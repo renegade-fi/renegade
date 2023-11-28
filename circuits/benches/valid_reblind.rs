@@ -5,6 +5,7 @@
 use circuit_types::{
     traits::{CircuitBaseType, SingleProverCircuit},
     wallet::Wallet,
+    PlonkCircuit,
 };
 use circuits::{
     singleprover_prove, verify_singleprover_proof,
@@ -18,9 +19,6 @@ use circuits::{
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use merlin::HashChainTranscript;
-use mpc_bulletproof::{r1cs::Prover, PedersenGens};
-use rand::thread_rng;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
 /// MAX_FEES, MERKLE_HEIGHT)
@@ -72,21 +70,14 @@ pub fn bench_apply_constraints_with_sizes<
         // Build a witness and statement
         let (witness, statement) =
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>();
-        let mut rng = thread_rng();
-        let mut transcript = HashChainTranscript::new(b"test");
-        let pc_gens = PedersenGens::default();
-        let mut prover = Prover::new(&pc_gens, &mut transcript);
+        let mut cs = PlonkCircuit::new_turbo_plonk();
 
-        let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
-        let statement_var = statement.commit_public(&mut prover);
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
 
         b.iter(|| {
-            ValidReblind::apply_constraints(
-                witness_var.clone(),
-                statement_var.clone(),
-                &mut prover,
-            )
-            .unwrap();
+            ValidReblind::apply_constraints(witness_var.clone(), statement_var.clone(), &mut cs)
+                .unwrap();
         });
     });
 }
@@ -145,7 +136,7 @@ pub fn bench_verifier_with_sizes<
         let (witness, statement) =
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>();
 
-        let (commitments, proof) = singleprover_prove::<
+        let proof = singleprover_prove::<
             ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
         >(witness, statement.clone())
         .unwrap();
@@ -153,7 +144,7 @@ pub fn bench_verifier_with_sizes<
         b.iter(|| {
             verify_singleprover_proof::<
                 ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-            >(statement.clone(), commitments.clone(), proof.clone())
+            >(statement.clone(), &proof)
             .unwrap();
         });
     });
