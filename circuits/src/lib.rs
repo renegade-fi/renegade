@@ -12,7 +12,7 @@
 use circuit_types::{
     errors::{ProverError, VerifierError},
     traits::{MpcType, MultiProverCircuit, SingleProverCircuit},
-    Fabric, PlonkProof,
+    CollaborativePlonkProof, Fabric, PlonkProof,
 };
 use constants::Scalar;
 
@@ -119,6 +119,15 @@ pub fn singleprover_prove_and_verify<C: SingleProverCircuit>(
     C::verify(statement, &proof).map_err(ProverError::Verification)
 }
 
+/// Construct a multiprover proof of a given circuit
+pub fn multiprover_prove<C: MultiProverCircuit>(
+    witness: C::Witness,
+    statement: C::Statement,
+    fabric: Fabric,
+) -> Result<CollaborativePlonkProof, ProverError> {
+    C::prove(witness, statement, fabric).map_err(ProverError::Plonk)
+}
+
 /// Generate a multiprover proof and verify it
 pub async fn multiprover_prove_and_verify<C: MultiProverCircuit>(
     witness: C::Witness,
@@ -143,11 +152,15 @@ pub mod test_helpers {
     //! Helpers used in tests throughout the crate and integration tests outside
     //! the crate
 
+    use std::iter;
+
     use ark_mpc::error::MpcError;
     use circuit_types::{
         fixed_point::FixedPoint,
         order::{Order, OrderSide},
         r#match::MatchResult,
+        traits::BaseType,
+        wallet::WalletShare,
     };
     use constants::{AuthenticatedScalar, Scalar};
     use env_logger::{Builder, Env, Target};
@@ -217,6 +230,19 @@ pub mod test_helpers {
     fn random_index(max: usize) -> u64 {
         let mut rng = thread_rng();
         rng.gen_range(0..max) as u64
+    }
+
+    /// Get a dummy set of wallet shares
+    pub fn dummy_wallet_share<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >() -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let mut iter = iter::from_fn(|| Some(Scalar::zero()));
+        WalletShare::from_scalars(&mut iter)
     }
 
     /// Open a batch of values and join into a single future
