@@ -5,19 +5,15 @@
 use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::wallet::Wallet;
+use circuit_types::PlonkCircuit;
 use circuits::zk_circuits::test_helpers::{create_wallet_shares, PUBLIC_KEYS};
 use circuits::zk_circuits::valid_wallet_create::{
     ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
-use merlin::HashChainTranscript;
-use mpc_bulletproof::r1cs::Prover;
-use mpc_bulletproof::PedersenGens;
-use mpc_stark::algebra::scalar::Scalar;
-use rand::thread_rng;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
 /// MAX_FEES)
@@ -51,8 +47,8 @@ where
         blinder: Scalar::zero(),
     };
 
-    let (private_shares, public_shares) = create_wallet_shares(wallet);
-    let private_shares_commitment = compute_wallet_private_share_commitment(private_shares.clone());
+    let (private_shares, public_shares) = create_wallet_shares(&wallet);
+    let private_shares_commitment = compute_wallet_private_share_commitment(&private_shares);
 
     (
         ValidWalletCreateWitness { private_wallet_share: private_shares },
@@ -88,25 +84,25 @@ pub fn bench_apply_constraints_with_sizes<
     // Build a witness and statement
     let (witness, statement) =
         create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
-    let mut rng = thread_rng();
-    let mut transcript = HashChainTranscript::new(b"test");
-    let pc_gens = PedersenGens::default();
-    let mut prover = Prover::new(&pc_gens, &mut transcript);
 
-    let (witness_var, _) = witness.commit_witness(&mut rng, &mut prover);
-    let statement_var = statement.commit_public(&mut prover);
+    // Allocate in the constraint system
+    let mut cs = PlonkCircuit::new_turbo_plonk();
+    let witness_var = witness.create_witness(&mut cs);
+    let statement_var = statement.create_public_var(&mut cs);
 
+    // Run the benchmark
     let mut group = c.benchmark_group("valid_wallet_create");
     let benchmark_id = BenchmarkId::new(
         "constraint-generation",
         format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"),
     );
+
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             ValidWalletCreate::apply_constraints(
                 witness_var.clone(),
                 statement_var.clone(),
-                &mut prover,
+                &mut cs,
             )
             .unwrap();
         });
@@ -155,11 +151,13 @@ pub fn bench_verifier_with_sizes<
     let (witness, statement) =
         create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
 
-    let (commitments, proof) = singleprover_prove::<
-        ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    >(witness, statement.clone())
+    let proof = singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+        witness,
+        statement.clone(),
+    )
     .unwrap();
 
+    // Run the benchmark
     let mut group = c.benchmark_group("valid_wallet_create");
     let benchmark_id =
         BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
@@ -167,8 +165,7 @@ pub fn bench_verifier_with_sizes<
         b.iter(|| {
             verify_singleprover_proof::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
                 statement.clone(),
-                commitments.clone(),
-                proof.clone(),
+                &proof,
             )
             .unwrap();
         });
