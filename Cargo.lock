@@ -362,17 +362,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ark-curve25519"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ab653b3eff27100f7dcb06b94785f2fbe0d1230408df55d543ee0ef48cd8760"
-dependencies = [
- "ark-ec",
- "ark-ff",
- "ark-std",
-]
-
-[[package]]
 name = "ark-ec"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -421,18 +410,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71892f265d01650e34988a546b37ea1d2ba1da162a639597a03d1550f26004d8"
 dependencies = [
  "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-std",
-]
-
-[[package]]
-name = "ark-ed25519"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c7ed5162ef7c978cfefffcd08cd8393d174836ae1c9fc8fa2dfcd5c2f03a4a9"
-dependencies = [
- "ark-curve25519",
  "ark-ec",
  "ark-ff",
  "ark-std",
@@ -1369,7 +1346,6 @@ version = "0.1.0"
 dependencies = [
  "ark-crypto-primitives",
  "ark-ec",
- "ark-ed25519",
  "ark-ff",
  "ark-mpc",
  "bigdecimal",
@@ -1396,7 +1372,6 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
- "serde_arrays",
  "serde_json",
  "test-helpers",
  "tokio",
@@ -7149,15 +7124,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25dd9975e68d0cb5aa1120c288333fc98731bd1dd12f561e468ea4728c042b89"
 dependencies = [
  "serde_derive",
-]
-
-[[package]]
-name = "serde_arrays"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38636132857f68ec3d5f3eb121166d2af33cb55174c4d5ff645db6165cbef0fd"
-dependencies = [
- "serde",
 ]
 
 [[package]]
