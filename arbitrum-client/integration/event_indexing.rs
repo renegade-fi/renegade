@@ -68,9 +68,7 @@ async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
         .await?
         .compute_root();
 
-    assert_eq_result!(final_root, expected_root)?;
-
-    Ok(())
+    assert_eq_result!(final_root, expected_root)
 }
 integration_test_async!(test_find_merkle_path);
 
@@ -89,15 +87,9 @@ async fn test_parse_public_shares_from_calldata(test_args: IntegrationTestArgs) 
         // The public share of the wallet blinder
         let blinder_share = expected_public_share.blinder;
 
-        // Fetch the transaction hash that indexed the public blinder share
-        let transaction_hash = client
-            .get_public_blinder_tx(blinder_share)
-            .await?
-            .ok_or_else(|| eyre::eyre!("public blinder share not found in contract state"))?;
-
         // Parse the public shares from the calldata
         let public_shares = client
-            .fetch_public_shares_from_tx(blinder_share, transaction_hash)
+            .fetch_public_shares_from_tx(blinder_share)
             .await?;
 
         // Check that the public shares match the expected public shares
