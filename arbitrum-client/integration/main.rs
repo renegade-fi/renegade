@@ -1,4 +1,9 @@
-//! Defines integration tests for the Arbitrum client
+//! Defines integration tests for the Arbitrum client.
+//!
+//! The tests explicitly assume that the contracts have already been deployed
+//! before they run. Additionally, the tests assume that the contracts have
+//! proof and ECDSA verification disabled, as those are not the focus of this
+//! test suite.
 
 #![deny(unsafe_code)]
 #![deny(missing_docs)]

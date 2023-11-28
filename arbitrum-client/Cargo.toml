@@ -45,3 +45,5 @@ json = "0.12"
 tokio = { workspace = true }
 colored = "2"
 inventory = "0.3"
+rand = { workspace = true }
+mpc-plonk = { workspace = true }

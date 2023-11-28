@@ -113,7 +113,12 @@ pub struct ArbitrumClient {
     /// The darkpool contract instance, used to make calls to the darkpool
     darkpool_contract: DarkpoolContract<SignerHttpProvider>,
     /// The Merkle implementation address, used to filter
-    /// for events emitted from the Merkle tree
+    /// for events emitted from the Merkle tree.
+    ///
+    /// Note: we only need to store this address due to a Stylus bug wherein
+    /// events from `delegatecall`-ed contracts are emitted with the callee,
+    /// as opposed to caller, address.
+    /// Once this bug is fixed, we will remove this field.
     merkle_event_source: Address,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,

@@ -34,7 +34,7 @@ impl ArbitrumClient {
     /// the given public blinder share
     ///
     /// Returns `None` if the public blinder share has not been used
-    pub async fn get_public_blinder_tx(
+    async fn get_public_blinder_tx(
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, ArbitrumClientError> {
@@ -134,11 +134,14 @@ impl ArbitrumClient {
     >(
         &self,
         public_blinder_share: Scalar,
-        tx_hash: TxHash,
     ) -> Result<WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ArbitrumClientError>
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
+        let tx_hash = self
+            .get_public_blinder_tx(public_blinder_share)
+            .await?
+            .ok_or(ArbitrumClientError::BlinderNotFound)?;
         let tx = self
             .darkpool_contract
             .client()
