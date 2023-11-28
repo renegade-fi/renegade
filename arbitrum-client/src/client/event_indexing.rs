@@ -2,7 +2,7 @@
 //! emitted by the darkpool contract
 
 use alloy_sol_types::SolCall;
-use circuit_types::SizedWalletShare;
+use circuit_types::wallet::WalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::{
@@ -40,8 +40,9 @@ impl ArbitrumClient {
     ) -> Result<Option<TxHash>, ArbitrumClientError> {
         let public_blinder_share_hash = keccak_hash_scalar(public_blinder_share)?;
         let events = self
-            .darkpool_event_source
+            .darkpool_contract
             .event::<WalletUpdatedFilter>()
+            .address(self.darkpool_contract.address().into())
             .topic1(public_blinder_share_hash)
             .from_block(self.deploy_block)
             .query_with_meta()
@@ -73,8 +74,9 @@ impl ArbitrumClient {
             let height = H256::from_slice((coords.height as u8).encode().as_slice());
             let index = H256::from_slice(coords.index.to_u128().unwrap().encode().as_slice());
             let events = self
-                .darkpool_event_source
+                .darkpool_contract
                 .event::<NodeChangedFilter>()
+                .address(self.merkle_event_source.into())
                 .topic1(height)
                 .topic2(index)
                 .from_block(self.deploy_block)
@@ -103,8 +105,9 @@ impl ArbitrumClient {
     ) -> Result<u128, ArbitrumClientError> {
         let commitment_hash = keccak_hash_scalar(commitment)?;
         let events = self
-            .darkpool_event_source
+            .darkpool_contract
             .event::<NodeChangedFilter>()
+            .address(self.merkle_event_source.into())
             .topic3(commitment_hash)
             .from_block(self.deploy_block)
             .query()
@@ -124,11 +127,18 @@ impl ArbitrumClient {
     /// we disambiguate between the two parties by adding the public blinder of
     /// the party's shares the caller intends to fetch
     // TODO: Add support for nested calls
-    pub async fn fetch_public_shares_from_tx(
+    pub async fn fetch_public_shares_from_tx<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
         &self,
         public_blinder_share: Scalar,
         tx_hash: TxHash,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+    ) -> Result<WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ArbitrumClientError>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
         let tx = self
             .darkpool_contract
             .client()

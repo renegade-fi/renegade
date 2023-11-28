@@ -1,3 +1,5 @@
+//! Defines integration tests for the Arbitrum client
+
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
@@ -5,6 +7,7 @@
 #![feature(generic_const_exprs)]
 
 mod constants;
+mod event_indexing;
 mod helpers;
 
 use ::constants::Scalar;
@@ -14,7 +17,7 @@ use arbitrum_client::{
 };
 use circuits::zk_circuits::test_helpers::SizedWalletShare;
 use clap::Parser;
-use constants::{DARKPOOL_CONTRACT_KEY, DARKPOOL_PROXY_CONTRACT_KEY};
+use constants::{DARKPOOL_PROXY_CONTRACT_KEY, MERKLE_CONTRACT_KEY};
 use eyre::Result;
 use helpers::{deploy_new_wallet, parse_addr_from_deployments_file};
 use test_helpers::integration_test_main;
@@ -22,6 +25,7 @@ use util::{logging::LevelFilter, runtime::block_on_result};
 
 use crate::constants::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY};
 
+/// The arguments used to run the integration tests
 #[derive(Debug, Clone, Parser)]
 #[command(author, version, about, long_about=None)]
 struct CliArgs {
@@ -94,8 +98,8 @@ impl From<CliArgs> for IntegrationTestArgs {
             DARKPOOL_PROXY_CONTRACT_KEY,
         )
         .unwrap();
-        let event_source =
-            parse_addr_from_deployments_file(&test_args.deployments_path, DARKPOOL_CONTRACT_KEY)
+        let merkle_event_source =
+            parse_addr_from_deployments_file(&test_args.deployments_path, MERKLE_CONTRACT_KEY)
                 .unwrap();
 
         // Build a client that references the darkpool
@@ -105,7 +109,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         let client = block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
-            event_source,
+            merkle_event_source,
             arb_priv_key: test_args.private_key,
             rpc_url: test_args.rpc_url,
         }))
