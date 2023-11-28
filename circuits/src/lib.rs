@@ -10,9 +10,9 @@
 #![feature(inherent_associated_types)]
 
 use circuit_types::{
-    errors::ProverError,
+    errors::{ProverError, VerifierError},
     traits::{MpcType, MultiProverCircuit, SingleProverCircuit},
-    Fabric,
+    Fabric, PlonkProof,
 };
 use constants::Scalar;
 
@@ -92,6 +92,22 @@ pub fn scalar_2_to_m(m: u64) -> Scalar {
     assert!(m < SCALAR_MAX_BITS as u64, "result would overflow Scalar field");
 
     Scalar::from(2u8).pow(m)
+}
+
+/// Construct a proof of a given circuit
+pub fn singleprover_prove<C: SingleProverCircuit>(
+    witness: C::Witness,
+    statement: C::Statement,
+) -> Result<PlonkProof, ProverError> {
+    C::prove(witness, statement)
+}
+
+/// Verify a proof of a given circuit
+pub fn verify_singleprover_proof<C: SingleProverCircuit>(
+    statement: C::Statement,
+    proof: &PlonkProof,
+) -> Result<(), VerifierError> {
+    C::verify(statement, proof)
 }
 
 /// Generate a proof of a circuit and verify it
