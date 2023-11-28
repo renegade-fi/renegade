@@ -1,16 +1,19 @@
 //! Helper functions for Arbitrum client integration tests
 
-use arbitrum_client::{client::ArbitrumClient, types::ContractValidWalletCreateStatement};
+use arbitrum_client::{client::ArbitrumClient, types::NUM_WIRE_TYPES};
 use circuit_types::{
-    native_helpers::compute_wallet_commitment_from_private, traits::SingleProverCircuit,
-    wallet::WalletShareStateCommitment,
+    native_helpers::compute_wallet_commitment_from_private, traits::BaseType,
+    wallet::WalletShareStateCommitment, PlonkProof,
 };
 use circuits::zk_circuits::{
-    test_helpers::SizedWalletShare,
-    valid_wallet_create::{test_helpers::create_default_witness_statement, ValidWalletCreate},
+    test_helpers::{SizedWalletShare, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
+    valid_wallet_create::ValidWalletCreateStatement,
 };
+use constants::Scalar;
 use eyre::{eyre, Result};
-use std::{fs::File, io::Read};
+use mpc_plonk::proof_system::structs::ProofEvaluations;
+use rand::thread_rng;
+use std::{fs::File, io::Read, iter};
 
 use crate::constants::DEPLOYMENTS_KEY;
 
@@ -26,19 +29,45 @@ pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> 
         .ok_or_else(|| eyre!("Could not parse darkpool address from deployments file"))
 }
 
+/// Create a dummy wallet share that is a random value repeated
+pub fn dummy_wallet_share() -> SizedWalletShare {
+    let mut rng = thread_rng();
+    SizedWalletShare::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)))
+}
+
+/// Create a dummy proof
+pub fn dummy_proof() -> PlonkProof {
+    PlonkProof {
+        wires_poly_comms: vec![Default::default(); NUM_WIRE_TYPES],
+        prod_perm_poly_comm: Default::default(),
+        split_quot_poly_comms: vec![Default::default(); NUM_WIRE_TYPES],
+        opening_proof: Default::default(),
+        shifted_opening_proof: Default::default(),
+        poly_evals: ProofEvaluations {
+            wires_evals: vec![Default::default(); NUM_WIRE_TYPES],
+            wire_sigma_evals: vec![Default::default(); NUM_WIRE_TYPES - 1],
+            perm_next_eval: Default::default(),
+        },
+        plookup_proof: Default::default(),
+    }
+}
+
 /// Deploy a new wallet and return the commitment to the wallet and the
 /// public shares of the wallet
 pub async fn deploy_new_wallet(
     client: &ArbitrumClient,
 ) -> Result<(WalletShareStateCommitment, SizedWalletShare)> {
-    let (witness, statement) = create_default_witness_statement();
-    let proof = ValidWalletCreate::prove(witness, statement.clone())?;
-    let contract_statement: ContractValidWalletCreateStatement = statement.clone().into();
+    let mut rng = thread_rng();
+    let statement = ValidWalletCreateStatement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::from_scalars(
+        &mut iter::repeat(Scalar::random(&mut rng)),
+    );
+
+    let proof = dummy_proof();
 
     client
         .new_wallet(
             statement.public_wallet_shares.blinder,
-            contract_statement,
+            statement.clone().into(),
             proof,
         )
         .await?;
