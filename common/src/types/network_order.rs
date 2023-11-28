@@ -173,7 +173,7 @@ impl Display for NetworkOrderState {
 mod test {
     use std::str::FromStr;
 
-    use mpc_stark::algebra::scalar::Scalar;
+    use constants::Scalar;
     use rand::thread_rng;
     use uuid::Uuid;
 
