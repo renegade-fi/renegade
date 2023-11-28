@@ -31,7 +31,7 @@ use constants::{
 use fixed_point::DEFAULT_FP_PRECISION;
 use merkle::MerkleOpening;
 use mpc_plonk::{
-    multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit,
+    multiprover::proof_system::{CollaborativeProof, MpcPlonkCircuit as GenericMpcPlonkCircuit},
     proof_system::structs::Proof,
 };
 use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
@@ -64,6 +64,8 @@ pub type PlonkCircuit = GenericPlonkCircuit<ScalarField>;
 pub type MpcPlonkCircuit = GenericMpcPlonkCircuit<SystemCurveGroup>;
 /// A Plonk proof represented over the system curve
 pub type PlonkProof = Proof<SystemCurve>;
+/// A collaborative plonk proof represented over the system curve
+pub type CollaborativePlonkProof = CollaborativeProof<SystemCurve>;
 
 // --------------------------
 // | Default Generic Values |
@@ -388,7 +390,7 @@ pub mod test_helpers {
     use rand::thread_rng;
 
     /// The maximum degree SRS to allocate for testing circuits
-    const MAX_DEGREE_TESTING: usize = 32768;
+    const MAX_DEGREE_TESTING: usize = 131072;
 
     lazy_static! {
         /// A universal SRS for testing circuits that is generated once and used
