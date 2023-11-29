@@ -26,7 +26,8 @@ use super::{biguint_from_hex_string, biguint_to_hex_string};
 pub const NUM_KEYS: usize = 4;
 /// The number of bytes used in a single scalar to represent a key
 pub const SCALAR_MAX_BYTES: usize = 31;
-/// The number of words needed to represent a non-native root key coordinate
+/// The number of words needed to represent a field element of ECDSA curve's
+/// base field, which is used to represent both public and private keys
 pub const ROOT_SCALAR_WORDS: usize = 2;
 
 // -------------
