@@ -8,29 +8,29 @@ use circuits::{
     singleprover_prove,
     zk_circuits::{
         valid_commitments::{
-            SizedValidCommitmentsWitness, ValidCommitments, ValidCommitmentsStatement,
+            SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
         },
-        valid_match_mpc::{ValidMatchMpcSingleProver, ValidMatchMpcWitness},
-        valid_reblind::{SizedValidReblindWitness, ValidReblind, ValidReblindStatement},
-        valid_settle::{SizedValidSettleStatement, SizedValidSettleWitness, ValidSettle},
+        valid_match_settle::{
+            SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
+        },
+        valid_reblind::{SizedValidReblind, SizedValidReblindWitness, ValidReblindStatement},
         valid_wallet_create::{
-            SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreate,
+            SizedValidWalletCreate, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
         },
         valid_wallet_update::{
-            SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness, ValidWalletUpdate,
+            SizedValidWalletUpdate, SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
         },
     },
 };
 use common::types::{
     proof_bundles::{
-        GenericValidCommitmentsBundle, GenericValidMatchMpcBundle, GenericValidReblindBundle,
-        GenericValidSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-        ProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
-        ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
+        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, ProofBundle,
+        ValidCommitmentsBundle, ValidMatchSettleBundle, ValidReblindBundle,
+        ValidWalletCreateBundle, ValidWalletUpdateBundle,
     },
     CancelChannel,
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use crossbeam::channel::Receiver;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rayon::ThreadPool;
@@ -129,19 +129,11 @@ impl ProofManager {
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             },
 
-            ProofJob::ValidMatchMpcSingleprover { witness } => {
+            ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
                 // Prove `VALID MATCH MPC`
-                let proof_bundle = Self::prove_valid_match_mpc(witness)?;
+                let proof_bundle = Self::prove_valid_match_mpc(witness, statement)?;
                 job.response_channel
-                    .send(ProofBundle::ValidMatchMpc(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
-            },
-
-            ProofJob::ValidSettle { witness, statement } => {
-                // Prove `VALID SETTLE`
-                let proof_bundle = Self::prove_valid_settle(statement, witness)?;
-                job.response_channel
-                    .send(ProofBundle::ValidSettle(proof_bundle))
+                    .send(ProofBundle::ValidMatchSettle(proof_bundle))
                     .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
             },
         }
@@ -153,12 +145,10 @@ impl ProofManager {
         statement: SizedValidWalletCreateStatement,
     ) -> Result<ValidWalletCreateBundle, ProofManagerError> {
         // Build the statement and witness for the proof
-        let (commitment, proof) = singleprover_prove::<
-            ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement.clone())
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let proof = singleprover_prove::<SizedValidWalletCreate>(witness, statement.clone())
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidWalletCreateBundle { commitment, statement, proof }))
+        Ok(Box::new(GenericValidWalletCreateBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID REBLIND`
@@ -167,12 +157,10 @@ impl ProofManager {
         statement: ValidReblindStatement,
     ) -> Result<ValidReblindBundle, ProofManagerError> {
         // Prove the statement `VALID REBLIND`
-        let (witness_comm, proof) = singleprover_prove::<
-            ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        >(witness, statement.clone())
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let proof = singleprover_prove::<SizedValidReblind>(witness, statement.clone())
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidReblindBundle { commitment: witness_comm, statement, proof }))
+        Ok(Box::new(GenericValidReblindBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID COMMITMENTS`
@@ -181,12 +169,10 @@ impl ProofManager {
         statement: ValidCommitmentsStatement,
     ) -> Result<ValidCommitmentsBundle, ProofManagerError> {
         // Prove the statement `VALID COMMITMENTS`
-        let (witness_comm, proof) = singleprover_prove::<
-            ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement.clone())
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let proof = singleprover_prove::<SizedValidCommitments>(witness, statement)
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidCommitmentsBundle { commitment: witness_comm, statement, proof }))
+        Ok(Box::new(GenericValidCommitmentsBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID WALLET UPDATE`
@@ -194,34 +180,20 @@ impl ProofManager {
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
     ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
-        let (witness_comm, proof) = singleprover_prove::<
-            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        >(witness, statement.clone())
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
-        Ok(Box::new(GenericValidWalletUpdateBundle { commitment: witness_comm, statement, proof }))
-    }
-
-    /// Create a proof of `VALID MATCH MPC`
-    fn prove_valid_match_mpc(
-        witness: ValidMatchMpcWitness,
-    ) -> Result<ValidMatchMpcBundle, ProofManagerError> {
-        let (witness_comm, proof) = singleprover_prove::<ValidMatchMpcSingleProver>(witness, ())
+        let proof = singleprover_prove::<SizedValidWalletUpdate>(witness, statement.clone())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidMatchMpcBundle { commitment: witness_comm, statement: (), proof }))
+        Ok(Box::new(GenericValidWalletUpdateBundle { statement, proof }))
     }
 
-    /// Create a proof of `VALID SETTLE`
-    fn prove_valid_settle(
-        statement: SizedValidSettleStatement,
-        witness: SizedValidSettleWitness,
-    ) -> Result<ValidSettleBundle, ProofManagerError> {
-        let (witness_comm, proof) = singleprover_prove::<
-            ValidSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        >(witness, statement.clone())
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+    /// Create a proof of `VALID MATCH SETTLE`
+    fn prove_valid_match_mpc(
+        witness: SizedValidMatchSettleWitness,
+        statement: SizedValidMatchSettleStatement,
+    ) -> Result<ValidMatchSettleBundle, ProofManagerError> {
+        let proof = singleprover_prove::<SizedValidMatchSettle>(witness, statement.clone())
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidSettleBundle { commitment: witness_comm, statement, proof }))
+        Ok(Box::new(GenericMatchSettleBundle { statement, proof }))
     }
 }

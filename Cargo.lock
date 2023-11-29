@@ -6106,6 +6106,7 @@ dependencies = [
 name = "proof-manager"
 version = "0.1.0"
 dependencies = [
+ "ark-mpc",
  "circuit-types",
  "circuits",
  "common",
@@ -6113,9 +6114,7 @@ dependencies = [
  "crossbeam",
  "job-types",
  "merlin 2.0.0",
- "mpc-bulletproof",
- "mpc-stark",
- "rand 0.8.5",
+ "mpc-plonk",
  "rayon",
  "serde",
  "tokio",
