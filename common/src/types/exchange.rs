@@ -1,6 +1,9 @@
 //! Defines exchanges used for price information
 
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    str::FromStr,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +39,21 @@ impl Display for Exchange {
             Exchange::UniswapV3 => String::from("uniswapv3"),
         };
         write!(f, "{}", fmt_str)
+    }
+}
+
+impl FromStr for Exchange {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "binance" => Ok(Exchange::Binance),
+            "coinbase" => Ok(Exchange::Coinbase),
+            "kraken" => Ok(Exchange::Kraken),
+            "okx" => Ok(Exchange::Okx),
+            "uniswapv3" | "uniswap" => Ok(Exchange::UniswapV3),
+            _ => Err(format!("Unknown exchange: {s}")),
+        }
     }
 }
 

@@ -151,9 +151,15 @@ impl PriceReporter {
             shared_exchange_state.clone(),
         );
 
-        // TODO: This thread can panic, we may want to handle that at the manager level
-        // and restart
-        tokio::spawn(connection_muxer.execution_loop());
+        tokio::spawn({
+            let base_token = base_token.clone();
+            let quote_token = quote_token.clone();
+            async move {
+                if let Err(e) = connection_muxer.execution_loop().await {
+                    log::error!("Error in ConnectionMuxer for {base_token}-{quote_token}: {e}");
+                }
+            }
+        });
 
         // Spawn a thread to stream median price reports
         let self_ = Self {
@@ -163,7 +169,6 @@ impl PriceReporter {
         };
 
         let self_clone = self_.clone();
-        #[allow(clippy::redundant_async_block)]
         tokio::spawn(async move { self_clone.median_streamer_loop(config.system_bus).await });
 
         Ok(self_)
@@ -241,7 +246,6 @@ impl PriceReporter {
             .intersection(&quote_token_supported_exchanges)
             .copied()
             .filter(|exchange| config.exchange_configured(*exchange))
-            .filter(|exchange| !config.disable_binance || *exchange != Exchange::Binance)
             .collect_vec()
     }
 
@@ -366,16 +370,13 @@ impl ConnectionMuxer {
     }
 
     /// Start the connection muxer
-    pub async fn execution_loop(mut self) {
+    pub async fn execution_loop(mut self) -> Result<(), ExchangeConnectionError> {
         // Start a keepalive timer
         let delay = tokio::time::sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS));
         tokio::pin!(delay);
 
         // Build a map of connections to multiplex from
-        let mut stream_map = self
-            .initialize_connections()
-            .await
-            .expect("error initializing exchange connections for price reporter");
+        let mut stream_map = self.initialize_connections().await?;
 
         loop {
             tokio::select! {
@@ -463,10 +464,7 @@ impl ConnectionMuxer {
                 let quote_token = self.quote_token.clone();
                 let config = self.config.clone();
 
-                #[allow(clippy::redundant_async_block)]
-                async move {
-                    connect_exchange(&base_token, &quote_token, &config, *exchange).await
-                }
+                async move { connect_exchange(&base_token, &quote_token, &config, *exchange).await }
             })
             .collect::<Vec<_>>();
         let conns = try_join_all(futures.into_iter()).await?;

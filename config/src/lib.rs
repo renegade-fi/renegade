@@ -3,6 +3,7 @@
 use clap::Parser;
 use common::types::{
     chain_id::ChainId,
+    exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
     wallet::Wallet,
 };
@@ -31,7 +32,7 @@ const CONFIG_FILE_ARG: &str = "--config-file";
 
 /// Defines the relayer system command line interface
 #[derive(Debug, Parser, Serialize, Deserialize)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, about, long_about = None)]
 #[rustfmt::skip]
 struct Cli {
     // ---------------
@@ -103,11 +104,9 @@ struct Cli {
     /// Flag to disable the price reporter
     #[clap(long, value_parser)]
     pub disable_price_reporter: bool,
-    /// Flag to disable streaming price from Binance
-    /// 
-    /// This is useful for testing in a region that Binance has IP blocked
-    #[clap(long, value_parser)]
-    pub disable_binance: bool,
+    /// Disables exchanges for price reporting
+    #[clap(long, value_parser, num_args=1.., value_delimiter=' ')]
+    pub disabled_exchanges: Vec<Exchange>,
     /// Flag to disable fee validation
     #[clap(long, value_parser)]
     pub disable_fee_validation: bool,
@@ -134,10 +133,10 @@ struct Cli {
     #[clap(long = "starknet-gateway", value_parser)]
     pub starknet_jsonrpc_node: Option<String>,
     /// The StarkNet addresses corresponding to the given private keys
-    #[clap(long = "starknet-account-addr", value_parser, requires = "starknet-private-keys")]
+    #[clap(long = "starknet-account-addr", value_parser, requires = "starknet_private_keys")]
     pub starknet_account_addresses: Vec<String>,
     /// The StarkNet private keys used to send transactions
-    #[clap(long = "starknet-account-pkey", value_parser, requires = "starknet-account-addresses")]
+    #[clap(long = "starknet-account-pkey", value_parser, requires = "starknet_account_addresses")]
     pub starknet_private_keys: Vec<String>,
     /// A file holding a json representation of the wallets the local node
     /// should manage
@@ -194,8 +193,8 @@ pub struct RelayerConfig {
     /// Whether to disable the price reporter if e.g. we are streaming from a
     /// dedicated external API gateway node in the cluster
     pub disable_price_reporter: bool,
-    /// Whether to disable price streaming from Binance for location blocks
-    pub disable_binance: bool,
+    /// The exchanges explicitly disabled for price reports
+    pub disabled_exchanges: Vec<Exchange>,
     /// Whether to disable fee validation, allowing for zero fees
     pub disable_fee_validation: bool,
     /// Whether or not the relayer is in debug mode
@@ -246,7 +245,7 @@ impl Clone for RelayerConfig {
             bind_addr: self.bind_addr,
             public_ip: self.public_ip,
             disable_price_reporter: self.disable_price_reporter,
-            disable_binance: self.disable_binance,
+            disabled_exchanges: self.disabled_exchanges.clone(),
             disable_fee_validation: self.disable_fee_validation,
             wallets: self.wallets.clone(),
             cluster_keypair: Keypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
@@ -344,7 +343,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
         disable_price_reporter: cli_args.disable_price_reporter,
-        disable_binance: cli_args.disable_binance,
+        disabled_exchanges: cli_args.disabled_exchanges,
         disable_fee_validation: cli_args.disable_fee_validation,
         wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
