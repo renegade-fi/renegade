@@ -65,11 +65,7 @@ pub async fn deploy_new_wallet(
     let proof = dummy_proof();
 
     client
-        .new_wallet(
-            statement.public_wallet_shares.blinder,
-            statement.clone().into(),
-            proof,
-        )
+        .new_wallet(statement.public_wallet_shares.blinder, statement.clone().into(), proof)
         .await?;
 
     // The contract will compute the full commitment and insert it into the Merkle
