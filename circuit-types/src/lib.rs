@@ -32,7 +32,7 @@ use fixed_point::DEFAULT_FP_PRECISION;
 use jf_primitives::pcs::prelude::Commitment;
 use merkle::MerkleOpening;
 use mpc_plonk::{
-    multiprover::proof_system::MpcPlonkCircuit as GenericMpcPlonkCircuit,
+    multiprover::proof_system::{CollaborativeProof, MpcPlonkCircuit as GenericMpcPlonkCircuit},
     proof_system::structs::Proof,
 };
 use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
@@ -63,9 +63,11 @@ pub type Fabric = MpcFabric<SystemCurveGroup>;
 pub type PlonkCircuit = GenericPlonkCircuit<ScalarField>;
 /// A circuit type with curve generic attached in a multiprover context
 pub type MpcPlonkCircuit = GenericMpcPlonkCircuit<SystemCurveGroup>;
-/// The (unbatched) proof type that the proof system generates
+/// A Plonk proof represented over the system curve
 pub type PlonkProof = Proof<SystemCurve>;
-/// The polynomial commitment type that the proof system utilizes
+/// A collaborative plonk proof represented over the system curve
+pub type CollaborativePlonkProof = CollaborativeProof<SystemCurve>;
+/// A KZG polynomial commitment over the system curve
 pub type PolynomialCommitment = Commitment<SystemCurve>;
 
 // --------------------------
