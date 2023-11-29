@@ -25,7 +25,6 @@ job-types = { path = "../workers/job-types" }
 network-manager = { path = "../workers/network-manager" }
 price-reporter = { path = "../workers/price-reporter" }
 proof-manager = { path = "../workers/proof-manager" }
-starknet-client = { path = "../starknet-client" }
 state = { path = "../state" }
 system-bus = { path = "../system-bus" }
 task-driver = { path = "../task-driver" }

@@ -263,7 +263,6 @@ dependencies = [
  "renegade-crypto",
  "serde",
  "serde_json",
- "starknet-client",
  "state",
  "system-bus",
  "task-driver",
@@ -1223,10 +1222,8 @@ dependencies = [
  "gossip-api",
  "job-types",
  "lazy_static",
- "mpc-stark",
  "renegade-crypto",
  "starknet",
- "starknet-client",
  "state",
  "tokio",
  "tracing",
@@ -3394,7 +3391,6 @@ dependencies = [
  "job-types",
  "libp2p",
  "lru 0.11.1",
- "starknet-client",
  "state",
  "tokio",
  "tracing",
@@ -3496,7 +3492,6 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
- "starknet-client",
  "state",
  "system-bus",
  "task-driver",
@@ -6596,7 +6591,6 @@ dependencies = [
  "network-manager",
  "price-reporter",
  "proof-manager",
- "starknet-client",
  "state",
  "system-bus",
  "task-driver",
@@ -7641,38 +7635,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "starknet-client"
-version = "0.1.0"
-dependencies = [
- "ark-ff",
- "circuit-types",
- "circuits",
- "clap 4.4.8",
- "colored",
- "common",
- "constants",
- "eyre",
- "inventory",
- "itertools 0.10.5",
- "json",
- "lazy_static",
- "mpc-bulletproof",
- "mpc-stark",
- "num-bigint",
- "rand 0.8.5",
- "renegade-crypto",
- "reqwest",
- "serde",
- "serde_json",
- "starknet",
- "state",
- "test-helpers",
- "tokio",
- "tracing",
- "util",
-]
-
-[[package]]
 name = "starknet-contract"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7883,7 +7845,6 @@ dependencies = [
 name = "statev2"
 version = "0.1.0"
 dependencies = [
- "ark-mpc",
  "circuit-types",
  "common",
  "config",
@@ -7892,7 +7853,6 @@ dependencies = [
  "external-api",
  "flexbuffers",
  "itertools 0.10.5",
- "job-types",
  "libmdbx",
  "multiaddr",
  "num-bigint",
@@ -8157,7 +8117,6 @@ dependencies = [
  "renegade-crypto",
  "serde",
  "starknet",
- "starknet-client",
  "state",
  "system-bus",
  "test-helpers",
