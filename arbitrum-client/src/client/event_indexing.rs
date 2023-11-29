@@ -2,7 +2,7 @@
 //! emitted by the darkpool contract
 
 use alloy_sol_types::SolCall;
-use circuit_types::wallet::WalletShare;
+use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::{
@@ -124,17 +124,10 @@ impl ArbitrumClient {
     /// we disambiguate between the two parties by adding the public blinder of
     /// the party's shares the caller intends to fetch
     // TODO: Add support for nested calls
-    pub async fn fetch_public_shares_from_tx<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
+    pub async fn fetch_public_shares_from_tx(
         &self,
         public_blinder_share: Scalar,
-    ) -> Result<WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ArbitrumClientError>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
         let tx_hash = self
             .get_public_blinder_tx(public_blinder_share)
             .await?

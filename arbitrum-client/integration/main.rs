@@ -20,7 +20,7 @@ use arbitrum_client::{
     client::{ArbitrumClient, ArbitrumClientConfig},
     constants::Chain,
 };
-use circuits::zk_circuits::test_helpers::SizedWalletShare;
+use circuit_types::SizedWalletShare;
 use clap::Parser;
 use constants::{DARKPOOL_PROXY_CONTRACT_KEY, MERKLE_CONTRACT_KEY};
 use eyre::Result;
