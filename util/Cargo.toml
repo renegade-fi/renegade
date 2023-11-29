@@ -26,3 +26,5 @@ tracing-subscriber = "0.3"
 
 [dev-dependencies]
 lazy_static = "1.4"
+num-bigint = "0.4"
+rand = "0.8"

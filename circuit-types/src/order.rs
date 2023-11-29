@@ -137,3 +137,9 @@ impl From<u64> for OrderSide {
         }
     }
 }
+
+impl From<bool> for OrderSide {
+    fn from(value: bool) -> Self {
+        Self::from(value as u64)
+    }
+}
