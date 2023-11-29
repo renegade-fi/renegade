@@ -5,7 +5,7 @@ use circuit_types::{
     balance::BalanceVar,
     fixed_point::{FixedPointVar, DEFAULT_FP_PRECISION},
     order::OrderVar,
-    r#match::MatchResultVar,
+    r#match::{MatchResultVar, OrderSettlementIndicesVar},
     wallet::WalletShareVar,
     Fabric, MpcPlonkCircuit, AMOUNT_BITS, PRICE_BITS,
 };
@@ -13,16 +13,13 @@ use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use super::{ValidMatchSettle, ValidMatchSettleStatementVar, ValidMatchSettleWitnessVar};
-use crate::{
-    zk_circuits::valid_commitments::OrderSettlementIndicesVar,
-    zk_gadgets::{
-        comparators::{
-            EqGadget, MultiproverEqGadget, MultiproverGreaterThanEqGadget,
-            MultiproverGreaterThanEqZeroGadget,
-        },
-        fixed_point::MultiproverFixedPointGadget,
-        select::{CondSelectGadget, CondSelectVectorGadget},
+use crate::zk_gadgets::{
+    comparators::{
+        EqGadget, MultiproverEqGadget, MultiproverGreaterThanEqGadget,
+        MultiproverGreaterThanEqZeroGadget,
     },
+    fixed_point::MultiproverFixedPointGadget,
+    select::{CondSelectGadget, CondSelectVectorGadget},
 };
 
 // --- Matching Engine --- //

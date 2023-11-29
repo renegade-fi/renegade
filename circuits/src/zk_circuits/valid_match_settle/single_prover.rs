@@ -5,20 +5,17 @@ use circuit_types::{
     balance::BalanceVar,
     fixed_point::{FixedPointVar, DEFAULT_FP_PRECISION},
     order::OrderVar,
-    r#match::MatchResultVar,
+    r#match::{MatchResultVar, OrderSettlementIndicesVar},
     wallet::WalletShareVar,
     PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
 };
 use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
-use crate::{
-    zk_circuits::valid_commitments::OrderSettlementIndicesVar,
-    zk_gadgets::{
-        comparators::{EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget},
-        fixed_point::FixedPointGadget,
-        select::{CondSelectGadget, CondSelectVectorGadget},
-    },
+use crate::zk_gadgets::{
+    comparators::{EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget},
+    fixed_point::FixedPointGadget,
+    select::{CondSelectGadget, CondSelectVectorGadget},
 };
 
 use super::{ValidMatchSettle, ValidMatchSettleStatementVar, ValidMatchSettleWitnessVar};

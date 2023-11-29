@@ -8842,6 +8842,8 @@ dependencies = [
  "json",
  "lazy_static",
  "libp2p",
+ "num-bigint",
+ "rand 0.8.5",
  "renegade-crypto",
  "tokio",
  "tracing",

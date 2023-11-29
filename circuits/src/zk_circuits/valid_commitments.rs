@@ -18,14 +18,12 @@ use circuit_types::{
     balance::{Balance, BalanceVar},
     fee::{Fee, FeeVar},
     order::{Order, OrderVar},
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-        MultiproverCircuitBaseType, SecretShareVarType,
-    },
+    r#match::OrderSettlementIndices,
+    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
     wallet::{WalletShare, WalletVar},
-    Fabric, PlonkCircuit,
+    PlonkCircuit,
 };
-use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
@@ -312,21 +310,6 @@ pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MA
 pub struct ValidCommitmentsStatement {
     /// The indices used in settling this order once matched
     pub indices: OrderSettlementIndices,
-}
-
-/// The indices that specify where settlement logic should modify the wallet
-/// shares
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct OrderSettlementIndices {
-    /// The index of the balance that holds the mint that the wallet will
-    /// send if a successful match occurs
-    pub balance_send: u64,
-    /// The index of the balance that holds the mint that the wallet will
-    /// receive if a successful match occurs
-    pub balance_receive: u64,
-    /// The index of the order that is to be matched
-    pub order: u64,
 }
 
 // ---------------------

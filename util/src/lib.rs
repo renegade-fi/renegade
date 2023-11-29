@@ -4,6 +4,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
 #![feature(ip)]
+#![feature(generic_const_exprs)]
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

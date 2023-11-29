@@ -5,6 +5,7 @@ use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     traits::{
@@ -50,4 +51,19 @@ pub struct MatchResult {
     /// We serialize this as a `bool` to automatically constrain it to be 0 or 1
     /// in a circuit. So `false` means 0 and `true` means 1
     pub min_amount_order_index: bool,
+}
+
+/// The indices that specify where settlement logic should modify the wallet
+/// shares
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct OrderSettlementIndices {
+    /// The index of the balance that holds the mint that the wallet will
+    /// send if a successful match occurs
+    pub balance_send: u64,
+    /// The index of the balance that holds the mint that the wallet will
+    /// receive if a successful match occurs
+    pub balance_receive: u64,
+    /// The index of the order that is to be matched
+    pub order: u64,
 }
