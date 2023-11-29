@@ -9,13 +9,13 @@ use circuit_types::{
     keychain::PublicSigningKey,
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
-    wallet::WalletShare,
-    PlonkProof, PolynomialCommitment,
+    PlonkProof, PolynomialCommitment, SizedWalletShare,
 };
 use circuits::zk_circuits::{
-    valid_commitments::ValidCommitmentsStatement, valid_match_settle::ValidMatchSettleStatement,
-    valid_reblind::ValidReblindStatement, valid_wallet_create::ValidWalletCreateStatement,
-    valid_wallet_update::ValidWalletUpdateStatement,
+    valid_commitments::ValidCommitmentsStatement,
+    valid_match_settle::SizedValidMatchSettleStatement, valid_reblind::ValidReblindStatement,
+    valid_wallet_create::SizedValidWalletCreateStatement,
+    valid_wallet_update::SizedValidWalletUpdateStatement,
 };
 use constants::{Scalar, ScalarField};
 use ruint::aliases::{U160, U256};
@@ -163,13 +163,8 @@ pub struct ContractValidWalletCreateStatement {
     pub public_wallet_shares: Vec<ScalarField>,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    From<ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
-    for ContractValidWalletCreateStatement
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
-    fn from(value: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
+impl From<SizedValidWalletCreateStatement> for ContractValidWalletCreateStatement {
+    fn from(value: SizedValidWalletCreateStatement) -> Self {
         let public_wallet_shares = wallet_shares_to_scalar_vec(&value.public_wallet_shares);
 
         ContractValidWalletCreateStatement {
@@ -204,17 +199,10 @@ pub struct ContractValidWalletUpdateStatement {
     pub timestamp: u64,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    TryFrom<ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
-    for ContractValidWalletUpdateStatement
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
+impl TryFrom<SizedValidWalletUpdateStatement> for ContractValidWalletUpdateStatement {
     type Error = ConversionError;
 
-    fn try_from(
-        value: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(value: SizedValidWalletUpdateStatement) -> Result<Self, Self::Error> {
         let new_public_shares = wallet_shares_to_scalar_vec(&value.new_public_shares);
         let external_transfer: Option<ContractExternalTransfer> =
             if value.external_transfer == ExternalTransfer::default() {
@@ -309,13 +297,8 @@ pub struct ContractValidMatchSettleStatement {
     pub party1_order_index: u64,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    From<ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
-    for ContractValidMatchSettleStatement
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
-    fn from(value: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
+impl From<SizedValidMatchSettleStatement> for ContractValidMatchSettleStatement {
+    fn from(value: SizedValidMatchSettleStatement) -> Self {
         let party0_modified_shares = wallet_shares_to_scalar_vec(&value.party0_modified_shares);
         let party1_modified_shares = wallet_shares_to_scalar_vec(&value.party1_modified_shares);
 
@@ -377,15 +360,6 @@ fn try_unwrap_scalars<const N: usize>(
 
 /// Convert a set of wallet secret shares into a vector of `ScalarField`
 /// elements
-fn wallet_shares_to_scalar_vec<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
-    shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-) -> Vec<ScalarField>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
+fn wallet_shares_to_scalar_vec(shares: &SizedWalletShare) -> Vec<ScalarField> {
     shares.to_scalars().into_iter().map(|s| s.inner()).collect()
 }
