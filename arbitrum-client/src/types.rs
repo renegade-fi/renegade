@@ -2,12 +2,23 @@
 //!
 //! Mirrored from https://github.com/renegade-fi/renegade-contracts/blob/main/common/src/types.rs
 
-use alloy_primitives::{Address, U256};
+use alloy_primitives::Address;
 use ark_bn254::{g1::Config as G1Config, Fq};
 use ark_ec::short_weierstrass::Affine;
-use circuit_types::{traits::BaseType, PlonkProof, PolynomialCommitment};
-use circuits::zk_circuits::valid_wallet_create::ValidWalletCreateStatement;
-use constants::ScalarField;
+use circuit_types::{
+    keychain::PublicSigningKey,
+    traits::BaseType,
+    transfers::{ExternalTransfer, ExternalTransferDirection},
+    wallet::WalletShare,
+    PlonkProof, PolynomialCommitment,
+};
+use circuits::zk_circuits::{
+    valid_commitments::ValidCommitmentsStatement, valid_match_settle::ValidMatchSettleStatement,
+    valid_reblind::ValidReblindStatement, valid_wallet_create::ValidWalletCreateStatement,
+    valid_wallet_update::ValidWalletUpdateStatement,
+};
+use constants::{Scalar, ScalarField};
+use ruint::aliases::{U160, U256};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -97,6 +108,24 @@ pub struct ContractExternalTransfer {
     pub is_withdrawal: bool,
 }
 
+impl TryFrom<ExternalTransfer> for ContractExternalTransfer {
+    type Error = ConversionError;
+
+    fn try_from(value: ExternalTransfer) -> Result<Self, Self::Error> {
+        let account_addr: U160 =
+            value.account_addr.try_into().map_err(|_| ConversionError::InvalidUint)?;
+        let mint: U160 = value.mint.try_into().map_err(|_| ConversionError::InvalidUint)?;
+        let amount: U256 = value.amount.try_into().map_err(|_| ConversionError::InvalidUint)?;
+
+        Ok(ContractExternalTransfer {
+            account_addr: Address::from(account_addr),
+            mint: Address::from(mint),
+            amount,
+            is_withdrawal: value.direction == ExternalTransferDirection::Withdrawal,
+        })
+    }
+}
+
 /// Represents the affine coordinates of a secp256k1 ECDSA public key.
 /// Since the secp256k1 base field order is larger than that of Bn254's scalar
 /// field, it takes 2 Bn254 scalar field elements to represent each coordinate.
@@ -109,6 +138,17 @@ pub struct ContractPublicSigningKey {
     /// The affine y-coordinate of the public key
     #[serde_as(as = "[ScalarFieldDef; 2]")]
     pub y: [ScalarField; 2],
+}
+
+impl TryFrom<PublicSigningKey> for ContractPublicSigningKey {
+    type Error = ConversionError;
+
+    fn try_from(value: PublicSigningKey) -> Result<Self, Self::Error> {
+        let x = try_unwrap_scalars(&value.x.to_scalars())?;
+        let y = try_unwrap_scalars(&value.y.to_scalars())?;
+
+        Ok(ContractPublicSigningKey { x, y })
+    }
 }
 
 /// Statement for `VALID_WALLET_CREATE` circuit
@@ -130,8 +170,7 @@ where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     fn from(value: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
-        let public_wallet_shares =
-            value.public_wallet_shares.to_scalars().into_iter().map(|s| s.inner()).collect();
+        let public_wallet_shares = wallet_shares_to_scalar_vec(&value.public_wallet_shares);
 
         ContractValidWalletCreateStatement {
             private_shares_commitment: value.private_shares_commitment.inner(),
@@ -165,6 +204,39 @@ pub struct ContractValidWalletUpdateStatement {
     pub timestamp: u64,
 }
 
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    TryFrom<ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
+    for ContractValidWalletUpdateStatement
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    type Error = ConversionError;
+
+    fn try_from(
+        value: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> Result<Self, Self::Error> {
+        let new_public_shares = wallet_shares_to_scalar_vec(&value.new_public_shares);
+        let external_transfer: Option<ContractExternalTransfer> =
+            if value.external_transfer == ExternalTransfer::default() {
+                None
+            } else {
+                Some(ContractExternalTransfer::try_from(value.external_transfer)?)
+            };
+
+        let old_pk_root: ContractPublicSigningKey = value.old_pk_root.try_into()?;
+
+        Ok(ContractValidWalletUpdateStatement {
+            old_shares_nullifier: value.old_shares_nullifier.inner(),
+            new_private_shares_commitment: value.new_private_shares_commitment.inner(),
+            new_public_shares,
+            merkle_root: value.merkle_root.inner(),
+            external_transfer,
+            old_pk_root,
+            timestamp: value.timestamp,
+        })
+    }
+}
+
 /// Statement for the `VALID_REBLIND` circuit
 #[serde_as]
 #[derive(Serialize, Deserialize)]
@@ -181,6 +253,16 @@ pub struct ContractValidReblindStatement {
     pub merkle_root: ScalarField,
 }
 
+impl From<ValidReblindStatement> for ContractValidReblindStatement {
+    fn from(value: ValidReblindStatement) -> Self {
+        ContractValidReblindStatement {
+            original_shares_nullifier: value.original_shares_nullifier.inner(),
+            reblinded_private_shares_commitment: value.reblinded_private_share_commitment.inner(),
+            merkle_root: value.merkle_root.inner(),
+        }
+    }
+}
+
 /// Statememt for the `VALID_COMMITMENTS` circuit
 #[derive(Serialize, Deserialize)]
 pub struct ContractValidCommitmentsStatement {
@@ -191,6 +273,16 @@ pub struct ContractValidCommitmentsStatement {
     pub balance_receive_index: u64,
     /// The index of the order being matched
     pub order_index: u64,
+}
+
+impl From<ValidCommitmentsStatement> for ContractValidCommitmentsStatement {
+    fn from(value: ValidCommitmentsStatement) -> Self {
+        ContractValidCommitmentsStatement {
+            balance_send_index: value.indices.balance_send,
+            balance_receive_index: value.indices.balance_receive,
+            order_index: value.indices.order,
+        }
+    }
 }
 
 /// Statement for the `VALID_MATCH_SETTLE` circuit
@@ -215,6 +307,29 @@ pub struct ContractValidMatchSettleStatement {
     pub party1_receive_balance_index: u64,
     /// The index of the second party's matched order
     pub party1_order_index: u64,
+}
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+    From<ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>
+    for ContractValidMatchSettleStatement
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    fn from(value: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
+        let party0_modified_shares = wallet_shares_to_scalar_vec(&value.party0_modified_shares);
+        let party1_modified_shares = wallet_shares_to_scalar_vec(&value.party1_modified_shares);
+
+        ContractValidMatchSettleStatement {
+            party0_modified_shares,
+            party1_modified_shares,
+            party0_send_balance_index: value.party0_indices.balance_send,
+            party0_receive_balance_index: value.party0_indices.balance_receive,
+            party0_order_index: value.party0_indices.order,
+            party1_send_balance_index: value.party1_indices.balance_send,
+            party1_receive_balance_index: value.party1_indices.balance_receive,
+            party1_order_index: value.party1_indices.order,
+        }
+    }
 }
 
 /// Represents the outputs produced by one of the parties in a match
@@ -245,4 +360,32 @@ pub fn try_unwrap_commitments<const N: usize>(
         .collect::<Vec<_>>()
         .try_into()
         .map_err(|_| ConversionError::InvalidLength)
+}
+
+/// Try to extract a fixed-length array of `ScalarField` elements
+/// from a slice of `Scalar`s
+fn try_unwrap_scalars<const N: usize>(
+    scalars: &[Scalar],
+) -> Result<[ScalarField; N], ConversionError> {
+    scalars
+        .iter()
+        .map(|s| s.inner())
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| ConversionError::InvalidLength)
+}
+
+/// Convert a set of wallet secret shares into a vector of `ScalarField`
+/// elements
+fn wallet_shares_to_scalar_vec<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+>(
+    shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+) -> Vec<ScalarField>
+where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    shares.to_scalars().into_iter().map(|s| s.inner()).collect()
 }
