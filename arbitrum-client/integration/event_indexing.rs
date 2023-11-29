@@ -54,10 +54,8 @@ async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
     .into_iter()
     .enumerate()
     {
-        let merkle_path: MerkleOpening<MERKLE_HEIGHT> = client
-            .find_merkle_authentication_path(commitment)
-            .await?
-            .into();
+        let merkle_path: MerkleOpening<MERKLE_HEIGHT> =
+            client.find_merkle_authentication_path(commitment).await?.into();
 
         assert_eq_result!(merkle_path.indices, expected_paths[index].indices)?;
         assert_eq_result!(merkle_path.elems, expected_paths[index].elems)?;

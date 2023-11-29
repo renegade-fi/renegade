@@ -131,10 +131,6 @@ impl ArbitrumClient {
         let merkle_event_source = config.get_merkle_event_source()?;
         let deploy_block = config.get_deploy_block();
 
-        Ok(Self {
-            darkpool_contract,
-            merkle_event_source,
-            deploy_block,
-        })
+        Ok(Self { darkpool_contract, merkle_event_source, deploy_block })
     }
 }
