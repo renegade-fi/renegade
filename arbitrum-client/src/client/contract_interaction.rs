@@ -1,7 +1,12 @@
 //! Defines `ArbitrumClient` helpers that allow for interacting with the
 //! darkpool contract
 
-use circuit_types::{merkle::MerkleRoot, wallet::Nullifier, PlonkProof};
+use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
+use common::types::proof_bundles::{
+    GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
+    GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, ValidCommitmentsBundle,
+    ValidMatchSettleBundle, ValidReblindBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+};
 use constants::Scalar;
 
 use crate::{
@@ -9,8 +14,8 @@ use crate::{
     helpers::{deserialize_calldata, serialize_calldata},
     serde_def_types::SerdeScalarField,
     types::{
-        ContractProof, ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
-        ContractValidWalletUpdateStatement, MatchPayload,
+        ContractProof, ContractValidWalletCreateStatement, ContractValidWalletUpdateStatement,
+        MatchPayload,
     },
 };
 
@@ -66,8 +71,6 @@ impl ArbitrumClient {
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
     }
 
-    // TODO: Implement analogue of `get_public_blinder_tx`
-
     // -----------
     // | SETTERS |
     // -----------
@@ -78,16 +81,18 @@ impl ArbitrumClient {
     /// Awaits until the transaction is confirmed on-chain
     pub async fn new_wallet(
         &self,
-        wallet_blinder_share: Scalar,
-        valid_wallet_create_statement: ContractValidWalletCreateStatement,
-        proof: PlonkProof,
+        valid_wallet_create: ValidWalletCreateBundle,
     ) -> Result<(), ArbitrumClientError> {
+        let GenericValidWalletCreateBundle { statement, proof } = *valid_wallet_create;
+
         let wallet_blinder_share_calldata =
-            serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?;
+            serialize_calldata(&SerdeScalarField(statement.public_wallet_shares.blinder.inner()))?;
+
         let contract_proof: ContractProof = proof.try_into()?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
-        let valid_wallet_create_statement_calldata =
-            serialize_calldata(&valid_wallet_create_statement)?;
+
+        let contract_statement: ContractValidWalletCreateStatement = statement.into();
+        let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
         self.darkpool_contract
             .new_wallet(
@@ -109,17 +114,19 @@ impl ArbitrumClient {
     /// Awaits until the transaction is confirmed on-chain
     pub async fn update_wallet(
         &self,
-        wallet_blinder_share: Scalar,
-        valid_wallet_update_statement: ContractValidWalletUpdateStatement,
+        valid_wallet_update: ValidWalletUpdateBundle,
         statement_signature: Vec<u8>,
-        proof: PlonkProof,
     ) -> Result<(), ArbitrumClientError> {
+        let GenericValidWalletUpdateBundle { statement, proof } = *valid_wallet_update;
+
         let wallet_blinder_share_calldata =
-            serialize_calldata(&SerdeScalarField(wallet_blinder_share.inner()))?;
+            serialize_calldata(&SerdeScalarField(statement.new_public_shares.blinder.inner()))?;
+
         let contract_proof: ContractProof = proof.try_into()?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
-        let valid_wallet_update_statement_calldata =
-            serialize_calldata(&valid_wallet_update_statement)?;
+
+        let contract_statement: ContractValidWalletUpdateStatement = statement.try_into()?;
+        let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
         self.darkpool_contract
             .update_wallet(
@@ -143,15 +150,59 @@ impl ArbitrumClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn process_match_settle(
         &self,
-        party_0_match_payload: MatchPayload,
-        party_0_valid_commitments_proof: PlonkProof,
-        party_0_valid_reblind_proof: PlonkProof,
-        party_1_match_payload: MatchPayload,
-        party_1_valid_commitments_proof: PlonkProof,
-        party_1_valid_reblind_proof: PlonkProof,
-        valid_match_settle_statement: ContractValidMatchSettleStatement,
-        valid_match_settle_proof: PlonkProof,
+        party_0_valid_commitments: ValidCommitmentsBundle,
+        party_0_valid_reblind: ValidReblindBundle,
+        party_1_valid_commitments: ValidCommitmentsBundle,
+        party_1_valid_reblind: ValidReblindBundle,
+        valid_match_settle: ValidMatchSettleBundle,
     ) -> Result<(), ArbitrumClientError> {
+        // Destructure proof bundles
+
+        let GenericMatchSettleBundle {
+            statement: valid_match_settle_statement,
+            proof: valid_match_settle_proof,
+        } = *valid_match_settle;
+
+        let GenericValidCommitmentsBundle {
+            statement: party_0_valid_commitments_statement,
+            proof: party_0_valid_commitments_proof,
+        } = *party_0_valid_commitments;
+
+        let GenericValidReblindBundle {
+            statement: party_0_valid_reblind_statement,
+            proof: party_0_valid_reblind_proof,
+        } = *party_0_valid_reblind;
+
+        let GenericValidCommitmentsBundle {
+            statement: party_1_valid_commitments_statement,
+            proof: party_1_valid_commitments_proof,
+        } = *party_1_valid_commitments;
+
+        let GenericValidReblindBundle {
+            statement: party_1_valid_reblind_statement,
+            proof: party_1_valid_reblind_proof,
+        } = *party_1_valid_reblind;
+
+        let party_0_match_payload = MatchPayload {
+            wallet_blinder_share: valid_match_settle_statement
+                .party0_modified_shares
+                .blinder
+                .inner(),
+            valid_commitments_statement: party_0_valid_commitments_statement.into(),
+            valid_reblind_statement: party_0_valid_reblind_statement.into(),
+        };
+
+        let party_1_match_payload = MatchPayload {
+            wallet_blinder_share: valid_match_settle_statement
+                .party1_modified_shares
+                .blinder
+                .inner(),
+            valid_commitments_statement: party_1_valid_commitments_statement.into(),
+            valid_reblind_statement: party_1_valid_reblind_statement.into(),
+        };
+
+        // Serialize calldata
+
         let party_0_match_payload_calldata = serialize_calldata(&party_0_match_payload)?;
 
         let party_0_valid_commitments_proof: ContractProof =
@@ -179,6 +230,8 @@ impl ArbitrumClient {
 
         let valid_match_settle_proof: ContractProof = valid_match_settle_proof.try_into()?;
         let valid_match_settle_proof_calldata = serialize_calldata(&valid_match_settle_proof)?;
+
+        // Call `process_match_settle` on darkpool contract
 
         self.darkpool_contract
             .process_match_settle(

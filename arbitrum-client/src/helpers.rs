@@ -1,7 +1,7 @@
 //! Various helpers for Arbitrum client execution
 
 use alloy_sol_types::SolCall;
-use circuit_types::{traits::BaseType, wallet::WalletShare};
+use circuit_types::{traits::BaseType, SizedWalletShare};
 use constants::Scalar;
 use ethers::{
     types::{Bytes, H256},
@@ -41,16 +41,9 @@ pub fn keccak_hash_scalar(scalar: Scalar) -> Result<H256, ArbitrumClientError> {
 }
 
 /// Parses wallet shares from the calldata of a `newWallet` call
-pub fn parse_shares_from_new_wallet<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn parse_shares_from_new_wallet(
     calldata: &[u8],
-) -> Result<WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ArbitrumClientError>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
+) -> Result<SizedWalletShare, ArbitrumClientError> {
     let call = newWalletCall::decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
@@ -60,20 +53,13 @@ where
 
     let mut shares = statement.public_wallet_shares.into_iter().map(Scalar::new);
 
-    Ok(WalletShare::from_scalars(&mut shares))
+    Ok(SizedWalletShare::from_scalars(&mut shares))
 }
 
 /// Parses wallet shares from the calldata of an `updateWallet` call
-pub fn parse_shares_from_update_wallet<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn parse_shares_from_update_wallet(
     calldata: &[u8],
-) -> Result<WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ArbitrumClientError>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
+) -> Result<SizedWalletShare, ArbitrumClientError> {
     let call = updateWalletCall::decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
@@ -83,21 +69,14 @@ where
 
     let mut shares = statement.new_public_shares.into_iter().map(Scalar::new);
 
-    Ok(WalletShare::from_scalars(&mut shares))
+    Ok(SizedWalletShare::from_scalars(&mut shares))
 }
 
 /// Parses wallet shares from the calldata of a `processMatchSettle` call
-pub fn parse_shares_from_process_match_settle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn parse_shares_from_process_match_settle(
     calldata: &[u8],
     public_blinder_share: Scalar,
-) -> Result<WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ArbitrumClientError>
-where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-{
+) -> Result<SizedWalletShare, ArbitrumClientError> {
     let call = processMatchSettleCall::decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
@@ -115,12 +94,12 @@ where
         let mut shares =
             valid_match_settle_statement.party0_modified_shares.into_iter().map(Scalar::new);
 
-        Ok(WalletShare::from_scalars(&mut shares))
+        Ok(SizedWalletShare::from_scalars(&mut shares))
     } else if party_1_match_payload.wallet_blinder_share == target_share {
         let mut shares =
             valid_match_settle_statement.party1_modified_shares.into_iter().map(Scalar::new);
 
-        Ok(WalletShare::from_scalars(&mut shares))
+        Ok(SizedWalletShare::from_scalars(&mut shares))
     } else {
         Err(ArbitrumClientError::BlinderNotFound)
     }
