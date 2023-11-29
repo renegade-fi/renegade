@@ -198,10 +198,8 @@ impl NewWalletTask {
 
         // Safety: verify that the wallet's shares recover the wallet correctly
         let circuit_wallet: SizedWallet = wallet.clone().into();
-        let recovered_wallet = wallet_from_blinded_shares(
-            wallet.private_shares.clone(),
-            wallet.blinded_public_shares.clone(),
-        );
+        let recovered_wallet =
+            wallet_from_blinded_shares(&wallet.private_shares, &wallet.blinded_public_shares);
 
         if circuit_wallet != recovered_wallet {
             return Err(NewWalletTaskError::InvalidShares(ERR_INVALID_SHARING.to_string()));
@@ -226,7 +224,7 @@ impl NewWalletTask {
             ValidWalletCreateWitness { private_wallet_share: self.wallet.private_shares.clone() };
 
         let private_shares_commitment =
-            compute_wallet_private_share_commitment(self.wallet.private_shares.clone());
+            compute_wallet_private_share_commitment(&self.wallet.private_shares);
         let statement = ValidWalletCreateStatement {
             private_shares_commitment,
             public_wallet_shares: self.wallet.blinded_public_shares.clone(),
