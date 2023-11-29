@@ -4,10 +4,15 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
-    r#match::MatchResult,
+    r#match::{MatchResult, OrderSettlementIndices},
+    wallet::WalletShare,
 };
 use constants::Scalar;
 use renegade_crypto::fields::scalar_to_u64;
+
+// ------------
+// | Matching |
+// ------------
 
 /// Match two orders at a given price and return the result amount if a match
 /// exists
@@ -96,14 +101,72 @@ fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u
     }
 }
 
+// --------------
+// | Settlement |
+// --------------
+
+/// Apply a match to two wallet secret shares
+pub fn settle_match_into_wallets<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+>(
+    wallet0_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    wallet1_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    party0_indices: OrderSettlementIndices,
+    party1_indices: OrderSettlementIndices,
+    match_res: &MatchResult,
+) where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    let direction = OrderSide::from(match_res.direction);
+    apply_match_to_shares(wallet0_share, &party0_indices, match_res, direction);
+    apply_match_to_shares(wallet1_share, &party1_indices, match_res, direction.opposite());
+}
+
+/// Applies a match to the shares of a wallet
+///
+/// Returns a new wallet share with the match applied
+pub fn apply_match_to_shares<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+    const MAX_FEES: usize,
+>(
+    shares: &mut WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    indices: &OrderSettlementIndices,
+    match_res: &MatchResult,
+    side: OrderSide,
+) where
+    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+{
+    let (send_amt, recv_amt) = match side {
+        // Buy side; send quote, receive base
+        OrderSide::Buy => (match_res.quote_amount, match_res.base_amount),
+        // Sell side; send base, receive quote
+        OrderSide::Sell => (match_res.base_amount, match_res.quote_amount),
+    };
+
+    shares.balances[indices.balance_send as usize].amount -= Scalar::from(send_amt);
+    shares.balances[indices.balance_receive as usize].amount += Scalar::from(recv_amt);
+    shares.orders[indices.order as usize].amount -= Scalar::from(match_res.base_amount);
+}
+
 #[cfg(test)]
 mod tests {
-    use super::match_orders;
+    use std::iter;
+
+    use super::{apply_match_to_shares, match_orders};
     use circuit_types::{
         balance::Balance,
         order::{Order, OrderSide},
+        r#match::{MatchResult, OrderSettlementIndices},
+        traits::BaseType,
+        SizedWalletShare,
     };
+    use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
     use lazy_static::lazy_static;
+    use num_bigint::RandBigInt;
+    use rand::{distributions::uniform::SampleRange, thread_rng, Rng};
 
     // --------------
     // | Dummy Data |
@@ -148,9 +211,53 @@ mod tests {
         };
     }
 
-    // ---------
-    // | Tests |
-    // ---------
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Get a random match result
+    fn random_match_result() -> MatchResult {
+        let mut rng = thread_rng();
+
+        MatchResult {
+            base_mint: rng.gen_biguint(100 /* bits */),
+            quote_mint: rng.gen_biguint(100 /* bits */),
+            base_amount: rng.gen(),
+            quote_amount: rng.gen(),
+            direction: rng.gen(),
+            max_minus_min_amount: rng.gen(),
+            min_amount_order_index: rng.gen(),
+        }
+    }
+
+    /// Generate a set of random wallet share
+    fn random_wallet_share() -> SizedWalletShare {
+        let mut rng = thread_rng();
+        let mut iter = iter::from_fn(|| Some(Scalar::random(&mut rng)));
+
+        SizedWalletShare::from_scalars(&mut iter)
+    }
+
+    /// Generate a set of random settlement indices
+    fn random_settlement_indices() -> OrderSettlementIndices {
+        let mut rng = thread_rng();
+        let send = (0..MAX_BALANCES).sample_single(&mut rng);
+
+        let mut recv = (0..MAX_BALANCES).sample_single(&mut rng);
+        while recv == send {
+            recv = (0..MAX_BALANCES).sample_single(&mut rng);
+        }
+
+        OrderSettlementIndices {
+            order: (0..MAX_ORDERS).sample_single(&mut rng) as u64,
+            balance_send: send as u64,
+            balance_receive: recv as u64,
+        }
+    }
+
+    // ---------------
+    // | Match Tests |
+    // ---------------
 
     /// Test a valid match between two orders
     #[test]
@@ -318,5 +425,46 @@ mod tests {
         let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
 
         assert!(res.is_none());
+    }
+
+    // --------------------
+    // | Settlement Tests |
+    // --------------------
+
+    /// Tests settling a match into two wallet shares
+    #[test]
+    fn test_settle_match() {
+        // Buy side
+        let match_res = random_match_result();
+        let indices = random_settlement_indices();
+        let original_shares = random_wallet_share();
+
+        let mut new_shares = original_shares.clone();
+        apply_match_to_shares(&mut new_shares, &indices, &match_res, OrderSide::Buy);
+
+        let expected_order_amt = original_shares.orders[indices.order as usize].amount
+            - Scalar::from(match_res.base_amount);
+        let expected_quote_amt = original_shares.balances[indices.balance_send as usize].amount
+            - Scalar::from(match_res.quote_amount);
+        let expected_base_amt = original_shares.balances[indices.balance_receive as usize].amount
+            + Scalar::from(match_res.base_amount);
+        assert_eq!(new_shares.balances[indices.balance_send as usize].amount, expected_quote_amt);
+        assert_eq!(new_shares.balances[indices.balance_receive as usize].amount, expected_base_amt);
+        assert_eq!(new_shares.orders[indices.order as usize].amount, expected_order_amt);
+
+        // Sell side
+        let mut new_shares = original_shares.clone();
+        apply_match_to_shares(&mut new_shares, &indices, &match_res, OrderSide::Sell);
+
+        let expected_quote_amt = original_shares.balances[indices.balance_receive as usize].amount
+            + Scalar::from(match_res.quote_amount);
+        let expected_base_amt = original_shares.balances[indices.balance_send as usize].amount
+            - Scalar::from(match_res.base_amount);
+        assert_eq!(new_shares.balances[indices.balance_send as usize].amount, expected_base_amt);
+        assert_eq!(
+            new_shares.balances[indices.balance_receive as usize].amount,
+            expected_quote_amt
+        );
+        assert_eq!(new_shares.orders[indices.order as usize].amount, expected_order_amt);
     }
 }

@@ -1,11 +1,11 @@
 //! Settles a match into secret shared wallets
 
-use circuit_types::{r#match::AuthenticatedMatchResult, wallet::AuthenticatedWalletShare};
-
-use crate::{
-    mpc_gadgets::comparators::cond_select_vec,
-    zk_circuits::valid_commitments::OrderSettlementIndices,
+use circuit_types::{
+    r#match::{AuthenticatedMatchResult, OrderSettlementIndices},
+    wallet::AuthenticatedWalletShare,
 };
+
+use crate::mpc_gadgets::comparators::cond_select_vec;
 
 /// Settles a match into two wallets and returns the updated wallet shares
 ///
@@ -70,7 +70,7 @@ mod test {
     use ark_mpc::{PARTY0, PARTY1};
     use circuit_types::{
         order::OrderSide,
-        r#match::MatchResult,
+        r#match::{MatchResult, OrderSettlementIndices},
         traits::{BaseType, MpcBaseType, MpcType},
         SizedWalletShare,
     };
@@ -78,15 +78,9 @@ mod test {
     use rand::{thread_rng, Rng};
     use renegade_crypto::fields::scalar_to_biguint;
     use test_helpers::mpc_network::execute_mock_mpc;
+    use util::matching_engine::apply_match_to_shares;
 
-    use crate::{
-        mpc_circuits::settle::settle_match,
-        test_helpers::random_indices,
-        zk_circuits::{
-            valid_commitments::OrderSettlementIndices,
-            valid_match_settle::test_helpers::apply_match_to_shares,
-        },
-    };
+    use crate::{mpc_circuits::settle::settle_match, test_helpers::random_indices};
 
     /// The parameterization of a test
     #[derive(Clone)]
@@ -126,14 +120,14 @@ mod test {
         let party0_pre_shares = random_shares();
         let party0_indices = random_indices();
         let party0_side = OrderSide::from(match_res.direction as u64);
-        let party0_post_shares =
-            apply_match_to_shares(&party0_pre_shares, &party0_indices, &match_res, party0_side);
+        let mut party0_post_shares = party0_pre_shares.clone();
+        apply_match_to_shares(&mut party0_post_shares, &party0_indices, &match_res, party0_side);
 
         let party1_pre_shares = random_shares();
         let party1_indices = random_indices();
         let party1_side = party0_side.opposite();
-        let party1_post_shares =
-            apply_match_to_shares(&party1_pre_shares, &party1_indices, &match_res, party1_side);
+        let mut party1_post_shares = party1_pre_shares.clone();
+        apply_match_to_shares(&mut party1_post_shares, &party1_indices, &match_res, party1_side);
 
         SettlementTest {
             match_res,
