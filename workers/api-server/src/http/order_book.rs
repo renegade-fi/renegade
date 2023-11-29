@@ -4,7 +4,10 @@
 // | HTTP Routes |
 // ---------------
 
+use std::collections::HashMap;
+
 use async_trait::async_trait;
+use common::types::wallet::OrderIdentifier;
 use external_api::{
     http::order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
     types::NetworkOrder,
@@ -55,6 +58,27 @@ impl GetNetworkOrdersHandler {
     }
 }
 
+/// Asynchronously retrieves the timestamp of an order by its identifier from the global state.
+/// 
+/// # Arguments
+/// 
+/// * `order_id` - The identifier of the order
+/// * `global_state` - The global state containing the order
+/// 
+/// # Returns
+/// 
+/// An optional `u64` representing the timestamp of the order, or `None` if the order is not found.
+async fn get_timestamp_by_order_id(
+    order_id: &OrderIdentifier,
+    global_state: &RelayerState,
+) -> Option<u64> {
+    if let Some(order) = global_state.get_order(order_id).await {
+        Some(order.timestamp)
+    } else {
+        None
+    }
+}
+
 #[async_trait]
 impl TypedHandler for GetNetworkOrdersHandler {
     type Request = EmptyRequestResponse;
@@ -66,6 +90,21 @@ impl TypedHandler for GetNetworkOrdersHandler {
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let mut order_timestamp_map: HashMap<OrderIdentifier, u64> = HashMap::new();
+        for order in self
+            .global_state
+            .read_order_book()
+            .await
+            .get_order_book_snapshot()
+            .await
+            .values()
+        {
+            if let Some(timestamp) = get_timestamp_by_order_id(&order.id, &self.global_state).await
+            {
+                order_timestamp_map.insert(order.id, timestamp);
+            }
+        }
+
         let orders: Vec<NetworkOrder> = self
             .global_state
             .read_order_book()
@@ -74,7 +113,13 @@ impl TypedHandler for GetNetworkOrdersHandler {
             .await
             .values()
             .cloned()
-            .map(|order| order.into())
+            .map(|order| {
+                let mut network_order: NetworkOrder = order.clone().into();
+                if let Some(timestamp) = order_timestamp_map.get(&order.id) {
+                    network_order.timestamp = *timestamp;
+                }
+                network_order
+            })
             .collect_vec();
 
         Ok(GetNetworkOrdersResponse { orders })

@@ -336,7 +336,6 @@ impl From<IndexedNetworkOrder> for NetworkOrder {
             local: order.local,
             cluster: order.cluster.to_string(),
             state: order.state,
-            // TODO: Replace this with the time the order was received
             timestamp: now,
         }
     }
