@@ -112,17 +112,13 @@ where
 
     let target_share = public_blinder_share.inner();
     if party_0_match_payload.wallet_blinder_share == target_share {
-        let mut shares = valid_match_settle_statement
-            .party0_modified_shares
-            .into_iter()
-            .map(Scalar::new);
+        let mut shares =
+            valid_match_settle_statement.party0_modified_shares.into_iter().map(Scalar::new);
 
         Ok(WalletShare::from_scalars(&mut shares))
     } else if party_1_match_payload.wallet_blinder_share == target_share {
-        let mut shares = valid_match_settle_statement
-            .party1_modified_shares
-            .into_iter()
-            .map(Scalar::new);
+        let mut shares =
+            valid_match_settle_statement.party1_modified_shares.into_iter().map(Scalar::new);
 
         Ok(WalletShare::from_scalars(&mut shares))
     } else {

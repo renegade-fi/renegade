@@ -114,10 +114,7 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
 
-        events
-            .last()
-            .map(|event| event.index)
-            .ok_or(ArbitrumClientError::CommitmentNotFound)
+        events.last().map(|event| event.index).ok_or(ArbitrumClientError::CommitmentNotFound)
     }
 
     /// Fetch and parse the public secret shares from the calldata of the given
