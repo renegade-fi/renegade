@@ -3,13 +3,13 @@
 
 use std::net::SocketAddr;
 
+use ark_mpc::network::QuicTwoPartyNet;
 use common::types::handshake::ConnectionRole;
 use gossip_api::gossip::ManagerControlDirective;
 use itertools::Itertools;
 use job_types::handshake_manager::HandshakeExecutionJob;
 use libp2p_core::{Endpoint, Multiaddr};
 use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use mpc_stark::network::QuicTwoPartyNet;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use util::networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr};

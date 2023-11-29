@@ -137,7 +137,7 @@ impl Worker for NetworkManager {
         let mut behavior = ComposedNetworkBehavior::new(
             *self.local_peer_id,
             ProtocolVersion::Version0,
-            self.local_keypair.clone(),
+            &self.local_keypair,
         )?;
 
         // Add any bootstrap addresses to the peer info table
