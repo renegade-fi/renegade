@@ -11,11 +11,10 @@ use common::types::{
     proof_bundles::OrderValidityProofBundle,
     wallet::OrderIdentifier,
 };
-use constants::ORDER_STATE_CHANGE_TOPIC;
+use constants::{Scalar, ORDER_STATE_CHANGE_TOPIC};
 use external_api::bus_message::SystemBusMessage;
 use itertools::Itertools;
 use libmdbx::{TransactionKind, RW};
-use mpc_stark::algebra::scalar::Scalar;
 use serde::{Deserialize, Serialize};
 use state_proto::{
     AddOrder as AddOrderMsg, AddOrderValidityProof as AddOrderValidityProofMsg,
@@ -339,7 +338,7 @@ mod test {
         network_order::NetworkOrder, proof_bundles::mocks::dummy_validity_proof_bundle,
         wallet::OrderIdentifier,
     };
-    use mpc_stark::algebra::scalar::Scalar;
+    use constants::Scalar;
     use rand::thread_rng;
     use state_proto::{
         AddOrder, AddOrderValidityProof, AddOrderValidityProofBuilder, NetworkOrderBuilder,

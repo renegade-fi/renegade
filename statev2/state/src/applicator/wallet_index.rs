@@ -126,8 +126,7 @@ impl StateApplicator {
 #[cfg(all(test, feature = "all-tests"))]
 pub(crate) mod test {
     use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
-    use constants::MERKLE_HEIGHT;
-    use mpc_stark::algebra::scalar::Scalar;
+    use constants::{Scalar, MERKLE_HEIGHT};
     use num_bigint::BigUint;
     use rand::thread_rng;
     use state_proto::{
