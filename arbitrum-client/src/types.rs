@@ -130,12 +130,8 @@ where
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     fn from(value: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>) -> Self {
-        let public_wallet_shares = value
-            .public_wallet_shares
-            .to_scalars()
-            .into_iter()
-            .map(|s| s.inner())
-            .collect();
+        let public_wallet_shares =
+            value.public_wallet_shares.to_scalars().into_iter().map(|s| s.inner()).collect();
 
         ContractValidWalletCreateStatement {
             private_shares_commitment: value.private_shares_commitment.inner(),
