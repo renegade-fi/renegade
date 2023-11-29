@@ -30,7 +30,6 @@ external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
 job-types = { path = "../workers/job-types" }
 renegade-crypto = { path = "../renegade-crypto" }
-starknet-client = { path = "../starknet-client" }
 state = { path = "../state" }
 system-bus = { path = "../system-bus" }
 
