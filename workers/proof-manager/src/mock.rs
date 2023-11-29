@@ -1,36 +1,21 @@
 //! Defines a mock for the proof manager that doesn't prove statements, but
 //! instead immediately returns dummy proofs that will not verify
 
-use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuits::zk_circuits::{
-    valid_commitments::{
-        SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
-    },
-    valid_match_mpc::{ValidMatchMpcSingleProver, ValidMatchMpcWitness},
-    valid_reblind::{SizedValidReblind, SizedValidReblindWitness, ValidReblindStatement},
-    valid_settle::{SizedValidSettle, SizedValidSettleStatement, SizedValidSettleWitness},
-    valid_wallet_create::{
-        SizedValidWalletCreate, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
-    },
-    valid_wallet_update::{
-        SizedValidWalletUpdate, SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
-    },
+    valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
+    valid_match_settle::{SizedValidMatchSettleStatement, SizedValidMatchSettleWitness},
+    valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
+    valid_wallet_create::{SizedValidWalletCreateStatement, SizedValidWalletCreateWitness},
+    valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
 };
 use common::types::proof_bundles::{
-    GenericValidCommitmentsBundle, GenericValidMatchMpcBundle, GenericValidReblindBundle,
-    GenericValidSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-    ProofBundle, ValidCommitmentsBundle, ValidMatchMpcBundle, ValidReblindBundle,
-    ValidSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+    mocks::dummy_proof, GenericMatchSettleBundle, GenericValidCommitmentsBundle,
+    GenericValidReblindBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
+    ProofBundle, ValidCommitmentsBundle, ValidMatchSettleBundle, ValidReblindBundle,
+    ValidWalletCreateBundle, ValidWalletUpdateBundle,
 };
 use crossbeam::channel::Receiver;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use merlin::HashChainTranscript as Transcript;
-use mpc_bulletproof::{
-    r1cs::{Prover, R1CSProof},
-    InnerProductProof, PedersenGens,
-};
-use mpc_stark::algebra::{scalar::Scalar, stark_curve::StarkPoint};
-use rand::thread_rng;
 use tokio::{runtime::Handle, sync::oneshot::Sender as TokioSender};
 
 /// The error emitted when the job queue closes early
@@ -41,46 +26,6 @@ const ERR_RESPONSE_CHANNEL_CLOSED: &str = "error sending proof, channel closed";
 // -----------
 // | Helpers |
 // -----------
-
-/// Create a mock constraint system and commit to a witness
-fn create_mock_commitment<C: SingleProverCircuit>(
-    witness: C::Witness,
-) -> <C::Witness as CircuitBaseType>::CommitmentType {
-    let mut transcript = Transcript::new(b"mock");
-    let pc_gens = PedersenGens::default();
-    let mut prover = Prover::new(&pc_gens, &mut transcript);
-
-    let mut rng = thread_rng();
-    let (_, comm_type) = witness.commit_witness(&mut rng, &mut prover);
-
-    comm_type
-}
-
-/// Create a mock `R1CSProof`
-fn create_mock_proof() -> R1CSProof {
-    R1CSProof {
-        A_I1: StarkPoint::generator(),
-        A_O1: StarkPoint::generator(),
-        S1: StarkPoint::generator(),
-        A_I2: StarkPoint::generator(),
-        A_O2: StarkPoint::generator(),
-        S2: StarkPoint::generator(),
-        T_1: StarkPoint::generator(),
-        T_3: StarkPoint::generator(),
-        T_4: StarkPoint::generator(),
-        T_5: StarkPoint::generator(),
-        T_6: StarkPoint::generator(),
-        t_x: Scalar::zero(),
-        t_x_blinding: Scalar::zero(),
-        e_blinding: Scalar::zero(),
-        ipp_proof: create_mock_inner_product_proof(),
-    }
-}
-
-/// Create a mock `InnerProductProof`
-fn create_mock_inner_product_proof() -> InnerProductProof {
-    InnerProductProof { L_vec: vec![], R_vec: vec![], a: Scalar::zero(), b: Scalar::zero() }
-}
 
 /// The mock proof manager
 pub struct MockProofManager;
@@ -113,11 +58,8 @@ impl MockProofManager {
             ProofJob::ValidCommitments { witness, statement } => {
                 ProofBundle::ValidCommitments(Self::valid_commitments(witness, statement))
             },
-            ProofJob::ValidMatchMpcSingleprover { witness } => {
-                ProofBundle::ValidMatchMpc(Self::valid_match_mpc(witness))
-            },
-            ProofJob::ValidSettle { witness, statement } => {
-                ProofBundle::ValidSettle(Self::valid_settle(witness, statement))
+            ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
+                ProofBundle::ValidMatchSettle(Self::valid_match_settle(witness, statement))
             },
         };
 
@@ -126,65 +68,47 @@ impl MockProofManager {
 
     /// Generate a dummy proof of `VALID WALLET CREATE`
     fn valid_wallet_create(
-        witness: SizedValidWalletCreateWitness,
+        _witness: SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
     ) -> ValidWalletCreateBundle {
-        let commitment = create_mock_commitment::<SizedValidWalletCreate>(witness);
-        let proof = create_mock_proof();
-
-        Box::new(GenericValidWalletCreateBundle { statement, commitment, proof })
+        let proof = dummy_proof();
+        Box::new(GenericValidWalletCreateBundle { statement, proof })
     }
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
     fn valid_wallet_update(
-        witness: SizedValidWalletUpdateWitness,
+        _witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
     ) -> ValidWalletUpdateBundle {
-        let commitment = create_mock_commitment::<SizedValidWalletUpdate>(witness);
-        let proof = create_mock_proof();
-
-        Box::new(GenericValidWalletUpdateBundle { statement, commitment, proof })
+        let proof = dummy_proof();
+        Box::new(GenericValidWalletUpdateBundle { statement, proof })
     }
 
     /// Generate a dummy proof of `VALID REBLIND`
     fn valid_reblind(
-        witness: SizedValidReblindWitness,
+        _witness: SizedValidReblindWitness,
         statement: ValidReblindStatement,
     ) -> ValidReblindBundle {
-        let commitment = create_mock_commitment::<SizedValidReblind>(witness);
-        let proof = create_mock_proof();
-
-        Box::new(GenericValidReblindBundle { statement, commitment, proof })
+        let proof = dummy_proof();
+        Box::new(GenericValidReblindBundle { statement, proof })
     }
 
     /// Create a dummy proof of `VALID COMMITMENTS`
     fn valid_commitments(
-        witness: SizedValidCommitmentsWitness,
+        _witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
     ) -> ValidCommitmentsBundle {
-        let commitment = create_mock_commitment::<SizedValidCommitments>(witness);
-        let proof = create_mock_proof();
-
-        Box::new(GenericValidCommitmentsBundle { statement, commitment, proof })
+        let proof = dummy_proof();
+        Box::new(GenericValidCommitmentsBundle { statement, proof })
     }
 
-    /// Create a dummy proof of `VALID MATCH MPC`
-    fn valid_match_mpc(witness: ValidMatchMpcWitness) -> ValidMatchMpcBundle {
-        let commitment = create_mock_commitment::<ValidMatchMpcSingleProver>(witness);
-        let proof = create_mock_proof();
-
-        Box::new(GenericValidMatchMpcBundle { commitment, statement: (), proof })
-    }
-
-    /// Create a dummy proof of `VALID SETTLE`
-    fn valid_settle(
-        witness: SizedValidSettleWitness,
-        statement: SizedValidSettleStatement,
-    ) -> ValidSettleBundle {
-        let commitment = create_mock_commitment::<SizedValidSettle>(witness);
-        let proof = create_mock_proof();
-
-        Box::new(GenericValidSettleBundle { statement, commitment, proof })
+    /// Create a dummy proof of `VALID MATCH SETTLE`
+    fn valid_match_settle(
+        _witness: SizedValidMatchSettleWitness,
+        statement: SizedValidMatchSettleStatement,
+    ) -> ValidMatchSettleBundle {
+        let proof = dummy_proof();
+        Box::new(GenericMatchSettleBundle { statement, proof })
     }
 }
 
@@ -196,9 +120,9 @@ mod test {
     use circuits::zk_circuits::valid_wallet_create::{
         SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
     };
+    use constants::Scalar;
     use crossbeam::channel::unbounded;
     use job_types::proof_manager::{ProofJob, ProofManagerJob};
-    use mpc_stark::algebra::scalar::Scalar;
     use tokio::{runtime::Builder as RuntimeBuilder, sync::oneshot::channel as oneshot_channel};
 
     use super::MockProofManager;
