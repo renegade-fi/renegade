@@ -1,10 +1,11 @@
 //! Jobs consumed by the handshake manager
 
+use ark_mpc::network::QuicTwoPartyNet;
 use circuit_types::wallet::Nullifier;
 use common::types::{gossip::WrappedPeerId, wallet::OrderIdentifier};
+use constants::SystemCurveGroup;
 use gossip_api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
-use mpc_stark::network::QuicTwoPartyNet;
 use uuid::Uuid;
 
 /// Represents a job for the handshake manager's thread pool to execute
@@ -37,7 +38,7 @@ pub enum HandshakeExecutionJob {
         /// The ID of the local peer in the subsequent MPC computation
         party_id: u64,
         /// The net that was setup for the party
-        net: QuicTwoPartyNet,
+        net: QuicTwoPartyNet<SystemCurveGroup>,
     },
     /// Indicates that the local peer should halt any MPCs active on the given
     /// nullifier
