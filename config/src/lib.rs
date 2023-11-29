@@ -46,9 +46,6 @@ struct Cli {
     // | Environment Configs |
     // -----------------------
 
-    /// The blockchain this node targets for settlement
-    #[clap(long, default_value="goerli")]
-    pub chain_id: ChainId,
     /// The address of the darkpool contract, defaults to the Goerli deployment
     #[clap(long, value_parser, default_value = "0x06aadd0758f809d4dc5c5686bcde6dc3e51d211aaf7eca8e902dc76e1217c7ab")]
     pub contract_address: String,
@@ -156,8 +153,6 @@ pub struct RelayerConfig {
     // -----------------------
     /// Software version of the relayer
     pub version: String,
-    /// The blockchain this node targets for settlement
-    pub chain_id: ChainId,
     /// The address of the contract in the target network
     pub contract_address: String,
 
@@ -234,7 +229,6 @@ impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
             version: self.version.clone(),
-            chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
             bootstrap_servers: self.bootstrap_servers.clone(),
             p2p_port: self.p2p_port,
@@ -328,7 +322,6 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
 
     let mut config = RelayerConfig {
         version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
-        chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
