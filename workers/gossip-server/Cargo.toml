@@ -17,7 +17,6 @@ circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
-starknet-client = { path = "../../starknet-client" }
 state = { path = "../../state" }
 util = { path = "../../util" }
 
