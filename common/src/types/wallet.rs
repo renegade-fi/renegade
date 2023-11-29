@@ -321,7 +321,7 @@ pub mod mocks {
             fees: vec![],
             key_chain: KeyChain {
                 public_keys: PublicKeyChain {
-                    pk_root: PublicSigningKey::from(&BigUint::from(0u8)),
+                    pk_root: PublicSigningKey::default(),
                     pk_match: PublicIdentificationKey::from(Scalar::zero()),
                 },
                 secret_keys: PrivateKeyChain {

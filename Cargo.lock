@@ -5371,6 +5371,7 @@ dependencies = [
 name = "network-manager"
 version = "0.1.0"
 dependencies = [
+ "ark-mpc",
  "async-trait",
  "common",
  "ed25519-dalek 1.0.1",
@@ -5383,8 +5384,6 @@ dependencies = [
  "libp2p-core",
  "libp2p-swarm",
  "libp2p-swarm-derive",
- "mpc-stark",
- "portpicker",
  "serde_json",
  "state",
  "system-bus",
@@ -8460,6 +8459,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 name = "task-driver"
 version = "0.1.0"
 dependencies = [
+ "arbitrum-client",
  "ark-mpc",
  "async-trait",
  "circuit-types",
