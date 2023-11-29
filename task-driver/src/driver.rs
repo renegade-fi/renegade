@@ -19,11 +19,7 @@ use tokio::{
 use tracing::log;
 use uuid::Uuid;
 
-use super::{
-    create_new_wallet::NewWalletTaskState, initialize_state::InitializeStateTaskState,
-    lookup_wallet::LookupWalletTaskState, settle_match::SettleMatchTaskState,
-    settle_match_internal::SettleMatchInternalTaskState, update_wallet::UpdateWalletTaskState,
-};
+use super::create_new_wallet::NewWalletTaskState;
 
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
@@ -110,33 +106,33 @@ pub trait Task: Send {
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "task_type", content = "state")]
 pub enum StateWrapper {
-    /// The state object for the relayer state initialization task
-    InitializeState(InitializeStateTaskState),
-    /// The state object for the deposit balance task
-    UpdateWallet(UpdateWalletTaskState),
-    /// The state object for the lookup wallet task
-    LookupWallet(LookupWalletTaskState),
+    // /// The state object for the relayer state initialization task
+    // InitializeState(InitializeStateTaskState),
+    // /// The state object for the deposit balance task
+    // UpdateWallet(UpdateWalletTaskState),
+    // /// The state object for the lookup wallet task
+    // LookupWallet(LookupWalletTaskState),
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
-    /// The state object for the settle match task
-    SettleMatch(SettleMatchTaskState),
-    /// The state object for the settle match internal task
-    SettleMatchInternal(SettleMatchInternalTaskState),
+    // /// The state object for the settle match task
+    // SettleMatch(SettleMatchTaskState),
+    // /// The state object for the settle match internal task
+    // SettleMatchInternal(SettleMatchInternalTaskState),
 }
 
-impl Display for StateWrapper {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let out = match self {
-            StateWrapper::InitializeState(state) => state.to_string(),
-            StateWrapper::UpdateWallet(state) => state.to_string(),
-            StateWrapper::LookupWallet(state) => state.to_string(),
-            StateWrapper::NewWallet(state) => state.to_string(),
-            StateWrapper::SettleMatch(state) => state.to_string(),
-            StateWrapper::SettleMatchInternal(state) => state.to_string(),
-        };
-        write!(f, "{out}")
-    }
-}
+// impl Display for StateWrapper {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         let out = match self {
+//             StateWrapper::InitializeState(state) => state.to_string(),
+//             StateWrapper::UpdateWallet(state) => state.to_string(),
+//             StateWrapper::LookupWallet(state) => state.to_string(),
+//             StateWrapper::NewWallet(state) => state.to_string(),
+//             StateWrapper::SettleMatch(state) => state.to_string(),
+//             StateWrapper::SettleMatchInternal(state) => state.to_string(),
+//         };
+//         write!(f, "{out}")
+//     }
+// }
 
 // ---------------
 // | Task Driver |

@@ -10,13 +10,15 @@ use core::panic;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{
     native_helpers::{compute_wallet_private_share_commitment, wallet_from_blinded_shares},
     SizedWallet,
 };
 use circuits::zk_circuits::valid_wallet_create::{
-    ValidWalletCreateStatement, ValidWalletCreateWitness,
+    SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
+    ValidWalletCreateWitness,
 };
 use common::types::{
     proof_bundles::ValidWalletCreateBundle,
@@ -25,12 +27,9 @@ use common::types::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::types::Wallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::oneshot;
-use tracing::log;
 
 use super::{
     driver::{StateWrapper, Task},
@@ -47,8 +46,11 @@ const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 pub struct NewWalletTask {
     /// The wallet to create
     pub wallet: StateWallet,
-    /// A starknet client for the task to submit transactions
-    pub starknet_client: StarknetClient,
+    /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
+    /// first step
+    pub proof_bundle: Option<ValidWalletCreateBundle>,
+    /// An arbitrum client for the task to submit transactions
+    pub arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
     pub global_state: RelayerState,
     /// The work queue to add proof management jobs to
@@ -64,8 +66,8 @@ pub enum NewWalletTaskError {
     InvalidShares(String),
     /// Error generating a proof of `VALID WALLET CREATE`
     ProofGeneration(String),
-    /// Error interacting with the Starknet client
-    Starknet(String),
+    /// Error interacting with the Arbitrum client
+    Arbitrum(String),
     /// Error sending a message to another worker
     SendMessage(String),
 }
@@ -91,10 +93,7 @@ pub enum NewWalletTaskState {
     Proving,
     /// The task is submitting the transaction to the contract and
     /// awaiting finality
-    SubmittingTx {
-        /// The proof of `VALID WALLET CREATE` from the last step
-        proof_bundle: ValidWalletCreateBundle,
-    },
+    SubmittingTx,
     /// The task is searching for the Merkle authentication proof for the
     /// new wallet on-chain
     FindingMerkleOpening,
@@ -143,8 +142,8 @@ impl Task for NewWalletTask {
             },
             NewWalletTaskState::Proving => {
                 // Begin proof and attach the proof to the state afterwards
-                let proof_bundle = self.generate_proof().await?;
-                self.task_state = NewWalletTaskState::SubmittingTx { proof_bundle }
+                self.generate_proof().await?;
+                self.task_state = NewWalletTaskState::SubmittingTx;
             },
             NewWalletTaskState::SubmittingTx { .. } => {
                 // Submit the wallet on-chain
@@ -187,7 +186,7 @@ impl NewWalletTask {
     pub fn new(
         wallet_id: WalletIdentifier,
         wallet: Wallet,
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, NewWalletTaskError> {
@@ -207,28 +206,25 @@ impl NewWalletTask {
 
         Ok(Self {
             wallet,
-            starknet_client,
+            proof: None,
+            arbitrum_client,
             global_state,
             proof_manager_work_queue,
             task_state: NewWalletTaskState::Pending,
         })
     }
 
+    // --------------
+    // | Task Steps |
+    // --------------
+
     /// Generate a proof of `VALID WALLET CREATE` for the new wallet
-    async fn generate_proof(&self) -> Result<ValidWalletCreateBundle, NewWalletTaskError> {
+    async fn generate_proof(&mut self) -> Result<(), NewWalletTaskError> {
         // Index the wallet in the global state
         self.global_state.add_wallets(vec![self.wallet.clone()]).await;
 
         // Construct the witness and statement for the proof
-        let witness =
-            ValidWalletCreateWitness { private_wallet_share: self.wallet.private_shares.clone() };
-
-        let private_shares_commitment =
-            compute_wallet_private_share_commitment(&self.wallet.private_shares);
-        let statement = ValidWalletCreateStatement {
-            private_shares_commitment,
-            public_wallet_shares: self.wallet.blinded_public_shares.clone(),
-        };
+        let (witness, statement) = self.get_witness_statement();
 
         // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
         let (response_sender, response_receiver) = oneshot::channel();
@@ -236,41 +232,26 @@ impl NewWalletTask {
             type_: ProofJob::ValidWalletCreate { statement, witness },
             response_channel: response_sender,
         };
+
         self.proof_manager_work_queue
             .send(job_req)
             .map_err(|err| NewWalletTaskError::SendMessage(err.to_string()))?;
 
+        // Await the proof
         let proof_bundle = response_receiver
             .await
             .map_err(|err| NewWalletTaskError::ProofGeneration(err.to_string()))?;
-
-        Ok(proof_bundle.into())
+        self.proof_bundle = Some(proof_bundle.into());
+        Ok(())
     }
 
     /// Submit the newly created wallet on-chain with proof of validity
     async fn submit_wallet_tx(&mut self) -> Result<(), NewWalletTaskError> {
-        let proof = if let NewWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
-            proof_bundle
-        } else {
-            unreachable!("can only begin submitting wallet after proof is generated")
-        };
-
-        // Compute a commitment to the private shares to use on-chain
-        let private_share_commitment = self.wallet.get_private_share_commitment();
-        let tx_hash = self
-            .starknet_client
-            .new_wallet(private_share_commitment, self.wallet.blinded_public_shares.clone(), proof)
+        let proof = self.proof_bundle.take().unwrap();
+        self.arbitrum_client
+            .new_wallet(proof)
             .await
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
-
-        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
-        let status = self
-            .starknet_client
-            .poll_transaction_completed(tx_hash)
-            .await
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
-
-        status.into_result().map_err(|err| NewWalletTaskError::Starknet(err.to_string()))
+            .map_err(|err| NewWalletTaskError::Arbitrum(err.to_string()))
     }
 
     /// A helper to find the new Merkle authentication path in the contract
@@ -278,9 +259,9 @@ impl NewWalletTask {
     /// authentication path
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
         // Find the authentication path of the wallet's private shares
-        let wallet_auth_path = find_merkle_path(&self.wallet, &self.starknet_client)
+        let wallet_auth_path = find_merkle_path(&self.wallet, &self.arbitrum_client)
             .await
-            .map_err(|err| NewWalletTaskError::Starknet(err.to_string()))?;
+            .map_err(|err| NewWalletTaskError::Arbitrum(err.to_string()))?;
 
         // Add the authentication path to the wallet in the global state
         self.global_state
@@ -290,5 +271,25 @@ impl NewWalletTask {
             .await;
 
         Ok(())
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Create a witness and statement for `VALID WALLET CREATE`
+    fn get_witness_statement(
+        &self,
+    ) -> (SizedValidWalletCreateWitness, SizedValidWalletCreateStatement) {
+        let private_shares_commitment =
+            compute_wallet_private_share_commitment(&self.wallet.private_shares);
+
+        (
+            ValidWalletCreateWitness { private_wallet_share: self.wallet.private_shares.clone() },
+            ValidWalletCreateStatement {
+                private_shares_commitment,
+                public_wallet_shares: self.wallet.blinded_public_shares.clone(),
+            },
+        )
     }
 }
