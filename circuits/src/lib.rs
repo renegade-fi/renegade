@@ -158,7 +158,7 @@ pub mod test_helpers {
     use circuit_types::{
         fixed_point::FixedPoint,
         order::{Order, OrderSide},
-        r#match::MatchResult,
+        r#match::{MatchResult, OrderSettlementIndices},
         traits::BaseType,
         wallet::WalletShare,
     };
@@ -171,10 +171,7 @@ pub mod test_helpers {
     use tracing::log::LevelFilter;
     use util::matching_engine::match_orders_with_max_amount;
 
-    use crate::zk_circuits::{
-        test_helpers::{MAX_BALANCES, MAX_ORDERS},
-        valid_commitments::OrderSettlementIndices,
-    };
+    use crate::zk_circuits::test_helpers::{MAX_BALANCES, MAX_ORDERS};
 
     // -----------
     // | Helpers |

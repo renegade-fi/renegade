@@ -11,7 +11,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     order::Order,
-    r#match::MatchResult,
+    r#match::{MatchResult, OrderSettlementIndices},
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiProverCircuit,
         MultiproverCircuitBaseType, SingleProverCircuit,
@@ -25,8 +25,6 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use circuit_macros::circuit_type;
 use serde::{Deserialize, Serialize};
-
-use super::valid_commitments::OrderSettlementIndices;
 
 /// A circuit with default sizing parameters
 pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -199,20 +197,16 @@ pub mod test_helpers {
     use circuit_types::{
         balance::Balance,
         order::{Order, OrderSide},
-        r#match::MatchResult,
-        wallet::WalletShare,
+        r#match::{MatchResult, OrderSettlementIndices},
     };
     use constants::Scalar;
     use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
+    use util::matching_engine::apply_match_to_shares;
 
     use crate::{
         test_helpers::random_orders_and_match,
-        zk_circuits::{
-            test_helpers::{
-                create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES,
-                MAX_ORDERS,
-            },
-            valid_commitments::OrderSettlementIndices,
+        zk_circuits::test_helpers::{
+            create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
         },
     };
 
@@ -239,10 +233,11 @@ pub mod test_helpers {
         let (_, party1_public_shares) = create_wallet_shares(&wallet2);
 
         // Update the wallets
-        let party0_modified_shares =
-            apply_match_to_shares(&party0_public_shares, &party0_indices, &match_res, o1.side);
-        let party1_modified_shares =
-            apply_match_to_shares(&party1_public_shares, &party1_indices, &match_res, o2.side);
+        let mut party0_modified_shares = party0_public_shares.clone();
+        apply_match_to_shares(&mut party0_modified_shares, &party0_indices, &match_res, o1.side);
+
+        let mut party1_modified_shares = party1_public_shares.clone();
+        apply_match_to_shares(&mut party1_modified_shares, &party1_indices, &match_res, o2.side);
 
         let amount1 = Scalar::from(o1.amount);
         let amount2 = Scalar::from(o2.amount);
@@ -326,37 +321,6 @@ pub mod test_helpers {
         };
 
         Balance { mint, amount: rng.next_u32() as u64 }
-    }
-
-    /// Applies a match to the shares of a wallet
-    ///
-    /// Returns a new wallet share with the match applied
-    pub(crate) fn apply_match_to_shares<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        indices: &OrderSettlementIndices,
-        match_res: &MatchResult,
-        side: OrderSide,
-    ) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
-    {
-        let (send_amt, recv_amt) = match side {
-            // Buy side; send quote, receive base
-            OrderSide::Buy => (match_res.quote_amount, match_res.base_amount),
-            // Sell side; send base, receive quote
-            OrderSide::Sell => (match_res.base_amount, match_res.quote_amount),
-        };
-
-        let mut new_shares = shares.clone();
-        new_shares.balances[indices.balance_send as usize].amount -= Scalar::from(send_amt);
-        new_shares.balances[indices.balance_receive as usize].amount += Scalar::from(recv_amt);
-        new_shares.orders[indices.order as usize].amount -= Scalar::from(match_res.base_amount);
-
-        new_shares
     }
 }
 

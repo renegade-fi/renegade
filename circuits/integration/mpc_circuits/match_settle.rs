@@ -7,6 +7,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     order::OrderSide,
+    r#match::OrderSettlementIndices,
     traits::{BaseType, MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType},
     Fabric, MpcPlonkCircuit,
 };
@@ -15,7 +16,6 @@ use circuits::{
     test_helpers::{random_indices, random_orders_and_match},
     zk_circuits::{
         test_helpers::{SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
-        valid_commitments::OrderSettlementIndices,
         valid_match_settle::{
             AuthenticatedValidMatchSettleStatement, AuthenticatedValidMatchSettleWitness,
             ValidMatchSettle,
