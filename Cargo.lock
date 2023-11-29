@@ -7989,38 +7989,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "starknet-client"
-version = "0.1.0"
-dependencies = [
- "ark-ff 0.4.2",
- "circuit-types",
- "circuits",
- "clap 4.4.10",
- "colored",
- "common",
- "constants",
- "eyre",
- "inventory",
- "itertools 0.10.5",
- "json",
- "lazy_static",
- "mpc-bulletproof",
- "mpc-stark",
- "num-bigint",
- "rand 0.8.5",
- "renegade-crypto",
- "reqwest",
- "serde",
- "serde_json",
- "starknet",
- "state",
- "test-helpers",
- "tokio",
- "tracing",
- "util",
-]
-
-[[package]]
 name = "starknet-contract"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

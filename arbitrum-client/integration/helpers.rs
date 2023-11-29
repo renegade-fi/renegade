@@ -3,12 +3,10 @@
 use arbitrum_client::{client::ArbitrumClient, types::NUM_WIRE_TYPES};
 use circuit_types::{
     native_helpers::compute_wallet_commitment_from_private, traits::BaseType,
-    wallet::WalletShareStateCommitment, PlonkProof,
+    wallet::WalletShareStateCommitment, PlonkProof, SizedWalletShare,
 };
-use circuits::zk_circuits::{
-    test_helpers::{SizedWalletShare, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
-    valid_wallet_create::ValidWalletCreateStatement,
-};
+use circuits::zk_circuits::valid_wallet_create::SizedValidWalletCreateStatement;
+use common::types::proof_bundles::GenericValidWalletCreateBundle;
 use constants::Scalar;
 use eyre::{eyre, Result};
 use mpc_plonk::proof_system::structs::ProofEvaluations;
@@ -58,15 +56,15 @@ pub async fn deploy_new_wallet(
     client: &ArbitrumClient,
 ) -> Result<(WalletShareStateCommitment, SizedWalletShare)> {
     let mut rng = thread_rng();
-    let statement = ValidWalletCreateStatement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::from_scalars(
-        &mut iter::repeat(Scalar::random(&mut rng)),
-    );
+    let statement =
+        SizedValidWalletCreateStatement::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
 
     let proof = dummy_proof();
 
-    client
-        .new_wallet(statement.public_wallet_shares.blinder, statement.clone().into(), proof)
-        .await?;
+    let valid_wallet_create_bundle =
+        Box::new(GenericValidWalletCreateBundle { statement: statement.clone(), proof });
+
+    client.new_wallet(valid_wallet_create_bundle).await?;
 
     // The contract will compute the full commitment and insert it into the Merkle
     // tree; we repeat the same computation here for consistency
