@@ -34,10 +34,8 @@ pub struct PriceReporterManagerConfig {
     pub eth_websocket_addr: Option<String>,
     /// Whether or not the worker is disabled
     pub disabled: bool,
-    /// Whether or not to disable binance streaming
-    ///
-    /// Used in locations that Binance has IP blocked
-    pub disable_binance: bool,
+    /// Exchanges that are explicitly disabled for price reporting
+    pub disabled_exchanges: Vec<Exchange>,
     /// The channel on which the coordinator may mandate that the price reporter
     /// manager cancel its execution
     pub cancel_channel: CancelChannel,
@@ -50,13 +48,16 @@ impl PriceReporterManagerConfig {
     /// For example; we do not connect to Coinbase if a Coinbase API key
     /// and secret is not provided
     pub(crate) fn exchange_configured(&self, exchange: Exchange) -> bool {
-        match exchange {
+        let disabled = self.disabled_exchanges.contains(&exchange);
+        let configured = match exchange {
             Exchange::Coinbase => {
                 self.coinbase_api_key.is_some() && self.coinbase_api_secret.is_some()
             },
             Exchange::UniswapV3 => self.eth_websocket_addr.is_some(),
             _ => true,
-        }
+        };
+
+        !disabled && configured
     }
 }
 

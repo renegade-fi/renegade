@@ -1347,7 +1347,7 @@ name = "config"
 version = "0.1.0"
 dependencies = [
  "base64 0.13.1",
- "clap 3.2.25",
+ "clap 4.4.2",
  "common",
  "ed25519-dalek 1.0.1",
  "libp2p",
