@@ -144,7 +144,8 @@ pub struct ValidMatchSettleStatement<
 
 /// A `VALID MATCH SETTLE` statement with default const generic sizing
 /// parameters
-pub type SizedValidSettleStatement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidMatchSettleStatement =
+    ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ---------------------
 // | Prove Verify Flow |

@@ -4071,14 +4071,15 @@ dependencies = [
 name = "job-types"
 version = "0.1.0"
 dependencies = [
+ "ark-mpc",
  "circuit-types",
  "circuits",
  "common",
+ "constants",
  "gossip-api",
  "lazy_static",
  "libp2p",
  "libp2p-core",
- "mpc-stark",
  "tokio",
  "uuid 1.6.1",
 ]
@@ -7866,11 +7867,11 @@ dependencies = [
  "bytes",
  "circuit-types",
  "common",
+ "constants",
  "derive_builder 0.12.0",
  "eyre",
  "indexmap 2.1.0",
  "itertools 0.11.0",
- "mpc-stark",
  "multiaddr",
  "num-bigint",
  "prost",
