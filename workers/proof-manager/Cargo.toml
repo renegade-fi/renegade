@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-mocks = ["dep:circuit-types", "dep:mpc-stark", "dep:merlin", "dep:rand"]
+mocks = ["dep:circuit-types", "common/mocks"]
 
 [dependencies]
 # === Cryptography === #
+ark-mpc = { workspace = true }
+mpc-plonk = { workspace = true }
 merlin = { workspace = true, optional = true }
-mpc-bulletproof = { workspace = true }
-mpc-stark = { workspace = true, optional = true }
 
 # === Runtime + Threading === #
 crossbeam = { workspace = true }
@@ -25,6 +25,5 @@ constants = { path = "../../constants" }
 job-types = { path = "../job-types" }
 
 # === Misc Dependencies === #
-rand = { workspace = true, optional = true }
 serde = { workspace = true }
 tracing = { workspace = true }
