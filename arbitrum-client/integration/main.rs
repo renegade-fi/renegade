@@ -122,10 +122,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
         let pre_allocated_state = setup_pre_allocated_state(&client).unwrap();
 
-        Self {
-            client,
-            pre_allocated_state,
-        }
+        Self { client, pre_allocated_state }
     }
 }
 

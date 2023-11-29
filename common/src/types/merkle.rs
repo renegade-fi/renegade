@@ -120,9 +120,8 @@ impl From<MerkleAuthenticationPath> for SizedMerkleOpening {
     fn from(native_path: MerkleAuthenticationPath) -> Self {
         // The path conversion is simply the first `MERKLE_HEIGHT` bits of
         // the leaf index
-        let path_indices = (0..MERKLE_HEIGHT)
-            .map(|bit| native_path.leaf_index.bit(bit as u64))
-            .collect_vec();
+        let path_indices =
+            (0..MERKLE_HEIGHT).map(|bit| native_path.leaf_index.bit(bit as u64)).collect_vec();
 
         MerkleOpening {
             elems: native_path.path_siblings.to_vec().try_into().unwrap(),
