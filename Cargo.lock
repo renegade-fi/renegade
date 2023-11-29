@@ -7218,7 +7218,6 @@ dependencies = [
  "job-types",
  "lazy_static",
  "libp2p",
- "mpc-stark",
  "num-bigint",
  "rand 0.8.5",
  "renegade-crypto",
@@ -7259,6 +7258,7 @@ dependencies = [
 name = "statev2"
 version = "0.1.0"
 dependencies = [
+ "ark-mpc",
  "circuit-types",
  "common",
  "config",
@@ -7269,7 +7269,6 @@ dependencies = [
  "itertools 0.10.5",
  "job-types",
  "libmdbx",
- "mpc-stark",
  "multiaddr",
  "num-bigint",
  "protobuf",
@@ -7482,6 +7481,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 name = "task-driver"
 version = "0.1.0"
 dependencies = [
+ "ark-mpc",
  "async-trait",
  "circuit-types",
  "circuits",
@@ -7497,7 +7497,6 @@ dependencies = [
  "itertools 0.11.0",
  "job-types",
  "lazy_static",
- "mpc-stark",
  "num-bigint",
  "num-traits",
  "proof-manager",

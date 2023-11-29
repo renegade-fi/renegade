@@ -19,7 +19,7 @@ crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Cryptography === #
-mpc-stark = { workspace = true }
+ark-mpc = { workspace = true }
 num-bigint = { workspace = true }
 
 # === Workspace Dependencies === #

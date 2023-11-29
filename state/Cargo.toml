@@ -45,5 +45,4 @@ tui-logger = "0.8"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [dev-dependencies]
-mpc-stark = { workspace = true }
 serde_json = { workspace = true }

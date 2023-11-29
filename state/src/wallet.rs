@@ -159,7 +159,7 @@ impl WalletIndex {
 #[cfg(test)]
 mod tests {
     use common::types::wallet::PrivateKeyChain;
-    use mpc_stark::algebra::scalar::Scalar;
+    use constants::Scalar;
     use num_bigint::BigUint;
     use rand::thread_rng;
 
