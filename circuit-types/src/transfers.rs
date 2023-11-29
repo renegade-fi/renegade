@@ -17,7 +17,7 @@ use crate::traits::{BaseType, CircuitBaseType, CircuitVarType};
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ExternalTransfer {
     /// The address of the account contract to transfer to/from
     pub account_addr: BigUint,
@@ -30,7 +30,7 @@ pub struct ExternalTransfer {
 }
 
 /// Represents the direction (deposit/withdraw) of a transfer
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ExternalTransferDirection {
     /// Deposit an ERC20 into the darkpool from an external address
     Deposit = 0,
