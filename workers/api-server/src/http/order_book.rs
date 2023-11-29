@@ -59,14 +59,14 @@ impl GetNetworkOrdersHandler {
 }
 
 /// Asynchronously retrieves the timestamp of an order by its identifier from the global state.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `order_id` - The identifier of the order
 /// * `global_state` - The global state containing the order
-/// 
+///
 /// # Returns
-/// 
+///
 /// An optional `u64` representing the timestamp of the order, or `None` if the order is not found.
 async fn get_timestamp_by_order_id(
     order_id: &OrderIdentifier,
