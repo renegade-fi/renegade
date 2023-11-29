@@ -12,6 +12,7 @@ prost = "0.12"
 # === Workspace Dependencies === #
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
+util = { path = "../../util" }
 
 # === Misc Dependencies === #
 eyre = { workspace = true }

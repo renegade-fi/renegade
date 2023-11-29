@@ -14,6 +14,7 @@ use std::{
         Arc,
     },
 };
+use util::get_current_time_seconds;
 
 use circuit_types::{
     balance::Balance as CircuitBalance,
@@ -263,6 +264,7 @@ impl TryFrom<NetworkOrder> for RuntimeNetworkOrder {
             local: false,
             validity_proofs,
             validity_proof_witnesses: None,
+            timestamp: get_current_time_seconds(),
         })
     }
 }

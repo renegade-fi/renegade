@@ -30,6 +30,7 @@ use job_types::handshake_manager::HandshakeExecutionJob;
 use std::collections::{HashMap, HashSet};
 use system_bus::SystemBus;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, RwLockReadGuard, RwLockWriteGuard};
+use util::get_current_time_seconds;
 use uuid::Uuid;
 
 /// The error emitted when enqueueing a job to the handshake manager fails
@@ -286,7 +287,8 @@ impl NetworkOrderBook {
 
     /// Add an order to the book, necessarily this order is in the received
     /// state because we must fetch a validity proof to move it to verified
-    pub async fn add_order(&mut self, order: NetworkOrder) {
+    pub async fn add_order(&mut self, mut order: NetworkOrder) {
+        order.timestamp = get_current_time_seconds();
         // If the order is local, add it to the local order list
         if order.local {
             self.write_local_orders().await.insert(order.id);
