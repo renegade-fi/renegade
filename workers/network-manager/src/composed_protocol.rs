@@ -64,7 +64,7 @@ impl ComposedNetworkBehavior {
     pub fn new(
         peer_id: PeerId,
         protocol_version: ProtocolVersion,
-        keypair: Keypair,
+        keypair: &Keypair,
     ) -> Result<Self, NetworkManagerError> {
         // Construct the point-to-point request response protocol
         let request_response = RequestResponse::new(
