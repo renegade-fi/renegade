@@ -11,19 +11,19 @@ async-trait = "0.1.60"
 futures = "0.3"
 libp2p = { workspace = true, features = [
     "gossipsub",
-    "identify", 
+    "identify",
     "kad",
     "tokio",
     "quic",
-]}
+] }
 libp2p-core = { workspace = true }
 libp2p-swarm = { workspace = true }
 libp2p-swarm-derive = { workspace = true }
 tokio = { workspace = true }
 
 # === Cryptography === #
+ark-mpc = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
-mpc-stark =  { workspace = true }
 
 # === Workspace Dependencies === #
 common = { path = "../../common" }
@@ -36,7 +36,6 @@ util = { path = "../../util" }
 
 # === Misc Dependencies === #
 itertools = "0.11"
-portpicker = "0.1"
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = "1.1.2"
