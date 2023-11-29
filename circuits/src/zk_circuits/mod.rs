@@ -16,7 +16,7 @@ pub mod test_helpers {
         balance::Balance,
         fee::Fee,
         fixed_point::FixedPoint,
-        keychain::{PublicKeyChain, PublicSigningKey, NUM_KEYS},
+        keychain::{NonNativeScalar, PublicKeyChain, PublicSigningKey, NUM_KEYS},
         merkle::MerkleOpening,
         order::{Order, OrderSide},
         traits::{
@@ -45,7 +45,10 @@ pub mod test_helpers {
         // computed correctly
         pub static ref PRIVATE_KEYS: Vec<Scalar> = vec![Scalar::one(); NUM_KEYS];
         pub static ref PUBLIC_KEYS: PublicKeyChain = PublicKeyChain {
-            pk_root: PublicSigningKey::from(&BigUint::from(2u8).pow(256)),
+            pk_root: PublicSigningKey {
+                x: NonNativeScalar::from(&BigUint::from(2u8).pow(256)),
+                y: NonNativeScalar::from(&BigUint::from(2u8).pow(256)),
+            },
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [

@@ -26,8 +26,8 @@ use super::{biguint_from_hex_string, biguint_to_hex_string};
 pub const NUM_KEYS: usize = 4;
 /// The number of bytes used in a single scalar to represent a key
 pub const SCALAR_MAX_BYTES: usize = 31;
-/// The number of words needed to represent a non-native root key
-pub const ROOT_KEY_WORDS: usize = 2;
+/// The number of words needed to represent a non-native root key coordinate
+pub const ROOT_SCALAR_WORDS: usize = 2;
 
 // -------------
 // | Key Types |
@@ -111,30 +111,30 @@ impl From<SecretIdentificationKey> for Scalar {
     }
 }
 
-/// A non-native key is a key that exists over a non-native field
-/// (i.e. not Starknet Scalar)
+/// A non-native scalar is an element of a non-native field
+/// (i.e. not Bn254 scalar)
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NonNativeKey<const KEY_WORDS: usize> {
-    /// The `Scalar` words used to represent the key
+pub struct NonNativeScalar<const SCALAR_WORDS: usize> {
+    /// The native `Scalar` words used to represent the scalar
     ///
-    /// Because the key is a point on a non-native curve, its representation
-    /// requires a bigint like approach
-    pub key_words: [Scalar; KEY_WORDS],
+    /// Because the scalar is an element of a non-native field, its
+    /// representation requires a bigint-like approach
+    pub scalar_words: [Scalar; SCALAR_WORDS],
 }
 
-impl<const KEY_WORDS: usize> Default for NonNativeKey<KEY_WORDS> {
+impl<const SCALAR_WORDS: usize> Default for NonNativeScalar<SCALAR_WORDS> {
     fn default() -> Self {
-        Self { key_words: [Scalar::zero(); KEY_WORDS] }
+        Self { scalar_words: [Scalar::zero(); SCALAR_WORDS] }
     }
 }
 
-impl<const KEY_WORDS: usize> NonNativeKey<KEY_WORDS> {
+impl<const SCALAR_WORDS: usize> NonNativeScalar<SCALAR_WORDS> {
     /// Split a biguint into scalar words in little endian order
-    fn split_biguint_into_words(mut val: BigUint) -> [Scalar; KEY_WORDS] {
+    fn split_biguint_into_words(mut val: BigUint) -> [Scalar; SCALAR_WORDS] {
         let scalar_mod = get_scalar_field_modulus();
-        let mut res = Vec::with_capacity(KEY_WORDS);
-        for _ in 0..KEY_WORDS {
+        let mut res = Vec::with_capacity(SCALAR_WORDS);
+        for _ in 0..SCALAR_WORDS {
             let word = Scalar::from(&val % &scalar_mod);
             val /= &scalar_mod;
             res.push(word);
@@ -146,26 +146,26 @@ impl<const KEY_WORDS: usize> NonNativeKey<KEY_WORDS> {
     /// Re-collect the key words into a biguint
     fn combine_words_into_biguint(&self) -> BigUint {
         let scalar_mod = get_scalar_field_modulus();
-        self.key_words
+        self.scalar_words
             .iter()
             .rev()
             .fold(BigUint::from(0u8), |acc, word| acc * &scalar_mod + word.to_biguint())
     }
 }
 
-impl<const KEY_WORDS: usize> From<&BigUint> for NonNativeKey<KEY_WORDS> {
+impl<const SCALAR_WORDS: usize> From<&BigUint> for NonNativeScalar<SCALAR_WORDS> {
     fn from(val: &BigUint) -> Self {
-        Self { key_words: Self::split_biguint_into_words(val.clone()) }
+        Self { scalar_words: Self::split_biguint_into_words(val.clone()) }
     }
 }
 
-impl<const KEY_WORDS: usize> From<&NonNativeKey<KEY_WORDS>> for BigUint {
-    fn from(value: &NonNativeKey<KEY_WORDS>) -> Self {
+impl<const SCALAR_WORDS: usize> From<&NonNativeScalar<SCALAR_WORDS>> for BigUint {
+    fn from(value: &NonNativeScalar<SCALAR_WORDS>) -> Self {
         value.combine_words_into_biguint()
     }
 }
 
-impl<const KEY_WORDS: usize> Serialize for NonNativeKey<KEY_WORDS> {
+impl<const SCALAR_WORDS: usize> Serialize for NonNativeScalar<SCALAR_WORDS> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -175,7 +175,7 @@ impl<const KEY_WORDS: usize> Serialize for NonNativeKey<KEY_WORDS> {
     }
 }
 
-impl<'de, const KEY_WORDS: usize> Deserialize<'de> for NonNativeKey<KEY_WORDS> {
+impl<'de, const SCALAR_WORDS: usize> Deserialize<'de> for NonNativeScalar<SCALAR_WORDS> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -185,14 +185,14 @@ impl<'de, const KEY_WORDS: usize> Deserialize<'de> for NonNativeKey<KEY_WORDS> {
     }
 }
 
-impl<const KEY_WORDS: usize> From<&NonNativeKey<KEY_WORDS>> for DalekKey {
-    fn from(val: &NonNativeKey<KEY_WORDS>) -> Self {
+impl<const SCALAR_WORDS: usize> From<&NonNativeScalar<SCALAR_WORDS>> for DalekKey {
+    fn from(val: &NonNativeScalar<SCALAR_WORDS>) -> Self {
         let key_bytes = BigUint::from(val).to_bytes_le();
         DalekKey::from_bytes(&key_bytes).unwrap()
     }
 }
 
-impl<const KEY_WORDS: usize> From<DalekKey> for NonNativeKey<KEY_WORDS> {
+impl<const SCALAR_WORDS: usize> From<DalekKey> for NonNativeScalar<SCALAR_WORDS> {
     fn from(key: DalekKey) -> Self {
         let key_bytes = key.as_bytes();
         Self::from(&BigUint::from_bytes_le(key_bytes))
@@ -203,10 +203,18 @@ impl<const KEY_WORDS: usize> From<DalekKey> for NonNativeKey<KEY_WORDS> {
 // | Keychain Type |
 // -----------------
 
+/// A public signing key in uncompressed affine representation
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct PublicSigningKey {
+    /// The affine x-coordinate of the public key
+    pub x: NonNativeScalar<ROOT_SCALAR_WORDS>,
+    /// The affine y-coordinate of the public key
+    pub y: NonNativeScalar<ROOT_SCALAR_WORDS>,
+}
+
 /// A type alias for readability
-pub type PublicSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
-/// A type alias for readability
-pub type SecretSigningKey = NonNativeKey<ROOT_KEY_WORDS>;
+pub type SecretSigningKey = NonNativeScalar<ROOT_SCALAR_WORDS>;
 
 /// Represents the base type, defining two keys with different access levels
 ///
@@ -234,7 +242,7 @@ mod test {
     use num_bigint::BigUint;
     use rand::RngCore;
 
-    use super::NonNativeKey;
+    use super::NonNativeScalar;
 
     #[test]
     fn test_nonnative_to_from_biguint() {
@@ -244,7 +252,7 @@ mod test {
 
         // Convert to and from a nonnative key
         let random_biguint = BigUint::from_bytes_be(&buf);
-        let key: NonNativeKey<3 /* KEY_WORDS */> = (&random_biguint).into();
+        let key: NonNativeScalar<3 /* SCALAR_WORDS */> = (&random_biguint).into();
         let recovered_biguint: BigUint = (&key).into();
 
         assert_eq!(random_biguint, recovered_biguint);
