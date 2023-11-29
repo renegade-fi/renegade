@@ -5,6 +5,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use circuit_types::wallet::Nullifier;
 use serde::{Deserialize, Serialize};
+use util::get_current_time_seconds;
 
 use super::{
     gossip::ClusterId,
@@ -66,6 +67,8 @@ pub struct NetworkOrder {
     /// have `None` in place
     #[serde(skip)]
     pub validity_proof_witnesses: Option<OrderValidityWitnessBundle>,
+    /// The timestamp this order was received at
+    pub timestamp: u64,
 }
 
 impl NetworkOrder {
@@ -84,6 +87,7 @@ impl NetworkOrder {
             state: NetworkOrderState::Received,
             validity_proofs: None,
             validity_proof_witnesses: None,
+            timestamp: get_current_time_seconds(),
         }
     }
 
@@ -177,6 +181,7 @@ mod test {
 
     use mpc_stark::algebra::scalar::Scalar;
     use rand::thread_rng;
+    use util::get_current_time_seconds;
     use uuid::Uuid;
 
     use crate::types::gossip::ClusterId;
@@ -200,6 +205,7 @@ mod test {
             state: NetworkOrderState::Cancelled,
             validity_proofs: None,
             validity_proof_witnesses: None,
+            timestamp: get_current_time_seconds(),
         };
         let mut order2 = order1.clone();
 

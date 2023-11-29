@@ -4,7 +4,6 @@ use std::{
     collections::HashMap,
     convert::TryInto,
     sync::{atomic::AtomicBool, Arc},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use circuit_types::{
@@ -325,19 +324,13 @@ pub struct NetworkOrder {
 
 impl From<IndexedNetworkOrder> for NetworkOrder {
     fn from(order: IndexedNetworkOrder) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
         NetworkOrder {
             id: order.id,
             public_share_nullifier: scalar_to_biguint(&order.public_share_nullifier),
             local: order.local,
             cluster: order.cluster.to_string(),
             state: order.state,
-            // TODO: Replace this with the time the order was received
-            timestamp: now,
+            timestamp: order.timestamp,
         }
     }
 }
