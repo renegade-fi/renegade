@@ -23,15 +23,18 @@ ark-mpc = { workspace = true }
 num-bigint = { workspace = true }
 
 # === Workspace Dependencies === #
+arbitrum-client = { path = "../arbitrum-client" }
 circuits = { path = "../circuits" }
 circuit-types = { path = "../circuit-types" }
 common = { path = "../common" }
+constants = { path = "../constants" }
 external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
 job-types = { path = "../workers/job-types" }
 renegade-crypto = { path = "../renegade-crypto" }
 state = { path = "../state" }
 system-bus = { path = "../system-bus" }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 itertools = "0.11"
