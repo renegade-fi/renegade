@@ -39,10 +39,10 @@ use common::types::{
         Wallet as RuntimeWallet, WalletMetadata as RuntimeWalletMetadata,
     },
 };
+use constants::Scalar;
 use error::StateProtoError;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use mpc_stark::algebra::scalar::Scalar;
 use multiaddr::Multiaddr;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};

@@ -6,9 +6,8 @@
 
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
-    valid_match_mpc::ValidMatchMpcWitness,
+    valid_match_settle::{SizedValidMatchSettleStatement, SizedValidMatchSettleWitness},
     valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
-    valid_settle::{SizedValidSettleStatement, SizedValidSettleWitness},
     valid_wallet_create::{SizedValidWalletCreateStatement, SizedValidWalletCreateWitness},
     valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
 };
@@ -70,19 +69,13 @@ pub enum ProofJob {
         /// The statement (public variables) parameterizing the proof
         statement: SizedValidWalletUpdateStatement,
     },
-    /// A request to create a proof of `VALID MATCH MPC` in a single prover
+    /// A request to create a proof of `VALID MATCH SETTLE` in a single prover
     /// context
-    ValidMatchMpcSingleprover {
-        /// The witness to the proof of `VALID MATCH MPC`
-        witness: ValidMatchMpcWitness,
-    },
-    /// A request to create a proof of `VALID SETTLE` for a note applied ot a
-    /// wallet
-    ValidSettle {
-        /// The witness to use in the proof of `VALID SETTLE`
-        witness: SizedValidSettleWitness,
+    ValidMatchSettleSingleprover {
+        /// The witness to the proof of `VALID MATCH SETTLE`
+        witness: SizedValidMatchSettleWitness,
         /// The statement (public variables) to use in the proof of `VALID
-        /// SETTLE`
-        statement: SizedValidSettleStatement,
+        /// MATCH SETTLE`
+        statement: SizedValidMatchSettleStatement,
     },
 }

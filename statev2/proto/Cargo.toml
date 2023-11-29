@@ -13,13 +13,13 @@ prost = "0.12"
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 util = { path = "../../util" }
+constants = { path = "../../constants" }
 
 # === Misc Dependencies === #
 eyre = { workspace = true }
 indexmap = { workspace = true }
 itertools = "0.11"
 multiaddr = "0.17"
-mpc-stark = "0.2"
 num-bigint = "0.4"
 serde = { workspace = true }
 serde_json = "1.0"

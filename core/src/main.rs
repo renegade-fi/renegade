@@ -175,7 +175,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     let (network_failure_sender, mut network_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
-    watch_worker::<NetworkManager>(&mut network_manager, network_failure_sender);
+    watch_worker::<NetworkManager>(&mut network_manager, &network_failure_sender);
 
     // Start the gossip server
     let (gossip_cancel_sender, gossip_cancel_receiver) = watch::channel(());
@@ -195,7 +195,7 @@ async fn main() -> Result<(), CoordinatorError> {
     gossip_server.start().expect("failed to start gossip server");
     let (gossip_failure_sender, mut gossip_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
-    watch_worker::<GossipServer>(&mut gossip_server, gossip_failure_sender);
+    watch_worker::<GossipServer>(&mut gossip_server, &gossip_failure_sender);
 
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());
@@ -216,7 +216,7 @@ async fn main() -> Result<(), CoordinatorError> {
     handshake_manager.start().expect("failed to start handshake manager");
     let (handshake_failure_sender, mut handshake_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
-    watch_worker::<HandshakeManager>(&mut handshake_manager, handshake_failure_sender);
+    watch_worker::<HandshakeManager>(&mut handshake_manager, &handshake_failure_sender);
 
     // Start the price reporter manager
     let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
@@ -236,7 +236,7 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::channel(1 /* buffer size */);
     watch_worker::<PriceReporterManager>(
         &mut price_reporter_manager,
-        price_reporter_failure_sender,
+        &price_reporter_failure_sender,
     );
 
     // Start the on-chain event listener
@@ -253,7 +253,7 @@ async fn main() -> Result<(), CoordinatorError> {
     chain_listener.start().expect("failed to start on-chain event listener");
     let (chain_listener_failure_sender, mut chain_listener_failure_receiver) =
         mpsc::channel(1 /* buffer_size */);
-    watch_worker::<OnChainEventListener>(&mut chain_listener, chain_listener_failure_sender);
+    watch_worker::<OnChainEventListener>(&mut chain_listener, &chain_listener_failure_sender);
 
     // Start the API server
     let (api_cancel_sender, api_cancel_receiver) = watch::channel(());
@@ -272,7 +272,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .expect("failed to build api server");
     api_server.start().expect("failed to start api server");
     let (api_failure_sender, mut api_failure_receiver) = mpsc::channel(1 /* buffer_size */);
-    watch_worker::<ApiServer>(&mut api_server, api_failure_sender);
+    watch_worker::<ApiServer>(&mut api_server, &api_failure_sender);
 
     // Start the proof generation module
     let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = watch::channel(());
@@ -284,7 +284,7 @@ async fn main() -> Result<(), CoordinatorError> {
     proof_manager.start().expect("failed to start proof generation module");
     let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
         mpsc::channel(1 /* buffer_size */);
-    watch_worker::<ProofManager>(&mut proof_manager, proof_manager_failure_sender);
+    watch_worker::<ProofManager>(&mut proof_manager, &proof_manager_failure_sender);
 
     // Await module termination, and send a cancel signal for any modules that
     // have been detected to fault
