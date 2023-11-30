@@ -4,8 +4,8 @@
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
 use common::types::proof_bundles::{
     GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
-    GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, ValidCommitmentsBundle,
-    ValidMatchSettleBundle, ValidReblindBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+    GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, OrderValidityProofBundle,
+    ValidMatchSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
 };
 use constants::Scalar;
 use tracing::log::info;
@@ -161,10 +161,8 @@ impl ArbitrumClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn process_match_settle(
         &self,
-        party_0_valid_commitments: ValidCommitmentsBundle,
-        party_0_valid_reblind: ValidReblindBundle,
-        party_1_valid_commitments: ValidCommitmentsBundle,
-        party_1_valid_reblind: ValidReblindBundle,
+        party0_validity_proofs: OrderValidityProofBundle,
+        party1_validity_proofs: OrderValidityProofBundle,
         valid_match_settle: ValidMatchSettleBundle,
     ) -> Result<(), ArbitrumClientError> {
         // Destructure proof bundles
@@ -177,22 +175,22 @@ impl ArbitrumClient {
         let GenericValidCommitmentsBundle {
             statement: party_0_valid_commitments_statement,
             proof: party_0_valid_commitments_proof,
-        } = *party_0_valid_commitments;
+        } = *party0_validity_proofs.copy_commitment_proof();
 
         let GenericValidReblindBundle {
             statement: party_0_valid_reblind_statement,
             proof: party_0_valid_reblind_proof,
-        } = *party_0_valid_reblind;
+        } = *party0_validity_proofs.copy_reblind_proof();
 
         let GenericValidCommitmentsBundle {
             statement: party_1_valid_commitments_statement,
             proof: party_1_valid_commitments_proof,
-        } = *party_1_valid_commitments;
+        } = *party1_validity_proofs.copy_commitment_proof();
 
         let GenericValidReblindBundle {
             statement: party_1_valid_reblind_statement,
             proof: party_1_valid_reblind_proof,
-        } = *party_1_valid_reblind;
+        } = *party1_validity_proofs.copy_reblind_proof();
 
         let party_0_match_payload = MatchPayload {
             wallet_blinder_share: valid_match_settle_statement

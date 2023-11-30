@@ -18,7 +18,7 @@ tungstenite = "0.18"
 
 # === Runtime + Concurrency === #
 crossbeam = { workspace = true }
-futures = "0.3"
+futures = { workspace = true }
 futures-util = "0.3"
 tokio = { workspace = true }
 
