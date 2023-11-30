@@ -29,7 +29,8 @@ use external_api::types::Wallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
 use state::RelayerState;
-use tokio::sync::oneshot;
+
+use crate::helpers::enqueue_proof_job;
 
 use super::{
     driver::{StateWrapper, Task},
@@ -227,20 +228,13 @@ impl NewWalletTask {
         let (witness, statement) = self.get_witness_statement();
 
         // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
-        let (response_sender, response_receiver) = oneshot::channel();
-        let job_req = ProofManagerJob {
-            type_: ProofJob::ValidWalletCreate { statement, witness },
-            response_channel: response_sender,
-        };
-
-        self.proof_manager_work_queue
-            .send(job_req)
-            .map_err(|err| NewWalletTaskError::SendMessage(err.to_string()))?;
+        let job = ProofJob::ValidWalletCreate { statement, witness };
+        let proof_recv = enqueue_proof_job(job, &self.proof_manager_work_queue)
+            .map_err(NewWalletTaskError::SendMessage)?;
 
         // Await the proof
-        let proof_bundle = response_receiver
-            .await
-            .map_err(|err| NewWalletTaskError::ProofGeneration(err.to_string()))?;
+        let proof_bundle =
+            proof_recv.await.map_err(|e| NewWalletTaskError::ProofGeneration(e.to_string()))?;
         self.proof_bundle = Some(proof_bundle.into());
         Ok(())
     }

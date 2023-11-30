@@ -21,9 +21,9 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
 use state::RelayerState;
-use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::helpers::find_merkle_path;
+use crate::helpers::{enqueue_proof_job, find_merkle_path};
 
 use super::{
     driver::{StateWrapper, Task},
@@ -252,18 +252,13 @@ impl UpdateWalletTask {
         let (witness, statement) = self.get_witness_statement()?;
 
         // Dispatch a job to the proof manager, and await the job's result
-        let (proof_sender, proof_receiver) = oneshot::channel();
-        self.proof_manager_work_queue
-            .send(ProofManagerJob {
-                response_channel: proof_sender,
-                type_: ProofJob::ValidWalletUpdate { witness, statement },
-            })
-            .map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
+        let job = ProofJob::ValidWalletUpdate { witness, statement };
+        let proof_recv = enqueue_proof_job(job, &self.proof_manager_work_queue)
+            .map_err(UpdateWalletTaskError::ProofGeneration)?;
 
         // Await the proof
-        let proof = proof_receiver
-            .await
-            .map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
+        let proof =
+            proof_recv.await.map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
 
         self.proof_bundle = Some(proof.into());
         Ok(())
