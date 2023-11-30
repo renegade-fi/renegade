@@ -117,14 +117,10 @@ impl ArbitrumClient {
         events.last().map(|event| event.index).ok_or(ArbitrumClientError::CommitmentNotFound)
     }
 
-    /// Fetch and parse the public secret shares from the calldata of the given
-    /// transaction
-    ///
-    /// In the case that the referenced transaction is a `process_match_settle`,
-    /// we disambiguate between the two parties by adding the public blinder of
-    /// the party's shares the caller intends to fetch
+    /// Fetch and parse the public secret shares from the calldata of the
+    /// transaction that updated the wallet with the given blinder
     // TODO: Add support for nested calls
-    pub async fn fetch_public_shares_from_tx(
+    pub async fn fetch_public_shares_for_blinder(
         &self,
         public_blinder_share: Scalar,
     ) -> Result<SizedWalletShare, ArbitrumClientError> {
@@ -132,6 +128,7 @@ impl ArbitrumClient {
             .get_public_blinder_tx(public_blinder_share)
             .await?
             .ok_or(ArbitrumClientError::BlinderNotFound)?;
+
         let tx = self
             .darkpool_contract
             .client()
