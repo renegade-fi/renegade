@@ -15,8 +15,8 @@ use crate::{
     helpers::{deserialize_calldata, serialize_calldata},
     serde_def_types::SerdeScalarField,
     types::{
-        ContractProof, ContractValidWalletCreateStatement, ContractValidWalletUpdateStatement,
-        MatchPayload,
+        ContractProof, ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
+        ContractValidWalletUpdateStatement, MatchPayload,
     },
 };
 
@@ -160,8 +160,8 @@ impl ArbitrumClient {
     /// Awaits until the transaction is confirmed on-chain
     pub async fn process_match_settle(
         &self,
-        party_0_validity_proof_bundle: OrderValidityProofBundle,
-        party_1_validity_proof_bundle: OrderValidityProofBundle,
+        party0_validity_proofs: OrderValidityProofBundle,
+        party1_validity_proofs: OrderValidityProofBundle,
         valid_match_settle: ValidMatchSettleBundle,
     ) -> Result<(), ArbitrumClientError> {
         // Destructure proof bundles
@@ -174,22 +174,22 @@ impl ArbitrumClient {
         let GenericValidCommitmentsBundle {
             statement: party_0_valid_commitments_statement,
             proof: party_0_valid_commitments_proof,
-        } = **party_0_validity_proof_bundle.commitment_proof;
+        } = *party0_validity_proofs.copy_commitment_proof();
 
         let GenericValidReblindBundle {
             statement: party_0_valid_reblind_statement,
             proof: party_0_valid_reblind_proof,
-        } = **party_0_validity_proof_bundle.reblind_proof;
+        } = *party0_validity_proofs.copy_reblind_proof();
 
         let GenericValidCommitmentsBundle {
             statement: party_1_valid_commitments_statement,
             proof: party_1_valid_commitments_proof,
-        } = **party_1_validity_proof_bundle.commitment_proof;
+        } = *party1_validity_proofs.copy_commitment_proof();
 
         let GenericValidReblindBundle {
             statement: party_1_valid_reblind_statement,
             proof: party_1_valid_reblind_proof,
-        } = **party_1_validity_proof_bundle.reblind_proof;
+        } = *party1_validity_proofs.copy_reblind_proof();
 
         let party_0_match_payload = MatchPayload {
             wallet_blinder_share: valid_match_settle_statement
@@ -233,8 +233,10 @@ impl ArbitrumClient {
         let party_1_valid_reblind_proof_calldata =
             serialize_calldata(&party_1_valid_reblind_proof)?;
 
+        let contract_valid_match_settle_statement: ContractValidMatchSettleStatement =
+            valid_match_settle_statement.into();
         let valid_match_settle_statement_calldata =
-            serialize_calldata(&valid_match_settle_statement)?;
+            serialize_calldata(&contract_valid_match_settle_statement)?;
 
         let valid_match_settle_proof: ContractProof = valid_match_settle_proof.try_into()?;
         let valid_match_settle_proof_calldata = serialize_calldata(&valid_match_settle_proof)?;
@@ -250,8 +252,8 @@ impl ArbitrumClient {
                 party_1_match_payload_calldata,
                 party_1_valid_commitments_proof_calldata,
                 party_1_valid_reblind_proof_calldata,
-                valid_match_settle_statement_calldata,
                 valid_match_settle_proof_calldata,
+                valid_match_settle_statement_calldata,
             )
             .send()
             .await
