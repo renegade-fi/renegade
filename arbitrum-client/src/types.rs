@@ -18,14 +18,12 @@ use circuits::zk_circuits::{
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
 use constants::{Scalar, ScalarField};
+use mpc_relation::constants::GATE_WIDTH;
 use ruint::aliases::{U160, U256};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::{errors::ConversionError, serde_def_types::*};
-
-/// The number of wire types in the circuit
-pub const NUM_WIRE_TYPES: usize = 5;
 
 /// Type alias for the affine representation of the
 /// system curve's G1 group
@@ -38,15 +36,15 @@ pub type G1BaseField = Fq;
 #[derive(Serialize, Deserialize)]
 pub struct ContractProof {
     /// The commitments to the wire polynomials
-    #[serde_as(as = "[G1AffineDef; NUM_WIRE_TYPES]")]
-    pub wire_comms: [G1Affine; NUM_WIRE_TYPES],
+    #[serde_as(as = "[G1AffineDef; GATE_WIDTH + 1]")]
+    pub wire_comms: [G1Affine; GATE_WIDTH + 1],
     /// The commitment to the grand product polynomial encoding the permutation
     /// argument (i.e., copy constraints)
     #[serde_as(as = "G1AffineDef")]
     pub z_comm: G1Affine,
     /// The commitments to the split quotient polynomials
-    #[serde_as(as = "[G1AffineDef; NUM_WIRE_TYPES]")]
-    pub quotient_comms: [G1Affine; NUM_WIRE_TYPES],
+    #[serde_as(as = "[G1AffineDef; GATE_WIDTH + 1]")]
+    pub quotient_comms: [G1Affine; GATE_WIDTH + 1],
     /// The opening proof of evaluations at challenge point `zeta`
     #[serde_as(as = "G1AffineDef")]
     pub w_zeta: G1Affine,
@@ -54,12 +52,12 @@ pub struct ContractProof {
     #[serde_as(as = "G1AffineDef")]
     pub w_zeta_omega: G1Affine,
     /// The evaluations of the wire polynomials at the challenge point `zeta`
-    #[serde_as(as = "[ScalarFieldDef; NUM_WIRE_TYPES]")]
-    pub wire_evals: [ScalarField; NUM_WIRE_TYPES],
+    #[serde_as(as = "[ScalarFieldDef; GATE_WIDTH + 1]")]
+    pub wire_evals: [ScalarField; GATE_WIDTH + 1],
     /// The evaluations of the permutation polynomials at the challenge point
     /// `zeta`
-    #[serde_as(as = "[ScalarFieldDef; NUM_WIRE_TYPES - 1]")]
-    pub sigma_evals: [ScalarField; NUM_WIRE_TYPES - 1],
+    #[serde_as(as = "[ScalarFieldDef; GATE_WIDTH]")]
+    pub sigma_evals: [ScalarField; GATE_WIDTH],
     /// The evaluation of the grand product polynomial at the challenge point
     /// `zeta * omega` (\bar{z})
     #[serde_as(as = "ScalarFieldDef")]
