@@ -8484,7 +8484,6 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
- "starknet",
  "state",
  "system-bus",
  "test-helpers",

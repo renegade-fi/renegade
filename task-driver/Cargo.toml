@@ -40,7 +40,6 @@ util = { path = "../util" }
 # === Misc Dependencies === #
 itertools = "0.11"
 serde = { workspace = true }
-starknet = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
