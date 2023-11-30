@@ -10,11 +10,9 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::sync::Arc;
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::{balance::Balance, SizedWalletShare};
 use common::types::{
     handshake::{HandshakeResult, HandshakeState},
     proof_bundles::OrderValidityProofBundle,
@@ -23,12 +21,10 @@ use common::types::{
 use crossbeam::channel::Sender as CrossbeamSender;
 use futures::FutureExt;
 use gossip_api::gossip::GossipOutbound;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u64};
+use job_types::proof_manager::ProofManagerJob;
 use serde::Serialize;
 use state::RelayerState;
-use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
-use tracing::log;
+use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use super::{
     driver::{StateWrapper, Task},
@@ -38,14 +34,6 @@ use super::{
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
 
-/// The party ID of the first party
-const PARTY0: u64 = 0;
-/// The party ID of the second party
-const PARTY1: u64 = 1;
-/// The match direction in which the first party buys the base
-const PARTY0_BUYS_BASE: u64 = 0;
-/// The match direction in which the second party buys the base
-const PARTY1_BUYS_BASE: u64 = 1;
 /// The displayable name for the settle match task
 const SETTLE_MATCH_TASK_NAME: &str = "settle-match";
 
@@ -259,6 +247,7 @@ impl SettleMatchTask {
             .await
             .expect("unable to find wallet in global state");
         wallet.apply_match(&self.handshake_result.match_, &self.handshake_state.local_order_id);
+        wallet.reblind_wallet();
 
         // Find the wallet's new Merkle opening
         let opening = find_merkle_path(&wallet, &self.arbitrum_client)
@@ -266,8 +255,7 @@ impl SettleMatchTask {
             .map_err(|err| SettleMatchTaskError::Arbitrum(err.to_string()))?;
         wallet.merkle_proof = Some(opening);
 
-        // Reblind the wallet and index the updated wallet in global state
-        wallet.reblind_wallet();
+        // Index the updated wallet in global state
         self.global_state.update_wallet(wallet).await;
 
         Ok(())
