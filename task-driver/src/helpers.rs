@@ -18,13 +18,16 @@ use circuits::zk_circuits::{
     },
     valid_reblind::{SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitness},
 };
-use common::types::proof_bundles::{
-    OrderValidityProofBundle, OrderValidityWitnessBundle, ValidCommitmentsBundle,
-    ValidReblindBundle,
-};
 use common::types::{
     proof_bundles::ProofBundle,
     wallet::{Wallet, WalletAuthenticationPath},
+};
+use common::types::{
+    proof_bundles::{
+        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidCommitmentsBundle,
+        ValidReblindBundle,
+    },
+    wallet::OrderIdentifier,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::{
@@ -62,8 +65,23 @@ const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
 // | Helpers |
 // -----------
 
+/// Enqueue a job with the proof manager
+///
+/// Returns a channel on which the proof manager will send the response
+pub(crate) fn enqueue_proof_job(
+    job: ProofJob,
+    work_queue: &CrossbeamSender<ProofManagerJob>,
+) -> Result<TokioReceiver<ProofBundle>, String> {
+    let (response_sender, response_receiver) = oneshot::channel();
+    work_queue
+        .send(ProofManagerJob { type_: job, response_channel: response_sender })
+        .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
+
+    Ok(response_receiver)
+}
+
 /// Find the merkle authentication path of a wallet
-pub(super) async fn find_merkle_path(
+pub(crate) async fn find_merkle_path(
     wallet: &Wallet,
     arbitrum_client: &ArbitrumClient,
 ) -> Result<WalletAuthenticationPath, ArbitrumClientError> {
@@ -73,9 +91,9 @@ pub(super) async fn find_merkle_path(
 }
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
-pub(super) fn construct_wallet_reblind_proof(
+pub(crate) fn construct_wallet_reblind_proof(
     wallet: &Wallet,
-    proof_manager_work_queue: &CrossbeamSender<ProofManagerJob>,
+    prover_queue: &CrossbeamSender<ProofManagerJob>,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
     // If the wallet doesn't have an authentication path return an error
     let authentication_path =
@@ -107,65 +125,34 @@ pub(super) fn construct_wallet_reblind_proof(
     };
 
     // Forward a job to the proof manager
-    let (proof_sender, proof_receiver) = oneshot::channel();
-    proof_manager_work_queue
-        .send(ProofManagerJob {
-            type_: ProofJob::ValidReblind { witness: witness.clone(), statement },
-            response_channel: proof_sender,
-        })
-        .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
+    let job = ProofJob::ValidReblind { witness: witness.clone(), statement };
+    let recv = enqueue_proof_job(job, prover_queue)?;
 
-    Ok((witness, proof_receiver))
+    Ok((witness, recv))
 }
 
 /// Prove `VALID COMMITMENTS` for an order within a wallet
 ///
 /// Returns a copy of the witness for indexing
-pub(super) fn construct_wallet_commitment_proof(
-    wallet: &Wallet,
+pub(crate) fn construct_order_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
     proof_manager_work_queue: &CrossbeamSender<ProofManagerJob>,
-    disable_fee_validation: bool,
+    fees_disabled: bool,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
-    // Choose the first fee. If no fee is found and fee validation is disabled, use
-    // a zero fee
-    let first_fee = wallet.fees.iter().find(|f| !f.is_default()).cloned();
-    let fee = if disable_fee_validation {
-        first_fee.unwrap_or(Fee::default())
-    } else {
-        first_fee.ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?
-    };
-
-    // Build an augmented wallet and find balances to update
+    // Build an augmented wallet
     let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
         &valid_reblind_witness.reblinded_wallet_private_shares,
         &valid_reblind_witness.reblinded_wallet_public_shares,
     );
 
-    let (send_mint, receive_mint) = match order.side {
-        OrderSide::Buy => (&order.quote_mint, &order.base_mint),
-        OrderSide::Sell => (&order.base_mint, &order.quote_mint),
-    };
+    // Find balances at which the local party will spend and receive their
+    // respective sides of the match
+    let (indices, balance_send, balance_receive) =
+        find_balances_and_indices(&order, &mut augmented_wallet)?;
 
-    let (send_index, send_balance) =
-        find_or_augment_balance(send_mint, &mut augmented_wallet, false /* augment */)
-            .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
-    let (receive_index, receive_balance) =
-        find_or_augment_balance(receive_mint, &mut augmented_wallet, true /* augment */)
-            .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
-
-    // Find a balance to cover the fee
-    let (_, fee_balance) = find_or_augment_balance(
-        &fee.gas_addr,
-        &mut augmented_wallet,
-        false, // augment
-    )
-    .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
-
-    // Find the order in the wallet
-    let order_index =
-        find_order(&order, &augmented_wallet).ok_or_else(|| ERR_ORDER_NOT_FOUND.to_string())?;
+    // Choose a fee to pay to the relayer
+    let (fee, fee_balance) = choose_fee(&mut augmented_wallet, fees_disabled)?;
 
     // Create new augmented public secret shares
     let reblinded_private_blinder = valid_reblind_witness.reblinded_wallet_private_shares.blinder;
@@ -178,34 +165,57 @@ pub(super) fn construct_wallet_commitment_proof(
     );
 
     // Build the witness and statement
-    let statement = ValidCommitmentsStatement {
-        indices: OrderSettlementIndices {
-            order: order_index as u64,
-            balance_send: send_index as u64,
-            balance_receive: receive_index as u64,
-        },
-    };
+    let statement = ValidCommitmentsStatement { indices };
     let witness = ValidCommitmentsWitness {
         private_secret_shares: valid_reblind_witness.reblinded_wallet_private_shares.clone(),
         public_secret_shares: valid_reblind_witness.reblinded_wallet_public_shares.clone(),
         augmented_public_shares,
         order,
-        balance_send: send_balance,
-        balance_receive: receive_balance,
+        balance_send,
+        balance_receive,
         balance_fee: fee_balance,
         fee,
     };
 
     // Dispatch a job to the proof manager to prove `VALID COMMITMENTS`
-    let (proof_sender, proof_receiver) = oneshot::channel();
-    proof_manager_work_queue
-        .send(ProofManagerJob {
-            response_channel: proof_sender,
-            type_: ProofJob::ValidCommitments { witness: witness.clone(), statement },
-        })
-        .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
+    let job = ProofJob::ValidCommitments { witness: witness.clone(), statement };
+    let recv = enqueue_proof_job(job, proof_manager_work_queue)?;
 
-    Ok((witness, proof_receiver))
+    Ok((witness, recv))
+}
+
+/// Build the indices and fetch the balances for a given order
+///
+/// Returns the indices and the send and receive balances respectively for the
+/// order
+fn find_balances_and_indices(
+    order: &Order,
+    wallet: &mut SizedWallet,
+) -> Result<(OrderSettlementIndices, Balance, Balance), String> {
+    let (send_mint, receive_mint) = match order.side {
+        OrderSide::Buy => (&order.quote_mint, &order.base_mint),
+        OrderSide::Sell => (&order.base_mint, &order.quote_mint),
+    };
+
+    let (send_index, send_balance) =
+        find_or_augment_balance(send_mint, wallet, false /* augment */)
+            .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
+    let (receive_index, receive_balance) =
+        find_or_augment_balance(receive_mint, wallet, true /* augment */)
+            .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
+
+    // Find the order in the wallet
+    let order_index = find_order(order, wallet).ok_or_else(|| ERR_ORDER_NOT_FOUND.to_string())?;
+
+    Ok((
+        OrderSettlementIndices {
+            order: order_index as u64,
+            balance_send: send_index as u64,
+            balance_receive: receive_index as u64,
+        },
+        send_balance,
+        receive_balance,
+    ))
 }
 
 /// Find a balance in the wallet
@@ -246,10 +256,32 @@ fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
     wallet.orders.iter().enumerate().find(|(_ind, o)| (*o).eq(order)).map(|(ind, _o)| ind)
 }
 
+/// Choose a fee in a wallet and find a balance that covers it
+fn choose_fee(wallet: &mut SizedWallet, fees_disabled: bool) -> Result<(Fee, Balance), String> {
+    // Choose the first fee. If no fee is found and fee validation is disabled, use
+    // a zero fee
+    let first_fee = wallet.fees.iter().find(|f| !f.is_default()).cloned();
+    let fee = if fees_disabled {
+        first_fee.unwrap_or(Fee::default())
+    } else {
+        first_fee.ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?
+    };
+
+    // Choose a fee and a balance to cover it
+    let (_, fee_balance) = find_or_augment_balance(
+        &fee.gas_addr,
+        wallet,
+        false, // augment
+    )
+    .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
+
+    Ok((fee, fee_balance))
+}
+
 /// Find a wallet on-chain, and update its validity proofs. That is, a proof of
 /// `VALID REBLIND` for the wallet, and one proof of `VALID COMMITMENTS` for
 /// each order in the wallet
-pub(super) async fn update_wallet_validity_proofs(
+pub(crate) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     global_state: RelayerState,
@@ -264,47 +296,25 @@ pub(super) async fn update_wallet_validity_proofs(
     // Dispatch a proof of `VALID REBLIND` for the wallet
     let (reblind_witness, reblind_response_channel) =
         construct_wallet_reblind_proof(wallet, &proof_manager_work_queue)?;
-    let wallet_reblind_witness = Box::new(reblind_witness);
 
     // For each order, construct a proof of `VALID COMMITMENTS`
     let mut commitments_response_channels = Vec::new();
-    for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_zero()) {
+    for (id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_zero()) {
         // Start a proof of `VALID COMMITMENTS`
-        let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
-            wallet,
+        let (commitments_witness, response_channel) = construct_order_commitment_proof(
             order.clone(),
-            &wallet_reblind_witness,
+            &reblind_witness,
             &proof_manager_work_queue,
-            global_state.disable_fee_validation,
+            global_state.fees_disabled,
         )?;
 
-        let order_commitment_witness = Box::new(commitments_witness);
-
-        // Attach a copy of the witness to the locally managed state
-        // This witness is referenced by match computations which compute linkable
-        // commitments to shared witness elements; i.e. they commit with the
-        // same randomness
-        {
-            global_state
-                .read_order_book()
-                .await
-                .attach_validity_proof_witness(
-                    order_id,
-                    OrderValidityWitnessBundle {
-                        reblind_witness: wallet_reblind_witness.clone(),
-                        commitment_witness: order_commitment_witness.clone(),
-                    },
-                )
-                .await;
-        } // order_book lock released
-
-        commitments_response_channels.push((*order_id, response_channel));
+        record_validity_witness(id, &commitments_witness, &reblind_witness, &global_state).await;
+        commitments_response_channels.push((*id, response_channel));
     }
 
     // Await the proof of `VALID REBLIND`
     let reblind_proof: ValidReblindBundle =
         reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?.into();
-    let reblind_proof = Box::new(reblind_proof);
 
     // Await proofs for each order, store them in the state
     for (order_id, receiver) in commitments_response_channels.into_iter() {
@@ -312,25 +322,70 @@ pub(super) async fn update_wallet_validity_proofs(
         let commitment_proof: ValidCommitmentsBundle =
             receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?.into();
 
-        let proof_bundle = OrderValidityProofBundle {
-            reblind_proof: reblind_proof.clone(),
-            commitment_proof: Box::new(commitment_proof),
-        };
-        global_state.add_order_validity_proofs(&order_id, proof_bundle.clone()).await;
-
-        // Gossip the updated proofs to the network
-        let message = GossipOutbound::Pubsub {
-            topic: ORDER_BOOK_TOPIC.to_string(),
-            message: PubsubMessage::OrderBookManagement(
-                OrderBookManagementMessage::OrderProofUpdated {
-                    order_id,
-                    cluster: global_state.local_cluster_id.clone(),
-                    proof_bundle,
-                },
-            ),
-        };
-        network_sender.send(message).unwrap()
+        record_validity_proof(
+            &order_id,
+            &commitment_proof,
+            &reblind_proof,
+            &global_state,
+            &network_sender,
+        )
+        .await?;
     }
 
     Ok(())
+}
+
+/// Attach a copy of the witness to the locally managed state
+///
+/// This witness is referenced by match computations to provide linkable
+/// commitments into a previously proven validity bundle
+async fn record_validity_witness(
+    order_id: &OrderIdentifier,
+    commitments_witness: &SizedValidCommitmentsWitness,
+    valid_reblind_witness: &SizedValidReblindWitness,
+    global_state: &RelayerState,
+) {
+    let witness_bundle = OrderValidityWitnessBundle {
+        reblind_witness: Box::new(valid_reblind_witness.clone()),
+        commitment_witness: Box::new(commitments_witness.clone()),
+    };
+
+    global_state
+        .read_order_book()
+        .await
+        .attach_validity_proof_witness(order_id, witness_bundle)
+        .await;
+}
+
+/// Attach a validity proof to the locally managed state
+///
+/// This is gossipped to the network so that peers may verify the validity
+/// bundle and schedule matches on the proven order
+pub(crate) async fn record_validity_proof(
+    order_id: &OrderIdentifier,
+    commitments_bundle: &ValidCommitmentsBundle,
+    reblind_bundle: &ValidReblindBundle,
+    global_state: &RelayerState,
+    network_sender: &TokioSender<GossipOutbound>,
+) -> Result<(), String> {
+    // Record the bundle in the global state
+    let proof_bundle = OrderValidityProofBundle {
+        reblind_proof: Box::new(reblind_bundle.clone()),
+        commitment_proof: Box::new(commitments_bundle.clone()),
+    };
+    global_state.add_order_validity_proofs(order_id, proof_bundle.clone()).await;
+
+    // Gossip the updated proofs to the network
+    let message = GossipOutbound::Pubsub {
+        topic: ORDER_BOOK_TOPIC.to_string(),
+        message: PubsubMessage::OrderBookManagement(
+            OrderBookManagementMessage::OrderProofUpdated {
+                order_id: *order_id,
+                cluster: global_state.local_cluster_id.clone(),
+                proof_bundle,
+            },
+        ),
+    };
+
+    network_sender.send(message).map_err(|e| e.to_string())
 }

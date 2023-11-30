@@ -4,7 +4,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::helpers::update_wallet_validity_proofs;
+use crate::helpers::{enqueue_proof_job, update_wallet_validity_proofs};
 
 use super::{
     driver::{StateWrapper, Task},
@@ -27,10 +27,7 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
 use state::RelayerState;
-use tokio::{
-    sync::{mpsc::UnboundedSender as TokioSender, oneshot},
-    task::JoinHandle as TokioJoinHandle,
-};
+use tokio::{sync::mpsc::UnboundedSender as TokioSender, task::JoinHandle as TokioJoinHandle};
 use util::matching_engine::settle_match_into_wallets;
 
 // -------------
@@ -40,9 +37,6 @@ use util::matching_engine::settle_match_into_wallets;
 /// The name of the task
 pub const SETTLE_MATCH_INTERNAL_TASK_NAME: &str = "settle-match-internal";
 
-/// Error message emitted when enqueuing a job with the proof generation module
-/// fails
-const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof generation module";
 /// Error message emitted when awaiting a proof fails
 const ERR_AWAITING_PROOF: &str = "error awaiting proof";
 /// Error message emitted when a wallet cannot be found
@@ -252,18 +246,12 @@ impl SettleMatchInternalTask {
         let (witness, statement) = self.get_witness_statement();
 
         // Enqueue a job with the proof generation module
-        let (response_sender, response_receiver) = oneshot::channel();
-        self.proof_manager_work_queue
-            .send(ProofManagerJob {
-                type_: ProofJob::ValidMatchSettleSingleprover { witness, statement },
-                response_channel: response_sender,
-            })
-            .map_err(|_| {
-                SettleMatchInternalTaskError::EnqueuingJob(ERR_ENQUEUING_JOB.to_string())
-            })?;
+        let job = ProofJob::ValidMatchSettleSingleprover { witness, statement };
+        let proof_recv = enqueue_proof_job(job, &self.proof_manager_work_queue)
+            .map_err(SettleMatchInternalTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
-        let proof = response_receiver.await.map_err(|_| {
+        let proof = proof_recv.await.map_err(|_| {
             SettleMatchInternalTaskError::EnqueuingJob(ERR_AWAITING_PROOF.to_string())
         })?;
 

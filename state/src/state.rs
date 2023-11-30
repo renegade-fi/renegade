@@ -48,7 +48,7 @@ pub struct RelayerState {
     /// The cluster id of the local relayer
     pub local_cluster_id: ClusterId,
     /// Whether to disable fee validation
-    pub disable_fee_validation: bool,
+    pub fees_disabled: bool,
     /// The list of wallets managed by the sending relayer
     wallet_index: AsyncShared<WalletIndex>,
     /// The set of peers known to the sending relayer
@@ -99,7 +99,7 @@ impl RelayerState {
             local_peer_id,
             local_keypair,
             local_cluster_id: args.cluster_id.clone(),
-            disable_fee_validation: args.disable_fee_validation,
+            fees_disabled: args.disable_fee_validation,
             wallet_index: new_async_shared(wallet_index),
             matched_order_pairs: new_async_shared(vec![]),
             peer_index: new_async_shared(peer_index),
