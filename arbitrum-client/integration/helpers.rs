@@ -2,12 +2,14 @@
 
 use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{
-    native_helpers::compute_wallet_commitment_from_private, wallet::WalletShareStateCommitment,
-    SizedWalletShare,
+    native_helpers::compute_wallet_commitment_from_private, traits::BaseType,
+    wallet::WalletShareStateCommitment, SizedWalletShare,
 };
 use common::types::proof_bundles::mocks::dummy_valid_wallet_create_bundle;
+use constants::Scalar;
 use eyre::{eyre, Result};
-use std::{fs::File, io::Read};
+use rand::thread_rng;
+use std::{fs::File, io::Read, iter};
 
 use crate::constants::DEPLOYMENTS_KEY;
 
@@ -23,12 +25,19 @@ pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> 
         .ok_or_else(|| eyre!("Could not parse darkpool address from deployments file"))
 }
 
+/// Create a set of random wallet shares
+pub fn random_wallet_shares() -> SizedWalletShare {
+    let mut rng = thread_rng();
+    SizedWalletShare::from_scalars(&mut iter::repeat_with(|| Scalar::random(&mut rng)))
+}
+
 /// Deploy a new wallet and return the commitment to the wallet and the
 /// public shares of the wallet
 pub async fn deploy_new_wallet(
     client: &ArbitrumClient,
 ) -> Result<(WalletShareStateCommitment, SizedWalletShare)> {
-    let valid_wallet_create_bundle = dummy_valid_wallet_create_bundle();
+    let mut valid_wallet_create_bundle = dummy_valid_wallet_create_bundle();
+    valid_wallet_create_bundle.statement.public_wallet_shares = random_wallet_shares();
 
     let statement = valid_wallet_create_bundle.statement.clone();
 
