@@ -206,7 +206,7 @@ impl NewWalletTask {
 
         Ok(Self {
             wallet,
-            proof: None,
+            proof_bundle: None,
             arbitrum_client,
             global_state,
             proof_manager_work_queue,

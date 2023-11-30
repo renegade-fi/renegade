@@ -19,7 +19,7 @@ use tokio::{
 use tracing::log;
 use uuid::Uuid;
 
-use super::create_new_wallet::NewWalletTaskState;
+use crate::{create_new_wallet::NewWalletTaskState, update_wallet::UpdateWalletTaskState};
 
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
@@ -108,8 +108,8 @@ pub trait Task: Send {
 pub enum StateWrapper {
     // /// The state object for the relayer state initialization task
     // InitializeState(InitializeStateTaskState),
-    // /// The state object for the deposit balance task
-    // UpdateWallet(UpdateWalletTaskState),
+    /// The state object for the deposit balance task
+    UpdateWallet(UpdateWalletTaskState),
     // /// The state object for the lookup wallet task
     // LookupWallet(LookupWalletTaskState),
     /// The state object for the new wallet task
