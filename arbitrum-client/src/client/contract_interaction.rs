@@ -8,6 +8,7 @@ use common::types::proof_bundles::{
     ValidMatchSettleBundle, ValidReblindBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
 };
 use constants::Scalar;
+use tracing::log::info;
 
 use crate::{
     errors::ArbitrumClientError,
@@ -94,7 +95,8 @@ impl ArbitrumClient {
         let contract_statement: ContractValidWalletCreateStatement = statement.into();
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        self.darkpool_contract
+        let receipt = self
+            .darkpool_contract
             .new_wallet(
                 wallet_blinder_share_calldata,
                 proof_calldata,
@@ -104,8 +106,12 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
-            .map(|_| ())
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxDropped)?;
+
+        info!("`new_wallet` tx hash: {:#x}", receipt.transaction_hash);
+
+        Ok(())
     }
 
     /// Call the `update_wallet` contract method with the given
@@ -128,7 +134,8 @@ impl ArbitrumClient {
         let contract_statement: ContractValidWalletUpdateStatement = statement.try_into()?;
         let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        self.darkpool_contract
+        let receipt = self
+            .darkpool_contract
             .update_wallet(
                 wallet_blinder_share_calldata,
                 proof_calldata,
@@ -139,8 +146,12 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
-            .map(|_| ())
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxDropped)?;
+
+        info!("`update_wallet` tx hash: {:#x}", receipt.transaction_hash);
+
+        Ok(())
     }
 
     /// Call the `process_match_settle` contract method with the given
@@ -233,7 +244,8 @@ impl ArbitrumClient {
 
         // Call `process_match_settle` on darkpool contract
 
-        self.darkpool_contract
+        let receipt = self
+            .darkpool_contract
             .process_match_settle(
                 party_0_match_payload_calldata,
                 party_0_valid_commitments_proof_calldata,
@@ -248,7 +260,11 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
-            .map(|_| ())
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxDropped)?;
+
+        info!("`process_match_settle` tx hash: {:#x}", receipt.transaction_hash);
+
+        Ok(())
     }
 }
