@@ -1,12 +1,16 @@
 //! Integration tests for contract interaction client functionality
 
+use circuit_types::transfers::ExternalTransfer;
 use common::types::proof_bundles::mocks::{
     dummy_valid_match_settle_bundle, dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle,
 };
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
-use crate::{helpers::deploy_new_wallet, IntegrationTestArgs};
+use crate::{
+    helpers::{deploy_new_wallet, random_wallet_shares},
+    IntegrationTestArgs,
+};
 
 /// Tests submitting a new wallet and then recovering its shares from the
 /// contract
@@ -14,7 +18,7 @@ async fn test_new_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.client;
 
     // Deploy a new wallet
-    let (_commitment, public_shares) = deploy_new_wallet(client).await?;
+    let (_, public_shares) = deploy_new_wallet(client).await?;
 
     let recovered_public_shares =
         client.fetch_public_shares_for_blinder(public_shares.blinder).await?;
@@ -29,8 +33,10 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.client;
 
     // Update a wallet with a dummy proof bundle
-    let valid_wallet_update_bundle = dummy_valid_wallet_update_bundle();
-    let new_shares = valid_wallet_update_bundle.statement.new_public_shares.clone();
+    let mut valid_wallet_update_bundle = dummy_valid_wallet_update_bundle();
+    let new_shares = random_wallet_shares();
+    valid_wallet_update_bundle.statement.new_public_shares = new_shares.clone();
+    valid_wallet_update_bundle.statement.external_transfer = ExternalTransfer::default();
 
     // Update the wallet
     client
@@ -56,12 +62,13 @@ async fn test_process_match_settle(test_args: IntegrationTestArgs) -> Result<()>
     // Submit a match between two wallets using dummy proof bundleso
     let party_0_validity_proof_bundle = dummy_validity_proof_bundle();
     let party_1_validity_proof_bundle = dummy_validity_proof_bundle();
-    let valid_match_settle_proof_bundle = dummy_valid_match_settle_bundle();
+    let mut valid_match_settle_proof_bundle = dummy_valid_match_settle_bundle();
 
-    let party_0_new_shares =
-        valid_match_settle_proof_bundle.statement.party0_modified_shares.clone();
-    let party_1_new_shares =
-        valid_match_settle_proof_bundle.statement.party1_modified_shares.clone();
+    let party_0_new_shares = random_wallet_shares();
+    valid_match_settle_proof_bundle.statement.party0_modified_shares = party_0_new_shares.clone();
+
+    let party_1_new_shares = random_wallet_shares();
+    valid_match_settle_proof_bundle.statement.party1_modified_shares = party_1_new_shares.clone();
 
     client
         .process_match_settle(

@@ -27,7 +27,7 @@ alloy-sol-types = "0.3.1"
 constants = { path = "../constants" }
 circuit-types = { path = "../circuit-types", features = ["test-helpers"] }
 circuits = { path = "../circuits", features = ["test_helpers"] }
-common = { path = "../common" }
+common = { path = "../common", features = ["mocks"] }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Serde === #
