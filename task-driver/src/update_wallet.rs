@@ -7,6 +7,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{
     native_helpers::wallet_from_blinded_shares, transfers::ExternalTransfer, SizedWallet,
@@ -18,12 +19,9 @@ use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
 use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use renegade_crypto::fields::starknet_felt_to_biguint;
 use serde::Serialize;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
-use tracing::log;
 
 use crate::helpers::find_merkle_path;
 
@@ -53,8 +51,13 @@ pub struct UpdateWalletTask {
     pub old_wallet: Wallet,
     /// The new wallet after update
     pub new_wallet: Wallet,
-    /// The starknet client to use for submitting transactions
-    pub starknet_client: StarknetClient,
+    /// A signature of the `VALID WALLET UPDATE` statement by the wallet's root
+    /// key, the contract uses this to authorize the update
+    pub wallet_update_signature: Vec<u8>,
+    /// A proof of `VALID WALLET UPDATE` created in the first step
+    pub proof_bundle: Option<ValidWalletUpdateBundle>,
+    /// The arbitrum client to use for submitting transactions
+    pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     pub network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -72,8 +75,8 @@ pub enum UpdateWalletTaskError {
     InvalidShares(String),
     /// Error generating a proof of `VALID WALLET UPDATE`
     ProofGeneration(String),
-    /// An error occurred interacting with Starknet
-    StarknetClient(String),
+    /// An error occurred interacting with Arbitrum
+    Arbitrum(String),
     /// A state element was not found that is necessary for task execution
     StateMissing(String),
     /// An error while updating validity proofs for a wallet
@@ -151,8 +154,7 @@ impl Task for UpdateWalletTask {
             },
             UpdateWalletTaskState::Proving => {
                 // Begin the proof of `VALID WALLET UPDATE`
-                let proof_bundle = self.generate_proof().await?;
-                self.task_state = UpdateWalletTaskState::SubmittingTx { proof_bundle };
+                self.generate_proof().await?;
             },
             UpdateWalletTaskState::SubmittingTx { .. } => {
                 // Submit the proof and transaction info to the contract and await
@@ -212,7 +214,8 @@ impl UpdateWalletTask {
         external_transfer: Option<ExternalTransfer>,
         old_wallet: Wallet,
         new_wallet: Wallet,
-        starknet_client: StarknetClient,
+        wallet_update_signature: Vec<u8>,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -222,22 +225,16 @@ impl UpdateWalletTask {
         }
 
         // Safety check, the new wallet's secret shares must recover the new wallet
-        let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
-        let recovered_wallet = wallet_from_blinded_shares(
-            new_wallet.private_shares.clone(),
-            new_wallet.blinded_public_shares.clone(),
-        );
-
-        if recovered_wallet != new_circuit_wallet {
-            return Err(UpdateWalletTaskError::InvalidShares(ERR_INVALID_BLINDING.to_string()));
-        }
+        Self::check_wallet_shares(&new_wallet)?;
 
         Ok(Self {
             timestamp_received,
             external_transfer,
             old_wallet,
             new_wallet,
-            starknet_client,
+            wallet_update_signature,
+            proof_bundle: None,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -245,34 +242,14 @@ impl UpdateWalletTask {
         })
     }
 
+    // --------------
+    // | Task Steps |
+    // --------------
+
     /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added
     /// balance
-    async fn generate_proof(&self) -> Result<ValidWalletUpdateBundle, UpdateWalletTaskError> {
-        let merkle_opening =
-            self.old_wallet.merkle_proof.clone().ok_or_else(|| {
-                UpdateWalletTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
-            })?;
-        let merkle_root = merkle_opening.compute_root();
-
-        // Build a witness and statement
-        let new_private_share_commitment = self.new_wallet.get_private_share_commitment();
-
-        let statement = SizedValidWalletUpdateStatement {
-            old_shares_nullifier: self.old_wallet.get_wallet_nullifier(),
-            new_private_shares_commitment: new_private_share_commitment,
-            new_public_shares: self.new_wallet.blinded_public_shares.clone(),
-            merkle_root,
-            external_transfer: self.external_transfer.clone().unwrap_or_default(),
-            old_pk_root: self.old_wallet.key_chain.public_keys.pk_root.clone(),
-            timestamp: self.timestamp_received,
-        };
-
-        let witness = SizedValidWalletUpdateWitness {
-            old_wallet_private_shares: self.old_wallet.private_shares.clone(),
-            old_wallet_public_shares: self.old_wallet.blinded_public_shares.clone(),
-            old_shares_opening: merkle_opening.into(),
-            new_wallet_private_shares: self.new_wallet.private_shares.clone(),
-        };
+    async fn generate_proof(&mut self) -> Result<(), UpdateWalletTaskError> {
+        let (witness, statement) = self.get_witness_statement()?;
 
         // Dispatch a job to the proof manager, and await the job's result
         let (proof_sender, proof_receiver) = oneshot::channel();
@@ -281,44 +258,26 @@ impl UpdateWalletTask {
                 response_channel: proof_sender,
                 type_: ProofJob::ValidWalletUpdate { witness, statement },
             })
-            .map_err(|err| UpdateWalletTaskError::ProofGeneration(err.to_string()))?;
+            .map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
 
-        proof_receiver
+        // Await the proof
+        let proof = proof_receiver
             .await
-            .map(|bundle| bundle.into())
-            .map_err(|err| UpdateWalletTaskError::ProofGeneration(err.to_string()))
+            .map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
+
+        self.proof_bundle = Some(proof.into());
+        Ok(())
     }
 
     /// Submit the `update_wallet` transaction to the contract and await
     /// finality
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
-        let proof = if let UpdateWalletTaskState::SubmittingTx { proof_bundle } = self.state() {
-            proof_bundle
-        } else {
-            unreachable!("submit_tx may only be called from a SubmittingTx task state")
-        };
-
-        // Submit on-chain
-        let tx_hash = self
-            .starknet_client
-            .update_wallet(
-                self.new_wallet.get_private_share_commitment(),
-                self.old_wallet.get_wallet_nullifier(),
-                self.external_transfer.clone().map(|transfer| transfer.into()),
-                self.new_wallet.blinded_public_shares.clone(),
-                proof,
-            )
+        let proof = self.proof_bundle.take().unwrap();
+        self.arbitrum_client
+            .update_wallet(proof, self.wallet_update_signature.clone())
             .await
-            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
-
-        log::info!("tx hash: 0x{:x}", starknet_felt_to_biguint(&tx_hash));
-        let status = self
-            .starknet_client
-            .poll_transaction_completed(tx_hash)
-            .await
-            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
-
-        status.into_result().map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))
+            .map_err(|e| e.to_string())
+            .map_err(UpdateWalletTaskError::Arbitrum)
     }
 
     /// Find the wallet opening for the new wallet and re-index the wallet in
@@ -326,15 +285,14 @@ impl UpdateWalletTask {
     async fn find_opening(&mut self) -> Result<(), UpdateWalletTaskError> {
         // Attach the opening to the new wallet, and index the wallet in the global
         // state
-        let merkle_opening = find_merkle_path(&self.new_wallet, &self.starknet_client)
+        let merkle_opening = find_merkle_path(&self.new_wallet, &self.arbitrum_client)
             .await
-            .map_err(|err| UpdateWalletTaskError::StarknetClient(err.to_string()))?;
+            .map_err(|e| UpdateWalletTaskError::Arbitrum(e.to_string()))?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // After the state is finalized on-chain, re-index the wallet in the global
         // state
         self.global_state.update_wallet(self.new_wallet.clone()).await;
-
         Ok(())
     }
 
@@ -350,5 +308,64 @@ impl UpdateWalletTask {
         )
         .await
         .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Check the construction of a wallet's shares, i.e. that the shares match
+    /// the wallet as a whole
+    fn check_wallet_shares(new_wallet: &Wallet) -> Result<(), UpdateWalletTaskError> {
+        let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
+        let recovered_wallet = wallet_from_blinded_shares(
+            &new_wallet.private_shares,
+            &new_wallet.blinded_public_shares,
+        );
+
+        if recovered_wallet != new_circuit_wallet {
+            return Err(UpdateWalletTaskError::InvalidShares(ERR_INVALID_BLINDING.to_string()));
+        }
+
+        Ok(())
+    }
+
+    /// Construct a witness and statement for `VALID WALLET UPDATE`
+    fn get_witness_statement(
+        &self,
+    ) -> Result<
+        (SizedValidWalletUpdateWitness, SizedValidWalletUpdateStatement),
+        UpdateWalletTaskError,
+    > {
+        // Get the Merkle opening previously stored to the wallet
+        let merkle_opening =
+            self.old_wallet.merkle_proof.clone().ok_or_else(|| {
+                UpdateWalletTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
+            })?;
+        let merkle_root = merkle_opening.compute_root();
+
+        // Build the witness and statement
+        let old_wallet = &self.old_wallet;
+        let new_wallet = &self.new_wallet;
+        let new_private_share_commitment = self.new_wallet.get_private_share_commitment();
+
+        let statement = SizedValidWalletUpdateStatement {
+            old_shares_nullifier: old_wallet.get_wallet_nullifier(),
+            new_private_shares_commitment: new_private_share_commitment,
+            new_public_shares: new_wallet.blinded_public_shares.clone(),
+            merkle_root,
+            external_transfer: self.external_transfer.clone().unwrap_or_default(),
+            old_pk_root: old_wallet.key_chain.public_keys.pk_root.clone(),
+            timestamp: self.timestamp_received,
+        };
+
+        let witness = SizedValidWalletUpdateWitness {
+            old_wallet_private_shares: old_wallet.private_shares.clone(),
+            old_wallet_public_shares: old_wallet.blinded_public_shares.clone(),
+            old_shares_opening: merkle_opening.into(),
+            new_wallet_private_shares: new_wallet.private_shares.clone(),
+        };
+
+        Ok((witness, statement))
     }
 }
