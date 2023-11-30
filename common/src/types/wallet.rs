@@ -19,6 +19,7 @@ use circuit_types::{
         compute_wallet_share_nullifier, create_wallet_shares_from_private,
     },
     order::{Order, OrderSide},
+    r#match::MatchResult,
     traits::BaseType,
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment},
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
@@ -274,6 +275,33 @@ impl Wallet {
         }
 
         Some((balance.clone(), fee.clone(), fee_balance.clone()))
+    }
+
+    /// Settle a match on the given order into the wallet
+    pub fn apply_match(&mut self, match_res: &MatchResult, order_id: &OrderIdentifier) {
+        // Subtract the matched volume from the order
+        let order = self.orders.get_mut(order_id).unwrap();
+        order.amount =
+            order.amount.checked_sub(match_res.base_amount).expect("order volume underflow");
+
+        // Select the correct mints and amounts based on the order side
+        let base = match_res.base_mint.clone();
+        let quote = match_res.quote_mint.clone();
+        let bast_amt = match_res.base_amount;
+        let quote_amt = match_res.quote_amount;
+        let (send_mint, send_amount, receive_mint, receive_amount) = match order.side {
+            OrderSide::Buy => (quote, quote_amt, base, bast_amt),
+            OrderSide::Sell => (base, bast_amt, quote, quote_amt),
+        };
+
+        // Update the balances
+        let send_balance = self.balances.get_mut(&send_mint).unwrap();
+        send_balance.amount =
+            send_balance.amount.checked_sub(send_amount).expect("balance underflow");
+
+        let receive_balance = self.balances.get_mut(&receive_mint).unwrap();
+        receive_balance.amount =
+            receive_balance.amount.checked_add(receive_amount).expect("balance overflow");
     }
 }
 

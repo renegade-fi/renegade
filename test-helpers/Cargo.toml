@@ -8,7 +8,7 @@ description = "Helpers for setting up and running integration tests for the rela
 # === Runtime + Networking === #
 async-trait = "0.1"
 dns-lookup = "1.0"
-futures = "0.3"
+futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Node Interaction === #

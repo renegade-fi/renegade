@@ -10,7 +10,7 @@ mpc-stark = { workspace = true }
 
 # === Concurrency + Networking === #
 crossbeam = { workspace = true }
-futures = "0.3"
+futures = { workspace = true }
 libp2p = { workspace = true }
 tokio = { workspace = true }
 
