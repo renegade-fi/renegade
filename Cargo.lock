@@ -371,6 +371,7 @@ dependencies = [
  "serde_with 3.4.0",
  "test-helpers",
  "tokio",
+ "tracing",
  "util",
 ]
 

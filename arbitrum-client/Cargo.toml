@@ -36,6 +36,7 @@ postcard = { version = "1", features = ["alloc"] }
 
 # === Misc === #
 lazy_static = "1.4.0"
+tracing = { workspace = true }
 
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
