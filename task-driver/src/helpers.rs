@@ -263,7 +263,7 @@ pub(super) async fn update_wallet_validity_proofs(
 
     // Dispatch a proof of `VALID REBLIND` for the wallet
     let (reblind_witness, reblind_response_channel) =
-        construct_wallet_reblind_proof(&wallet, &proof_manager_work_queue)?;
+        construct_wallet_reblind_proof(wallet, &proof_manager_work_queue)?;
     let wallet_reblind_witness = Box::new(reblind_witness);
 
     // For each order, construct a proof of `VALID COMMITMENTS`
@@ -271,7 +271,7 @@ pub(super) async fn update_wallet_validity_proofs(
     for (order_id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_zero()) {
         // Start a proof of `VALID COMMITMENTS`
         let (commitments_witness, response_channel) = construct_wallet_commitment_proof(
-            &wallet,
+            wallet,
             order.clone(),
             &wallet_reblind_witness,
             &proof_manager_work_queue,

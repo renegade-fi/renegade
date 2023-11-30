@@ -7,17 +7,17 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
 };
 
+use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use common::types::wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata};
+use constants::Scalar;
 use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
-use mpc_stark::algebra::scalar::Scalar;
-use renegade_crypto::{fields::starknet_felt_to_biguint, hash::PoseidonCSPRNG};
+use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::Serialize;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
@@ -45,8 +45,8 @@ pub struct LookupWalletTask {
     pub key_chain: KeyChain,
     /// The wallet recovered from contract state
     pub wallet: Option<Wallet>,
-    /// A starknet client for the task to submit transactions
-    pub starknet_client: StarknetClient,
+    /// An arbitrum client for the task to submit transactions
+    pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     pub network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -89,8 +89,8 @@ pub enum LookupWalletTaskError {
     NotFound(String),
     /// Error generating a proof of `VALID COMMITMENTS`
     ProofGeneration(String),
-    /// Error interacting with the starknet client
-    Starknet(String),
+    /// Error interacting with the arbitrum client
+    Arbitrum(String),
 }
 
 impl Display for LookupWalletTaskError {
@@ -156,7 +156,7 @@ impl LookupWalletTask {
         blinder_stream_seed: Scalar,
         secret_share_stream_seed: Scalar,
         key_chain: KeyChain,
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -167,7 +167,7 @@ impl LookupWalletTask {
             secret_share_seed: secret_share_stream_seed,
             key_chain,
             wallet: None, // replaced in the first task step
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -175,92 +175,47 @@ impl LookupWalletTask {
         }
     }
 
+    // --------------
+    // | Task Steps |
+    // --------------
+
     /// Find the wallet in the contract storage and create an opening for the
     /// wallet
     async fn find_wallet(&mut self) -> Result<(), LookupWalletTaskError> {
-        // Find the latest transaction updating the wallet, as indexed by the public
-        // share of the blinders
-        let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
+        // Lookup the public and private shares from contract calldata
+        let (blinded_public_shares, private_shares) = self.find_wallet_shares().await?;
 
-        let mut blinder_index = 0;
-        let mut curr_blinder = Scalar::zero();
-        let mut curr_blinder_private_share = Scalar::zero();
+        let blinder = blinded_public_shares.blinder + private_shares.blinder;
+        let unblinded_public_shares = blinded_public_shares.unblind_shares(blinder);
+        let recovered_wallet = unblinded_public_shares + private_shares.clone();
 
-        let mut updating_tx = None;
-
-        // TODO: Look for first non-nullified public blinder share, not just the first
-        // share that has been indexed
-        while
-            let (blinder, private_share) = blinder_csprng.next_tuple().unwrap() &&
-            let Some(tx) = self
-                .starknet_client
-                .get_public_blinder_tx(blinder - private_share)
-                .await
-                .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?
-        {
-            updating_tx = Some(tx);
-
-            curr_blinder = blinder;
-            curr_blinder_private_share = private_share;
-            blinder_index += 1;
-        }
-
-        let latest_tx = updating_tx
-            .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
-        log::info!("latest updating tx: 0x{:x}", starknet_felt_to_biguint(&latest_tx));
-
-        // Fetch the secret shares from the tx
-        let blinder_public_share = curr_blinder - curr_blinder_private_share;
-        let public_shares: SizedWalletShare = self
-            .starknet_client
-            .fetch_public_shares_from_tx(blinder_public_share, latest_tx)
-            .await
-            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
-
-        // Build an iterator over private secret shares and fast forward to the given
-        // wallet index `shares_per_wallet` does not include the private share
-        // of the wallet blinder, this comes from a separate stream of
-        // randomness, so we take the serialized length minus one
-        let shares_per_wallet = public_shares.to_scalars().len();
-        let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
-        private_share_csprng.advance_by((blinder_index - 1) * (shares_per_wallet - 1)).unwrap();
-
-        // Sample private secret shares for the wallet
-        let mut new_private_shares = private_share_csprng.take(shares_per_wallet);
-        let mut private_shares = SizedWalletShare::from_scalars(&mut new_private_shares);
-        private_shares.blinder = curr_blinder_private_share;
-
-        // Recover the wallet and index it in the global state
-        let recovered_blinder = private_shares.blinder + public_shares.blinder;
-        let unblinded_public_share = public_shares.clone().unblind_shares(recovered_blinder);
-        let circuit_wallet = private_shares.clone() + unblinded_public_share;
-
+        // Construct a wallet from the recovered shares
         let mut wallet = Wallet {
             wallet_id: self.wallet_id,
-            orders: circuit_wallet.orders.iter().cloned().map(|o| (Uuid::new_v4(), o)).collect(),
-            balances: circuit_wallet
+            orders: recovered_wallet.orders.iter().cloned().map(|o| (Uuid::new_v4(), o)).collect(),
+            balances: recovered_wallet
                 .balances
                 .iter()
                 .cloned()
                 .map(|b| (b.mint.clone(), b))
                 .collect(),
-            fees: circuit_wallet.fees.to_vec(),
+            fees: recovered_wallet.fees.to_vec(),
             key_chain: KeyChain {
-                public_keys: circuit_wallet.keys,
+                public_keys: recovered_wallet.keys,
                 secret_keys: self.key_chain.secret_keys.clone(),
             },
-            blinder: circuit_wallet.blinder,
+            blinder: recovered_wallet.blinder,
             metadata: WalletMetadata::default(),
             private_shares,
-            blinded_public_shares: public_shares,
-            merkle_proof: None, // discovered in next step
+            blinded_public_shares,
+            merkle_proof: None, // constructed below
             update_locked: Arc::new(AtomicBool::default()),
         };
 
         // Find the authentication path for the wallet
-        let authentication_path = find_merkle_path(&wallet, &self.starknet_client)
+        let authentication_path = find_merkle_path(&wallet, &self.arbitrum_client)
             .await
-            .map_err(|err| LookupWalletTaskError::Starknet(err.to_string()))?;
+            .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
         wallet.merkle_proof = Some(authentication_path);
 
         self.global_state.update_wallet(wallet.clone()).await;
@@ -285,5 +240,85 @@ impl LookupWalletTask {
         )
         .await
         .map_err(LookupWalletTaskError::ProofGeneration)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Find the public and private shares of the wallet seeded by the given
+    /// value
+    ///
+    /// Unblinds the public shares before returning them
+    async fn find_wallet_shares(
+        &self,
+    ) -> Result<(SizedWalletShare, SizedWalletShare), LookupWalletTaskError> {
+        // Find the latest index of the wallet in its share stream
+        let (blinder_index, curr_blinder, curr_blinder_private_share) =
+            self.find_latest_wallet_tx().await?;
+
+        // Fetch the secret shares from the tx
+        let blinder_public_share = curr_blinder - curr_blinder_private_share;
+        let blinded_public_shares = self
+            .arbitrum_client
+            .fetch_public_shares_from_tx(blinder_public_share)
+            .await
+            .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
+
+        // Build an iterator over private secret shares and fast forward to the given
+        // wallet index.
+        //
+        // `shares_per_wallet` does not include the private share of the wallet blinder,
+        // this comes from a separate stream of randomness, so we take the serialized
+        // length minus one
+        let shares_per_wallet = blinded_public_shares.to_scalars().len();
+        let mut private_share_csprng = PoseidonCSPRNG::new(self.secret_share_seed);
+        private_share_csprng.advance_by((blinder_index - 1) * (shares_per_wallet - 1)).unwrap();
+
+        // Sample private secret shares for the wallet
+        let mut new_private_shares = private_share_csprng.take(shares_per_wallet);
+        let mut private_shares = SizedWalletShare::from_scalars(&mut new_private_shares);
+        private_shares.blinder = curr_blinder_private_share;
+
+        Ok((blinded_public_shares, private_shares))
+    }
+
+    /// Find the latest update of a wallet that has been submitted to the
+    /// contract. The update is represented as an index into the blinder stream
+    ///
+    /// Returns a tuple: `(blinder_index, blinder, blinder_private_share)`
+    async fn find_latest_wallet_tx(
+        &self,
+    ) -> Result<(usize, Scalar, Scalar), LookupWalletTaskError> {
+        // Find the latest transaction updating the wallet, as indexed by the public
+        // share of the blinders
+        let mut blinder_csprng = PoseidonCSPRNG::new(self.blinder_seed);
+
+        let mut blinder_index = 0;
+        let mut curr_blinder = Scalar::zero();
+        let mut curr_blinder_private_share = Scalar::zero();
+
+        let mut updating_tx = None;
+
+        while
+            let (blinder, private_share) = blinder_csprng.next_tuple().unwrap() &&
+            let Some(tx) = self
+                .arbitrum_client
+                .get_public_blinder_tx(blinder - private_share)
+                .await
+                .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?
+        {
+            updating_tx = Some(tx);
+
+            curr_blinder = blinder;
+            curr_blinder_private_share = private_share;
+            blinder_index += 1;
+        }
+
+        let latest_tx = updating_tx
+            .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
+        log::info!("latest updating tx: {:#x}", latest_tx);
+
+        Ok((blinder_index, curr_blinder, curr_blinder_private_share))
     }
 }
