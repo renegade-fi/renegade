@@ -91,7 +91,7 @@ where
     /// This is necessary because the default implementation of `blind` that is
     /// derived by the macro will blind the blinder as well as the shares,
     /// which is undesirable
-    pub fn blind_shares(self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+    pub fn blind_shares(&self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
         let prev_blinder = self.blinder;
         let mut blinded = self.blind(blinder);
         blinded.blinder = prev_blinder;
