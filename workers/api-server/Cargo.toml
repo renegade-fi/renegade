@@ -23,6 +23,7 @@ futures-util = "0.3"
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
+arbitrum-client = { path = "../../arbitrum-client" }
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
