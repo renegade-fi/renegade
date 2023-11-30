@@ -70,7 +70,7 @@ util = { path = "../util", optional = true }
 bitvec = "1.0"
 ctor = { version = "0.1", optional = true }
 env_logger = { version = "0.9", optional = true }
-futures = "0.3"
+futures = { workspace = true }
 itertools = "0.10"
 lazy_static = "1.4"
 rand = { version = "0.8" }
@@ -89,7 +89,6 @@ ctor = "0.1"
 dns-lookup = "1.0"
 env_logger = "0.9"
 eyre = { workspace = true }
-futures = "0.3"
 inventory = "0.3"
 mpc-plonk = { workspace = true, features = ["test_apis", "std"] }
 rand = "0.8"

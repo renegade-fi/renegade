@@ -25,7 +25,7 @@ system-bus = { path = "../system-bus" }
 util = { path = "../util" }
 
 # === Async === #
-futures = { version = "0.3.26" }
+futures = { workspace = true }
 futures-util = { version = "0.3" }
 tokio = { workspace = true }
 

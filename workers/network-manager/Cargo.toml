@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 # === Concurrency + Networking === #
 async-trait = "0.1.60"
-futures = "0.3"
+futures = { workspace = true }
 libp2p = { workspace = true, features = [
     "gossipsub",
     "identify",

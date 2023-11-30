@@ -11,7 +11,7 @@ hmac-sha256 = "1.1"
 
 # === Async + Runtime === #
 async-trait = "0.1"
-futures = "0.3"
+futures = { workspace = true }
 futures-util = "0.3"
 tokio = { workspace = true }
 
