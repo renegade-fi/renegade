@@ -34,7 +34,7 @@ impl ArbitrumClient {
     /// the given public blinder share
     ///
     /// Returns `None` if the public blinder share has not been used
-    async fn get_public_blinder_tx(
+    pub async fn get_public_blinder_tx(
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, ArbitrumClientError> {
