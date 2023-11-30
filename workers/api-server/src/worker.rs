@@ -1,12 +1,12 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
+use arbitrum_client::client::ArbitrumClient;
 use common::{types::CancelChannel, worker::Worker};
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::{price_reporter::PriceReporterManagerJob, proof_manager::ProofManagerJob};
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
@@ -45,8 +45,8 @@ pub struct ApiServerConfig {
     pub http_port: u16,
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
-    /// A starknet client
-    pub starknet_client: StarknetClient,
+    /// An arbitrum client
+    pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     pub network_sender: TokioSender<GossipOutbound>,
     /// The worker job queue for the PriceReporterManager

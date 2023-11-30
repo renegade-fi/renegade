@@ -265,7 +265,7 @@ impl HttpServer {
             CREATE_WALLET_ROUTE.to_string(),
             false, // auth_required
             CreateWalletHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
                 config.task_driver.clone(),
@@ -278,7 +278,7 @@ impl HttpServer {
             FIND_WALLET_ROUTE.to_string(),
             false, // auth_required
             FindWalletHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -300,7 +300,7 @@ impl HttpServer {
             WALLET_ORDERS_ROUTE.to_string(),
             true, // auth_required
             CreateOrderHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -322,7 +322,7 @@ impl HttpServer {
             UPDATE_ORDER_ROUTE.to_string(),
             true, // auth_required
             UpdateOrderHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -336,7 +336,7 @@ impl HttpServer {
             CANCEL_ORDER_ROUTE.to_string(),
             true, // auth_required
             CancelOrderHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 config.global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -366,7 +366,7 @@ impl HttpServer {
             DEPOSIT_BALANCE_ROUTE.to_string(),
             true, // auth_required
             DepositBalanceHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -380,7 +380,7 @@ impl HttpServer {
             WITHDRAW_BALANCE_ROUTE.to_string(),
             true, // auth_required
             WithdrawBalanceHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -402,7 +402,7 @@ impl HttpServer {
             FEES_ROUTE.to_string(),
             true, // auth_required
             AddFeeHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
@@ -416,7 +416,7 @@ impl HttpServer {
             REMOVE_FEE_ROUTE.to_string(),
             true, // auth_required
             RemoveFeeHandler::new(
-                config.starknet_client.clone(),
+                config.arbitrum_client.clone(),
                 config.network_sender.clone(),
                 global_state.clone(),
                 config.proof_generation_work_queue.clone(),
