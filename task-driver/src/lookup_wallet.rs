@@ -261,7 +261,7 @@ impl LookupWalletTask {
         let blinder_public_share = curr_blinder - curr_blinder_private_share;
         let blinded_public_shares = self
             .arbitrum_client
-            .fetch_public_shares_from_tx(blinder_public_share)
+            .fetch_public_shares_for_blinder(blinder_public_share)
             .await
             .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
 
