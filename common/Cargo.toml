@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-mocks = ["rand", "jf-primitives", "mpc-plonk", "ark-ec"]
+mocks = ["rand", "jf-primitives", "mpc-relation", "mpc-plonk", "ark-ec"]
 
 [dependencies]
 # === Cryptography + Arithmetic === #
@@ -13,6 +13,7 @@ ark-ec = { version = "0.4", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 jf-primitives = { workspace = true, optional = true }
 mpc-plonk = { workspace = true, optional = true }
+mpc-relation = { workspace = true, optional = true }
 num-bigint = { workspace = true }
 
 # === Runtime + Networking === #

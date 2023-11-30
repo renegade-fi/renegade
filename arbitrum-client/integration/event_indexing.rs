@@ -86,7 +86,7 @@ async fn test_parse_public_shares_from_calldata(test_args: IntegrationTestArgs) 
         let blinder_share = expected_public_share.blinder;
 
         // Parse the public shares from the calldata
-        let public_shares = client.fetch_public_shares_from_tx(blinder_share).await?;
+        let public_shares = client.fetch_public_shares_for_blinder(blinder_share).await?;
 
         // Check that the public shares match the expected public shares
         assert_eq_result!(public_shares, expected_public_share)?;
