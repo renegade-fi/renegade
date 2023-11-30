@@ -308,6 +308,8 @@ pub mod mocks {
     use constants::{Scalar, ScalarField, SystemCurve, SystemCurveGroup};
     use jf_primitives::pcs::prelude::Commitment;
     use mpc_plonk::proof_system::structs::ProofEvaluations;
+    use mpc_relation::constants::GATE_WIDTH;
+    use rand::thread_rng;
 
     use super::{
         GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
@@ -318,25 +320,33 @@ pub mod mocks {
 
     /// Create a dummy proof bundle for `VALID WALLET CREATE`
     pub fn dummy_valid_wallet_create_bundle() -> ValidWalletCreateBundle {
-        let statement = ValidWalletCreateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let mut rng = thread_rng();
+        let statement =
+            ValidWalletCreateStatement::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
         Box::new(GenericValidWalletCreateBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID WALLET UPDATE`
     pub fn dummy_valid_wallet_update_bundle() -> ValidWalletUpdateBundle {
-        let statement = ValidWalletUpdateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let mut rng = thread_rng();
+        let statement =
+            ValidWalletUpdateStatement::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
         Box::new(GenericValidWalletUpdateBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID REBLIND`
     pub fn dummy_valid_reblind_bundle() -> ValidReblindBundle {
-        let statement = ValidReblindStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let mut rng = thread_rng();
+        let statement =
+            ValidReblindStatement::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
         Box::new(GenericValidReblindBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy proof bundle for `VALID COMMITMENTS`
     pub fn dummy_valid_commitments_bundle() -> ValidCommitmentsBundle {
-        let statement = ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let mut rng = thread_rng();
+        let statement =
+            ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
         Box::new(GenericValidCommitmentsBundle { statement, proof: dummy_proof() })
     }
 
@@ -350,16 +360,18 @@ pub mod mocks {
 
     /// Create a dummy proof bundle for `VALID MATCH SETTLE`
     pub fn dummy_valid_match_settle_bundle() -> ValidMatchSettleBundle {
-        let statement = ValidMatchSettleStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        let mut rng = thread_rng();
+        let statement =
+            ValidMatchSettleStatement::from_scalars(&mut iter::repeat(Scalar::random(&mut rng)));
         Box::new(GenericMatchSettleBundle { statement, proof: dummy_proof() })
     }
 
     /// Create a dummy R1CS proof
     pub fn dummy_proof() -> PlonkProof {
         PlonkProof {
-            wires_poly_comms: vec![],
+            wires_poly_comms: vec![Default::default(); GATE_WIDTH + 1],
             prod_perm_poly_comm: dummy_commitment(),
-            split_quot_poly_comms: vec![],
+            split_quot_poly_comms: vec![Default::default(); GATE_WIDTH + 1],
             opening_proof: dummy_commitment(),
             shifted_opening_proof: dummy_commitment(),
             poly_evals: dummy_poly_evals(),
@@ -376,8 +388,8 @@ pub mod mocks {
     /// `PlonkProof`
     fn dummy_poly_evals() -> ProofEvaluations<ScalarField> {
         ProofEvaluations {
-            wires_evals: vec![],
-            wire_sigma_evals: vec![],
+            wires_evals: vec![Default::default(); GATE_WIDTH + 1],
+            wire_sigma_evals: vec![Default::default(); GATE_WIDTH],
             perm_next_eval: ScalarField::default(),
         }
     }
