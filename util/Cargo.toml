@@ -8,7 +8,7 @@ edition = "2021"
 libp2p = { workspace = true }
 
 # === Runtime === #
-futures = "0.3"
+futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #

@@ -7819,6 +7819,7 @@ dependencies = [
  "crossbeam",
  "external-api",
  "eyre",
+ "futures",
  "gossip-api",
  "inventory",
  "itertools 0.11.0",

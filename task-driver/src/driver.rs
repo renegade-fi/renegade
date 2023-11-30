@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState,
-    update_wallet::UpdateWalletTaskState,
+    settle_match::SettleMatchTaskState, update_wallet::UpdateWalletTaskState,
 };
 
 /// The amount to increase the backoff delay by every retry
@@ -117,8 +117,8 @@ pub enum StateWrapper {
     LookupWallet(LookupWalletTaskState),
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
-    // /// The state object for the settle match task
-    // SettleMatch(SettleMatchTaskState),
+    /// The state object for the settle match task
+    SettleMatch(SettleMatchTaskState),
     // /// The state object for the settle match internal task
     // SettleMatchInternal(SettleMatchInternalTaskState),
 }
