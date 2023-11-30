@@ -2,6 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{
     balance::Balance as StateBalance,
@@ -13,7 +14,7 @@ use constants::{MAX_FEES, MAX_ORDERS};
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::{
     http::wallet::{
-        AddFeeRequest, AddFeeResponse, CancelOrderResponse, CreateOrderRequest,
+        AddFeeRequest, AddFeeResponse, CancelOrderRequest, CancelOrderResponse, CreateOrderRequest,
         CreateOrderResponse, CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest,
         DepositBalanceResponse, FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse,
         GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
@@ -29,7 +30,6 @@ use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use task_driver::{
     create_new_wallet::NewWalletTask, driver::TaskDriver, lookup_wallet::LookupWalletTask,
@@ -192,7 +192,7 @@ impl TypedHandler for GetWalletHandler {
 /// Handler for the POST /wallet route
 pub struct CreateWalletHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
     global_state: RelayerState,
     /// A sender to the proof manager's work queue, used to enqueue
@@ -206,12 +206,12 @@ pub struct CreateWalletHandler {
 impl CreateWalletHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
-        Self { starknet_client, global_state, proof_manager_work_queue, task_driver }
+        Self { arbitrum_client, global_state, proof_manager_work_queue, task_driver }
     }
 }
 
@@ -232,7 +232,7 @@ impl TypedHandler for CreateWalletHandler {
         let task = NewWalletTask::new(
             wallet_id,
             req.wallet,
-            self.starknet_client.clone(),
+            self.arbitrum_client.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
@@ -246,7 +246,7 @@ impl TypedHandler for CreateWalletHandler {
 /// Handler for the POST /wallet route
 pub struct FindWalletHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -262,14 +262,14 @@ pub struct FindWalletHandler {
 impl FindWalletHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -296,7 +296,7 @@ impl TypedHandler for FindWalletHandler {
             biguint_to_scalar(&req.blinder_seed),
             biguint_to_scalar(&req.secret_share_seed),
             req.key_chain,
-            self.starknet_client.clone(),
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -411,7 +411,7 @@ impl TypedHandler for GetOrderByIdHandler {
 /// Handler for the POST /wallet/:id/orders route
 pub struct CreateOrderHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -426,14 +426,14 @@ pub struct CreateOrderHandler {
 impl CreateOrderHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -485,7 +485,8 @@ impl TypedHandler for CreateOrderHandler {
             None, // external_transfer
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -500,7 +501,7 @@ impl TypedHandler for CreateOrderHandler {
 /// Handler for the POST /wallet/:id/orders/:id/update route
 pub struct UpdateOrderHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -515,14 +516,14 @@ pub struct UpdateOrderHandler {
 impl UpdateOrderHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -579,7 +580,8 @@ impl TypedHandler for UpdateOrderHandler {
             None, // external_transfer
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -594,7 +596,7 @@ impl TypedHandler for UpdateOrderHandler {
 /// Handler for the POST /wallet/:id/orders/:id/cancel route
 pub struct CancelOrderHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -609,14 +611,14 @@ pub struct CancelOrderHandler {
 impl CancelOrderHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -627,13 +629,13 @@ impl CancelOrderHandler {
 
 #[async_trait]
 impl TypedHandler for CancelOrderHandler {
-    type Request = EmptyRequestResponse;
+    type Request = CancelOrderRequest;
     type Response = CancelOrderResponse;
 
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
@@ -655,7 +657,8 @@ impl TypedHandler for CancelOrderHandler {
             None, // external_transfer
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -769,7 +772,7 @@ impl TypedHandler for GetBalanceByMintHandler {
 /// Handler for the POST /wallet/:id/balances/deposit route
 pub struct DepositBalanceHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -784,14 +787,14 @@ pub struct DepositBalanceHandler {
 impl DepositBalanceHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -837,7 +840,8 @@ impl TypedHandler for DepositBalanceHandler {
             }),
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -852,7 +856,7 @@ impl TypedHandler for DepositBalanceHandler {
 /// Handler for the POST /wallet/:id/balances/:mint/withdraw route
 pub struct WithdrawBalanceHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -867,14 +871,14 @@ pub struct WithdrawBalanceHandler {
 impl WithdrawBalanceHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -926,7 +930,8 @@ impl TypedHandler for WithdrawBalanceHandler {
             }),
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -993,7 +998,7 @@ impl TypedHandler for GetFeesHandler {
 /// Handler for the POST /wallet/:id/fees route
 pub struct AddFeeHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -1008,14 +1013,14 @@ pub struct AddFeeHandler {
 impl AddFeeHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -1061,7 +1066,8 @@ impl TypedHandler for AddFeeHandler {
             None, // external_transfer
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
@@ -1076,7 +1082,7 @@ impl TypedHandler for AddFeeHandler {
 /// Handler for the POST /wallet/:id/fees/:index/remove route
 pub struct RemoveFeeHandler {
     /// A starknet client
-    starknet_client: StarknetClient,
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
@@ -1091,14 +1097,14 @@ pub struct RemoveFeeHandler {
 impl RemoveFeeHandler {
     /// Constructor
     pub fn new(
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
         Self {
-            starknet_client,
+            arbitrum_client,
             network_sender,
             global_state,
             proof_manager_work_queue,
@@ -1115,7 +1121,7 @@ impl TypedHandler for RemoveFeeHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        _req: Self::Request,
+        req: Self::Request,
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Parse the wallet id and fee index from the URL params
@@ -1143,7 +1149,8 @@ impl TypedHandler for RemoveFeeHandler {
             None, // external_transfer
             old_wallet,
             new_wallet,
-            self.starknet_client.clone(),
+            req.statement_sig,
+            self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),

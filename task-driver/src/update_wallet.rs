@@ -227,6 +227,8 @@ impl UpdateWalletTask {
         // Safety check, the new wallet's secret shares must recover the new wallet
         Self::check_wallet_shares(&new_wallet)?;
 
+        // TODO: Check the signature on the wallet update statement
+
         Ok(Self {
             timestamp_received,
             external_transfer,
