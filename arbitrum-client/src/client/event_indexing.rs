@@ -76,7 +76,7 @@ impl ArbitrumClient {
             let events = self
                 .darkpool_contract
                 .event::<NodeChangedFilter>()
-                .address(self.merkle_event_source.into())
+                .address(self.darkpool_contract.address().into())
                 .topic1(height)
                 .topic2(index)
                 .from_block(self.deploy_block)
@@ -107,7 +107,7 @@ impl ArbitrumClient {
         let events = self
             .darkpool_contract
             .event::<NodeChangedFilter>()
-            .address(self.merkle_event_source.into())
+            .address(self.darkpool_contract.address().into())
             .topic3(commitment_hash)
             .from_block(self.deploy_block)
             .query()
