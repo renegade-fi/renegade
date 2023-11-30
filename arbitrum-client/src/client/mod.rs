@@ -29,10 +29,6 @@ pub struct ArbitrumClientConfig {
     ///
     /// This is the main entrypoint to interaction with the darkpool.
     pub darkpool_addr: String,
-    /// The address of the darkpool implementation contract.
-    ///
-    /// This is used to filter for events emitted by the darkpool.
-    pub merkle_event_source: String,
     /// Which chain the client should interact with,
     /// e.g. mainnet, testnet, or devnet
     pub chain: Chain,
@@ -85,14 +81,6 @@ impl ArbitrumClientConfig {
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
     }
 
-    /// Parses the Merkle implementation address from the configuration,
-    /// from which the events are emitted, returning an
-    /// [`ethers::types::Address`]
-    fn get_merkle_event_source(&self) -> Result<Address, ArbitrumClientConfigError> {
-        Address::from_str(&self.merkle_event_source)
-            .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
-    }
-
     /// Constructs a [`DarkpoolContract`] instance from the configuration,
     /// which provides strongly-typed, RPC-client-aware bindings for the
     /// darkpool contract methods.
@@ -112,14 +100,6 @@ impl ArbitrumClientConfig {
 pub struct ArbitrumClient {
     /// The darkpool contract instance, used to make calls to the darkpool
     darkpool_contract: DarkpoolContract<SignerHttpProvider>,
-    /// The Merkle implementation address, used to filter
-    /// for events emitted from the Merkle tree.
-    ///
-    /// Note: we only need to store this address due to a Stylus bug wherein
-    /// events from `delegatecall`-ed contracts are emitted with the callee,
-    /// as opposed to caller, address.
-    /// Once this bug is fixed, we will remove this field.
-    merkle_event_source: Address,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,
 }
@@ -128,9 +108,8 @@ impl ArbitrumClient {
     /// Constructs a new Arbitrum client from the given configuration
     pub async fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
         let darkpool_contract = config.construct_contract_instance().await?;
-        let merkle_event_source = config.get_merkle_event_source()?;
         let deploy_block = config.get_deploy_block();
 
-        Ok(Self { darkpool_contract, merkle_event_source, deploy_block })
+        Ok(Self { darkpool_contract, deploy_block })
     }
 }

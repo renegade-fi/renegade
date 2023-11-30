@@ -21,6 +21,8 @@ pub enum ArbitrumClientError {
     TxQuerying(String),
     /// Error thrown when a transaction can't be found
     TxNotFound(String),
+    /// Error thrown when a transaction is dropped from the mempool
+    TxDropped,
     /// Error thrown when a transaction's selector doesn't match
     /// one of the supported ones
     /// (`newWallet`, `updateWallet`, `processMatchSettle`)

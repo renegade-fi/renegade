@@ -22,7 +22,7 @@ use arbitrum_client::{
 };
 use circuit_types::SizedWalletShare;
 use clap::Parser;
-use constants::{DARKPOOL_PROXY_CONTRACT_KEY, MERKLE_CONTRACT_KEY};
+use constants::DARKPOOL_PROXY_CONTRACT_KEY;
 use eyre::Result;
 use helpers::{deploy_new_wallet, parse_addr_from_deployments_file};
 use test_helpers::integration_test_main;
@@ -103,9 +103,6 @@ impl From<CliArgs> for IntegrationTestArgs {
             DARKPOOL_PROXY_CONTRACT_KEY,
         )
         .unwrap();
-        let merkle_event_source =
-            parse_addr_from_deployments_file(&test_args.deployments_path, MERKLE_CONTRACT_KEY)
-                .unwrap();
 
         // Build a client that references the darkpool
         // We block on the client creation so that we can match the (synchronous)
@@ -114,7 +111,6 @@ impl From<CliArgs> for IntegrationTestArgs {
         let client = block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
-            merkle_event_source,
             arb_priv_key: test_args.private_key,
             rpc_url: test_args.rpc_url,
         }))
