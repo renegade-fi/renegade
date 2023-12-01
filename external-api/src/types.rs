@@ -3,7 +3,10 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use circuit_types::{
@@ -56,6 +59,9 @@ pub struct Wallet {
     pub private_shares: Vec<BigUint>,
     /// The wallet blinder, used to blind wallet secret shares
     pub blinder: BigUint,
+    /// The state of update lock of the wallet, used to protect against
+    /// concurrent updates to the wallet
+    pub update_locked: bool,
 }
 
 /// Conversion from a wallet that has been indexed in the global state to the
@@ -105,6 +111,7 @@ impl From<IndexedWallet> for Wallet {
             blinded_public_shares,
             private_shares,
             blinder: scalar_to_biguint(&wallet.blinder),
+            update_locked: wallet.update_locked.load(Ordering::Relaxed),
         }
     }
 }
