@@ -6,11 +6,14 @@
 
 use async_trait::async_trait;
 use external_api::bus_message::{task_topic_name, SystemBusMessage};
-use hyper::StatusCode;
 use system_bus::{SystemBus, TopicReader};
 use task_driver::driver::TaskDriver;
 
-use crate::{error::ApiServerError, http::parse_task_id_from_params, router::UrlParams};
+use crate::{
+    error::{not_found, ApiServerError},
+    http::parse_task_id_from_params,
+    router::UrlParams,
+};
 
 use super::handler::WebsocketTopicHandler;
 
@@ -49,10 +52,7 @@ impl WebsocketTopicHandler for TaskStatusHandler {
 
         // Check that the task is valid
         if !self.task_driver.contains_task(&task_id).await {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_TASK_MISSING.to_string(),
-            ));
+            return Err(not_found(ERR_TASK_MISSING.to_string()));
         }
 
         // Subscribe to the topic

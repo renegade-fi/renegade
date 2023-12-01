@@ -8,12 +8,12 @@ use external_api::{
     types::{Cluster, Peer},
     EmptyRequestResponse,
 };
-use hyper::{HeaderMap, StatusCode};
+use hyper::HeaderMap;
 use itertools::Itertools;
 use state::RelayerState;
 
 use crate::{
-    error::ApiServerError,
+    error::{not_found, ApiServerError},
     router::{TypedHandler, UrlParams},
 };
 
@@ -151,10 +151,7 @@ impl TypedHandler for GetPeerInfoHandler {
         {
             Ok(GetPeerInfoResponse { peer: info.into() })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_PEER_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_PEER_NOT_FOUND.to_string()))
         }
     }
 }

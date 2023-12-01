@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography + Arithmetic === #
-ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+k256 = "0.13"
 num-bigint = { workspace = true }
 num-traits = "0.2"
 
@@ -42,3 +42,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = "1.1.2"
+
+[dev-dependencies]
+ecdsa = "0.16"
+rand = { workspace = true }
+util = { path = "../../util" }
