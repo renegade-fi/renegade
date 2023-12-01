@@ -5,7 +5,11 @@ use std::ops::Add;
 
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
-use ed25519_dalek::PublicKey as DalekKey;
+use k256::{
+    ecdsa::VerifyingKey as K256VerifyingKey,
+    elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
+    AffinePoint, EncodedPoint, FieldElement as K256FieldElement,
+};
 use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::get_scalar_field_modulus;
@@ -26,9 +30,11 @@ use super::{biguint_from_hex_string, biguint_to_hex_string};
 pub const NUM_KEYS: usize = 4;
 /// The number of bytes used in a single scalar to represent a key
 pub const SCALAR_MAX_BYTES: usize = 31;
-/// The number of words needed to represent a field element of ECDSA curve's
-/// base field, which is used to represent both public and private keys
-pub const ROOT_SCALAR_WORDS: usize = 2;
+/// The number of words needed to represent an element of k256's base field,
+/// which is used to represent both public and private keys
+const K256_FELT_WORDS: usize = 2;
+/// The number of bytes in a k256 field element
+const K256_FELT_BYTES: usize = 32;
 
 // -------------
 // | Key Types |
@@ -186,17 +192,22 @@ impl<'de, const SCALAR_WORDS: usize> Deserialize<'de> for NonNativeScalar<SCALAR
     }
 }
 
-impl<const SCALAR_WORDS: usize> From<&NonNativeScalar<SCALAR_WORDS>> for DalekKey {
-    fn from(val: &NonNativeScalar<SCALAR_WORDS>) -> Self {
-        let key_bytes = BigUint::from(val).to_bytes_le();
-        DalekKey::from_bytes(&key_bytes).unwrap()
+impl From<&NonNativeScalar<K256_FELT_WORDS>> for K256FieldElement {
+    fn from(value: &NonNativeScalar<K256_FELT_WORDS>) -> Self {
+        let val_bigint = BigUint::from(value);
+        let bytes: [u8; K256_FELT_BYTES] =
+            val_bigint.to_bytes_be()[..K256_FELT_BYTES].try_into().unwrap();
+
+        K256FieldElement::from_bytes(&bytes.into()).unwrap()
     }
 }
 
-impl<const SCALAR_WORDS: usize> From<DalekKey> for NonNativeScalar<SCALAR_WORDS> {
-    fn from(key: DalekKey) -> Self {
-        let key_bytes = key.as_bytes();
-        Self::from(&BigUint::from_bytes_le(key_bytes))
+impl From<&K256FieldElement> for NonNativeScalar<K256_FELT_WORDS> {
+    fn from(value: &K256FieldElement) -> Self {
+        let bytes = value.to_bytes();
+        let val_bigint = BigUint::from_bytes_be(&bytes);
+
+        Self::from(&val_bigint)
     }
 }
 
@@ -209,13 +220,48 @@ impl<const SCALAR_WORDS: usize> From<DalekKey> for NonNativeScalar<SCALAR_WORDS>
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct PublicSigningKey {
     /// The affine x-coordinate of the public key
-    pub x: NonNativeScalar<ROOT_SCALAR_WORDS>,
+    pub x: NonNativeScalar<K256_FELT_WORDS>,
     /// The affine y-coordinate of the public key
-    pub y: NonNativeScalar<ROOT_SCALAR_WORDS>,
+    pub y: NonNativeScalar<K256_FELT_WORDS>,
+}
+
+impl From<&PublicSigningKey> for K256VerifyingKey {
+    fn from(value: &PublicSigningKey) -> Self {
+        // Construct a point from the raw coordinates
+        let x_coord = K256FieldElement::from(&value.x);
+        let y_coord = K256FieldElement::from(&value.y);
+
+        // `k256` does not expose direct access to coordinates except through a
+        // compressed form
+        let point = AffinePoint::from_encoded_point(&EncodedPoint::from_affine_coordinates(
+            &x_coord.to_bytes(),
+            &y_coord.to_bytes(),
+            false, // compress
+        ))
+        .unwrap();
+
+        K256VerifyingKey::from_affine(point).unwrap()
+    }
+}
+
+impl From<&K256VerifyingKey> for PublicSigningKey {
+    fn from(value: &K256VerifyingKey) -> Self {
+        // Get the affine point underlying the key
+        let encoded_key = value.as_affine().to_encoded_point(false /* compress */);
+        let x_coord = K256FieldElement::from_bytes(encoded_key.x().unwrap()).unwrap();
+        let y_coord = K256FieldElement::from_bytes(encoded_key.y().unwrap()).unwrap();
+
+        // Convert to circuit-native types
+        let x = NonNativeScalar::from(&x_coord);
+        let y = NonNativeScalar::from(&y_coord);
+
+        // Construct the public key
+        Self { x, y }
+    }
 }
 
 /// A type alias for readability
-pub type SecretSigningKey = NonNativeScalar<ROOT_SCALAR_WORDS>;
+pub type SecretSigningKey = NonNativeScalar<K256_FELT_WORDS>;
 
 /// Represents the base type, defining two keys with different access levels
 ///
@@ -240,11 +286,13 @@ pub struct PublicKeyChain {
 
 #[cfg(test)]
 mod test {
+    use k256::ecdsa::{SigningKey, VerifyingKey};
     use num_bigint::BigUint;
-    use rand::RngCore;
+    use rand::{thread_rng, RngCore};
 
-    use super::NonNativeScalar;
+    use super::{NonNativeScalar, PublicSigningKey};
 
+    /// Tests converting a non-native key to and from a biguint
     #[test]
     fn test_nonnative_to_from_biguint() {
         let mut rng = rand::thread_rng();
@@ -257,5 +305,18 @@ mod test {
         let recovered_biguint: BigUint = (&key).into();
 
         assert_eq!(random_biguint, recovered_biguint);
+    }
+
+    /// Tests converting a signing key to and from the k256 library repr
+    #[test]
+    fn test_signing_key_conversions() {
+        let mut rng = thread_rng();
+        let key = SigningKey::random(&mut rng);
+        let vkey = key.verifying_key();
+
+        let circuit_key = PublicSigningKey::from(vkey);
+        let recovered_vkey = VerifyingKey::from(&circuit_key);
+
+        assert_eq!(*vkey, recovered_vkey);
     }
 }
