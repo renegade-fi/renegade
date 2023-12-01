@@ -10,12 +10,12 @@ use external_api::{
     types::NetworkOrder,
     EmptyRequestResponse,
 };
-use hyper::{HeaderMap, StatusCode};
+use hyper::HeaderMap;
 use itertools::Itertools;
 use state::RelayerState;
 
 use crate::{
-    error::ApiServerError,
+    error::{not_found, ApiServerError},
     router::{TypedHandler, UrlParams},
 };
 
@@ -112,10 +112,7 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
         {
             Ok(GetNetworkOrderByIdResponse { order: order.into() })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_ORDER_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_ORDER_NOT_FOUND.to_string()))
         }
     }
 }

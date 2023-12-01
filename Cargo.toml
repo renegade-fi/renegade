@@ -29,6 +29,9 @@ members = [
 ]
 exclude = ["mpc-stark", "mpc-bulletproof"]
 
+[profile.test]
+debug-assertions = false
+
 [profile.bench]
 opt-level = 3 # Full optimizations
 lto = true

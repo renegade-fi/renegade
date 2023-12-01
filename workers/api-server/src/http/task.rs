@@ -6,11 +6,11 @@
 
 use async_trait::async_trait;
 use external_api::{http::task::GetTaskStatusResponse, EmptyRequestResponse};
-use hyper::{HeaderMap, StatusCode};
+use hyper::HeaderMap;
 use task_driver::driver::TaskDriver;
 
 use crate::{
-    error::ApiServerError,
+    error::{not_found, ApiServerError},
     router::{TypedHandler, UrlParams},
 };
 
@@ -59,10 +59,7 @@ impl TypedHandler for GetTaskStatusHandler {
         if let Some(status) = self.task_driver.get_task_state(&task_id).await {
             Ok(GetTaskStatusResponse { status: status.to_string() })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_TASK_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_TASK_NOT_FOUND.to_string()))
         }
     }
 }
