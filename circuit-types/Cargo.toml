@@ -11,8 +11,8 @@ test-helpers = ["mpc-plonk/test-srs"]
 ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true }
-ed25519-dalek = "1.0.1"
 jf-primitives = { workspace = true }
+k256 = { version = "0.13", features = ["expose-field"] }
 mpc-plonk = { workspace = true }
 mpc-relation = { workspace = true }
 
