@@ -38,7 +38,7 @@ use task_driver::{
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
-    error::ApiServerError,
+    error::{bad_request, not_found, ApiServerError},
     router::{TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
@@ -65,9 +65,12 @@ async fn find_wallet_for_update(
     state: &RelayerState,
 ) -> Result<Wallet, ApiServerError> {
     // Find the wallet in global state and use its keys to authenticate the request
-    let wallet = state.read_wallet_index().await.get_wallet(&wallet_id).await.ok_or_else(|| {
-        ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_WALLET_NOT_FOUND.to_string())
-    })?;
+    let wallet = state
+        .read_wallet_index()
+        .await
+        .get_wallet(&wallet_id)
+        .await
+        .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
     // Acquire the lock for the wallet
     if wallet.is_locked() {
@@ -164,10 +167,7 @@ impl TypedHandler for GetWalletHandler {
         {
             wallet
         } else {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ));
+            return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         };
 
         // Filter out empty orders, balances, and fees
@@ -191,7 +191,7 @@ impl TypedHandler for GetWalletHandler {
 
 /// Handler for the POST /wallet route
 pub struct CreateWalletHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
     global_state: RelayerState,
@@ -236,7 +236,7 @@ impl TypedHandler for CreateWalletHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(CreateWalletResponse { wallet_id, task_id })
@@ -245,7 +245,7 @@ impl TypedHandler for CreateWalletHandler {
 
 /// Handler for the POST /wallet route
 pub struct FindWalletHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -350,10 +350,7 @@ impl TypedHandler for GetOrdersHandler {
 
             Ok(GetOrdersResponse { orders: non_default_orders })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
         }
     }
 }
@@ -387,30 +384,25 @@ impl TypedHandler for GetOrderByIdHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Find the wallet in global state and use its keys to authenticate the request
-        let wallet =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.ok_or_else(
-                || {
-                    ApiServerError::HttpStatusCode(
-                        StatusCode::NOT_FOUND,
-                        ERR_WALLET_NOT_FOUND.to_string(),
-                    )
-                },
-            )?;
+        let wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         if let Some(order) = wallet.orders.get(&order_id).cloned() {
             Ok(GetOrderByIdResponse { order: (order_id, order).into() })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_ORDER_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_ORDER_NOT_FOUND.to_string()))
         }
     }
 }
 
 /// Handler for the POST /wallet/:id/orders route
 pub struct CreateOrderHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -463,10 +455,7 @@ impl TypedHandler for CreateOrderHandler {
         let num_orders = old_wallet.orders.values().filter(|order| !order.is_default()).count();
 
         if num_orders >= MAX_ORDERS {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_ORDERS_FULL.to_string(),
-            ));
+            return Err(bad_request(ERR_ORDERS_FULL.to_string()));
         }
 
         // Add the order to the new wallet
@@ -491,7 +480,7 @@ impl TypedHandler for CreateOrderHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(CreateOrderResponse { id, task_id })
@@ -500,7 +489,7 @@ impl TypedHandler for CreateOrderHandler {
 
 /// Handler for the POST /wallet/:id/orders/:id/update route
 pub struct UpdateOrderHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -560,9 +549,10 @@ impl TypedHandler for UpdateOrderHandler {
         // `insert`) to maintain ordering of the orders. This is important for
         // the circuit, which relies on the order of the orders to be consistent
         // between the old and new wallets
-        let index = new_wallet.orders.get_index_of(&order_id).ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
-        })?;
+        let index = new_wallet
+            .orders
+            .get_index_of(&order_id)
+            .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         new_wallet
             .orders
             .get_index_mut(index)
@@ -586,7 +576,7 @@ impl TypedHandler for UpdateOrderHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(UpdateOrderResponse { task_id })
@@ -595,7 +585,7 @@ impl TypedHandler for UpdateOrderHandler {
 
 /// Handler for the POST /wallet/:id/orders/:id/cancel route
 pub struct CancelOrderHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -646,9 +636,10 @@ impl TypedHandler for CancelOrderHandler {
 
         // Remove the order from the new wallet
         let mut new_wallet = old_wallet.clone();
-        let order = new_wallet.orders.remove(&order_id).ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_ORDER_NOT_FOUND.to_string())
-        })?;
+        let order = new_wallet
+            .orders
+            .remove(&order_id)
+            .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
@@ -663,7 +654,7 @@ impl TypedHandler for CancelOrderHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(CancelOrderResponse { task_id, order: (order_id, order).into() })
@@ -713,10 +704,7 @@ impl TypedHandler for GetBalancesHandler {
 
             Ok(GetBalancesResponse { balances: non_default_balances })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
         }
     }
 }
@@ -761,17 +749,14 @@ impl TypedHandler for GetBalanceByMintHandler {
 
             Ok(GetBalanceByMintResponse { balance })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
         }
     }
 }
 
 /// Handler for the POST /wallet/:id/balances/deposit route
 pub struct DepositBalanceHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -846,7 +831,7 @@ impl TypedHandler for DepositBalanceHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(DepositBalanceResponse { task_id })
@@ -855,7 +840,7 @@ impl TypedHandler for DepositBalanceHandler {
 
 /// Handler for the POST /wallet/:id/balances/:mint/withdraw route
 pub struct WithdrawBalanceHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -913,9 +898,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         && balance.amount >= withdrawal_amount {
             balance.amount -= withdrawal_amount;
         } else {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST, ERR_INSUFFICIENT_BALANCE.to_string()
-            ));
+            return Err(bad_request(ERR_INSUFFICIENT_BALANCE.to_string()));
         }
         new_wallet.reblind_wallet();
 
@@ -936,7 +919,7 @@ impl TypedHandler for WithdrawBalanceHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(WithdrawBalanceResponse { task_id })
@@ -987,17 +970,14 @@ impl TypedHandler for GetFeesHandler {
 
             Ok(GetFeesResponse { fees: non_default_fees })
         } else {
-            Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ))
+            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
         }
     }
 }
 
 /// Handler for the POST /wallet/:id/fees route
 pub struct AddFeeHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -1049,10 +1029,7 @@ impl TypedHandler for AddFeeHandler {
         // Ensure that the fees list is not full
         let num_fees = old_wallet.fees.iter().filter(|fee| !fee.is_default()).count();
         if num_fees >= MAX_FEES {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_FEES_FULL.to_string(),
-            ));
+            return Err(bad_request(ERR_FEES_FULL.to_string()));
         }
 
         // Add the fee to the new wallet
@@ -1072,7 +1049,7 @@ impl TypedHandler for AddFeeHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(AddFeeResponse { task_id })
@@ -1081,7 +1058,7 @@ impl TypedHandler for AddFeeHandler {
 
 /// Handler for the POST /wallet/:id/fees/:index/remove route
 pub struct RemoveFeeHandler {
-    /// A starknet client
+    /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
@@ -1132,10 +1109,7 @@ impl TypedHandler for RemoveFeeHandler {
         let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
 
         if fee_index >= old_wallet.fees.len() {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_FEE_OUT_OF_RANGE.to_string(),
-            ));
+            return Err(not_found(ERR_FEE_OUT_OF_RANGE.to_string()));
         }
 
         // Remove the fee from the old wallet
@@ -1155,7 +1129,7 @@ impl TypedHandler for RemoveFeeHandler {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .map_err(|err| ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string()))?;
+        .map_err(|e| bad_request(e.to_string()))?;
         let (task_id, _) = self.task_driver.start_task(task).await;
 
         Ok(RemoveFeeResponse { task_id, fee: removed_fee.into() })

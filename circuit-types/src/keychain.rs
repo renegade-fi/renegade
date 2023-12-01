@@ -246,7 +246,7 @@ impl From<&PublicSigningKey> for K256VerifyingKey {
 
 impl From<&K256VerifyingKey> for PublicSigningKey {
     fn from(value: &K256VerifyingKey) -> Self {
-        // Get the affine point underlying the key
+        // Parse the coordinates of the affine representation of the key
         let encoded_key = value.as_affine().to_encoded_point(false /* compress */);
         let x_coord = K256FieldElement::from_bytes(encoded_key.x().unwrap()).unwrap();
         let y_coord = K256FieldElement::from_bytes(encoded_key.y().unwrap()).unwrap();
@@ -255,7 +255,6 @@ impl From<&K256VerifyingKey> for PublicSigningKey {
         let x = NonNativeScalar::from(&x_coord);
         let y = NonNativeScalar::from(&y_coord);
 
-        // Construct the public key
         Self { x, y }
     }
 }

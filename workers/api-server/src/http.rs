@@ -9,7 +9,7 @@ use external_api::{http::PingResponse, EmptyRequestResponse};
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
-    Body, Error as HyperError, HeaderMap, Method, Request, Response, Server, StatusCode,
+    Body, Error as HyperError, HeaderMap, Method, Request, Response, Server,
 };
 use num_bigint::BigUint;
 use num_traits::Num;
@@ -21,6 +21,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use uuid::Uuid;
+
+use crate::error::{bad_request, not_found};
 
 use self::{
     network::{
@@ -100,43 +102,32 @@ const INDEX_URL_PARAM: &str = "index";
 /// A helper to parse out a mint from a URL param
 pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
     // Try to parse as a hex string, then fall back to decimal
-    let mint_str = params.get(MINT_URL_PARAM).ok_or_else(|| {
-        ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_MINT_PARSE.to_string())
-    })?;
+    let mint_str =
+        params.get(MINT_URL_PARAM).ok_or_else(|| not_found(ERR_MINT_PARSE.to_string()))?;
     let stripped_param = mint_str.strip_prefix("0x").unwrap_or(mint_str);
     if let Ok(mint) = BigUint::from_str_radix(stripped_param, 16 /* radix */) {
         return Ok(mint);
     }
 
-    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| {
-        ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MINT_PARSE.to_string())
-    })
+    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| bad_request(ERR_MINT_PARSE.to_string()))
 }
 
 /// A helper to parse out a wallet ID from a URL param
 pub(super) fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
     params
         .get(WALLET_ID_URL_PARAM)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
-        })?
+        .ok_or_else(|| bad_request(ERR_WALLET_ID_PARSE.to_string()))?
         .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_WALLET_ID_PARSE.to_string())
-        })
+        .map_err(|_| bad_request(ERR_WALLET_ID_PARSE.to_string()))
 }
 
 /// A helper to parse out an order ID from a URL param
 pub(super) fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
     params
         .get(ORDER_ID_URL_PARAM)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
-        })?
+        .ok_or_else(|| bad_request(ERR_ORDER_ID_PARSE.to_string()))?
         .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_ORDER_ID_PARSE.to_string())
-        })
+        .map_err(|_| bad_request(ERR_ORDER_ID_PARSE.to_string()))
 }
 
 /// A helper to parse out a cluster ID from a URL param
@@ -145,19 +136,9 @@ pub(super) fn parse_cluster_id_from_params(
 ) -> Result<ClusterId, ApiServerError> {
     params
         .get(CLUSTER_ID_URL_PARAM)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_CLUSTER_ID_PARSE.to_string(),
-            )
-        })?
+        .ok_or_else(|| bad_request(ERR_CLUSTER_ID_PARSE.to_string()))?
         .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(
-                StatusCode::BAD_REQUEST,
-                ERR_CLUSTER_ID_PARSE.to_string(),
-            )
-        })
+        .map_err(|_| bad_request(ERR_CLUSTER_ID_PARSE.to_string()))
 }
 
 /// A helper to parse out a peer ID from a URL param
@@ -166,13 +147,9 @@ pub(super) fn parse_peer_id_from_params(
 ) -> Result<WrappedPeerId, ApiServerError> {
     params
         .get(PEER_ID_URL_PARAM)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_PEER_ID_PARSE.to_string())
-        })?
+        .ok_or_else(|| bad_request(ERR_PEER_ID_PARSE.to_string()))?
         .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_PEER_ID_PARSE.to_string())
-        })
+        .map_err(|_| bad_request(ERR_PEER_ID_PARSE.to_string()))
 }
 
 /// A helper to parse out a task ID from a URL param
@@ -181,26 +158,18 @@ pub(super) fn parse_task_id_from_params(
 ) -> Result<TaskIdentifier, ApiServerError> {
     params
         .get(TASK_ID_URL_PARAM)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_TASK_ID_PARSE.to_string())
-        })?
+        .ok_or_else(|| bad_request(ERR_TASK_ID_PARSE.to_string()))?
         .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_TASK_ID_PARSE.to_string())
-        })
+        .map_err(|_| bad_request(ERR_TASK_ID_PARSE.to_string()))
 }
 
 /// A helper to parse out an index from a URL param
 pub(super) fn parse_index_from_params(params: &UrlParams) -> Result<usize, ApiServerError> {
     params
         .get(INDEX_URL_PARAM)
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_INDEX_PARSE.to_string())
-        })?
+        .ok_or_else(|| bad_request(ERR_INDEX_PARSE.to_string()))?
         .parse()
-        .map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_INDEX_PARSE.to_string())
-        })
+        .map_err(|_| bad_request(ERR_INDEX_PARSE.to_string()))
 }
 
 /// A wrapper around the router and task management operations that
@@ -229,7 +198,7 @@ impl HttpServer {
 
         // The "/exchangeHealthStates" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             EXCHANGE_HEALTH_ROUTE.to_string(),
             false, // auth_required
             ExchangeHealthStatesHandler::new(config.clone()),
@@ -237,7 +206,7 @@ impl HttpServer {
 
         // The "/ping" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             PING_ROUTE.to_string(),
             false, // auth_required
             PingHandler::new(),
@@ -245,7 +214,7 @@ impl HttpServer {
 
         // The "/task/:id" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_TASK_STATUS_ROUTE.to_string(),
             false, // auth_required
             GetTaskStatusHandler::new(config.task_driver.clone()),
@@ -253,7 +222,7 @@ impl HttpServer {
 
         // The "/wallet/:id" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_WALLET_ROUTE.to_string(),
             true, // auth_required
             GetWalletHandler::new(global_state.clone()),
@@ -261,7 +230,7 @@ impl HttpServer {
 
         // The "/wallet" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
             false, // auth_required
             CreateWalletHandler::new(
@@ -274,7 +243,7 @@ impl HttpServer {
 
         // The "/wallet/lookup" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             FIND_WALLET_ROUTE.to_string(),
             false, // auth_required
             FindWalletHandler::new(
@@ -288,7 +257,7 @@ impl HttpServer {
 
         // Getter for the "/wallet/:id/orders" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             WALLET_ORDERS_ROUTE.to_string(),
             true, // auth_required
             GetOrdersHandler::new(global_state.clone()),
@@ -296,7 +265,7 @@ impl HttpServer {
 
         // Post to the "/wallet/:id/orders" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
             true, // auth_required
             CreateOrderHandler::new(
@@ -310,7 +279,7 @@ impl HttpServer {
 
         // The "/wallet/:id/orders/:id" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_ORDER_BY_ID_ROUTE.to_string(),
             true, // auth_required
             GetOrderByIdHandler::new(global_state.clone()),
@@ -318,7 +287,7 @@ impl HttpServer {
 
         // The "/wallet/:id/orders/:id/update" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             UPDATE_ORDER_ROUTE.to_string(),
             true, // auth_required
             UpdateOrderHandler::new(
@@ -332,7 +301,7 @@ impl HttpServer {
 
         // The "/wallet/:id/orders/:id/cancel" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
             true, // auth_required
             CancelOrderHandler::new(
@@ -346,7 +315,7 @@ impl HttpServer {
 
         // The "/wallet/:id/balances" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_BALANCES_ROUTE.to_string(),
             true, // auth_required
             GetBalancesHandler::new(global_state.clone()),
@@ -354,7 +323,7 @@ impl HttpServer {
 
         // The "/wallet/:id/balances/:mint" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
             true, // auth_required
             GetBalanceByMintHandler::new(global_state.clone()),
@@ -362,7 +331,7 @@ impl HttpServer {
 
         // The "/wallet/:id/balances/deposit" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
             true, // auth_required
             DepositBalanceHandler::new(
@@ -376,7 +345,7 @@ impl HttpServer {
 
         // The "/wallet/:id/balances/:mint/withdraw" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
             true, // auth_required
             WithdrawBalanceHandler::new(
@@ -390,7 +359,7 @@ impl HttpServer {
 
         // The GET "/wallet/:id/fees" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             FEES_ROUTE.to_string(),
             true, // auth_required
             GetFeesHandler::new(global_state.clone()),
@@ -398,7 +367,7 @@ impl HttpServer {
 
         // The POST "/wallet/:id/fees" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             FEES_ROUTE.to_string(),
             true, // auth_required
             AddFeeHandler::new(
@@ -412,7 +381,7 @@ impl HttpServer {
 
         // The "/wallet/:id/fees/:index/remove" route
         router.add_route(
-            Method::POST,
+            &Method::POST,
             REMOVE_FEE_ROUTE.to_string(),
             true, // auth_required
             RemoveFeeHandler::new(
@@ -426,7 +395,7 @@ impl HttpServer {
 
         // The "/order_book/orders" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_NETWORK_ORDERS_ROUTE.to_string(),
             false, // auth_required
             GetNetworkOrdersHandler::new(global_state.clone()),
@@ -434,7 +403,7 @@ impl HttpServer {
 
         // The "/order_book/orders/:id" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
             false, // auth_required
             GetNetworkOrderByIdHandler::new(global_state.clone()),
@@ -442,7 +411,7 @@ impl HttpServer {
 
         // The "/network" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
             false, // auth_required
             GetNetworkTopologyHandler::new(global_state.clone()),
@@ -450,7 +419,7 @@ impl HttpServer {
 
         // The "/network/clusters/:id" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_CLUSTER_INFO_ROUTE.to_string(),
             false, // auth_required
             GetClusterInfoHandler::new(global_state.clone()),
@@ -458,7 +427,7 @@ impl HttpServer {
 
         // The "/network/peers/:id" route
         router.add_route(
-            Method::GET,
+            &Method::GET,
             GET_PEER_INFO_ROUTE.to_string(),
             false, // auth_required
             GetPeerInfoHandler::new(global_state),

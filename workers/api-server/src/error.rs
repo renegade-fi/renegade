@@ -35,3 +35,18 @@ impl From<ApiServerError> for Response<Body> {
         }
     }
 }
+
+/// Create an `ApiServerError` with a 400 bad request code
+pub(crate) fn bad_request(e: String) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, e)
+}
+
+/// Create an `ApiServerError` with a 401 unauthorized code
+pub(crate) fn unauthorized(e: String) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::UNAUTHORIZED, e)
+}
+
+/// Create an `ApiServerError` with a 404 not found code
+pub(crate) fn not_found(e: String) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, e)
+}

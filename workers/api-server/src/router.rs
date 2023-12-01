@@ -10,8 +10,10 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use state::RelayerState;
 use tracing::log;
 
+use crate::error::{bad_request, not_found};
+
 use super::{
-    authenticate_wallet_request, error::ApiServerError, http::parse_wallet_id_from_params,
+    auth::authenticate_wallet_request, error::ApiServerError, http::parse_wallet_id_from_params,
 };
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
@@ -165,7 +167,7 @@ impl Router {
     /// operation type to the URL when creating the route
     ///
     /// Concretely, if POST is valid to /route then we route to /POST/route
-    fn create_full_route(method: Method, mut route: String) -> String {
+    fn create_full_route(method: &Method, mut route: String) -> String {
         // Prepend a "/" if not already done
         if !route.starts_with('/') {
             route = String::from("/") + &route;
@@ -179,7 +181,7 @@ impl Router {
     /// Add a route to the router
     pub fn add_route<H: Handler + 'static>(
         &mut self,
-        method: Method,
+        method: &Method,
         route: String,
         auth_required: bool,
         handler: H,
@@ -201,11 +203,11 @@ impl Router {
     ) -> Response<Body> {
         // If the request is an options request, handle it directly
         if method == Method::OPTIONS {
-            return self.handle_options_req(route);
+            return self.handle_options_req(&route);
         }
 
         // Get the full routable path
-        let full_route = Self::create_full_route(method.clone(), route.clone());
+        let full_route = Self::create_full_route(&method, route.clone());
 
         // Dispatch to handler
         if let Ok(matched_path) = self.router.at(&full_route) {
@@ -231,12 +233,12 @@ impl Router {
     }
 
     /// Handle an options request
-    fn handle_options_req(&self, route: String) -> Response<Body> {
+    fn handle_options_req(&self, route: &str) -> Response<Body> {
         // Get the set of allowed methods for this route
         let allowed_methods = vec![Method::GET, Method::POST]
             .into_iter()
             .filter_map(|method: Method| {
-                let full_route = Self::create_full_route(method.clone(), route.clone());
+                let full_route = Self::create_full_route(&method, route.to_owned());
                 self.router.at(&full_route).ok()?;
                 Some(method)
             })
@@ -267,24 +269,21 @@ impl Router {
         let wallet_id = parse_wallet_id_from_params(url_params)?;
 
         // Lookup the wallet in the global state
-        let wallet =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.ok_or_else(
-                || {
-                    ApiServerError::HttpStatusCode(
-                        StatusCode::NOT_FOUND,
-                        ERR_WALLET_NOT_FOUND.to_string(),
-                    )
-                },
-            )?;
+        let wallet = self
+            .global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&wallet_id)
+            .await
+            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         // Get the request bytes
-        let req_body = to_bytes(req.body_mut()).await.map_err(|err| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, err.to_string())
-        })?;
+        let req_body =
+            to_bytes(req.body_mut()).await.map_err(|err| bad_request(err.to_string()))?;
 
         // Authenticated the request
         authenticate_wallet_request(
-            req.headers().clone(),
+            req.headers(),
             &req_body,
             &wallet.key_chain.public_keys.pk_root,
         )?;
