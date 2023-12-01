@@ -8,7 +8,7 @@ use external_api::{
     websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
 };
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use hyper::{http::HeaderValue, HeaderMap, StatusCode};
+use hyper::{http::HeaderValue, HeaderMap};
 use matchit::Router;
 use system_bus::TopicReader;
 use tokio::net::{TcpListener, TcpStream};
@@ -17,7 +17,11 @@ use tokio_tungstenite::{accept_async, WebSocketStream};
 use tracing::log;
 use tungstenite::Message;
 
-use crate::router::ERR_WALLET_NOT_FOUND;
+use crate::{
+    auth::authenticate_wallet_request,
+    error::{bad_request, not_found},
+    router::ERR_WALLET_NOT_FOUND,
+};
 
 use self::{
     handler::{DefaultHandler, WebsocketTopicHandler},
@@ -27,8 +31,8 @@ use self::{
 };
 
 use super::{
-    authenticate_wallet_request, error::ApiServerError, http::parse_wallet_id_from_params,
-    router::UrlParams, worker::ApiServerConfig,
+    error::ApiServerError, http::parse_wallet_id_from_params, router::UrlParams,
+    worker::ApiServerConfig,
 };
 
 mod handler;
@@ -329,9 +333,7 @@ impl WebsocketServer {
         topic: &str,
     ) -> Result<(UrlParams, &dyn WebsocketTopicHandler), ApiServerError> {
         // Find the route
-        let route = self.router.at(topic).map_err(|_| {
-            ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, ERR_INVALID_TOPIC.to_string())
-        })?;
+        let route = self.router.at(topic).map_err(|_| not_found(ERR_INVALID_TOPIC.to_string()))?;
 
         // Clone the parameters from the route into a hashmap to take ownership
         let mut params = UrlParams::new();
@@ -350,13 +352,8 @@ impl WebsocketServer {
     ) -> Result<(), ApiServerError> {
         // Parse the wallet ID from the params
         let wallet_id = parse_wallet_id_from_params(params)?;
-        let headers: HeaderMap<HeaderValue> =
-            HeaderMap::try_from(&message.headers).map_err(|_| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::BAD_REQUEST,
-                    ERR_HEADER_PARSE.to_string(),
-                )
-            })?;
+        let headers: HeaderMap<HeaderValue> = HeaderMap::try_from(&message.headers)
+            .map_err(|_| bad_request(ERR_HEADER_PARSE.to_string()))?;
 
         // Look up the verification key in the global state
         let pk_root = self
@@ -366,12 +363,7 @@ impl WebsocketServer {
             .await
             .get_wallet(&wallet_id)
             .await
-            .ok_or_else(|| {
-                ApiServerError::HttpStatusCode(
-                    StatusCode::NOT_FOUND,
-                    ERR_WALLET_NOT_FOUND.to_string(),
-                )
-            })?
+            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?
             .key_chain
             .public_keys
             .pk_root;
@@ -380,7 +372,7 @@ impl WebsocketServer {
         let body_serialized =
             serde_json::to_vec(&message.body).expect("re-serialization should not fail");
 
-        authenticate_wallet_request(headers, &body_serialized, &pk_root)
+        authenticate_wallet_request(&headers, &body_serialized, &pk_root)
     }
 
     /// Push an internal event that the client is subscribed to onto the

@@ -3,12 +3,14 @@
 use async_trait::async_trait;
 use common::types::token::Token;
 use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
-use hyper::StatusCode;
 use job_types::price_reporter::PriceReporterManagerJob;
 use system_bus::{SystemBus, TopicReader};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
-use crate::{error::ApiServerError, router::UrlParams};
+use crate::{
+    error::{bad_request, ApiServerError},
+    router::UrlParams,
+};
 
 use super::handler::WebsocketTopicHandler;
 
@@ -36,9 +38,7 @@ const QUOTE_MINT_URL_PARAM: &str = "quote";
 fn parse_source_from_url_params(params: &UrlParams) -> Result<String, ApiServerError> {
     params
         .get(&PRICE_SOURCE_URL_PARAM.to_string())
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MISSING_PARAMS.to_string())
-        })
+        .ok_or_else(|| bad_request(ERR_MISSING_PARAMS.to_string()))
         .cloned()
 }
 
@@ -46,9 +46,7 @@ fn parse_source_from_url_params(params: &UrlParams) -> Result<String, ApiServerE
 fn parse_base_mint_from_url_params(params: &UrlParams) -> Result<String, ApiServerError> {
     params
         .get(&BASE_MINT_URL_PARAM.to_string())
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MISSING_PARAMS.to_string())
-        })
+        .ok_or_else(|| bad_request(ERR_MISSING_PARAMS.to_string()))
         .cloned()
 }
 
@@ -56,9 +54,7 @@ fn parse_base_mint_from_url_params(params: &UrlParams) -> Result<String, ApiServ
 fn parse_quote_mint_from_url_params(params: &UrlParams) -> Result<String, ApiServerError> {
     params
         .get(&QUOTE_MINT_URL_PARAM.to_string())
-        .ok_or_else(|| {
-            ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, ERR_MISSING_PARAMS.to_string())
-        })
+        .ok_or_else(|| bad_request(ERR_MISSING_PARAMS.to_string()))
         .cloned()
 }
 

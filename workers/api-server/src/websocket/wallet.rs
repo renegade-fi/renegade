@@ -1,11 +1,14 @@
 //! Handler definitions for wallet websocket topics
 use async_trait::async_trait;
 use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
-use hyper::StatusCode;
 use state::RelayerState;
 use system_bus::{SystemBus, TopicReader};
 
-use crate::{error::ApiServerError, http::parse_wallet_id_from_params, router::UrlParams};
+use crate::{
+    error::{not_found, ApiServerError},
+    http::parse_wallet_id_from_params,
+    router::UrlParams,
+};
 
 use super::handler::WebsocketTopicHandler;
 
@@ -49,10 +52,7 @@ impl WebsocketTopicHandler for WalletTopicHandler {
 
         // If the wallet doesn't exist, throw an error
         if self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.is_none() {
-            return Err(ApiServerError::HttpStatusCode(
-                StatusCode::NOT_FOUND,
-                ERR_WALLET_NOT_FOUND.to_string(),
-            ));
+            return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         }
 
         // Subscribe to the topic
