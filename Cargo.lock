@@ -3240,6 +3240,7 @@ dependencies = [
 name = "gossip-server"
 version = "0.1.0"
 dependencies = [
+ "arbitrum-client",
  "circuit-types",
  "circuits",
  "common",
