@@ -8,7 +8,7 @@ use common::{
         gossip::{ClusterId, PeerInfo, WrappedPeerId},
         network_order::NetworkOrder,
         proof_bundles::OrderValidityProofBundle,
-        wallet::{OrderIdentifier, Wallet},
+        wallet::{OrderIdentifier, Wallet, WalletIdentifier},
     },
     AsyncShared,
 };
@@ -23,7 +23,10 @@ use libp2p::{
     Multiaddr,
 };
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicUsize, Arc},
+};
 use system_bus::SystemBus;
 use tokio::sync::{mpsc::UnboundedSender as TokioSender, RwLockReadGuard, RwLockWriteGuard};
 
@@ -179,6 +182,14 @@ impl RelayerState {
 
         // Get a peer in this cluster
         self.read_peer_index().await.sample_cluster_peer(&managing_cluster).await
+    }
+
+    /// Get a reference to the staleness of a wallet
+    pub async fn get_wallet_merkle_staleness(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Option<Arc<AtomicUsize>> {
+        self.read_wallet_index().await.get_merkle_staleness(wallet_id).await
     }
 
     // ----------------------

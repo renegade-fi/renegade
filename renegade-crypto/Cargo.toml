@@ -26,6 +26,7 @@ ark-ec = "0.4"
 ark-ff = "0.4"
 ark-mpc = { workspace = true, optional = true }
 bigdecimal = "0.3"
+ethers-core = "2"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 
 # === Workspace Dependencies === #
