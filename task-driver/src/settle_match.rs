@@ -12,14 +12,15 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use arbitrum_client::client::ArbitrumClient;
+use ark_mpc::PARTY0;
 use async_trait::async_trait;
+use circuit_types::SizedWalletShare;
+use common::types::proof_bundles::ValidMatchSettleBundle;
+use common::types::wallet::Wallet;
 use common::types::{
-    handshake::{HandshakeResult, HandshakeState},
-    proof_bundles::OrderValidityProofBundle,
-    wallet::WalletIdentifier,
+    handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use futures::FutureExt;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::ProofManagerJob;
 use serde::Serialize;
@@ -33,6 +34,11 @@ use super::{
 
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
+/// The error message emitted when a wallet cannot be found in state
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
+/// The error message emitted when a validity proof wintess cannot be found in
+/// state
+const ERR_VALIDITY_WITNESS_NOT_FOUND: &str = "validity witness not found in global state";
 
 /// The displayable name for the settle match task
 const SETTLE_MATCH_TASK_NAME: &str = "settle-match";
@@ -48,8 +54,8 @@ pub struct SettleMatchTask {
     /// The state entry from the handshake manager that parameterizes the
     /// match process
     pub handshake_state: HandshakeState,
-    /// The result of the match process
-    pub handshake_result: Box<HandshakeResult>,
+    /// The proof that comes from the collaborative match-settle process
+    pub match_settle_proof: ValidMatchSettleBundle,
     /// The validity proofs submitted by the first party
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
@@ -105,6 +111,8 @@ pub enum SettleMatchTaskError {
     ProofGeneration(String),
     /// Error sending a message to another local worker
     SendMessage(String),
+    /// Error when state is missing for settlement
+    StateMissing(String),
     /// Error interacting with Arbitrum
     Arbitrum(String),
     /// Error updating validity proofs for a wallet
@@ -176,7 +184,7 @@ impl SettleMatchTask {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         handshake_state: HandshakeState,
-        handshake_result: Box<HandshakeResult>,
+        match_settle_proof: ValidMatchSettleBundle,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
         arbitrum_client: ArbitrumClient,
@@ -193,7 +201,7 @@ impl SettleMatchTask {
         Self {
             wallet_id,
             handshake_state,
-            handshake_result,
+            match_settle_proof,
             party0_validity_proof,
             party1_validity_proof,
             arbitrum_client,
@@ -215,7 +223,7 @@ impl SettleMatchTask {
             .process_match_settle(
                 self.party0_validity_proof.clone(),
                 self.party1_validity_proof.clone(),
-                self.handshake_result.match_settle_proof.clone(),
+                self.match_settle_proof.clone(),
             )
             .await;
 
@@ -239,15 +247,12 @@ impl SettleMatchTask {
         self.global_state.nullify_orders(party0_reblind_statement.original_shares_nullifier).await;
         self.global_state.nullify_orders(party1_reblind_statement.original_shares_nullifier).await;
 
-        // Find the wallet that was matched
-        let mut wallet = self
-            .global_state
-            .read_wallet_index()
-            .then(|index| async move { index.get_wallet(&self.wallet_id).await })
-            .await
-            .expect("unable to find wallet in global state");
-        wallet.apply_match(&self.handshake_result.match_, &self.handshake_state.local_order_id);
-        wallet.reblind_wallet();
+        // Find the wallet that was matched and the new private shares from its current
+        // reblind proof
+        let mut wallet = self.get_wallet().await?;
+        let (private_shares, blinded_public_shares) = self.get_new_shares().await?;
+
+        wallet.update_from_shares(&private_shares, &blinded_public_shares);
 
         // Find the wallet's new Merkle opening
         let opening = find_merkle_path(&wallet, &self.arbitrum_client)
@@ -274,5 +279,47 @@ impl SettleMatchTask {
         )
         .await
         .map_err(SettleMatchTaskError::UpdatingValidityProofs)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Get the wallet that this settlement task is operating on
+    async fn get_wallet(&self) -> Result<Wallet, SettleMatchTaskError> {
+        self.global_state
+            .read_wallet_index()
+            .await
+            .get_wallet(&self.wallet_id)
+            .await
+            .ok_or_else(|| SettleMatchTaskError::StateMissing(ERR_WALLET_NOT_FOUND.to_string()))
+    }
+
+    /// Get the new private and blinded public shares for the wallet after
+    /// update
+    async fn get_new_shares(
+        &self,
+    ) -> Result<(SizedWalletShare, SizedWalletShare), SettleMatchTaskError> {
+        // Fetch private shares from the validity proof's witness
+        let validity_witness = self
+            .global_state
+            .read_order_book()
+            .await
+            .get_validity_proof_witnesses(&self.handshake_state.local_order_id)
+            .await
+            .ok_or_else(|| {
+                SettleMatchTaskError::StateMissing(ERR_VALIDITY_WITNESS_NOT_FOUND.to_string())
+            })?;
+        let private_shares =
+            validity_witness.reblind_witness.reblinded_wallet_private_shares.clone();
+
+        // Fetch public shares from the match settle proof's statement
+        let public_shares = if self.handshake_state.role.get_party_id() == PARTY0 {
+            self.match_settle_proof.statement.party0_modified_shares.clone()
+        } else {
+            self.match_settle_proof.statement.party1_modified_shares.clone()
+        };
+
+        Ok((private_shares, public_shares))
     }
 }

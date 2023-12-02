@@ -119,6 +119,10 @@ pub struct ValidMatchSettleWitness<
 
 /// A `VALID MATCH SETTLE` witness with default const generic sizing parameters
 pub type SizedValidMatchSettleWitness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// An authenticated `VALID MATCH SETTLE` witness with default const generic
+/// sizing parameters
+pub type SizedAuthenticatedMatchSettleWitness =
+    AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 /// The statement type for `VALID MATCH SETTLE`
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
@@ -144,6 +148,10 @@ pub struct ValidMatchSettleStatement<
 /// parameters
 pub type SizedValidMatchSettleStatement =
     ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// An authenticated `VALID MATCH SETTLE` statement with default const generic
+/// sizing parameters
+pub type SizedAuthenticatedMatchSettleStatement =
+    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // ---------------------
 // | Prove Verify Flow |

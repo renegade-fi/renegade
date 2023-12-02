@@ -17,6 +17,7 @@ use circuit_types::{
     native_helpers::{
         compute_wallet_private_share_commitment, compute_wallet_share_commitment,
         compute_wallet_share_nullifier, create_wallet_shares_from_private,
+        wallet_from_blinded_shares,
     },
     order::{Order, OrderSide},
     r#match::MatchResult,
@@ -223,6 +224,12 @@ impl Wallet {
         compute_wallet_share_nullifier(self.get_wallet_share_commitment(), self.blinder)
     }
 
+    /// Invalidate the Merkle opening of a wallet after an update
+    fn invalidate_merkle_opening(&mut self) {
+        self.merkle_proof = None;
+        self.merkle_staleness.store(0, Ordering::Relaxed);
+    }
+
     /// Reblind the wallet, consuming the next set of blinders and secret shares
     pub fn reblind_wallet(&mut self) {
         let private_shares_serialized: Vec<Scalar> = self.private_shares.to_scalars();
@@ -248,6 +255,7 @@ impl Wallet {
         self.private_shares = new_private_share;
         self.blinded_public_shares = new_public_share;
         self.blinder = new_blinder;
+        self.invalidate_merkle_opening();
     }
 
     /// Remove default balances, orders, fees
@@ -308,6 +316,37 @@ impl Wallet {
         let receive_balance = self.balances.get_mut(&receive_mint).unwrap();
         receive_balance.amount =
             receive_balance.amount.checked_add(receive_amount).expect("balance overflow");
+
+        // Invalidate the Merkle opening
+        self.invalidate_merkle_opening();
+    }
+
+    /// Update a wallet from a given set of private and (blinded) public secret
+    /// shares
+    pub fn update_from_shares(
+        &mut self,
+        private_shares: &SizedWalletShare,
+        blinded_public_shares: &SizedWalletShare,
+    ) {
+        // Recover the wallet and update the balances, orders, fees
+        let wallet = wallet_from_blinded_shares(private_shares, blinded_public_shares);
+
+        self.blinder = wallet.blinder;
+        self.balances = wallet.balances.into_iter().map(|b| (b.mint.clone(), b)).collect();
+
+        // Preserve the order_ids, the indexmap should give a consistent ordering
+        // between orders
+        let order_ids = self.orders.keys().cloned();
+        self.orders = order_ids.zip(wallet.orders).collect();
+
+        self.fees = wallet.fees.to_vec();
+
+        // Update the wallet shares
+        self.private_shares = private_shares.clone();
+        self.blinded_public_shares = blinded_public_shares.clone();
+
+        // The Merkle proof is now invalid
+        self.invalidate_merkle_opening();
     }
 }
 

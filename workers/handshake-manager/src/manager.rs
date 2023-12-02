@@ -4,16 +4,16 @@ mod internal_engine;
 pub mod r#match;
 mod price_agreement;
 
+use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{fixed_point::FixedPoint, order::Order};
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
     new_async_shared,
     types::{
-        chain_id::ChainId,
         gossip::WrappedPeerId,
-        handshake::{ConnectionRole, HandshakeResult, HandshakeState},
+        handshake::{ConnectionRole, HandshakeState},
         network_order::NetworkOrderState,
-        proof_bundles::OrderValidityProofBundle,
+        proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
         tasks::TaskIdentifier,
         token::Token,
         wallet::OrderIdentifier,
@@ -38,7 +38,6 @@ use job_types::{
 };
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use std::{
     convert::TryInto,
@@ -114,44 +113,41 @@ pub struct HandshakeManager {
 /// Manages the threaded execution of the handshake protocol
 #[derive(Clone)]
 pub struct HandshakeExecutor {
-    /// The chain that the local node targets
-    chain_id: ChainId,
     /// The cache used to mark order pairs as already matched
-    pub(super) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
+    pub(crate) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
-    pub(super) handshake_state_index: HandshakeStateIndex,
+    pub(crate) handshake_state_index: HandshakeStateIndex,
     /// The channel on which other workers enqueue jobs for the protocol
     /// executor
-    pub(super) job_channel: DefaultOption<TokioReceiver<HandshakeExecutionJob>>,
+    pub(crate) job_channel: DefaultOption<TokioReceiver<HandshakeExecutionJob>>,
     /// The channel on which the handshake executor may forward requests to the
     /// network
-    pub(super) network_channel: TokioSender<GossipOutbound>,
+    pub(crate) network_channel: TokioSender<GossipOutbound>,
     /// The pricer reporter's work queue, used for fetching price reports
-    pub(super) price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
+    pub(crate) price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
     /// A Starknet client used for interacting with the contract
-    pub(super) starknet_client: StarknetClient,
+    pub(crate) arbitrum_client: ArbitrumClient,
     /// The channel on which to send proof manager jobs
-    pub(super) proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub(crate) proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The global relayer state
-    pub(super) global_state: RelayerState,
+    pub(crate) global_state: RelayerState,
     /// The task driver, used to manage long-running async tasks
-    pub(super) task_driver: TaskDriver,
+    pub(crate) task_driver: TaskDriver,
     /// The system bus used to publish internal broadcast messages
-    pub(super) system_bus: SystemBus<SystemBusMessage>,
+    pub(crate) system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator thread may cancel handshake
     /// execution
-    pub(super) cancel: CancelChannel,
+    pub(crate) cancel: CancelChannel,
 }
 
 impl HandshakeExecutor {
     /// Create a new protocol executor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        chain_id: ChainId,
         job_channel: TokioReceiver<HandshakeExecutionJob>,
         network_channel: TokioSender<GossipOutbound>,
         price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
-        starknet_client: StarknetClient,
+        arbitrum_client: ArbitrumClient,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         global_state: RelayerState,
         task_driver: TaskDriver,
@@ -163,13 +159,12 @@ impl HandshakeExecutor {
         let handshake_state_index = HandshakeStateIndex::new(global_state.clone());
 
         Ok(Self {
-            chain_id,
             handshake_cache,
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
             price_reporter_job_queue,
-            starknet_client,
+            arbitrum_client,
             proof_manager_work_queue,
             global_state,
             task_driver,
@@ -323,10 +318,8 @@ impl HandshakeExecutor {
 
                 // Record the match in the cache
                 self.record_completed_match(request_id).await?;
+                self.submit_match(party0_proof, party1_proof, order_state, res).await;
 
-                if res.is_nontrivial() {
-                    self.submit_match(party0_proof, party1_proof, order_state, res).await;
-                }
                 Ok(())
             },
 
@@ -661,17 +654,8 @@ impl HandshakeExecutor {
     /// This involves both converting the address into an Eth mainnet analog
     /// and casting this to a `Token`
     fn token_pair_for_order(&self, order: &Order) -> (Token, Token) {
-        match self.chain_id {
-            ChainId::AlphaGoerli | ChainId::Devnet => (
-                Token::from_addr_biguint(&order.base_mint),
-                Token::from_addr_biguint(&order.quote_mint),
-            ),
-            ChainId::Katana => (
-                Token::from_katana_addr_biguint(&order.base_mint),
-                Token::from_katana_addr_biguint(&order.quote_mint),
-            ),
-            _ => todo!("Implement price remapping for {:?}", self.chain_id),
-        }
+        // TODO: chain-specific token mapping
+        (Token::from_addr_biguint(&order.base_mint), Token::from_addr_biguint(&order.quote_mint))
     }
 
     /// Sends a request or response depending on whether the response channel is
@@ -777,15 +761,15 @@ impl HandshakeExecutor {
         party0_proof: OrderValidityProofBundle,
         party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
-        match_res: Box<HandshakeResult>,
+        match_settle_proof: ValidMatchSettleBundle,
     ) -> TaskIdentifier {
         // Submit the match to the contract
         let task = SettleMatchTask::new(
             handshake_state,
-            match_res,
+            match_settle_proof,
             party0_proof,
             party1_proof,
-            self.starknet_client.clone(),
+            self.arbitrum_client.clone(),
             self.network_channel.clone(),
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),

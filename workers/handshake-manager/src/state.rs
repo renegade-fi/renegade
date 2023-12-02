@@ -14,8 +14,8 @@ use common::{
     },
     AsyncShared,
 };
+use constants::Scalar;
 use crossbeam::channel::Sender;
-use mpc_stark::algebra::scalar::Scalar;
 use state::RelayerState;
 use uuid::Uuid;
 
