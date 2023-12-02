@@ -331,7 +331,7 @@ impl StateTuiApp {
         let price_reporter_enabled =
             if self.config.disable_price_reporter { STR_DISABLED } else { STR_ENABLED };
         let chain_events_enabled =
-            if self.config.starknet_jsonrpc_node.is_some() { STR_ENABLED } else { STR_DISABLED };
+            if self.config.rpc_url.is_some() { STR_ENABLED } else { STR_DISABLED };
 
         // Style and collect into a list
         let line1 = Spans::from(vec![

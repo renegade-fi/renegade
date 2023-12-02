@@ -1,14 +1,15 @@
 //! Constant values referenced by the Arbitrum client.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, str::FromStr};
 
 use ark_ff::{BigInt, Fp};
 use constants::{Scalar, MERKLE_HEIGHT};
 use lazy_static::lazy_static;
 use renegade_crypto::hash::compute_poseidon_hash;
+use serde::{Deserialize, Serialize};
 
 /// The chain environment
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum Chain {
     /// Mainnet chain
     Mainnet,
@@ -16,6 +17,19 @@ pub enum Chain {
     Testnet,
     /// Devnet chain
     Devnet,
+}
+
+impl FromStr for Chain {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "mainnet" => Ok(Chain::Mainnet),
+            "testnet" => Ok(Chain::Testnet),
+            "devnet" => Ok(Chain::Devnet),
+            _ => Err(format!("Invalid chain: {s}")),
+        }
+    }
 }
 
 /// The number of bytes in a Solidity function selector

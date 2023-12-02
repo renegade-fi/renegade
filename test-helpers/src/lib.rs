@@ -4,7 +4,6 @@
 #![deny(unsafe_code)]
 
 pub mod assertions;
-pub mod contracts;
 pub mod macros;
 pub mod mpc_network;
 pub mod types;
