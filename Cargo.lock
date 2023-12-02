@@ -1225,8 +1225,8 @@ dependencies = [
  "lazy_static",
  "renegade-crypto",
  "state",
+ "task-driver",
  "tokio",
- "tokio-stream",
  "tracing",
 ]
 

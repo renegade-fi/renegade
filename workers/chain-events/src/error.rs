@@ -15,6 +15,8 @@ pub enum OnChainEventListenerError {
     Setup(String),
     /// The stream unexpectedly stopped
     StreamEnded,
+    /// An error starting up a task
+    TaskStartup(String),
 }
 
 impl Display for OnChainEventListenerError {

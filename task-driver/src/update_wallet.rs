@@ -41,7 +41,7 @@ const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 // | Task Definition |
 // -------------------
 
-/// Defines the long running flow for adding a balance to a wallet
+/// Defines the long running flow for updating a wallet
 pub struct UpdateWalletTask {
     /// The timestamp at which the task was initiated, used to timestamp orders
     pub timestamp_received: u64,
@@ -68,7 +68,7 @@ pub struct UpdateWalletTask {
     pub task_state: UpdateWalletTaskState,
 }
 
-/// The error type for the deposit balance task
+/// The error type for the update wallet task
 #[derive(Clone, Debug)]
 pub enum UpdateWalletTaskError {
     /// A wallet was submitted with an invalid secret shares
@@ -93,7 +93,7 @@ impl Display for UpdateWalletTaskError {
 
 impl Error for UpdateWalletTaskError {}
 
-/// Defines the state of the deposit balance task
+/// Defines the state of the deposit update wallet task
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum UpdateWalletTaskState {
@@ -248,8 +248,7 @@ impl UpdateWalletTask {
     // | Task Steps |
     // --------------
 
-    /// Generate a proof of `VALID WALLET UPDATE` for the wallet with added
-    /// balance
+    /// Generate a proof of `VALID WALLET UPDATE` for the wallet
     async fn generate_proof(&mut self) -> Result<(), UpdateWalletTaskError> {
         let (witness, statement) = self.get_witness_statement()?;
 
