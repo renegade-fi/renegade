@@ -12,7 +12,6 @@ futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Node Interaction === #
-starknet = { workspace = true }
 reqwest = "0.11.13"
 
 # === Cryptography + Arithmetic === #

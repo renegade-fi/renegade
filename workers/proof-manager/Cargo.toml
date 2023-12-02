@@ -10,7 +10,6 @@ mocks = ["dep:circuit-types", "common/mocks"]
 # === Cryptography === #
 ark-mpc = { workspace = true }
 mpc-plonk = { workspace = true }
-merlin = { workspace = true, optional = true }
 
 # === Runtime + Threading === #
 crossbeam = { workspace = true }

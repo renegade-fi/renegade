@@ -373,7 +373,7 @@ dependencies = [
  "renegade-crypto",
  "ruint",
  "serde",
- "serde_with 3.4.0",
+ "serde_with",
  "test-helpers",
  "tokio",
  "tracing",
@@ -991,7 +991,6 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
- "serde",
 ]
 
 [[package]]
@@ -1748,6 +1747,7 @@ dependencies = [
 name = "config"
 version = "0.1.0"
 dependencies = [
+ "arbitrum-client",
  "base64 0.13.1",
  "clap 3.2.25",
  "common",
@@ -3494,10 +3494,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe9006bed769170c11f845cf00c7c1e9092aeb3f268e007c3e760ac68008070f"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -4254,7 +4252,7 @@ dependencies = [
  "hashbrown 0.13.2",
  "itertools 0.10.5",
  "jf-utils",
- "merlin 3.0.0",
+ "merlin",
  "mpc-relation",
  "num-bigint",
  "num-traits",
@@ -5018,18 +5016,6 @@ checksum = "2145869435ace5ea6ea3d35f59be559317ec9a0d04e1812d5f185a87b6d36f1a"
 
 [[package]]
 name = "merlin"
-version = "2.0.0"
-source = "git+https://github.com/renegade-fi/merlin#a161f0bbb31963b38910488d7d6cc4badd540881"
-dependencies = [
- "byteorder",
- "keccak",
- "rand_core 0.6.4",
- "tiny-keccak",
- "zeroize",
-]
-
-[[package]]
-name = "merlin"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58c38e2799fc0978b65dfff8023ec7843e2330bb462f19198840b34b6582397d"
@@ -5095,7 +5081,7 @@ dependencies = [
  "itertools 0.10.5",
  "jf-primitives",
  "jf-utils",
- "merlin 3.0.0",
+ "merlin",
  "mpc-relation",
  "num-bigint",
  "rand_chacha 0.3.1",
@@ -6296,7 +6282,6 @@ dependencies = [
  "constants",
  "crossbeam",
  "job-types",
- "merlin 2.0.0",
  "mpc-plonk",
  "rayon",
  "serde",
@@ -6767,6 +6752,7 @@ name = "renegade-relayer"
 version = "0.1.0"
 dependencies = [
  "api-server",
+ "arbitrum-client",
  "chain-events",
  "chrono",
  "circuit-types",
@@ -7415,17 +7401,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_json_pythonic"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62212da9872ca2a0cad0093191ee33753eddff9266cbbc1b4a602d13a3a768db"
-dependencies = [
- "itoa",
- "ryu",
- "serde",
-]
-
-[[package]]
 name = "serde_spanned"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7448,22 +7423,6 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "2.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07ff71d2c147a7b57362cead5e22f772cd52f6ab31cfcd9edcd7f6aeb2a0afbe"
-dependencies = [
- "base64 0.13.1",
- "chrono",
- "hex 0.4.3",
- "indexmap 1.9.3",
- "serde",
- "serde_json",
- "serde_with_macros 2.3.3",
- "time",
-]
-
-[[package]]
-name = "serde_with"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64cd236ccc1b7a29e7e2739f27c0b2dd199804abc4290e32f59f3b68d6405c23"
@@ -7475,20 +7434,8 @@ dependencies = [
  "indexmap 2.1.0",
  "serde",
  "serde_json",
- "serde_with_macros 3.4.0",
+ "serde_with_macros",
  "time",
-]
-
-[[package]]
-name = "serde_with_macros"
-version = "2.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "881b6f881b17d13214e5d494c939ebab463d01264ce1811e9d4ac3a882e7695f"
-dependencies = [
- "darling 0.20.3",
- "proc-macro2",
- "quote",
- "syn 2.0.39",
 ]
 
 [[package]]
@@ -7915,187 +7862,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
-name = "starknet"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fcb61961b91757a9bc2d11549067445b2f921bd957f53710db35449767a1ba3"
-dependencies = [
- "starknet-accounts",
- "starknet-contract",
- "starknet-core 0.5.1",
- "starknet-crypto",
- "starknet-ff",
- "starknet-macros",
- "starknet-providers",
- "starknet-signers",
-]
-
-[[package]]
-name = "starknet-accounts"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "111ed887e4db14f0df1f909905e7737e4730770c8ed70997b58a71d5d940daac"
-dependencies = [
- "async-trait",
- "starknet-core 0.5.1",
- "starknet-providers",
- "starknet-signers",
- "thiserror",
-]
-
-[[package]]
-name = "starknet-contract"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d6f81a647694b2cb669ab60e77954b57bf5fbc757f5fcaf0a791c3bd341f04"
-dependencies = [
- "serde",
- "serde_json",
- "serde_with 2.3.3",
- "starknet-accounts",
- "starknet-core 0.5.1",
- "starknet-providers",
- "thiserror",
-]
-
-[[package]]
-name = "starknet-core"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91f89c79b641618de8aa9668d74c6b6634659ceca311c6318a35c025f9d4d969"
-dependencies = [
- "base64 0.21.5",
- "flate2",
- "hex 0.4.3",
- "serde",
- "serde_json",
- "serde_json_pythonic",
- "serde_with 2.3.3",
- "sha3 0.10.8",
- "starknet-crypto",
- "starknet-ff",
-]
-
-[[package]]
-name = "starknet-core"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f1683ca7c63f0642310eddedb7d35056d8306084dff323d440711065c63ed87"
-dependencies = [
- "base64 0.21.5",
- "flate2",
- "hex 0.4.3",
- "serde",
- "serde_json",
- "serde_json_pythonic",
- "serde_with 2.3.3",
- "sha3 0.10.8",
- "starknet-crypto",
- "starknet-ff",
-]
-
-[[package]]
-name = "starknet-crypto"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33c03f5ac70f9b067f48db7d2d70bdf18ee0f731e8192b6cfa679136becfcdb0"
-dependencies = [
- "crypto-bigint 0.5.5",
- "hex 0.4.3",
- "hmac 0.12.1",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rfc6979 0.4.0",
- "sha2 0.10.8",
- "starknet-crypto-codegen",
- "starknet-curve",
- "starknet-ff",
- "zeroize",
-]
-
-[[package]]
-name = "starknet-crypto-codegen"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af6527b845423542c8a16e060ea1bc43f67229848e7cd4c4d80be994a84220ce"
-dependencies = [
- "starknet-curve",
- "starknet-ff",
- "syn 2.0.39",
-]
-
-[[package]]
-name = "starknet-curve"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a68a0d87ae56572abf83ddbfd44259a7c90dbeeee1629a1ffe223e7f9a8f3052"
-dependencies = [
- "starknet-ff",
-]
-
-[[package]]
-name = "starknet-ff"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7584bc732e4d2a8ccebdd1dda8236f7940a79a339e30ebf338d45c329659e36c"
-dependencies = [
- "ark-ff 0.4.2",
- "bigdecimal",
- "crypto-bigint 0.5.5",
- "getrandom 0.2.11",
- "hex 0.4.3",
- "num-bigint",
- "serde",
-]
-
-[[package]]
-name = "starknet-macros"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f66fe05edab7ee6752a0aff3e14508001191083f3c6d0b6fa14f7008a96839b0"
-dependencies = [
- "starknet-core 0.7.2",
- "syn 2.0.39",
-]
-
-[[package]]
-name = "starknet-providers"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbbfccb46a8969fb3ac803718d9d8270cff4eed5b7f6b9ba234875ad2cc997c5"
-dependencies = [
- "async-trait",
- "auto_impl",
- "ethereum-types 0.14.1",
- "flate2",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "serde_with 2.3.3",
- "starknet-core 0.5.1",
- "thiserror",
- "url",
-]
-
-[[package]]
-name = "starknet-signers"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5313524cc79344015ef2a8618947332ab17012b5c50600c7f84c60989bdec980"
-dependencies = [
- "async-trait",
- "auto_impl",
- "crypto-bigint 0.5.5",
- "eth-keystore",
- "rand 0.8.5",
- "starknet-core 0.5.1",
- "starknet-crypto",
- "thiserror",
-]
-
-[[package]]
 name = "state"
 version = "0.1.0"
 dependencies = [
@@ -8499,7 +8265,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "starknet",
  "tokio",
  "tracing",
 ]
