@@ -1,5 +1,6 @@
 //! Solidity ABI definitions of smart contracts, events, and other on-chain
 //! data structures used by the Arbitrum client.
+#![allow(missing_docs)]
 
 use alloy_sol_types::sol;
 use ethers::contract::abigen;
@@ -17,6 +18,7 @@ abigen!(
 
         event WalletUpdated(bytes indexed wallet_blinder_share)
         event NodeChanged(uint8 indexed height, uint128 indexed index, bytes indexed new_value_hash, bytes new_value)
+        event NullifierSpent(uint256 nullifier)
     ]"#
 );
 

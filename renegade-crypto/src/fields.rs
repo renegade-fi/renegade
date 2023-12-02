@@ -6,11 +6,15 @@ use std::ops::Neg;
 use ark_ff::PrimeField;
 use bigdecimal::BigDecimal;
 use constants::Scalar;
+use ethers_core::types::U256;
 use num_bigint::{BigInt, BigUint, Sign};
 
 // -----------
 // | Helpers |
 // -----------
+
+/// The number of bytes in a U256
+pub const U256_BYTES: usize = 256 / 8;
 
 /// Return the modulus `p` of the `Scalar` ($Z_p$) field as a `BigUint`
 pub fn get_scalar_field_modulus() -> BigUint {
@@ -29,6 +33,12 @@ pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
 /// Convert a scalar to a BigUint
 pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
     a.to_biguint()
+}
+
+/// Convert a scalar to a U256
+pub fn scalar_to_u256(a: &Scalar) -> U256 {
+    // ethers will handle padding
+    U256::from_big_endian(&a.to_bytes_be())
 }
 
 /// Convert a scalar to a BigDecimal
@@ -72,6 +82,12 @@ pub fn biguint_to_scalar(a: &BigUint) -> Scalar {
     Scalar::from(a.clone())
 }
 
+/// Convert a BigUint to a U256
+pub fn biguint_to_u256(a: &BigUint) -> U256 {
+    // ethers will handle padding
+    U256::from_big_endian(&a.to_bytes_be())
+}
+
 /// Convert a bigint to a vector of bits, encoded as scalars
 pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     let mut res = Vec::with_capacity(D);
@@ -81,6 +97,26 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     }
 
     res
+}
+
+// -------------------------
+// | Conversions from U256 |
+// -------------------------
+
+/// Convert a U256 to a scalar
+pub fn u256_to_scalar(a: &U256) -> Scalar {
+    let mut buf = [0u8; 32];
+    a.to_big_endian(&mut buf);
+
+    Scalar::from_be_bytes_mod_order(&buf)
+}
+
+/// Convert a U256 to a BigUint
+pub fn u256_to_biguint(a: &U256) -> BigUint {
+    let mut buf = [0u8; 32];
+    a.to_big_endian(&mut buf);
+
+    BigUint::from_bytes_be(&buf)
 }
 
 // ---------

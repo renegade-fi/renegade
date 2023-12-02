@@ -5,7 +5,7 @@ use std::{
     hash::Hash,
     iter,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -99,6 +99,12 @@ pub struct Wallet {
     /// The authentication paths for the public and private shares of the wallet
     #[serde(default)]
     pub merkle_proof: Option<WalletAuthenticationPath>,
+    /// The staleness of the Merkle proof, i.e. the number of Merkle root
+    /// updates that have occurred since the wallet's Merkle proof was last
+    /// updated
+    #[serde(skip_serializing, skip_deserializing, default)]
+    #[derivative(PartialEq = "ignore")]
+    pub merkle_staleness: Arc<AtomicUsize>,
     /// An update lock, used to protect against concurrent updates to a wallet
     ///
     /// `true` implies that the lock is held elsewhere
@@ -318,7 +324,10 @@ pub struct WalletMetadata {
 pub mod mocks {
     use std::{
         iter,
-        sync::{atomic::AtomicBool, Arc},
+        sync::{
+            atomic::{AtomicBool, AtomicUsize},
+            Arc,
+        },
     };
 
     use circuit_types::{
@@ -366,6 +375,7 @@ pub mod mocks {
             )),
             metadata: WalletMetadata::default(),
             merkle_proof: Some(mock_merkle_path()),
+            merkle_staleness: Arc::new(AtomicUsize::default()),
             update_locked: Arc::new(AtomicBool::default()),
         };
 

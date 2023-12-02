@@ -7,11 +7,13 @@ edition = "2021"
 # === Concurrency + Runtime === #
 crossbeam = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = "0.1"
 
-# === Networking + Blockchain === #
-starknet = { workspace = true }
+# === Crypto === #
+ethers = "2"
 
 # === Workspace Dependencies === #
+arbitrum-client = { path = "../../arbitrum-client" }
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 renegade-crypto = { path = "../../renegade-crypto" }

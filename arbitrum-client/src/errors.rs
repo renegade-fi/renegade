@@ -17,6 +17,8 @@ pub enum ArbitrumClientError {
     EventQuerying(String),
     /// Error thrown when a commitment can't be found in the Merkle tree
     CommitmentNotFound,
+    /// An error interacting with the lower level rpc client
+    Rpc(String),
     /// Error thrown when getting a transaction fails
     TxQuerying(String),
     /// Error thrown when a transaction can't be found

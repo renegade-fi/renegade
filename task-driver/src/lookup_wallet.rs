@@ -4,7 +4,6 @@
 use std::{
     error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
-    sync::{atomic::AtomicBool, Arc},
 };
 
 use arbitrum_client::client::ArbitrumClient;
@@ -209,7 +208,8 @@ impl LookupWalletTask {
             private_shares,
             blinded_public_shares,
             merkle_proof: None, // constructed below
-            update_locked: Arc::new(AtomicBool::default()),
+            merkle_staleness: Default::default(),
+            update_locked: Default::default(),
         };
 
         // Find the authentication path for the wallet
