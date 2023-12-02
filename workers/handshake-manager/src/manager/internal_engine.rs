@@ -1,21 +1,13 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use circuit_types::{
-    balance::Balance,
-    fixed_point::FixedPoint,
-    order::{Order, OrderSide},
-    r#match::MatchResult,
-    traits::LinkableType,
-};
+use circuit_types::fixed_point::FixedPoint;
 use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, Wallet},
 };
 use itertools::Itertools;
-use mpc_stark::algebra::scalar::Scalar;
 use rand::{seq::SliceRandom, thread_rng};
-use renegade_crypto::fields::scalar_to_u64;
 use task_driver::settle_match_internal::SettleMatchInternalTask;
 use tracing::log;
 use util::matching_engine::match_orders;
@@ -110,8 +102,8 @@ impl HandshakeExecutor {
                 Some(order) => match_orders(
                     my_order,
                     &order,
-                    &my_witness.commitment_witness.balance_send.to_base_type(),
-                    &other_witness.commitment_witness.balance_send.to_base_type(),
+                    &my_witness.commitment_witness.balance_send,
+                    &other_witness.commitment_witness.balance_send,
                     price,
                 ),
                 None => continue,
@@ -130,7 +122,7 @@ impl HandshakeExecutor {
                     other_proof,
                     other_witness,
                     handshake_result,
-                    self.starknet_client.clone(),
+                    self.arbitrum_client.clone(),
                     self.network_channel.clone(),
                     self.global_state.clone(),
                     self.proof_manager_work_queue.clone(),
