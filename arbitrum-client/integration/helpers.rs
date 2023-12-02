@@ -1,6 +1,6 @@
 //! Helper functions for Arbitrum client integration tests
 
-use arbitrum_client::client::ArbitrumClient;
+use arbitrum_client::{client::ArbitrumClient, helpers::send_tx};
 use circuit_types::{
     native_helpers::compute_wallet_commitment_from_private, traits::BaseType,
     wallet::WalletShareStateCommitment, SizedWalletShare,
@@ -11,7 +11,7 @@ use eyre::{eyre, Result};
 use rand::thread_rng;
 use std::{fs::File, io::Read, iter};
 
-use crate::constants::DEPLOYMENTS_KEY;
+use crate::{constants::DEPLOYMENTS_KEY, PreAllocatedState};
 
 /// Parse the address of the deployed contract from the `deployments.json` file
 pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {
@@ -50,4 +50,30 @@ pub async fn deploy_new_wallet(
         statement.private_shares_commitment,
     );
     Ok((full_commitment, statement.public_wallet_shares))
+}
+
+/// Sets up pre-allocated state used by the integration tests
+pub async fn setup_pre_allocated_state(client: &ArbitrumClient) -> Result<PreAllocatedState> {
+    // Insert three new wallets into the contract
+    let (index0_commitment, index0_shares) = deploy_new_wallet(client).await?;
+    let (index1_commitment, index1_shares) = deploy_new_wallet(client).await?;
+    let (index2_commitment, index2_shares) = deploy_new_wallet(client).await?;
+
+    Ok(PreAllocatedState {
+        index0_commitment,
+        index1_commitment,
+        index2_commitment,
+        index0_public_wallet_shares: index0_shares,
+        index1_public_wallet_shares: index1_shares,
+        index2_public_wallet_shares: index2_shares,
+    })
+}
+
+/// Clears the state of the Merkle tree contract, resetting it to a blank tree
+/// w/ the default values for the leaves
+pub async fn clear_merkle(client: &ArbitrumClient) -> Result<()> {
+    send_tx(client.darkpool_contract.clear_merkle())
+        .await
+        .map(|_| ())
+        .map_err(|e| eyre!(e.to_string()))
 }
