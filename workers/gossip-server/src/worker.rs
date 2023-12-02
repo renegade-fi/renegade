@@ -1,5 +1,6 @@
 //! Implements the `Worker` trait for the GossipServer
 
+use arbitrum_client::client::ArbitrumClient;
 use common::default_wrapper::DefaultWrapper;
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
@@ -8,7 +9,6 @@ use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::gossip_server::GossipServerJob;
 use libp2p::Multiaddr;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -31,9 +31,8 @@ pub struct GossipServerConfig {
     pub cluster_id: ClusterId,
     /// The servers to bootstrap into the network with
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
-    /// The starknet client used to connect to sequencer gateway
-    /// and jsonrpc nodes
-    pub starknet_client: StarknetClient,
+    /// The arbitrum client used for querying contract state
+    pub arbitrum_client: ArbitrumClient,
     /// A reference to the relayer-global state
     pub global_state: RelayerState,
     /// A job queue to send outbound heartbeat requests on

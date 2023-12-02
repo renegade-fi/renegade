@@ -4,6 +4,7 @@
 //! This file groups logic for creating the server as well as the central
 //! dispatch/execution loop of the workers
 
+use arbitrum_client::client::ArbitrumClient;
 use common::{
     default_wrapper::DefaultWrapper,
     new_async_shared,
@@ -19,7 +20,6 @@ use gossip_api::{
 };
 use job_types::gossip_server::GossipServerJob;
 use lru::LruCache;
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use std::{
     collections::HashMap,
@@ -214,9 +214,9 @@ impl GossipProtocolExecutor {
         })
     }
 
-    /// Shorthand to fetch the starknet client from the config
-    pub(super) fn starknet_client(&self) -> &StarknetClient {
-        &self.config.starknet_client
+    /// Shorthand to fetch the arbitrum client from the config
+    pub(super) fn arbitrum_client(&self) -> &ArbitrumClient {
+        &self.config.arbitrum_client
     }
 
     /// Runs the executor loop
