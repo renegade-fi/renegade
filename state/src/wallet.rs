@@ -1,6 +1,9 @@
 //! Groups state primitives for indexing and tracking wallet information
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicUsize, Arc},
+};
 
 use common::types::{
     gossip::WrappedPeerId,
@@ -64,6 +67,14 @@ impl WalletIndex {
     /// Get the wallet with the given ID
     pub async fn get_wallet(&self, wallet_id: &WalletIdentifier) -> Option<Wallet> {
         self.read_wallet(wallet_id).await.map(|locked_val| locked_val.clone())
+    }
+
+    /// Get the merkle proof staleness for a given wallet ID
+    pub async fn get_merkle_staleness(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Option<Arc<AtomicUsize>> {
+        self.read_wallet(wallet_id).await.map(|locked_val| locked_val.merkle_staleness.clone())
     }
 
     /// Get the wallet that an order is allocated in

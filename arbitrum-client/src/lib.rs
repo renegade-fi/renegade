@@ -11,7 +11,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-mod abi;
+pub mod abi;
 pub mod client;
 pub mod constants;
 pub mod errors;

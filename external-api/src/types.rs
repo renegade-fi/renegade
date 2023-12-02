@@ -7,6 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use circuit_types::{
@@ -130,7 +131,8 @@ impl From<Wallet> for IndexedWallet {
             blinded_public_shares,
             private_shares,
             merkle_proof: None,
-            update_locked: Arc::new(AtomicBool::default()),
+            merkle_staleness: Default::default(),
+            update_locked: Default::default(),
         }
     }
 }

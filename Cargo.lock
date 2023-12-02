@@ -217,7 +217,7 @@ dependencies = [
  "common",
  "constants",
  "crossbeam",
- "ecdsa 0.16.9",
+ "ecdsa",
  "external-api",
  "futures",
  "futures-util",
@@ -1215,16 +1215,18 @@ dependencies = [
 name = "chain-events"
 version = "0.1.0"
 dependencies = [
+ "arbitrum-client",
  "circuit-types",
  "common",
  "crossbeam",
+ "ethers",
  "gossip-api",
  "job-types",
  "lazy_static",
  "renegade-crypto",
- "starknet",
  "state",
  "tokio",
+ "tokio-stream",
  "tracing",
 ]
 
@@ -6294,6 +6296,7 @@ dependencies = [
  "bigdecimal",
  "constants",
  "criterion",
+ "ethers-core",
  "itertools 0.10.5",
  "lazy_static",
  "num-bigint",

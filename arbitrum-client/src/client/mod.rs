@@ -41,7 +41,7 @@ pub struct ArbitrumClientConfig {
 /// A type alias for the RPC client, which is an ethers middleware stack that
 /// includes a signer derived from a raw private key, and a provider that
 /// connects to the RPC endpoint over HTTP.
-type SignerHttpProvider = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
+pub type SignerHttpProvider = SignerMiddleware<Provider<Http>, Wallet<SigningKey>>;
 
 impl ArbitrumClientConfig {
     /// Gets the block number at which the darkpool was deployed
@@ -99,7 +99,7 @@ impl ArbitrumClientConfig {
 #[derive(Clone)]
 pub struct ArbitrumClient {
     /// The darkpool contract instance, used to make calls to the darkpool
-    darkpool_contract: DarkpoolContract<SignerHttpProvider>,
+    pub darkpool_contract: DarkpoolContract<SignerHttpProvider>,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,
 }
@@ -111,5 +111,19 @@ impl ArbitrumClient {
         let deploy_block = config.get_deploy_block();
 
         Ok(Self { darkpool_contract, deploy_block })
+    }
+
+    /// Get a reference to the underlying RPC client
+    fn client(&self) -> Arc<SignerHttpProvider> {
+        self.darkpool_contract.client()
+    }
+
+    /// Get the current Stylus block number
+    pub async fn block_number(&self) -> Result<BlockNumber, ArbitrumClientError> {
+        self.client()
+            .get_block_number()
+            .await
+            .map(BlockNumber::Number)
+            .map_err(|e| ArbitrumClientError::Rpc(e.to_string()))
     }
 }

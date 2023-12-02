@@ -242,6 +242,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
+        max_root_staleness: args.max_merkle_staleness,
         starknet_client: starknet_client.clone(),
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender,
