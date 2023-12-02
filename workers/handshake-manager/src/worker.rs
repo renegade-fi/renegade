@@ -2,7 +2,8 @@
 
 use std::thread::{Builder, JoinHandle};
 
-use common::types::{chain_id::ChainId, CancelChannel};
+use arbitrum_client::client::ArbitrumClient;
+use common::types::CancelChannel;
 use common::worker::Worker;
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::bus_message::SystemBusMessage;
@@ -11,7 +12,6 @@ use job_types::{
     handshake_manager::HandshakeExecutionJob, price_reporter::PriceReporterManagerJob,
     proof_manager::ProofManagerJob,
 };
-use starknet_client::client::StarknetClient;
 use state::RelayerState;
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
@@ -29,16 +29,14 @@ use super::{error::HandshakeManagerError, manager::HandshakeManager};
 
 /// The config type for the handshake manager
 pub struct HandshakeManagerConfig {
-    /// The chain that the local node targets
-    pub chain_id: ChainId,
     /// The relayer-global state
     pub global_state: RelayerState,
     /// The channel on which to send outbound network requests
     pub network_channel: TokioSender<GossipOutbound>,
     /// The price reporter's job queue
     pub price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
-    /// A starknet client for interacting with the contract
-    pub starknet_client: StarknetClient,
+    /// An arbitrum client for interacting with the contract
+    pub arbitrum_client: ArbitrumClient,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
     pub job_sender: TokioSender<HandshakeExecutionJob>,
@@ -68,11 +66,10 @@ impl Worker for HandshakeManager {
             config.cancel_channel.clone(),
         );
         let executor = HandshakeExecutor::new(
-            config.chain_id,
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_reporter_job_queue.clone(),
-            config.starknet_client.clone(),
+            config.arbitrum_client.clone(),
             config.proof_manager_sender.clone(),
             config.global_state.clone(),
             config.task_driver.clone(),

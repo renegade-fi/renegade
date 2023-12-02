@@ -3,32 +3,29 @@
 
 use std::cmp;
 
+use ark_mpc::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
 use circuit_types::{
-    balance::{Balance, LinkableBalance},
+    balance::Balance,
     fixed_point::FixedPoint,
-    order::{LinkableOrder, Order, OrderSide},
-    r#match::AuthenticatedLinkableMatchResult,
-    traits::{BaseType, LinkableType, MpcBaseType, MpcType, MultiproverCircuitCommitmentType},
+    order::{Order, OrderSide},
+    r#match::OrderSettlementIndices,
+    traits::{MpcBaseType, MpcType},
+    Fabric, SizedWalletShare,
 };
 use circuits::{
-    mpc_circuits::r#match::compute_match,
-    multiprover_prove, verify_collaborative_proof,
-    zk_circuits::{
-        commitment_links::{verify_augmented_shares_commitments, verify_commitment_match_link},
-        valid_match_mpc::{
-            AuthenticatedValidMatchMpcWitness, ValidMatchMpcCircuit, ValidMatchMpcWitnessCommitment,
-        },
+    mpc_circuits::{r#match::compute_match, settle::settle_match},
+    multiprover_prove, verify_singleprover_proof,
+    zk_circuits::valid_match_settle::{
+        SizedAuthenticatedMatchSettleStatement, SizedAuthenticatedMatchSettleWitness,
+        SizedValidMatchSettle,
     },
 };
 use common::types::{
-    handshake::{HandshakeResult, HandshakeState},
-    proof_bundles::{
-        GenericValidMatchMpcBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
-    },
+    handshake::HandshakeState,
+    proof_bundles::{GenericMatchSettleBundle, OrderValidityProofBundle, ValidMatchSettleBundle},
 };
+use constants::SystemCurveGroup;
 use crossbeam::channel::{bounded, Receiver};
-use mpc_bulletproof::r1cs::R1CSProof;
-use mpc_stark::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
 use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use tracing::log;
 use uuid::Uuid;
@@ -37,10 +34,10 @@ use crate::error::HandshakeManagerError;
 
 use super::HandshakeExecutor;
 
-/// Error message emitted when the opened VALID MATCH proof does not properly
-/// link to both parties' proofs of VALID COMMITMENTS
-const ERR_INVALID_PROOF_LINK: &str =
-    "invalid commitment link between VALID COMMITMENTS and VALID MATCH MPC";
+/// Error message emitted when opening a statement fails
+const ERR_OPENING_STATEMENT: &str = "error opening statement";
+/// Error message emitted when opening a proof fails
+const ERR_OPENING_PROOF: &str = "error opening proof";
 
 // -----------
 // | Helpers |
@@ -79,8 +76,8 @@ impl HandshakeExecutor {
         party_id: u64,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
-        mpc_net: QuicTwoPartyNet,
-    ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
+        mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
+    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
         // Fetch the handshake state from the state index
         let handshake_state =
             self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
@@ -101,18 +98,17 @@ impl HandshakeExecutor {
         let res = self_clone
             .execute_match_impl(
                 party_id,
-                handshake_state.to_owned(),
+                handshake_state,
                 party0_validity_proof,
                 party1_validity_proof,
                 mpc_net,
                 cancel_receiver,
             )
-            .await?;
+            .await;
 
         // Await MPC completion
-        log::info!("Finished match!");
-
-        Ok(res)
+        log::info!("Match completed!");
+        res
     }
 
     /// Implementation of the execute_match method that is wrapped in a Tokio
@@ -123,9 +119,9 @@ impl HandshakeExecutor {
         handshake_state: HandshakeState,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
-        mpc_net: QuicTwoPartyNet,
+        mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
         cancel_channel: Receiver<()>,
-    ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
+    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
         log::info!("Matching order...");
 
         // Build a fabric
@@ -150,10 +146,16 @@ impl HandshakeExecutor {
 
         // Run the mpc to get a match result
         let commitment_witness = proof_witnesses.copy_commitment_witness();
-        let witness = Self::execute_match_mpc(
+        let reblind_witness = proof_witnesses.copy_reblind_witness();
+        let party0_commitments_statement = &party0_validity_proof.commitment_proof.statement;
+        let party1_commitments_statement = &party1_validity_proof.commitment_proof.statement;
+        let (witness, statement) = Self::execute_match_settle_mpc(
             &commitment_witness.order,
             &commitment_witness.balance_send,
             &handshake_state.execution_price,
+            &reblind_witness.reblinded_wallet_public_shares,
+            party0_commitments_statement.indices,
+            party1_commitments_statement.indices,
             &fabric,
         );
 
@@ -162,184 +164,102 @@ impl HandshakeExecutor {
             return Err(HandshakeManagerError::MpcShootdown);
         }
 
-        // Prove `VALID MATCH MPC` with the counterparty
-        let (commitment, proof) = Self::prove_valid_match(&witness, &fabric).await?;
-
-        // Verify the commitment links between the match proof and the two parties'
-        // proofs of VALID COMMITMENTS
-        if !verify_commitment_match_link(
-            &party0_validity_proof.commitment_proof.commitment,
-            &party1_validity_proof.commitment_proof.commitment,
-            &commitment,
-        ) {
-            return Err(HandshakeManagerError::VerificationError(
-                ERR_INVALID_PROOF_LINK.to_string(),
-            ));
-        };
-
-        // Check if a cancel has come in after the collaborative proof
-        if !cancel_channel.is_empty() {
-            return Err(HandshakeManagerError::MpcShootdown);
-        }
-
-        self.build_handshake_result(
-            witness.match_res,
-            commitment,
-            proof,
-            proof_witnesses,
-            party0_validity_proof,
-            party1_validity_proof,
-            handshake_state,
-            &fabric,
-            cancel_channel,
-        )
-        .await
+        // Prove `VALID MATCH SETTLE` with the counterparty
+        Self::prove_valid_match(witness, statement, &fabric).await
     }
 
-    /// Execute the match MPC over the provisioned QUIC stream
-    fn execute_match_mpc(
-        my_order: &LinkableOrder,
-        my_balance: &LinkableBalance,
+    /// Execute the match settle MPC over the provisioned fabric
+    fn execute_match_settle_mpc(
+        my_order: &Order,
+        my_balance: &Balance,
         my_price: &FixedPoint,
-        fabric: &MpcFabric,
-    ) -> AuthenticatedValidMatchMpcWitness {
-        // Allocate the orders in the MPC fabric
+        my_public_shares: &SizedWalletShare,
+        party0_indices: OrderSettlementIndices,
+        party1_indices: OrderSettlementIndices,
+        fabric: &Fabric,
+    ) -> (SizedAuthenticatedMatchSettleWitness, SizedAuthenticatedMatchSettleStatement) {
+        let my_amount = compute_max_amount(my_price, my_order, my_balance);
+
+        // Allocate the matching engine inputs in the MPC fabric
         let o1 = my_order.allocate(PARTY0, fabric);
         let b1 = my_balance.allocate(PARTY0, fabric);
         let price1 = my_price.allocate(PARTY0, fabric);
+        let amount1 = my_amount.allocate(PARTY0, fabric);
+        let party0_public_shares = my_public_shares.allocate(PARTY0, fabric);
 
         let o2 = my_order.allocate(PARTY1, fabric);
         let b2 = my_balance.allocate(PARTY1, fabric);
         let price2 = my_price.allocate(PARTY1, fabric);
-
-        // Use the first party's price, the second party's price will be constrained to
-        // equal the first party's in the subsequent proof of `VALID MATCH MPC`
-        let price = my_price.allocate(PARTY0, fabric);
-
-        let my_amount =
-            compute_max_amount(my_price, &my_order.to_base_type(), &my_balance.to_base_type());
-        let amount1 = my_amount.allocate(PARTY0, fabric);
         let amount2 = my_amount.allocate(PARTY1, fabric);
+        let party1_public_shares = my_public_shares.allocate(PARTY1, fabric);
 
-        // Run the circuit
-        let match_res = compute_match(&o1, &o2, &amount1, &amount2, &price, fabric);
+        // Match the orders
+        //
+        // We use the first party's price, the second party's price will be constrained
+        // to equal the first party's in the subsequent proof of `VALID MATCH
+        // MPC`
+        let match_res = compute_match(&o1, &amount1, &amount2, &price1, fabric);
 
-        // Build a witness for the collaborative proof
-        AuthenticatedValidMatchMpcWitness {
-            order1: o1,
-            balance1: b1,
-            amount1,
-            price1,
-            order2: o2,
-            balance2: b2,
-            amount2,
-            price2,
-            match_res: match_res.link_commitments(fabric),
-        }
+        // Settle the orders into the party's wallets
+        let (party0_modified_shares, party1_modified_shares) = settle_match(
+            party0_indices,
+            party1_indices,
+            &party0_public_shares,
+            &party1_public_shares,
+            &match_res,
+        );
+
+        // Build a witness and statement for the collaborative proof
+        (
+            SizedAuthenticatedMatchSettleWitness {
+                order1: o1,
+                balance1: b1,
+                amount1,
+                price1,
+                order2: o2,
+                balance2: b2,
+                amount2,
+                price2,
+                match_res,
+                party0_public_shares,
+                party1_public_shares,
+            },
+            SizedAuthenticatedMatchSettleStatement {
+                party0_indices: party0_indices.allocate(PARTY0, fabric),
+                party1_indices: party1_indices.allocate(PARTY1, fabric),
+                party0_modified_shares,
+                party1_modified_shares,
+            },
+        )
     }
 
     /// Generates a collaborative proof of the validity of a given match result
-    ///
-    /// The implementation *does not* open the match result. This leaks
-    /// information and should be done last, after all other openings,
-    /// validity checks, etc are performed
     async fn prove_valid_match(
-        witness: &AuthenticatedValidMatchMpcWitness,
-        fabric: &MpcFabric,
-    ) -> Result<(ValidMatchMpcWitnessCommitment, R1CSProof), HandshakeManagerError> {
+        shared_witness: SizedAuthenticatedMatchSettleWitness,
+        shared_statement: SizedAuthenticatedMatchSettleStatement,
+        fabric: &Fabric,
+    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
         // Prove the statement
-        let (witness_commitment, proof) = multiprover_prove::<ValidMatchMpcCircuit>(
-            witness.clone(),
-            (), // statement
+        let shared_proof = multiprover_prove::<SizedValidMatchSettle>(
+            shared_witness,
+            shared_statement.clone(),
             fabric.clone(),
         )
         .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
 
         // Open the proof and verify it
-        let opened_proof = proof
-            .open()
+        let proof = shared_proof
+            .open_authenticated()
             .await
-            .map_err(|_| HandshakeManagerError::MpcNetwork("error opening proof".to_string()))?;
-        let opened_commit = witness_commitment
+            .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_PROOF.to_string()))?;
+        let statement = shared_statement
             .open_and_authenticate()
             .await
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
+            .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_STATEMENT.to_string()))?;
 
-        verify_collaborative_proof::<ValidMatchMpcCircuit>(
-            (), // statement
-            opened_commit.clone(),
-            opened_proof.clone(),
-        )
-        .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
+        verify_singleprover_proof::<SizedValidMatchSettle>(statement.clone(), &proof)
+            .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
-        Ok((opened_commit, opened_proof))
-    }
-
-    /// Build the handshake result from a match and proof
-    #[allow(clippy::too_many_arguments)]
-    async fn build_handshake_result(
-        &self,
-        shared_match_res: AuthenticatedLinkableMatchResult,
-        commitment: ValidMatchMpcWitnessCommitment,
-        proof: R1CSProof,
-        validity_proof_witness: OrderValidityWitnessBundle,
-        party0_validity_proof: OrderValidityProofBundle,
-        party1_validity_proof: OrderValidityProofBundle,
-        handshake_state: HandshakeState,
-        fabric: &MpcFabric,
-        cancel_channel: Receiver<()>,
-    ) -> Result<Box<HandshakeResult>, HandshakeManagerError> {
-        // Exchange fees and public secret shares before opening the match result
-        let party0_fee =
-            validity_proof_witness.commitment_witness.fee.share_public(PARTY0, fabric.clone());
-        let party1_fee =
-            validity_proof_witness.commitment_witness.fee.share_public(PARTY1, fabric.clone());
-
-        let party0_public_shares = validity_proof_witness
-            .commitment_witness
-            .augmented_public_shares
-            .share_public(PARTY0, fabric.clone());
-        let party1_public_shares = validity_proof_witness
-            .commitment_witness
-            .augmented_public_shares
-            .share_public(PARTY1, fabric.clone());
-
-        // Verify that the opened augmented shares are the same used in the validity
-        // proofs
-        let party0_public_shares = party0_public_shares.await;
-        let party1_public_shares = party1_public_shares.await;
-        if !verify_augmented_shares_commitments(
-            &party0_public_shares,
-            &party1_public_shares,
-            &party0_validity_proof.commitment_proof.commitment,
-            &party1_validity_proof.commitment_proof.commitment,
-        ) {
-            return Err(HandshakeManagerError::VerificationError(
-                ERR_INVALID_PROOF_LINK.to_string(),
-            ));
-        }
-
-        // Finally, before revealing the match, we make a check that the MPC has
-        // not been terminated by the coordinator
-        if !cancel_channel.is_empty() {
-            return Err(HandshakeManagerError::MpcShootdown);
-        }
-
-        // Open the match result and build the handshake result
-        let match_res_open = shared_match_res
-            .open_and_authenticate()
-            .await
-            .map_err(|err| HandshakeManagerError::MpcNetwork(err.to_string()))?;
-
-        Ok(Box::new(HandshakeResult {
-            match_: match_res_open,
-            match_proof: Box::new(GenericValidMatchMpcBundle { commitment, statement: (), proof }),
-            party0_share_nullifier: handshake_state.local_share_nullifier,
-            party1_share_nullifier: handshake_state.peer_share_nullifier,
-            party0_reblinded_shares: party0_public_shares,
-            party1_reblinded_shares: party1_public_shares,
-            party0_fee: party0_fee.await,
-            party1_fee: party1_fee.await,
-        }))
+        Ok(Box::new(GenericMatchSettleBundle { statement, proof }))
     }
 }
