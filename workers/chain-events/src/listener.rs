@@ -1,12 +1,6 @@
 //! Defines the core implementation of the on-chain event listener
 
-use std::{
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-    thread::JoinHandle,
-};
+use std::{sync::atomic::Ordering, thread::JoinHandle};
 
 use arbitrum_client::{
     abi::{DarkpoolContractEvents, NodeChangedFilter, NullifierSpentFilter},
@@ -20,6 +14,10 @@ use gossip_api::gossip::GossipOutbound;
 use job_types::{handshake_manager::HandshakeExecutionJob, proof_manager::ProofManagerJob};
 use renegade_crypto::fields::u256_to_scalar;
 use state::RelayerState;
+use task_driver::{
+    driver::TaskDriver,
+    update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskError},
+};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
@@ -55,7 +53,9 @@ pub struct OnChainEventListenerConfig {
     pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The work queue for the network manager, used to send outbound gossip
     /// messages
-    pub network_manager_work_queue: TokioSender<GossipOutbound>,
+    pub network_sender: TokioSender<GossipOutbound>,
+    /// The task driver, used to create and manage long-running async tasks
+    pub task_driver: TaskDriver,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
 }
@@ -184,7 +184,7 @@ impl OnChainEventListenerExecutor {
 
             let last_val = staleness.fetch_add(1, Ordering::Relaxed);
             if last_val > self.config.max_root_staleness {
-                self.update_wallet_merkle_path(id, staleness);
+                self.update_wallet_merkle_path(id).await?;
             }
         }
 
@@ -192,7 +192,36 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Update the Merkle path of the given wallet to the latest known root
-    fn update_wallet_merkle_path(&self, wallet_id: &WalletIdentifier, staleness: Arc<AtomicUsize>) {
-        todo!()
+    ///
+    /// Does not block on task completion, if the task fails it will be retried
+    /// on subsequent events streamed into the listener
+    async fn update_wallet_merkle_path(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<(), OnChainEventListenerError> {
+        let wallet =
+            self.global_state.read_wallet_index().await.get_wallet(wallet_id).await.unwrap();
+
+        let task = match UpdateMerkleProofTask::new(
+            wallet,
+            self.arbitrum_client().clone(),
+            self.config.global_state.clone(),
+            self.config.proof_generation_work_queue.clone(),
+            self.config.network_sender.clone(),
+        )
+        .await
+        {
+            Ok(task) => task,
+            Err(UpdateMerkleProofTaskError::WalletLocked) => {
+                // The wallet is locked for an update, the update will give the wallet a new
+                // Merkle proof
+                return Ok(());
+            },
+            Err(e) => return Err(OnChainEventListenerError::TaskStartup(e.to_string())),
+        };
+
+        // Spawn the task
+        self.config.task_driver.start_task(task).await;
+        Ok(())
     }
 }

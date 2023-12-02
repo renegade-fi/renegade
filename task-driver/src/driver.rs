@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::{
     create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState,
     settle_match::SettleMatchTaskState, settle_match_internal::SettleMatchInternalTaskState,
-    update_wallet::UpdateWalletTaskState,
+    update_merkle_proof::UpdateMerkleProofTaskState, update_wallet::UpdateWalletTaskState,
 };
 
 /// The amount to increase the backoff delay by every retry
@@ -110,8 +110,6 @@ pub trait Task: Send {
 #[allow(clippy::large_enum_variant)]
 #[serde(tag = "task_type", content = "state")]
 pub enum StateWrapper {
-    /// The state object for the deposit balance task
-    UpdateWallet(UpdateWalletTaskState),
     /// The state object for the lookup wallet task
     LookupWallet(LookupWalletTaskState),
     /// The state object for the new wallet task
@@ -120,16 +118,21 @@ pub enum StateWrapper {
     SettleMatch(SettleMatchTaskState),
     /// The state object for the settle match internal task
     SettleMatchInternal(SettleMatchInternalTaskState),
+    /// The state object for the update Merkle proof task
+    UpdateMerkleProof(UpdateMerkleProofTaskState),
+    /// The state object for the update wallet task
+    UpdateWallet(UpdateWalletTaskState),
 }
 
 impl Display for StateWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let out = match self {
-            StateWrapper::UpdateWallet(state) => state.to_string(),
             StateWrapper::LookupWallet(state) => state.to_string(),
             StateWrapper::NewWallet(state) => state.to_string(),
             StateWrapper::SettleMatch(state) => state.to_string(),
             StateWrapper::SettleMatchInternal(state) => state.to_string(),
+            StateWrapper::UpdateWallet(state) => state.to_string(),
+            StateWrapper::UpdateMerkleProof(state) => state.to_string(),
         };
         write!(f, "{out}")
     }
