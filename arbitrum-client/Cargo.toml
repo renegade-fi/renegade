@@ -3,10 +3,18 @@ name = "arbitrum-client"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+integration = [
+    "circuit-types/test-helpers",
+    "circuits/test_helpers",
+    "common/mocks",
+]
+
 [[test]]
 name = "integration"
 path = "integration/main.rs"
 harness = false
+required-features = ["integration"]
 
 [dependencies]
 # === Cryptography / Arithmetic === #
@@ -25,9 +33,9 @@ alloy-sol-types = "0.3.1"
 
 # === Workspace Dependencies === #
 constants = { path = "../constants" }
-circuit-types = { path = "../circuit-types", features = ["test-helpers"] }
-circuits = { path = "../circuits", features = ["test_helpers"] }
-common = { path = "../common", features = ["mocks"] }
+circuit-types = { path = "../circuit-types" }
+circuits = { path = "../circuits" }
+common = { path = "../common" }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Serde === #
