@@ -1,7 +1,11 @@
 //! Constants used in the Arbitrum client integration tests
 
 /// The default hostport that the Nitro devnet L2 node runs on
-pub(crate) const DEFAULT_DEVNET_HOSTPORT: &str = "http://localhost:8547";
+///
+/// This assumes that the integration tests are running in a docker-compose
+/// setup with a DNS alias `sequencer` pointing to a devnet node running in a
+/// sister container
+pub(crate) const DEFAULT_DEVNET_HOSTPORT: &str = "http://sequencer:8547";
 
 /// The default private key that the Nitro devnet is seeded with
 pub(crate) const DEFAULT_DEVNET_PKEY: &str =

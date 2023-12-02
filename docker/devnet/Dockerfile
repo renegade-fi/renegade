@@ -1,50 +1,25 @@
-# Pull the compiled contract sources from the locally avialable image
-# This assumes that you have already built the contract sources, which happens
-# automatically when run via `cargo-integrate`
-FROM renegade-contracts:latest AS sources
-
-# We use the katana RPC node as a devnet sequencer for testing
-# https://book.dojoengine.org/toolchain/katana/overview.html
-FROM ubuntu AS devnet
+# This Dockerfile pulls in the Arbitrum Nitro devnet repo,
+# and runs the devnet. This is a docker-compose stack of its own
+# which will run in this container, but the stack is complex enough
+# to warrant this approach.
+# As such, we use the official docker image as the base.
+FROM docker AS devnet
 
 # Install dependencies
-RUN apt-get update && \
-    apt-get install -y git \
-    curl \
-    jq \
-    gcc
+RUN apk add git bash curl jq
 
-# Install Cargo
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+# Clone the Nitro devnet repo
+WORKDIR devnet
+RUN git clone \
+    -b custom-network \
+    --recurse-submodules \
+    https://github.com/renegade-fi/nitro-testnode.git
 
-# Install Katana directly from source
-ARG DOJO_REVISION=b0d24a3
-RUN git clone https://github.com/dojoengine/dojo
-WORKDIR /dojo
-RUN git checkout $DOJO_REVISION
-RUN cargo install --path ./crates/katana --locked --force
+WORKDIR nitro-testnode
 
-# Install the CLI for deploying contracts
-WORKDIR /
-RUN git clone -b cairo2-no-poseidon-or-verifier \
-    https://github.com/renegade-fi/renegade-contracts.git
-WORKDIR /renegade-contracts/starknet_scripts
-RUN cargo build
+# Copy in the healthcheck & run scripts
+COPY ./healthcheck.sh /healthcheck.sh
+COPY ./run_with_graceful_shutdown.sh /run_with_graceful_shutdown.sh
 
-# Copy the compiled contract sources from the sources image
-WORKDIR /
-COPY --from=sources /artifacts /artifacts
-COPY ./setup-sequencer.sh /setup-sequencer.sh
-RUN /setup-sequencer.sh || exit -1
-
-# Copy the deployment log to a configurable location
-ARG DEPLOYMENT_CONFIG_VOLUME=/deployments
-RUN mkdir $DEPLOYMENT_CONFIG_VOLUME
-RUN cp /renegade-contracts/starknet_scripts/deployments.json $DEPLOYMENT_CONFIG_VOLUME
-
-ENTRYPOINT RUST_LOG=info katana \
-    --seed 0 \
-    --load-state /katana-state.out \
-    --disable-fee \
-    --chain-id KATANA
+# Run the devnet
+ENTRYPOINT /run_with_graceful_shutdown.sh
