@@ -15,6 +15,7 @@ mod error;
 use std::{io::Write, process::exit, thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
+use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{watch_worker, Worker};
 use external_api::bus_message::SystemBusMessage;
@@ -28,14 +29,10 @@ use job_types::{
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{manager::PriceReporterManager, worker::PriceReporterManagerConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use state::tui::StateTuiApp;
 use state::RelayerState;
 use system_bus::SystemBus;
-use task_driver::{
-    driver::{TaskDriver, TaskDriverConfig},
-    initialize_state::InitializeStateTask,
-};
+use task_driver::driver::{TaskDriver, TaskDriverConfig};
 
 use chrono::Local;
 use crossbeam::channel;
@@ -122,32 +119,20 @@ async fn main() -> Result<(), CoordinatorError> {
         configure_default_log_capture()
     }
 
-    // Construct a starknet client that workers will use to communicate with
-    // Starknet
-    let starknet_client = StarknetClient::new(StarknetClientConfig {
+    // Construct an arbitrum client that workers will use for submitting txs
+    let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
+        darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
-        contract_addr: args.contract_address.clone(),
-        infura_api_key: None,
-        starknet_json_rpc_addr: args.starknet_jsonrpc_node.clone().unwrap(),
-        starknet_account_addresses: args.starknet_account_addresses,
-        starknet_pkeys: args.starknet_private_keys,
-    });
+        rpc_url: args.rpc_url.unwrap(),
+        arb_priv_key: args.arbitrum_private_key.clone(),
+    })
+    .await
+    .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
 
     // Build a task driver that may be used to spawn long-lived asynchronous tasks
     // that are common among workers
     let task_driver_config = TaskDriverConfig::default_with_bus(system_bus.clone());
     let task_driver = TaskDriver::new(task_driver_config);
-
-    // Spawn a thread to sync the relayer-global state with on-chain state and
-    // network state
-    let task = InitializeStateTask::new(
-        global_state.clone(),
-        starknet_client.clone(),
-        proof_generation_worker_sender.clone(),
-        network_sender.clone(),
-    )
-    .await;
-    task_driver.start_task(task).await;
 
     // ----------------
     // | Worker Setup |
@@ -184,7 +169,7 @@ async fn main() -> Result<(), CoordinatorError> {
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
         bootstrap_servers: args.bootstrap_servers,
-        starknet_client: starknet_client.clone(),
+        arbitrum_client: arbitrum_client.clone(),
         global_state: global_state.clone(),
         job_sender: gossip_worker_sender.clone(),
         job_receiver: Some(gossip_worker_receiver).into(),
@@ -200,11 +185,10 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
-        chain_id: args.chain_id,
         global_state: global_state.clone(),
         network_channel: network_sender.clone(),
         price_reporter_job_queue: price_reporter_worker_sender.clone(),
-        starknet_client: starknet_client.clone(),
+        arbitrum_client: arbitrum_client.clone(),
         job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
         proof_manager_sender: proof_generation_worker_sender.clone(),
@@ -243,11 +227,12 @@ async fn main() -> Result<(), CoordinatorError> {
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
         max_root_staleness: args.max_merkle_staleness,
-        starknet_client: starknet_client.clone(),
+        arbitrum_client: arbitrum_client.clone(),
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender.clone(),
-        network_manager_work_queue: network_sender.clone(),
+        network_sender: network_sender.clone(),
+        task_driver: task_driver.clone(),
         cancel_channel: chain_listener_cancel_receiver,
     })
     .expect("failed to build on-chain event listener");
@@ -261,7 +246,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
-        starknet_client: starknet_client.clone(),
+        arbitrum_client: arbitrum_client.clone(),
         network_sender: network_sender.clone(),
         global_state: global_state.clone(),
         task_driver,
