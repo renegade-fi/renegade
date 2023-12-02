@@ -21,6 +21,17 @@ pub enum Chain {
 /// The number of bytes in a Solidity function selector
 pub const SELECTOR_LEN: usize = 4;
 
+// The following are used for cases in which runtime type-based event filtering
+// is not possible. In these cases, we must construct filters manually using ABI
+// signatures
+
+/// The abi signature for the `WalletUpdated` event
+pub const WALLET_UPDATED_EVENT_NAME: &str = "WalletUpdated";
+/// The abi signature for the `NodeChanged` event
+pub const MERKLE_NODE_CHANGED_EVENT_NAME: &str = "NodeChanged";
+/// The abi signature for the `NullifierSpent` event
+pub const NULLIFIER_SPENT_EVENT_NAME: &str = "NullifierSpent";
+
 lazy_static! {
     // ------------------------
     // | Merkle Tree Metadata |

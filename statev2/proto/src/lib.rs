@@ -457,7 +457,8 @@ impl TryFrom<Wallet> for RuntimeWallet {
             private_shares,
             blinded_public_shares,
             merkle_proof,
-            update_locked: Arc::new(AtomicBool::default()),
+            merkle_staleness: Default::default(),
+            update_locked: Default::default(),
         })
     }
 }

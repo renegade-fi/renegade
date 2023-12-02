@@ -2,7 +2,6 @@
 
 use clap::Parser;
 use common::types::{
-    chain_id::ChainId,
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
     wallet::Wallet,
@@ -60,11 +59,9 @@ struct Cli {
     /// Allow for discovery of nodes on the localhost IP address
     #[clap(long, value_parser, default_value="false")]
     pub allow_local: bool,
-
     /// The address to bind to for gossip, defaults to 0.0.0.0 (all interfaces)
     #[clap(long, value_parser, default_value = "0.0.0.0")]
     pub bind_addr: IpAddr,
-
     /// The known public IP address of the local peer
     #[clap(long, value_parser)] 
     pub public_ip: Option<SocketAddr>,
@@ -85,6 +82,7 @@ struct Cli {
     // ----------------------------
     // | Local Node Configuration |
     // ----------------------------
+
     /// The port to listen on for libp2p
     #[clap(short = 'p', long, value_parser, default_value = "8000")]
     pub p2p_port: u16,
@@ -98,6 +96,10 @@ struct Cli {
     /// A fresh key is generated at startup if this is not present
     #[clap(long, value_parser)]
     pub p2p_key: Option<String>,
+    /// The maximum staleness (number of newer roots observed) to allow on Merkle proofs for 
+    /// managed wallets. After this threshold is exceeded, the Merkle proof will be updated
+    #[clap(long, value_parser, default_value = "100")]
+    pub max_merkle_staleness: usize,
     /// Flag to disable the price reporter
     #[clap(long, value_parser)]
     pub disable_price_reporter: bool,
@@ -185,6 +187,10 @@ pub struct RelayerConfig {
     pub websocket_port: u16,
     /// The local peer's base64 encoded p2p key
     pub p2p_key: Option<String>,
+    /// The maximum staleness (number of newer roots observed) to allow on
+    /// Merkle proofs for managed wallets. After this threshold is exceeded,
+    /// the Merkle proof will be updated
+    pub max_merkle_staleness: usize,
     /// Whether to disable the price reporter if e.g. we are streaming from a
     /// dedicated external API gateway node in the cluster
     pub disable_price_reporter: bool,
@@ -235,6 +241,7 @@ impl Clone for RelayerConfig {
             http_port: self.http_port,
             websocket_port: self.websocket_port,
             p2p_key: self.p2p_key.clone(),
+            max_merkle_staleness: self.max_merkle_staleness,
             allow_local: self.allow_local,
             bind_addr: self.bind_addr,
             public_ip: self.public_ip,
@@ -328,6 +335,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         http_port: cli_args.http_port,
         websocket_port: cli_args.websocket_port,
         allow_local: cli_args.allow_local,
+        max_merkle_staleness: cli_args.max_merkle_staleness,
         p2p_key: cli_args.p2p_key,
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
