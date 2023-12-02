@@ -4,10 +4,7 @@
 use circuit_types::wallet::Nullifier;
 use circuits::{
     verify_singleprover_proof,
-    zk_circuits::{
-        commitment_links::verify_reblind_commitments_link,
-        valid_commitments::SizedValidCommitments, valid_reblind::SizedValidReblind,
-    },
+    zk_circuits::{valid_commitments::SizedValidCommitments, valid_reblind::SizedValidReblind},
 };
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
@@ -31,10 +28,9 @@ use super::{errors::GossipError, server::GossipProtocolExecutor};
 
 /// Error message emitted when an already-used nullifier is received
 const ERR_NULLIFIER_USED: &str = "invalid nullifier, already used";
-/// Error message emitted when two validity proofs are improperly commitment
-/// linked
-const ERR_INVALID_PROOF_LINK: &str =
-    "invalid proof link between VALID REBLIND and VALID COMMITMENTS";
+/// Error message emitted when a Merkle root is not found in the contract
+/// history
+const ERR_INVALID_MERKLE_ROOT: &str = "invalid merkle root, not in contract history";
 
 impl GossipProtocolExecutor {
     /// Dispatches messages from the cluster regarding order book management
@@ -148,11 +144,11 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
         // Ensure that the nullifier has not been used for this order
-        if !self
-            .starknet_client()
-            .check_nullifier_unused(nullifier)
+        if self
+            .arbitrum_client()
+            .check_nullifier_used(nullifier)
             .await
-            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
+            .map_err(|err| GossipError::Arbitrum(err.to_string()))?
         {
             log::info!("received order with spent nullifier, skipping...");
             return Ok(());
@@ -307,38 +303,25 @@ impl GossipProtocolExecutor {
         let reblind_proof = proof_bundle.copy_reblind_proof();
         let commitment_proof = proof_bundle.copy_commitment_proof();
 
-        // Verify the two proofs are correctly commitment linked
-        if !verify_reblind_commitments_link(&reblind_proof.commitment, &commitment_proof.commitment)
-        {
-            log::error!("received validity proof bundle with invalid proof linking");
-            return Err(GossipError::ValidCommitmentVerification(
-                ERR_INVALID_PROOF_LINK.to_string(),
-            ));
-        }
-
         // Check that the proof shares' nullifiers are unused
         self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier).await?;
 
         // Check that the Merkle root is a valid historical root
         if !self
-            .starknet_client()
+            .arbitrum_client()
             .check_merkle_root_valid(reblind_proof.statement.merkle_root)
             .await
-            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
+            .map_err(|err| GossipError::Arbitrum(err.to_string()))?
         {
-            log::info!("got order with invalid merkle root, skipping...");
-            // TODO: Once the contract implements foreign field Merkle, error on
-            // this test
-            // return Err(GossipError::ValidCommitmentVerification(
-            //     "invalid merkle root, not in contract history".to_string(),
-            // ));
+            return Err(GossipError::ValidCommitmentVerification(
+                ERR_INVALID_MERKLE_ROOT.to_string(),
+            ));
         }
 
         // Verify the reblind proof
         if let Err(e) = verify_singleprover_proof::<SizedValidReblind>(
             reblind_proof.statement,
-            reblind_proof.commitment,
-            reblind_proof.proof,
+            &reblind_proof.proof,
         ) {
             log::error!("Invalid proof of `VALID REBLIND`");
             return Err(GossipError::ValidReblindVerification(e.to_string()));
@@ -347,8 +330,7 @@ impl GossipProtocolExecutor {
         // Validate the commitment proof
         if let Err(e) = verify_singleprover_proof::<SizedValidCommitments>(
             commitment_proof.statement,
-            commitment_proof.commitment,
-            commitment_proof.proof,
+            &commitment_proof.proof,
         ) {
             log::error!("Invalid proof of `VALID COMMITMENTS`");
             return Err(GossipError::ValidCommitmentVerification(e.to_string()));
@@ -360,16 +342,16 @@ impl GossipProtocolExecutor {
     /// Assert that a nullifier is unused in the contract, returns a GossipError
     /// if the nullifier has been used
     async fn assert_nullifier_unused(&self, nullifier: Nullifier) -> Result<(), GossipError> {
-        self.starknet_client()
-            .check_nullifier_unused(nullifier)
+        self.arbitrum_client()
+            .check_nullifier_used(nullifier)
             .await
             .map(|res| {
-                if !res {
+                if res {
                     Err(GossipError::NullifierUsed(ERR_NULLIFIER_USED.to_string()))
                 } else {
                     Ok(())
                 }
             })
-            .map_err(|err| GossipError::StarknetRequest(err.to_string()))?
+            .map_err(|err| GossipError::Arbitrum(err.to_string()))?
     }
 }
