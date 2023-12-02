@@ -1,13 +1,11 @@
 //! Groups type definitions for handshake state objects used throughout the node
 
-use circuit_types::{
-    fee::Fee, fixed_point::FixedPoint, r#match::MatchResult, wallet::Nullifier, SizedWalletShare,
-};
+use circuit_types::fixed_point::FixedPoint;
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use uuid::Uuid;
 
-use super::{proof_bundles::ValidMatchSettleBundle, wallet::OrderIdentifier};
+use super::wallet::OrderIdentifier;
 
 /// The role in an MPC network setup; either Dialer or Listener depending on
 /// which node initiates the connection
@@ -128,39 +126,6 @@ impl HandshakeState {
     /// Transition the state to Error
     pub fn error(&mut self, err: String) {
         self.state = State::Error(err);
-    }
-}
-
-/// The type returned by the match process, including the result, the validity
-/// proof bundle, and all witness/statement variables that must be revealed to
-/// complete the match
-#[derive(Clone, Debug)]
-pub struct HandshakeResult {
-    /// The plaintext, opened result of the match
-    pub match_: MatchResult,
-    /// The first party's public wallet share nullifier
-    pub party0_share_nullifier: Nullifier,
-    /// The second party's public wallet share nullifier,
-    pub party1_share_nullifier: Nullifier,
-    /// The first party's public reblinded secret shares
-    pub party0_reblinded_shares: SizedWalletShare,
-    /// The second party's public reblinded secret shares
-    pub party1_reblinded_shares: SizedWalletShare,
-    /// The proof of `VALID MATCH MPC` along with associated commitments
-    pub match_settle_proof: ValidMatchSettleBundle,
-    /// The first party's fee
-    pub party0_fee: Fee,
-    /// The second party's fee
-    pub party1_fee: Fee,
-}
-
-impl HandshakeResult {
-    /// Whether or not the match is non-trivial, a match is trivial if it
-    /// represents the result of running the matching engine on two orders
-    /// that do not cross. In this case the fields of the match will be
-    /// zero'd out
-    pub fn is_nontrivial(&self) -> bool {
-        self.match_.base_amount != 0
     }
 }
 

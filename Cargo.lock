@@ -3330,6 +3330,8 @@ dependencies = [
 name = "handshake-manager"
 version = "0.1.0"
 dependencies = [
+ "arbitrum-client",
+ "ark-mpc",
  "ark-serialize 0.4.2",
  "circuit-types",
  "circuits",
@@ -3344,8 +3346,7 @@ dependencies = [
  "lazy_static",
  "libp2p",
  "lru 0.11.1",
- "mpc-bulletproof",
- "mpc-stark",
+ "mpc-plonk",
  "portpicker",
  "rand 0.8.5",
  "renegade-crypto",
@@ -4638,32 +4639,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mpc-bulletproof"
-version = "0.1.0"
-source = "git+https://github.com/renegade-fi/mpc-bulletproof#0c579bdd3734026f2a096536b52ee6f5863fe3f3"
-dependencies = [
- "ark-ff 0.4.2",
- "ark-serialize 0.4.2",
- "byteorder",
- "digest 0.8.1",
- "futures",
- "futures-util",
- "itertools 0.10.5",
- "merlin 2.0.0",
- "mpc-stark",
- "num-bigint",
- "rand 0.8.5",
- "rand_core 0.5.1",
- "rayon",
- "serde",
- "serde_derive",
- "sha3 0.8.2",
- "thiserror",
- "tokio",
- "unzip-n",
-]
-
-[[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
 source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#bb746c0b313a9bcdf599e12c9fdbde268fe4de83"
@@ -4722,36 +4697,6 @@ dependencies = [
  "num-bigint",
  "rand_chacha 0.3.1",
  "rayon",
-]
-
-[[package]]
-name = "mpc-stark"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84d6e9643f4e3917c59649b653969e5eee7bf372a80587bfdeead8eec90cb85"
-dependencies = [
- "ark-ec",
- "ark-ff 0.4.2",
- "ark-serialize 0.4.2",
- "async-trait",
- "bytes",
- "crossbeam",
- "digest 0.10.7",
- "futures",
- "itertools 0.10.5",
- "kanal",
- "num-bigint",
- "quinn",
- "rand 0.8.5",
- "rcgen 0.9.3",
- "rustc-hash",
- "rustls 0.20.9",
- "serde",
- "serde_json",
- "sha3 0.10.8",
- "tokio",
- "tracing",
- "zeroize",
 ]
 
 [[package]]
@@ -8483,17 +8428,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "unzip-n"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2e7e85a0596447f0f2ac090e16bc4c516c6fe91771fb0c0ccf7fa3dae896b9c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
 
 [[package]]
 name = "url"
