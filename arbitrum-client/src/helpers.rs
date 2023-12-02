@@ -4,13 +4,16 @@ use alloy_sol_types::SolCall;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use constants::Scalar;
 use ethers::{
-    types::{Bytes, H256},
+    abi::Detokenize,
+    contract::ContractCall,
+    types::{Bytes, TransactionReceipt, H256},
     utils::keccak256,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     abi::{newWalletCall, processMatchSettleCall, updateWalletCall},
+    client::SignerHttpProvider,
     errors::ArbitrumClientError,
     serde_def_types::SerdeScalarField,
     types::{
@@ -38,6 +41,18 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 pub fn keccak_hash_scalar(scalar: Scalar) -> Result<H256, ArbitrumClientError> {
     let scalar_bytes = serialize_calldata(&SerdeScalarField(scalar.inner()))?;
     Ok(keccak256(scalar_bytes).into())
+}
+
+/// Sends a transaction, awaiting its confirmation and returning the receipt
+pub async fn send_tx(
+    tx: ContractCall<SignerHttpProvider, impl Detokenize>,
+) -> Result<TransactionReceipt, ArbitrumClientError> {
+    tx.send()
+        .await
+        .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+        .await
+        .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+        .ok_or(ArbitrumClientError::TxDropped)
 }
 
 /// Parses wallet shares from the calldata of a `newWallet` call

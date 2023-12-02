@@ -7,52 +7,47 @@ use constants::MERKLE_HEIGHT;
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
-use crate::IntegrationTestArgs;
+use crate::{
+    helpers::{clear_merkle, setup_pre_allocated_state},
+    IntegrationTestArgs,
+};
 
 /// Tests finding a pre-allocated commitment in the Merkle state
 async fn test_find_commitment(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.client;
+    let state = setup_pre_allocated_state(client).await?;
 
-    for (index, commitment) in [
-        test_args.pre_allocated_state.index0_commitment,
-        test_args.pre_allocated_state.index1_commitment,
-        test_args.pre_allocated_state.index2_commitment,
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, commitment) in
+        [state.index0_commitment, state.index1_commitment, state.index2_commitment]
+            .into_iter()
+            .enumerate()
     {
         // Test the commitment
         let commitment_index = client.find_commitment_in_state(commitment).await?;
         assert_eq_result!(commitment_index, index as u128)?;
     }
 
-    Ok(())
+    clear_merkle(client).await
 }
 integration_test_async!(test_find_commitment);
 
 /// Tests finding a Merkle authentication path for a pre-allocated commitment
 async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.client;
+    let state = setup_pre_allocated_state(client).await?;
 
     // Create Merkle openings to test against
     let (expected_root, expected_paths) = create_multi_opening_with_default_leaf::<MERKLE_HEIGHT>(
-        &[
-            test_args.pre_allocated_state.index0_commitment,
-            test_args.pre_allocated_state.index1_commitment,
-            test_args.pre_allocated_state.index2_commitment,
-        ],
+        &[state.index0_commitment, state.index1_commitment, state.index2_commitment],
         *EMPTY_LEAF_VALUE,
     );
 
     // Find Merkle openings via the `ArbitrumClient` and compare them to the
     // expected openings
-    for (index, commitment) in [
-        test_args.pre_allocated_state.index0_commitment,
-        test_args.pre_allocated_state.index1_commitment,
-        test_args.pre_allocated_state.index2_commitment,
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, commitment) in
+        [state.index0_commitment, state.index1_commitment, state.index2_commitment]
+            .into_iter()
+            .enumerate()
     {
         let merkle_path: MerkleOpening<MERKLE_HEIGHT> =
             client.find_merkle_authentication_path(commitment).await?.into();
@@ -61,12 +56,12 @@ async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
         assert_eq_result!(merkle_path.elems, expected_paths[index].elems)?;
     }
 
-    let final_root = client
-        .find_merkle_authentication_path(test_args.pre_allocated_state.index2_commitment)
-        .await?
-        .compute_root();
+    let final_root =
+        client.find_merkle_authentication_path(state.index2_commitment).await?.compute_root();
 
-    assert_eq_result!(final_root, expected_root)
+    assert_eq_result!(final_root, expected_root)?;
+
+    clear_merkle(client).await
 }
 integration_test_async!(test_find_merkle_path);
 
@@ -74,11 +69,12 @@ integration_test_async!(test_find_merkle_path);
 /// public shares from the calldata
 async fn test_parse_public_shares_from_calldata(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.client;
+    let state = setup_pre_allocated_state(client).await?;
 
     for expected_public_share in [
-        test_args.pre_allocated_state.index0_public_wallet_shares,
-        test_args.pre_allocated_state.index1_public_wallet_shares,
-        test_args.pre_allocated_state.index2_public_wallet_shares,
+        state.index0_public_wallet_shares,
+        state.index1_public_wallet_shares,
+        state.index2_public_wallet_shares,
     ]
     .into_iter()
     {
@@ -92,6 +88,6 @@ async fn test_parse_public_shares_from_calldata(test_args: IntegrationTestArgs) 
         assert_eq_result!(public_shares, expected_public_share)?;
     }
 
-    Ok(())
+    clear_merkle(client).await
 }
 integration_test_async!(test_parse_public_shares_from_calldata);
