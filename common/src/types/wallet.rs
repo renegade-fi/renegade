@@ -348,35 +348,6 @@ impl Wallet {
         // The Merkle proof is now invalid
         self.invalidate_merkle_opening();
     }
-
-    /// Update a wallet from a given set of private and (blinded) public secret
-    /// shares
-    pub fn update_from_shares(
-        &mut self,
-        private_shares: &SizedWalletShare,
-        blinded_public_shares: &SizedWalletShare,
-    ) {
-        // Recover the wallet and update the balances, orders, fees
-        let wallet = wallet_from_blinded_shares(private_shares, blinded_public_shares);
-
-        self.blinder = wallet.blinder;
-        self.balances = wallet.balances.into_iter().map(|b| (b.mint.clone(), b)).collect();
-
-        // Preserve the order_ids, the indexmap should give a consistent ordering
-        // between orders
-        let order_ids = self.orders.keys().cloned();
-        self.orders = order_ids.zip(wallet.orders).collect();
-
-        self.fees = wallet.fees.to_vec();
-
-        // Update the wallet shares
-        self.private_shares = private_shares.clone();
-        self.blinded_public_shares = blinded_public_shares.clone();
-
-        // The Merkle proof is now invalid
-        self.merkle_proof = None;
-        self.merkle_staleness.store(0, Ordering::Relaxed);
-    }
 }
 
 /// Metadata relevant to the wallet's network state
