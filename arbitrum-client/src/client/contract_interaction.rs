@@ -12,7 +12,7 @@ use tracing::log::info;
 
 use crate::{
     errors::ArbitrumClientError,
-    helpers::{deserialize_calldata, serialize_calldata},
+    helpers::{deserialize_calldata, send_tx, serialize_calldata},
     serde_def_types::SerdeScalarField,
     types::{
         ContractProof, ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
@@ -95,19 +95,12 @@ impl ArbitrumClient {
         let contract_statement: ContractValidWalletCreateStatement = statement.into();
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = self
-            .darkpool_contract
-            .new_wallet(
-                wallet_blinder_share_calldata,
-                proof_calldata,
-                valid_wallet_create_statement_calldata,
-            )
-            .send()
-            .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxDropped)?;
+        let receipt = send_tx(self.darkpool_contract.new_wallet(
+            wallet_blinder_share_calldata,
+            proof_calldata,
+            valid_wallet_create_statement_calldata,
+        ))
+        .await?;
 
         info!("`new_wallet` tx hash: {:#x}", receipt.transaction_hash);
 
@@ -134,20 +127,13 @@ impl ArbitrumClient {
         let contract_statement: ContractValidWalletUpdateStatement = statement.try_into()?;
         let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = self
-            .darkpool_contract
-            .update_wallet(
-                wallet_blinder_share_calldata,
-                proof_calldata,
-                valid_wallet_update_statement_calldata,
-                statement_signature.into(),
-            )
-            .send()
-            .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxDropped)?;
+        let receipt = send_tx(self.darkpool_contract.update_wallet(
+            wallet_blinder_share_calldata,
+            proof_calldata,
+            valid_wallet_update_statement_calldata,
+            statement_signature.into(),
+        ))
+        .await?;
 
         info!("`update_wallet` tx hash: {:#x}", receipt.transaction_hash);
 
@@ -243,24 +229,17 @@ impl ArbitrumClient {
 
         // Call `process_match_settle` on darkpool contract
 
-        let receipt = self
-            .darkpool_contract
-            .process_match_settle(
-                party_0_match_payload_calldata,
-                party_0_valid_commitments_proof_calldata,
-                party_0_valid_reblind_proof_calldata,
-                party_1_match_payload_calldata,
-                party_1_valid_commitments_proof_calldata,
-                party_1_valid_reblind_proof_calldata,
-                valid_match_settle_proof_calldata,
-                valid_match_settle_statement_calldata,
-            )
-            .send()
-            .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxDropped)?;
+        let receipt = send_tx(self.darkpool_contract.process_match_settle(
+            party_0_match_payload_calldata,
+            party_0_valid_commitments_proof_calldata,
+            party_0_valid_reblind_proof_calldata,
+            party_1_match_payload_calldata,
+            party_1_valid_commitments_proof_calldata,
+            party_1_valid_reblind_proof_calldata,
+            valid_match_settle_proof_calldata,
+            valid_match_settle_statement_calldata,
+        ))
+        .await?;
 
         info!("`process_match_settle` tx hash: {:#x}", receipt.transaction_hash);
 

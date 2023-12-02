@@ -47,7 +47,7 @@ cargo run \
     -r $DEVNET_RPC_URL \
     -d $DEPLOYMENTS_PATH \
     deploy-stylus \
-    --contract darkpool \
+    --contract darkpool-test-contract \
     $(no_verify)
 
 # Deploy the proxy contract
