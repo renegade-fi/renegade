@@ -1,6 +1,7 @@
 //! Solidity ABI definitions of smart contracts, events, and other on-chain
 //! data structures used by the Arbitrum client.
 #![allow(missing_docs)]
+#![allow(unused_doc_comments)]
 
 use alloy_sol_types::sol;
 use ethers::contract::abigen;
@@ -44,6 +45,22 @@ abigen!(
 
 
         function clearMerkle() external
+    ]"#
+);
+
+/// Represents an ERC20 contract's abi used in integration tests for
+/// deposit/withdrawal mechanics
+#[cfg(feature = "integration")]
+abigen!(
+    ERC20Contract,
+    r#"[
+        function totalSupply() external view returns (uint256)
+        function balanceOf(address account) external view returns (uint256)
+        function mint(address memory _address, uint256 memory value) external
+        function transfer(address to, uint256 value) external returns (bool)
+        function allowance(address owner, address spender) external view returns (uint256)
+        function approve(address spender, uint256 value) external returns (bool)
+        function transferFrom(address from, address to, uint256 value) external returns (bool)
     ]"#
 );
 

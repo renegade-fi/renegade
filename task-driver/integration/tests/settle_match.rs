@@ -2,39 +2,40 @@
 
 use crate::{
     helpers::{
-        biguint_from_hex_string, increase_erc20_allowance, lookup_wallet_and_check_result,
-        new_wallet_in_darkpool,
+        biguint_from_address, biguint_from_hex_string, increase_erc20_allowance,
+        lookup_wallet_and_check_result, new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
-    r#match::MatchResult,
-    traits::{LinkableBaseType, LinkableType},
+    r#match::{MatchResult, OrderSettlementIndices},
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use circuits::zk_circuits::valid_match_mpc::ValidMatchMpcWitness;
+use circuits::zk_circuits::valid_match_settle::{
+    ValidMatchSettleStatement, ValidMatchSettleWitness,
+};
 use common::types::{
-    handshake::{mocks::mock_handshake_state, HandshakeResult, HandshakeState},
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchMpcBundle},
+    handshake::{mocks::mock_handshake_state, HandshakeState},
+    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle},
     wallet::Wallet,
 };
+use constants::Scalar;
 use eyre::{eyre, Result};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
-use mpc_stark::algebra::scalar::Scalar;
-use num_bigint::BigUint;
-use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_u64;
 use state::RelayerState;
 use task_driver::{settle_match::SettleMatchTask, settle_match_internal::SettleMatchInternalTask};
-use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
+use test_helpers::{
+    arbitrum::PREDEPLOYED_WETH_ADDR, assert_eq_result, assert_true_result, integration_test_async,
+};
 use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};
+use util::matching_engine::settle_match_into_wallets;
 use uuid::Uuid;
 
-use super::{update_wallet::execute_wallet_update, WETH_ADDR};
+use super::update_wallet::execute_wallet_update;
 
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
@@ -52,7 +53,7 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
 
     Order {
         quote_mint: biguint_from_hex_string(&test_args.erc20_addr),
-        base_mint: biguint_from_hex_string(WETH_ADDR),
+        base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR),
         side,
         amount: 10,
         worst_case_price: FixedPoint::from_integer(worst_cast_price),
@@ -66,7 +67,9 @@ fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
         OrderSide::Buy => {
             Balance { mint: biguint_from_hex_string(&test_args.erc20_addr), amount: 500 }
         },
-        OrderSide::Sell => Balance { mint: biguint_from_hex_string(WETH_ADDR), amount: 200 },
+        OrderSide::Sell => {
+            Balance { mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR), amount: 200 }
+        },
     }
 }
 
@@ -78,7 +81,8 @@ async fn setup_wallet_with_order_balance(
     balance: Balance,
     test_args: IntegrationTestArgs,
 ) -> Result<(Wallet, Scalar, Scalar)> {
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
+    let account_addr = biguint_from_address(client.wallet_address());
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Deposit the balance into the wallet
@@ -100,7 +104,7 @@ async fn setup_wallet_with_order_balance(
         Some(ExternalTransfer {
             mint: balance.mint,
             amount: balance.amount.into(),
-            account_addr: biguint_from_hex_string(&test_args.account_addr),
+            account_addr,
             direction: ExternalTransferDirection::Deposit,
         }),
         test_args.clone(),
@@ -151,37 +155,28 @@ async fn setup_match_result(
     mut wallet1: Wallet,
     mut wallet2: Wallet,
     test_args: &IntegrationTestArgs,
-) -> Result<HandshakeResult> {
-    let mut rng = thread_rng();
+) -> Result<(MatchResult, ValidMatchSettleBundle)> {
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
     let base_amount = 10;
     let quote_amount = price * Scalar::from(base_amount);
-    let direction = if wallet1.orders.first().unwrap().1.side == OrderSide::Buy { 0 } else { 1 };
+    let direction = wallet1.orders.first().unwrap().1.side.is_sell();
 
     let match_ = MatchResult {
         quote_mint: biguint_from_hex_string(&test_args.erc20_addr),
-        base_mint: biguint_from_hex_string(WETH_ADDR),
+        base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR),
         quote_amount: scalar_to_u64(&quote_amount.floor()),
         base_amount,
         direction,
         max_minus_min_amount: 0,
-        min_amount_order_index: 0,
+        min_amount_order_index: false,
     };
 
     // Simulate a reblind that would happen before a match
     wallet1.reblind_wallet();
     wallet2.reblind_wallet();
 
-    Ok(HandshakeResult {
-        match_: match_.to_linkable(),
-        party0_share_nullifier: Scalar::random(&mut rng),
-        party1_share_nullifier: Scalar::random(&mut rng),
-        party0_reblinded_shares: wallet1.blinded_public_shares.to_linkable(),
-        party1_reblinded_shares: wallet2.blinded_public_shares.to_linkable(),
-        match_proof: dummy_match_proof(&wallet1, &wallet2, match_, test_args).await?,
-        party0_fee: Fee::default().to_linkable(),
-        party1_fee: Fee::default().to_linkable(),
-    })
+    let proof = dummy_match_proof(&wallet1, &wallet2, match_.clone(), test_args).await?;
+    Ok((match_, proof))
 }
 
 /// Get the validity proof bundle for the first order in a given wallet
@@ -218,28 +213,52 @@ async fn dummy_match_proof(
     wallet2: &Wallet,
     match_res: MatchResult,
     test_args: &IntegrationTestArgs,
-) -> Result<ValidMatchMpcBundle> {
-    let order1 = wallet1.orders.first().unwrap().1;
-    let balance1 = wallet1.balances.first().unwrap().1;
+) -> Result<ValidMatchSettleBundle> {
+    let order1 = wallet1.orders.first().unwrap().1.clone();
+    let balance1 = wallet1.balances.first().unwrap().1.clone();
     let amount1 = Scalar::from(order1.amount);
-    let order2 = wallet2.orders.first().unwrap().1;
-    let balance2 = wallet2.balances.first().unwrap().1;
+    let party0_public_shares = wallet1.blinded_public_shares.clone();
+
+    let order2 = wallet2.orders.first().unwrap().1.clone();
+    let balance2 = wallet2.balances.first().unwrap().1.clone();
     let amount2 = Scalar::from(order2.amount);
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
+    let party1_public_shares = wallet2.blinded_public_shares.clone();
+
+    let party0_indices = OrderSettlementIndices { order: 0, balance_send: 0, balance_receive: 1 };
+    let party1_indices = party0_indices;
+
+    let mut party0_modified_shares = party0_public_shares.clone();
+    let mut party1_modified_shares = party1_public_shares.clone();
+    settle_match_into_wallets(
+        &mut party0_modified_shares,
+        &mut party1_modified_shares,
+        party0_indices,
+        party1_indices,
+        &match_res,
+    );
 
     let (send, recv) = channel();
     let job = ProofManagerJob {
-        type_: ProofJob::ValidMatchMpcSingleprover {
-            witness: ValidMatchMpcWitness {
-                order1: order1.to_linkable(),
-                order2: order2.to_linkable(),
-                balance1: balance1.to_linkable(),
-                balance2: balance2.to_linkable(),
+        type_: ProofJob::ValidMatchSettleSingleprover {
+            witness: ValidMatchSettleWitness {
+                order1,
+                order2,
+                balance1,
+                balance2,
                 price1: price,
                 price2: price,
                 amount1,
                 amount2,
-                match_res: match_res.to_linkable(),
+                match_res,
+                party0_public_shares,
+                party1_public_shares,
+            },
+            statement: ValidMatchSettleStatement {
+                party0_indices,
+                party1_indices,
+                party0_modified_shares,
+                party1_modified_shares,
             },
         },
         response_channel: send,
@@ -255,15 +274,16 @@ async fn verify_settlement(
     mut wallet: Wallet,
     blinder_seed: Scalar,
     share_seed: Scalar,
-    order_side: OrderSide,
     match_res: MatchResult,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     let state = &test_args.global_state;
 
     // 1. Apply the match to the wallet
-    apply_match(&mut wallet, order_side, &match_res);
     wallet.reblind_wallet();
+
+    let first_order = *wallet.orders.first().unwrap().0;
+    wallet.apply_match(&match_res, &first_order);
 
     // 2. Lookup the wallet in global state, verify that this matches the expected
     let new_wallet = state
@@ -282,42 +302,6 @@ async fn verify_settlement(
     lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, test_args.clone()).await
 }
 
-/// Apply a match to the wallet
-fn apply_match(wallet: &mut Wallet, order_side: OrderSide, match_res: &MatchResult) {
-    let quote_mint = match_res.quote_mint.clone();
-    let base_mint = match_res.base_mint.clone();
-
-    let quote_amount = match_res.quote_amount as i64;
-    let base_amount = match_res.base_amount as i64;
-
-    match order_side {
-        OrderSide::Buy => {
-            // Buy the base, sell the quote
-            apply_balance_update(wallet, quote_mint, -quote_amount);
-            apply_balance_update(wallet, base_mint, base_amount);
-        },
-        OrderSide::Sell => {
-            // Buy the quote, sell the base
-            apply_balance_update(wallet, quote_mint, quote_amount);
-            apply_balance_update(wallet, base_mint, -base_amount);
-        },
-    };
-
-    // Update the order volume
-    wallet.orders.first_mut().unwrap().1.amount -= match_res.base_amount;
-}
-
-/// Add a u64 to an i64 without overflowing
-fn apply_balance_update(wallet: &mut Wallet, mint: BigUint, amount: i64) {
-    let entry = wallet.balances.entry(mint.clone()).or_insert_with(|| Balance { mint, amount: 0 });
-
-    if amount < 0 {
-        entry.amount = entry.amount.saturating_sub(amount.unsigned_abs());
-    } else {
-        entry.amount = entry.amount.saturating_add(amount as u64);
-    }
-}
-
 // ---------
 // | Tests |
 // ---------
@@ -326,14 +310,14 @@ fn apply_balance_update(wallet: &mut Wallet, mint: BigUint, amount: i64) {
 async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Create two new wallets with orders that match
     let state = &test_args.global_state;
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let (buy_wallet, buy_blinder_seed, buy_share_seed) =
         setup_buy_side_wallet(test_args.clone()).await?;
     let (sell_wallet, sell_blinder_seed, sell_share_seed) =
         setup_sell_side_wallet(test_args.clone()).await?;
 
     // Setup the match result
-    let handshake_res =
+    let (match_res, _) =
         setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
 
     // Create the task
@@ -346,7 +330,7 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         get_first_order_witness(&buy_wallet, state).await?,
         get_first_order_proofs(&sell_wallet, state).await?,
         get_first_order_witness(&sell_wallet, state).await?,
-        handshake_res.match_.to_base_type(),
+        match_res.clone(),
         client.clone(),
         network_sender,
         state.clone(),
@@ -359,26 +343,17 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     assert_true_result!(res)?;
 
     // Verify the match on both wallets
-    let res = handshake_res.match_.to_base_type();
     verify_settlement(
         buy_wallet,
         buy_blinder_seed,
         buy_share_seed,
-        OrderSide::Buy,
-        res.clone(),
+        match_res.clone(),
         test_args.clone(),
     )
     .await?;
 
-    verify_settlement(
-        sell_wallet,
-        sell_blinder_seed,
-        sell_share_seed,
-        OrderSide::Sell,
-        res,
-        test_args.clone(),
-    )
-    .await
+    verify_settlement(sell_wallet, sell_blinder_seed, sell_share_seed, match_res, test_args.clone())
+        .await
 }
 integration_test_async!(test_settle_internal_match);
 
@@ -386,14 +361,14 @@ integration_test_async!(test_settle_internal_match);
 async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Create two new wallets with orders that match
     let state = &test_args.global_state;
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let (buy_wallet, buy_blinder_seed, buy_share_seed) =
         setup_buy_side_wallet(test_args.clone()).await?;
     let (mut sell_wallet, sell_blinder_seed, sell_share_seed) =
         setup_sell_side_wallet(test_args.clone()).await?;
 
     // Setup the match result
-    let handshake_res =
+    let (match_res, match_settle_proof) =
         setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
     let handshake_state = HandshakeState {
         local_order_id: *buy_wallet.orders.first().unwrap().0,
@@ -404,7 +379,7 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     let (network_sender, _network_recv) = unbounded_channel();
     let task = SettleMatchTask::new(
         handshake_state,
-        Box::new(handshake_res.clone()),
+        match_settle_proof,
         get_first_order_proofs(&buy_wallet, state).await?,
         get_first_order_proofs(&sell_wallet, state).await?,
         client.clone(),
@@ -420,20 +395,19 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
 
     // Only the first wallet would have been updated in the global state, as the
     // second wallet is assumed to be managed by another cluster
-    let match_res = handshake_res.match_.to_base_type();
     verify_settlement(
         buy_wallet,
         buy_blinder_seed,
         buy_share_seed,
-        OrderSide::Buy,
         match_res.clone(),
         test_args.clone(),
     )
     .await?;
 
     // The second wallet we must verify by looking up on-chain
-    apply_match(&mut sell_wallet, OrderSide::Sell, &match_res);
+    let sell_order_id = *sell_wallet.orders.first().unwrap().0;
     sell_wallet.reblind_wallet();
+    sell_wallet.apply_match(&match_res, &sell_order_id);
 
     lookup_wallet_and_check_result(
         &sell_wallet,

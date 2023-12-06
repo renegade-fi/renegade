@@ -8,9 +8,9 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::wallet::Wallet;
+use constants::Scalar;
 use eyre::Result;
 use lazy_static::lazy_static;
-use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use rand::thread_rng;
 use task_driver::update_wallet::UpdateWalletTask;
@@ -20,8 +20,9 @@ use uuid::Uuid;
 
 use crate::{
     helpers::{
-        allocate_wallet_in_darkpool, biguint_from_hex_string, empty_wallet_from_seed,
-        increase_erc20_allowance, lookup_wallet_and_check_result, new_wallet_in_darkpool,
+        allocate_wallet_in_darkpool, biguint_from_address, biguint_from_hex_string,
+        empty_wallet_from_seed, increase_erc20_allowance, lookup_wallet_and_check_result,
+        new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
@@ -57,12 +58,13 @@ pub(crate) async fn execute_wallet_update(
     transfer: Option<ExternalTransfer>,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let task = UpdateWalletTask::new(
         get_current_time_seconds(),
         transfer,
         old_wallet,
         new_wallet,
+        vec![], // wallet_update_signature
         client.clone(),
         test_args.network_sender.clone(),
         test_args.global_state.clone(),
@@ -95,7 +97,7 @@ async fn execute_wallet_update_and_verify_shares(
 /// Tests updating a wallet then recovering it from on-chain state
 async fn test_update_wallet_then_recover(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Update the wallet by reblinding it
@@ -121,7 +123,7 @@ integration_test_async!(test_update_wallet_then_recover);
 #[allow(non_snake_case)]
 async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Update the wallet by inserting an order
@@ -144,7 +146,7 @@ integration_test_async!(test_update_wallet__place_order);
 /// Tests cancelling an order in a wallet
 #[allow(non_snake_case)]
 async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Result<()> {
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let mut rng = thread_rng();
 
     // Create a new wallet with a non-empty order and post it on-chain
@@ -182,7 +184,7 @@ integration_test_async!(test_update_wallet__cancel_order);
 #[allow(non_snake_case)]
 async fn test_update_wallet__add_fee(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Update the wallet by adding a fee
@@ -205,7 +207,7 @@ integration_test_async!(test_update_wallet__add_fee);
 /// Tests updating a wallet by removing a fee from the wallet
 #[allow(non_snake_case)]
 async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Result<()> {
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
     let mut rng = thread_rng();
 
     // Create a new wallet with a non-empty fee and post it on-chain
@@ -241,7 +243,7 @@ integration_test_async!(test_update_wallet__remove_fee);
 /// Tests updating a wallet by depositing into the pool
 #[allow(non_snake_case)]
 async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs) -> Result<()> {
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
 
     // Create a new wallet and post it on-chain
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
@@ -258,7 +260,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     // Approve the deposit on the ERC20 contract
     increase_erc20_allowance(amount, &test_args.erc20_addr, test_args.clone()).await?;
 
-    let account_addr = biguint_from_hex_string(&test_args.account_addr);
+    let account_addr = biguint_from_address(client.wallet_address());
     execute_wallet_update_and_verify_shares(
         old_wallet,
         wallet.clone(),

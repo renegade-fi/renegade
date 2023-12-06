@@ -1,7 +1,7 @@
 //! Integration tests for the `NewWalletTask`
 
+use constants::Scalar;
 use eyre::{eyre, Result};
-use mpc_stark::algebra::scalar::Scalar;
 use rand::thread_rng;
 use task_driver::create_new_wallet::NewWalletTask;
 use test_helpers::integration_test_async;
@@ -18,7 +18,7 @@ async fn create_new_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     let task = NewWalletTask::new(
         wallet.id,
         wallet,
-        test_args.starknet_client.clone(),
+        test_args.arbitrum_client.clone(),
         test_args.global_state.clone(),
         test_args.proof_job_queue.clone(),
     )?;
@@ -44,7 +44,7 @@ async fn create_new_wallet__invalid_shares(test_args: IntegrationTestArgs) -> Re
     let task = NewWalletTask::new(
         wallet.id,
         wallet,
-        test_args.starknet_client.clone(),
+        test_args.arbitrum_client.clone(),
         test_args.global_state.clone(),
         test_args.proof_job_queue.clone(),
     );

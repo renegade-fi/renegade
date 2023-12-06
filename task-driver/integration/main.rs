@@ -2,6 +2,8 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
@@ -10,29 +12,31 @@ mod tests;
 
 use std::sync::Arc;
 
+use arbitrum_client::{
+    client::{ArbitrumClient, ArbitrumClientConfig},
+    constants::Chain,
+};
 use clap::Parser;
-use common::types::chain_id::ChainId;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use gossip_api::gossip::GossipOutbound;
 use helpers::new_mock_task_driver;
 use job_types::proof_manager::ProofManagerJob;
 use proof_manager::mock::MockProofManager;
-use starknet_client::client::{StarknetClient, StarknetClientConfig};
 use state::mock::StateMockBuilder;
 use state::RelayerState;
 use task_driver::driver::TaskDriver;
-use test_helpers::integration_test_main;
+use test_helpers::{
+    arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
+    integration_test_main,
+};
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
-use util::{logging::LevelFilter, starknet::parse_addr_from_deployments_file};
-
-/// The hostport that the test expects a local devnet node to be running on
-///
-/// This assumes that the integration tests are running in a docker-compose
-/// setup with a DNS alias `sequencer` pointing to a devnet node running in a
-/// sister container
-const DEVNET_HOSTPORT: &str = "http://sequencer:5050";
+use util::{
+    arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
+    logging::LevelFilter,
+    runtime::block_on_result,
+};
 
 // -------
 // | CLI |
@@ -44,23 +48,13 @@ const DEVNET_HOSTPORT: &str = "http://sequencer:5050";
 struct CliArgs {
     /// The private key to use for the Starknet account during testing
     ///
-    /// Defaults to the first pre-deployed account on `starknet-devnet` when
-    /// run with seed 0
+    /// Defaults to the first pre-deployed account on the `nitro-testnode`
     #[arg(
         short = 'p',
         long,
-        default_value = "0x300001800000000300000180000000000030000000000003006001800006600"
+        default_value = DEFAULT_DEVNET_PKEY
     )]
-    starknet_pkey: String,
-    /// The address of the account contract to use for testing
-    ///
-    /// Defaults to the first pre-deployed account on `starknet-devnet` when
-    /// run with seed 0
-    #[arg(
-        long,
-        default_value = "0x3ee9e18edc71a6df30ac3aca2e0b02a198fbce19b7480a63a0d71cbd76652e0"
-    )]
-    starknet_account_addr: String,
+    arbitrum_pkey: String,
     /// The address of the darkpool deployed on Starknet at the time the test is
     /// started
     ///
@@ -75,10 +69,7 @@ struct CliArgs {
     ///
     /// Defaults to the ETH base token address with the same address as on
     /// Goerli
-    #[arg(
-        long,
-        default_value = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-    )]
+    #[arg(long, default_value = "0x0")]
     erc20_addr: String,
     /// The location of a `deployments.json` file that contains the addresses of
     /// the deployed contracts
@@ -88,7 +79,7 @@ struct CliArgs {
     #[arg(long, default_value = "/artifacts")]
     cairo_artifacts_path: String,
     /// The url the devnet node api server
-    #[arg(long, default_value = DEVNET_HOSTPORT)]
+    #[arg(long, default_value = DEFAULT_DEVNET_HOSTPORT)]
     devnet_url: String,
     /// The test to run
     #[arg(short, long, value_parser)]
@@ -103,10 +94,8 @@ struct CliArgs {
 struct IntegrationTestArgs {
     /// The address of a pre-deployed ERC20 for testing
     erc20_addr: String,
-    /// The client's account address
-    account_addr: String,
-    /// The starknet client that resolves to a locally running devnet node
-    starknet_client: StarknetClient,
+    /// The arbitrum client that resolves to a locally running devnet node
+    arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A receiver for the network manager's work queue
@@ -135,8 +124,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
         Self {
             erc20_addr: test_args.erc20_addr.clone(),
-            account_addr: test_args.starknet_account_addr.clone(),
-            starknet_client: setup_starknet_client_mock(test_args),
+            arbitrum_client: setup_arbitrum_client_mock(test_args),
             network_sender,
             _network_receiver: Arc::new(network_receiver),
             proof_job_queue,
@@ -151,8 +139,8 @@ fn setup_global_state_mock() -> RelayerState {
     StateMockBuilder::default().disable_fee_validation().build()
 }
 
-/// Setup a mock `StarknetClient` for the integration tests
-fn setup_starknet_client_mock(test_args: CliArgs) -> StarknetClient {
+/// Setup a mock `ArbitrumClient` for the integration tests
+fn setup_arbitrum_client_mock(test_args: CliArgs) -> ArbitrumClient {
     assert!(
         test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
         "one of `darkpool_addr` or `deployments_path` must be provided"
@@ -163,18 +151,21 @@ fn setup_starknet_client_mock(test_args: CliArgs) -> StarknetClient {
     let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
         addr
     } else {
-        parse_addr_from_deployments_file(test_args.deployments_path.unwrap()).unwrap()
+        parse_addr_from_deployments_file(
+            &test_args.deployments_path.unwrap(),
+            DARKPOOL_PROXY_CONTRACT_KEY,
+        )
+        .unwrap()
     };
 
     // Build a client that references the darkpool
-    StarknetClient::new(StarknetClientConfig {
-        chain: ChainId::Katana,
-        contract_addr: darkpool_addr,
-        starknet_json_rpc_addr: format!("{}/rpc", test_args.devnet_url),
-        infura_api_key: None,
-        starknet_account_addresses: vec![test_args.starknet_account_addr.clone()],
-        starknet_pkeys: vec![test_args.starknet_pkey],
-    })
+    block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
+        chain: Chain::Devnet,
+        darkpool_addr,
+        arb_priv_key: test_args.arbitrum_pkey,
+        rpc_url: test_args.devnet_url,
+    }))
+    .unwrap()
 }
 
 // ----------------

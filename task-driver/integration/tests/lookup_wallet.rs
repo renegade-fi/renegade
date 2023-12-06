@@ -1,7 +1,7 @@
 //! Integration tests for the `LookupWalletTask`
 
+use constants::Scalar;
 use eyre::Result;
-use mpc_stark::algebra::scalar::Scalar;
 use rand::{distributions::uniform::SampleRange, thread_rng};
 use task_driver::lookup_wallet::LookupWalletTask;
 use test_helpers::{assert_true_result, integration_test_async};
@@ -25,7 +25,7 @@ async fn test_lookup_wallet__invalid_wallet(test_args: IntegrationTestArgs) -> R
         Scalar::zero(), // blinder_stream_seed
         Scalar::zero(), // secret_share_stream_seed
         wallet.key_chain,
-        test_args.starknet_client.clone(),
+        test_args.arbitrum_client.clone(),
         test_args.network_sender.clone(),
         test_args.global_state.clone(),
         test_args.proof_job_queue.clone(),
@@ -43,7 +43,7 @@ integration_test_async!(test_lookup_wallet__invalid_wallet);
 async fn test_lookup_wallet__valid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a wallet from a blinder seed
     let mut rng = thread_rng();
-    let client = &test_args.starknet_client;
+    let client = &test_args.arbitrum_client;
 
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);

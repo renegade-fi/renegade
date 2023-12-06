@@ -23,12 +23,15 @@ use arbitrum_client::{
 };
 use circuit_types::SizedWalletShare;
 use clap::Parser;
-use constants::DARKPOOL_PROXY_CONTRACT_KEY;
-use helpers::parse_addr_from_deployments_file;
-use test_helpers::integration_test_main;
-use util::{logging::LevelFilter, runtime::block_on_result};
-
-use crate::constants::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY};
+use test_helpers::{
+    arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
+    integration_test_main,
+};
+use util::{
+    arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
+    logging::LevelFilter,
+    runtime::block_on_result,
+};
 
 /// The arguments used to run the integration tests
 #[derive(Debug, Clone, Parser)]
