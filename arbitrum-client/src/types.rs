@@ -249,7 +249,7 @@ impl From<ValidReblindStatement> for ContractValidReblindStatement {
     }
 }
 
-/// Statememt for the `VALID_COMMITMENTS` circuit
+/// Statement for the `VALID_COMMITMENTS` circuit
 #[derive(Serialize, Deserialize)]
 pub struct ContractValidCommitmentsStatement {
     /// The index of the balance sent by the party if a successful match occurs

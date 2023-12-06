@@ -1,5 +1,11 @@
 //! Helpers for `task-driver` integration tests
 
+use std::str::FromStr;
+
+use arbitrum_client::{
+    abi::ERC20Contract,
+    client::{ArbitrumClient, SignerHttpProvider},
+};
 use circuit_types::{
     native_helpers::create_wallet_shares_from_private, traits::BaseType, SizedWalletShare,
 };
@@ -8,18 +14,14 @@ use common::types::{
     wallet::Wallet,
     wallet_mocks::mock_empty_wallet,
 };
+use constants::Scalar;
+use ethers::types::{Address, U256};
 use external_api::types::Wallet as ApiWallet;
 use eyre::{eyre, Result};
-use lazy_static::lazy_static;
-use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use num_traits::Num;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
-use starknet::core::types::FieldElement as StarknetFieldElement;
-use starknet::{accounts::Call, core::utils::get_selector_from_name};
-use starknet_client::types::CalldataSerializable;
-use starknet_client::{client::StarknetClient, types::StarknetU256};
 use system_bus::SystemBus;
 use task_driver::{
     driver::{TaskDriver, TaskDriverConfig},
@@ -30,21 +32,15 @@ use uuid::Uuid;
 
 use crate::IntegrationTestArgs;
 
-lazy_static! {
-    /// The selector for an ERC20 `increaseAllowance` call
-    pub static ref ERC20_APPROVE_SELECTOR: StarknetFieldElement =
-        get_selector_from_name("approve").unwrap();
-}
-
 /// Parse a biguint from a hex string
 pub fn biguint_from_hex_string(s: &str) -> BigUint {
     let stripped = s.strip_prefix("0x").unwrap_or(s);
     BigUint::from_str_radix(stripped, 16 /* radix */).unwrap()
 }
 
-/// Parse a field element from a hex string
-pub fn felt_from_hex_string(s: &str) -> StarknetFieldElement {
-    StarknetFieldElement::from_hex_be(s).unwrap()
+/// Parse a biguint from an H160 address
+pub fn biguint_from_address(val: Address) -> BigUint {
+    BigUint::from_bytes_be(val.as_bytes())
 }
 
 // ---------
@@ -67,7 +63,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
         blinder_seed,
         share_seed,
         expected_wallet.key_chain.clone(),
-        test_args.starknet_client,
+        test_args.arbitrum_client,
         test_args.network_sender,
         state.clone(),
         test_args.proof_job_queue,
@@ -100,7 +96,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
 ///
 /// Returns the `blinder_stream_seed` and `share_stream_seed` used to secret
 /// share the wallet as well as the wallet itself
-pub async fn new_wallet_in_darkpool(client: &StarknetClient) -> Result<(Wallet, Scalar, Scalar)> {
+pub async fn new_wallet_in_darkpool(client: &ArbitrumClient) -> Result<(Wallet, Scalar, Scalar)> {
     let mut rng = thread_rng();
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
@@ -112,14 +108,14 @@ pub async fn new_wallet_in_darkpool(client: &StarknetClient) -> Result<(Wallet, 
 }
 
 /// Create a wallet in the contract state
-pub async fn allocate_wallet_in_darkpool(wallet: &Wallet, client: &StarknetClient) -> Result<()> {
+pub async fn allocate_wallet_in_darkpool(wallet: &Wallet, client: &ArbitrumClient) -> Result<()> {
     let share_comm = wallet.get_private_share_commitment();
-    let proof = dummy_valid_wallet_create_bundle();
 
-    let tx_hash =
-        client.new_wallet(share_comm, wallet.blinded_public_shares.clone(), proof).await?;
-    client.poll_transaction_completed(tx_hash).await?;
-    Ok(())
+    let mut proof = dummy_valid_wallet_create_bundle();
+    proof.statement.public_wallet_shares = wallet.blinded_public_shares.clone();
+    proof.statement.private_shares_commitment = share_comm;
+
+    client.new_wallet(proof).await.map_err(Into::into)
 }
 
 /// Mock a wallet update by reblinding the shares and sending them to the
@@ -127,45 +123,43 @@ pub async fn allocate_wallet_in_darkpool(wallet: &Wallet, client: &StarknetClien
 ///
 /// Mutates the wallet in place so that the changes in the contract are
 /// reflected in the caller's state
-pub async fn mock_wallet_update(wallet: &mut Wallet, client: &StarknetClient) -> Result<()> {
+pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) -> Result<()> {
     wallet.reblind_wallet();
 
     let mut rng = thread_rng();
     let share_comm = wallet.get_private_share_commitment();
     let nullifier = Scalar::random(&mut rng);
-    let proof = dummy_valid_wallet_update_bundle();
 
-    let tx_hash = client
-        .update_wallet(
-            share_comm,
-            nullifier,
-            None, // external_transfer
-            wallet.blinded_public_shares.clone(),
-            proof,
-        )
-        .await?;
-    client.poll_transaction_completed(tx_hash).await?;
-    Ok(())
+    // Mock a `VALID WALLET UPDATE` proof bundle
+    let mut proof = dummy_valid_wallet_update_bundle();
+    proof.statement.old_shares_nullifier = nullifier;
+    proof.statement.new_private_shares_commitment = share_comm;
+    proof.statement.new_public_shares = wallet.blinded_public_shares.clone();
+
+    client.update_wallet(proof, vec![] /* statement_sig */).await.map_err(Into::into)
 }
 
 /// Increase the ERC20 allowance of the darkpool contract for the given account
 pub(crate) async fn increase_erc20_allowance(
     amount: u64,
-    mint: &str,
+    addr: &str,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    let client = &test_args.starknet_client;
-    let darkpool_addr = &client.config.contract_addr;
+    let darkpool_addr = test_args.arbitrum_client.darkpool_contract.address();
 
-    // Add the `spender` and `amount` to the calldata
-    let mut calldata = vec![felt_from_hex_string(darkpool_addr)];
-    calldata.extend(StarknetU256 { low: amount as u128, high: 0 }.to_calldata());
+    let erc20_client = create_erc20_client(addr, &test_args)?;
+    erc20_client.approve(darkpool_addr, U256::from(amount)).await.map_err(Into::into).map(|_| ())
+}
 
-    let allow_call =
-        Call { to: felt_from_hex_string(mint), selector: *ERC20_APPROVE_SELECTOR, calldata };
+/// Create a client for the deployed erc20 contract
+fn create_erc20_client(
+    addr: &str,
+    test_args: &IntegrationTestArgs,
+) -> Result<ERC20Contract<SignerHttpProvider>> {
+    let client = test_args.arbitrum_client.client();
+    let addr = Address::from_str(addr)?;
 
-    client.execute_transaction(allow_call).await?;
-    Ok(())
+    Ok(ERC20Contract::new(addr, client))
 }
 
 // ---------

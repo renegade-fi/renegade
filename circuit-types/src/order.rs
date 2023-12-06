@@ -85,6 +85,16 @@ pub enum OrderSide {
 }
 
 impl OrderSide {
+    /// Return whether the order is a sell side order, this is equivalent to the
+    /// conversion that makes the `OrderSide` a bool type when allocated in
+    /// the circuit
+    pub fn is_sell(&self) -> bool {
+        match self {
+            OrderSide::Buy => false,
+            OrderSide::Sell => true,
+        }
+    }
+
     /// Return the opposite direction to self
     pub fn opposite(&self) -> OrderSide {
         match self {

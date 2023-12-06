@@ -9,21 +9,9 @@ use common::types::proof_bundles::mocks::dummy_valid_wallet_create_bundle;
 use constants::Scalar;
 use eyre::{eyre, Result};
 use rand::thread_rng;
-use std::{fs::File, io::Read, iter};
+use std::iter;
 
-use crate::{constants::DEPLOYMENTS_KEY, PreAllocatedState};
-
-/// Parse the address of the deployed contract from the `deployments.json` file
-pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {
-    let mut file_contents = String::new();
-    File::open(file_path)?.read_to_string(&mut file_contents)?;
-
-    let parsed_json = json::parse(&file_contents)?;
-    parsed_json[DEPLOYMENTS_KEY][contract_key]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| eyre!("Could not parse darkpool address from deployments file"))
-}
+use crate::PreAllocatedState;
 
 /// Create a set of random wallet shares
 pub fn random_wallet_shares() -> SizedWalletShare {

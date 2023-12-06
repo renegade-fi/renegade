@@ -8191,6 +8191,7 @@ dependencies = [
  "common",
  "constants",
  "crossbeam",
+ "ethers",
  "external-api",
  "eyre",
  "futures",

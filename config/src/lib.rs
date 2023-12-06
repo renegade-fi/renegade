@@ -16,7 +16,7 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 use toml::{value::Map, Value};
-use util::arbitrum::parse_addr_from_deployments_file;
+use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 
 /// The default version of the node
 const DEFAULT_VERSION: &str = "0.1.0";
@@ -451,7 +451,8 @@ fn toml_value_to_string(val: &Value) -> Result<String, String> {
 fn set_contract_from_file(config: &mut RelayerConfig, file: Option<String>) -> Result<(), String> {
     // Do not override if the file is not specified
     if let Some(path) = file {
-        let darkpool_addr = parse_addr_from_deployments_file(path).map_err(|e| e.to_string())?;
+        let darkpool_addr = parse_addr_from_deployments_file(&path, DARKPOOL_PROXY_CONTRACT_KEY)
+            .map_err(|e| e.to_string())?;
         config.contract_address = darkpool_addr;
     }
 
