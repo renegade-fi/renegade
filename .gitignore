@@ -7,4 +7,3 @@
 secrets.env
 **/flamegraph.svg
 /.gitattributes
-**/.env-integration
