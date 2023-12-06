@@ -10,10 +10,24 @@ if [[ $# -lt 2 ]] ; then
     exit 0
 fi
 
+# Source .env file from the target package, if it exists
+env_file="$2"/.env-integration
+if [[ -f $env_file ]]; then
+  source $env_file
+fi
+
+# If the $USE_DEVNET env var is set, set up devnet
+# Assumes `cargo integrate` is being run from the root of the repo
+if [[ -n $USE_DEVNET ]]; then
+  source ./bin/setup_devnet.zsh
+fi
+
 # Use BuildKit
 export DOCKER_BUILDKIT=1
 
 # Bring up the compose file for the target package
+export DEPLOYMENTS_DIR
+export DEPLOYMENTS_FILE
 compose_file="$2"/docker-compose.yml
 docker-compose --file $compose_file down --volumes
 docker-compose \
