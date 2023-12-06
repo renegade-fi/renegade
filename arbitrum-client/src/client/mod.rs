@@ -114,8 +114,13 @@ impl ArbitrumClient {
     }
 
     /// Get a reference to the underlying RPC client
-    fn client(&self) -> Arc<SignerHttpProvider> {
+    pub fn client(&self) -> Arc<SignerHttpProvider> {
         self.darkpool_contract.client()
+    }
+
+    /// Get the address of the wallet used for signing transactions
+    pub fn wallet_address(&self) -> Address {
+        self.client().address()
     }
 
     /// Get the current Stylus block number
