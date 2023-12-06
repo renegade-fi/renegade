@@ -35,7 +35,7 @@ cargo run \
     -r $DEVNET_RPC_URL \
     -d $DEPLOYMENTS_PATH \
     deploy-stylus \
-    --contract verifier \
+    --contract verifier
 
 # Deploy Merkle contract
 cargo run \
@@ -44,7 +44,7 @@ cargo run \
     -r $DEVNET_RPC_URL \
     -d $DEPLOYMENTS_PATH \
     deploy-stylus \
-    --contract merkle \
+    --contract merkle
 
 # Deploy darkpool contract, setting the "--no-verify" flag
 # conditionally depending on whether the corresponding env var is set
@@ -112,6 +112,17 @@ if [[ -n $UPLOAD_VKEYS ]]; then
         -d $DEPLOYMENTS_PATH \
         upload-vkey \
         -c valid-match-settle
+fi
+
+# If the $DEPLOY_DUMMY_ERC20 env var is set, deploy the dummy ERC20 contract
+if [[ -n $DEPLOY_DUMMY_ERC20 ]]; then
+    cargo run \
+    -p scripts -- \
+    -p $DEVNET_PKEY \
+    -r $DEVNET_RPC_URL \
+    -d $DEPLOYMENTS_PATH \
+    deploy-stylus \
+    --contract dummy-erc20
 fi
 
 # Sleep forever to prevent the Docker Compose stack from aborting due to container exit
