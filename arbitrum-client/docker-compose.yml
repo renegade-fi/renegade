@@ -1,56 +1,5 @@
 services:
 
-  devnet:
-    build:
-      context: ../docker/devnet
-    volumes:
-      # We mount the docker socket so that the devnet can spin up its own docker containers.
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - TOKEN_BRIDGE_ADDRESS=0xDB2D15a3EB70C347E0D2C2c7861cAFb946baAb48
-      - DEVNET_RPC_URL=http://sequencer:8547
-    # We opt not to attach logging for this service, since the logs from the devnet stack are
-    # overbearingly verbose and not useful for debugging.
-    attach: false
-    healthcheck:
-      test: "/healthcheck.sh"
-      start_period: 5m
-      interval: 5s
-      timeout: 10s
-      retries: 3
-    # We give the devnet a long grace period to stop,
-    # since it also has to tear down the Arbitrum devnet docker-compose stack
-    stop_grace_period: 1m
-
-  contracts:
-    build:
-      context: ../docker/contracts
-      # We create a "signal file" on a shared volume when the contracts are deployed,
-      # to indicate to the relayer service that it can start running tests.
-      args:
-        - SIGNAL_FILE=/is_deployed/is_deployed
-    environment:
-      - DEVNET_PKEY=0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
-      - DEVNET_ACCOUNT_ADDRESS=0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
-      # The RPC URL uses a "sequencer" DNS alias even though there is no sequencer service in this stack.
-      # This is because the devnet stack has a sequencer service, and is configured to run on the same network.
-      - DEVNET_RPC_URL=http://sequencer:8547
-      - DEPLOYMENTS_PATH=/deployments/deployments.json
-      - NO_VERIFY=1
-    image: renegade-contracts:latest
-    volumes:
-      - deployments:/deployments
-      - is_deployed:/is_deployed
-    healthcheck:
-      test: "/check_file_exists.sh /is_deployed/is_deployed"
-      start_period: 3m
-      interval: 5s
-      timeout: 10s
-      retries: 3
-    depends_on:
-      devnet:
-        condition: service_healthy
-
   relayer:
     image: arbitrum-client-integration-test:latest
     build:
@@ -58,23 +7,9 @@ services:
       dockerfile: arbitrum-client/Dockerfile
     command: >
       cargo test --test integration --features "integration" -- 
-        --deployments-path /deployments/deployments.json
+        --deployments-path /deployments/${DEPLOYMENTS_FILE}
         --verbose 
     volumes:
-      - deployments:/deployments
-      - is_deployed:/is_deployed
+      - ${DEPLOYMENTS_DIR}:/deployments
     tty: true
-    depends_on:
-      devnet:
-        condition: service_healthy
-      contracts:
-        condition: service_healthy
-
-networks:
-  default:
-    # We give the default network an explicit name so that the devnet stack can join it.
-    name: integration
-
-volumes:
-  deployments:
-  is_deployed:
+    network_mode: host
