@@ -55,9 +55,9 @@ fn build_mpc_base_type_impl(base_struct: &ItemStruct) -> TokenStream2 {
     let generics = base_struct.generics.clone();
     let where_clause = generics.where_clause.clone();
 
-    let base_struct_ident = ident_with_generics(base_struct.ident.clone(), generics.clone());
+    let base_struct_ident = ident_with_generics(&base_struct.ident, generics.clone());
     let mpc_type_name = ident_with_prefix(&base_struct.ident.to_string(), MPC_TYPE_PREFIX);
-    let mpc_type_name = ident_with_generics(mpc_type_name, generics.clone());
+    let mpc_type_name = ident_with_generics(&mpc_type_name, generics.clone());
 
     let mpc_base_type_trait = new_ident(MPC_BASE_TYPE_TRAIT_NAME);
     let mpc_allocated_type = new_ident(MPC_ALLOCATED_TYPE_ASSOCIATED_NAME);
@@ -85,8 +85,8 @@ fn build_mpc_type(base_struct: &ItemStruct, include_multiprover: bool) -> TokenS
         new_name_ident,
         vec![],
         generics,
-        path_from_ident(mpc_base_trait_ident),
-        path_from_ident(mpc_type_associated_ident),
+        &path_from_ident(&mpc_base_trait_ident),
+        &path_from_ident(&mpc_type_associated_ident),
     );
 
     // Impl `MpcType` for the newly constructed type
@@ -108,18 +108,18 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
     let generics = base_type.generics.clone();
     let where_clause = generics.where_clause.clone();
 
-    let mpc_type_trait_name = path_from_ident(new_ident(MPC_ALLOC_TYPE_TRAIT_NAME));
-    let mpc_type_ident = ident_with_generics(mpc_type.ident.clone(), generics.clone());
+    let mpc_type_trait_name = path_from_ident(&new_ident(MPC_ALLOC_TYPE_TRAIT_NAME));
+    let mpc_type_ident = ident_with_generics(&mpc_type.ident, generics.clone());
 
     // This ident is used for the `type NativeType` associated type
     let native_type_ident = new_ident(MPC_NATIVE_TYPE_ASSOCIATED_NAME);
-    let base_type_ident = ident_with_generics(base_type.ident.clone(), generics.clone());
+    let base_type_ident = ident_with_generics(&base_type.ident, generics.clone());
 
-    let authenticated_scalar_type = path_from_ident(new_ident(MPC_TYPE_SERIALIZED_IDENT));
+    let authenticated_scalar_type = path_from_ident(&new_ident(MPC_TYPE_SERIALIZED_IDENT));
     let from_auth_scalars_method = build_deserialize_method(
-        new_ident(FROM_AUTHENTICATED_SCALARS_METHOD_NAME),
-        authenticated_scalar_type.clone(),
-        mpc_type_trait_name.clone(),
+        &new_ident(FROM_AUTHENTICATED_SCALARS_METHOD_NAME),
+        &authenticated_scalar_type,
+        &mpc_type_trait_name,
         mpc_type,
     );
 
@@ -135,8 +135,8 @@ fn build_mpc_type_impl(mpc_type: &ItemStruct, base_type: &ItemStruct) -> TokenSt
 
     // Build a `to_authenticated_scalars` method
     let to_auth_scalars_method = build_serialize_method(
-        new_ident(TO_AUTHENTICATED_SCALARS_METHOD_NAME),
-        authenticated_scalar_type.clone(),
+        &new_ident(TO_AUTHENTICATED_SCALARS_METHOD_NAME),
+        &authenticated_scalar_type,
         mpc_type,
     );
 

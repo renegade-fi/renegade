@@ -73,16 +73,16 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
 
 /// Implementation of the circuit tracer, parses the token stream and defines
 /// the two trampoline function implementation
-pub(crate) fn circuit_trace_impl(target_fn: ItemFn, macro_args: MacroArgs) -> TokenStream {
+pub(crate) fn circuit_trace_impl(target_fn: &ItemFn, macro_args: MacroArgs) -> TokenStream {
     let mut out_tokens = TokenStream2::default();
 
     // Build the trampoline implementations
-    let (inactive_impl, active_impl) = build_trampoline_impls(&target_fn, macro_args);
+    let (inactive_impl, active_impl) = build_trampoline_impls(target_fn, macro_args);
     out_tokens.extend(inactive_impl.to_token_stream());
     out_tokens.extend(active_impl.to_token_stream());
 
     // Modify the target function to have a different signature from the trampoline
-    out_tokens.extend(modify_target_fn(&target_fn).to_token_stream());
+    out_tokens.extend(modify_target_fn(target_fn).to_token_stream());
 
     out_tokens.into()
 }

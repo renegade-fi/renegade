@@ -112,6 +112,7 @@ lazy_static! {
 ///
 /// This will cause the price reporter to connect to exchanges and begin
 /// streaming, ahead of when we need prices
+#[allow(clippy::needless_pass_by_value)]
 pub fn init_price_streams(
     price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
 ) -> Result<(), HandshakeManagerError> {

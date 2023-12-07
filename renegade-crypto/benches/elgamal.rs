@@ -1,3 +1,7 @@
+//! Benchmarks for the elgamal implementation
+
+#![allow(missing_docs)]
+
 use constants::Scalar;
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
 use rand::thread_rng;

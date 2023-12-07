@@ -56,7 +56,7 @@ pub struct DB {
 
 impl DB {
     /// Constructor
-    pub fn new(config: DbConfig) -> Result<Self, StorageError> {
+    pub fn new(config: &DbConfig) -> Result<Self, StorageError> {
         let db_path = Path::new(&config.path);
         let db = Database::new()
             .set_max_tables(NUM_TABLES)
@@ -435,7 +435,7 @@ mod test {
         // Create a mock DB and table
         let tempdir = tempdir().unwrap();
         let path = tempdir.path().to_str().unwrap().to_string();
-        let db = Arc::new(DB::new(DbConfig { path: path.clone() }).unwrap());
+        let db = Arc::new(DB::new(&DbConfig { path: path.clone() }).unwrap());
 
         db.create_table(TABLE_NAME).unwrap();
 
@@ -479,7 +479,7 @@ mod test {
         let path = tempdir.path().to_str().unwrap().to_string();
 
         // Create a mock DB and table
-        let db = DB::new(DbConfig { path: path.clone() }).unwrap();
+        let db = DB::new(&DbConfig { path: path.clone() }).unwrap();
 
         // Set a key
         let key = "test_key".to_string();
@@ -495,7 +495,7 @@ mod test {
         drop(db);
 
         // Re-open the database at the same path and read the value
-        let db = DB::new(DbConfig { path }).unwrap();
+        let db = DB::new(&DbConfig { path }).unwrap();
 
         let tx = db.new_read_tx().unwrap();
         let val: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();

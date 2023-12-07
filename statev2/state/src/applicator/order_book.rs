@@ -307,6 +307,7 @@ impl StateApplicator {
     }
 
     /// Write the nullifier set for a given nullifier
+    #[allow(clippy::needless_pass_by_value)]
     fn write_nullifier_set(
         nullifier: Scalar,
         nullifier_set: Vec<OrderIdentifier>,

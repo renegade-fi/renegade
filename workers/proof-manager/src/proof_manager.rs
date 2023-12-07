@@ -67,6 +67,7 @@ pub struct ProofManager {
 impl ProofManager {
     /// The execution loop blocks on the job queue then schedules proof
     /// generation jobs onto a thread pool
+    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn execution_loop(
         job_queue: Receiver<ProofManagerJob>,
         thread_pool: Arc<ThreadPool>,

@@ -267,7 +267,7 @@ impl RelayerState {
     /// Add an order to the book
     pub async fn add_order(&self, order: NetworkOrder) {
         // Add the order to the book and to the priority store
-        self.write_handshake_priorities().await.new_order(order.id, order.cluster.clone());
+        self.write_handshake_priorities().await.new_order(order.id, &order.cluster);
         self.write_order_book().await.add_order(order).await;
     }
 

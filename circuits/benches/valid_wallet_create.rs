@@ -1,5 +1,6 @@
 //! Tests the process of proving and verifying a `VALID WALLET CREATE` circuit
 #![allow(incomplete_features)]
+#![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
 use circuit_types::native_helpers::compute_wallet_private_share_commitment;

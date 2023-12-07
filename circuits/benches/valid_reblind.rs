@@ -1,5 +1,6 @@
 //! Tests the process of proving and verifying a `VALID REBLIND` circuit
 #![allow(incomplete_features)]
+#![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
 use circuit_types::{

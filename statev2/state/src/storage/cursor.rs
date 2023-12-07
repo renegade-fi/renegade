@@ -45,14 +45,14 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
         let res = self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
 
-        res.map(|(k, v)| Self::deserialize_key_value(k, v)).transpose()
+        res.map(|(k, v)| Self::deserialize_key_value(&k, &v)).transpose()
     }
 
     /// Position the cursor at the previous key value pair and return it
     pub fn prev(&mut self) -> Result<Option<(K, V)>, StorageError> {
         let res = self.inner.prev::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
 
-        res.map(|(k, v)| Self::deserialize_key_value(k, v)).transpose()
+        res.map(|(k, v)| Self::deserialize_key_value(&k, &v)).transpose()
     }
 
     /// Seek to the first key in the table
@@ -93,15 +93,15 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 
     /// Deserialize a key-value pair to the type of the cursor
     fn deserialize_key_value(
-        k_buffer: CowBuffer,
-        v_buffer: CowBuffer,
+        k_buffer: &CowBuffer,
+        v_buffer: &CowBuffer,
     ) -> Result<(K, V), StorageError> {
-        Ok((deserialize_value(&k_buffer)?, deserialize_value(&v_buffer)?))
+        Ok((deserialize_value(k_buffer)?, deserialize_value(v_buffer)?))
     }
 
     /// Buffer the kv pair at the current position
     fn buffer_kv_pair(&mut self, pair: Option<(CowBuffer, CowBuffer)>) -> Result<(), StorageError> {
-        self.buffered_value = pair.map(|(k, v)| Self::deserialize_key_value(k, v)).transpose()?;
+        self.buffered_value = pair.map(|(k, v)| Self::deserialize_key_value(&k, &v)).transpose()?;
 
         Ok(())
     }
@@ -138,7 +138,7 @@ impl<'txn, T: TransactionKind, K: Key, V: Value> Iterator for DbCursor<'txn, T, 
         }
 
         let res = res.unwrap();
-        res.map(|(k, v)| Self::deserialize_key_value(k, v))
+        res.map(|(k, v)| Self::deserialize_key_value(&k, &v))
     }
 }
 

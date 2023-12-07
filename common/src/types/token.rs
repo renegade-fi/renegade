@@ -609,7 +609,7 @@ lazy_static! {
     ///
     /// https://github.com/starknet-io/starknet-addresses/blob/master/bridged_tokens/goerli.json
     ///
-    /// TODO: This will be removed when we implement our custom bridging solution
+    /// TODO: Update this with arbitrum addresses
     static ref STARKNET_GOERLI_TOKEN_REMAP: HashMap<String, String> = {
         vec![
             // WBTC

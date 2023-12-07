@@ -99,8 +99,8 @@ impl HandshakePriorityStore {
     // -----------
 
     /// Add a new order to the priority list
-    pub fn new_order(&mut self, order_id: OrderIdentifier, cluster_id: ClusterId) {
-        let cluster_priority = self.get_cluster_priority(&cluster_id);
+    pub fn new_order(&mut self, order_id: OrderIdentifier, cluster_id: &ClusterId) {
+        let cluster_priority = self.get_cluster_priority(cluster_id);
         self.order_priorities.insert(
             order_id,
             new_async_shared(OrderPriority {
