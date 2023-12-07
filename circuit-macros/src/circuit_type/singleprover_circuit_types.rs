@@ -70,7 +70,7 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 
     let var_type_associated = new_ident(VAR_TYPE_ASSOCIATED_NAME);
     let var_type_name = ident_with_generics(
-        ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX),
+        &ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX),
         generics.clone(),
     );
 
@@ -96,13 +96,13 @@ pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
         var_name,
         vec![derive_clone],
         generics.clone(),
-        str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
-        str_to_path(VAR_TYPE_ASSOCIATED_NAME),
+        &str_to_path(CIRCUIT_BASE_TYPE_TRAIT_NAME),
+        &str_to_path(VAR_TYPE_ASSOCIATED_NAME),
     );
 
     // Implement `CircuitVarType` for this struct and append to the result
     let circuit_var_impl =
-        build_var_type_impl(&var_struct, ident_with_generics(base_name, generics));
+        build_var_type_impl(&var_struct, &ident_with_generics(&base_name, generics));
     let mut res = var_struct.to_token_stream();
     res.extend(circuit_var_impl);
 
@@ -110,19 +110,19 @@ pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
 }
 
 /// Build an implementation of the `CircuitVarType` trait for the new var type
-fn build_var_type_impl(var_struct: &ItemStruct, base_name: Path) -> TokenStream2 {
+fn build_var_type_impl(var_struct: &ItemStruct, base_name: &Path) -> TokenStream2 {
     // Build the impl prelude
     let generics = var_struct.generics.clone();
     let trait_ident = str_to_path(VAR_TYPE_TRAIT_NAME);
     let where_clause = generics.where_clause.clone();
 
-    let var_struct_ident = ident_with_generics(var_struct.ident.clone(), generics.clone());
+    let var_struct_ident = ident_with_generics(&var_struct.ident, generics.clone());
 
     let base_type_associated_name = new_ident(BASE_TYPE_TRAIT_NAME);
 
     let serialized_type = str_to_path(VARIABLE_TYPE);
     let serialize_method_expr =
-        build_serialize_method(new_ident(TO_VARS_METHOD_NAME), serialized_type.clone(), var_struct);
+        build_serialize_method(&new_ident(TO_VARS_METHOD_NAME), &serialized_type, var_struct);
 
     let deserialize_method_expr = build_from_vars(var_struct);
 

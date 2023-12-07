@@ -44,11 +44,11 @@ fn build_secret_share_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let where_clause = base_type.generics.where_clause.clone();
 
     let trait_name = new_ident(SECRET_SHARE_BASE_TYPE_TRAIT_NAME);
-    let base_struct_name = ident_with_generics(base_type.ident.clone(), generics.clone());
+    let base_struct_name = ident_with_generics(&base_type.ident.clone(), generics.clone());
 
     let associated_type_name = new_ident(SHARE_TYPE_ASSOCIATED_NAME);
     let derived_share_type_name = ident_with_generics(
-        ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX),
+        &ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX),
         generics.clone(),
     );
 
@@ -68,7 +68,7 @@ fn build_secret_share_type(base_type: &ItemStruct, mpc: bool, serde: bool) -> To
     let new_name = ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX);
     let derive: Attribute = parse_quote!(#[derive(Clone, Debug, Eq, PartialEq)]);
 
-    let base_type_trait = path_from_ident(new_ident(SECRET_SHARE_BASE_TYPE_TRAIT_NAME));
+    let base_type_trait = path_from_ident(&new_ident(SECRET_SHARE_BASE_TYPE_TRAIT_NAME));
     let associated_share_name = new_ident(SHARE_TYPE_ASSOCIATED_NAME);
 
     let secret_share_type = build_modified_struct_from_associated_types(
@@ -76,8 +76,8 @@ fn build_secret_share_type(base_type: &ItemStruct, mpc: bool, serde: bool) -> To
         new_name,
         vec![derive],
         base_type.generics.clone(),
-        base_type_trait,
-        path_from_ident(associated_share_name),
+        &base_type_trait,
+        &path_from_ident(&associated_share_name),
     );
 
     // Implement addition between share types
@@ -107,9 +107,9 @@ fn build_secret_share_type(base_type: &ItemStruct, mpc: bool, serde: bool) -> To
     if serde {
         res.extend(build_serde_methods(
             &secret_share_type,
-            path_from_ident(new_ident(SCALAR_TYPE_IDENT)),
-            new_ident(TO_SCALARS_METHOD_NAME),
-            new_ident(FROM_SCALARS_METHOD_NAME),
+            &path_from_ident(&new_ident(SCALAR_TYPE_IDENT)),
+            &new_ident(TO_SCALARS_METHOD_NAME),
+            &new_ident(FROM_SCALARS_METHOD_NAME),
         ));
     }
 
@@ -129,11 +129,11 @@ fn build_addition_impl(base_type: &ItemStruct) -> TokenStream2 {
     let where_clause = base_type.generics.where_clause.clone();
 
     let secret_share_type_name = ident_with_generics(
-        ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX),
+        &ident_with_suffix(&base_type.ident.to_string(), SHARE_SUFFIX),
         generics.clone(),
     );
 
-    let output_type_name = ident_with_generics(base_type.ident.clone(), generics.clone());
+    let output_type_name = ident_with_generics(&base_type.ident, generics.clone());
 
     // Implementation calls out to the `add_shares`
     let impl_block: ItemImpl = parse_quote! {
@@ -156,13 +156,12 @@ fn build_secret_share_type_impl(secret_share_type: &ItemStruct) -> TokenStream2 
     let where_clause = secret_share_type.generics.where_clause.clone();
 
     let trait_name = new_ident(SECRET_SHARE_TYPE_TRAIT_NAME);
-    let secret_share_type_name =
-        ident_with_generics(secret_share_type.ident.clone(), generics.clone());
+    let secret_share_type_name = ident_with_generics(&secret_share_type.ident, generics.clone());
 
     // The associated base type
     let base_type_associated_name = new_ident(SECRET_SHARE_BASE_ASSOCIATED_NAME);
     let base_type_name = ident_with_generics(
-        ident_strip_suffix(&secret_share_type.ident.to_string(), SHARE_SUFFIX),
+        &ident_strip_suffix(&secret_share_type.ident.to_string(), SHARE_SUFFIX),
         generics.clone(),
     );
 
@@ -185,14 +184,14 @@ fn build_share_var_impl(secret_share_type: &ItemStruct) -> TokenStream2 {
     let impl_generics = generics.clone();
 
     let var_type_name = ident_with_suffix(&secret_share_type.ident.to_string(), VAR_SUFFIX);
-    let var_type_with_generics = ident_with_generics(var_type_name.clone(), impl_generics.clone());
+    let var_type_with_generics = ident_with_generics(&var_type_name, impl_generics.clone());
 
     let base_type_associated_name = new_ident(SECRET_SHARE_BASE_ASSOCIATED_NAME);
     let base_type_name = ident_with_suffix(
         &ident_strip_suffix(&secret_share_type.ident.to_string(), SHARE_SUFFIX).to_string(),
         VAR_SUFFIX,
     );
-    let base_type_with_generics: Path = ident_with_generics(base_type_name, generics.clone());
+    let base_type_with_generics: Path = ident_with_generics(&base_type_name, generics.clone());
 
     let impl_block: ItemImpl = parse_quote! {
         impl #impl_generics #trait_name for #var_type_with_generics

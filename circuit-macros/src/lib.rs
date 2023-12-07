@@ -1,6 +1,10 @@
 //! Defines macros used in the `circuits` crate; macros must be defined in a
 //! separate crate
+#![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(unsafe_code)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
 
 use proc_macro::TokenStream;
 use syn::{ItemFn, ItemStruct};
@@ -40,7 +44,7 @@ pub fn circuit_trace(args: TokenStream, item: TokenStream) -> TokenStream {
     let ast: ItemFn = syn::parse(item).unwrap();
     let macro_args = circuit_trace::parse_macro_args(args).unwrap();
 
-    circuit_trace::circuit_trace_impl(ast, macro_args)
+    circuit_trace::circuit_trace_impl(&ast, macro_args)
 }
 
 // ---------
@@ -56,5 +60,5 @@ pub fn circuit_type(args: TokenStream, item: TokenStream) -> TokenStream {
     let ast: ItemStruct = syn::parse(item).unwrap();
     let macro_args = circuit_type::parse_macro_args(args).unwrap();
 
-    circuit_type::circuit_type_impl(ast, macro_args)
+    circuit_type::circuit_type_impl(&ast, &macro_args)
 }

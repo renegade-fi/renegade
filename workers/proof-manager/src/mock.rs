@@ -32,11 +32,11 @@ pub struct MockProofManager;
 impl MockProofManager {
     /// Start a mock proof manager
     pub fn start(job_queue: Receiver<ProofManagerJob>) {
-        Handle::current().spawn_blocking(move || Self::execution_loop(job_queue));
+        Handle::current().spawn_blocking(move || Self::execution_loop(&job_queue));
     }
 
     /// The execution loop for the mock
-    fn execution_loop(job_queue: Receiver<ProofManagerJob>) {
+    fn execution_loop(job_queue: &Receiver<ProofManagerJob>) {
         loop {
             let job = job_queue.recv().expect(ERR_JOB_QUEUE_CLOSED);
             Self::handle_job(job.type_, job.response_channel);
@@ -47,19 +47,19 @@ impl MockProofManager {
     fn handle_job(job_type: ProofJob, response_channel: TokioSender<ProofBundle>) {
         let bundle = match job_type {
             ProofJob::ValidWalletCreate { witness, statement } => {
-                ProofBundle::ValidWalletCreate(Self::valid_wallet_create(witness, statement))
+                ProofBundle::ValidWalletCreate(Self::valid_wallet_create(&witness, statement))
             },
             ProofJob::ValidWalletUpdate { witness, statement } => {
-                ProofBundle::ValidWalletUpdate(Self::valid_wallet_update(witness, statement))
+                ProofBundle::ValidWalletUpdate(Self::valid_wallet_update(&witness, statement))
             },
             ProofJob::ValidReblind { witness, statement } => {
-                ProofBundle::ValidReblind(Self::valid_reblind(witness, statement))
+                ProofBundle::ValidReblind(Self::valid_reblind(&witness, statement))
             },
             ProofJob::ValidCommitments { witness, statement } => {
-                ProofBundle::ValidCommitments(Self::valid_commitments(witness, statement))
+                ProofBundle::ValidCommitments(Self::valid_commitments(&witness, statement))
             },
             ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
-                ProofBundle::ValidMatchSettle(Self::valid_match_settle(witness, statement))
+                ProofBundle::ValidMatchSettle(Self::valid_match_settle(&witness, statement))
             },
         };
 
@@ -68,7 +68,7 @@ impl MockProofManager {
 
     /// Generate a dummy proof of `VALID WALLET CREATE`
     fn valid_wallet_create(
-        _witness: SizedValidWalletCreateWitness,
+        _witness: &SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
     ) -> ValidWalletCreateBundle {
         let proof = dummy_proof();
@@ -77,7 +77,7 @@ impl MockProofManager {
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
     fn valid_wallet_update(
-        _witness: SizedValidWalletUpdateWitness,
+        _witness: &SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
     ) -> ValidWalletUpdateBundle {
         let proof = dummy_proof();
@@ -86,7 +86,7 @@ impl MockProofManager {
 
     /// Generate a dummy proof of `VALID REBLIND`
     fn valid_reblind(
-        _witness: SizedValidReblindWitness,
+        _witness: &SizedValidReblindWitness,
         statement: ValidReblindStatement,
     ) -> ValidReblindBundle {
         let proof = dummy_proof();
@@ -95,7 +95,7 @@ impl MockProofManager {
 
     /// Create a dummy proof of `VALID COMMITMENTS`
     fn valid_commitments(
-        _witness: SizedValidCommitmentsWitness,
+        _witness: &SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
     ) -> ValidCommitmentsBundle {
         let proof = dummy_proof();
@@ -104,7 +104,7 @@ impl MockProofManager {
 
     /// Create a dummy proof of `VALID MATCH SETTLE`
     fn valid_match_settle(
-        _witness: SizedValidMatchSettleWitness,
+        _witness: &SizedValidMatchSettleWitness,
         statement: SizedValidMatchSettleStatement,
     ) -> ValidMatchSettleBundle {
         let proof = dummy_proof();

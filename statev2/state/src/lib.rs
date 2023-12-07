@@ -7,6 +7,8 @@
 
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
 #![deny(unsafe_code)]
 #![allow(incomplete_features)]
 #![feature(let_chains)]
@@ -28,6 +30,6 @@ pub(crate) mod test_helpers {
         let tempdir = tempdir().unwrap();
         let path = tempdir.path().to_str().unwrap();
 
-        DB::new(DbConfig { path: path.to_string() }).unwrap()
+        DB::new(&DbConfig { path: path.to_string() }).unwrap()
     }
 }

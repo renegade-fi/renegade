@@ -1,6 +1,7 @@
 //! Benchmarks a full match of two orders including the raw MPC and the
 //! collaborative proof
 #![allow(unused)]
+#![allow(missing_docs)]
 
 use std::time::{Duration, Instant};
 

@@ -201,8 +201,8 @@ fn run_match_settle_with_amounts(
 
 /// Checks constraint satisfaction on a generated witness and statement
 fn check_constraints(
-    statement: SizedValidMatchSettleStatement,
-    witness: SizedValidMatchSettleWitness,
+    statement: &SizedValidMatchSettleStatement,
+    witness: &SizedValidMatchSettleWitness,
     fabric: &Fabric,
 ) -> bool {
     // Allocate the witness and statement
@@ -237,7 +237,7 @@ async fn test_witness_generation(test_args: IntegrationTestArgs) -> Result<()> {
 
     let (statement, witness) = run_match_settle(&w1, &w2, ind1, ind2, price, fabric);
 
-    assert_true_result!(check_constraints(statement, witness, fabric))
+    assert_true_result!(check_constraints(&statement, &witness, fabric))
 }
 
 /// Tests the MPC when one party in undercapitalized for the match
@@ -260,7 +260,7 @@ async fn test_witness_generation__undercapitalized(test_args: IntegrationTestArg
     let (statement, witness) =
         run_match_settle_with_amounts(&w1, &w2, ind1, ind2, price, amt1, amt2, fabric);
 
-    assert_true_result!(check_constraints(statement, witness, fabric))
+    assert_true_result!(check_constraints(&statement, &witness, fabric))
 }
 
 /// Tests attempting to settle a match with an invalid amount from one party
@@ -280,7 +280,7 @@ async fn test_witness_generation__invalid_amount(test_args: IntegrationTestArgs)
     let (statement, witness) =
         run_match_settle_with_amounts(&w1, &w2, ind1, ind2, price, amt1, amt2, fabric);
 
-    assert_true_result!(!check_constraints(statement, witness, fabric))
+    assert_true_result!(!check_constraints(&statement, &witness, fabric))
 }
 
 integration_test_async!(test_witness_generation);

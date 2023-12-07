@@ -85,7 +85,7 @@ pub struct AtomicPriceStreamState {
 
 impl AtomicPriceStreamState {
     /// Construct a new price stream state instance from a set fo exchanges
-    pub fn new_from_exchanges(exchanges: Vec<Exchange>) -> Self {
+    pub fn new_from_exchanges(exchanges: &[Exchange]) -> Self {
         Self {
             price_map: exchanges
                 .iter()
@@ -134,7 +134,7 @@ impl PriceReporter {
         // Create shared memory that the `ConnectionMuxer` will use to communicate with
         // the `PriceReporter`
         let shared_exchange_state =
-            AtomicPriceStreamState::new_from_exchanges(supported_exchanges.clone());
+            AtomicPriceStreamState::new_from_exchanges(&supported_exchanges);
 
         // Spawn a thread to manage the connections
         let connection_muxer = ConnectionMuxer::new(

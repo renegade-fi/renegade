@@ -34,7 +34,7 @@ impl StateApplicator {
             }
 
             // Add the peer to the store
-            Self::add_peer_with_tx(peer_info.clone(), &tx)?;
+            Self::add_peer_with_tx(&peer_info, &tx)?;
             self.system_bus().publish(
                 NETWORK_TOPOLOGY_TOPIC.to_string(),
                 SystemBusMessage::NewPeer { peer: peer_info },
@@ -45,7 +45,7 @@ impl StateApplicator {
     }
 
     /// Remove a peer from the peer index
-    pub fn remove_peer(&self, msg: RemovePeerMsg) -> Result<()> {
+    pub fn remove_peer(&self, msg: &RemovePeerMsg) -> Result<()> {
         let peer_id = WrappedPeerId::from_str(&msg.peer_id)
             .map_err(|e| StateApplicatorError::Parse(format!("PeerId: {}", e)))?;
         let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
@@ -66,9 +66,9 @@ impl StateApplicator {
     // -----------
 
     /// Add a single peer to the global state
-    fn add_peer_with_tx(peer: PeerInfo, tx: &DbTxn<'_, RW>) -> Result<()> {
+    fn add_peer_with_tx(peer: &PeerInfo, tx: &DbTxn<'_, RW>) -> Result<()> {
         // Add the peer to the peer index
-        tx.write(PEER_INFO_TABLE, &peer.peer_id, &peer).map_err(StateApplicatorError::Storage)?;
+        tx.write(PEER_INFO_TABLE, &peer.peer_id, peer).map_err(StateApplicatorError::Storage)?;
 
         // Read in the cluster peers list and append the new peer
         let cluster_id = &peer.cluster_id;
@@ -176,7 +176,7 @@ mod tests {
         // Removing the peer should not fail
         let peer_id = WrappedPeerId::random();
         let msg = remove_peer_msg(&peer_id);
-        applicator.remove_peer(msg).unwrap();
+        applicator.remove_peer(&msg).unwrap();
     }
 
     /// Tests removing a peer that does exist
@@ -194,7 +194,7 @@ mod tests {
 
         // Remove the first peer from the state
         let remove_msg = remove_peer_msg(&peer_info1.peer_id);
-        applicator.remove_peer(remove_msg).unwrap();
+        applicator.remove_peer(&remove_msg).unwrap();
 
         // Verify that the first peer isn't present, but the second s
         let db = applicator.db();

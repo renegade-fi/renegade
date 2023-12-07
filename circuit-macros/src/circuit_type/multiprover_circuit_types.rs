@@ -35,14 +35,14 @@ fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
     let base_generics = mpc_type.generics.clone();
     let where_clause = mpc_type.generics.where_clause.clone();
 
-    let trait_name = path_from_ident(new_ident(MULTIPROVER_BASE_TRAIT_NAME));
-    let mpc_type_name = ident_with_generics(mpc_type.ident.clone(), base_generics.clone());
+    let trait_name = path_from_ident(&new_ident(MULTIPROVER_BASE_TRAIT_NAME));
+    let mpc_type_name = ident_with_generics(&mpc_type.ident, base_generics.clone());
 
     let base_type_associated_name = new_ident(MULTIPROVER_BASE_TYPE_ASSOCIATED_NAME);
     let var_type_associated_name = new_ident(VAR_TYPE_ASSOCIATED_NAME);
 
     let derived_base_type_ident = ident_with_generics(
-        ident_strip_prefix(&mpc_type.ident.to_string(), MPC_TYPE_PREFIX),
+        &ident_strip_prefix(&mpc_type.ident.to_string(), MPC_TYPE_PREFIX),
         base_generics.clone(),
     );
 
@@ -51,7 +51,7 @@ fn build_base_type_impl(mpc_type: &ItemStruct) -> TokenStream2 {
         &ident_with_suffix(&base_ident, VAR_SUFFIX).to_string(),
         MPC_TYPE_PREFIX,
     );
-    let derived_var_type_ident = ident_with_generics(var_type_ident, base_generics.clone());
+    let derived_var_type_ident = ident_with_generics(&var_type_ident, base_generics.clone());
 
     let impl_block: ItemImpl = parse_quote! {
         impl #base_generics #trait_name for #mpc_type_name

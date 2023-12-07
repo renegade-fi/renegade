@@ -4,7 +4,6 @@ use circuit_types::{merkle::MerkleOpening, SizedMerkleOpening};
 use constants::Scalar;
 use constants::MERKLE_HEIGHT;
 use itertools::Itertools;
-// use mpc_stark::algebra::scalar::Scalar;
 use num_bigint::BigUint;
 use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};

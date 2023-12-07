@@ -2,18 +2,13 @@
 
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
 #![deny(unsafe_code)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use std::{
-    collections::HashSet,
-    str::FromStr,
-    sync::{
-        atomic::{AtomicBool, AtomicU64},
-        Arc,
-    },
-};
+use std::{collections::HashSet, str::FromStr, sync::atomic::AtomicU64};
 use util::get_current_time_seconds;
 
 use circuit_types::{

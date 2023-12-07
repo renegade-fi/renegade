@@ -1,4 +1,7 @@
 //! Defines benchmarks for the Poseidon hash function
+
+#![allow(missing_docs)]
+
 use constants::Scalar;
 use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,

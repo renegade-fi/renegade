@@ -1,6 +1,7 @@
 //! Benchmarks for the `VALID WALLET UPDATE` circuit
 
 #![allow(incomplete_features)]
+#![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
 use circuit_types::{

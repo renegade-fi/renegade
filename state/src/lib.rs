@@ -2,6 +2,8 @@
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::needless_pass_by_ref_mut)]
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
 

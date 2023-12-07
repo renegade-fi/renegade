@@ -1,14 +1,6 @@
 //! Defines API type definitions used in request/response messages
 
-use std::{
-    collections::HashMap,
-    convert::TryInto,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, convert::TryInto, sync::atomic::Ordering};
 
 use circuit_types::{
     balance::Balance as IndexedBalance,
@@ -30,9 +22,6 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{biguint_from_hex_string, biguint_to_hex_string};
-
-/// The Goerli network identifier
-const STARKNET_ALPHA_GOERLI: &str = "starknet-alpha-goerli";
 
 // --------------------
 // | Wallet API Types |
@@ -342,7 +331,7 @@ impl From<HashMap<String, Vec<Peer>>> for Network {
 
         Self {
             // TODO: Make this not a constant
-            id: STARKNET_ALPHA_GOERLI.to_string(),
+            id: "goerli".to_string(),
             clusters,
         }
     }

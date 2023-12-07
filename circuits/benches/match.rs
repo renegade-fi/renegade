@@ -3,6 +3,7 @@
 
 #![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
+#![allow(missing_docs)]
 
 use std::time::{Duration, Instant};
 

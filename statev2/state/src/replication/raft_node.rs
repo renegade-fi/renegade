@@ -84,13 +84,13 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         // TODO: Replace random node ID with the first 8 bytes of the local peer ID
         let my_id = thread_rng().next_u64();
 
-        Self::new_with_config(config, RaftConfig { id: my_id, ..Default::default() })
+        Self::new_with_config(config, &RaftConfig { id: my_id, ..Default::default() })
     }
 
     /// Creates a new replication node with a given raft config
     pub fn new_with_config(
         config: ReplicationNodeConfig<N>,
-        raft_config: RaftConfig,
+        raft_config: &RaftConfig,
     ) -> Result<Self, ReplicationError> {
         // Build the log store on top of the DB
         let store = LogStore::new(config.db.clone())?;
@@ -112,7 +112,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         let logger = Logger::root(tracing_drain, slog::o!());
 
         // Build raft node
-        let node = RawNode::new(&raft_config, store, &logger).map_err(ReplicationError::Raft)?;
+        let node = RawNode::new(raft_config, store, &logger).map_err(ReplicationError::Raft)?;
 
         Ok(Self {
             tick_period_ms: config.tick_period_ms,
@@ -164,7 +164,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                     Err(ReplicationError::ProposalQueue(PROPOSAL_QUEUE_DISCONNECTED.to_string()))
                 },
             })? {
-                self.process_proposal(msg)?;
+                self.process_proposal(&msg)?;
             }
 
             // Check for new messages from raft peers
@@ -187,13 +187,13 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     }
 
     /// Process a state transition proposal
-    fn process_proposal(&mut self, proposal: StateTransition) -> Result<(), ReplicationError> {
+    fn process_proposal(&mut self, proposal: &StateTransition) -> Result<(), ReplicationError> {
         // Handle raft cluster changes directly, otherwise append the proposal to the
         // log
         match proposal {
-            StateTransition::AddRaftLearner(peer_id) => self.add_learner(peer_id),
-            StateTransition::AddRaftPeer(peer_id) => self.add_peer(peer_id),
-            StateTransition::RemoveRaftPeer(peer_id) => self.remove_peer(peer_id),
+            StateTransition::AddRaftLearner(peer_id) => self.add_learner(*peer_id),
+            StateTransition::AddRaftPeer(peer_id) => self.add_peer(*peer_id),
+            StateTransition::RemoveRaftPeer(peer_id) => self.remove_peer(*peer_id),
             _ => {
                 let payload = serde_json::to_vec(&proposal)
                     .map_err(|e| ReplicationError::SerializeValue(e.to_string()))?;
@@ -513,7 +513,7 @@ pub(crate) mod test_helpers {
             db,
             proposal_queue,
             network,
-            RaftConfig {
+            &RaftConfig {
                 id,
                 election_tick: 20,
                 min_election_tick: 20,
@@ -540,7 +540,7 @@ pub(crate) mod test_helpers {
             // Build a raft node that has high tick frequency and low leader timeout intervals to
             // speed up tests. In unit tests there is no practical latency issue, so we can set the
             // timeouts to the minimum values they may validly take
-            RaftConfig {
+            &RaftConfig {
                 id,
                 election_tick: 2,
                 min_election_tick: 2,
@@ -557,7 +557,7 @@ pub(crate) mod test_helpers {
         db: Arc<DB>,
         proposal_queue: CrossbeamReceiver<StateTransition>,
         network: MockNetwork,
-        raft_config: RaftConfig,
+        raft_config: &RaftConfig,
     ) -> ReplicationNode<MockNetwork> {
         ReplicationNode::new_with_config(
             ReplicationNodeConfig {
@@ -596,7 +596,7 @@ mod test {
     use super::{ReplicationNode, ReplicationNodeConfig};
 
     /// Find a wallet in the given DB by its wallet ID
-    fn find_wallet_in_db(wallet_id: WalletIdentifier, db: Arc<DB>) -> Wallet {
+    fn find_wallet_in_db(wallet_id: WalletIdentifier, db: &DB) -> Wallet {
         db.read(WALLETS_TABLE, &wallet_id).unwrap().unwrap()
     }
 
@@ -639,7 +639,7 @@ mod test {
         let db = mock_cluster.db(1 /* node_id */);
         let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
         let wallet_id = expected_wallet.wallet_id;
-        let wallet = find_wallet_in_db(wallet_id, db);
+        let wallet = find_wallet_in_db(wallet_id, &db);
 
         mock_cluster.assert_no_crashes();
         assert_eq!(wallet, expected_wallet);
@@ -663,8 +663,8 @@ mod test {
         let db2 = cluster.db(2 /* node_id */);
 
         let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
-        let wallet1 = find_wallet_in_db(expected_wallet.wallet_id, db1);
-        let wallet2 = find_wallet_in_db(expected_wallet.wallet_id, db2);
+        let wallet1 = find_wallet_in_db(expected_wallet.wallet_id, &db1);
+        let wallet2 = find_wallet_in_db(expected_wallet.wallet_id, &db2);
 
         assert_eq!(wallet1, expected_wallet);
         assert_eq!(wallet2, expected_wallet);
@@ -691,7 +691,7 @@ mod test {
         let db = cluster.db(node_id);
 
         let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
-        let wallet = find_wallet_in_db(expected_wallet.wallet_id, db);
+        let wallet = find_wallet_in_db(expected_wallet.wallet_id, &db);
 
         assert_eq!(wallet, expected_wallet);
         cluster.assert_no_crashes();

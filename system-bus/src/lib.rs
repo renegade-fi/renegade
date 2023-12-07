@@ -250,6 +250,7 @@ impl<M: Clone + Sync> SystemBus<M> {
     }
 
     /// Publish a message onto a topic; blocks if the buffer is full
+    #[allow(clippy::needless_pass_by_value)]
     pub fn publish(&self, topic: String, message: M) {
         let locked_mesh = self.read_topic_mesh();
         let topic_entry = locked_mesh.get(&topic);
@@ -265,6 +266,7 @@ impl<M: Clone + Sync> SystemBus<M> {
     }
 
     /// Subscribe to a topic, returns a pollable future
+    #[allow(clippy::needless_pass_by_value)]
     pub fn subscribe(&self, topic: String) -> TopicReader<M> {
         // If the topic is not yet registered, create one
         let contains_topic = { self.read_topic_mesh().contains_key(&topic) };

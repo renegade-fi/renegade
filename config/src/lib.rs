@@ -1,5 +1,6 @@
 //! Groups configurations used throughout the relayer passed to the CLI
 
+use arbitrum_client::constants::Chain;
 use clap::Parser;
 use common::types::{
     exchange::Exchange,
@@ -45,8 +46,11 @@ struct Cli {
     // | Environment Configs |
     // -----------------------
 
+    /// The chain that the relayer settles to
+    #[clap(long, value_parser, default_value = "testnet")]
+    pub chain_id: Chain,
     /// The address of the darkpool contract, defaults to the Goerli deployment
-    #[clap(long, value_parser, default_value = "0x06aadd0758f809d4dc5c5686bcde6dc3e51d211aaf7eca8e902dc76e1217c7ab")]
+    #[clap(long, value_parser, default_value = "0xf96e457217cfaa498cf917f2da429814c587b064")]
     pub contract_address: String,
     /// The path to the file containing deployments info for the darkpool contract
     #[clap(long, value_parser)]
@@ -128,15 +132,12 @@ struct Cli {
     /// The Ethereum RPC node websocket address to dial for on-chain data
     #[clap(long = "eth-websocket", value_parser)]
     pub eth_websocket_addr: Option<String>,
-    /// The HTTP addressable StarkNet JSON-RPC node
-    #[clap(long = "starknet-gateway", value_parser)]
-    pub starknet_jsonrpc_node: Option<String>,
-    /// The StarkNet addresses corresponding to the given private keys
-    #[clap(long = "starknet-account-addr", value_parser, requires = "starknet_private_keys")]
-    pub starknet_account_addresses: Vec<String>,
-    /// The StarkNet private keys used to send transactions
-    #[clap(long = "starknet-account-pkey", value_parser, requires = "starknet_account_addresses")]
-    pub starknet_private_keys: Vec<String>,
+    /// The HTTP addressable Arbitrum JSON-RPC node
+    #[clap(long = "rpc-url", value_parser)]
+    pub rpc_url: Option<String>,
+    /// The Arbitrum private key used to send transactions
+    #[clap(long = "arbitrum-pkey", value_parser, default_value = "0x0")]
+    pub arbitrum_private_key: String,
     /// A file holding a json representation of the wallets the local node
     /// should manage
     #[clap(short, long, value_parser)]
@@ -155,6 +156,8 @@ pub struct RelayerConfig {
     // -----------------------
     /// Software version of the relayer
     pub version: String,
+    /// The chain that the relayer settles to
+    pub chain_id: Chain,
     /// The address of the contract in the target network
     pub contract_address: String,
 
@@ -212,12 +215,10 @@ pub struct RelayerConfig {
     pub coinbase_api_key: Option<String>,
     /// The Coinbase API secret to use for price streaming
     pub coinbase_api_secret: Option<String>,
-    /// The StarkNet JSON-RPC API gateway
-    pub starknet_jsonrpc_node: Option<String>,
-    /// The StarkNet addresses corresponding to the given private keys
-    pub starknet_account_addresses: Vec<String>,
-    /// The StarkNet private keys used for signing transactions
-    pub starknet_private_keys: Vec<String>,
+    /// The HTTP addressable Arbitrum JSON-RPC node
+    pub rpc_url: Option<String>,
+    /// The Arbitrum private key used to send transactions
+    pub arbitrum_private_key: String,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
 }
@@ -235,6 +236,7 @@ impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
             version: self.version.clone(),
+            chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
             bootstrap_servers: self.bootstrap_servers.clone(),
             p2p_port: self.p2p_port,
@@ -253,9 +255,8 @@ impl Clone for RelayerConfig {
             cluster_id: self.cluster_id.clone(),
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),
-            starknet_jsonrpc_node: self.starknet_jsonrpc_node.clone(),
-            starknet_account_addresses: self.starknet_account_addresses.clone(),
-            starknet_private_keys: self.starknet_private_keys.clone(),
+            rpc_url: self.rpc_url.clone(),
+            arbitrum_private_key: self.arbitrum_private_key.clone(),
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
         }
@@ -329,6 +330,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
 
     let mut config = RelayerConfig {
         version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
+        chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
@@ -347,9 +349,8 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
-        starknet_jsonrpc_node: cli_args.starknet_jsonrpc_node,
-        starknet_account_addresses: cli_args.starknet_account_addresses,
-        starknet_private_keys: cli_args.starknet_private_keys,
+        rpc_url: cli_args.rpc_url,
+        arbitrum_private_key: cli_args.arbitrum_private_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };

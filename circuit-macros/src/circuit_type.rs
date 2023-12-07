@@ -111,30 +111,30 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
 // -------------------
 
 /// Implementation of the type derivation macro
-pub(crate) fn circuit_type_impl(target_struct: ItemStruct, macro_args: MacroArgs) -> TokenStream {
+pub(crate) fn circuit_type_impl(target_struct: &ItemStruct, macro_args: &MacroArgs) -> TokenStream {
     // Copy the existing struct into the result
     let mut out_tokens = TokenStream2::default();
     out_tokens.extend(target_struct.to_token_stream());
 
     // Build the implementation of the `BaseType` trait
-    out_tokens.extend(build_base_type_impl(&target_struct));
+    out_tokens.extend(build_base_type_impl(target_struct));
 
     // Build singleprover circuit types
     if macro_args.build_singleprover_types {
-        let circuit_type_tokens = build_circuit_types(&target_struct);
+        let circuit_type_tokens = build_circuit_types(target_struct);
         out_tokens.extend(circuit_type_tokens);
     }
 
     // Build MPC types
     if macro_args.build_mpc_types {
-        let mpc_type_tokens = build_mpc_types(&target_struct, macro_args.build_multiprover_types);
+        let mpc_type_tokens = build_mpc_types(target_struct, macro_args.build_multiprover_types);
         out_tokens.extend(mpc_type_tokens);
     }
 
     // Build secret share types
     if macro_args.build_secret_share_types {
         let secret_share_type_tokens =
-            build_secret_share_types(&target_struct, macro_args.build_mpc_types, macro_args.serde);
+            build_secret_share_types(target_struct, macro_args.build_mpc_types, macro_args.serde);
         out_tokens.extend(secret_share_type_tokens);
     }
 
@@ -153,20 +153,17 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 
     let base_type_ident = base_type.ident.clone();
     let base_type_params = params_from_generics(generics.clone());
-    let scalar_type_path = path_from_ident(new_ident(SCALAR_TYPE_IDENT));
+    let scalar_type_path = path_from_ident(&new_ident(SCALAR_TYPE_IDENT));
 
     let from_scalars_impl = build_deserialize_method(
-        new_ident(FROM_SCALARS_METHOD_NAME),
-        scalar_type_path.clone(),
-        path_from_ident(trait_ident.clone()),
+        &new_ident(FROM_SCALARS_METHOD_NAME),
+        &scalar_type_path.clone(),
+        &path_from_ident(&trait_ident),
         base_type,
     );
 
-    let to_scalars_impl = build_serialize_method(
-        new_ident(TO_SCALARS_METHOD_NAME),
-        scalar_type_path.clone(),
-        base_type,
-    );
+    let to_scalars_impl =
+        build_serialize_method(&new_ident(TO_SCALARS_METHOD_NAME), &scalar_type_path, base_type);
 
     let impl_block: ItemImpl = parse_quote! {
         impl #generics #trait_ident for #base_type_ident <#base_type_params>
@@ -212,16 +209,16 @@ fn ident_strip_suffix(original: &str, suffix: &str) -> Ident {
 
 /// Convert a string to a `Path` syntax tree object representing a type path
 fn str_to_path(s: &str) -> Path {
-    path_from_ident(new_ident(s))
+    path_from_ident(&new_ident(s))
 }
 
 /// Convert an `Ident` directly into a `Path`
-fn path_from_ident(identifier: Ident) -> Path {
+fn path_from_ident(identifier: &Ident) -> Path {
     parse_quote!(#identifier)
 }
 
 /// Add generic parameters to an identifier
-fn ident_with_generics(ident: Ident, generics: Generics) -> Path {
+fn ident_with_generics(ident: &Ident, generics: Generics) -> Path {
     let params = params_from_generics(generics);
     parse_quote!(#ident <#params>)
 }
@@ -245,8 +242,8 @@ fn params_from_generics(generics: Generics) -> Punctuated<Ident, Comma> {
 ///         vec![self.field1, self.field2, ...]
 ///     }
 fn build_serialize_method(
-    method_name: Ident,
-    target_type: Path,
+    method_name: &Ident,
+    target_type: &Path,
     self_struct: &ItemStruct,
 ) -> TokenStream2 {
     let mut field_exprs: Vec<Stmt> = Vec::with_capacity(self_struct.fields.len());
@@ -273,9 +270,9 @@ fn build_serialize_method(
 /// Self {         Self { field1: i.next().unwrap(), field2: , ... }
 ///     }
 fn build_deserialize_method(
-    method_name: Ident,
-    from_type: Path,
-    trait_ident: Path,
+    method_name: &Ident,
+    from_type: &Path,
+    trait_ident: &Path,
     self_struct: &ItemStruct,
 ) -> TokenStream2 {
     let mut fields_expr: Punctuated<FieldValue, Comma> = Punctuated::new();
@@ -312,7 +309,7 @@ fn impl_clone_by_fields(base_struct: &ItemStruct) -> TokenStream2 {
     let generics = base_struct.generics.clone();
     let where_clause = generics.where_clause.clone();
     let base_type_ident = base_struct.ident.clone();
-    let base_type_with_generics = ident_with_generics(base_type_ident.clone(), generics.clone());
+    let base_type_with_generics = ident_with_generics(&base_type_ident, generics.clone());
 
     let mut field_exprs: Punctuated<FieldValue, Comma> = Punctuated::new();
     for field in base_struct.fields.iter() {
@@ -338,9 +335,9 @@ fn impl_clone_by_fields(base_struct: &ItemStruct) -> TokenStream2 {
 /// type
 fn build_serde_methods(
     base_type: &ItemStruct,
-    serialized_type: Path,
-    serialize_method: Ident,
-    deserialize_method: Ident,
+    serialized_type: &Path,
+    serialize_method: &Ident,
+    deserialize_method: &Ident,
 ) -> TokenStream2 {
     let generics = base_type.generics.clone();
     let where_clause = base_type.generics.where_clause.clone();
@@ -349,7 +346,7 @@ fn build_serde_methods(
     deserialize_generics.params.push(parse_quote!('de));
 
     let base_type_ident = base_type.ident.clone();
-    let base_type_with_generics = ident_with_generics(base_type_ident, generics.clone());
+    let base_type_with_generics = ident_with_generics(&base_type_ident, generics.clone());
 
     let serialize_impl: ItemImpl = parse_quote! {
         impl #generics serde::Serialize for #base_type_with_generics
@@ -384,8 +381,8 @@ fn build_modified_struct_from_associated_types(
     new_name: Ident,
     attributes: Vec<Attribute>,
     generics: Generics,
-    type_derivation_trait_ident: Path,
-    associated_type_ident: Path,
+    type_derivation_trait_ident: &Path,
+    associated_type_ident: &Path,
 ) -> ItemStruct {
     // Build the fields fo the var struct
     let new_fields = base_type
