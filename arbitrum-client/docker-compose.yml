@@ -18,7 +18,7 @@ services:
       interval: 5s
       timeout: 10s
       retries: 3
-      start_period: 2m
+      start_period: 10m
 
   relayer:
     image: arbitrum-client-integration-test:latest
