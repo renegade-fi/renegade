@@ -7,7 +7,13 @@ edition = "2021"
 default = ["non-wasm"]
 # We define a feature flag that gates all uses of wasm incompatible dependencies
 # specifically for use in stylus contracts
-non-wasm = ["dep:ark-mpc", "dep:rand", "constants/mpc-types", "inline"]
+non-wasm = [
+    "dep:ark-mpc",
+    "dep:rand",
+    "constants/mpc-types",
+    "inline",
+    "dep:ethers-core",
+]
 inline = []
 
 [[bench]]
@@ -26,7 +32,7 @@ ark-ec = "0.4"
 ark-ff = "0.4"
 ark-mpc = { workspace = true, optional = true }
 bigdecimal = "0.3"
-ethers-core = "2"
+ethers-core = { version = "2", optional = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 
 # === Workspace Dependencies === #
