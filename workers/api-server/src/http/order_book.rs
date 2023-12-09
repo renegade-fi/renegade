@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use external_api::{
     http::order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
-    types::NetworkOrder,
+    types::ApiNetworkOrder,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
@@ -66,7 +66,7 @@ impl TypedHandler for GetNetworkOrdersHandler {
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let orders: Vec<NetworkOrder> = self
+        let orders: Vec<ApiNetworkOrder> = self
             .global_state
             .read_order_book()
             .await

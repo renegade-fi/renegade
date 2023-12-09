@@ -10,7 +10,7 @@ use common::types::{
 };
 use serde::Serialize;
 
-use crate::types::Wallet;
+use crate::types::ApiWallet;
 
 // ----------------------------
 // | System Bus Message Types |
@@ -107,7 +107,7 @@ pub enum SystemBusMessage {
     /// A message indicating that a wallet has been updated
     WalletUpdate {
         /// The new wallet after update
-        wallet: Box<Wallet>,
+        wallet: Box<ApiWallet>,
     },
 
     /// A message indicating an internal (gossip metadata) update has been

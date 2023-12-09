@@ -24,7 +24,7 @@ async fn test_lookup_wallet__invalid_wallet(test_args: IntegrationTestArgs) -> R
         Uuid::new_v4(),
         Scalar::zero(), // blinder_stream_seed
         Scalar::zero(), // secret_share_stream_seed
-        wallet.key_chain,
+        wallet.key_chain.try_into().unwrap(),
         test_args.arbitrum_client.clone(),
         test_args.network_sender.clone(),
         test_args.global_state.clone(),

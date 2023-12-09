@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# === Arithmetic === #
+num-bigint = "0.4"
+num-traits = "0.2"
+
 # === Networking === #
 libp2p = { workspace = true }
 
@@ -20,11 +24,11 @@ renegade-crypto = { path = "../renegade-crypto" }
 chrono = "0.4"
 env_logger = "0.9"
 eyre = { workspace = true }
+hex = "0.4"
 json = "0.12"
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = "0.3"
 
 [dev-dependencies]
 lazy_static = "1.4"
-num-bigint = "0.4"
 rand = "0.8"

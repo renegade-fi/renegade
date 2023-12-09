@@ -2,8 +2,8 @@
 
 use crate::{
     helpers::{
-        biguint_from_address, biguint_from_hex_string, increase_erc20_allowance,
-        lookup_wallet_and_check_result, new_wallet_in_darkpool,
+        biguint_from_address, increase_erc20_allowance, lookup_wallet_and_check_result,
+        new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
@@ -32,7 +32,7 @@ use test_helpers::{
     arbitrum::PREDEPLOYED_WETH_ADDR, assert_eq_result, assert_true_result, integration_test_async,
 };
 use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};
-use util::matching_engine::settle_match_into_wallets;
+use util::{hex::biguint_from_hex_string, matching_engine::settle_match_into_wallets};
 use uuid::Uuid;
 
 use super::update_wallet::execute_wallet_update;
@@ -52,8 +52,8 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
     };
 
     Order {
-        quote_mint: biguint_from_hex_string(&test_args.erc20_addr),
-        base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR),
+        quote_mint: biguint_from_hex_string(&test_args.erc20_addr).unwrap(),
+        base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR).unwrap(),
         side,
         amount: 10,
         worst_case_price: FixedPoint::from_integer(worst_cast_price),
@@ -65,10 +65,10 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
 fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
     match side {
         OrderSide::Buy => {
-            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr), amount: 500 }
+            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr).unwrap(), amount: 500 }
         },
         OrderSide::Sell => {
-            Balance { mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR), amount: 200 }
+            Balance { mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR).unwrap(), amount: 200 }
         },
     }
 }
@@ -162,8 +162,8 @@ async fn setup_match_result(
     let direction = wallet1.orders.first().unwrap().1.side.is_sell();
 
     let match_ = MatchResult {
-        quote_mint: biguint_from_hex_string(&test_args.erc20_addr),
-        base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR),
+        quote_mint: biguint_from_hex_string(&test_args.erc20_addr).unwrap(),
+        base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR).unwrap(),
         quote_amount: scalar_to_u64(&quote_amount.floor()),
         base_amount,
         direction,

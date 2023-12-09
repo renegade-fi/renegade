@@ -16,10 +16,9 @@ use common::types::{
 };
 use constants::Scalar;
 use ethers::types::{Address, U256};
-use external_api::types::Wallet as ApiWallet;
+use external_api::types::ApiWallet;
 use eyre::{eyre, Result};
 use num_bigint::BigUint;
-use num_traits::Num;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
 use system_bus::SystemBus;
@@ -31,12 +30,6 @@ use test_helpers::{assert_eq_result, assert_true_result};
 use uuid::Uuid;
 
 use crate::IntegrationTestArgs;
-
-/// Parse a biguint from a hex string
-pub fn biguint_from_hex_string(s: &str) -> BigUint {
-    let stripped = s.strip_prefix("0x").unwrap_or(s);
-    BigUint::from_str_radix(stripped, 16 /* radix */).unwrap()
-}
 
 /// Parse a biguint from an H160 address
 pub fn biguint_from_address(val: Address) -> BigUint {
