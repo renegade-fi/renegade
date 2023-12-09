@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_string,
-    types::{Balance, Fee, Order, Wallet},
+    deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string,
+    types::{ApiBalance, ApiFee, ApiOrder, ApiWallet},
 };
 
 // --------------------
@@ -21,14 +21,14 @@ use crate::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetWalletResponse {
     /// The wallet requested by the client
-    pub wallet: Wallet,
+    pub wallet: ApiWallet,
 }
 
 /// The request type to create a new wallet
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateWalletRequest {
     /// The wallet info to be created
-    pub wallet: Wallet,
+    pub wallet: ApiWallet,
 }
 
 /// The response type to a request to create a new wallet
@@ -71,20 +71,20 @@ pub struct FindWalletResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetOrdersResponse {
     /// The orders within a given wallet
-    pub orders: Vec<Order>,
+    pub orders: Vec<ApiOrder>,
 }
 /// The response type to get a single order by ID
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetOrderByIdResponse {
     /// The order requested
-    pub order: Order,
+    pub order: ApiOrder,
 }
 
 /// The request type to add a new order to a given wallet
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateOrderRequest {
     /// The order to be created
-    pub order: Order,
+    pub order: ApiOrder,
     /// A signature of the circuit statement used in the proof of
     /// VALID WALLET UPDATE by `sk_root`. This allows the contract
     /// to guarantee that the wallet updates are properly authorized
@@ -104,7 +104,7 @@ pub struct CreateOrderResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateOrderRequest {
     /// The order to be updated
-    pub order: Order,
+    pub order: ApiOrder,
     /// A signature of the circuit statement used in the proof of
     /// VALID WALLET UPDATE by `sk_root`. This allows the contract
     /// to guarantee that the wallet updates are properly authorized
@@ -133,7 +133,7 @@ pub struct CancelOrderResponse {
     /// The ID of the task allocated for this request
     pub task_id: TaskIdentifier,
     /// The order information of the now-cancelled order
-    pub order: Order,
+    pub order: ApiOrder,
 }
 
 // -----------------------------
@@ -144,14 +144,14 @@ pub struct CancelOrderResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBalancesResponse {
     /// The balances in the given wallet
-    pub balances: Vec<Balance>,
+    pub balances: Vec<ApiBalance>,
 }
 
 /// The response type to get a single balance by mint
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBalanceByMintResponse {
     /// The requested balance
-    pub balance: Balance,
+    pub balance: ApiBalance,
 }
 
 /// The request type to deposit a balance into the darkpool
@@ -159,14 +159,14 @@ pub struct GetBalanceByMintResponse {
 pub struct DepositBalanceRequest {
     /// The arbitrum account contract address to send the balance from
     #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
+        serialize_with = "serialize_biguint_to_hex_string",
+        deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub from_addr: BigUint,
     /// The mint (ERC-20 contract address) of the token to deposit
     #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
+        serialize_with = "serialize_biguint_to_hex_string",
+        deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub mint: BigUint,
     /// The amount of the token to deposit
@@ -193,8 +193,8 @@ pub struct DepositBalanceResponse {
 pub struct WithdrawBalanceRequest {
     /// The destination address to withdraw the balance to
     #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
+        serialize_with = "serialize_biguint_to_hex_string",
+        deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub destination_addr: BigUint,
     /// The amount of the token to withdraw
@@ -227,8 +227,8 @@ pub struct InternalTransferRequest {
     pub statement_sig: Vec<u8>,
     /// The recipient's settle key
     #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
+        serialize_with = "serialize_biguint_to_hex_string",
+        deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub recipient_key: BigUint,
     /// The amount to transfer
@@ -250,14 +250,14 @@ pub struct InternalTransferResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetFeesResponse {
     /// The fees in a given wallet
-    pub fees: Vec<Fee>,
+    pub fees: Vec<ApiFee>,
 }
 
 /// The request type to add a fee to a wallet
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AddFeeRequest {
     /// The fee to add to the wallet
-    pub fee: Fee,
+    pub fee: ApiFee,
     /// A signature of the circuit statement used in the proof of
     /// VALID WALLET UPDATE by `sk_root`. This allows the contract
     /// to guarantee that the wallet updates are properly authorized
@@ -292,5 +292,5 @@ pub struct RemoveFeeResponse {
     /// The ID of the task allocated for this request
     pub task_id: TaskIdentifier,
     /// The fee that was removed
-    pub fee: Fee,
+    pub fee: ApiFee,
 }

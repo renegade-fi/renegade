@@ -22,10 +22,10 @@ use circuits::zk_circuits::valid_wallet_create::{
 };
 use common::types::{
     proof_bundles::ValidWalletCreateBundle,
-    wallet::{Wallet as StateWallet, WalletIdentifier},
+    wallet::{Wallet, WalletIdentifier},
 };
 use crossbeam::channel::Sender as CrossbeamSender;
-use external_api::types::Wallet;
+use external_api::types::ApiWallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
 use state::RelayerState;
@@ -46,7 +46,7 @@ const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 /// The task struct defining the long-run async flow for creating a new wallet
 pub struct NewWalletTask {
     /// The wallet to create
-    pub wallet: StateWallet,
+    pub wallet: Wallet,
     /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
     /// first step
     pub proof_bundle: Option<ValidWalletCreateBundle>,
@@ -71,6 +71,8 @@ pub enum NewWalletTaskError {
     Arbitrum(String),
     /// Error sending a message to another worker
     SendMessage(String),
+    /// Error setting up the task
+    Setup(String),
 }
 
 impl Display for NewWalletTaskError {
@@ -186,14 +188,14 @@ impl NewWalletTask {
     /// Constructor
     pub fn new(
         wallet_id: WalletIdentifier,
-        wallet: Wallet,
+        wallet: ApiWallet,
         arbitrum_client: ArbitrumClient,
         global_state: RelayerState,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, NewWalletTaskError> {
         // When we cast to a state wallet, the identifier is erased, add
         // it from the request explicitly
-        let mut wallet: StateWallet = wallet.into();
+        let mut wallet: Wallet = wallet.try_into().map_err(NewWalletTaskError::Setup)?;
         wallet.wallet_id = wallet_id;
 
         // Safety: verify that the wallet's shares recover the wallet correctly

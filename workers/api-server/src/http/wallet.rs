@@ -21,7 +21,7 @@ use external_api::{
         GetWalletResponse, RemoveFeeRequest, RemoveFeeResponse, UpdateOrderRequest,
         UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
     },
-    types::{Balance as ApiBalance, Fee as ApiFee, Order as ApiOrder},
+    types::{ApiBalance, ApiFee, ApiOrder},
     EmptyRequestResponse,
 };
 use gossip_api::gossip::GossipOutbound;

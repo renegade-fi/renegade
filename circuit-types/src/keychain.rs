@@ -40,6 +40,9 @@ const K256_FELT_BYTES: usize = 32;
 // | Key Types |
 // -------------
 
+/// A private identification key is the pre-image under a hash of its public key
+pub type PrivateIdentificationKey = Scalar;
+
 /// A public identification key is the image-under-hash of the secret
 /// identification key knowledge of which is proved in a circuit
 #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
@@ -215,6 +218,9 @@ impl From<&K256FieldElement> for NonNativeScalar<K256_FELT_WORDS> {
 // | Keychain Type |
 // -----------------
 
+/// A type alias for a private signing key
+pub type PrivateSigningKey = NonNativeScalar<K256_FELT_WORDS>;
+
 /// A public signing key in uncompressed affine representation
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -223,6 +229,26 @@ pub struct PublicSigningKey {
     pub x: NonNativeScalar<K256_FELT_WORDS>,
     /// The affine y-coordinate of the public key
     pub y: NonNativeScalar<K256_FELT_WORDS>,
+}
+
+impl PublicSigningKey {
+    /// Construct a key from bytes
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        // Parse the encoded K256 point assumed to be compressed
+        let point = EncodedPoint::from_bytes(bytes).map_err(|e| e.to_string())?;
+
+        // Convert to circuit-native types, it is simpler to go through the whole
+        // conversion than decompressing manually
+        let verifying_key =
+            K256VerifyingKey::from_encoded_point(&point).map_err(|e| e.to_string())?;
+        Ok((&verifying_key).into())
+    }
+
+    /// Convert the key to bytes
+    pub fn to_compressed_bytes(&self) -> Vec<u8> {
+        let verifying_key = K256VerifyingKey::from(self);
+        verifying_key.to_sec1_bytes().to_vec()
+    }
 }
 
 impl From<&PublicSigningKey> for K256VerifyingKey {

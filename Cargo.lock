@@ -2834,12 +2834,14 @@ version = "0.1.0"
 dependencies = [
  "circuit-types",
  "common",
+ "constants",
+ "hex 0.4.3",
  "itertools 0.10.5",
  "num-bigint",
- "num-traits",
  "renegade-crypto",
  "serde",
  "serde_json",
+ "util",
  "uuid 1.6.1",
 ]
 
@@ -8228,10 +8230,12 @@ dependencies = [
  "env_logger 0.9.3",
  "eyre",
  "futures",
+ "hex 0.4.3",
  "json",
  "lazy_static",
  "libp2p",
  "num-bigint",
+ "num-traits",
  "rand 0.8.5",
  "renegade-crypto",
  "tokio",

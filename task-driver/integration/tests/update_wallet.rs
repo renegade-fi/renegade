@@ -15,14 +15,13 @@ use num_bigint::BigUint;
 use rand::thread_rng;
 use task_driver::update_wallet::UpdateWalletTask;
 use test_helpers::{assert_true_result, integration_test_async};
-use util::get_current_time_seconds;
+use util::{get_current_time_seconds, hex::biguint_from_hex_string};
 use uuid::Uuid;
 
 use crate::{
     helpers::{
-        allocate_wallet_in_darkpool, biguint_from_address, biguint_from_hex_string,
-        empty_wallet_from_seed, increase_erc20_allowance, lookup_wallet_and_check_result,
-        new_wallet_in_darkpool,
+        allocate_wallet_in_darkpool, biguint_from_address, empty_wallet_from_seed,
+        increase_erc20_allowance, lookup_wallet_and_check_result, new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
@@ -251,7 +250,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     // Update the wallet by depositing into the pool
     let old_wallet = wallet.clone();
 
-    let mint = biguint_from_hex_string(&test_args.erc20_addr);
+    let mint = biguint_from_hex_string(&test_args.erc20_addr).unwrap();
     let amount = 10u64;
 
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
