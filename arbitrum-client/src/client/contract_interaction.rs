@@ -8,12 +8,12 @@ use common::types::proof_bundles::{
     ValidMatchSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
 };
 use constants::Scalar;
+use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::log::info;
 
 use crate::{
     errors::ArbitrumClientError,
-    helpers::{deserialize_calldata, send_tx, serialize_calldata},
-    serde_def_types::SerdeScalarField,
+    helpers::{send_tx, serialize_calldata},
     types::{
         ContractProof, ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
         ContractValidWalletUpdateStatement, MatchPayload,
@@ -32,16 +32,12 @@ impl ArbitrumClient {
 
     /// Get the current Merkle root in the contract
     pub async fn get_merkle_root(&self) -> Result<Scalar, ArbitrumClientError> {
-        let merkle_root_bytes = self
-            .darkpool_contract
+        self.darkpool_contract
             .get_root()
             .call()
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?;
-
-        let merkle_root = deserialize_calldata::<SerdeScalarField>(&merkle_root_bytes)?.0;
-
-        Ok(Scalar::new(merkle_root))
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
+            .map(|r| u256_to_scalar(&r))
     }
 
     /// Check whether the given Merkle root is a valid historical root
@@ -49,10 +45,8 @@ impl ArbitrumClient {
         &self,
         root: MerkleRoot,
     ) -> Result<bool, ArbitrumClientError> {
-        let root_calldata = serialize_calldata(&SerdeScalarField(root.inner()))?;
-
         self.darkpool_contract
-            .root_in_history(root_calldata)
+            .root_in_history(scalar_to_u256(&root))
             .call()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
@@ -63,10 +57,8 @@ impl ArbitrumClient {
         &self,
         nullifier: Nullifier,
     ) -> Result<bool, ArbitrumClientError> {
-        let nullifier_calldata = serialize_calldata(&SerdeScalarField(nullifier.inner()))?;
-
         self.darkpool_contract
-            .is_nullifier_spent(nullifier_calldata)
+            .is_nullifier_spent(scalar_to_u256(&nullifier))
             .call()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
@@ -86,20 +78,16 @@ impl ArbitrumClient {
     ) -> Result<(), ArbitrumClientError> {
         let GenericValidWalletCreateBundle { statement, proof } = *valid_wallet_create;
 
-        let wallet_blinder_share_calldata =
-            serialize_calldata(&SerdeScalarField(statement.public_wallet_shares.blinder.inner()))?;
-
         let contract_proof: ContractProof = proof.try_into()?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
 
         let contract_statement: ContractValidWalletCreateStatement = statement.into();
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = send_tx(self.darkpool_contract.new_wallet(
-            wallet_blinder_share_calldata,
-            proof_calldata,
-            valid_wallet_create_statement_calldata,
-        ))
+        let receipt = send_tx(
+            self.darkpool_contract
+                .new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
+        )
         .await?;
 
         info!("`new_wallet` tx hash: {:#x}", receipt.transaction_hash);
@@ -118,9 +106,6 @@ impl ArbitrumClient {
     ) -> Result<(), ArbitrumClientError> {
         let GenericValidWalletUpdateBundle { statement, proof } = *valid_wallet_update;
 
-        let wallet_blinder_share_calldata =
-            serialize_calldata(&SerdeScalarField(statement.new_public_shares.blinder.inner()))?;
-
         let contract_proof: ContractProof = proof.try_into()?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
 
@@ -128,7 +113,6 @@ impl ArbitrumClient {
         let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = send_tx(self.darkpool_contract.update_wallet(
-            wallet_blinder_share_calldata,
             proof_calldata,
             valid_wallet_update_statement_calldata,
             statement_signature.into(),
@@ -178,19 +162,11 @@ impl ArbitrumClient {
         } = *party1_validity_proofs.copy_reblind_proof();
 
         let party_0_match_payload = MatchPayload {
-            wallet_blinder_share: valid_match_settle_statement
-                .party0_modified_shares
-                .blinder
-                .inner(),
             valid_commitments_statement: party_0_valid_commitments_statement.into(),
             valid_reblind_statement: party_0_valid_reblind_statement.into(),
         };
 
         let party_1_match_payload = MatchPayload {
-            wallet_blinder_share: valid_match_settle_statement
-                .party1_modified_shares
-                .blinder
-                .inner(),
             valid_commitments_statement: party_1_valid_commitments_statement.into(),
             valid_reblind_statement: party_1_valid_reblind_statement.into(),
         };

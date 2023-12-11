@@ -11,7 +11,6 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-mod constants;
 mod contract_interaction;
 mod event_indexing;
 mod helpers;

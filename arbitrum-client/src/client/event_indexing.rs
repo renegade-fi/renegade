@@ -12,6 +12,7 @@ use ethers::{
 };
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
+use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 
 use crate::{
     abi::{
@@ -21,10 +22,9 @@ use crate::{
     constants::{DEFAULT_AUTHENTICATION_PATH, SELECTOR_LEN},
     errors::ArbitrumClientError,
     helpers::{
-        keccak_hash_scalar, parse_shares_from_new_wallet, parse_shares_from_process_match_settle,
+        parse_shares_from_new_wallet, parse_shares_from_process_match_settle,
         parse_shares_from_update_wallet,
     },
-    serde_def_types::SerdeScalarField,
 };
 
 use super::ArbitrumClient;
@@ -38,12 +38,11 @@ impl ArbitrumClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, ArbitrumClientError> {
-        let public_blinder_share_hash = keccak_hash_scalar(public_blinder_share)?;
         let events = self
             .darkpool_contract
             .event::<WalletUpdatedFilter>()
             .address(self.darkpool_contract.address().into())
-            .topic1(public_blinder_share_hash)
+            .topic1(scalar_to_u256(&public_blinder_share))
             .from_block(self.deploy_block)
             .query_with_meta()
             .await
@@ -84,14 +83,10 @@ impl ArbitrumClient {
                 .await
                 .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
 
-            let value = events.last().map(|event| {
-                postcard::from_bytes::<SerdeScalarField>(&event.new_value)
-                    .map_err(|e| ArbitrumClientError::Serde(e.to_string()))
-                    .map(|s| s.0 /* Scalar */)
-            });
+            let value = events.last().map(|event| event.new_value);
 
             if let Some(value) = value {
-                path[MERKLE_HEIGHT - coords.height] = Scalar::new(value?);
+                path[MERKLE_HEIGHT - coords.height] = u256_to_scalar(&value);
             }
         }
 
@@ -103,12 +98,11 @@ impl ArbitrumClient {
         &self,
         commitment: Scalar,
     ) -> Result<u128, ArbitrumClientError> {
-        let commitment_hash = keccak_hash_scalar(commitment)?;
         let events = self
             .darkpool_contract
             .event::<NodeChangedFilter>()
             .address(self.darkpool_contract.address().into())
-            .topic3(commitment_hash)
+            .topic3(scalar_to_u256(&commitment))
             .from_block(self.deploy_block)
             .query()
             .await
