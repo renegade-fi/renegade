@@ -30,97 +30,50 @@ no_verify() {
 
 # Deploy verifier contract
 cargo run \
-    -p scripts -- \
-    -p $DEVNET_PKEY \
-    -r $DEVNET_RPC_URL \
-    -d $DEPLOYMENTS_PATH \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
     --contract verifier
 
 # Deploy Merkle contract
 cargo run \
-    -p scripts -- \
-    -p $DEVNET_PKEY \
-    -r $DEVNET_RPC_URL \
-    -d $DEPLOYMENTS_PATH \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
     --contract merkle
 
 # Deploy darkpool contract, setting the "--no-verify" flag
 # conditionally depending on whether the corresponding env var is set
 cargo run \
-    -p scripts -- \
-    -p $DEVNET_PKEY \
-    -r $DEVNET_RPC_URL \
-    -d $DEPLOYMENTS_PATH \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
     --contract darkpool-test-contract \
     $(no_verify)
 
 # Deploy the proxy contract
 cargo run \
-    -p scripts -- \
-    -p $DEVNET_PKEY \
-    -r $DEVNET_RPC_URL \
-    -d $DEPLOYMENTS_PATH \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
     deploy-proxy \
-    -o $DEVNET_ACCOUNT_ADDRESS
-
-# If the $UPLOAD_VKEYS env var is set, upload the verification keys
-if [[ -n $UPLOAD_VKEYS ]]; then
-    # Upload VALID WALLET CREATE verification key
-    cargo run \
-        -p scripts -- \
-        -p $DEVNET_PKEY \
-        -r $DEVNET_RPC_URL \
-        -d $DEPLOYMENTS_PATH \
-        upload-vkey \
-        -c valid-wallet-create
-
-    # Upload VALID WALLET UPDATE verification key
-    cargo run \
-        -p scripts -- \
-        -p $DEVNET_PKEY \
-        -r $DEVNET_RPC_URL \
-        -d $DEPLOYMENTS_PATH \
-        upload-vkey \
-        -c valid-wallet-update
-
-    # Upload VALID COMMITMENTS verification key
-    cargo run \
-        -p scripts -- \
-        -p $DEVNET_PKEY \
-        -r $DEVNET_RPC_URL \
-        -d $DEPLOYMENTS_PATH \
-        upload-vkey \
-        -c valid-commitments
-
-    # Upload VALID REBLIND verification key
-    cargo run \
-        -p scripts -- \
-        -p $DEVNET_PKEY \
-        -r $DEVNET_RPC_URL \
-        -d $DEPLOYMENTS_PATH \
-        upload-vkey \
-        -c valid-reblind
-
-    # Upload VALID MATCH SETTLE verification key
-    cargo run \
-        -p scripts -- \
-        -p $DEVNET_PKEY \
-        -r $DEVNET_RPC_URL \
-        -d $DEPLOYMENTS_PATH \
-        upload-vkey \
-        -c valid-match-settle
-fi
+    --owner $DEVNET_ACCOUNT_ADDRESS \
+    --test
 
 # If the $DEPLOY_DUMMY_ERC20 env var is set, deploy the dummy ERC20 contract
 if [[ -n $DEPLOY_DUMMY_ERC20 ]]; then
     cargo run \
-    -p scripts -- \
-    -p $DEVNET_PKEY \
-    -r $DEVNET_RPC_URL \
-    -d $DEPLOYMENTS_PATH \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
     --contract dummy-erc20
 fi
