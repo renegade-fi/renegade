@@ -64,8 +64,7 @@ cargo run \
     --rpc-url $DEVNET_RPC_URL \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-proxy \
-    --owner $DEVNET_ACCOUNT_ADDRESS \
-    --test
+    --owner $DEVNET_ACCOUNT_ADDRESS
 
 # If the $DEPLOY_DUMMY_ERC20 env var is set, deploy the dummy ERC20 contract
 if [[ -n $DEPLOY_DUMMY_ERC20 ]]; then
