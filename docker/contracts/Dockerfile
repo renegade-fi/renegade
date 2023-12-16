@@ -36,7 +36,8 @@ RUN cargo build -p scripts
 # to cache the dependencies.
 # The actual deploy script will rebuild & deploy this contract, along with
 # the others.
-RUN cargo \
+RUN RUSTFLAGS="-C opt-level=3" \
+    cargo \
     +nightly \
     build \
     -r \

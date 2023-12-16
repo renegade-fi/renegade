@@ -19,23 +19,34 @@ done
 # Exit on error
 set -e
 
-# Returns either "--no-verify" or an empty string
-# depending on whether the $NO_VERIFY env var is set
-no_verify() {
-    if [[ -n $NO_VERIFY ]]; then
-        echo "--no-verify"
-    fi
-    # Implicitly returns an empty string if $NO_VERIFY is unset
-}
+# If $NO_VERIFY is set, write dummy addresses to the deployments file.
+# Otherwise, deploy the verification keys.
+if [[ -n $NO_VERIFY ]]; then
+    # Write dummy addresses to the deployments file
+    dummy_address="0x0000000000000000000000000000000000000000"
+    jq -n --arg dummy_address "$dummy_address" \
+    '{
+        deployments: {
+            verifier_contract: $dummy_address,
+            vkeys_contract: $dummy_address
+        }
+    }' > $DEPLOYMENTS_PATH
 
-# Deploy verifier contract
-cargo run \
-    --package scripts -- \
-    --priv-key $DEVNET_PKEY \
-    --rpc-url $DEVNET_RPC_URL \
-    --deployments-path $DEPLOYMENTS_PATH \
-    deploy-stylus \
-    --contract verifier
+    no_verify_flag="--no-verify"
+else
+    # Deploy verification keys
+    # TODO: Ensure that the same SRS is used for the verification keys
+    # and the integration tests
+    cargo run \
+        --package scripts -- \
+        --priv-key $DEVNET_PKEY \
+        --rpc-url $DEVNET_RPC_URL \
+        --deployments-path $DEPLOYMENTS_PATH \
+        deploy-stylus \
+        --contract vkeys
+
+    no_verify_flag=""
+fi
 
 # Deploy Merkle contract
 cargo run \
@@ -55,7 +66,22 @@ cargo run \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
     --contract darkpool-test-contract \
-    $(no_verify)
+    $no_verify_flag
+
+# If the $NO_VERIFY env var is unset, deploy the verifier.
+# We do this after deploying the other contracts because it uses
+# different compilation flags, and we want to preserve the cached
+# dependencies for the other contracts.
+if [[ -z $NO_VERIFY ]]; then
+    # Deploy verifier contract
+    cargo run \
+        --package scripts -- \
+        --priv-key $DEVNET_PKEY \
+        --rpc-url $DEVNET_RPC_URL \
+        --deployments-path $DEPLOYMENTS_PATH \
+        deploy-stylus \
+        --contract verifier
+fi
 
 # Deploy the proxy contract
 cargo run \
