@@ -299,7 +299,7 @@ impl MultiproverEqGadget {
 
         // Allocate a gate to check whether the underlying value is zero
         let mut res = fabric.new_batch_gate_op(vec![a_open.id()], 2 /* arity */, |mut args| {
-            let val: Scalar = args.remove(0).into();
+            let val: Scalar = args.next().unwrap().into();
             let (is_zero, inv) = if val == Scalar::zero() {
                 (Scalar::one(), Scalar::zero())
             } else {

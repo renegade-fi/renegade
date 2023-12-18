@@ -620,9 +620,9 @@ mod test {
         >(&witness, &statement)
     }
 
-    // ------------------------------
-    // | Order Placement Test Cases |
-    // ------------------------------
+    // -------------------------
+    // | Order Placement Tests |
+    // -------------------------
 
     /// Tests a valid witness and statement for placing an order
     #[test]

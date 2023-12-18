@@ -38,7 +38,7 @@ pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalar]) -> Authenticated
 pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarResult> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
     a.fabric().new_batch_gate_op(vec![a.id()], N, |mut args| {
-        let a: Scalar = args.pop().unwrap().into();
+        let a: Scalar = args.next().unwrap().into();
         let a_bigint = a.to_biguint();
 
         BitSlice::<_, Lsb0>::from_slice(&a_bigint.to_bytes_le())

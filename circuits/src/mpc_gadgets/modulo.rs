@@ -15,8 +15,8 @@ use super::bits::{bit_lt_public, scalar_from_bits_le, scalar_to_bits_le};
 
 /// Take a `ScalarResult` modulo a power of 2
 fn scalar_mod_2m(val: &ScalarResult, m: usize) -> ScalarResult {
-    val.fabric().new_gate_op(vec![val.id()], move |args| {
-        let val: Scalar = args[0].clone().into();
+    val.fabric().new_gate_op(vec![val.id()], move |mut args| {
+        let val: Scalar = args.next().unwrap().into();
         let val_biguint = val.to_biguint();
 
         let res = val_biguint % &(BigUint::from(1u8) << m);

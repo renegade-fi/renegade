@@ -6,7 +6,7 @@ use std::{fmt::Debug, net::SocketAddr, sync::Arc, time::Duration};
 
 use ark_mpc::{
     network::{MpcNetwork, QuicTwoPartyNet},
-    MpcFabric, PARTY0, PARTY1,
+    ExecutorSizeHints, MpcFabric, PARTY0, PARTY1,
 };
 use constants::SystemCurveGroup;
 use dns_lookup::lookup_host;
@@ -21,7 +21,8 @@ use self::{
 };
 
 /// The size of MPC network to allocate by default
-pub const DEFAULT_MPC_SIZE_HINT: usize = 1_000_000;
+pub const DEFAULT_MPC_SIZE_HINT: ExecutorSizeHints =
+    ExecutorSizeHints { n_ops: 1_000, n_results: 1_000_000 };
 
 // -----------
 // | Helpers |
