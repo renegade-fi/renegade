@@ -8,7 +8,7 @@ use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{
-    helpers::{clear_merkle, deploy_new_wallet, random_wallet_shares},
+    helpers::{deploy_new_wallet, random_wallet_shares},
     IntegrationTestArgs,
 };
 
@@ -24,9 +24,7 @@ async fn test_new_wallet(test_args: IntegrationTestArgs) -> Result<()> {
         client.fetch_public_shares_for_blinder(public_shares.blinder).await?;
 
     // Check that the recovered public shares are the same as the original ones
-    assert_eq_result!(public_shares, recovered_public_shares)?;
-
-    clear_merkle(client).await
+    assert_eq_result!(public_shares, recovered_public_shares)
 }
 integration_test_async!(test_new_wallet);
 
@@ -52,9 +50,7 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
         client.fetch_public_shares_for_blinder(new_shares.blinder).await?;
 
     // Check that the recovered public shares are the same as the original ones
-    assert_eq_result!(new_shares, recovered_public_shares)?;
-
-    clear_merkle(client).await
+    assert_eq_result!(new_shares, recovered_public_shares)
 }
 integration_test_async!(test_update_wallet);
 
@@ -94,8 +90,6 @@ async fn test_process_match_settle(test_args: IntegrationTestArgs) -> Result<()>
         client.fetch_public_shares_for_blinder(party_1_new_shares.blinder).await?;
 
     // Check that the recovered public shares are the same as the original ones
-    assert_eq_result!(party_1_new_shares, recovered_party_1_shares)?;
-
-    clear_merkle(client).await
+    assert_eq_result!(party_1_new_shares, recovered_party_1_shares)
 }
 integration_test_async!(test_process_match_settle);

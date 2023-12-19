@@ -22,9 +22,6 @@ use crate::{
 
 use super::ArbitrumClient;
 
-// TODO: Replace `renegade_contracts_common::types::*` with relayer statement
-// types once they're adapted to Plonk
-
 impl ArbitrumClient {
     // -----------
     // | GETTERS |
