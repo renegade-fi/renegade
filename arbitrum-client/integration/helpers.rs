@@ -10,6 +10,7 @@ use constants::Scalar;
 use eyre::{eyre, Result};
 use rand::thread_rng;
 use std::iter;
+use tracing::log::warn;
 
 use crate::PreAllocatedState;
 
@@ -41,7 +42,13 @@ pub async fn deploy_new_wallet(
 }
 
 /// Sets up pre-allocated state used by the integration tests
-pub async fn setup_pre_allocated_state(client: &ArbitrumClient) -> Result<PreAllocatedState> {
+pub async fn setup_pre_allocated_state(client: &mut ArbitrumClient) -> Result<PreAllocatedState> {
+    // Clear the state of the Merkle tree contract
+    clear_merkle(client).await?;
+
+    // Reset the deploy block
+    client.reset_deploy_block().await?;
+
     // Insert three new wallets into the contract
     let (index0_commitment, index0_shares) = deploy_new_wallet(client).await?;
     let (index1_commitment, index1_shares) = deploy_new_wallet(client).await?;
@@ -60,6 +67,7 @@ pub async fn setup_pre_allocated_state(client: &ArbitrumClient) -> Result<PreAll
 /// Clears the state of the Merkle tree contract, resetting it to a blank tree
 /// w/ the default values for the leaves
 pub async fn clear_merkle(client: &ArbitrumClient) -> Result<()> {
+    warn!("Clearing Merkle contract state");
     send_tx(client.darkpool_contract.clear_merkle())
         .await
         .map(|_| ())

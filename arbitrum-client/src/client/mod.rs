@@ -131,4 +131,15 @@ impl ArbitrumClient {
             .map(BlockNumber::Number)
             .map_err(|e| ArbitrumClientError::Rpc(e.to_string()))
     }
+
+    /// Resets the deploy block to the current block number.
+    ///
+    /// Used in integration tests to ensure that we are only querying for events
+    /// from the desired block onwards.
+    #[cfg(feature = "integration")]
+    pub async fn reset_deploy_block(&mut self) -> Result<(), ArbitrumClientError> {
+        self.deploy_block = self.block_number().await?;
+
+        Ok(())
+    }
 }
