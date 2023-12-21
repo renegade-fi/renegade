@@ -313,9 +313,21 @@ impl Wallet {
         send_balance.amount =
             send_balance.amount.checked_sub(send_amount).expect("balance underflow");
 
-        let receive_balance = self.balances.get_mut(&receive_mint).unwrap();
+        let receive_balance = self
+            .balances
+            .entry(receive_mint)
+            .or_insert_with_key(|mint| Balance { mint: mint.clone(), amount: 0 });
         receive_balance.amount =
             receive_balance.amount.checked_add(receive_amount).expect("balance overflow");
+
+        // Update the public shares of the wallet, reblinding the wallet should be done
+        // separately
+        let (_, new_public_share) = create_wallet_shares_from_private(
+            &self.clone().into(),
+            &self.private_shares,
+            self.blinder,
+        );
+        self.blinded_public_shares = new_public_share;
 
         // Invalidate the Merkle opening
         self.invalidate_merkle_opening();
@@ -378,6 +390,7 @@ pub mod mocks {
     };
     use constants::{Scalar, MERKLE_HEIGHT};
     use indexmap::IndexMap;
+    use k256::ecdsa::SigningKey as K256SigningKey;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use uuid::Uuid;
@@ -390,6 +403,11 @@ pub mod mocks {
     pub fn mock_empty_wallet() -> Wallet {
         // Create an initial wallet
         let mut rng = thread_rng();
+
+        // Sample a valid signing key
+        let key = K256SigningKey::random(&mut rng);
+        let pk_root = PublicSigningKey::from(key.verifying_key());
+
         let mut wallet = Wallet {
             wallet_id: Uuid::new_v4(),
             orders: IndexMap::default(),
@@ -397,7 +415,7 @@ pub mod mocks {
             fees: vec![],
             key_chain: KeyChain {
                 public_keys: PublicKeyChain {
-                    pk_root: PublicSigningKey::default(),
+                    pk_root,
                     pk_match: PublicIdentificationKey::from(Scalar::zero()),
                 },
                 secret_keys: PrivateKeyChain {
@@ -406,12 +424,12 @@ pub mod mocks {
                 },
             },
             blinder: Scalar::random(&mut rng),
-            private_shares: SizedWalletShare::from_scalars(&mut iter::repeat(Scalar::random(
-                &mut rng,
-            ))),
-            blinded_public_shares: SizedWalletShare::from_scalars(&mut iter::repeat(
-                Scalar::random(&mut rng),
-            )),
+            private_shares: SizedWalletShare::from_scalars(&mut iter::repeat_with(|| {
+                Scalar::random(&mut rng)
+            })),
+            blinded_public_shares: SizedWalletShare::from_scalars(&mut iter::repeat_with(|| {
+                Scalar::random(&mut rng)
+            })),
             metadata: WalletMetadata::default(),
             merkle_proof: Some(mock_merkle_path()),
             merkle_staleness: Arc::new(AtomicUsize::default()),

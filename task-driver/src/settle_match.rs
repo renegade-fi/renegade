@@ -241,18 +241,17 @@ impl SettleMatchTask {
     /// Apply the match result to the local wallet, find the wallet's new
     /// Merkle opening, and update the global state
     async fn update_wallet_state(&self) -> Result<(), SettleMatchTaskError> {
+        // Find the wallet that was matched and the new private shares from its current
+        // reblind proof
+        let mut wallet = self.get_wallet().await?;
+        let (private_shares, blinded_public_shares) = self.get_new_shares().await?;
+        wallet.update_from_shares(&private_shares, &blinded_public_shares);
+
         // Cancel all orders on both nullifiers, await new validity proofs
         let party0_reblind_statement = &self.party0_validity_proof.reblind_proof.statement;
         let party1_reblind_statement = &self.party1_validity_proof.reblind_proof.statement;
         self.global_state.nullify_orders(party0_reblind_statement.original_shares_nullifier).await;
         self.global_state.nullify_orders(party1_reblind_statement.original_shares_nullifier).await;
-
-        // Find the wallet that was matched and the new private shares from its current
-        // reblind proof
-        let mut wallet = self.get_wallet().await?;
-        let (private_shares, blinded_public_shares) = self.get_new_shares().await?;
-
-        wallet.update_from_shares(&private_shares, &blinded_public_shares);
 
         // Find the wallet's new Merkle opening
         let opening = find_merkle_path(&wallet, &self.arbitrum_client)

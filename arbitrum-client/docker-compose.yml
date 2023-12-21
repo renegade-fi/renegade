@@ -28,7 +28,6 @@ services:
     command: >
       cargo test --test integration --features "integration" -- 
         --deployments-path /deployments/deployments.json
-        --verbose 
     volumes:
       - deployments:/deployments
     tty: true

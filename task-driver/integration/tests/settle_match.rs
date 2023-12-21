@@ -1,10 +1,7 @@
 //! Integration tests for settling matches, both internal and cross-cluster
 
 use crate::{
-    helpers::{
-        biguint_from_address, increase_erc20_allowance, lookup_wallet_and_check_result,
-        new_wallet_in_darkpool,
-    },
+    helpers::{biguint_from_address, lookup_wallet_and_check_result, new_wallet_in_darkpool},
     IntegrationTestArgs,
 };
 use circuit_types::{
@@ -13,6 +10,7 @@ use circuit_types::{
     order::{Order, OrderSide},
     r#match::{MatchResult, OrderSettlementIndices},
     transfers::{ExternalTransfer, ExternalTransferDirection},
+    SizedWallet,
 };
 use circuits::zk_circuits::valid_match_settle::{
     ValidMatchSettleStatement, ValidMatchSettleWitness,
@@ -39,6 +37,8 @@ use super::update_wallet::execute_wallet_update;
 
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
+/// The amounts that each order is for
+const ORDER_AMOUNT: u64 = 5;
 
 // -----------
 // | Helpers |
@@ -55,7 +55,7 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
         quote_mint: biguint_from_hex_string(&test_args.erc20_addr).unwrap(),
         base_mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR).unwrap(),
         side,
-        amount: 10,
+        amount: ORDER_AMOUNT,
         worst_case_price: FixedPoint::from_integer(worst_cast_price),
         timestamp: 10,
     }
@@ -65,10 +65,10 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
 fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
     match side {
         OrderSide::Buy => {
-            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr).unwrap(), amount: 500 }
+            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr).unwrap(), amount: 100 }
         },
         OrderSide::Sell => {
-            Balance { mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR).unwrap(), amount: 200 }
+            Balance { mint: biguint_from_hex_string(PREDEPLOYED_WETH_ADDR).unwrap(), amount: 100 }
         },
     }
 }
@@ -90,15 +90,7 @@ async fn setup_wallet_with_order_balance(
     wallet.balances.insert(balance.mint.clone(), balance.clone());
     wallet.reblind_wallet();
 
-    // Increase the deposit allowance to transfer the balance
-    increase_erc20_allowance(
-        balance.amount,
-        &balance.mint.to_str_radix(16 /* radix */),
-        test_args.clone(),
-    )
-    .await?;
-
-    execute_wallet_update(
+    wallet = execute_wallet_update(
         old_wallet,
         wallet.clone(),
         Some(ExternalTransfer {
@@ -116,7 +108,7 @@ async fn setup_wallet_with_order_balance(
     wallet.orders.insert(Uuid::new_v4(), order);
     wallet.reblind_wallet();
 
-    execute_wallet_update(
+    wallet = execute_wallet_update(
         old_wallet,
         wallet.clone(),
         None, // transfer
@@ -157,7 +149,7 @@ async fn setup_match_result(
     test_args: &IntegrationTestArgs,
 ) -> Result<(MatchResult, ValidMatchSettleBundle)> {
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
-    let base_amount = 10;
+    let base_amount = ORDER_AMOUNT;
     let quote_amount = price * Scalar::from(base_amount);
     let direction = wallet1.orders.first().unwrap().1.side.is_sell();
 
@@ -171,9 +163,18 @@ async fn setup_match_result(
         min_amount_order_index: false,
     };
 
-    // Simulate a reblind that would happen before a match
-    wallet1.reblind_wallet();
-    wallet2.reblind_wallet();
+    // Pull the validity proof witnesses for the wallets so that we may update the
+    // public and private shares to the reblinded and augmented shares; as would
+    // happen before a real match
+    let state = &test_args.global_state;
+    let witness1 = get_first_order_witness(&wallet1, state).await?;
+    let witness2 = get_first_order_witness(&wallet2, state).await?;
+
+    wallet1.private_shares = witness1.reblind_witness.reblinded_wallet_private_shares;
+    wallet1.blinded_public_shares = witness1.commitment_witness.augmented_public_shares;
+
+    wallet2.private_shares = witness2.reblind_witness.reblinded_wallet_private_shares;
+    wallet2.blinded_public_shares = witness2.commitment_witness.augmented_public_shares;
 
     let proof = dummy_match_proof(&wallet1, &wallet2, match_.clone(), test_args).await?;
     Ok((match_, proof))
@@ -293,10 +294,15 @@ async fn verify_settlement(
         .await
         .ok_or_else(|| eyre!("wallet not found in state"))?;
 
+    let circuit_wallet1: SizedWallet = wallet.clone().into();
+    let circuit_wallet2: SizedWallet = new_wallet.clone().into();
+
     assert_eq_result!(new_wallet.blinder, wallet.blinder)?;
+    assert_eq_result!(new_wallet.private_shares, wallet.private_shares)?;
+
+    assert_eq_result!(circuit_wallet1, circuit_wallet2)?;
 
     assert_eq_result!(new_wallet.blinded_public_shares, wallet.blinded_public_shares)?;
-    assert_eq_result!(new_wallet.private_shares, wallet.private_shares)?;
 
     // 3. Lookup the wallet on-chain, verify that this matches the expected
     lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, test_args.clone()).await

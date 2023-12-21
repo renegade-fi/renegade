@@ -262,8 +262,7 @@ impl SettleMatchInternalTask {
     /// Submit the match transaction
     async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
         // Submit a `match` transaction
-        let match_settle_proof = self.proof_bundle.take().unwrap();
-
+        let match_settle_proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
             .process_match_settle(
                 self.order1_proof.clone(),
@@ -392,9 +391,9 @@ impl SettleMatchInternalTask {
 
         // Apply the match to the secret shares of the match parties
         let party0_indices = commitment_statement1.indices;
-        let party0_public_shares = reblind_witness1.reblinded_wallet_public_shares.clone();
+        let party0_public_shares = commitment_witness1.augmented_public_shares.clone();
         let party1_indices = commitment_statement2.indices;
-        let party1_public_shares = reblind_witness2.reblinded_wallet_public_shares.clone();
+        let party1_public_shares = commitment_witness2.augmented_public_shares.clone();
 
         let mut party0_modified_shares = party0_public_shares.clone();
         let mut party1_modified_shares = party1_public_shares.clone();

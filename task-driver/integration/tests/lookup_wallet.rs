@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use crate::{
     helpers::{
-        allocate_wallet_in_darkpool, create_empty_api_wallet, empty_wallet_from_seed,
-        lookup_wallet_and_check_result, mock_wallet_update,
+        create_empty_api_wallet, lookup_wallet_and_check_result, mock_wallet_update,
+        new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
@@ -44,11 +44,7 @@ async fn test_lookup_wallet__valid_wallet(test_args: IntegrationTestArgs) -> Res
     // Create a wallet from a blinder seed
     let mut rng = thread_rng();
     let client = &test_args.arbitrum_client;
-
-    let blinder_seed = Scalar::random(&mut rng);
-    let share_seed = Scalar::random(&mut rng);
-    let mut wallet = empty_wallet_from_seed(blinder_seed, share_seed);
-    allocate_wallet_in_darkpool(&wallet, client).await?;
+    let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Reblind the wallet to emulate a sequence of updates to the wallet
     // then send it to the contract

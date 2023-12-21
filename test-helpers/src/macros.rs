@@ -58,7 +58,10 @@ macro_rules! integration_test_main {
             }
 
             let args = <$cli_args>::parse();
-            let verbose = args.verbose;
+            let print_harness = match args.verbosity {
+                TestVerbosity::Quiet => false,
+                _ => true,
+            };
 
             let runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
 
@@ -74,7 +77,7 @@ macro_rules! integration_test_main {
                 // | Test Harness |
                 // ----------------
 
-                if verbose {
+                if print_harness {
                     println!("\n\n{}\n", "Running integration tests...".blue());
                 }
 
@@ -90,7 +93,7 @@ macro_rules! integration_test_main {
                         continue;
                     }
 
-                    if verbose {
+                    if print_harness {
                         // Flush the write buffer before the test executes. We print success or
                         // failure on the same line as the "Running", but if the
                         // test panics, we want to know which test was run
@@ -104,7 +107,7 @@ macro_rules! integration_test_main {
                         },
                     };
 
-                    all_success &= validate_success(res, verbose);
+                    all_success &= validate_success(res, print_harness);
                 }
 
                 // Call macro caller defined teardown
@@ -115,7 +118,7 @@ macro_rules! integration_test_main {
 
             let all_success = runtime.block_on(result).unwrap();
             if all_success {
-                if verbose {
+                if print_harness {
                     println!("\n{}", "Integration tests successful!".green(),);
                 }
 
@@ -128,9 +131,9 @@ macro_rules! integration_test_main {
         /// Prints a success or failure message, returns true if success, false if
         /// failure
         #[inline]
-        fn validate_success(res: eyre::Result<()>, verbose: bool) -> bool {
+        fn validate_success(res: eyre::Result<()>, print_harness: bool) -> bool {
             if res.is_ok() {
-                if verbose {
+                if print_harness {
                     println!("{}", "Success!".green());
                 }
 
