@@ -2,6 +2,7 @@
 
 use std::iter;
 
+use ark_mpc::gadgets::bit_xor_public;
 use circuit_types::{AuthenticatedBool, Fabric};
 use constants::{AuthenticatedScalar, Scalar};
 use itertools::Itertools;
@@ -10,7 +11,7 @@ use crate::SCALAR_BITS_MINUS_TWO;
 
 use super::{
     arithmetic::product,
-    bits::{bit_xor_public, scalar_from_bits_le, scalar_to_bits_le, to_bits_le},
+    bits::{scalar_from_bits_le, scalar_to_bits_le, to_bits_le},
     modulo::truncate,
 };
 

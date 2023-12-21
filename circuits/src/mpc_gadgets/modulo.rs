@@ -104,15 +104,19 @@ mod tests {
     use ark_mpc::PARTY0;
     use circuit_types::errors::MpcError;
     use constants::Scalar;
+    use num_bigint::BigUint;
     use rand::{thread_rng, RngCore};
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::mpc_gadgets::modulo::{mod_2m, shift_right};
+    use crate::{
+        mpc_gadgets::modulo::{mod_2m, shift_right},
+        SCALAR_BITS_MINUS_TWO,
+    };
 
     /// Test the `mod2m` gadget
     #[tokio::test]
     async fn test_mod2m() {
-        const M: usize = 3;
+        const M: usize = SCALAR_BITS_MINUS_TWO;
         let mut rng = thread_rng();
         let value = Scalar::random(&mut rng);
 
@@ -120,7 +124,7 @@ mod tests {
             let shared_value = fabric.share_scalar(value, PARTY0);
             let res = mod_2m::<M>(&shared_value, &fabric).open_authenticated().await.unwrap();
 
-            let expected = Scalar::from(value.to_biguint() % (1u64 << M));
+            let expected = Scalar::from(value.to_biguint() % (BigUint::from(1u8) << M));
             Ok(res == expected)
         })
         .await;

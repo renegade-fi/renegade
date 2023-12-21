@@ -85,7 +85,13 @@ where
     let party0_conn = MockNetwork::new(PARTY0, party0_stream);
     let party1_conn = MockNetwork::new(PARTY1, party1_stream);
 
-    execute_mock_mpc_with_network(f, party0_conn, party1_conn).await
+    execute_mock_mpc_with_network_and_hint(
+        f,
+        party0_conn,
+        party1_conn,
+        ExecutorSizeHints::default(),
+    )
+    .await
 }
 
 /// Run a mock MPC connected by a duplex stream that has an added delay as the
@@ -97,15 +103,35 @@ where
     F: Fn(MpcFabric<SystemCurveGroup>) -> S + Send + Sync + 'static,
 {
     // Build a duplex stream to broker communication between the two parties
+    execute_mock_mpc_with_delay_and_hint(f, delay, ExecutorSizeHints::default()).await
+}
+
+/// Execute a mock MPC connected by a duplex stream as the mock network. Use the
+/// provided size hint when constructing the fabric
+pub async fn execute_mock_mpc_with_delay_and_hint<T, S, F>(
+    f: F,
+    delay: Duration,
+    hint: ExecutorSizeHints,
+) -> (T, T)
+where
+    T: Send + 'static,
+    S: Future<Output = T> + Send + 'static,
+    F: Fn(MpcFabric<SystemCurveGroup>) -> S + Send + Sync + 'static,
+{
     let (party0_stream, party1_stream) = UnboundedDuplexStream::new_duplex_pair();
     let party0_conn = MockNetworkWithDelay::new(PARTY0, party0_stream, delay);
     let party1_conn = MockNetworkWithDelay::new(PARTY1, party1_stream, delay);
 
-    execute_mock_mpc_with_network(f, party0_conn, party1_conn).await
+    execute_mock_mpc_with_network_and_hint(f, party0_conn, party1_conn, hint).await
 }
 
 /// Execute a mock MPC with a given implementation of `MpcNetwork`
-async fn execute_mock_mpc_with_network<T, S, F, N>(f: F, party0_conn: N, party1_conn: N) -> (T, T)
+async fn execute_mock_mpc_with_network_and_hint<T, S, F, N>(
+    f: F,
+    party0_conn: N,
+    party1_conn: N,
+    hint: ExecutorSizeHints,
+) -> (T, T)
 where
     T: Send + 'static,
     S: Future<Output = T> + Send + 'static,
@@ -113,8 +139,10 @@ where
     N: MpcNetwork<SystemCurveGroup> + Send + Sync + 'static,
 {
     // Build a duplex stream to broker communication between the two parties
-    let party0_fabric = MpcFabric::new(party0_conn, PartyIDBeaverSource::new(PARTY0));
-    let party1_fabric = MpcFabric::new(party1_conn, PartyIDBeaverSource::new(PARTY1));
+    let party0_fabric =
+        MpcFabric::new_with_size_hint(hint, party0_conn, PartyIDBeaverSource::new(PARTY0));
+    let party1_fabric =
+        MpcFabric::new_with_size_hint(hint, party1_conn, PartyIDBeaverSource::new(PARTY1));
 
     // Spawn two tasks to execute the MPC
     let fabric0 = party0_fabric.clone();
