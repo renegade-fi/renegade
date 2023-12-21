@@ -104,10 +104,7 @@ pub enum UpdateWalletTaskState {
     Proving,
     /// The task is submitting the transaction to the contract and awaiting
     /// transaction finality
-    SubmittingTx {
-        /// The proof of VALID WALLET UPDATE created in the previous step
-        proof_bundle: ValidWalletUpdateBundle,
-    },
+    SubmittingTx,
     /// The task is finding a new Merkle opening for the wallet
     FindingOpening,
     /// The task is updating the validity proofs for all orders in the
@@ -155,6 +152,7 @@ impl Task for UpdateWalletTask {
             UpdateWalletTaskState::Proving => {
                 // Begin the proof of `VALID WALLET UPDATE`
                 self.generate_proof().await?;
+                self.task_state = UpdateWalletTaskState::SubmittingTx;
             },
             UpdateWalletTaskState::SubmittingTx { .. } => {
                 // Submit the proof and transaction info to the contract and await
@@ -268,7 +266,7 @@ impl UpdateWalletTask {
     /// Submit the `update_wallet` transaction to the contract and await
     /// finality
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
-        let proof = self.proof_bundle.take().unwrap();
+        let proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
             .update_wallet(proof, self.wallet_update_signature.clone())
             .await

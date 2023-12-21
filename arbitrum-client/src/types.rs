@@ -91,7 +91,7 @@ impl TryFrom<PlonkProof> for ContractProof {
 
 /// Represents an external transfer of an ERC20 token
 #[serde_as]
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
 pub struct ContractExternalTransfer {
     /// The address of the account contract to deposit from or withdraw to
     #[serde_as(as = "AddressDef")]

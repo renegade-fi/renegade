@@ -19,7 +19,7 @@ use arbitrum_client::{
 use clap::Parser;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use gossip_api::gossip::GossipOutbound;
-use helpers::new_mock_task_driver;
+use helpers::{fund_wallet, increase_erc20_allowance, new_mock_task_driver, FUNDING_AMOUNT};
 use job_types::proof_manager::ProofManagerJob;
 use proof_manager::mock::MockProofManager;
 use state::mock::StateMockBuilder;
@@ -28,12 +28,15 @@ use task_driver::driver::TaskDriver;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
+    types::TestVerbosity,
 };
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
 use util::{
-    arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
+    arbitrum::{
+        parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_CONTRACT_KEY,
+    },
     logging::LevelFilter,
     runtime::block_on_result,
 };
@@ -63,14 +66,10 @@ struct CliArgs {
     darkpool_addr: Option<String>,
     /// The address of a dummy ERC-20 token deployed on the devnet node
     ///
-    /// It is assumed that the given account address has a balance of this token
-    /// on the devnet node. This is generally true for default values; i.e.
-    /// pre-deployed accounts with the default $ETH ERC-20 token
-    ///
-    /// Defaults to the ETH base token address with the same address as on
-    /// Goerli
-    #[arg(long, default_value = "0x0")]
-    erc20_addr: String,
+    /// It is assumed that the dummy erc20 has a `mint` method that allows the
+    /// test to fund its address
+    #[arg(long)]
+    erc20_addr: Option<String>,
     /// The location of a `deployments.json` file that contains the addresses of
     /// the deployed contracts
     #[arg(long)]
@@ -85,13 +84,15 @@ struct CliArgs {
     #[arg(short, long, value_parser)]
     test: Option<String>,
     /// The verbosity level of the test harness
-    #[arg(long, short)]
-    verbose: bool,
+    #[arg(long, short, default_value = "default")]
+    verbosity: TestVerbosity,
 }
 
 /// The arguments provided to every integration test
 #[derive(Clone)]
 struct IntegrationTestArgs {
+    /// The address of the darkpool deployed on the Arbitrum devnet
+    darkpool_addr: String,
     /// The address of a pre-deployed ERC20 for testing
     erc20_addr: String,
     /// The arbitrum client that resolves to a locally running devnet node
@@ -122,15 +123,21 @@ impl From<CliArgs> for IntegrationTestArgs {
         let (proof_job_queue, job_receiver) = unbounded();
         MockProofManager::start(job_receiver);
 
-        Self {
-            erc20_addr: test_args.erc20_addr.clone(),
+        let args = Self {
+            darkpool_addr: get_darkpool_addr(&test_args),
+            erc20_addr: get_erc20_addr(&test_args),
             arbitrum_client: setup_arbitrum_client_mock(test_args),
             network_sender,
             _network_receiver: Arc::new(network_receiver),
             proof_job_queue,
             global_state: setup_global_state_mock(),
             driver: new_mock_task_driver(),
-        }
+        };
+
+        // Fund the wallet with WETH and the dummy ERC20 token
+        block_on_result(fund_wallet(&args)).unwrap();
+        block_on_result(increase_erc20_allowance(FUNDING_AMOUNT, &args.erc20_addr, &args)).unwrap();
+        args
     }
 }
 
@@ -141,31 +148,56 @@ fn setup_global_state_mock() -> RelayerState {
 
 /// Setup a mock `ArbitrumClient` for the integration tests
 fn setup_arbitrum_client_mock(test_args: CliArgs) -> ArbitrumClient {
-    assert!(
-        test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
-        "one of `darkpool_addr` or `deployments_path` must be provided"
-    );
-
-    // The darkpool address may either be specified directly, or given by a
-    // deployments file in a known location
-    let darkpool_addr = if let Some(addr) = test_args.darkpool_addr {
-        addr
-    } else {
-        parse_addr_from_deployments_file(
-            &test_args.deployments_path.unwrap(),
-            DARKPOOL_PROXY_CONTRACT_KEY,
-        )
-        .unwrap()
-    };
-
     // Build a client that references the darkpool
     block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
         chain: Chain::Devnet,
-        darkpool_addr,
+        darkpool_addr: get_darkpool_addr(&test_args),
         arb_priv_key: test_args.arbitrum_pkey,
         rpc_url: test_args.devnet_url,
     }))
     .unwrap()
+}
+
+/// Get the address of the darkpool contract
+fn get_darkpool_addr(test_args: &CliArgs) -> String {
+    assert!(
+        test_args.darkpool_addr.is_some() || test_args.deployments_path.is_some(),
+        "Must provide either a darkpool address or a deployments file"
+    );
+
+    get_addr_maybe_from_file(
+        test_args.darkpool_addr.clone(),
+        DARKPOOL_PROXY_CONTRACT_KEY,
+        test_args.deployments_path.as_deref().unwrap_or("/deployments.json"),
+    )
+}
+
+/// Get the address of the erc20 contract
+fn get_erc20_addr(test_args: &CliArgs) -> String {
+    assert!(
+        test_args.erc20_addr.is_some() || test_args.deployments_path.is_some(),
+        "Must provide either an erc20 address or a deployments file"
+    );
+
+    get_addr_maybe_from_file(
+        test_args.erc20_addr.clone(),
+        DUMMY_ERC20_CONTRACT_KEY,
+        test_args.deployments_path.as_deref().unwrap_or("/deployments.json"),
+    )
+}
+
+/// Get an address either from the command line or by falling back to the given
+/// key in the deployments file
+fn get_addr_maybe_from_file(
+    maybe_addr: Option<String>,
+    json_key: &str,
+    deployments_file: &str,
+) -> String {
+    if let Some(addr) = maybe_addr {
+        addr
+    } else {
+        parse_addr_from_deployments_file(deployments_file, json_key).unwrap()
+    }
 }
 
 // ----------------
@@ -173,9 +205,11 @@ fn setup_arbitrum_client_mock(test_args: CliArgs) -> ArbitrumClient {
 // ----------------
 
 /// Setup code for the integration tests
-fn setup_integration_tests(_test_args: &CliArgs) {
+fn setup_integration_tests(test_args: &CliArgs) {
     // Configure logging
-    util::logging::setup_system_logger(LevelFilter::INFO);
+    if matches!(test_args.verbosity, TestVerbosity::Full) {
+        util::logging::setup_system_logger(LevelFilter::INFO);
+    }
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

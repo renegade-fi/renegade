@@ -4,14 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-mocks = ["rand", "jf-primitives", "mpc-relation", "mpc-plonk", "ark-ec"]
+mocks = ["rand", "jf-primitives", "mpc-relation", "mpc-plonk", "ark-ec", "k256", "ecdsa"]
 
 [dependencies]
 # === Cryptography + Arithmetic === #
 ark-mpc = { workspace = true }
 ark-ec = { version = "0.4", optional = true }
+ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 jf-primitives = { workspace = true, optional = true }
+k256 = { version = "0.13", features = ["expose-field"], optional = true }
 mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
 num-bigint = { workspace = true }

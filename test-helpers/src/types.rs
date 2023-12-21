@@ -1,7 +1,11 @@
 //! Groups type definitions used in integration tests
 #![allow(clippy::crate_in_macro_def)]
 
-use std::pin::Pin;
+use std::{
+    fmt::{self, Display},
+    pin::Pin,
+    str::FromStr,
+};
 
 use eyre::Result;
 use futures::Future;
@@ -53,4 +57,35 @@ pub enum IntegrationTestFn<FnArgs> {
     SynchronousFn(fn(FnArgs) -> Result<()>),
     /// An asynchronous test
     AsynchronousFn(fn(FnArgs) -> Pin<Box<dyn Future<Output = Result<()>>>>),
+}
+
+/// The verbosity at which to run a test
+#[derive(Debug, Clone, Copy, Default)]
+pub enum TestVerbosity {
+    /// No output
+    Quiet,
+    /// Only the test harness will output logs
+    #[default]
+    Default,
+    /// Full verbosity, logging enabled
+    Full,
+}
+
+impl Display for TestVerbosity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl FromStr for TestVerbosity {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "quiet" => Ok(Self::Quiet),
+            "default" => Ok(Self::Default),
+            "full" => Ok(Self::Full),
+            _ => Err(format!("invalid verbosity level: {}", s)),
+        }
+    }
 }

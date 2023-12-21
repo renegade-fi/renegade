@@ -17,9 +17,8 @@ use common::types::proof_bundles::{
 use crossbeam::channel::Receiver;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use tokio::{runtime::Handle, sync::oneshot::Sender as TokioSender};
+use tracing::log;
 
-/// The error emitted when the job queue closes early
-const ERR_JOB_QUEUE_CLOSED: &str = "error receiving job, channel closed";
 /// The error message emitted when a response channel closes early
 const ERR_RESPONSE_CHANNEL_CLOSED: &str = "error sending proof, channel closed";
 
@@ -38,8 +37,13 @@ impl MockProofManager {
     /// The execution loop for the mock
     fn execution_loop(job_queue: &Receiver<ProofManagerJob>) {
         loop {
-            let job = job_queue.recv().expect(ERR_JOB_QUEUE_CLOSED);
-            Self::handle_job(job.type_, job.response_channel);
+            match job_queue.recv() {
+                Err(e) => {
+                    log::error!("error receiving job: {e}... shutting down");
+                    break;
+                },
+                Ok(job) => Self::handle_job(job.type_, job.response_channel),
+            }
         }
     }
 

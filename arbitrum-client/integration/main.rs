@@ -25,6 +25,7 @@ use clap::Parser;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
+    types::TestVerbosity,
 };
 use util::{
     arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
@@ -58,8 +59,8 @@ struct CliArgs {
     test: Option<String>,
 
     /// The verbosity level of the test harness
-    #[arg(short, long)]
-    verbose: bool,
+    #[arg(long, default_value = "default")]
+    verbosity: TestVerbosity,
 }
 
 /// The arguments provided to every integration test
@@ -121,9 +122,11 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 /// Setup code for the integration tests
-fn setup_integration_tests(_test_args: &CliArgs) {
+fn setup_integration_tests(test_args: &CliArgs) {
     // Configure logging
-    util::logging::setup_system_logger(LevelFilter::INFO);
+    if matches!(test_args.verbosity, TestVerbosity::Full) {
+        util::logging::setup_system_logger(LevelFilter::INFO);
+    }
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);

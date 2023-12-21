@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-integration = ["state/mocks", "common/mocks"]
+integration = ["state/mocks", "common/mocks", "arbitrum-client/integration"]
 
 [[test]]
 name = "integration"

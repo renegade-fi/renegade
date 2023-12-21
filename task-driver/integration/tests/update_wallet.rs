@@ -20,8 +20,8 @@ use uuid::Uuid;
 
 use crate::{
     helpers::{
-        allocate_wallet_in_darkpool, biguint_from_address, empty_wallet_from_seed,
-        increase_erc20_allowance, lookup_wallet_and_check_result, new_wallet_in_darkpool,
+        allocate_wallet_in_darkpool, attach_merkle_opening, biguint_from_address,
+        empty_wallet_from_seed, lookup_wallet_and_check_result, new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
@@ -52,11 +52,17 @@ lazy_static! {
 
 /// Perform a wallet update task and verify that it succeeds
 pub(crate) async fn execute_wallet_update(
-    old_wallet: Wallet,
+    mut old_wallet: Wallet,
     new_wallet: Wallet,
     transfer: Option<ExternalTransfer>,
     test_args: IntegrationTestArgs,
-) -> Result<()> {
+) -> Result<Wallet> {
+    // Make sure the Merkle proof is present
+    if old_wallet.merkle_proof.is_none() {
+        attach_merkle_opening(&mut old_wallet, &test_args.arbitrum_client).await?;
+    }
+
+    let id = new_wallet.wallet_id;
     let client = &test_args.arbitrum_client;
     let task = UpdateWalletTask::new(
         get_current_time_seconds(),
@@ -72,7 +78,16 @@ pub(crate) async fn execute_wallet_update(
 
     let (_task_id, handle) = test_args.driver.start_task(task).await;
     let success = handle.await?;
-    assert_true_result!(success)
+    assert_true_result!(success)?;
+
+    // Fetch the updated wallet from state
+    test_args
+        .global_state
+        .read_wallet_index()
+        .await
+        .get_wallet(&id)
+        .await
+        .ok_or_else(|| eyre::eyre!("Wallet not found in state"))
 }
 
 /// Execute a wallet update, then lookup the new wallet from on-chain state and
@@ -156,7 +171,7 @@ async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Res
     let order_id = Uuid::new_v4();
     wallet.orders.insert(order_id, DUMMY_ORDER.clone());
 
-    allocate_wallet_in_darkpool(&wallet, client).await?;
+    allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     // Update the wallet by removing an order
     let old_wallet = wallet.clone();
@@ -216,7 +231,7 @@ async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Resul
 
     wallet.fees.push(DUMMY_FEE.clone());
 
-    allocate_wallet_in_darkpool(&wallet, client).await?;
+    allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     // Update the wallet by removing a fee
     let old_wallet = wallet.clone();
@@ -255,9 +270,6 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
 
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
     wallet.reblind_wallet();
-
-    // Approve the deposit on the ERC20 contract
-    increase_erc20_allowance(amount, &test_args.erc20_addr, test_args.clone()).await?;
 
     let account_addr = biguint_from_address(client.wallet_address());
     execute_wallet_update_and_verify_shares(
