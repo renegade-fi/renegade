@@ -2,7 +2,11 @@
 
 use std::{cmp, iter};
 
-use ark_mpc::ResultValue;
+use ark_mpc::{
+    algebra::AuthenticatedScalarResult,
+    gadgets::{bit_xor, bit_xor_batch, bit_xor_public_batch},
+    ResultValue,
+};
 use bitvec::{prelude::Lsb0, slice::BitSlice};
 use circuit_types::Fabric;
 use constants::{AuthenticatedScalar, Scalar, ScalarResult};
@@ -23,11 +27,21 @@ const BLINDING_FACTOR_MAX_BITS: usize = 252;
 /// into a single scalar
 pub(crate) fn scalar_from_bits_le(bits: &[AuthenticatedScalar]) -> AuthenticatedScalar {
     assert!(!bits.is_empty(), "scalar_from_bits_le cannot be called with empty bit array");
-    let two = Scalar::from(2u64);
-    let mut result = bits[bits.len() - 1].clone();
+    // Generate powers of two as scalars
+    let powers_of_two = scalar_powers_of_two(bits.len());
+    let scaled_bits = AuthenticatedScalar::batch_mul_constant(bits, &powers_of_two);
 
-    for bit in bits.iter().rev().skip(1) {
-        result = &result * two + bit;
+    scaled_bits.into_iter().sum()
+}
+
+/// Get the powers of two from exponents [0..exponent)
+fn scalar_powers_of_two(exponent: usize) -> Vec<Scalar> {
+    let mut result = Vec::with_capacity(exponent);
+    let mut power_of_two = Scalar::one();
+
+    for _ in 0..exponent {
+        result.push(power_of_two);
+        power_of_two = power_of_two + power_of_two;
     }
 
     result
@@ -94,18 +108,6 @@ fn resize_bitvector_to_length_public(
 // | Gadgets |
 // -----------
 
-/// Single bit xor, assumes that `a` and `b` are scalars representing bits
-pub fn bit_xor(a: &AuthenticatedScalar, b: &AuthenticatedScalar) -> AuthenticatedScalar {
-    // xor(a, b) = a + b - 2ab
-    a + b - Scalar::from(2u64) * a * b
-}
-
-/// Single bit xor where one of the bits is public
-pub fn bit_xor_public(a: &ScalarResult, b: &AuthenticatedScalar) -> AuthenticatedScalar {
-    // xor(a, b) = a + b - 2ab
-    a + b - Scalar::from(2u64) * a * b
-}
-
 /// Bitwise Add with carry; inputs assumed to be in little endian order
 ///
 /// Returns the added bits and a bit indicating whether the value has overflowed
@@ -128,12 +130,15 @@ fn bit_add_impl(
     let mut result = Vec::with_capacity(a.len());
     let mut carry = initial_carry;
 
-    for (a_bit, b_bit) in a.iter().zip(b.iter()) {
+    let element_wise_mul = AuthenticatedScalarResult::batch_mul(b, a);
+    let xors = bit_xor_batch(a, b);
+
+    for (a_times_b, a_xor_b) in element_wise_mul.into_iter().zip(xors.into_iter()) {
         // The out bit in this position is A \xor B \xor carry
-        let a_xor_b = bit_xor(a_bit, b_bit);
         result.push(bit_xor(&a_xor_b, &carry));
+
         // The carry bit from this depth of the adder
-        carry = a_bit * b_bit + a_xor_b * &carry;
+        carry = a_times_b + a_xor_b * &carry;
     }
 
     (result, carry)
@@ -160,12 +165,15 @@ fn bit_add_impl_public(
     let mut result = Vec::with_capacity(a.len());
     let mut carry = initial_carry;
 
-    for (a_bit, b_bit) in a.iter().zip(b.iter()) {
+    let element_wise_mul = AuthenticatedScalarResult::batch_mul_public(b, a);
+    let xors = bit_xor_public_batch(a, b);
+
+    for (a_times_b, a_xor_b) in element_wise_mul.into_iter().zip(xors.into_iter()) {
         // The out bit in this position is A \xor B \xor carry
-        let a_xor_b = bit_xor_public(a_bit, b_bit);
         result.push(bit_xor(&a_xor_b, &carry));
+
         // The carry bit from this depth of the adder
-        carry = a_bit * b_bit + a_xor_b * &carry;
+        carry = a_times_b + a_xor_b * &carry;
     }
 
     (result, carry)
@@ -290,7 +298,7 @@ mod tests {
 
     use crate::{
         mpc_gadgets::bits::{bit_add, bit_add_public, bit_lt, bit_lt_public, to_bits_le},
-        scalar_2_to_m,
+        scalar_2_to_m, SCALAR_BITS_MINUS_TWO,
     };
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};
@@ -438,7 +446,7 @@ mod tests {
     /// Tests the `bit_add_public` gadget
     #[tokio::test]
     async fn test_bit_add_public() {
-        const N: usize = 100;
+        const N: usize = SCALAR_BITS_MINUS_TWO;
         let bits1 = random_bits(N);
         let bits2 = random_bits(N);
 

@@ -5,7 +5,7 @@
 
 use std::time::{Duration, Instant};
 
-use ark_mpc::{PARTY0, PARTY1};
+use ark_mpc::{test_helpers::execute_mock_mpc_with_size_hint, ExecutorSizeHints, PARTY0, PARTY1};
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
@@ -25,7 +25,9 @@ use circuits::{
 };
 use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use test_helpers::mpc_network::execute_mock_mpc_with_delay;
+use test_helpers::mpc_network::{
+    execute_mock_mpc_with_delay, execute_mock_mpc_with_delay_and_hint,
+};
 use tokio::runtime::Builder as RuntimeBuilder;
 
 /// A small delay, roughly what would be expected for nodes in the same
@@ -52,7 +54,8 @@ type SizedValidMatchSettleStatement =
 ///
 /// Returns the total time taken for the critical path
 async fn run_match_with_delay(delay: Duration) -> Duration {
-    let (party0_time, party1_time) = execute_mock_mpc_with_delay(
+    let hint = ExecutorSizeHints { n_ops: 28_500, n_results: 9_200_000 };
+    let (party0_time, party1_time) = execute_mock_mpc_with_delay_and_hint(
         |fabric| async move {
             let start_time = Instant::now();
 
@@ -66,6 +69,7 @@ async fn run_match_with_delay(delay: Duration) -> Duration {
             start_time.elapsed()
         },
         delay,
+        hint,
     )
     .await;
 
@@ -186,6 +190,10 @@ criterion_main!(full_match);
 async fn main() {
     // Run a single match to collect statistics, the delay does not matter as
     // all collected stats are independent of the delay
+    let start = Instant::now();
+
     let delay = Duration::from_millis(SMALL_DELAY_MS);
     let _ = run_match_with_delay(delay).await;
+
+    println!("Total time: {:?}", start.elapsed());
 }

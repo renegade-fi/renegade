@@ -219,7 +219,7 @@ pub(crate) async fn increase_erc20_allowance(
 ) -> Result<()> {
     let darkpool_addr = Address::from_str(&test_args.darkpool_addr)
         .map_err(|e| eyre!("error parsing darkpool address: {e}"))?;
-    let erc20_client = create_erc20_client(addr, &test_args)
+    let erc20_client = create_erc20_client(addr, test_args)
         .map_err(|e| eyre!("error creating erc20 client: {e}"))?;
 
     let balance = erc20_client.balance_of(test_args.arbitrum_client.wallet_address()).await?;
