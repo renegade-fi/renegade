@@ -1,16 +1,13 @@
 //! Groups API type definitions for wallet API operations
 
-use common::types::{
-    tasks::TaskIdentifier,
-    wallet::{KeyChain, WalletIdentifier},
-};
+use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string,
-    types::{ApiBalance, ApiFee, ApiOrder, ApiWallet},
+    types::{ApiBalance, ApiFee, ApiKeychain, ApiOrder, ApiWallet},
 };
 
 // --------------------
@@ -51,7 +48,7 @@ pub struct FindWalletRequest {
     /// The seed for the wallet's secret share CSPRNG
     pub secret_share_seed: BigUint,
     /// The keychain to use for management after the wallet is found
-    pub key_chain: KeyChain,
+    pub key_chain: ApiKeychain,
 }
 
 /// The response type to a request to find a wallet in contract storage

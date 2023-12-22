@@ -1,9 +1,15 @@
+# Build
 **/target
 **/build
+**/flamegraph.svg
+
+# Config
 **/no_commit
+**/deployments.json
+
+# vscode + vim
 .idea
 .vscode
 *.sw[a-p]
 secrets.env
-**/flamegraph.svg
 /.gitattributes

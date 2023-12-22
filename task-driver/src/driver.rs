@@ -38,7 +38,7 @@ const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
 ///
 /// TODO: This is high for now, bring this down as Starknet stabilizes
-const TASK_DRIVER_N_RETRIES: usize = 20;
+const TASK_DRIVER_N_RETRIES: usize = 5;
 
 // ----------
 // | Config |
