@@ -9,7 +9,7 @@ use circuit_types::{
     order::Order,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use common::types::wallet::{Wallet, WalletIdentifier};
+use common::types::wallet::{KeyChain, Wallet, WalletIdentifier};
 use constants::{MAX_FEES, MAX_ORDERS};
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::{
@@ -291,11 +291,14 @@ impl TypedHandler for FindWalletHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Create a task in thew driver to find and prove validity for
         // the wallet
+        let keychain: KeyChain =
+            req.key_chain.try_into().map_err(|e: String| bad_request(e.to_string()))?;
+
         let task = LookupWalletTask::new(
             req.wallet_id,
             biguint_to_scalar(&req.blinder_seed),
             biguint_to_scalar(&req.secret_share_seed),
-            req.key_chain,
+            keychain,
             self.arbitrum_client.clone(),
             self.network_sender.clone(),
             self.global_state.clone(),

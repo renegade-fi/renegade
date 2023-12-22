@@ -213,6 +213,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrum-client",
  "async-trait",
+ "base64 0.21.5",
  "circuit-types",
  "common",
  "constants",
