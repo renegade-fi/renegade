@@ -281,7 +281,7 @@ impl Storage for LogStore {
                 } else {
                     Err(RaftError::Store(RaftStorageError::Unavailable))
                 }
-            }
+            },
             res => res.map_err(RaftError::from),
         }
     }

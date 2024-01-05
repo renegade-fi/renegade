@@ -127,8 +127,7 @@ impl CoinbaseConnection {
         let json_blob = json_blob.unwrap();
 
         // Extract the list of events and update the order book
-        let update_events =
-            if let Some(coinbase_events) = json_blob[COINBASE_EVENTS].as_array()
+        let update_events = if let Some(coinbase_events) = json_blob[COINBASE_EVENTS].as_array()
             && let Some(update_events) = coinbase_events[0][COINBASE_EVENT_UPDATE].as_array()
         {
             update_events

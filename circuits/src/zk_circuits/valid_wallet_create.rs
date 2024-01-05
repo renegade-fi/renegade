@@ -143,6 +143,10 @@ where
     type Statement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+    fn name() -> String {
+        "Valid Wallet Create".to_string()
+    }
+
     fn apply_constraints(
         witness_var: ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement_var: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -221,10 +225,8 @@ pub mod tests {
     use crate::{
         singleprover_prove_and_verify,
         zk_circuits::{
-            test_helpers::{
-                check_constraint_satisfaction, INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES,
-                MAX_FEES, MAX_ORDERS,
-            },
+            check_constraint_satisfaction,
+            test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
             valid_wallet_create::{
                 test_helpers::create_default_witness_statement, ValidWalletCreate,
             },

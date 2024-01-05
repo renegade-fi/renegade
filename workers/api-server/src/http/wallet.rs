@@ -898,7 +898,8 @@ impl TypedHandler for WithdrawBalanceHandler {
 
         let mut new_wallet = old_wallet.clone();
         if let Some(balance) = new_wallet.balances.get_mut(&mint)
-        && balance.amount >= withdrawal_amount {
+            && balance.amount >= withdrawal_amount
+        {
             balance.amount -= withdrawal_amount;
         } else {
             return Err(bad_request(ERR_INSUFFICIENT_BALANCE.to_string()));

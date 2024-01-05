@@ -331,6 +331,10 @@ where
     type Witness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
     type Statement = ValidReblindStatement;
 
+    fn name() -> String {
+        "Valid Reblind".to_string()
+    }
+
     fn apply_constraints(
         witness_var: ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
         statement_var: ValidReblindStatementVar,
@@ -435,9 +439,9 @@ mod test {
     use rand::{thread_rng, Rng};
 
     use crate::zk_circuits::{
+        check_constraint_satisfaction,
         test_helpers::{
-            check_constraint_satisfaction, SizedWallet, SizedWalletShare, INITIAL_WALLET,
-            MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            SizedWallet, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
         },
         valid_reblind::test_helpers::construct_witness_statement,
     };

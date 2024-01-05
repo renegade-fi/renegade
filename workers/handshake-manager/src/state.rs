@@ -141,9 +141,10 @@ impl HandshakeStateIndex {
         // MPC runtime
         for request in requests.iter() {
             if let Some(state) = self.remove_handshake(request).await
-            && let Some(channel) = state.cancel_channel
+                && let Some(channel) = state.cancel_channel
             {
-                channel.send(())
+                channel
+                    .send(())
                     .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
             }
         }

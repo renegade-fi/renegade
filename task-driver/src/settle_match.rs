@@ -231,9 +231,10 @@ impl SettleMatchTask {
         // the counterparty already submitted a `match` and move on to
         // settlement
         if let Err(ref tx_rejection) = tx_submit_res
-            && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG){
-                return Ok(())
-            }
+            && tx_rejection.to_string().contains(NULLIFIER_USED_ERROR_MSG)
+        {
+            return Ok(());
+        }
 
         tx_submit_res.map_err(|e| SettleMatchTaskError::Arbitrum(e.to_string()))
     }

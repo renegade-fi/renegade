@@ -324,6 +324,10 @@ where
     type Statement = ValidCommitmentsStatement;
     type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+    fn name() -> String {
+        "Valid Commitments".to_string()
+    }
+
     fn apply_constraints(
         witness_var: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement_var: ValidCommitmentsStatementVar,
@@ -483,10 +487,8 @@ mod test {
     use lazy_static::lazy_static;
 
     use crate::zk_circuits::{
-        test_helpers::{
-            check_constraint_satisfaction, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES,
-            MAX_ORDERS,
-        },
+        check_constraint_satisfaction,
+        test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
         valid_commitments::test_helpers::{create_witness_and_statement, find_balance_or_augment},
     };
 

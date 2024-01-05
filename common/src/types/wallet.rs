@@ -382,9 +382,7 @@ pub mod mocks {
     };
 
     use circuit_types::{
-        keychain::{
-            PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,
-        },
+        keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey},
         traits::BaseType,
         SizedWalletShare,
     };
@@ -408,20 +406,17 @@ pub mod mocks {
         let key = K256SigningKey::random(&mut rng);
         let pk_root = PublicSigningKey::from(key.verifying_key());
 
+        let sk_match = SecretIdentificationKey::from(Scalar::random(&mut rng));
+        let pk_match = sk_match.get_public_key();
+
         let mut wallet = Wallet {
             wallet_id: Uuid::new_v4(),
             orders: IndexMap::default(),
             balances: IndexMap::default(),
             fees: vec![],
             key_chain: KeyChain {
-                public_keys: PublicKeyChain {
-                    pk_root,
-                    pk_match: PublicIdentificationKey::from(Scalar::zero()),
-                },
-                secret_keys: PrivateKeyChain {
-                    sk_root: None,
-                    sk_match: SecretIdentificationKey::from(Scalar::zero()),
-                },
+                public_keys: PublicKeyChain { pk_root, pk_match },
+                secret_keys: PrivateKeyChain { sk_root: None, sk_match },
             },
             blinder: Scalar::random(&mut rng),
             private_shares: SizedWalletShare::from_scalars(&mut iter::repeat_with(|| {

@@ -479,6 +479,10 @@ where
     type Witness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
     type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+    fn name() -> String {
+        "Valid Wallet Update".to_string()
+    }
+
     fn apply_constraints(
         witness_var: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
         statement_var: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -595,9 +599,9 @@ mod test {
     use rand::{thread_rng, RngCore};
 
     use crate::zk_circuits::{
+        check_constraint_satisfaction,
         test_helpers::{
-            check_constraint_satisfaction, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES,
-            MAX_ORDERS, TIMESTAMP,
+            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, TIMESTAMP,
         },
         valid_wallet_update::test_helpers::NEW_TIMESTAMP,
     };

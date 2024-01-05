@@ -220,17 +220,18 @@ impl RelayerState {
         for peer in peer_ids.iter() {
             // Skip this peer if peer info wasn't sent, or if their cluster auth signature
             // doesn't verify
-            if let Some(info) = peer_info.get(peer) && info.verify_cluster_auth_sig().is_ok() {
+            if let Some(info) = peer_info.get(peer)
+                && info.verify_cluster_auth_sig().is_ok()
+            {
                 // Record a dummy heartbeat to setup the initial state
                 info.successful_heartbeat();
                 locked_peer_index.add_peer(info.clone()).await;
 
                 // Push a message onto the bus indicating the new peer discovery
-                self.system_bus
-                    .publish(
-                        NETWORK_TOPOLOGY_TOPIC.to_string(),
-                        SystemBusMessage::NewPeer { peer: info.clone() }
-                    );
+                self.system_bus.publish(
+                    NETWORK_TOPOLOGY_TOPIC.to_string(),
+                    SystemBusMessage::NewPeer { peer: info.clone() },
+                );
             } else {
                 continue;
             }

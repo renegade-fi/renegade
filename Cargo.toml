@@ -28,9 +28,6 @@ members = [
 	"workers/proof-manager",
 ]
 
-[profile.test]
-debug-assertions = false
-
 [profile.bench]
 opt-level = 3 # Full optimizations
 lto = true

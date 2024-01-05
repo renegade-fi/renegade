@@ -186,6 +186,10 @@ where
     type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
     type Statement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
+    fn name() -> String {
+        "Valid Match Settle".to_string()
+    }
+
     fn apply_constraints(
         witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
@@ -345,7 +349,7 @@ mod tests {
     use crate::{
         multiprover_prove_and_verify,
         zk_circuits::{
-            test_helpers::check_constraint_satisfaction,
+            check_constraint_satisfaction,
             valid_match_settle::test_helpers::{
                 dummy_witness_and_statement, SizedValidMatchSettle,
             },
