@@ -27,14 +27,16 @@ use crate::{
 };
 
 lazy_static! {
+    /// A dummy timestamp used for updates
+    static ref DUMMY_TIMESTAMP: u64 = get_current_time_seconds();
     /// A dummy order that is allocated in a wallet as an update
     static ref DUMMY_ORDER: Order = Order {
-        quote_mint: 0u8.into(),
-        base_mint: 1u8.into(),
+        quote_mint: 1u8.into(),
+        base_mint: 2u8.into(),
         side: OrderSide::Buy,
         amount: 10,
         worst_case_price: FixedPoint::from_integer(10),
-        timestamp: get_current_time_seconds(),
+        timestamp: *DUMMY_TIMESTAMP,
     };
 
     /// A dummy fee that is allocated in a wallet
@@ -65,7 +67,7 @@ pub(crate) async fn execute_wallet_update(
     let id = new_wallet.wallet_id;
     let client = &test_args.arbitrum_client;
     let task = UpdateWalletTask::new(
-        get_current_time_seconds(),
+        *DUMMY_TIMESTAMP,
         transfer,
         old_wallet,
         new_wallet,
@@ -137,8 +139,18 @@ integration_test_async!(test_update_wallet_then_recover);
 #[allow(non_snake_case)]
 async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
+    let mut rng = thread_rng();
     let client = &test_args.arbitrum_client;
-    let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
+
+    // Create a new wallet with a balance already inside
+    let blinder_seed = Scalar::random(&mut rng);
+    let share_seed = Scalar::random(&mut rng);
+    let mut wallet = empty_wallet_from_seed(blinder_seed, share_seed);
+
+    let send_mint = DUMMY_ORDER.send_mint().clone();
+    wallet.balances.insert(send_mint.clone(), Balance { mint: send_mint, amount: 10 });
+    wallet.reblind_wallet();
+    allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     // Update the wallet by inserting an order
     let old_wallet = wallet.clone();

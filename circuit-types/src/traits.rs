@@ -673,6 +673,9 @@ pub trait SingleProverCircuit: Sized {
     /// the underlying NP statement being proven
     type Statement: CircuitBaseType;
 
+    /// The name of the circuit
+    fn name() -> String;
+
     /// Returns a reference to the proving key for the circuit
     #[cfg(not(feature = "test-helpers"))]
     fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
@@ -780,6 +783,11 @@ pub trait MultiProverCircuit {
         Witness = <Self::Witness as MultiproverCircuitBaseType>::BaseType,
         Statement = <Self::Statement as MultiproverCircuitBaseType>::BaseType,
     >;
+
+    /// The name of the circuit
+    fn name() -> String {
+        Self::BaseCircuit::name()
+    }
 
     /// Returns a reference to the proving key for the circuit
     fn proving_key() -> Arc<ProvingKey<SystemCurve>> {

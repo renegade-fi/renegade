@@ -12,7 +12,7 @@ use k256::{
 };
 use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
-use renegade_crypto::fields::get_scalar_field_modulus;
+use renegade_crypto::{fields::get_scalar_field_modulus, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -88,6 +88,14 @@ impl From<PublicIdentificationKey> for Scalar {
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretIdentificationKey {
     pub key: Scalar,
+}
+
+impl SecretIdentificationKey {
+    /// Get the public key corresponding to this secret key
+    pub fn get_public_key(&self) -> PublicIdentificationKey {
+        let key = compute_poseidon_hash(&[self.key]);
+        PublicIdentificationKey { key }
+    }
 }
 
 impl Serialize for SecretIdentificationKey {

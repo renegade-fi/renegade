@@ -257,18 +257,15 @@ impl GossipProtocolExecutor {
 
         // If the local peer has a copy of the witness stored locally, send it to the
         // peer
-        if let Some(order_info) = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_order_info(&order_id)
-            .await
-        && let Some(witness) = order_info.validity_proof_witnesses
+        if let Some(order_info) =
+            self.global_state.read_order_book().await.get_order_info(&order_id).await
+            && let Some(witness) = order_info.validity_proof_witnesses
         {
             self.network_channel
-                .send(GossipOutbound::Request { peer_id: requesting_peer, message: GossipRequest::ValidityWitness {
-                    order_id, witness
-                }})
+                .send(GossipOutbound::Request {
+                    peer_id: requesting_peer,
+                    message: GossipRequest::ValidityWitness { order_id, witness },
+                })
                 .map_err(|err| GossipError::SendMessage(err.to_string()))?;
         }
 

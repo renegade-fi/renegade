@@ -64,6 +64,24 @@ impl Order {
         self.amount == 0
     }
 
+    /// The mint of the token sent by the creator of this order in the event
+    /// that the order is matched
+    pub fn send_mint(&self) -> &BigUint {
+        match self.side {
+            OrderSide::Buy => &self.quote_mint,
+            OrderSide::Sell => &self.base_mint,
+        }
+    }
+
+    /// The mint of the token received by the creator of this order in the event
+    /// that the order is matched
+    pub fn receive_mint(&self) -> &BigUint {
+        match self.side {
+            OrderSide::Buy => &self.base_mint,
+            OrderSide::Sell => &self.quote_mint,
+        }
+    }
+
     /// Determines whether the given price is within the allowable range for the
     /// order
     pub fn price_in_range(&self, price: FixedPoint) -> bool {

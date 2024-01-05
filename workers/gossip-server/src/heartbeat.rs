@@ -438,7 +438,9 @@ impl HeartbeatTimer {
             }; // cluster_metadata_locked released
 
             // Enqueue a job to send the heartbeat
-            if let Some(peer_id) = next_peer_id && peer_id != global_state.local_peer_id {
+            if let Some(peer_id) = next_peer_id
+                && peer_id != global_state.local_peer_id
+            {
                 if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer_id)) {
                     return GossipError::TimerFailed(err.to_string());
                 }

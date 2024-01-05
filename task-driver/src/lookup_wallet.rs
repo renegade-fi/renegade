@@ -300,9 +300,8 @@ impl LookupWalletTask {
 
         let mut updating_tx = None;
 
-        while
-            let (blinder, private_share) = blinder_csprng.next_tuple().unwrap() &&
-            let Some(tx) = self
+        while let (blinder, private_share) = blinder_csprng.next_tuple().unwrap()
+            && let Some(tx) = self
                 .arbitrum_client
                 .get_public_blinder_tx(blinder - private_share)
                 .await
