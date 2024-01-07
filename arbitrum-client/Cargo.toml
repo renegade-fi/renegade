@@ -50,6 +50,9 @@ postcard = { version = "1", features = ["alloc"] }
 lazy_static = "1.4.0"
 tracing = { workspace = true }
 
+# === Contracts Repo Dependencies === #
+contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
+
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
 eyre = { workspace = true }

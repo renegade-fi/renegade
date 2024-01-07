@@ -55,7 +55,8 @@ cargo run \
     --rpc-url $DEVNET_RPC_URL \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
-    --contract merkle
+    --contract merkle \
+    $no_verify_flag
 
 # Deploy darkpool contract, setting the "--no-verify" flag
 # conditionally depending on whether the corresponding env var is set
