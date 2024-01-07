@@ -8,16 +8,18 @@ use common::types::proof_bundles::{
     ValidMatchSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
 };
 use constants::Scalar;
+use contracts_common::types::MatchPayload;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::log::info;
 
 use crate::{
+    conversion::{
+        to_contract_proof, to_contract_valid_commitments_statement,
+        to_contract_valid_match_settle_statement, to_contract_valid_reblind_statement,
+        to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
+    },
     errors::ArbitrumClientError,
     helpers::{send_tx, serialize_calldata},
-    types::{
-        ContractProof, ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
-        ContractValidWalletUpdateStatement, MatchPayload,
-    },
 };
 
 use super::ArbitrumClient;
@@ -75,10 +77,10 @@ impl ArbitrumClient {
     ) -> Result<(), ArbitrumClientError> {
         let GenericValidWalletCreateBundle { statement, proof } = *valid_wallet_create;
 
-        let contract_proof: ContractProof = proof.try_into()?;
+        let contract_proof = to_contract_proof(proof)?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
 
-        let contract_statement: ContractValidWalletCreateStatement = statement.into();
+        let contract_statement = to_contract_valid_wallet_create_statement(&statement);
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = send_tx(
@@ -103,10 +105,10 @@ impl ArbitrumClient {
     ) -> Result<(), ArbitrumClientError> {
         let GenericValidWalletUpdateBundle { statement, proof } = *valid_wallet_update;
 
-        let contract_proof: ContractProof = proof.try_into()?;
+        let contract_proof = to_contract_proof(proof)?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
 
-        let contract_statement: ContractValidWalletUpdateStatement = statement.try_into()?;
+        let contract_statement = to_contract_valid_wallet_update_statement(statement)?;
         let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = send_tx(self.darkpool_contract.update_wallet(
@@ -159,45 +161,51 @@ impl ArbitrumClient {
         } = *party1_validity_proofs.copy_reblind_proof();
 
         let party_0_match_payload = MatchPayload {
-            valid_commitments_statement: party_0_valid_commitments_statement.into(),
-            valid_reblind_statement: party_0_valid_reblind_statement.into(),
+            valid_commitments_statement: to_contract_valid_commitments_statement(
+                party_0_valid_commitments_statement,
+            ),
+            valid_reblind_statement: to_contract_valid_reblind_statement(
+                &party_0_valid_reblind_statement,
+            ),
         };
 
         let party_1_match_payload = MatchPayload {
-            valid_commitments_statement: party_1_valid_commitments_statement.into(),
-            valid_reblind_statement: party_1_valid_reblind_statement.into(),
+            valid_commitments_statement: to_contract_valid_commitments_statement(
+                party_1_valid_commitments_statement,
+            ),
+            valid_reblind_statement: to_contract_valid_reblind_statement(
+                &party_1_valid_reblind_statement,
+            ),
         };
 
         // Serialize calldata
 
         let party_0_match_payload_calldata = serialize_calldata(&party_0_match_payload)?;
 
-        let party_0_valid_commitments_proof: ContractProof =
-            party_0_valid_commitments_proof.try_into()?;
+        let party_0_valid_commitments_proof = to_contract_proof(party_0_valid_commitments_proof)?;
         let party_0_valid_commitments_proof_calldata =
             serialize_calldata(&party_0_valid_commitments_proof)?;
 
-        let party_0_valid_reblind_proof: ContractProof = party_0_valid_reblind_proof.try_into()?;
+        let party_0_valid_reblind_proof = to_contract_proof(party_0_valid_reblind_proof)?;
         let party_0_valid_reblind_proof_calldata =
             serialize_calldata(&party_0_valid_reblind_proof)?;
 
         let party_1_match_payload_calldata = serialize_calldata(&party_1_match_payload)?;
 
-        let party_1_valid_commitments_proof: ContractProof =
-            party_1_valid_commitments_proof.try_into()?;
+        let party_1_valid_commitments_proof = to_contract_proof(party_1_valid_commitments_proof)?;
         let party_1_valid_commitments_proof_calldata =
             serialize_calldata(&party_1_valid_commitments_proof)?;
 
-        let party_1_valid_reblind_proof: ContractProof = party_1_valid_reblind_proof.try_into()?;
+        let party_1_valid_reblind_proof = to_contract_proof(party_1_valid_reblind_proof)?;
         let party_1_valid_reblind_proof_calldata =
             serialize_calldata(&party_1_valid_reblind_proof)?;
 
-        let contract_valid_match_settle_statement: ContractValidMatchSettleStatement =
-            valid_match_settle_statement.into();
+        let contract_valid_match_settle_statement =
+            to_contract_valid_match_settle_statement(&valid_match_settle_statement);
         let valid_match_settle_statement_calldata =
             serialize_calldata(&contract_valid_match_settle_statement)?;
 
-        let valid_match_settle_proof: ContractProof = valid_match_settle_proof.try_into()?;
+        let valid_match_settle_proof = to_contract_proof(valid_match_settle_proof)?;
         let valid_match_settle_proof_calldata = serialize_calldata(&valid_match_settle_proof)?;
 
         // Call `process_match_settle` on darkpool contract

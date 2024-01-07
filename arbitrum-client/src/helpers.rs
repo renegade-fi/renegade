@@ -3,6 +3,11 @@
 use alloy_sol_types::SolCall;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use constants::Scalar;
+use contracts_common::types::{
+    ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+    ValidWalletCreateStatement as ContractValidWalletCreateStatement,
+    ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
+};
 use ethers::{
     abi::Detokenize,
     contract::ContractCall,
@@ -14,10 +19,6 @@ use crate::{
     abi::{newWalletCall, processMatchSettleCall, updateWalletCall},
     client::SignerHttpProvider,
     errors::ArbitrumClientError,
-    types::{
-        ContractValidMatchSettleStatement, ContractValidWalletCreateStatement,
-        ContractValidWalletUpdateStatement,
-    },
 };
 
 /// Serializes a calldata element for a contract call

@@ -269,6 +269,7 @@ dependencies = [
  "colored",
  "common",
  "constants",
+ "contracts-common",
  "ethers",
  "eyre",
  "inventory",
@@ -1626,6 +1627,20 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-mpc",
+]
+
+[[package]]
+name = "contracts-common"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade-contracts.git#15e94d0ec07eed877e2945aa133a90d2cf7e84b3"
+dependencies = [
+ "alloy-primitives",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-serialize 0.4.2",
+ "serde",
+ "serde_with",
 ]
 
 [[package]]
