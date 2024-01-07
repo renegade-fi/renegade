@@ -67,3 +67,10 @@ impl From<ExternalTransferDirection> for Scalar {
         Scalar::from(dir as u8)
     }
 }
+
+impl ExternalTransfer {
+    /// Whether or not the instance is a default external transfer
+    pub fn is_default(&self) -> bool {
+        self.eq(&ExternalTransfer::default())
+    }
+}
