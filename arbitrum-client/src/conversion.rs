@@ -104,7 +104,7 @@ pub fn to_contract_valid_wallet_update_statement(
 ) -> Result<ContractValidWalletUpdateStatement, ConversionError> {
     let new_public_shares = wallet_shares_to_scalar_vec(&statement.new_public_shares);
     let external_transfer: Option<ContractExternalTransfer> =
-        if statement.external_transfer == ExternalTransfer::default() {
+        if statement.external_transfer.is_default() {
             None
         } else {
             Some(to_contract_external_transfer(statement.external_transfer)?)
