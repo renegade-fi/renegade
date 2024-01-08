@@ -19,6 +19,13 @@ use constants::Scalar;
 use itertools::Itertools;
 use mpc_relation::traits::Circuit;
 
+/// The group name for the VALID REBLIND <-> VALID COMMITMENTS link
+pub const VALID_REBLIND_COMMITMENTS_LINK: &str = "valid_reblind_commitments";
+/// The group for the VALID COMMITMENTS <-> VALID MATCH SETTLE (party 0) link
+pub const VALID_COMMITMENTS_MATCH_SETTLE_LINK0: &str = "valid_commitments_match_settle0";
+/// The group for the VALID COMMITMENTS <-> VALID MATCH SETTLE (party 1) link
+pub const VALID_COMMITMENTS_MATCH_SETTLE_LINK1: &str = "valid_commitments_match_settle1";
+
 // -----------
 // | Helpers |
 // -----------

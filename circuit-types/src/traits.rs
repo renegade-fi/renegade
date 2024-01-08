@@ -751,15 +751,15 @@ pub trait SingleProverCircuit: Sized {
     // | Proof Linking |
     // -----------------
 
-    /// Get the proof linking groups in the circuit along with optional offsets
+    /// Get the proof linking groups in the circuit along with optional layouts
     /// specified for each
     ///
     /// Implementing types can link to other circuits by referencing the group
     /// layout of other circuits in their implementation of this method
     ///
     /// Defaults to no proof linking groups
-    fn proof_linking_groups() -> Vec<(String, Option<GroupLayout>)> {
-        vec![]
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        Ok(vec![])
     }
 
     /// Generate a layout for the circuit, this is used to place proof linking
@@ -774,12 +774,11 @@ pub trait SingleProverCircuit: Sized {
             return Ok(layout.clone());
         }
 
-        println!("Generating layout for {}", Self::name());
         // Otherwise compute the layout for the first time and cache it
         // We do so by allocating a circuit with the correct topology, but using dummy
         // values for wires
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let groups = Self::proof_linking_groups();
+        let groups = Self::proof_linking_groups()?;
         for (id, layout) in groups.into_iter() {
             cs.create_link_group(id, layout);
         }
@@ -821,8 +820,15 @@ pub trait SingleProverCircuit: Sized {
         witness: Self::Witness,
         statement: Self::Statement,
     ) -> Result<Proof<SystemCurve>, ProverError> {
-        // Allocate the witness and statement in the constraint system
         let mut circuit = PlonkCircuit::new_turbo_plonk();
+
+        // Add proof linking groups to the circuit
+        let layout = Self::get_circuit_layout().map_err(ProverError::Plonk)?;
+        for (id, layout) in layout.group_layouts.into_iter() {
+            circuit.create_link_group(id, Some(layout));
+        }
+
+        // Allocate the witness and statement in the constraint system
         let witness_var = witness.create_witness(&mut circuit);
         let statement_var = statement.create_public_var(&mut circuit);
 
@@ -912,7 +918,7 @@ pub trait MultiProverCircuit {
     /// specified for each
     ///
     /// Delegates to the associated single-prover circuit
-    fn proof_linking_groups() -> Vec<(String, Option<GroupLayout>)> {
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
         Self::BaseCircuit::proof_linking_groups()
     }
 
@@ -944,8 +950,15 @@ pub trait MultiProverCircuit {
         statement: Self::Statement,
         fabric: Fabric,
     ) -> Result<CollaborativeProof<SystemCurve>, PlonkError> {
-        // Allocate the witness and statement in the constraint system
         let mut circuit = MpcPlonkCircuit::new(fabric.clone());
+
+        // Add proof linking groups to the circuit
+        let layout = Self::get_circuit_layout()?;
+        for (id, layout) in layout.group_layouts.into_iter() {
+            circuit.create_link_group(id, Some(layout));
+        }
+
+        // Allocate the witness and statement in the constraint system
         let witness_var = witness.create_shared_witness(&mut circuit);
         let statement_var = statement.create_shared_public_var(&mut circuit);
 

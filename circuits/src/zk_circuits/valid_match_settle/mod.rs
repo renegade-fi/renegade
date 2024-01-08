@@ -21,10 +21,15 @@ use circuit_types::{
 };
 use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
 
 use circuit_macros::circuit_type;
 use serde::{Deserialize, Serialize};
+
+use super::{
+    valid_commitments::ValidCommitments, VALID_COMMITMENTS_MATCH_SETTLE_LINK0,
+    VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
+};
 
 /// A circuit with default sizing parameters
 pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -188,6 +193,19 @@ where
 
     fn name() -> String {
         "Valid Match Settle".to_string()
+    }
+
+    // VALID MATCH SETTLE inherits its two groups from the VALID COMMITMENTS layout
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        let commitments_layout =
+            ValidCommitments::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::get_circuit_layout()?;
+        let layout1 = commitments_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+        let layout2 = commitments_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
+
+        Ok(vec![
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout1)),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), Some(layout2)),
+        ])
     }
 
     fn apply_constraints(
