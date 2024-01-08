@@ -27,6 +27,9 @@ use self::{
 /// The trait name for the base type that all other types are derived from
 const BASE_TYPE_TRAIT_NAME: &str = "BaseType";
 
+/// The name of the associated constant representing the number of scalars
+/// needed to serialize a type
+const NUM_SCALARS_ASSOC_CONST: &str = "NUM_SCALARS";
 /// The name of the method that converts a serialized scalar iterator to a base
 /// type
 const FROM_SCALARS_METHOD_NAME: &str = "from_scalars";
@@ -155,6 +158,11 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let base_type_params = params_from_generics(generics.clone());
     let scalar_type_path = path_from_ident(&new_ident(SCALAR_TYPE_IDENT));
 
+    // Build the `NUM_SCALARS` const
+    let num_scalars_ident = new_ident(NUM_SCALARS_ASSOC_CONST);
+    let num_scalars_expr = build_num_scalars_expr(base_type);
+
+    // Build the `from_scalars` method
     let from_scalars_impl = build_deserialize_method(
         &new_ident(FROM_SCALARS_METHOD_NAME),
         &scalar_type_path.clone(),
@@ -162,6 +170,7 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
         base_type,
     );
 
+    // Build the `to_scalars` method
     let to_scalars_impl =
         build_serialize_method(&new_ident(TO_SCALARS_METHOD_NAME), &scalar_type_path, base_type);
 
@@ -169,11 +178,41 @@ fn build_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
         impl #generics #trait_ident for #base_type_ident <#base_type_params>
             #where_clause
         {
+            const #num_scalars_ident: usize = #num_scalars_expr;
+
             #from_scalars_impl
             #to_scalars_impl
         }
     };
     impl_block.to_token_stream()
+}
+
+/// Builds a const expression for the `NUM_SCALARS` const on the base type
+///
+/// This expression is the sum of the number of scalars in each field of the
+/// base type
+fn build_num_scalars_expr(base_type: &ItemStruct) -> Expr {
+    let base_type_trait = new_ident(BASE_TYPE_TRAIT_NAME);
+    let num_scalars_ident = new_ident(NUM_SCALARS_ASSOC_CONST);
+
+    // Parse the first field to setup the expr
+    let mut num_scalars_expr: Expr;
+    if let Some(field) = base_type.fields.iter().next() {
+        let ty = &field.ty;
+        num_scalars_expr = parse_quote!(<#ty as #base_type_trait>::#num_scalars_ident);
+    } else {
+        // Empty type
+        return parse_quote!(0);
+    }
+
+    // Add the rest of the fields to the expr
+    for field in base_type.fields.iter().skip(1) {
+        let ty = &field.ty;
+        num_scalars_expr =
+            parse_quote!(#num_scalars_expr + <#ty as #base_type_trait>::#num_scalars_ident);
+    }
+
+    num_scalars_expr
 }
 
 // -----------

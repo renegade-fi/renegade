@@ -123,6 +123,8 @@ impl OrderSide {
 }
 
 impl BaseType for OrderSide {
+    const NUM_SCALARS: usize = 1;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![Scalar::from(*self as u8)]
     }

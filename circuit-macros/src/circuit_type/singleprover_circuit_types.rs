@@ -68,6 +68,7 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
     let base_type_params = params_from_generics(generics.clone());
 
+    // Build the `VarType`
     let var_type_associated = new_ident(VAR_TYPE_ASSOCIATED_NAME);
     let var_type_name = ident_with_generics(
         &ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX),
