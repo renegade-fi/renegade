@@ -434,10 +434,11 @@ mod fixed_point_tests {
 
     /// The tolerance to use for equality checks with f64
     const F64_TOLERANCE: f64 = 1e-6;
-    /// Integer tolerance for equality, integers magnify the differences between
-    /// fixed point representations and floating point representations so this
-    /// value is higher
-    const INTEGER_TOLERANCE: f64 = 50.;
+    /// The tolerance used for equality checks on multiplications which may
+    /// differ from floating points by larger margins
+    ///
+    /// We require our result to be within 1% of the true value
+    const F64_MUL_TOLERANCE: f64 = 0.01;
 
     /// Check that a given f64 is within some tolerance of another
     fn check_within_tolerance(val: f64, expected: f64, tolerance: f64) {
@@ -446,6 +447,21 @@ mod fixed_point_tests {
             "Expected {} to be within {} of {}",
             val,
             tolerance,
+            expected
+        );
+    }
+
+    /// Check that a given f64 differs from another by less than some percent
+    /// tolerance
+    fn check_within_fractional_tolerance(val: f64, expected: f64, tolerance: f64) {
+        let diff = (val - expected).abs();
+        let diff_ratio = diff / expected;
+
+        assert!(
+            diff_ratio < tolerance,
+            "Expected {} to be within {} of {}",
+            val,
+            diff_ratio,
             expected
         );
     }
@@ -525,8 +541,8 @@ mod fixed_point_tests {
         let expected1 = fp1 * fp2;
         let expected2 = fp1 * (int as f32);
 
-        check_within_tolerance(res1.to_f64(), expected1 as f64, F64_TOLERANCE);
-        check_within_tolerance(res2.to_f64(), expected2 as f64, INTEGER_TOLERANCE);
+        check_within_fractional_tolerance(res1.to_f64(), expected1 as f64, F64_MUL_TOLERANCE);
+        check_within_fractional_tolerance(res2.to_f64(), expected2 as f64, F64_MUL_TOLERANCE);
     }
 
     // ---------------------------------------
@@ -611,7 +627,11 @@ mod fixed_point_tests {
         let res = fixed1.mul_integer(integer, &mut cs).unwrap();
         let expected = fp1 * (int as f32);
 
-        check_within_tolerance(res.eval(&cs).to_f64(), expected as f64, INTEGER_TOLERANCE);
+        check_within_fractional_tolerance(
+            res.eval(&cs).to_f64(),
+            expected as f64,
+            F64_MUL_TOLERANCE,
+        );
     }
 
     // -------------------------
@@ -725,6 +745,6 @@ mod fixed_point_tests {
         .await;
 
         let expected = fp * (int as f64);
-        check_within_tolerance(res, expected, INTEGER_TOLERANCE);
+        check_within_fractional_tolerance(res, expected, F64_MUL_TOLERANCE);
     }
 }
