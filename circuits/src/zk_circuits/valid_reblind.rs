@@ -16,10 +16,11 @@ use constants::{Scalar, ScalarField};
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use itertools::{izip, Itertools};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    zk_circuits::valid_commitments::ValidCommitments,
     zk_gadgets::{
         merkle::PoseidonMerkleHashGadget,
         poseidon::PoseidonHashGadget,
@@ -27,6 +28,8 @@ use crate::{
     },
     SingleProverCircuit,
 };
+
+use super::VALID_REBLIND_COMMITMENTS_LINK;
 
 // ----------------------
 // | Circuit Definition |
@@ -333,6 +336,16 @@ where
 
     fn name() -> String {
         "Valid Reblind".to_string()
+    }
+
+    // VALID REBLIND inherits the group placement from VALID COMMITMENTS for their
+    // link group
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        let commitments_layout =
+            ValidCommitments::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::get_circuit_layout()?;
+        let shared_layout = commitments_layout.get_group_layout(VALID_REBLIND_COMMITMENTS_LINK);
+
+        Ok(vec![(VALID_REBLIND_COMMITMENTS_LINK.to_string(), Some(shared_layout))])
     }
 
     fn apply_constraints(

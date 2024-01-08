@@ -10,6 +10,10 @@
 //! VALID COMMITMENTS is proven once per order in the wallet
 
 use crate::{
+    zk_circuits::{
+        VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
+        VALID_REBLIND_COMMITMENTS_LINK,
+    },
     zk_gadgets::{comparators::EqGadget, select::CondSelectVectorGadget},
     SingleProverCircuit,
 };
@@ -25,7 +29,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
 // ----------------------
@@ -328,6 +332,17 @@ where
         "Valid Commitments".to_string()
     }
 
+    /// For `VALID COMMITMENTS` the proof linking groups have no specific
+    /// layout, they are placed automatically and the circuit layouts of other
+    /// circuits reference these placements
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        Ok(vec![
+            (VALID_REBLIND_COMMITMENTS_LINK.to_string(), None),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), None),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), None),
+        ])
+    }
+
     fn apply_constraints(
         witness_var: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
         statement_var: ValidCommitmentsStatementVar,
@@ -482,6 +497,7 @@ mod test {
         fee::FeeShare,
         fixed_point::FixedPointShare,
         order::{OrderShare, OrderSide},
+        traits::SingleProverCircuit,
     };
     use constants::Scalar;
     use lazy_static::lazy_static;
@@ -489,7 +505,14 @@ mod test {
     use crate::zk_circuits::{
         check_constraint_satisfaction,
         test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
-        valid_commitments::test_helpers::{create_witness_and_statement, find_balance_or_augment},
+        valid_commitments::{
+            test_helpers::{create_witness_and_statement, find_balance_or_augment},
+            SizedValidCommitments,
+        },
+        valid_match_settle::SizedValidMatchSettle,
+        valid_reblind::SizedValidReblind,
+        VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
+        VALID_REBLIND_COMMITMENTS_LINK,
     };
 
     use super::ValidCommitments;
@@ -521,6 +544,38 @@ mod test {
     // --------------
     // | Test Cases |
     // --------------
+
+    /// Tests that `VALID REBLIND` and `VALID COMMITMENTS` layout their shared
+    /// linking group in the same way
+    #[test]
+    fn test_reblind_commitments_layout() {
+        let commitments_layout = SizedValidCommitments::get_circuit_layout().unwrap();
+        let reblind_layout = SizedValidReblind::get_circuit_layout().unwrap();
+
+        let commitments_link = commitments_layout.get_group_layout(VALID_REBLIND_COMMITMENTS_LINK);
+        let reblind_link = reblind_layout.get_group_layout(VALID_REBLIND_COMMITMENTS_LINK);
+
+        assert_eq!(commitments_link, reblind_link);
+    }
+
+    /// Tests that `VALID COMMITMENTS` and `VALID MATCH SETTLE` layout their
+    /// shared groups in the same way
+    #[test]
+    fn test_commitments_match_settle_layout() {
+        let commitments_layout = SizedValidCommitments::get_circuit_layout().unwrap();
+        let match_settle_layout = SizedValidMatchSettle::get_circuit_layout().unwrap();
+
+        let comm_link0 = commitments_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+        let comm_link1 = commitments_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
+
+        let match_link0 =
+            match_settle_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+        let match_link1 =
+            match_settle_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
+
+        assert_eq!(comm_link0, match_link0);
+        assert_eq!(comm_link1, match_link1);
+    }
 
     /// Tests that the constraints may be satisfied by a valid witness
     /// and statement pair
