@@ -39,6 +39,8 @@ pub enum ExternalTransferDirection {
 }
 
 impl BaseType for ExternalTransferDirection {
+    const NUM_SCALARS: usize = 1;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![Scalar::from(*self as u8)]
     }

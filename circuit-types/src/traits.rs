@@ -57,6 +57,13 @@ const ERR_TOO_FEW_VARS: &str = "from_vars: Invalid number of variables";
 /// and deserialization
 #[async_trait]
 pub trait BaseType: Clone {
+    /// The number of scalars required to represent the base type
+    const NUM_SCALARS: usize;
+    /// Get the number of scalars required to represent the base type
+    fn num_scalars() -> usize {
+        Self::NUM_SCALARS
+    }
+
     /// Convert the base type to its serialized scalar representation in the
     /// circuit
     fn to_scalars(&self) -> Vec<Scalar>;
@@ -309,6 +316,8 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
 // --- Base Types --- //
 
 impl BaseType for Scalar {
+    const NUM_SCALARS: usize = 1;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![*self]
     }
@@ -319,6 +328,8 @@ impl BaseType for Scalar {
 }
 
 impl BaseType for u64 {
+    const NUM_SCALARS: usize = 1;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![Scalar::from(*self)]
     }
@@ -329,6 +340,8 @@ impl BaseType for u64 {
 }
 
 impl BaseType for bool {
+    const NUM_SCALARS: usize = 1;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![Scalar::from(*self as u8)]
     }
@@ -343,6 +356,8 @@ impl BaseType for bool {
 }
 
 impl BaseType for BigUint {
+    const NUM_SCALARS: usize = 1;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![biguint_to_scalar(self)]
     }
@@ -353,6 +368,8 @@ impl BaseType for BigUint {
 }
 
 impl BaseType for () {
+    const NUM_SCALARS: usize = 0;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         vec![]
     }
@@ -361,6 +378,8 @@ impl BaseType for () {
 }
 
 impl<const N: usize, T: BaseType> BaseType for [T; N] {
+    const NUM_SCALARS: usize = N * T::NUM_SCALARS;
+
     fn to_scalars(&self) -> Vec<Scalar> {
         self.iter().flat_map(|x| x.to_scalars()).collect()
     }
