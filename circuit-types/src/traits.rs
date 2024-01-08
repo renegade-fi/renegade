@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use constants::{AuthenticatedScalar, Scalar, ScalarField, SystemCurve};
 use futures::future::join_all;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use mpc_plonk::{
     errors::PlonkError,
     multiprover::proof_system::{CollaborativeProof, MultiproverPlonkKzgSnark},
@@ -30,11 +31,19 @@ use mpc_plonk::{
     },
     transcript::SolidityTranscript,
 };
-use mpc_relation::{traits::Circuit, BoolVar, Variable};
+use mpc_relation::{
+    proof_linking::{CircuitLayout, GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    BoolVar, Variable,
+};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    iter,
+    sync::{Arc, RwLock},
+};
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
@@ -45,6 +54,16 @@ use crate::{
 const ERR_TOO_FEW_SCALARS: &str = "from_scalars: Invalid number of scalars";
 /// The error message emitted when too few variables are given
 const ERR_TOO_FEW_VARS: &str = "from_vars: Invalid number of variables";
+
+lazy_static! {
+    /// The layout cache for the circuits
+    ///
+    /// Computing a circuit layout is an expensive operation, so we cache the result globally
+    /// as the layout is essentially static
+    ///
+    /// This is also made thread safe so that the cache may be used across proving threads
+    static ref CIRCUIT_LAYOUT_CACHE: RwLock<HashMap<String, CircuitLayout>> = RwLock::new(HashMap::new());
+}
 
 // ---------------
 // | Type Traits |
@@ -653,7 +672,6 @@ impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
 pub fn setup_preprocessed_keys<C: SingleProverCircuit>(
 ) -> (ProvingKey<SystemCurve>, VerifyingKey<SystemCurve>) {
     use crate::test_helpers::TESTING_SRS;
-    use std::iter;
 
     // Create a dummy circuit of correct topology to generate the keys
     // We use zero'd scalars here to give valid boolean types as well as scalar
@@ -695,6 +713,10 @@ pub trait SingleProverCircuit: Sized {
     /// The name of the circuit
     fn name() -> String;
 
+    // ----------------------------
+    // | Proving + Verifying Keys |
+    // ----------------------------
+
     /// Returns a reference to the proving key for the circuit
     #[cfg(not(feature = "test-helpers"))]
     fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
@@ -724,6 +746,66 @@ pub trait SingleProverCircuit: Sized {
         let (_, vk) = setup_preprocessed_keys::<Self>();
         Arc::new(vk)
     }
+
+    // -----------------
+    // | Proof Linking |
+    // -----------------
+
+    /// Get the proof linking groups in the circuit along with optional offsets
+    /// specified for each
+    ///
+    /// Implementing types can link to other circuits by referencing the group
+    /// layout of other circuits in their implementation of this method
+    ///
+    /// Defaults to no proof linking groups
+    fn proof_linking_groups() -> Vec<(String, Option<GroupLayout>)> {
+        vec![]
+    }
+
+    /// Generate a layout for the circuit, this is used to place proof linking
+    /// groups
+    ///
+    /// Because this method may be somewhat expensive to compute and essentially
+    /// represents static data, we cache the result in a lazily initialized
+    /// static variable
+    fn get_circuit_layout() -> Result<CircuitLayout, PlonkError> {
+        // Check if the layout has already been computed
+        if let Some(layout) = CIRCUIT_LAYOUT_CACHE.read().unwrap().get(&Self::name()) {
+            return Ok(layout.clone());
+        }
+
+        println!("Generating layout for {}", Self::name());
+        // Otherwise compute the layout for the first time and cache it
+        // We do so by allocating a circuit with the correct topology, but using dummy
+        // values for wires
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let groups = Self::proof_linking_groups();
+        for (id, layout) in groups.into_iter() {
+            cs.create_link_group(id, layout);
+        }
+
+        // Build a witness and statement from dummy values
+        let mut values_iter = iter::repeat(Scalar::zero());
+        let witness = Self::Witness::from_scalars(&mut values_iter);
+        let statement = Self::Statement::from_scalars(&mut values_iter);
+
+        // `create_witness` will assign values to the appropriate link groups
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+
+        // Apply the circuit constraints
+        Self::apply_constraints(witness_var, statement_var, &mut cs)?;
+
+        // Generate the layout
+        let layout = cs.generate_layout()?;
+        CIRCUIT_LAYOUT_CACHE.write().unwrap().insert(Self::name(), layout.clone());
+
+        Ok(layout)
+    }
+
+    // -----------------------
+    // | Prove + Verify Flow |
+    // -----------------------
 
     /// Apply the constraints of the circuit to a given constraint system
     fn apply_constraints(
@@ -808,6 +890,10 @@ pub trait MultiProverCircuit {
         Self::BaseCircuit::name()
     }
 
+    // ----------------------------
+    // | Proving + Verifying Keys |
+    // ----------------------------
+
     /// Returns a reference to the proving key for the circuit
     fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
         Self::BaseCircuit::proving_key()
@@ -817,6 +903,30 @@ pub trait MultiProverCircuit {
     fn verifying_key() -> Arc<VerifyingKey<SystemCurve>> {
         Self::BaseCircuit::verifying_key()
     }
+
+    // -----------------
+    // | Proof Linking |
+    // -----------------
+
+    /// Get the proof linking groups in the circuit along with optional offsets
+    /// specified for each
+    ///
+    /// Delegates to the associated single-prover circuit
+    fn proof_linking_groups() -> Vec<(String, Option<GroupLayout>)> {
+        Self::BaseCircuit::proof_linking_groups()
+    }
+
+    /// Generate a layout for the circuit, this is used to place proof linking
+    /// groups
+    ///
+    /// Delegates to the associated single-prover circuit
+    fn get_circuit_layout() -> Result<CircuitLayout, PlonkError> {
+        Self::BaseCircuit::get_circuit_layout()
+    }
+
+    // -----------------------
+    // | Prove + Verify Flow |
+    // -----------------------
 
     /// Apply the constraints of the circuit to a multiprover constraint system
     fn apply_constraints_multiprover(
