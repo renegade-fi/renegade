@@ -9,7 +9,6 @@ mod test {
     use ark_mpc::PARTY0;
     use circuit_macros::circuit_type;
     use constants::{AuthenticatedScalar, Scalar, ScalarField};
-    use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit;
     use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit, Variable};
     use std::ops::Add;
     use test_helpers::mpc_network::execute_mock_mpc;
@@ -19,7 +18,7 @@ mod test {
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric, PlonkCircuit,
+        Fabric, MpcPlonkCircuit, PlonkCircuit,
     };
 
     /// The number of scalars to place as an array in the `TestType` type
@@ -130,9 +129,23 @@ mod test {
 
             let mut circuit = MpcPlonkCircuit::new(fabric.clone());
 
+            // Create the link groups that the witness will be allocated within
+            circuit.create_link_group("test".to_string(), None /* layout */);
+            circuit.create_link_group("test2".to_string(), None);
+
             // Allocate the dummy value in the constraint system
             let dummy_allocated = value.allocate(PARTY0, &fabric);
             let shared_var = dummy_allocated.create_shared_witness(&mut circuit);
+
+            // Check the layout of the circuit, it should have only a single field
+            // allocated of size `NUM_TEST_SCALARS`
+            let layout = circuit.generate_layout().unwrap();
+
+            let group1 = layout.get_group_layout("test");
+            let group2 = layout.get_group_layout("test2");
+
+            assert_eq!(group1.size, NUM_TEST_SCALARS);
+            assert_eq!(group2.size, NUM_TEST_SCALARS);
 
             // Evaluate the first variable in the var type
             let eval: AuthenticatedTestType = shared_var.eval_multiprover(&circuit);
