@@ -681,6 +681,11 @@ pub fn setup_preprocessed_keys<C: SingleProverCircuit>(
     let statement = C::Statement::from_scalars(&mut scalars);
 
     let mut cs = PlonkCircuit::new_turbo_plonk();
+    let circuit_layout = C::get_circuit_layout().unwrap();
+    for (id, layout) in circuit_layout.group_layouts.into_iter() {
+        cs.create_link_group(id, Some(layout));
+    }
+
     let witness_var = witness.create_witness(&mut cs);
     let statement_var = statement.create_public_var(&mut cs);
 

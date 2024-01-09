@@ -16,7 +16,12 @@ use constants::{Scalar, ScalarField};
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use itertools::{izip, Itertools};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
+use mpc_relation::{
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    Variable,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -290,8 +295,10 @@ pub struct ValidReblindWitness<
     /// The public secret shares of the original wallet
     pub original_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The private secret shares of the reblinded wallet
+    #[link_groups = "valid_reblind_commitments"]
     pub reblinded_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the reblinded wallet
+    #[link_groups = "valid_reblind_commitments"]
     pub reblinded_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The Merkle opening from the commitment to the original wallet's shares
     pub original_share_opening: MerkleOpening<MERKLE_HEIGHT>,
