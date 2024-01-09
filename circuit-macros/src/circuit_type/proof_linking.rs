@@ -25,6 +25,7 @@ use syn::{
 };
 
 use crate::circuit_type::{
+    multiprover_circuit_types::MULTIPROVER_BASE_TRAIT_NAME,
     new_ident,
     singleprover_circuit_types::{CIRCUIT_BASE_TYPE_TRAIT_NAME, VAR_TYPE_ASSOCIATED_NAME},
 };
@@ -34,24 +35,12 @@ const LINKING_GROUP_IDS_ATTR: &str = "link_groups";
 
 /// The method used to create a witness
 const CREATE_WITNESS_METHOD_NAME: &str = "create_witness";
+/// The method used to create a shared witness
+const CREATE_SHARED_WITNESS_METHOD_NAME: &str = "create_shared_witness";
 
-/// Returns whether the given type uses any proof linking groups
-///
-/// This is done by checking whether any of the fields in the type have the
-/// `link_groups` attribute
-pub fn requires_proof_linking(base_type: &ItemStruct) -> bool {
-    base_type.fields.iter().any(|f| f.attrs.iter().any(is_link_group_attr))
-}
-
-/// Returns a copy of the target struct with link group attributes removed
-pub fn remove_link_group_attributes(base_type: &ItemStruct) -> ItemStruct {
-    let mut res = base_type.clone();
-    res.fields.iter_mut().for_each(|f| {
-        f.attrs.retain(|a| !is_link_group_attr(a));
-    });
-
-    res
-}
+// ----------------
+// | Singleprover |
+// ----------------
 
 /// Generate a `create_witness` method that allocates appropriate fields into
 /// their proof linking groups
@@ -98,6 +87,89 @@ pub fn build_create_witness_method(base_type: &ItemStruct) -> TokenStream {
             }
         }
     }
+}
+
+// ---------------
+// | Multiprover |
+// ---------------
+
+/// Generate a `create_shared_witness` method that allocates the appropriate
+/// into their proof linking groups
+///
+/// We use the `mpc_type` for typing information and the `base_type` for field
+/// attributes
+pub fn build_create_shared_witness_method(
+    mpc_type: &ItemStruct,
+    base_type: &ItemStruct,
+) -> TokenStream {
+    // For each field, construct a list of link group ids and allocate the field
+    // into the circuit with these group ids
+    let var_type = new_ident(VAR_TYPE_ASSOCIATED_NAME);
+    let multiprover_base_type = new_ident(MULTIPROVER_BASE_TRAIT_NAME);
+
+    let mut fields_expr: Punctuated<FieldValue, Comma> = Punctuated::new();
+    for (base_field, mpc_field) in
+        base_type.fields.iter().cloned().zip(mpc_type.fields.iter().cloned())
+    {
+        let ident = base_field.ident.clone().expect("only named fields are supported");
+        let field_type = mpc_field.ty.clone();
+
+        // This block expression represents the allocation of the current field into the
+        // constraint system
+        // Use the base field to get link groups, attrs are not copied over to the mpc
+        // type
+        let group_expr = parse_linking_groups_for_field(&base_field);
+        let field_expr: Expr = parse_quote! {{
+            let groups = #group_expr;
+            let vars = self.#ident
+                .to_authenticated_scalars()
+                .into_iter()
+                .map(|s| cs.create_variable_with_link_groups(s, &groups).unwrap())
+                .collect::<Vec<_>>();
+
+            <#field_type as #multiprover_base_type>::#var_type::from_vars(&mut vars.into_iter(), cs)
+        }};
+
+        fields_expr.push(FieldValue {
+            attrs: Vec::new(),
+            member: Member::Named(ident),
+            colon_token: Some(Colon::default()),
+            expr: field_expr,
+        });
+    }
+
+    let method_name = new_ident(CREATE_SHARED_WITNESS_METHOD_NAME);
+    let var_type = new_ident(VAR_TYPE_ASSOCIATED_NAME);
+
+    quote! {
+        fn #method_name(&self, cs: &mut MpcPlonkCircuit) -> Self::#var_type {
+            Self::#var_type {
+                #fields_expr
+            }
+        }
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Returns whether the given type uses any proof linking groups
+///
+/// This is done by checking whether any of the fields in the type have the
+/// `link_groups` attribute
+pub fn requires_proof_linking(base_type: &ItemStruct) -> bool {
+    base_type.fields.iter().any(|f| f.attrs.iter().any(is_link_group_attr))
+}
+
+/// Returns a copy of the target struct with link group attributes removed
+pub fn remove_link_group_attributes(base_type: &ItemStruct) -> ItemStruct {
+    let mut res = base_type.clone();
+    res.fields.iter_mut().for_each(|f| {
+        f.attrs.retain(|a| !is_link_group_attr(a));
+    });
+
+    res
 }
 
 /// Returns whether an attribute is a `linking_group_ids` attribute

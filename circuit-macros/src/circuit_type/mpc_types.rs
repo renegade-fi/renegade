@@ -97,7 +97,7 @@ fn build_mpc_type(base_struct: &ItemStruct, include_multiprover: bool) -> TokenS
 
     // Implement multiprover types
     if include_multiprover {
-        res.extend(build_multiprover_circuit_types(&mpc_type));
+        res.extend(build_multiprover_circuit_types(&mpc_type, base_struct));
     }
 
     res
