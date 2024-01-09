@@ -6,7 +6,7 @@
 //! allocate `field1` into groups `group1` and `group2` and `field2` into group
 //! `group3`:
 //!
-//! ```
+//! ```ignore
 //! #[circuit-type(singleprover)]
 //! struct MyCircuit {
 //!    #[link_groups = "group1, group2")]

@@ -21,15 +21,17 @@ use circuit_types::{
 };
 use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
+use mpc_relation::{
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    Variable,
+};
 
 use circuit_macros::circuit_type;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    valid_commitments::ValidCommitments, VALID_COMMITMENTS_MATCH_SETTLE_LINK0,
-    VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
-};
+use super::{VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1};
 
 /// A circuit with default sizing parameters
 pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -96,16 +98,20 @@ pub struct ValidMatchSettleWitness<
     [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
 {
     /// The first party's order
+    #[link_groups = "valid_commitments_match_settle0"]
     pub order1: Order,
     /// The first party's balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub balance1: Balance,
     /// The price that the first party agreed to execute at for their asset
     pub price1: FixedPoint,
     /// The maximum amount that the first party may match
     pub amount1: Scalar,
     /// The second party's order
+    #[link_groups = "valid_commitments_match_settle1"]
     pub order2: Order,
     /// The second party's balance
+    #[link_groups = "valid_commitments_match_settle1"]
     pub balance2: Balance,
     /// The price that the second party agreed to execute at for their asset
     pub price2: FixedPoint,
@@ -117,8 +123,10 @@ pub struct ValidMatchSettleWitness<
     /// information before the collaborative proof has finished
     pub match_res: MatchResult,
     /// The public shares of the first party before the match is settled
+    #[link_groups = "valid_commitments_match_settle0"]
     pub party0_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public shares of the second party before the match is settled
+    #[link_groups = "valid_commitments_match_settle1"]
     pub party1_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
 
@@ -195,16 +203,20 @@ where
         "Valid Match Settle".to_string()
     }
 
-    // VALID MATCH SETTLE inherits its two groups from the VALID COMMITMENTS layout
+    /// VALID MATCH SETTLE places the two groups that it shares with VALID
+    /// COMMITMENTS
+    ///
+    /// Note: VALID MATCH SETTLE places these groups because it has a larger
+    /// statement. If VALID COMMITMENTS were to place this group, VALID MATCH
+    /// SETTLE would not be able to inherit it -- it would overlap with public
+    /// inputs
+    ///
+    /// Ideally we would fix this by exposing a `min_offset` or similar, but for
+    /// now we simply have VALID MATCH SETTLE place the group
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let commitments_layout =
-            ValidCommitments::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::get_circuit_layout()?;
-        let layout1 = commitments_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
-        let layout2 = commitments_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
-
         Ok(vec![
-            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout1)),
-            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), Some(layout2)),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), None),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), None),
         ])
     }
 

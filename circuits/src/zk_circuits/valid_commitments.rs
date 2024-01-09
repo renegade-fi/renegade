@@ -29,8 +29,15 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
+use mpc_relation::{
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    Variable,
+};
 use serde::{Deserialize, Serialize};
+
+use super::valid_match_settle::ValidMatchSettle;
 
 // ----------------------
 // | Circuit Definition |
@@ -286,17 +293,17 @@ pub struct ValidCommitmentsWitness<
 {
     /// The private secret shares of the wallet that have been reblinded for
     /// match
+    #[link_groups = "valid_reblind_commitments"]
     pub private_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The public secret shares of the wallet that have been reblinded for
     /// match
+    #[link_groups = "valid_reblind_commitments"]
     pub public_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    /// The modified public secret shares, possibly with a zero'd balance added
-    /// for the mint that will be received by this party upon a successful
-    /// match
-    pub augmented_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
     /// The order that the prover intends to match against with this proof
+    #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
     pub order: Order,
     /// The balance that the wallet will send when the order is matched
+    #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
     pub balance_send: Balance,
     /// The balance that the wallet will receive into when the order is matched
     pub balance_receive: Balance,
@@ -304,6 +311,11 @@ pub struct ValidCommitmentsWitness<
     pub balance_fee: Balance,
     /// The fee that the relayer will take upon a successful match
     pub fee: Fee,
+    /// The modified public secret shares, possibly with a zero'd balance added
+    /// for the mint that will be received by this party upon a successful
+    /// match
+    #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
+    pub augmented_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
 }
 /// A `VALID COMMITMENTS` witness with default const generic sizing parameters
 pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
@@ -332,14 +344,25 @@ where
         "Valid Commitments".to_string()
     }
 
-    /// For `VALID COMMITMENTS` the proof linking groups have no specific
-    /// layout, they are placed automatically and the circuit layouts of other
-    /// circuits reference these placements
+    /// VALID COMMITMENTS has three proof linking groups:
+    /// - valid_reblind_commitments: The linking group between VALID REBLIND and
+    ///   VALID COMMITMENTS. This group is placed by VALID COMMITMENTS and
+    ///   inherited by VALID REBLIND
+    /// - valid_commitments_match_settle{0,1}: The linking groups between VALID
+    ///   COMMITMENTS and VALID MATCH SETTLE. These two groups are placed by
+    ///   VALID MATCH SETTLE and inherited by VALID COMMITMENTS
+    ///
+    /// To place the valid_reblind_commitments group, VALID COMMITMENTS
+    /// specifies `None` for the layout
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let layout0 = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+        let layout1 = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
+
         Ok(vec![
             (VALID_REBLIND_COMMITMENTS_LINK.to_string(), None),
-            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), None),
-            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), None),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout0)),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), Some(layout1)),
         ])
     }
 
