@@ -17,7 +17,7 @@ use circuit_types::{
 };
 use constants::Scalar;
 use itertools::Itertools;
-use mpc_relation::traits::Circuit;
+use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
 
 /// The group name for the VALID REBLIND <-> VALID COMMITMENTS link
 pub const VALID_REBLIND_COMMITMENTS_LINK: &str = "valid_reblind_commitments";
@@ -38,6 +38,11 @@ pub fn check_constraint_satisfaction<C: SingleProverCircuit>(
 ) -> bool {
     // Apply the constraints
     let mut cs = PlonkCircuit::new_turbo_plonk();
+    let circuit_layout = C::get_circuit_layout().unwrap();
+    for (id, layout) in circuit_layout.group_layouts.into_iter() {
+        cs.create_link_group(id, Some(layout));
+    }
+
     let witness_var = witness.create_witness(&mut cs);
     let statement_var = statement.create_public_var(&mut cs);
 
@@ -56,6 +61,11 @@ pub fn check_constraint_satisfaction_multiprover<C: MultiProverCircuit>(
     fabric: &Fabric,
 ) -> bool {
     let mut cs = MpcPlonkCircuit::new(fabric.clone());
+    let circuit_layout = C::get_circuit_layout().unwrap();
+    for (id, layout) in circuit_layout.group_layouts.into_iter() {
+        cs.create_link_group(id, Some(layout));
+    }
+
     let witness_var = witness.create_shared_witness(&mut cs);
     let statement_var = statement.create_shared_public_var(&mut cs);
 
