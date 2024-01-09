@@ -3,6 +3,7 @@
 
 mod mpc_types;
 mod multiprover_circuit_types;
+mod proof_linking;
 mod secret_share_types;
 mod singleprover_circuit_types;
 
@@ -20,8 +21,8 @@ use syn::{
 };
 
 use self::{
-    mpc_types::build_mpc_types, secret_share_types::build_secret_share_types,
-    singleprover_circuit_types::build_circuit_types,
+    mpc_types::build_mpc_types, proof_linking::remove_link_group_attributes,
+    secret_share_types::build_secret_share_types, singleprover_circuit_types::build_circuit_types,
 };
 
 /// The trait name for the base type that all other types are derived from
@@ -115,9 +116,11 @@ pub(crate) fn parse_macro_args(args: TokenStream) -> Result<MacroArgs> {
 
 /// Implementation of the type derivation macro
 pub(crate) fn circuit_type_impl(target_struct: &ItemStruct, macro_args: &MacroArgs) -> TokenStream {
-    // Copy the existing struct into the result
+    // Copy the existing struct into the result after removing any #[link_groups =
+    // "..."] attributes
     let mut out_tokens = TokenStream2::default();
-    out_tokens.extend(target_struct.to_token_stream());
+    let cleaned_target = remove_link_group_attributes(target_struct);
+    out_tokens.extend(cleaned_target.to_token_stream());
 
     // Build the implementation of the `BaseType` trait
     out_tokens.extend(build_base_type_impl(target_struct));

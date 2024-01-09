@@ -10,7 +10,7 @@ mod test {
     use circuit_macros::circuit_type;
     use constants::{AuthenticatedScalar, Scalar, ScalarField};
     use mpc_plonk::multiprover::proof_system::MpcPlonkCircuit;
-    use mpc_relation::{traits::Circuit, PlonkCircuit, Variable};
+    use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit, Variable};
     use std::ops::Add;
     use test_helpers::mpc_network::execute_mock_mpc;
 
@@ -19,7 +19,7 @@ mod test {
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric,
+        Fabric, PlonkCircuit,
     };
 
     /// The number of scalars to place as an array in the `TestType` type
@@ -29,6 +29,7 @@ mod test {
     #[derive(Clone, Debug, PartialEq, Eq)]
     struct TestType {
         val: Scalar,
+        #[link_groups = "test, test2"]
         array_val: [Scalar; NUM_TEST_SCALARS],
     }
 
@@ -67,9 +68,23 @@ mod test {
 
         let mut circuit = PlonkCircuit::new_turbo_plonk();
 
+        // Create the link groups that the witness will be allocated within
+        circuit.create_link_group("test".to_string(), None /* layout */);
+        circuit.create_link_group("test2".to_string(), None);
+
         // Verify that we can commit to the type as a witness or public
         let _witness = a.create_witness(&mut circuit);
         let _public = a.create_public_var(&mut circuit);
+
+        // Check the layout of the circuit, it should have only a single field
+        // allocated of size `NUM_TEST_SCALARS`
+        let layout = circuit.generate_layout().unwrap();
+
+        let group1 = layout.get_group_layout("test");
+        let group2 = layout.get_group_layout("test2");
+
+        assert_eq!(group1.size, NUM_TEST_SCALARS);
+        assert_eq!(group2.size, NUM_TEST_SCALARS);
     }
 
     #[test]
@@ -78,6 +93,10 @@ mod test {
         let a = TestType::new(Scalar::one());
 
         let mut circuit = PlonkCircuit::new_turbo_plonk();
+
+        // Create the link groups that the witness will be allocated within
+        circuit.create_link_group("test".to_string(), None /* layout */);
+        circuit.create_link_group("test2".to_string(), None);
 
         // Commit to the type and verify that the callback typechecks
         let var = a.create_witness(&mut circuit);
