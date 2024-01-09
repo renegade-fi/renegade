@@ -14,7 +14,9 @@ use crate::circuit_type::{ident_with_suffix, new_ident};
 
 use super::{
     build_modified_struct_from_associated_types, build_serialize_method, ident_with_generics,
-    params_from_generics, str_to_path, BASE_TYPE_TRAIT_NAME,
+    params_from_generics,
+    proof_linking::{build_create_witness_method, requires_proof_linking},
+    str_to_path, BASE_TYPE_TRAIT_NAME,
 };
 
 // -------------
@@ -75,11 +77,18 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
         generics.clone(),
     );
 
+    // Maybe override the `create_witness` method
+    let mut create_witness_method = TokenStream2::new();
+    if requires_proof_linking(base_type) {
+        create_witness_method = build_create_witness_method(base_type);
+    }
+
     let impl_block: ItemImpl = parse_quote! {
         impl #generics #trait_ident for #base_name <#base_type_params>
             #where_clause
         {
             type #var_type_associated = #var_type_name;
+            #create_witness_method
         }
     };
     impl_block.to_token_stream()
