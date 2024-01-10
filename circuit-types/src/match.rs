@@ -60,10 +60,10 @@ pub struct MatchResult {
 pub struct OrderSettlementIndices {
     /// The index of the balance that holds the mint that the wallet will
     /// send if a successful match occurs
-    pub balance_send: u64,
+    pub balance_send: usize,
     /// The index of the balance that holds the mint that the wallet will
     /// receive if a successful match occurs
-    pub balance_receive: u64,
+    pub balance_receive: usize,
     /// The index of the order that is to be matched
-    pub order: u64,
+    pub order: usize,
 }

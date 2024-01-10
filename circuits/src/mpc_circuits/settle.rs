@@ -28,8 +28,8 @@ where
     let mut party1_new_shares = party1_public_share.clone();
 
     // Subtract the amount of base token exchanged from each party's order
-    let party0_order = &mut party0_new_shares.orders[party0_settle_indices.order as usize];
-    let party1_order = &mut party1_new_shares.orders[party1_settle_indices.order as usize];
+    let party0_order = &mut party0_new_shares.orders[party0_settle_indices.order];
+    let party1_order = &mut party1_new_shares.orders[party1_settle_indices.order];
     party0_order.amount = &party0_order.amount - &match_res.base_amount;
     party1_order.amount = &party1_order.amount - &match_res.base_amount;
 
@@ -44,20 +44,16 @@ where
     let party0_sell = amounts.remove(0);
 
     // Update the balances of the two parties
-    let party0_buy_balance =
-        &mut party0_new_shares.balances[party0_settle_indices.balance_receive as usize];
+    let party0_buy_balance = &mut party0_new_shares.balances[party0_settle_indices.balance_receive];
     party0_buy_balance.amount = &party0_buy_balance.amount + &party0_buy;
 
-    let party1_buy_balance =
-        &mut party1_new_shares.balances[party1_settle_indices.balance_receive as usize];
+    let party1_buy_balance = &mut party1_new_shares.balances[party1_settle_indices.balance_receive];
     party1_buy_balance.amount = &party1_buy_balance.amount + &party0_sell;
 
-    let party0_sell_balance =
-        &mut party0_new_shares.balances[party0_settle_indices.balance_send as usize];
+    let party0_sell_balance = &mut party0_new_shares.balances[party0_settle_indices.balance_send];
     party0_sell_balance.amount = &party0_sell_balance.amount - &party0_sell;
 
-    let party1_sell_balance =
-        &mut party1_new_shares.balances[party1_settle_indices.balance_send as usize];
+    let party1_sell_balance = &mut party1_new_shares.balances[party1_settle_indices.balance_send];
     party1_sell_balance.amount = &party1_sell_balance.amount - &party0_buy;
 
     (party0_new_shares, party1_new_shares)

@@ -122,10 +122,12 @@ where
 /// Link a proof of VALID COMMITMENTS with a proof of MATCH SETTLE using the
 /// system wide sizing constants in a singleprover context
 pub fn link_sized_commitments_match_settle(
+    party_id: PartyId,
     commitments_link_hint: &ProofLinkingHint,
     match_settle_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
     link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+        party_id,
         commitments_link_hint,
         match_settle_link_hint,
     )
@@ -154,6 +156,7 @@ pub fn link_commitments_match_settle<
     const MAX_ORDERS: usize,
     const MAX_FEES: usize,
 >(
+    party_id: PartyId,
     commitments_link_hint: &ProofLinkingHint,
     match_settle_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError>
@@ -162,7 +165,7 @@ where
 {
     // Get the group layout for the match settle <-> commitments link group
     let layout =
-        get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(PARTY0)?;
+        get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(party_id)?;
     let pk = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
