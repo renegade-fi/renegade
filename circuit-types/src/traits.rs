@@ -47,7 +47,8 @@ use std::{
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
-    AuthenticatedBool, Fabric, MpcPlonkCircuit, PlonkCircuit,
+    AuthenticatedBool, CollaborativePlonkProof, Fabric, MpcPlonkCircuit, MpcProofLinkingHint,
+    PlonkCircuit, PlonkProof, ProofLinkingHint,
 };
 
 /// The error message emitted when too few scalars are given
@@ -825,6 +826,16 @@ pub trait SingleProverCircuit: Sized {
         witness: Self::Witness,
         statement: Self::Statement,
     ) -> Result<Proof<SystemCurve>, ProverError> {
+        let (proof, _hint) = Self::prove_with_link_hint(witness, statement)?;
+        Ok(proof)
+    }
+
+    /// Generate a proof of the statement represented by the circuit and return
+    /// a link hint with the proof
+    fn prove_with_link_hint(
+        witness: Self::Witness,
+        statement: Self::Statement,
+    ) -> Result<(PlonkProof, ProofLinkingHint), ProverError> {
         let mut circuit = PlonkCircuit::new_turbo_plonk();
 
         // Add proof linking groups to the circuit
@@ -845,10 +856,8 @@ pub trait SingleProverCircuit: Sized {
         // Generate the proof
         let mut rng = thread_rng();
         let pk = Self::proving_key();
-        PlonkKzgSnark::prove::<_, _, SolidityTranscript>(
-            &mut rng, &circuit, &pk, None, // extra_init_msg
-        )
-        .map_err(ProverError::Plonk)
+        PlonkKzgSnark::prove_with_link_hint::<_, _, SolidityTranscript>(&mut rng, &circuit, &pk)
+            .map_err(ProverError::Plonk)
     }
 
     /// Verify a proof of the statement represented by the circuit
@@ -955,6 +964,16 @@ pub trait MultiProverCircuit {
         statement: Self::Statement,
         fabric: Fabric,
     ) -> Result<CollaborativeProof<SystemCurve>, PlonkError> {
+        let (proof, _hint) = Self::prove_with_link_hint(witness, statement, fabric)?;
+        Ok(proof)
+    }
+
+    /// Prove the statement represented by the circuit and return a link hint
+    fn prove_with_link_hint(
+        witness: Self::Witness,
+        statement: Self::Statement,
+        fabric: Fabric,
+    ) -> Result<(CollaborativePlonkProof, MpcProofLinkingHint), PlonkError> {
         let mut circuit = MpcPlonkCircuit::new(fabric.clone());
 
         // Add proof linking groups to the circuit
@@ -973,7 +992,7 @@ pub trait MultiProverCircuit {
 
         // Generate the proof
         let pk = Self::proving_key();
-        MultiproverPlonkKzgSnark::prove(&circuit, &pk, fabric)
+        MultiproverPlonkKzgSnark::prove_with_link_hint(&circuit, &pk, fabric)
     }
 
     /// Verify a proof of the statement represented by the circuit

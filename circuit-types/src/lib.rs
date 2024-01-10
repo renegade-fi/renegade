@@ -32,8 +32,14 @@ use fixed_point::DEFAULT_FP_PRECISION;
 use jf_primitives::pcs::prelude::Commitment;
 use merkle::MerkleOpening;
 use mpc_plonk::{
-    multiprover::proof_system::{CollaborativeProof, MpcPlonkCircuit as GenericMpcPlonkCircuit},
-    proof_system::structs::Proof,
+    multiprover::proof_system::{
+        proof_linking::MultiproverLinkingProof, CollaborativeProof, MpcLinkingHint,
+        MpcPlonkCircuit as GenericMpcPlonkCircuit,
+    },
+    proof_system::{
+        proof_linking::LinkingProof,
+        structs::{LinkingHint, Proof},
+    },
 };
 use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
 use num_bigint::BigUint;
@@ -69,6 +75,14 @@ pub type PlonkProof = Proof<SystemCurve>;
 pub type CollaborativePlonkProof = CollaborativeProof<SystemCurve>;
 /// A KZG polynomial commitment over the system curve
 pub type PolynomialCommitment = Commitment<SystemCurve>;
+/// A proof linking hint defined over the system curve
+pub type ProofLinkingHint = LinkingHint<SystemCurve>;
+/// A collaboratively generated proof linking hint defined over the system curve
+pub type MpcProofLinkingHint = MpcLinkingHint<SystemCurve>;
+/// A linking proof defined over the system curve
+pub type PlonkLinkProof = LinkingProof<SystemCurve>;
+/// A collaboratively generated linking proof defined over the system curve
+pub type MpcPlonkLinkProof = MultiproverLinkingProof<SystemCurve>;
 
 // --------------------------
 // | Default Generic Values |

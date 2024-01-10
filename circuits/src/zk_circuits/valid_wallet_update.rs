@@ -480,7 +480,7 @@ where
     type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     fn name() -> String {
-        "Valid Wallet Update".to_string()
+        format!("Valid Wallet Update ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES}, {MERKLE_HEIGHT})")
     }
 
     fn apply_constraints(
