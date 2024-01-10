@@ -200,7 +200,7 @@ where
     type Statement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     fn name() -> String {
-        "Valid Match Settle".to_string()
+        format!("Valid Match Settle ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})")
     }
 
     /// VALID MATCH SETTLE places the two groups that it shares with VALID

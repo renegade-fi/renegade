@@ -342,7 +342,7 @@ where
     type Statement = ValidReblindStatement;
 
     fn name() -> String {
-        "Valid Reblind".to_string()
+        format!("Valid Reblind ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES}, {MERKLE_HEIGHT})")
     }
 
     // VALID REBLIND inherits the group placement from VALID COMMITMENTS for their

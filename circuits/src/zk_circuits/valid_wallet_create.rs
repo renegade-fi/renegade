@@ -144,7 +144,7 @@ where
     type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     fn name() -> String {
-        "Valid Wallet Create".to_string()
+        format!("Valid Wallet Create ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})")
     }
 
     fn apply_constraints(

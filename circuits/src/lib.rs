@@ -12,7 +12,7 @@
 use circuit_types::{
     errors::{ProverError, VerifierError},
     traits::{MpcType, MultiProverCircuit, SingleProverCircuit},
-    CollaborativePlonkProof, Fabric, PlonkProof,
+    CollaborativePlonkProof, Fabric, MpcProofLinkingHint, PlonkProof, ProofLinkingHint,
 };
 use constants::Scalar;
 
@@ -102,6 +102,14 @@ pub fn singleprover_prove<C: SingleProverCircuit>(
     C::prove(witness, statement)
 }
 
+/// Construct a proof of a given circuit and return a link hint with it
+pub fn singleprover_prove_with_hint<C: SingleProverCircuit>(
+    witness: C::Witness,
+    statement: C::Statement,
+) -> Result<(PlonkProof, ProofLinkingHint), ProverError> {
+    C::prove_with_link_hint(witness, statement)
+}
+
 /// Verify a proof of a given circuit
 pub fn verify_singleprover_proof<C: SingleProverCircuit>(
     statement: C::Statement,
@@ -126,6 +134,16 @@ pub fn multiprover_prove<C: MultiProverCircuit>(
     fabric: Fabric,
 ) -> Result<CollaborativePlonkProof, ProverError> {
     C::prove(witness, statement, fabric).map_err(ProverError::Plonk)
+}
+
+/// Construct a collaborative proof of a given circuit and return a shared link
+/// hint with it
+pub fn multiprover_prove_with_hint<C: MultiProverCircuit>(
+    witness: C::Witness,
+    statement: C::Statement,
+    fabric: Fabric,
+) -> Result<(CollaborativePlonkProof, MpcProofLinkingHint), ProverError> {
+    C::prove_with_link_hint(witness, statement, fabric).map_err(ProverError::Plonk)
 }
 
 /// Generate a multiprover proof and verify it
