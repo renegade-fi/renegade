@@ -82,7 +82,7 @@ fn add_balances_to_wallet(
 ) {
     let mut rng = thread_rng();
 
-    let order = &wallet.orders[ind.order as usize];
+    let order = &wallet.orders[ind.order];
     let base_amt = order.amount;
     let quote_amt = (price * Scalar::from(base_amt)).floor();
     let quote_amt = scalar_to_u64(&quote_amt);
@@ -100,8 +100,8 @@ fn add_balances_to_wallet(
     };
 
     // Add balances for the order
-    wallet.balances[ind.balance_send as usize] = send;
-    wallet.balances[ind.balance_receive as usize] = recv;
+    wallet.balances[ind.balance_send] = send;
+    wallet.balances[ind.balance_receive] = recv;
 }
 
 /// Run the match settle process
@@ -128,9 +128,9 @@ fn max_amount_at_price(
     price: FixedPoint,
 ) -> u64 {
     // Lookup the amount on the order and the send balance
-    let order = &wallet.orders[indices.order as usize];
+    let order = &wallet.orders[indices.order];
     let order_amt = order.amount;
-    let mut send_bal = wallet.balances[indices.balance_send as usize].amount;
+    let mut send_bal = wallet.balances[indices.balance_send].amount;
 
     // Convert the send balance to the base mint amount
     // I.e. convert if the send balance is the quote
@@ -160,8 +160,8 @@ fn run_match_settle_with_amounts(
     let (_, pre_public_shares2) = create_wallet_shares(w2);
 
     // Allocate inputs in the fabric
-    let order1 = w1.orders[ind1.order as usize].allocate(PARTY0, fabric);
-    let order2 = w2.orders[ind2.order as usize].allocate(PARTY0, fabric);
+    let order1 = w1.orders[ind1.order].allocate(PARTY0, fabric);
+    let order2 = w2.orders[ind2.order].allocate(PARTY0, fabric);
     let amount1 = amount1.allocate(PARTY0, fabric);
     let amount2 = amount2.allocate(PARTY0, fabric);
     let price = price.allocate(PARTY0, fabric);
@@ -185,11 +185,11 @@ fn run_match_settle_with_amounts(
         },
         SizedValidMatchSettleWitness {
             order1,
-            balance1: wallet1.balances[ind1.balance_send as usize].clone(),
+            balance1: wallet1.balances[ind1.balance_send].clone(),
             amount1,
             price1: price.clone(),
             order2,
-            balance2: wallet2.balances[ind2.balance_send as usize].clone(),
+            balance2: wallet2.balances[ind2.balance_send].clone(),
             amount2,
             price2: price,
             party0_public_shares: party0_pre_shares,
@@ -253,7 +253,7 @@ async fn test_witness_generation__undercapitalized(test_args: IntegrationTestArg
     // Set the amount for party 1 to a value that will not cover the amount in its
     // order
     // Balances are initialized to values that marginally cover the order
-    w1.balances[ind1.balance_send as usize].amount /= 2;
+    w1.balances[ind1.balance_send].amount /= 2;
     let amt1 = max_amount_at_price(&w1, ind1, price);
     let amt2 = max_amount_at_price(&w2, ind2, price);
 

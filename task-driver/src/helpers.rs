@@ -209,9 +209,9 @@ fn find_balances_and_indices(
 
     Ok((
         OrderSettlementIndices {
-            order: order_index as u64,
-            balance_send: send_index as u64,
-            balance_receive: receive_index as u64,
+            order: order_index,
+            balance_send: send_index,
+            balance_receive: receive_index,
         },
         send_balance,
         receive_balance,

@@ -242,9 +242,9 @@ pub mod test_helpers {
     }
 
     /// Generate a random index bounded by a max
-    fn random_index(max: usize) -> u64 {
+    fn random_index(max: usize) -> usize {
         let mut rng = thread_rng();
-        rng.gen_range(0..max) as u64
+        rng.gen_range(0..max)
     }
 
     /// Get a dummy set of wallet shares
