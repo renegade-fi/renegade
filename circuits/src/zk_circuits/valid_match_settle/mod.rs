@@ -373,7 +373,7 @@ mod tests {
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
-        multiprover_prove_and_verify,
+        multiprover_prove_and_verify, singleprover_prove_and_verify,
         zk_circuits::{
             check_constraint_satisfaction,
             valid_match_settle::test_helpers::{
@@ -401,6 +401,15 @@ mod tests {
         .await;
 
         assert!(res.is_ok())
+    }
+
+    /// Tests proving a valid match on the singleprover circuit
+    #[test]
+    fn test_valid_match__singleprover() {
+        let (witness, statement) = dummy_witness_and_statement();
+
+        singleprover_prove_and_verify::<SizedValidMatchSettle>(witness, statement)
+            .expect("failed to prove and verify");
     }
 
     // ---------------

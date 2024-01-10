@@ -288,7 +288,7 @@ pub mod test_helpers {
             base_mint: base_mint.clone(),
             side: OrderSide::Buy,
             amount: rng.gen_range(1..base_amount),
-            worst_case_price: price + Scalar::one(),
+            worst_case_price: price + Scalar::from(2u8),
             timestamp: 0,
         };
 
@@ -298,7 +298,7 @@ pub mod test_helpers {
             base_mint: base_mint.clone(),
             side: OrderSide::Sell,
             amount: rng.gen_range(1..base_amount),
-            worst_case_price: price - Scalar::one(),
+            worst_case_price: price - Scalar::from(2u8),
             timestamp: 0,
         };
 
