@@ -341,7 +341,7 @@ where
     type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
     fn name() -> String {
-        "Valid Commitments".to_string()
+        format!("Valid Commitments ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})")
     }
 
     /// VALID COMMITMENTS has three proof linking groups:
@@ -382,8 +382,10 @@ where
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        balance::Balance, native_helpers::create_wallet_shares_from_private, order::OrderSide,
-        wallet::Wallet,
+        balance::Balance,
+        native_helpers::create_wallet_shares_from_private,
+        order::OrderSide,
+        wallet::{Wallet, WalletShare},
     };
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
@@ -411,10 +413,26 @@ pub mod test_helpers {
     where
         [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
     {
-        let mut rng = thread_rng();
-
         // Split the wallet into secret shares
-        let (private_secret_shares, public_secret_shares) = create_wallet_shares(wallet);
+        let (private_share, public_share) = create_wallet_shares(wallet);
+        create_witness_and_statement_with_shares(wallet, &public_share, &private_share)
+    }
+
+    /// Create a witness and statement with wallet shares specified alongside
+    /// the wallet
+    pub fn create_witness_and_statement_with_shares<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MAX_FEES: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_share: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ValidCommitmentsStatement)
+    where
+        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    {
+        let mut rng = thread_rng();
 
         // Choose an order and fee to match on
         let ind_order = 0;
@@ -450,15 +468,12 @@ pub mod test_helpers {
 
         // After augmenting, split the augmented wallet into shares, using the same
         // private secret shares as the original (un-augmented) wallet
-        let (_, augmented_public_shares) = create_wallet_shares_from_private(
-            &augmented_wallet,
-            &private_secret_shares,
-            wallet.blinder,
-        );
+        let (_, augmented_public_shares) =
+            create_wallet_shares_from_private(&augmented_wallet, private_share, wallet.blinder);
 
         let witness = ValidCommitmentsWitness {
-            private_secret_shares,
-            public_secret_shares,
+            private_secret_shares: private_share.clone(),
+            public_secret_shares: public_share.clone(),
             augmented_public_shares,
             order,
             balance_send,
