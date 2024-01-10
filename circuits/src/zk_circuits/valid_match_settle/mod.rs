@@ -287,11 +287,11 @@ pub mod test_helpers {
         (
             ValidMatchSettleWitness {
                 order1: o1,
-                balance1: wallet1.balances[party0_indices.balance_send as usize].clone(),
+                balance1: wallet1.balances[party0_indices.balance_send].clone(),
                 price1: price,
                 amount1,
                 order2: o2,
-                balance2: wallet2.balances[party1_indices.balance_send as usize].clone(),
+                balance2: wallet2.balances[party1_indices.balance_send].clone(),
                 price2: price,
                 amount2,
                 match_res,
@@ -327,11 +327,7 @@ pub mod test_helpers {
 
         (
             wallet,
-            OrderSettlementIndices {
-                balance_send: send as u64,
-                balance_receive: recv as u64,
-                order: order_ind as u64,
-            },
+            OrderSettlementIndices { balance_send: send, balance_receive: recv, order: order_ind },
         )
     }
 
@@ -630,9 +626,8 @@ mod tests {
         let (witness, mut statement) = dummy_witness_and_statement();
 
         // Modify the send balance of party 0
-        statement.party0_modified_shares.balances
-            [statement.party0_indices.balance_send as usize]
-            .amount += Scalar::one();
+        statement.party0_modified_shares.balances[statement.party0_indices.balance_send].amount +=
+            Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
             &witness.clone(),
@@ -646,8 +641,7 @@ mod tests {
         let (witness, mut statement) = dummy_witness_and_statement();
 
         // Modify the receive balance of party 1
-        statement.party1_modified_shares.balances
-            [statement.party1_indices.balance_receive as usize]
+        statement.party1_modified_shares.balances[statement.party1_indices.balance_receive]
             .amount += Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
@@ -662,7 +656,7 @@ mod tests {
         let (witness, mut statement) = dummy_witness_and_statement();
 
         // Modify the order of party 0
-        statement.party0_modified_shares.orders[statement.party0_indices.order as usize].amount -=
+        statement.party0_modified_shares.orders[statement.party0_indices.order].amount -=
             Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
@@ -679,9 +673,8 @@ mod tests {
 
         // Modify a balance that should not be modified
         let mut statement = original_statement.clone();
-        statement.party0_modified_shares.balances
-            [statement.party0_indices.balance_send as usize]
-            .mint += Scalar::one();
+        statement.party0_modified_shares.balances[statement.party0_indices.balance_send].mint +=
+            Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
             &witness.clone(),
@@ -690,7 +683,7 @@ mod tests {
 
         // Modify an order that should not be modified
         let mut statement = original_statement.clone();
-        statement.party1_modified_shares.orders[statement.party1_indices.order as usize].amount -=
+        statement.party1_modified_shares.orders[statement.party1_indices.order].amount -=
             Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(

@@ -146,9 +146,9 @@ pub fn apply_match_to_shares<
         OrderSide::Sell => (match_res.base_amount, match_res.quote_amount),
     };
 
-    shares.balances[indices.balance_send as usize].amount -= Scalar::from(send_amt);
-    shares.balances[indices.balance_receive as usize].amount += Scalar::from(recv_amt);
-    shares.orders[indices.order as usize].amount -= Scalar::from(match_res.base_amount);
+    shares.balances[indices.balance_send].amount -= Scalar::from(send_amt);
+    shares.balances[indices.balance_receive].amount += Scalar::from(recv_amt);
+    shares.orders[indices.order].amount -= Scalar::from(match_res.base_amount);
 }
 
 #[cfg(test)]
@@ -249,9 +249,9 @@ mod tests {
         }
 
         OrderSettlementIndices {
-            order: (0..MAX_ORDERS).sample_single(&mut rng) as u64,
-            balance_send: send as u64,
-            balance_receive: recv as u64,
+            order: (0..MAX_ORDERS).sample_single(&mut rng),
+            balance_send: send,
+            balance_receive: recv,
         }
     }
 

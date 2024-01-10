@@ -140,9 +140,9 @@ pub fn to_contract_valid_commitments_statement(
     statement: ValidCommitmentsStatement,
 ) -> ContractValidCommitmentsStatement {
     ContractValidCommitmentsStatement {
-        balance_send_index: statement.indices.balance_send,
-        balance_receive_index: statement.indices.balance_receive,
-        order_index: statement.indices.order,
+        balance_send_index: statement.indices.balance_send as u64,
+        balance_receive_index: statement.indices.balance_receive as u64,
+        order_index: statement.indices.order as u64,
     }
 }
 
@@ -157,12 +157,12 @@ pub fn to_contract_valid_match_settle_statement(
     ContractValidMatchSettleStatement {
         party0_modified_shares,
         party1_modified_shares,
-        party0_send_balance_index: statement.party0_indices.balance_send,
-        party0_receive_balance_index: statement.party0_indices.balance_receive,
-        party0_order_index: statement.party0_indices.order,
-        party1_send_balance_index: statement.party1_indices.balance_send,
-        party1_receive_balance_index: statement.party1_indices.balance_receive,
-        party1_order_index: statement.party1_indices.order,
+        party0_send_balance_index: statement.party0_indices.balance_send as u64,
+        party0_receive_balance_index: statement.party0_indices.balance_receive as u64,
+        party0_order_index: statement.party0_indices.order as u64,
+        party1_send_balance_index: statement.party1_indices.balance_send as u64,
+        party1_receive_balance_index: statement.party1_indices.balance_receive as u64,
+        party1_order_index: statement.party1_indices.order as u64,
     }
 }
 
