@@ -359,6 +359,18 @@ impl BaseType for u64 {
     }
 }
 
+impl BaseType for usize {
+    const NUM_SCALARS: usize = 1;
+
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![Scalar::from(*self as u64)]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        scalar_to_u64(&i.next().unwrap()) as usize
+    }
+}
+
 impl BaseType for bool {
     const NUM_SCALARS: usize = 1;
 
@@ -421,6 +433,10 @@ impl CircuitBaseType for Scalar {
 }
 
 impl CircuitBaseType for u64 {
+    type VarType = Variable;
+}
+
+impl CircuitBaseType for usize {
     type VarType = Variable;
 }
 
@@ -522,6 +538,10 @@ impl MpcBaseType for Scalar {
 }
 
 impl MpcBaseType for u64 {
+    type AllocatedType = AuthenticatedScalar;
+}
+
+impl MpcBaseType for usize {
     type AllocatedType = AuthenticatedScalar;
 }
 
@@ -637,6 +657,10 @@ impl SecretShareBaseType for Scalar {
 }
 
 impl SecretShareBaseType for u64 {
+    type ShareType = Scalar;
+}
+
+impl SecretShareBaseType for usize {
     type ShareType = Scalar;
 }
 

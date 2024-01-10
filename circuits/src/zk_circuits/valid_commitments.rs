@@ -484,9 +484,9 @@ pub mod test_helpers {
 
         let statement = ValidCommitmentsStatement {
             indices: OrderSettlementIndices {
-                balance_send: ind_send as u64,
-                balance_receive: ind_receive as u64,
-                order: ind_order as u64,
+                balance_send: ind_send,
+                balance_receive: ind_receive,
+                order: ind_order,
             },
         };
 
@@ -643,8 +643,7 @@ mod test {
 
         // Prover attempt to augment the wallet with a non-zero balance
         let augmented_balance_index = statement.indices.balance_receive;
-        witness.augmented_public_shares.balances[augmented_balance_index as usize].amount +=
-            Scalar::one();
+        witness.augmented_public_shares.balances[augmented_balance_index].amount += Scalar::one();
         witness.balance_receive.amount += 1u64;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
@@ -659,7 +658,7 @@ mod test {
 
         // Reset the original wallet such that the augmented balance was non-zero
         let augmentation_index = statement.indices.balance_receive;
-        witness.public_secret_shares.balances[augmentation_index as usize] =
+        witness.public_secret_shares.balances[augmentation_index] =
             BalanceShare { amount: Scalar::one(), mint: Scalar::one() };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
@@ -757,7 +756,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the send balance from the order
-        witness.augmented_public_shares.balances[statement.indices.balance_send as usize] =
+        witness.augmented_public_shares.balances[statement.indices.balance_send] =
             BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
@@ -770,7 +769,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the receive balance from the order
-        witness.augmented_public_shares.balances[statement.indices.balance_receive as usize] =
+        witness.augmented_public_shares.balances[statement.indices.balance_receive] =
             BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
@@ -798,7 +797,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the order being proved on
-        witness.augmented_public_shares.orders[statement.indices.order as usize] = OrderShare {
+        witness.augmented_public_shares.orders[statement.indices.order] = OrderShare {
             quote_mint: Scalar::zero(),
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
