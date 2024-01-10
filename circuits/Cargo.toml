@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 test_helpers = ["dep:env_logger", "dep:ctor", "dep:util"]
 large_benchmarks = []
+large_tests = []
 stats = ["ark-mpc/stats"]
 
 [[test]]
