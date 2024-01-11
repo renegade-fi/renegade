@@ -44,7 +44,7 @@ macro_rules! print_wire {
         use circuit_types::traits::CircuitVarType;
         use tracing::log;
         let x_eval = $x.eval($cs);
-        log::info!("eval({}): {x_eval}", stringify!($x));
+        log::info!("eval({}): {x_eval:?}", stringify!($x));
     }};
 }
 

@@ -72,12 +72,14 @@ impl FixedPointGadget {
         // Constrain the difference to be less than the precision on the fixed point,
         // This is effectively the same as constraining the difference to have an
         // integral component of zero
-        // 2^m - (lhs - rhs) > 0
+        // (2^m - 1) - (lhs - rhs) > 0
         let diff = cs.lc(
             &[one_var, lhs_minus_rhs, zero_var, zero_var],
-            &[*TWO_TO_M_SCALAR, -one, one, one],
+            &[(*TWO_TO_M_SCALAR - ScalarField::one()), -one, one, one],
         )?;
-        GreaterThanEqZeroGadget::<DEFAULT_FP_PRECISION>::constrain_greater_than_zero(diff, cs)
+        GreaterThanEqZeroGadget::<{ DEFAULT_FP_PRECISION + 1 }>::constrain_greater_than_zero(
+            diff, cs,
+        )
     }
 
     // === Arithmetic Ops === //
@@ -121,10 +123,10 @@ impl MultiproverFixedPointGadget {
         // integral component of zero
         let diff = cs.lc(
             &[one_var, lhs_minus_rhs, zero_var, zero_var],
-            &[*TWO_TO_M_SCALAR, -one, one, one],
+            &[(*TWO_TO_M_SCALAR - ScalarField::one()), -one, one, one],
         )?;
 
-        MultiproverGreaterThanEqZeroGadget::<DEFAULT_FP_PRECISION>::constrain_greater_than_zero(
+        MultiproverGreaterThanEqZeroGadget::<{DEFAULT_FP_PRECISION + 1}>::constrain_greater_than_zero(
             diff, fabric, cs,
         )
     }
@@ -152,12 +154,14 @@ mod test {
         let mut rng = thread_rng();
         let fp1: f64 = rng.gen();
         let fp_floor = fp1.floor() as u64;
+        let fp_ceil = fp1.ceil() as u64;
         let int: u64 = rng.gen();
 
         // Allocate the values in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
         let fp_var1 = FixedPoint::from_f64_round_down(fp1).create_witness(&mut cs);
         let floor_var = fp_floor.create_witness(&mut cs);
+        let ceil_var = fp_ceil.create_witness(&mut cs);
 
         let int_var = int.create_witness(&mut cs);
         let int_fp = FixedPoint::from_integer(int).create_witness(&mut cs);
@@ -174,8 +178,28 @@ mod test {
         FixedPointGadget::constrain_equal_integer_ignore_fraction(fp_var1, floor_var, &mut cs)
             .unwrap();
 
-        // Validate constraints
+        // fp1 == ceil(fp1) when ignoring the fractional part
+        FixedPointGadget::constrain_equal_integer_ignore_fraction(fp_var1, ceil_var, &mut cs)
+            .unwrap();
+
+        // int_fp == int_var when ignoring the fractional part
+        FixedPointGadget::constrain_equal_integer_ignore_fraction(int_fp, int_var, &mut cs)
+            .unwrap();
+
+        // Validate constraints -- all should be true at this point
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+
+        // int_fp + 1 != int when ignoring the fractional part
+        let int_fp_plus_one = FixedPoint::from_integer(int + 1).create_witness(&mut cs);
+        FixedPointGadget::constrain_equal_integer_ignore_fraction(
+            int_fp_plus_one,
+            int_var,
+            &mut cs,
+        )
+        .unwrap();
+
+        // Validate constraints -- should now fail
+        assert!(cs.check_circuit_satisfiability(&[]).is_err());
     }
 
     /// Tests the floor method
@@ -203,6 +227,7 @@ mod test {
         let mut rng = thread_rng();
         let fp1: f64 = rng.gen();
         let fp_floor = fp1.floor() as u64;
+        let fp_ceil = fp1.ceil() as u64;
         let int: u64 = rng.gen();
 
         let (res, _) = execute_mock_mpc(move |fabric| async move {
@@ -212,6 +237,7 @@ mod test {
                 .allocate(PARTY0, &fabric)
                 .create_shared_witness(&mut cs);
             let floor_var = fp_floor.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
+            let ceil_var = fp_ceil.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
             let int_var = int.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
 
             // fp1 == floor(fp1), when ignoring the fractional part
@@ -220,9 +246,45 @@ mod test {
             )
             .unwrap();
 
-            let res = cs.check_circuit_satisfiability(&[]).is_ok();
+            // fp1 == ceil(fp), when ignoring the fractional part
+            MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+                fp_var, ceil_var, &fabric, &mut cs,
+            )
+            .unwrap();
+
+            // int_fp == int_var when ignoring the fractional part
+            let int_fp = FixedPoint::from_integer(int)
+                .allocate(PARTY0, &fabric)
+                .create_shared_witness(&mut cs);
+            MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+                int_fp, int_var, &fabric, &mut cs,
+            )
+            .unwrap();
+
+            let mut res = cs.check_circuit_satisfiability(&[]).is_ok();
+
+            // int_fp + 1 != int when ignoring the fractional part
+            let int_fp_plus_one = FixedPoint::from_integer(int + 1)
+                .allocate(PARTY0, &fabric)
+                .create_shared_witness(&mut cs);
+            MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+                int_fp_plus_one,
+                int_var,
+                &fabric,
+                &mut cs,
+            )
+            .unwrap();
+
+            res &= cs.check_circuit_satisfiability(&[]).is_err();
 
             // fp1 != int
+            // Use a new circuit as the constraints on the old one are already unsatisfied
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let fp_var = FixedPoint::from_f64_round_down(fp1)
+                .allocate(PARTY0, &fabric)
+                .create_shared_witness(&mut cs);
+            let int_var = int.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
+
             MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
                 fp_var, int_var, &fabric, &mut cs,
             )
