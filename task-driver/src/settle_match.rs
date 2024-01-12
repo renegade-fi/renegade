@@ -36,7 +36,7 @@ use super::{
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
 /// The error message emitted when a wallet cannot be found in state
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
-/// The error message emitted when a validity proof wintess cannot be found in
+/// The error message emitted when a validity proof witness cannot be found in
 /// state
 const ERR_VALIDITY_WITNESS_NOT_FOUND: &str = "validity witness not found in global state";
 
@@ -221,9 +221,9 @@ impl SettleMatchTask {
         let tx_submit_res = self
             .arbitrum_client
             .process_match_settle(
-                self.party0_validity_proof.clone(),
-                self.party1_validity_proof.clone(),
-                self.match_settle_proof.clone(),
+                &self.party0_validity_proof,
+                &self.party1_validity_proof,
+                &self.match_settle_proof,
             )
             .await;
 

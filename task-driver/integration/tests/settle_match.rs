@@ -170,11 +170,11 @@ async fn setup_match_result(
     let witness1 = get_first_order_witness(&wallet1, state).await?;
     let witness2 = get_first_order_witness(&wallet2, state).await?;
 
-    wallet1.private_shares = witness1.reblind_witness.reblinded_wallet_private_shares;
-    wallet1.blinded_public_shares = witness1.commitment_witness.augmented_public_shares;
+    wallet1.private_shares = witness1.reblind_witness.reblinded_wallet_private_shares.clone();
+    wallet1.blinded_public_shares = witness1.commitment_witness.augmented_public_shares.clone();
 
-    wallet2.private_shares = witness2.reblind_witness.reblinded_wallet_private_shares;
-    wallet2.blinded_public_shares = witness2.commitment_witness.augmented_public_shares;
+    wallet2.private_shares = witness2.reblind_witness.reblinded_wallet_private_shares.clone();
+    wallet2.blinded_public_shares = witness2.commitment_witness.augmented_public_shares.clone();
 
     let proof = dummy_match_proof(&wallet1, &wallet2, match_.clone(), test_args).await?;
     Ok((match_, proof))

@@ -117,7 +117,7 @@ pub async fn allocate_wallet_in_darkpool(
     proof.statement.public_wallet_shares = wallet.blinded_public_shares.clone();
     proof.statement.private_shares_commitment = share_comm;
 
-    client.new_wallet(proof).await?;
+    client.new_wallet(&proof).await?;
 
     // Find the Merkle opening for the wallet
     attach_merkle_opening(wallet, client).await
@@ -151,7 +151,7 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
     proof.statement.new_private_shares_commitment = share_comm;
     proof.statement.new_public_shares = wallet.blinded_public_shares.clone();
 
-    client.update_wallet(proof, vec![] /* statement_sig */).await.map_err(Into::into)
+    client.update_wallet(&proof, vec![] /* statement_sig */).await.map_err(Into::into)
 }
 
 /// Fund the wallet in the integration test args with a given amount of WETH and

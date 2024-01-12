@@ -3,9 +3,9 @@
 
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
 use common::types::proof_bundles::{
-    GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
-    GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, OrderValidityProofBundle,
-    ValidMatchSettleBundle, ValidWalletCreateBundle, ValidWalletUpdateBundle,
+    GenericMatchSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
+    OrderValidityProofBundle, SizedValidCommitmentsBundle, SizedValidMatchSettleBundle,
+    SizedValidReblindBundle, SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
 };
 use constants::Scalar;
 use contracts_common::types::MatchPayload;
@@ -73,14 +73,14 @@ impl ArbitrumClient {
     /// Awaits until the transaction is confirmed on-chain
     pub async fn new_wallet(
         &self,
-        valid_wallet_create: ValidWalletCreateBundle,
+        valid_wallet_create: &SizedValidWalletCreateBundle,
     ) -> Result<(), ArbitrumClientError> {
-        let GenericValidWalletCreateBundle { statement, proof } = *valid_wallet_create;
+        let GenericValidWalletCreateBundle { statement, proof } = valid_wallet_create;
 
         let contract_proof = to_contract_proof(proof)?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
 
-        let contract_statement = to_contract_valid_wallet_create_statement(&statement);
+        let contract_statement = to_contract_valid_wallet_create_statement(statement);
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = send_tx(
@@ -100,10 +100,10 @@ impl ArbitrumClient {
     /// Awaits until the transaction is confirmed on-chain
     pub async fn update_wallet(
         &self,
-        valid_wallet_update: ValidWalletUpdateBundle,
+        valid_wallet_update: &SizedValidWalletUpdateBundle,
         statement_signature: Vec<u8>,
     ) -> Result<(), ArbitrumClientError> {
-        let GenericValidWalletUpdateBundle { statement, proof } = *valid_wallet_update;
+        let GenericValidWalletUpdateBundle { statement, proof } = valid_wallet_update;
 
         let contract_proof = to_contract_proof(proof)?;
         let proof_calldata = serialize_calldata(&contract_proof)?;
@@ -129,36 +129,36 @@ impl ArbitrumClient {
     /// Awaits until the transaction is confirmed on-chain
     pub async fn process_match_settle(
         &self,
-        party0_validity_proofs: OrderValidityProofBundle,
-        party1_validity_proofs: OrderValidityProofBundle,
-        valid_match_settle: ValidMatchSettleBundle,
+        party0_validity_proofs: &OrderValidityProofBundle,
+        party1_validity_proofs: &OrderValidityProofBundle,
+        valid_match_settle: &SizedValidMatchSettleBundle,
     ) -> Result<(), ArbitrumClientError> {
         // Destructure proof bundles
 
         let GenericMatchSettleBundle {
             statement: valid_match_settle_statement,
             proof: valid_match_settle_proof,
-        } = *valid_match_settle;
+        } = valid_match_settle;
 
-        let GenericValidCommitmentsBundle {
+        let SizedValidCommitmentsBundle {
             statement: party_0_valid_commitments_statement,
             proof: party_0_valid_commitments_proof,
-        } = *party0_validity_proofs.copy_commitment_proof();
+        } = party0_validity_proofs.copy_commitment_proof();
 
-        let GenericValidReblindBundle {
+        let SizedValidReblindBundle {
             statement: party_0_valid_reblind_statement,
             proof: party_0_valid_reblind_proof,
-        } = *party0_validity_proofs.copy_reblind_proof();
+        } = party0_validity_proofs.copy_reblind_proof();
 
-        let GenericValidCommitmentsBundle {
+        let SizedValidCommitmentsBundle {
             statement: party_1_valid_commitments_statement,
             proof: party_1_valid_commitments_proof,
-        } = *party1_validity_proofs.copy_commitment_proof();
+        } = party1_validity_proofs.copy_commitment_proof();
 
-        let GenericValidReblindBundle {
+        let SizedValidReblindBundle {
             statement: party_1_valid_reblind_statement,
             proof: party_1_valid_reblind_proof,
-        } = *party1_validity_proofs.copy_reblind_proof();
+        } = party1_validity_proofs.copy_reblind_proof();
 
         let party_0_match_payload = MatchPayload {
             valid_commitments_statement: to_contract_valid_commitments_statement(
@@ -182,26 +182,26 @@ impl ArbitrumClient {
 
         let party_0_match_payload_calldata = serialize_calldata(&party_0_match_payload)?;
 
-        let party_0_valid_commitments_proof = to_contract_proof(party_0_valid_commitments_proof)?;
+        let party_0_valid_commitments_proof = to_contract_proof(&party_0_valid_commitments_proof)?;
         let party_0_valid_commitments_proof_calldata =
             serialize_calldata(&party_0_valid_commitments_proof)?;
 
-        let party_0_valid_reblind_proof = to_contract_proof(party_0_valid_reblind_proof)?;
+        let party_0_valid_reblind_proof = to_contract_proof(&party_0_valid_reblind_proof)?;
         let party_0_valid_reblind_proof_calldata =
             serialize_calldata(&party_0_valid_reblind_proof)?;
 
         let party_1_match_payload_calldata = serialize_calldata(&party_1_match_payload)?;
 
-        let party_1_valid_commitments_proof = to_contract_proof(party_1_valid_commitments_proof)?;
+        let party_1_valid_commitments_proof = to_contract_proof(&party_1_valid_commitments_proof)?;
         let party_1_valid_commitments_proof_calldata =
             serialize_calldata(&party_1_valid_commitments_proof)?;
 
-        let party_1_valid_reblind_proof = to_contract_proof(party_1_valid_reblind_proof)?;
+        let party_1_valid_reblind_proof = to_contract_proof(&party_1_valid_reblind_proof)?;
         let party_1_valid_reblind_proof_calldata =
             serialize_calldata(&party_1_valid_reblind_proof)?;
 
         let contract_valid_match_settle_statement =
-            to_contract_valid_match_settle_statement(&valid_match_settle_statement);
+            to_contract_valid_match_settle_statement(valid_match_settle_statement);
         let valid_match_settle_statement_calldata =
             serialize_calldata(&contract_valid_match_settle_statement)?;
 

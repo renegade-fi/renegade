@@ -41,7 +41,7 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     // Update the wallet
     client
         .update_wallet(
-            valid_wallet_update_bundle,
+            &valid_wallet_update_bundle,
             vec![], // statement_signature
         )
         .await?;
@@ -59,7 +59,7 @@ integration_test_async!(test_update_wallet);
 async fn test_process_match_settle(test_args: IntegrationTestArgs) -> Result<()> {
     let client = &test_args.client;
 
-    // Submit a match between two wallets using dummy proof bundleso
+    // Submit a match between two wallets using dummy proof bundles
     let party_0_validity_proof_bundle = dummy_validity_proof_bundle();
     let party_1_validity_proof_bundle = dummy_validity_proof_bundle();
     let mut valid_match_settle_proof_bundle = dummy_valid_match_settle_bundle();
@@ -72,9 +72,9 @@ async fn test_process_match_settle(test_args: IntegrationTestArgs) -> Result<()>
 
     client
         .process_match_settle(
-            party_0_validity_proof_bundle,
-            party_1_validity_proof_bundle,
-            valid_match_settle_proof_bundle,
+            &party_0_validity_proof_bundle,
+            &party_1_validity_proof_bundle,
+            &valid_match_settle_proof_bundle,
         )
         .await?;
 

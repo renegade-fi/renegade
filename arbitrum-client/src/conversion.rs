@@ -35,7 +35,7 @@ use crate::errors::ConversionError;
 pub type G1Affine = Affine<G1Config>;
 
 /// Convert a [`PlonkProof`] to its corresponding smart contract type
-pub fn to_contract_proof(proof: PlonkProof) -> Result<ContractProof, ConversionError> {
+pub fn to_contract_proof(proof: &PlonkProof) -> Result<ContractProof, ConversionError> {
     Ok(ContractProof {
         wire_comms: try_unwrap_commitments(&proof.wires_poly_comms)?,
         z_comm: proof.prod_perm_poly_comm.0,
@@ -45,11 +45,13 @@ pub fn to_contract_proof(proof: PlonkProof) -> Result<ContractProof, ConversionE
         wire_evals: proof
             .poly_evals
             .wires_evals
+            .clone()
             .try_into()
             .map_err(|_| ConversionError::InvalidLength)?,
         sigma_evals: proof
             .poly_evals
             .wire_sigma_evals
+            .clone()
             .try_into()
             .map_err(|_| ConversionError::InvalidLength)?,
         z_bar: proof.poly_evals.perm_next_eval,
@@ -58,13 +60,17 @@ pub fn to_contract_proof(proof: PlonkProof) -> Result<ContractProof, ConversionE
 
 /// Convert an [`ExternalTransfer`] to its corresponding smart contract type
 fn to_contract_external_transfer(
-    external_transfer: ExternalTransfer,
+    external_transfer: &ExternalTransfer,
 ) -> Result<ContractExternalTransfer, ConversionError> {
-    let account_addr: U160 =
-        external_transfer.account_addr.try_into().map_err(|_| ConversionError::InvalidUint)?;
-    let mint: U160 = external_transfer.mint.try_into().map_err(|_| ConversionError::InvalidUint)?;
+    let account_addr: U160 = external_transfer
+        .account_addr
+        .clone()
+        .try_into()
+        .map_err(|_| ConversionError::InvalidUint)?;
+    let mint: U160 =
+        external_transfer.mint.clone().try_into().map_err(|_| ConversionError::InvalidUint)?;
     let amount: U256 =
-        external_transfer.amount.try_into().map_err(|_| ConversionError::InvalidUint)?;
+        external_transfer.amount.clone().try_into().map_err(|_| ConversionError::InvalidUint)?;
 
     Ok(ContractExternalTransfer {
         account_addr: Address::from(account_addr),
@@ -100,14 +106,14 @@ pub fn to_contract_valid_wallet_create_statement(
 /// Convert a [`SizedValidWalletUpdateStatement`] to its corresponding smart
 /// contract type
 pub fn to_contract_valid_wallet_update_statement(
-    statement: SizedValidWalletUpdateStatement,
+    statement: &SizedValidWalletUpdateStatement,
 ) -> Result<ContractValidWalletUpdateStatement, ConversionError> {
     let new_public_shares = wallet_shares_to_scalar_vec(&statement.new_public_shares);
     let external_transfer: Option<ContractExternalTransfer> =
         if statement.external_transfer.is_default() {
             None
         } else {
-            Some(to_contract_external_transfer(statement.external_transfer)?)
+            Some(to_contract_external_transfer(&statement.external_transfer)?)
         };
 
     let old_pk_root = to_contract_public_signing_key(&statement.old_pk_root)?;

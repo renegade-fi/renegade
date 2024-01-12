@@ -1,7 +1,7 @@
 //! Groups the handshake manager definitions necessary to run the MPC match
 //! computation and collaboratively generate a proof of `VALID MATCH MPC`
 
-use std::cmp;
+use std::{cmp, sync::Arc};
 
 use ark_mpc::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
 use circuit_types::{
@@ -260,6 +260,6 @@ impl HandshakeExecutor {
         verify_singleprover_proof::<SizedValidMatchSettle>(statement.clone(), &proof)
             .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
-        Ok(Box::new(GenericMatchSettleBundle { statement, proof }))
+        Ok(Arc::new(GenericMatchSettleBundle { statement, proof }))
     }
 }

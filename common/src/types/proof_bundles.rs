@@ -1,5 +1,7 @@
 //! Defines proof bundles that are passed across worker boundaries
 
+use std::sync::Arc;
+
 use circuit_types::PlonkProof;
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
@@ -32,8 +34,10 @@ pub struct GenericValidWalletCreateBundle<
 
 /// A type alias that specifies default generics for
 /// `GenericValidWalletCreateBundle`
-pub type ValidWalletCreateBundle =
-    Box<GenericValidWalletCreateBundle<MAX_BALANCES, MAX_BALANCES, MAX_FEES>>;
+pub type SizedValidWalletCreateBundle =
+    GenericValidWalletCreateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A type alias that heap allocates a wallet create bundle
+pub type ValidWalletCreateBundle = Arc<SizedValidWalletCreateBundle>;
 
 /// The response type for a request to generate a proof of `VALID WALLET UPDATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,8 +57,10 @@ pub struct GenericValidWalletUpdateBundle<
 
 /// A type alias that specifies the default generics for
 /// `GenericValidWalletUpdateBundle`
-pub type ValidWalletUpdateBundle =
-    Box<GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>>;
+pub type SizedValidWalletUpdateBundle =
+    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+/// A type alias that heap-allocates a wallet update bundle
+pub type ValidWalletUpdateBundle = Arc<SizedValidWalletUpdateBundle>;
 
 /// The response type for a request to generate a proof of `VALID REBLIND`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,8 +79,10 @@ pub struct GenericValidReblindBundle<
 }
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
-pub type ValidReblindBundle =
-    Box<GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>>;
+pub type SizedValidReblindBundle =
+    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+/// A type alias that heap-allocates a reblind bundle
+pub type ValidReblindBundle = Arc<SizedValidReblindBundle>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -93,8 +101,10 @@ pub struct GenericValidCommitmentsBundle<
 
 /// A type alias that specifies the default generics for
 /// `GenericValidCommitmentsBundle`
-pub type ValidCommitmentsBundle =
-    Box<GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
+pub type SizedValidCommitmentsBundle =
+    GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A type alias that heap-allocates a commitments bundle
+pub type ValidCommitmentsBundle = Arc<SizedValidCommitmentsBundle>;
 
 /// A bundle of the statement, witness commitment, and proof of `VALID MATCH
 /// SETTLE`
@@ -112,8 +122,11 @@ pub struct GenericMatchSettleBundle<
     pub proof: PlonkProof,
 }
 
-/// A type alias that boxes a `GenericValidMatchMpcBundle`
-pub type ValidMatchSettleBundle = Box<GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>;
+/// A type alias that specifies the default generics for
+/// `GenericMatchSettleBundle`
+pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+/// A type alias that heap-allocates a `ValidMatchMpcBundle`
+pub type ValidMatchSettleBundle = Arc<SizedValidMatchSettleBundle>;
 
 /// The bundle returned by the proof generation module
 #[derive(Clone, Debug)]
@@ -194,20 +207,20 @@ impl From<ProofBundle> for ValidMatchSettleBundle {
 #[derive(Clone, Debug)]
 pub struct OrderValidityProofBundle {
     /// The proof of `VALID REBLIND` for the order's wallet
-    pub reblind_proof: Box<ValidReblindBundle>,
+    pub reblind_proof: ValidReblindBundle,
     /// The proof of `VALID COMMITMENTS` for the order
-    pub commitment_proof: Box<ValidCommitmentsBundle>,
+    pub commitment_proof: ValidCommitmentsBundle,
 }
 
 impl OrderValidityProofBundle {
     /// Clone the reblind proof out from behind the reference
-    pub fn copy_reblind_proof(&self) -> ValidReblindBundle {
-        ValidReblindBundle::clone(&self.reblind_proof)
+    pub fn copy_reblind_proof(&self) -> SizedValidReblindBundle {
+        SizedValidReblindBundle::clone(&self.reblind_proof)
     }
 
     /// Clone the commitments proof out from behind the reference
-    pub fn copy_commitment_proof(&self) -> ValidCommitmentsBundle {
-        ValidCommitmentsBundle::clone(&self.commitment_proof)
+    pub fn copy_commitment_proof(&self) -> SizedValidCommitmentsBundle {
+        SizedValidCommitmentsBundle::clone(&self.commitment_proof)
     }
 }
 
@@ -226,11 +239,11 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
         D: serde::Deserializer<'de>,
     {
         let (reblind_proof, commitment_proof) =
-            <(ValidReblindBundle, ValidCommitmentsBundle)>::deserialize(deserializer)?;
+            <(SizedValidReblindBundle, SizedValidCommitmentsBundle)>::deserialize(deserializer)?;
 
         Ok(OrderValidityProofBundle {
-            reblind_proof: Box::new(reblind_proof),
-            commitment_proof: Box::new(commitment_proof),
+            reblind_proof: Arc::new(reblind_proof),
+            commitment_proof: Arc::new(commitment_proof),
         })
     }
 }
@@ -244,9 +257,9 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
 #[derive(Clone, Debug)]
 pub struct OrderValidityWitnessBundle {
     /// The witness of `VALID REBLIND` for the order's wallet
-    pub reblind_witness: Box<SizedValidReblindWitness>,
+    pub reblind_witness: Arc<SizedValidReblindWitness>,
     /// The witness of `VALID COMMITMENTS` for the order
-    pub commitment_witness: Box<SizedValidCommitmentsWitness>,
+    pub commitment_witness: Arc<SizedValidCommitmentsWitness>,
 }
 
 impl OrderValidityWitnessBundle {
@@ -279,8 +292,8 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
             <(SizedValidReblindWitness, SizedValidCommitmentsWitness)>::deserialize(deserializer)?;
 
         Ok(OrderValidityWitnessBundle {
-            reblind_witness: Box::new(reblind_witness),
-            commitment_witness: Box::new(commitment_witness),
+            reblind_witness: Arc::new(reblind_witness),
+            commitment_witness: Arc::new(commitment_witness),
         })
     }
 }
@@ -295,7 +308,7 @@ pub mod mocks {
     //!
     //! Note that these mocks are not expected to verify
 
-    use std::iter;
+    use std::{iter, sync::Arc};
 
     use ark_ec::CurveGroup;
     use circuit_types::{traits::BaseType, PlonkProof};
@@ -311,49 +324,47 @@ pub mod mocks {
     use mpc_relation::constants::GATE_WIDTH;
 
     use super::{
-        GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
-        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, OrderValidityProofBundle,
-        ValidCommitmentsBundle, ValidMatchSettleBundle, ValidReblindBundle,
-        ValidWalletCreateBundle, ValidWalletUpdateBundle,
+        OrderValidityProofBundle, SizedValidCommitmentsBundle, SizedValidMatchSettleBundle,
+        SizedValidReblindBundle, SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
     };
 
     /// Create a dummy proof bundle for `VALID WALLET CREATE`
-    pub fn dummy_valid_wallet_create_bundle() -> ValidWalletCreateBundle {
+    pub fn dummy_valid_wallet_create_bundle() -> SizedValidWalletCreateBundle {
         let statement = ValidWalletCreateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        Box::new(GenericValidWalletCreateBundle { statement, proof: dummy_proof() })
+        SizedValidWalletCreateBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy proof bundle for `VALID WALLET UPDATE`
-    pub fn dummy_valid_wallet_update_bundle() -> ValidWalletUpdateBundle {
+    pub fn dummy_valid_wallet_update_bundle() -> SizedValidWalletUpdateBundle {
         let statement = ValidWalletUpdateStatement::from_scalars(&mut iter::repeat(Scalar::one()));
 
-        Box::new(GenericValidWalletUpdateBundle { statement, proof: dummy_proof() })
+        SizedValidWalletUpdateBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy proof bundle for `VALID REBLIND`
-    pub fn dummy_valid_reblind_bundle() -> ValidReblindBundle {
+    pub fn dummy_valid_reblind_bundle() -> SizedValidReblindBundle {
         let statement = ValidReblindStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        Box::new(GenericValidReblindBundle { statement, proof: dummy_proof() })
+        SizedValidReblindBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy proof bundle for `VALID COMMITMENTS`
-    pub fn dummy_valid_commitments_bundle() -> ValidCommitmentsBundle {
+    pub fn dummy_valid_commitments_bundle() -> SizedValidCommitmentsBundle {
         let statement = ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        Box::new(GenericValidCommitmentsBundle { statement, proof: dummy_proof() })
+        SizedValidCommitmentsBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy validity proof bundle
     pub fn dummy_validity_proof_bundle() -> OrderValidityProofBundle {
         OrderValidityProofBundle {
-            reblind_proof: Box::new(dummy_valid_reblind_bundle()),
-            commitment_proof: Box::new(dummy_valid_commitments_bundle()),
+            reblind_proof: Arc::new(dummy_valid_reblind_bundle()),
+            commitment_proof: Arc::new(dummy_valid_commitments_bundle()),
         }
     }
 
     /// Create a dummy proof bundle for `VALID MATCH SETTLE`
-    pub fn dummy_valid_match_settle_bundle() -> ValidMatchSettleBundle {
+    pub fn dummy_valid_match_settle_bundle() -> SizedValidMatchSettleBundle {
         let statement = ValidMatchSettleStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        Box::new(GenericMatchSettleBundle { statement, proof: dummy_proof() })
+        SizedValidMatchSettleBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy R1CS proof
