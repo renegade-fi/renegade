@@ -386,9 +386,6 @@ impl SettleMatchInternalTask {
         let commitment_witness1 = &self.order1_validity_witness.commitment_witness;
         let commitment_witness2 = &self.order2_validity_witness.commitment_witness;
 
-        let reblind_witness1 = &self.order1_validity_witness.copy_reblind_witness();
-        let reblind_witness2 = &self.order2_validity_witness.copy_reblind_witness();
-
         // Apply the match to the secret shares of the match parties
         let party0_indices = commitment_statement1.indices;
         let party0_public_shares = commitment_witness1.augmented_public_shares.clone();
@@ -411,13 +408,13 @@ impl SettleMatchInternalTask {
             balance1: commitment_witness1.balance_send.clone(),
             amount1: self.match_result.base_amount.into(),
             price1: self.execution_price,
-            party0_public_shares: reblind_witness1.reblinded_wallet_public_shares.clone(),
+            party0_public_shares,
 
             order2: commitment_witness2.order.clone(),
             balance2: commitment_witness2.balance_send.clone(),
             amount2: self.match_result.base_amount.into(),
             price2: self.execution_price,
-            party1_public_shares: reblind_witness2.reblinded_wallet_public_shares.clone(),
+            party1_public_shares,
 
             match_res: self.match_result.clone(),
         };
