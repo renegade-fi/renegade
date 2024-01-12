@@ -251,11 +251,11 @@ impl SettleMatchInternalTask {
             .map_err(SettleMatchInternalTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
-        let proof = proof_recv.await.map_err(|_| {
+        let bundle = proof_recv.await.map_err(|_| {
             SettleMatchInternalTaskError::EnqueuingJob(ERR_AWAITING_PROOF.to_string())
         })?;
 
-        self.proof_bundle = Some(proof.into());
+        self.proof_bundle = Some(bundle.proof.into());
         Ok(())
     }
 
