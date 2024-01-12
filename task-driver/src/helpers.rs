@@ -12,9 +12,10 @@ use circuit_types::{
     },
     order::{Order, OrderSide},
     r#match::OrderSettlementIndices,
-    SizedWallet,
+    ProofLinkingHint, SizedWallet,
 };
 use circuits::zk_circuits::{
+    proof_linking::link_sized_commitments_reblind,
     valid_commitments::{
         SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitness,
     },
@@ -25,10 +26,7 @@ use common::types::{
     wallet::{Wallet, WalletAuthenticationPath},
 };
 use common::types::{
-    proof_bundles::{
-        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidCommitmentsBundle,
-        ValidReblindBundle,
-    },
+    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
 use crossbeam::channel::Sender as CrossbeamSender;
@@ -300,7 +298,7 @@ pub(crate) async fn update_wallet_validity_proofs(
         construct_wallet_reblind_proof(wallet, &proof_manager_work_queue)?;
 
     // For each order, construct a proof of `VALID COMMITMENTS`
-    let mut commitments_response_channels = Vec::new();
+    let mut commitments_instances = Vec::new();
     for (id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_zero()) {
         // Start a proof of `VALID COMMITMENTS`
         let (commitments_witness, response_channel) = construct_order_commitment_proof(
@@ -309,23 +307,23 @@ pub(crate) async fn update_wallet_validity_proofs(
             &proof_manager_work_queue,
             global_state.fees_disabled,
         )?;
-
-        record_validity_witness(id, &commitments_witness, &reblind_witness, &global_state).await;
-        commitments_response_channels.push((*id, response_channel));
+        commitments_instances.push((*id, commitments_witness, response_channel));
     }
 
     // Await the proof of `VALID REBLIND`
-    let reblind_proof: ValidReblindBundle =
-        reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?.into();
+    let reblind_proof: ProofBundle =
+        reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?;
 
-    // Await proofs for each order, store them in the state
-    for (order_id, receiver) in commitments_response_channels.into_iter() {
+    // Await proofs of `VALID COMMITMENTS` for each order, store them in the state
+    for (order_id, commitments_witness, receiver) in commitments_instances.into_iter() {
         // Await a proof
-        let commitment_proof: ValidCommitmentsBundle =
-            receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?.into();
+        let commitment_proof: ProofBundle =
+            receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?;
 
-        record_validity_proof(
+        link_and_store_proofs(
             &order_id,
+            &commitments_witness,
+            &reblind_witness,
             &commitment_proof,
             &reblind_proof,
             &global_state,
@@ -337,44 +335,39 @@ pub(crate) async fn update_wallet_validity_proofs(
     Ok(())
 }
 
-/// Attach a copy of the witness to the locally managed state
+/// Attach a validity proof and witness to the locally managed state
 ///
-/// This witness is referenced by match computations to provide linkable
-/// commitments into a previously proven validity bundle
-async fn record_validity_witness(
+/// The proof is gossipped to the network so that peers may verify the validity
+/// bundle and schedule matches on the proven order
+async fn link_and_store_proofs(
     order_id: &OrderIdentifier,
     commitments_witness: &SizedValidCommitmentsWitness,
-    valid_reblind_witness: &SizedValidReblindWitness,
-    global_state: &RelayerState,
-) {
-    let witness_bundle = OrderValidityWitnessBundle {
-        reblind_witness: Arc::new(valid_reblind_witness.clone()),
-        commitment_witness: Arc::new(commitments_witness.clone()),
-    };
-
-    global_state
-        .read_order_book()
-        .await
-        .attach_validity_proof_witness(order_id, witness_bundle)
-        .await;
-}
-
-/// Attach a validity proof to the locally managed state
-///
-/// This is gossipped to the network so that peers may verify the validity
-/// bundle and schedule matches on the proven order
-pub(crate) async fn record_validity_proof(
-    order_id: &OrderIdentifier,
-    commitments_bundle: &ValidCommitmentsBundle,
-    reblind_bundle: &ValidReblindBundle,
+    reblind_witness: &SizedValidReblindWitness,
+    commitments_bundle: &ProofBundle,
+    reblind_bundle: &ProofBundle,
     global_state: &RelayerState,
     network_sender: &TokioSender<GossipOutbound>,
 ) -> Result<(), String> {
+    // Prove the link between the reblind and commitments proofs
+    let reblind_link_hint = &reblind_bundle.link_hint;
+    let comms_link_hint = &commitments_bundle.link_hint;
+    let linking_proof = link_sized_commitments_reblind(reblind_link_hint, comms_link_hint)
+        .map_err(|e| e.to_string())?;
+
+    // Record the witness in global state
+    record_validity_witness(
+        order_id,
+        commitments_witness.clone(),
+        reblind_witness.clone(),
+        comms_link_hint.clone(),
+        global_state,
+    )
+    .await;
+
     // Record the bundle in the global state
-    let proof_bundle = OrderValidityProofBundle {
-        reblind_proof: reblind_bundle.clone(),
-        commitment_proof: commitments_bundle.clone(),
-    };
+    let reblind_proof = reblind_bundle.proof.clone().into();
+    let commitment_proof = commitments_bundle.proof.clone().into();
+    let proof_bundle = OrderValidityProofBundle { reblind_proof, commitment_proof, linking_proof };
     global_state.add_order_validity_proofs(order_id, proof_bundle.clone()).await;
 
     // Gossip the updated proofs to the network
@@ -390,4 +383,28 @@ pub(crate) async fn record_validity_proof(
     };
 
     network_sender.send(message).map_err(|e| e.to_string())
+}
+
+/// Attach a copy of the witness to the locally managed state
+///
+/// This witness is referenced by match computations to provide linkable
+/// commitments into a previously proven validity bundle
+async fn record_validity_witness(
+    order_id: &OrderIdentifier,
+    commitments_witness: SizedValidCommitmentsWitness,
+    valid_reblind_witness: SizedValidReblindWitness,
+    commitments_link_hint: ProofLinkingHint,
+    global_state: &RelayerState,
+) {
+    let witness_bundle = OrderValidityWitnessBundle {
+        reblind_witness: Arc::new(valid_reblind_witness),
+        commitment_witness: Arc::new(commitments_witness),
+        commitment_linking_hint: Arc::new(commitments_link_hint),
+    };
+
+    global_state
+        .read_order_book()
+        .await
+        .attach_validity_proof_witness(order_id, witness_bundle)
+        .await;
 }

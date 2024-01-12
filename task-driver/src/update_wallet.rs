@@ -256,10 +256,10 @@ impl UpdateWalletTask {
             .map_err(UpdateWalletTaskError::ProofGeneration)?;
 
         // Await the proof
-        let proof =
+        let bundle =
             proof_recv.await.map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
 
-        self.proof_bundle = Some(proof.into());
+        self.proof_bundle = Some(bundle.proof.into());
         Ok(())
     }
 
