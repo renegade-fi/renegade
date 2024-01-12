@@ -1,8 +1,6 @@
 //! Defines a mock for the proof manager that doesn't prove statements, but
 //! instead immediately returns dummy proofs that will not verify
 
-use std::sync::Arc;
-
 use circuit_types::traits::SingleProverCircuit;
 use circuits::zk_circuits::{
     check_constraint_satisfaction,
@@ -21,10 +19,8 @@ use circuits::zk_circuits::{
     },
 };
 use common::types::proof_bundles::{
-    mocks::dummy_proof, GenericMatchSettleBundle, GenericValidCommitmentsBundle,
-    GenericValidReblindBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-    ProofBundle, ValidCommitmentsBundle, ValidMatchSettleBundle, ValidReblindBundle,
-    ValidWalletCreateBundle, ValidWalletUpdateBundle,
+    mocks::{dummy_link_hint, dummy_proof},
+    ProofBundle,
 };
 use crossbeam::channel::Receiver;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
@@ -72,21 +68,21 @@ impl MockProofManager {
     ) -> Result<(), ProofManagerError> {
         let bundle = match job_type {
             ProofJob::ValidWalletCreate { witness, statement } => {
-                ProofBundle::ValidWalletCreate(Self::valid_wallet_create(witness, statement)?)
+                Self::valid_wallet_create(witness, statement)
             },
             ProofJob::ValidWalletUpdate { witness, statement } => {
-                ProofBundle::ValidWalletUpdate(Self::valid_wallet_update(witness, statement)?)
+                Self::valid_wallet_update(witness, statement)
             },
             ProofJob::ValidReblind { witness, statement } => {
-                ProofBundle::ValidReblind(Self::valid_reblind(witness, statement)?)
+                Self::valid_reblind(witness, statement)
             },
             ProofJob::ValidCommitments { witness, statement } => {
-                ProofBundle::ValidCommitments(Self::valid_commitments(witness, statement)?)
+                Self::valid_commitments(witness, statement)
             },
             ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
-                ProofBundle::ValidMatchSettle(Self::valid_match_settle(witness, statement)?)
+                Self::valid_match_settle(witness, statement)
             },
-        };
+        }?;
 
         response_channel.send(bundle).expect(ERR_RESPONSE_CHANNEL_CLOSED);
         Ok(())
@@ -96,55 +92,60 @@ impl MockProofManager {
     fn valid_wallet_create(
         witness: SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
-    ) -> Result<ValidWalletCreateBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         Self::check_constraints::<SizedValidWalletCreate>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Arc::new(GenericValidWalletCreateBundle { statement, proof }))
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_wallet_create(statement, proof, link_hint))
     }
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
     fn valid_wallet_update(
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
-    ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         Self::check_constraints::<SizedValidWalletUpdate>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Arc::new(GenericValidWalletUpdateBundle { statement, proof }))
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
     }
 
     /// Generate a dummy proof of `VALID REBLIND`
     fn valid_reblind(
         witness: SizedValidReblindWitness,
         statement: ValidReblindStatement,
-    ) -> Result<ValidReblindBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         Self::check_constraints::<SizedValidReblind>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Arc::new(GenericValidReblindBundle { statement, proof }))
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_reblind(statement, proof, link_hint))
     }
 
     /// Create a dummy proof of `VALID COMMITMENTS`
     fn valid_commitments(
         witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
-    ) -> Result<ValidCommitmentsBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         Self::check_constraints::<SizedValidCommitments>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Arc::new(GenericValidCommitmentsBundle { statement, proof }))
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
     }
 
     /// Create a dummy proof of `VALID MATCH SETTLE`
     fn valid_match_settle(
         witness: SizedValidMatchSettleWitness,
         statement: SizedValidMatchSettleStatement,
-    ) -> Result<ValidMatchSettleBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         Self::check_constraints::<SizedValidMatchSettle>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Arc::new(GenericMatchSettleBundle { statement, proof }))
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
     }
 
     /// Check constraint satisfaction for a witness and statement
