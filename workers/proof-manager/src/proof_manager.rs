@@ -149,7 +149,7 @@ impl ProofManager {
         let proof = singleprover_prove::<SizedValidWalletCreate>(witness, statement.clone())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidWalletCreateBundle { statement, proof }))
+        Ok(Arc::new(GenericValidWalletCreateBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID REBLIND`
@@ -161,7 +161,7 @@ impl ProofManager {
         let proof = singleprover_prove::<SizedValidReblind>(witness, statement.clone())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidReblindBundle { statement, proof }))
+        Ok(Arc::new(GenericValidReblindBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID COMMITMENTS`
@@ -173,7 +173,7 @@ impl ProofManager {
         let proof = singleprover_prove::<SizedValidCommitments>(witness, statement)
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidCommitmentsBundle { statement, proof }))
+        Ok(Arc::new(GenericValidCommitmentsBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID WALLET UPDATE`
@@ -184,7 +184,7 @@ impl ProofManager {
         let proof = singleprover_prove::<SizedValidWalletUpdate>(witness, statement.clone())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericValidWalletUpdateBundle { statement, proof }))
+        Ok(Arc::new(GenericValidWalletUpdateBundle { statement, proof }))
     }
 
     /// Create a proof of `VALID MATCH SETTLE`
@@ -195,6 +195,6 @@ impl ProofManager {
         let proof = singleprover_prove::<SizedValidMatchSettle>(witness, statement.clone())
             .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Box::new(GenericMatchSettleBundle { statement, proof }))
+        Ok(Arc::new(GenericMatchSettleBundle { statement, proof }))
     }
 }

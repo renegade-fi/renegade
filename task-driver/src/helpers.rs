@@ -1,5 +1,7 @@
 //! Helpers for common functionality across tasks
 
+use std::sync::Arc;
+
 use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use circuit_types::{
     balance::Balance,
@@ -346,8 +348,8 @@ async fn record_validity_witness(
     global_state: &RelayerState,
 ) {
     let witness_bundle = OrderValidityWitnessBundle {
-        reblind_witness: Box::new(valid_reblind_witness.clone()),
-        commitment_witness: Box::new(commitments_witness.clone()),
+        reblind_witness: Arc::new(valid_reblind_witness.clone()),
+        commitment_witness: Arc::new(commitments_witness.clone()),
     };
 
     global_state
@@ -370,8 +372,8 @@ pub(crate) async fn record_validity_proof(
 ) -> Result<(), String> {
     // Record the bundle in the global state
     let proof_bundle = OrderValidityProofBundle {
-        reblind_proof: Box::new(reblind_bundle.clone()),
-        commitment_proof: Box::new(commitments_bundle.clone()),
+        reblind_proof: reblind_bundle.clone(),
+        commitment_proof: commitments_bundle.clone(),
     };
     global_state.add_order_validity_proofs(order_id, proof_bundle.clone()).await;
 

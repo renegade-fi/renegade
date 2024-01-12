@@ -30,7 +30,7 @@ pub async fn deploy_new_wallet(
 
     let statement = valid_wallet_create_bundle.statement.clone();
 
-    client.new_wallet(valid_wallet_create_bundle).await?;
+    client.new_wallet(&valid_wallet_create_bundle).await?;
 
     // The contract will compute the full commitment and insert it into the Merkle
     // tree; we repeat the same computation here for consistency

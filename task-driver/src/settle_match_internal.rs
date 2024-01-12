@@ -264,11 +264,7 @@ impl SettleMatchInternalTask {
         // Submit a `match` transaction
         let match_settle_proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
-            .process_match_settle(
-                self.order1_proof.clone(),
-                self.order2_proof.clone(),
-                match_settle_proof,
-            )
+            .process_match_settle(&self.order1_proof, &self.order2_proof, &match_settle_proof)
             .await
             .map_err(|e| SettleMatchInternalTaskError::Arbitrum(e.to_string()))
     }

@@ -268,7 +268,7 @@ impl UpdateWalletTask {
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
-            .update_wallet(proof, self.wallet_update_signature.clone())
+            .update_wallet(&proof, self.wallet_update_signature.clone())
             .await
             .map_err(|e| e.to_string())
             .map_err(UpdateWalletTaskError::Arbitrum)

@@ -1,6 +1,8 @@
 //! Defines a mock for the proof manager that doesn't prove statements, but
 //! instead immediately returns dummy proofs that will not verify
 
+use std::sync::Arc;
+
 use circuit_types::traits::SingleProverCircuit;
 use circuits::zk_circuits::{
     check_constraint_satisfaction,
@@ -98,7 +100,7 @@ impl MockProofManager {
         Self::check_constraints::<SizedValidWalletCreate>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Box::new(GenericValidWalletCreateBundle { statement, proof }))
+        Ok(Arc::new(GenericValidWalletCreateBundle { statement, proof }))
     }
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
@@ -109,7 +111,7 @@ impl MockProofManager {
         Self::check_constraints::<SizedValidWalletUpdate>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Box::new(GenericValidWalletUpdateBundle { statement, proof }))
+        Ok(Arc::new(GenericValidWalletUpdateBundle { statement, proof }))
     }
 
     /// Generate a dummy proof of `VALID REBLIND`
@@ -120,7 +122,7 @@ impl MockProofManager {
         Self::check_constraints::<SizedValidReblind>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Box::new(GenericValidReblindBundle { statement, proof }))
+        Ok(Arc::new(GenericValidReblindBundle { statement, proof }))
     }
 
     /// Create a dummy proof of `VALID COMMITMENTS`
@@ -131,7 +133,7 @@ impl MockProofManager {
         Self::check_constraints::<SizedValidCommitments>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Box::new(GenericValidCommitmentsBundle { statement, proof }))
+        Ok(Arc::new(GenericValidCommitmentsBundle { statement, proof }))
     }
 
     /// Create a dummy proof of `VALID MATCH SETTLE`
@@ -142,7 +144,7 @@ impl MockProofManager {
         Self::check_constraints::<SizedValidMatchSettle>(&witness, &statement)?;
 
         let proof = dummy_proof();
-        Ok(Box::new(GenericMatchSettleBundle { statement, proof }))
+        Ok(Arc::new(GenericMatchSettleBundle { statement, proof }))
     }
 
     /// Check constraint satisfaction for a witness and statement

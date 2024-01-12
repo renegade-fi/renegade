@@ -245,7 +245,7 @@ impl NewWalletTask {
     async fn submit_wallet_tx(&mut self) -> Result<(), NewWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
-            .new_wallet(proof)
+            .new_wallet(&proof)
             .await
             .map_err(|err| NewWalletTaskError::Arbitrum(err.to_string()))
     }
