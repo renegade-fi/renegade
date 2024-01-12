@@ -265,7 +265,9 @@ async fn dummy_match_proof(
     test_args.proof_job_queue.send(job)?;
 
     // Await a response
-    recv.await.map(|bundle| bundle.into()).map_err(|_| eyre!("Failed to receive proof bundle"))
+    recv.await
+        .map(|bundle| bundle.proof.into())
+        .map_err(|_| eyre!("Failed to receive proof bundle"))
 }
 
 /// Verify that a match has been correctly applied to a wallet
