@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use circuit_types::PlonkProof;
+use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint};
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
-    valid_match_settle::ValidMatchSettleStatement,
+    valid_match_settle::{SizedValidMatchSettleStatement, ValidMatchSettleStatement},
     valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
-    valid_wallet_create::ValidWalletCreateStatement,
-    valid_wallet_update::ValidWalletUpdateStatement,
+    valid_wallet_create::{SizedValidWalletCreateStatement, ValidWalletCreateStatement},
+    valid_wallet_update::{SizedValidWalletUpdateStatement, ValidWalletUpdateStatement},
 };
 use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
 use serde::{Deserialize, Serialize};
@@ -128,10 +128,96 @@ pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MA
 /// A type alias that heap-allocates a `ValidMatchMpcBundle`
 pub type ValidMatchSettleBundle = Arc<SizedValidMatchSettleBundle>;
 
-/// The bundle returned by the proof generation module
+/// The proof bundle returned by the proof generation module
+#[derive(Clone, Debug)]
+pub struct ProofBundle {
+    /// The underlying r1cs satisfaction proof
+    pub proof: R1CSProofBundle,
+    /// The proof linking hint returned by the proof
+    pub link_hint: ProofLinkingHint,
+}
+
+impl ProofBundle {
+    /// Create a new proof bundle from a `VALID WALLET CREATE` proof
+    pub fn new_valid_wallet_create(
+        statement: SizedValidWalletCreateStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidWalletCreate(Arc::new(GenericValidWalletCreateBundle {
+                statement,
+                proof,
+            })),
+            link_hint,
+        }
+    }
+
+    /// Create a new proof bundle from a `VALID WALLET UPDATE` proof
+    pub fn new_valid_wallet_update(
+        statement: SizedValidWalletUpdateStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidWalletUpdate(Arc::new(GenericValidWalletUpdateBundle {
+                statement,
+                proof,
+            })),
+            link_hint,
+        }
+    }
+
+    /// Create a new proof bundle from a `VALID REBLIND` proof
+    pub fn new_valid_reblind(
+        statement: ValidReblindStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidReblind(Arc::new(GenericValidReblindBundle {
+                statement,
+                proof,
+            })),
+            link_hint,
+        }
+    }
+
+    /// Create a new proof bundle from a `VALID COMMITMENTS` proof
+    pub fn new_valid_commitments(
+        statement: ValidCommitmentsStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidCommitments(Arc::new(GenericValidCommitmentsBundle {
+                statement,
+                proof,
+            })),
+            link_hint,
+        }
+    }
+
+    /// Create a new proof bundle from a `VALID MATCH SETTLE` proof
+    pub fn new_valid_match_settle(
+        statement: SizedValidMatchSettleStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidMatchSettle(Arc::new(GenericMatchSettleBundle {
+                statement,
+                proof,
+            })),
+            link_hint,
+        }
+    }
+}
+
+/// The bundle type returned by the proof generation module
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
-pub enum ProofBundle {
+pub enum R1CSProofBundle {
     /// A witness commitment, statement, and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
     /// A witness commitment, statement, and proof of `VALID REBLIND`
@@ -145,9 +231,9 @@ pub enum ProofBundle {
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect
-impl From<ProofBundle> for ValidWalletCreateBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidWalletCreate(b) = bundle {
+impl From<R1CSProofBundle> for ValidWalletCreateBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidWalletCreate(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidWalletCreate: {:?}", bundle)
@@ -155,9 +241,9 @@ impl From<ProofBundle> for ValidWalletCreateBundle {
     }
 }
 
-impl From<ProofBundle> for ValidReblindBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidReblind(b) = bundle {
+impl From<R1CSProofBundle> for ValidReblindBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidReblind(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidReblind: {:?}", bundle);
@@ -165,9 +251,9 @@ impl From<ProofBundle> for ValidReblindBundle {
     }
 }
 
-impl From<ProofBundle> for ValidCommitmentsBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidCommitments(b) = bundle {
+impl From<R1CSProofBundle> for ValidCommitmentsBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidCommitments(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidCommitments: {:?}", bundle)
@@ -175,9 +261,9 @@ impl From<ProofBundle> for ValidCommitmentsBundle {
     }
 }
 
-impl From<ProofBundle> for ValidWalletUpdateBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidWalletUpdate(b) = bundle {
+impl From<R1CSProofBundle> for ValidWalletUpdateBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidWalletUpdate(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidWalletUpdate: {:?}", bundle);
@@ -185,9 +271,9 @@ impl From<ProofBundle> for ValidWalletUpdateBundle {
     }
 }
 
-impl From<ProofBundle> for ValidMatchSettleBundle {
-    fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidMatchSettle(b) = bundle {
+impl From<R1CSProofBundle> for ValidMatchSettleBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidMatchSettle(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMatchMpc: {:?}", bundle)
@@ -210,6 +296,8 @@ pub struct OrderValidityProofBundle {
     pub reblind_proof: ValidReblindBundle,
     /// The proof of `VALID COMMITMENTS` for the order
     pub commitment_proof: ValidCommitmentsBundle,
+    /// A linking proof of the reblind and commitments proofs in this struct
+    pub linking_proof: PlonkLinkProof,
 }
 
 impl OrderValidityProofBundle {
@@ -238,12 +326,15 @@ impl<'de> Deserialize<'de> for OrderValidityProofBundle {
     where
         D: serde::Deserializer<'de>,
     {
-        let (reblind_proof, commitment_proof) =
-            <(SizedValidReblindBundle, SizedValidCommitmentsBundle)>::deserialize(deserializer)?;
+        let (reblind_proof, commitment_proof, linking_proof) =
+            <(SizedValidReblindBundle, SizedValidCommitmentsBundle, PlonkLinkProof)>::deserialize(
+                deserializer,
+            )?;
 
         Ok(OrderValidityProofBundle {
             reblind_proof: Arc::new(reblind_proof),
             commitment_proof: Arc::new(commitment_proof),
+            linking_proof,
         })
     }
 }
@@ -260,6 +351,11 @@ pub struct OrderValidityWitnessBundle {
     pub reblind_witness: Arc<SizedValidReblindWitness>,
     /// The witness of `VALID COMMITMENTS` for the order
     pub commitment_witness: Arc<SizedValidCommitmentsWitness>,
+    /// The proof-linking hint for the `VALID COMMITMENTS` proof,
+    ///
+    /// We only need to keep this hint around as the `VALID REBLIND` proof's
+    /// hint will have already been used
+    pub commitment_linking_hint: Arc<ProofLinkingHint>,
 }
 
 impl OrderValidityWitnessBundle {
@@ -288,12 +384,18 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
     where
         D: serde::Deserializer<'de>,
     {
-        let (reblind_witness, commitment_witness) =
-            <(SizedValidReblindWitness, SizedValidCommitmentsWitness)>::deserialize(deserializer)?;
+        let (reblind_witness, commitment_witness, linking_hint) = <(
+            SizedValidReblindWitness,
+            SizedValidCommitmentsWitness,
+            ProofLinkingHint,
+        )>::deserialize(
+            deserializer
+        )?;
 
         Ok(OrderValidityWitnessBundle {
             reblind_witness: Arc::new(reblind_witness),
             commitment_witness: Arc::new(commitment_witness),
+            commitment_linking_hint: Arc::new(linking_hint),
         })
     }
 }
@@ -310,8 +412,9 @@ pub mod mocks {
 
     use std::{iter, sync::Arc};
 
-    use ark_ec::CurveGroup;
-    use circuit_types::{traits::BaseType, PlonkProof};
+    use ark_ec::{pairing::Pairing, CurveGroup};
+    use ark_poly::univariate::DensePolynomial;
+    use circuit_types::{traits::BaseType, PlonkLinkProof, PlonkProof, ProofLinkingHint};
     use circuits::zk_circuits::{
         valid_commitments::ValidCommitmentsStatement,
         valid_match_settle::ValidMatchSettleStatement, valid_reblind::ValidReblindStatement,
@@ -319,7 +422,7 @@ pub mod mocks {
         valid_wallet_update::ValidWalletUpdateStatement,
     };
     use constants::{Scalar, ScalarField, SystemCurve, SystemCurveGroup};
-    use jf_primitives::pcs::prelude::Commitment;
+    use jf_primitives::pcs::prelude::{Commitment, UnivariateKzgProof};
     use mpc_plonk::proof_system::structs::ProofEvaluations;
     use mpc_relation::constants::GATE_WIDTH;
 
@@ -358,6 +461,7 @@ pub mod mocks {
         OrderValidityProofBundle {
             reblind_proof: Arc::new(dummy_valid_reblind_bundle()),
             commitment_proof: Arc::new(dummy_valid_commitments_bundle()),
+            linking_proof: dummy_link_proof(),
         }
     }
 
@@ -380,9 +484,27 @@ pub mod mocks {
         }
     }
 
+    /// Create a dummy linking proof to be used as part of a validity bundle
+    fn dummy_link_proof() -> PlonkLinkProof {
+        PlonkLinkProof { quotient_commitment: dummy_commitment(), opening_proof: dummy_opening() }
+    }
+
+    /// Create a dummy proof linking hint
+    pub fn dummy_link_hint() -> ProofLinkingHint {
+        ProofLinkingHint {
+            linking_wire_poly: DensePolynomial::default(),
+            linking_wire_comm: dummy_commitment(),
+        }
+    }
+
     /// Create a dummy commitment to be used as part of a `PlonkProof`
     fn dummy_commitment() -> Commitment<SystemCurve> {
         Commitment(<SystemCurveGroup as CurveGroup>::Affine::default())
+    }
+
+    /// Create a dummy opening proof to a KZG commitment
+    fn dummy_opening() -> UnivariateKzgProof<SystemCurve> {
+        UnivariateKzgProof { proof: <SystemCurve as Pairing>::G1Affine::default() }
     }
 
     /// Create a set of dummy polynomial evaluations to be used as part of a

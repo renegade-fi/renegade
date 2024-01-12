@@ -5,7 +5,7 @@
 use std::{sync::Arc, thread::JoinHandle};
 
 use circuits::{
-    singleprover_prove,
+    singleprover_prove_with_hint,
     zk_circuits::{
         valid_commitments::{
             SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
@@ -22,15 +22,7 @@ use circuits::{
         },
     },
 };
-use common::types::{
-    proof_bundles::{
-        GenericMatchSettleBundle, GenericValidCommitmentsBundle, GenericValidReblindBundle,
-        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, ProofBundle,
-        ValidCommitmentsBundle, ValidMatchSettleBundle, ValidReblindBundle,
-        ValidWalletCreateBundle, ValidWalletUpdateBundle,
-    },
-    CancelChannel,
-};
+use common::types::{proof_bundles::ProofBundle, CancelChannel};
 use crossbeam::channel::Receiver;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rayon::ThreadPool;
@@ -98,103 +90,99 @@ impl ProofManager {
 
     /// The main job handler, run by a thread in the pool
     fn handle_proof_job(job: ProofManagerJob) -> Result<(), ProofManagerError> {
-        match job.type_ {
+        let proof_bundle = match job.type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 // Prove `VALID WALLET CREATE`
-                let proof_bundle = Self::prove_valid_wallet_create(witness, statement)?;
-                job.response_channel
-                    .send(ProofBundle::ValidWalletCreate(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+                Self::prove_valid_wallet_create(witness, statement)
             },
 
             ProofJob::ValidReblind { witness, statement } => {
                 // Prove `VALID REBLIND`
-                let proof_bundle = Self::prove_valid_reblind(witness, statement)?;
-                job.response_channel
-                    .send(ProofBundle::ValidReblind(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+                Self::prove_valid_reblind(witness, statement)
             },
 
             ProofJob::ValidCommitments { witness, statement } => {
                 // Prove `VALID COMMITMENTS`
-                let proof_bundle = Self::prove_valid_commitments(witness, statement)?;
-                job.response_channel
-                    .send(ProofBundle::ValidCommitments(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+                Self::prove_valid_commitments(witness, statement)
             },
 
             ProofJob::ValidWalletUpdate { witness, statement } => {
-                let proof_bundle = Self::prove_valid_wallet_update(witness, statement)?;
-                job.response_channel
-                    .send(ProofBundle::ValidWalletUpdate(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+                Self::prove_valid_wallet_update(witness, statement)
             },
 
             ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
                 // Prove `VALID MATCH MPC`
-                let proof_bundle = Self::prove_valid_match_mpc(witness, statement)?;
-                job.response_channel
-                    .send(ProofBundle::ValidMatchSettle(proof_bundle))
-                    .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+                Self::prove_valid_match_mpc(witness, statement)
             },
-        }
+        }?;
+
+        job.response_channel
+            .send(proof_bundle)
+            .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
     }
 
     /// Create a proof of `VALID WALLET CREATE`
     fn prove_valid_wallet_create(
         witness: SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
-    ) -> Result<ValidWalletCreateBundle, ProofManagerError> {
-        // Build the statement and witness for the proof
-        let proof = singleprover_prove::<SizedValidWalletCreate>(witness, statement.clone())
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID WALLET CREATE`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidWalletCreate>(witness, statement.clone())
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Arc::new(GenericValidWalletCreateBundle { statement, proof }))
+        Ok(ProofBundle::new_valid_wallet_create(statement, proof, link_hint))
     }
 
     /// Create a proof of `VALID REBLIND`
     fn prove_valid_reblind(
         witness: SizedValidReblindWitness,
         statement: ValidReblindStatement,
-    ) -> Result<ValidReblindBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID REBLIND`
-        let proof = singleprover_prove::<SizedValidReblind>(witness, statement.clone())
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidReblind>(witness, statement.clone())
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Arc::new(GenericValidReblindBundle { statement, proof }))
+        Ok(ProofBundle::new_valid_reblind(statement, proof, link_hint))
     }
 
     /// Create a proof of `VALID COMMITMENTS`
     fn prove_valid_commitments(
         witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
-    ) -> Result<ValidCommitmentsBundle, ProofManagerError> {
+    ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID COMMITMENTS`
-        let proof = singleprover_prove::<SizedValidCommitments>(witness, statement)
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidCommitments>(witness, statement)
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Arc::new(GenericValidCommitmentsBundle { statement, proof }))
+        Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
     }
 
     /// Create a proof of `VALID WALLET UPDATE`
     fn prove_valid_wallet_update(
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
-    ) -> Result<ValidWalletUpdateBundle, ProofManagerError> {
-        let proof = singleprover_prove::<SizedValidWalletUpdate>(witness, statement.clone())
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID WALLET UPDATE`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidWalletUpdate>(witness, statement.clone())
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Arc::new(GenericValidWalletUpdateBundle { statement, proof }))
+        Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
     }
 
     /// Create a proof of `VALID MATCH SETTLE`
     fn prove_valid_match_mpc(
         witness: SizedValidMatchSettleWitness,
         statement: SizedValidMatchSettleStatement,
-    ) -> Result<ValidMatchSettleBundle, ProofManagerError> {
-        let proof = singleprover_prove::<SizedValidMatchSettle>(witness, statement.clone())
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID MATCH SETTLE`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidMatchSettle>(witness, statement.clone())
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(Arc::new(GenericMatchSettleBundle { statement, proof }))
+        Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
     }
 }
