@@ -1,17 +1,20 @@
-# Builds and deploys the contracts to the (assumed to be running) local devnet
+FROM offchainlabs/stylus-node:v0.1.0-f47fec1-dev
 
-FROM rust:1.70-slim-buster AS builder
+# Need to run as root to install dependencies
+# (Stylus node base image sets user to `user`)
+USER root
 
-# Install dependencies
-RUN apt-get update && \
-    apt-get install -y pkg-config && \
-    apt-get install -y libssl-dev && \
-    apt-get install -y build-essential && \
-    apt-get install -y git && \
-    apt-get install -y curl && \
-    apt-get install -y jq
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    build-essential \
+    git \
+    curl \
+    jq
 
-# Build the rust toolchain to cache it before adding any dependencies
+# Install the rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH=/root/.cargo/bin:$PATH
 RUN rustup toolchain install nightly
 RUN rustup component add rust-src --toolchain nightly
 RUN rustup target add wasm32-unknown-unknown
@@ -47,7 +50,22 @@ RUN RUSTFLAGS="-C opt-level=3" \
     -Z build-std=std,panic_abort \
     -Z build-std-features=panic_immediate_abort
 
-# Copy the deploy script
+# Copy over the contract deployment script
 COPY ./deploy_contracts.sh /deploy_contracts.sh
+RUN chmod +x /deploy_contracts.sh
 
-ENTRYPOINT /deploy_contracts.sh
+# Run the contract deployment script
+ARG NO_VERIFY
+RUN /deploy_contracts.sh
+
+CMD ["--node.dangerous.no-l1-listener",\
+    "--node.sequencer.dangerous.no-coordinator",\
+    "--node.sequencer.enable",\
+    "--node.staker.enable=false",\
+    "--init.dev-init",\
+    "--init.empty=false",\
+    "--chain.id=412346",\
+    "--chain.dev-wallet.private-key=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",\
+    "--http.addr=0.0.0.0",\
+    "--http.vhosts=*",\
+    "--http.corsdomain=*"]
