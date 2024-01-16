@@ -68,6 +68,20 @@ where
     .map_err(ProverError::Plonk)
 }
 
+/// Validate a link between a proof of VALID REBLIND with a proof of VALID
+/// COMMITMENTS using the system wide sizing constants
+pub fn validate_sized_commitments_reblind_link(
+    link_proof: &PlonkLinkProof,
+    reblind_proof: &PlonkProof,
+    commitments_proof: &PlonkProof,
+) -> Result<(), ProverError> {
+    validate_commitments_reblind_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>(
+        link_proof,
+        reblind_proof,
+        commitments_proof,
+    )
+}
+
 /// Validate a link between a proof of VALID COMMITMENTS with a proof of VALID
 /// REBLIND
 pub fn validate_commitments_reblind_link<
@@ -205,6 +219,22 @@ where
         fabric,
     )
     .map_err(ProverError::Plonk)
+}
+
+/// Validate a link between a proof of VALID COMMITMENTS with a proof of MATCH
+/// SETTLE using the system wide sizing constants
+pub fn validate_sized_commitments_match_settle_link(
+    party_id: PartyId,
+    link_proof: &PlonkLinkProof,
+    commitments_proof: &PlonkProof,
+    match_settle_proof: &PlonkProof,
+) -> Result<(), ProverError> {
+    validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+        party_id,
+        link_proof,
+        commitments_proof,
+        match_settle_proof,
+    )
 }
 
 /// Validate a link between a proof of MATCH SETTLE with a proof of VALID

@@ -7,6 +7,9 @@ use std::fmt;
 pub enum GossipError {
     /// An error resulting from a cancellation signal
     Cancelled(String),
+    /// An error validating the proof link between `VALID COMMITMENTS` and
+    /// `VALID REBLIND`
+    CommitmentsReblindLinkVerification(String),
     /// An error occurred looking up a critical state element
     MissingState(String),
     /// A nullifier has already been used in the contract
@@ -24,7 +27,6 @@ pub enum GossipError {
     /// An error verifying a peer's proof of `VALID COMMITMENTS`
     ValidCommitmentVerification(String),
     /// An error verifying a peer's proof of `VALID REBLIND`
-    #[allow(unused)]
     ValidReblindVerification(String),
 }
 
