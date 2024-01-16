@@ -10,19 +10,26 @@ use circuit_types::{
     order::{Order, OrderSide},
     r#match::OrderSettlementIndices,
     traits::{MpcBaseType, MpcType},
-    Fabric, SizedWalletShare,
+    CollaborativePlonkProof, Fabric, MpcPlonkLinkProof, MpcProofLinkingHint, PlonkProof,
+    ProofLinkingHint, SizedWalletShare,
 };
 use circuits::{
     mpc_circuits::{r#match::compute_match, settle::settle_match},
-    multiprover_prove, verify_singleprover_proof,
-    zk_circuits::valid_match_settle::{
-        SizedAuthenticatedMatchSettleStatement, SizedAuthenticatedMatchSettleWitness,
-        SizedValidMatchSettle,
+    multiprover_prove_with_hint, verify_singleprover_proof,
+    zk_circuits::{
+        proof_linking::{
+            link_sized_commitments_match_settle_multiprover,
+            validate_sized_commitments_match_settle_link,
+        },
+        valid_match_settle::{
+            SizedAuthenticatedMatchSettleStatement, SizedAuthenticatedMatchSettleWitness,
+            SizedValidMatchSettle,
+        },
     },
 };
 use common::types::{
     handshake::HandshakeState,
-    proof_bundles::{GenericMatchSettleBundle, OrderValidityProofBundle, ValidMatchSettleBundle},
+    proof_bundles::{MatchBundle, OrderValidityProofBundle, SizedValidMatchSettleBundle},
 };
 use constants::SystemCurveGroup;
 use crossbeam::channel::{bounded, Receiver};
@@ -77,7 +84,7 @@ impl HandshakeExecutor {
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
-    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
+    ) -> Result<MatchBundle, HandshakeManagerError> {
         // Fetch the handshake state from the state index
         let handshake_state =
             self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
@@ -117,11 +124,11 @@ impl HandshakeExecutor {
         &self,
         party_id: u64,
         handshake_state: HandshakeState,
-        party0_validity_proof: OrderValidityProofBundle,
-        party1_validity_proof: OrderValidityProofBundle,
+        party0_validity_bundle: OrderValidityProofBundle,
+        party1_validity_bundle: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
         cancel_channel: Receiver<()>,
-    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
+    ) -> Result<MatchBundle, HandshakeManagerError> {
         log::info!("Matching order...");
 
         // Build a fabric
@@ -147,8 +154,8 @@ impl HandshakeExecutor {
         // Run the mpc to get a match result
         let commitment_witness = proof_witnesses.copy_commitment_witness();
         let reblind_witness = proof_witnesses.copy_reblind_witness();
-        let party0_commitments_statement = &party0_validity_proof.commitment_proof.statement;
-        let party1_commitments_statement = &party1_validity_proof.commitment_proof.statement;
+        let party0_commitments_statement = &party0_validity_bundle.commitment_proof.statement;
+        let party1_commitments_statement = &party1_validity_bundle.commitment_proof.statement;
         let (witness, statement) = Self::execute_match_settle_mpc(
             &commitment_witness.order,
             &commitment_witness.balance_send,
@@ -165,7 +172,23 @@ impl HandshakeExecutor {
         }
 
         // Prove `VALID MATCH SETTLE` with the counterparty
-        Self::prove_valid_match(witness, statement, &fabric).await
+        let (match_proof, link_proof0, link_proof1) = Self::prove_valid_match_and_link(
+            witness,
+            &statement,
+            &proof_witnesses.commitment_linking_hint,
+            &fabric,
+        )?;
+
+        // Open and verify the result
+        Self::open_and_verify_match_settle_proofs(
+            &statement,
+            match_proof,
+            &link_proof0,
+            &link_proof1,
+            &party0_validity_bundle.commitment_proof.proof,
+            &party1_validity_bundle.commitment_proof.proof,
+        )
+        .await
     }
 
     /// Execute the match settle MPC over the provisioned fabric
@@ -234,32 +257,121 @@ impl HandshakeExecutor {
     }
 
     /// Generates a collaborative proof of the validity of a given match result
-    async fn prove_valid_match(
+    fn prove_valid_match_and_link(
         shared_witness: SizedAuthenticatedMatchSettleWitness,
-        shared_statement: SizedAuthenticatedMatchSettleStatement,
+        shared_statement: &SizedAuthenticatedMatchSettleStatement,
+        my_commitments_link_hint: &ProofLinkingHint,
         fabric: &Fabric,
-    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
-        // Prove the statement
-        let shared_proof = multiprover_prove::<SizedValidMatchSettle>(
+    ) -> Result<
+        (CollaborativePlonkProof, MpcPlonkLinkProof, MpcPlonkLinkProof),
+        HandshakeManagerError,
+    > {
+        // Prove the match-settle statement
+        let (proof, hint) = multiprover_prove_with_hint::<SizedValidMatchSettle>(
             shared_witness,
             shared_statement.clone(),
             fabric.clone(),
         )
         .map_err(|err| HandshakeManagerError::Multiprover(err.to_string()))?;
 
-        // Open the proof and verify it
-        let proof = shared_proof
-            .open_authenticated()
+        // Link the match-settle proof to the commitments proofs
+        let (link_proof0, link_proof1) =
+            Self::compute_match_links(my_commitments_link_hint, &hint, fabric)?;
+
+        Ok((proof, link_proof0, link_proof1))
+    }
+
+    /// Link a proof of `VALID MATCH SETTLE` with a two proofs of `VALID
+    /// COMMITMENTS`
+    fn compute_match_links(
+        my_commitments_link_hint: &ProofLinkingHint,
+        match_settle_link_hint: &MpcProofLinkingHint,
+        fabric: &Fabric,
+    ) -> Result<(MpcPlonkLinkProof, MpcPlonkLinkProof), HandshakeManagerError> {
+        // Share the commitments proof links
+        let party0_commitments_hint =
+            MpcProofLinkingHint::from_singleprover_hint(my_commitments_link_hint, PARTY0, fabric);
+        let party1_commitments_hint =
+            MpcProofLinkingHint::from_singleprover_hint(my_commitments_link_hint, PARTY1, fabric);
+
+        // Link each proof
+        let link_proof0 = link_sized_commitments_match_settle_multiprover(
+            PARTY0,
+            &party0_commitments_hint,
+            match_settle_link_hint,
+            fabric,
+        )
+        .map_err(|e| HandshakeManagerError::Multiprover(e.to_string()))?;
+
+        let link_proof1 = link_sized_commitments_match_settle_multiprover(
+            PARTY1,
+            &party1_commitments_hint,
+            match_settle_link_hint,
+            fabric,
+        )
+        .map_err(|e| HandshakeManagerError::Multiprover(e.to_string()))?;
+
+        Ok((link_proof0, link_proof1))
+    }
+
+    /// Open and verify the match-settle proof and its links to the commitments
+    /// proofs
+    ///
+    /// TODO: Safe opening -- zero the match result if the orders don't cross
+    async fn open_and_verify_match_settle_proofs(
+        shared_statement: &SizedAuthenticatedMatchSettleStatement,
+        shared_proof: CollaborativePlonkProof,
+        link_proof0: &MpcPlonkLinkProof,
+        link_proof1: &MpcPlonkLinkProof,
+        commitments_proof0: &PlonkProof,
+        commitments_proof1: &PlonkProof,
+    ) -> Result<MatchBundle, HandshakeManagerError> {
+        // Open the proofs before awaiting them, letting the fabric schedule all
+        // openings in parallel
+        let proof = shared_proof.open_authenticated();
+        let statement = shared_statement.open_and_authenticate();
+        let link_proof0 = link_proof0.open_authenticated();
+        let link_proof1 = link_proof1.open_authenticated();
+
+        // Verify the R1CS proof
+        let proof = proof
             .await
             .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_PROOF.to_string()))?;
-        let statement = shared_statement
-            .open_and_authenticate()
+        let statement = statement
             .await
             .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_STATEMENT.to_string()))?;
 
         verify_singleprover_proof::<SizedValidMatchSettle>(statement.clone(), &proof)
             .map_err(|err| HandshakeManagerError::VerificationError(err.to_string()))?;
 
-        Ok(Arc::new(GenericMatchSettleBundle { statement, proof }))
+        // Verify the links
+        let link_proof0 = link_proof0
+            .await
+            .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_PROOF.to_string()))?;
+        validate_sized_commitments_match_settle_link(
+            PARTY0,
+            &link_proof0,
+            commitments_proof0,
+            &proof,
+        )
+        .map_err(|e| HandshakeManagerError::Multiprover(e.to_string()))?;
+
+        let link_proof1 = link_proof1
+            .await
+            .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_PROOF.to_string()))?;
+        validate_sized_commitments_match_settle_link(
+            PARTY1,
+            &link_proof1,
+            commitments_proof1,
+            &proof,
+        )
+        .map_err(|e| HandshakeManagerError::Multiprover(e.to_string()))?;
+
+        // Structure the openings into a match bundle
+        Ok(MatchBundle {
+            match_proof: Arc::new(SizedValidMatchSettleBundle { proof, statement }),
+            commitments_link0: link_proof0,
+            commitments_link1: link_proof1,
+        })
     }
 }
