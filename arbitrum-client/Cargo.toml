@@ -3,9 +3,6 @@ name = "arbitrum-client"
 version = "0.1.0"
 edition = "2021"
 
-[package.metadata.integration]
-uses_devnet = true
-
 [features]
 integration = [
     "circuit-types/test-helpers",

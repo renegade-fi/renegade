@@ -1,24 +1,13 @@
 services:
-
-  contracts:
+  sequencer:
+    image: sequencer
+    ports:
+      - "8547:8547"
     build:
-      context: ../docker/contracts
-    environment:
-      - DEVNET_PKEY=0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659
-      - DEVNET_ACCOUNT_ADDRESS=0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E
-      - DEVNET_RPC_URL=http://localhost:8547
-      - DEPLOYMENTS_PATH=/deployments/deployments.json
-      - NO_VERIFY=1
-      - INIT_CHECK_ADDRESS=0xDB2D15a3EB70C347E0D2C2c7861cAFb946baAb48
-    volumes:
-      - deployments:/deployments
-    network_mode: host
-    healthcheck:
-      test: "jq -e \".deployments.darkpool_proxy_admin_contract\" \"/deployments/deployments.json\""
-      interval: 5s
-      timeout: 10s
-      retries: 3
-      start_period: 10m
+      context: ../docker/sequencer
+      args:
+        - NO_VERIFY=1
+    attach: false
 
   relayer:
     image: arbitrum-client-integration-test:latest
@@ -27,14 +16,8 @@ services:
       dockerfile: arbitrum-client/Dockerfile
     command: >
       cargo test --test integration --features "integration" -- 
-        --deployments-path /deployments/deployments.json
-    volumes:
-      - deployments:/deployments
+        --deployments-path /deployments.json --rpc-url http://sequencer:8547
     tty: true
-    network_mode: host
     depends_on:
-      contracts:
-        condition: service_healthy
-
-volumes:
-  deployments:
+      sequencer:
+        condition: service_started
