@@ -15,6 +15,8 @@ pub enum NetworkManagerError {
     Network(String),
     /// An error while setting up the network manager
     SetupError(String),
+    /// An error serializing or deserializing a message
+    Serialization(String),
 }
 
 impl Display for NetworkManagerError {
