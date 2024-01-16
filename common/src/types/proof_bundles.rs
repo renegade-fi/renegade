@@ -317,7 +317,8 @@ impl Serialize for OrderValidityProofBundle {
     where
         S: serde::Serializer,
     {
-        (self.copy_reblind_proof(), self.copy_commitment_proof()).serialize(serializer)
+        (self.copy_reblind_proof(), self.copy_commitment_proof(), self.linking_proof.clone())
+            .serialize(serializer)
     }
 }
 

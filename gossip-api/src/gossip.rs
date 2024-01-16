@@ -308,9 +308,11 @@ impl From<AuthenticatedPubsubMessage> for Vec<u8> {
     }
 }
 
-impl From<Vec<u8>> for AuthenticatedPubsubMessage {
-    fn from(bytes: Vec<u8>) -> Self {
-        serde_json::from_slice(&bytes).unwrap()
+impl TryFrom<Vec<u8>> for AuthenticatedPubsubMessage {
+    type Error = String;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        serde_json::from_slice(&bytes).map_err(|e| e.to_string())
     }
 }
 

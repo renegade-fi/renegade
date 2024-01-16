@@ -4,7 +4,10 @@
 use circuit_types::wallet::Nullifier;
 use circuits::{
     verify_singleprover_proof,
-    zk_circuits::{valid_commitments::SizedValidCommitments, valid_reblind::SizedValidReblind},
+    zk_circuits::{
+        proof_linking::validate_sized_commitments_reblind_link,
+        valid_commitments::SizedValidCommitments, valid_reblind::SizedValidReblind,
+    },
 };
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
@@ -299,6 +302,7 @@ impl GossipProtocolExecutor {
         // take ownership
         let reblind_proof = proof_bundle.copy_reblind_proof();
         let commitment_proof = proof_bundle.copy_commitment_proof();
+        let link_proof = &proof_bundle.linking_proof;
 
         // Check that the proof shares' nullifiers are unused
         self.assert_nullifier_unused(reblind_proof.statement.original_shares_nullifier).await?;
@@ -331,6 +335,17 @@ impl GossipProtocolExecutor {
         ) {
             log::error!("Invalid proof of `VALID COMMITMENTS`");
             return Err(GossipError::ValidCommitmentVerification(e.to_string()));
+        }
+
+        // Validate the proof link between the `VALID REBLIND` and `VALID COMMITMENTS`
+        // proofs
+        if let Err(e) = validate_sized_commitments_reblind_link(
+            link_proof,
+            &reblind_proof.proof,
+            &commitment_proof.proof,
+        ) {
+            log::error!("Invalid proof link between `VALID REBLIND` and `VALID COMMITMENTS`");
+            return Err(GossipError::CommitmentsReblindLinkVerification(e.to_string()));
         }
 
         Ok(())
