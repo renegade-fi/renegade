@@ -10,13 +10,6 @@ if [[ $# -lt 2 ]] ; then
     exit 0
 fi
 
-# If the target package needs a devnet, spin one up
-# Assumes `cargo integrate` is being run from the root of the repo
-uses_devnet=$(cargo metadata --format-version=1 --no-deps | jq -r ".packages[] | select(.name == \"$2\") | .metadata.integration.uses_devnet")
-if [[ $uses_devnet == "true" ]]; then
-    source ./bin/setup_devnet.zsh
-fi
-
 # Use BuildKit
 export DOCKER_BUILDKIT=1
 

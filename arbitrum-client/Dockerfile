@@ -60,3 +60,5 @@ COPY arbitrum-client/src ./src
 COPY arbitrum-client/integration ./integration
 
 RUN cargo build --quiet --test integration --features "integration"
+
+COPY --from=sequencer /deployments.json /deployments.json
