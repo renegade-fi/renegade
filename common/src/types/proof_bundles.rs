@@ -401,6 +401,47 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
     }
 }
 
+/// Wraps a proof of `VALID MATCH SETTLE` with two linking proofs to the `VALID
+/// COMMITMENTS` proofs of the matched parties
+#[derive(Clone, Debug)]
+pub struct MatchBundle {
+    /// The proof of `VALID MATCH SETTLE` for the matched orders
+    pub match_proof: ValidMatchSettleBundle,
+    /// The linking proof of the match proof to the commitment proof of the
+    /// first party
+    pub commitments_link0: PlonkLinkProof,
+    /// The linking proof of the match proof to the commitment proof of the
+    /// second party
+    pub commitments_link1: PlonkLinkProof,
+}
+
+impl Serialize for MatchBundle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Clone the match proof out from behind the `Arc`
+        let match_proof = SizedValidMatchSettleBundle::clone(&self.match_proof);
+        (match_proof, self.commitments_link0.clone(), self.commitments_link1.clone())
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MatchBundle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Deserialize the match proof
+        let (match_proof, commitments_link0, commitments_link1) =
+            <(SizedValidMatchSettleBundle, PlonkLinkProof, PlonkLinkProof)>::deserialize(
+                deserializer,
+            )?;
+
+        Ok(MatchBundle { match_proof: Arc::new(match_proof), commitments_link0, commitments_link1 })
+    }
+}
+
 // ---------
 // | Mocks |
 // ---------
@@ -486,7 +527,7 @@ pub mod mocks {
     }
 
     /// Create a dummy linking proof to be used as part of a validity bundle
-    fn dummy_link_proof() -> PlonkLinkProof {
+    pub fn dummy_link_proof() -> PlonkLinkProof {
         PlonkLinkProof { quotient_commitment: dummy_commitment(), opening_proof: dummy_opening() }
     }
 
