@@ -15,7 +15,7 @@ use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
-use common::types::proof_bundles::ValidMatchSettleBundle;
+use common::types::proof_bundles::MatchBundle;
 use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
@@ -55,7 +55,7 @@ pub struct SettleMatchTask {
     /// match process
     pub handshake_state: HandshakeState,
     /// The proof that comes from the collaborative match-settle process
-    pub match_settle_proof: ValidMatchSettleBundle,
+    pub match_bundle: MatchBundle,
     /// The validity proofs submitted by the first party
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
@@ -184,7 +184,7 @@ impl SettleMatchTask {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         handshake_state: HandshakeState,
-        match_settle_proof: ValidMatchSettleBundle,
+        match_bundle: MatchBundle,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
         arbitrum_client: ArbitrumClient,
@@ -201,7 +201,7 @@ impl SettleMatchTask {
         Self {
             wallet_id,
             handshake_state,
-            match_settle_proof,
+            match_bundle,
             party0_validity_proof,
             party1_validity_proof,
             arbitrum_client,
@@ -218,12 +218,14 @@ impl SettleMatchTask {
 
     /// Submit the match transaction to the contract
     async fn submit_match(&self) -> Result<(), SettleMatchTaskError> {
+        // TODO: Send proof links with the transaction
+        let match_settle_proof = &self.match_bundle.match_proof;
         let tx_submit_res = self
             .arbitrum_client
             .process_match_settle(
                 &self.party0_validity_proof,
                 &self.party1_validity_proof,
-                &self.match_settle_proof,
+                match_settle_proof,
             )
             .await;
 
@@ -314,10 +316,11 @@ impl SettleMatchTask {
             validity_witness.reblind_witness.reblinded_wallet_private_shares.clone();
 
         // Fetch public shares from the match settle proof's statement
+        let match_settle_statement = &self.match_bundle.match_proof.statement;
         let public_shares = if self.handshake_state.role.get_party_id() == PARTY0 {
-            self.match_settle_proof.statement.party0_modified_shares.clone()
+            match_settle_statement.party0_modified_shares.clone()
         } else {
-            self.match_settle_proof.statement.party1_modified_shares.clone()
+            match_settle_statement.party1_modified_shares.clone()
         };
 
         Ok((private_shares, public_shares))

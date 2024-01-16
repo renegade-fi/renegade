@@ -17,7 +17,10 @@ use circuits::zk_circuits::valid_match_settle::{
 };
 use common::types::{
     handshake::{mocks::mock_handshake_state, HandshakeState},
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle},
+    proof_bundles::{
+        mocks::dummy_link_proof, MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
+        ValidMatchSettleBundle,
+    },
     wallet::Wallet,
 };
 use constants::Scalar;
@@ -147,7 +150,7 @@ async fn setup_match_result(
     mut wallet1: Wallet,
     mut wallet2: Wallet,
     test_args: &IntegrationTestArgs,
-) -> Result<(MatchResult, ValidMatchSettleBundle)> {
+) -> Result<(MatchResult, MatchBundle)> {
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
     let base_amount = ORDER_AMOUNT;
     let quote_amount = price * Scalar::from(base_amount);
@@ -176,7 +179,7 @@ async fn setup_match_result(
     wallet2.private_shares = witness2.reblind_witness.reblinded_wallet_private_shares.clone();
     wallet2.blinded_public_shares = witness2.commitment_witness.augmented_public_shares.clone();
 
-    let proof = dummy_match_proof(&wallet1, &wallet2, match_.clone(), test_args).await?;
+    let proof = dummy_match_bundle(&wallet1, &wallet2, match_.clone(), test_args).await?;
     Ok((match_, proof))
 }
 
@@ -209,12 +212,12 @@ async fn get_first_order_witness(
 }
 
 /// Generate a dummy match proof on the first order in each wallet
-async fn dummy_match_proof(
+async fn dummy_match_bundle(
     wallet1: &Wallet,
     wallet2: &Wallet,
     match_res: MatchResult,
     test_args: &IntegrationTestArgs,
-) -> Result<ValidMatchSettleBundle> {
+) -> Result<MatchBundle> {
     let order1 = wallet1.orders.first().unwrap().1.clone();
     let balance1 = wallet1.balances.first().unwrap().1.clone();
     let amount1 = Scalar::from(order1.amount);
@@ -267,9 +270,16 @@ async fn dummy_match_proof(
     test_args.proof_job_queue.send(job)?;
 
     // Await a response
-    recv.await
+    let match_proof: ValidMatchSettleBundle = recv
+        .await
         .map(|bundle| bundle.proof.into())
-        .map_err(|_| eyre!("Failed to receive proof bundle"))
+        .map_err(|_| eyre!("Failed to receive proof bundle"))?;
+
+    Ok(MatchBundle {
+        match_proof,
+        commitments_link0: dummy_link_proof(),
+        commitments_link1: dummy_link_proof(),
+    })
 }
 
 /// Verify that a match has been correctly applied to a wallet

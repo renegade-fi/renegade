@@ -13,7 +13,7 @@ use common::{
         gossip::WrappedPeerId,
         handshake::{ConnectionRole, HandshakeState},
         network_order::NetworkOrderState,
-        proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
+        proof_bundles::{MatchBundle, OrderValidityProofBundle},
         tasks::TaskIdentifier,
         token::Token,
         wallet::OrderIdentifier,
@@ -761,12 +761,12 @@ impl HandshakeExecutor {
         party0_proof: OrderValidityProofBundle,
         party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
-        match_settle_proof: ValidMatchSettleBundle,
+        match_bundle: MatchBundle,
     ) -> TaskIdentifier {
         // Submit the match to the contract
         let task = SettleMatchTask::new(
             handshake_state,
-            match_settle_proof,
+            match_bundle,
             party0_proof,
             party1_proof,
             self.arbitrum_client.clone(),
