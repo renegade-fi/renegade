@@ -11,12 +11,14 @@ use super::{
     helpers::find_merkle_path,
 };
 use arbitrum_client::client::ArbitrumClient;
+use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
+use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
-use common::types::proof_bundles::ValidMatchSettleBundle;
+use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
 use common::types::wallet::WalletIdentifier;
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -65,7 +67,7 @@ pub struct SettleMatchInternalTask {
     /// The match result
     match_result: MatchResult,
     /// The proof of `VALID MATCH SETTLE` generated in the first task step
-    proof_bundle: Option<ValidMatchSettleBundle>,
+    match_bundle: Option<MatchBundle>,
     /// The arbitrum client to use for submitting transactions
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
@@ -221,7 +223,7 @@ impl SettleMatchInternalTask {
             order2_proof,
             order2_validity_witness: order2_witness,
             match_result,
-            proof_bundle: None,
+            match_bundle: None,
             arbitrum_client,
             network_sender,
             global_state,
@@ -255,14 +257,19 @@ impl SettleMatchInternalTask {
             SettleMatchInternalTaskError::EnqueuingJob(ERR_AWAITING_PROOF.to_string())
         })?;
 
-        self.proof_bundle = Some(bundle.proof.into());
+        // Create proof links between the parties' proofs of `VALID COMMITMENTS` and the
+        // `VALID MATCH SETTLE` proof
+        let match_bundle = self.create_link_proofs(bundle).await?;
+        self.match_bundle = Some(match_bundle);
         Ok(())
     }
 
     /// Submit the match transaction
     async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
         // Submit a `match` transaction
-        let match_settle_proof = self.proof_bundle.clone().unwrap();
+
+        // TODO: Submit link proofs with the tx
+        let match_settle_proof = self.match_bundle.clone().unwrap().match_proof;
         self.arbitrum_client
             .process_match_settle(&self.order1_proof, &self.order2_proof, &match_settle_proof)
             .await
@@ -423,6 +430,28 @@ impl SettleMatchInternalTask {
         };
 
         (witness, statement)
+    }
+
+    /// Create link proofs of `VALID MATCH SETTLE` to the parties' proofs of
+    /// `VALID COMMITMENTS`
+    async fn create_link_proofs(
+        &self,
+        match_settle_proof: ProofBundle,
+    ) -> Result<MatchBundle, SettleMatchInternalTaskError> {
+        let match_link_hint = &match_settle_proof.link_hint;
+        let match_proof: ValidMatchSettleBundle = match_settle_proof.proof.into();
+
+        let party0_comms_hint = &self.order1_validity_witness.commitment_linking_hint;
+        let commitments_link0 =
+            link_sized_commitments_match_settle(PARTY0, party0_comms_hint, match_link_hint)
+                .map_err(|e| SettleMatchInternalTaskError::ProvingValidity(e.to_string()))?;
+
+        let party1_comms_hint = &self.order2_validity_witness.commitment_linking_hint;
+        let commitments_link1 =
+            link_sized_commitments_match_settle(PARTY0, party1_comms_hint, match_link_hint)
+                .map_err(|e| SettleMatchInternalTaskError::ProvingValidity(e.to_string()))?;
+
+        Ok(MatchBundle { match_proof, commitments_link0, commitments_link1 })
     }
 
     /// Find and update the merkle opening for the wallet
