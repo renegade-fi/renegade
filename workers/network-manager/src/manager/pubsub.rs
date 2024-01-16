@@ -49,7 +49,9 @@ impl NetworkManagerExecutor {
         message: GossipsubMessage,
     ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types and verify auth
-        let event: AuthenticatedPubsubMessage = message.data.into();
+        let event: AuthenticatedPubsubMessage =
+            message.data.try_into().map_err(NetworkManagerError::Serialization)?;
+
         if !event.verify_cluster_auth(&self.cluster_key.public) {
             return Err(NetworkManagerError::Authentication(ERR_SIG_VERIFY.to_string()));
         }
