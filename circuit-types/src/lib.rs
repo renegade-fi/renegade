@@ -17,6 +17,7 @@ pub mod macro_tests;
 pub mod r#match;
 pub mod merkle;
 pub mod order;
+pub mod srs;
 pub mod traits;
 pub mod transfers;
 pub mod wallet;
@@ -407,7 +408,7 @@ pub mod test_helpers {
     use rand::thread_rng;
 
     /// The maximum degree SRS to allocate for testing circuits
-    const MAX_DEGREE_TESTING: usize = 131072;
+    const MAX_DEGREE_TESTING: usize = 65536;
 
     lazy_static! {
         /// A universal SRS for testing circuits that is generated once and used
