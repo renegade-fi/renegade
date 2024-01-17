@@ -6,12 +6,12 @@ use eyre::{eyre, Result};
 
 /// The deployments key in the `deployments.json` file
 pub const DEPLOYMENTS_KEY: &str = "deployments";
-/// The darkpool key in the `deployments.json` file
-pub const DARKPOOL_KEY: &str = "darkpool";
 /// The darkpool proxy contract key in the `deployments.json` file
 pub const DARKPOOL_PROXY_CONTRACT_KEY: &str = "darkpool_proxy_contract";
-/// The dummy erc20 contract key in a `deployments.json` file
-pub const DUMMY_ERC20_CONTRACT_KEY: &str = "dummy_erc20_contract";
+/// The first dummy erc20 contract key in a `deployments.json` file
+pub const DUMMY_ERC20_0_CONTRACT_KEY: &str = "DUMMY1";
+/// The second dummy erc20 contract key in a `deployments.json` file
+pub const DUMMY_ERC20_1_CONTRACT_KEY: &str = "DUMMY2";
 
 /// Parse the address of the deployed contract from the `deployments.json` file
 pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {

@@ -1,12 +1,6 @@
 //! Helpers for `task-driver` integration tests
 
-use std::str::FromStr;
-
-use arbitrum_client::{
-    abi::{ERC20Contract, WethContract},
-    client::{ArbitrumClient, SignerHttpProvider},
-    helpers::send_tx,
-};
+use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{
     native_helpers::create_wallet_shares_from_private, traits::BaseType,
     transfers::ExternalTransfer, SizedWalletShare,
@@ -17,7 +11,7 @@ use common::types::{
     wallet_mocks::mock_empty_wallet,
 };
 use constants::Scalar;
-use ethers::types::{Address, U256};
+use ethers::types::Address;
 use external_api::types::ApiWallet;
 use eyre::{eyre, Result};
 use num_bigint::BigUint;
@@ -28,13 +22,10 @@ use task_driver::{
     driver::{TaskDriver, TaskDriverConfig},
     lookup_wallet::LookupWalletTask,
 };
-use test_helpers::{arbitrum::PREDEPLOYED_WETH_ADDR, assert_eq_result, assert_true_result};
+use test_helpers::{assert_eq_result, assert_true_result};
 use uuid::Uuid;
 
 use crate::IntegrationTestArgs;
-
-/// The amount of each token to fund the wallet with
-pub(crate) const FUNDING_AMOUNT: u64 = 1000;
 
 /// Parse a biguint from an H160 address
 pub fn biguint_from_address(val: Address) -> BigUint {
@@ -152,105 +143,6 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
     proof.statement.new_public_shares = wallet.blinded_public_shares.clone();
 
     client.update_wallet(&proof, vec![] /* statement_sig */).await.map_err(Into::into)
-}
-
-/// Fund the wallet in the integration test args with a given amount of WETH and
-/// the dummy erc20 token
-pub(crate) async fn fund_wallet(test_args: &IntegrationTestArgs) -> Result<()> {
-    let weth_client =
-        create_weth_client(test_args).map_err(|e| eyre!("error creating weth client: {e}"))?;
-    let erc20_client = create_erc20_client(&test_args.erc20_addr, test_args)
-        .map_err(|e| eyre!("error creating erc20 client: {e}"))?;
-
-    let addr = test_args.arbitrum_client.wallet_address();
-
-    // First wrap native ETH to fund WETH
-    let weth_balance =
-        weth_client.balance_of(addr).await.map_err(|e| eyre!("error getting weth balance: {e}"))?;
-    let funds_needed = FUNDING_AMOUNT.saturating_sub(weth_balance.as_u64());
-    if funds_needed > 0 {
-        wrap_eth(funds_needed, test_args).await?;
-    }
-
-    // Now mint erc20 tokens to fund the wallet
-    let erc20_balance = erc20_client
-        .balance_of(addr)
-        .await
-        .map_err(|e| eyre!("error getting erc20 balance: {e}"))?;
-
-    let funds_needed = FUNDING_AMOUNT.saturating_sub(erc20_balance.as_u64());
-    if funds_needed > 0 {
-        fund_wallet_with_erc20(funds_needed, test_args).await?;
-    }
-
-    Ok(())
-}
-
-/// Wrap a given amount of native ETH in WETH
-pub(crate) async fn wrap_eth(amount: u64, test_args: &IntegrationTestArgs) -> Result<()> {
-    let weth_client =
-        create_weth_client(test_args).map_err(|e| eyre!("error creating weth client: {e}"))?;
-    send_tx(weth_client.deposit().value(amount))
-        .await
-        .map_err(|e| eyre!("error depositing weth: {e}"))
-        .map(|_| ())
-}
-
-/// Fund the wallet with the given amount of the ERC20 token
-pub(crate) async fn fund_wallet_with_erc20(
-    amount: u64,
-    test_args: &IntegrationTestArgs,
-) -> Result<()> {
-    let wallet_addr = test_args.arbitrum_client.wallet_address();
-    let erc20_client = create_erc20_client(&test_args.erc20_addr, test_args)
-        .map_err(|e| eyre!("error creating erc20 client: {e}"))?;
-
-    send_tx(erc20_client.mint(wallet_addr, U256::from(amount)))
-        .await
-        .map_err(|e| eyre!("error minting erc20: {e}"))
-        .map(|_| ())
-}
-
-/// Increase the ERC20 allowance of the darkpool contract for the given account
-pub(crate) async fn increase_erc20_allowance(
-    amount: u64,
-    addr: &str,
-    test_args: &IntegrationTestArgs,
-) -> Result<()> {
-    let darkpool_addr = Address::from_str(&test_args.darkpool_addr)
-        .map_err(|e| eyre!("error parsing darkpool address: {e}"))?;
-    let erc20_client = create_erc20_client(addr, test_args)
-        .map_err(|e| eyre!("error creating erc20 client: {e}"))?;
-
-    let balance = erc20_client.balance_of(test_args.arbitrum_client.wallet_address()).await?;
-    println!("amount: {amount}, balance: {balance}");
-
-    send_tx(erc20_client.approve(darkpool_addr, U256::from(amount)))
-        .await
-        .map_err(|e| eyre!("error increasing erc20 allowance: {e}"))
-        .map(|_| ())
-}
-
-/// Create a client for the deployed erc20 contract
-pub(crate) fn create_erc20_client(
-    addr: &str,
-    test_args: &IntegrationTestArgs,
-) -> Result<ERC20Contract<SignerHttpProvider>> {
-    let client = test_args.arbitrum_client.client();
-    let addr = Address::from_str(addr).map_err(|e| eyre!("error parsing address({addr}): {e}"))?;
-
-    Ok(ERC20Contract::new(addr, client))
-}
-
-/// Create a WETH client for the deployed WETH contract
-pub(crate) fn create_weth_client(
-    test_args: &IntegrationTestArgs,
-) -> Result<WethContract<SignerHttpProvider>> {
-    let client = test_args.arbitrum_client.client();
-    let addr = Address::from_str(PREDEPLOYED_WETH_ADDR)
-        .map_err(|e| eyre!("error parsing address({PREDEPLOYED_WETH_ADDR}): {e}"))?;
-
-    Ok(WethContract::new(addr, client))
 }
 
 // ---------

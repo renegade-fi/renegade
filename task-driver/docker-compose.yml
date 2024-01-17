@@ -1,39 +1,32 @@
 services:
-  contracts:
-    build:
-      context: ../docker/contracts
-    image: renegade-contracts:latest
-    entrypoint: sleep infinity
   sequencer:
-    build:
-      context: ../docker/devnet
-    volumes:
-      - deployments:/deployments
+    image: sequencer
     ports:
-      - "5050:5050"
+      - "8547:8547"
+    build:
+      context: ../docker/sequencer
+      args:
+        - NO_VERIFY=1
+    attach: false
     healthcheck:
-      test: "curl -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"starknet_chainId\",\"params\":[],\"id\":1}' http://localhost:5050/rpc || exit 1"
-      interval: 5s
-      timeout: 10s
-      retries: 3
-    depends_on:
-      - contracts
+      test: curl -sf http://localhost:8547
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
   relayer:
     image: task-driver-integration-test:latest
     build:
       context: ..
       dockerfile: task-driver/Dockerfile
-    volumes:
-      - deployments:/deployments
     ports:
       - "8000:8000"
     command: >
       cargo test --test integration --features "integration" -- 
-        --deployments-path /deployments/deployments.json
-        --verbose 
+        --deployments-path /deployments.json
+        --devnet-url http://sequencer:8547
+        --verbosity full
     tty: true
     depends_on:
       sequencer:
         condition: service_healthy
-volumes:
-  deployments:

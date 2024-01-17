@@ -23,6 +23,7 @@ nitro \
 
 # Spinwait until the devnet is ready for contracts to be deployed to it
 while ! curl -sf http://localhost:8547 > /dev/null; do
+    echo "Waiting for sequencer to be ready..."
     sleep 1
 done
 
@@ -68,17 +69,6 @@ cargo run \
     --contract merkle \
     $no_verify_flag
 
-# If the $DEPLOY_DUMMY_ERC20 env var is set, deploy the dummy ERC20 contract
-if [[ -n $DEPLOY_DUMMY_ERC20 ]]; then
-    cargo run \
-    --package scripts -- \
-    --priv-key $DEVNET_PKEY \
-    --rpc-url $DEVNET_RPC_URL \
-    --deployments-path $DEPLOYMENTS_PATH \
-    deploy-stylus \
-    --contract dummy-erc20
-fi
-
 # Deploy darkpool contract, setting the "--no-verify" flag
 # conditionally depending on whether the corresponding env var is set
 cargo run \
@@ -114,3 +104,15 @@ cargo run \
     deploy-proxy \
     --owner $DEVNET_ACCOUNT_ADDRESS \
     --fee 1
+
+# Deploy the dummy ERC20 contracts
+# The funding amount here is 1 million of a token with 18 decimal places
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-erc20s \
+    --account-skeys $DEVNET_PKEY \
+    --tickers DUMMY1 DUMMY2 \
+    --funding-amount 1000000000000000000000000

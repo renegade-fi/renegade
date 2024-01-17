@@ -8,6 +8,11 @@ services:
       args:
         - NO_VERIFY=1
     attach: false
+    healthcheck:
+      test: curl -sf http://localhost:8547
+      interval: 1s
+      timeout: 5s
+      retries: 10
 
   relayer:
     image: arbitrum-client-integration-test:latest
@@ -20,4 +25,4 @@ services:
     tty: true
     depends_on:
       sequencer:
-        condition: service_started
+        condition: service_healthy

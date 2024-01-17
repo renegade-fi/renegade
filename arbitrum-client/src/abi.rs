@@ -48,43 +48,6 @@ abigen!(
     ]"#
 );
 
-/// Represents an ERC20 contract's abi used in integration tests for
-/// deposit/withdrawal mechanics
-#[cfg(feature = "integration")]
-abigen!(
-    ERC20Contract,
-    r#"[
-        function totalSupply() external view returns (uint256)
-        function balanceOf(address account) external view returns (uint256)
-        function mint(address memory _address, uint256 memory value) external
-        function transfer(address to, uint256 value) external returns (bool)
-        function allowance(address owner, address spender) external view returns (uint256)
-        function approve(address spender, uint256 value) external returns (bool)
-        function transferFrom(address from, address to, uint256 value) external returns (bool)
-    ]"#
-);
-
-/// Represents the weth contract's abi used in integration tests for
-/// deposit/withdrawal mechanics
-///
-/// The WETH contract is exactly like an ERC20 but with the `deposit` and
-/// `withdraw` methods added for wrapping/unwrapping
-#[cfg(feature = "integration")]
-abigen!(
-    WethContract,
-    r#"[
-        function deposit() external payable
-        function withdraw(uint256 amount) external
-        function totalSupply() external view returns (uint256)
-        function balanceOf(address account) external view returns (uint256)
-        function mint(address memory _address, uint256 memory value) external
-        function transfer(address to, uint256 value) external returns (bool)
-        function allowance(address owner, address spender) external view returns (uint256)
-        function approve(address spender, uint256 value) external returns (bool)
-        function transferFrom(address from, address to, uint256 value) external returns (bool)
-    ]"#
-);
-
 sol! {
     function newWallet(bytes memory proof, bytes memory valid_wallet_create_statement_bytes) external;
     function updateWallet(bytes memory proof, bytes memory valid_wallet_update_statement_bytes, bytes memory public_inputs_signature) external;
