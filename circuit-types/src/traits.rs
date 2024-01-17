@@ -47,6 +47,7 @@ use std::{
 
 use crate::{
     errors::{MpcError, ProverError, VerifierError},
+    srs::SYSTEM_SRS,
     AuthenticatedBool, CollaborativePlonkProof, Fabric, MpcPlonkCircuit, MpcProofLinkingHint,
     PlonkCircuit, PlonkProof, ProofLinkingHint,
 };
@@ -56,6 +57,9 @@ const ERR_TOO_FEW_SCALARS: &str = "from_scalars: Invalid number of scalars";
 /// The error message emitted when too few variables are given
 const ERR_TOO_FEW_VARS: &str = "from_vars: Invalid number of variables";
 
+/// A type alias for a pair of shared proving and verifying keys
+pub type SharedCircuitKeys = (Arc<ProvingKey<SystemCurve>>, Arc<VerifyingKey<SystemCurve>>);
+
 lazy_static! {
     /// The layout cache for the circuits
     ///
@@ -64,6 +68,10 @@ lazy_static! {
     ///
     /// This is also made thread safe so that the cache may be used across proving threads
     static ref CIRCUIT_LAYOUT_CACHE: RwLock<HashMap<String, CircuitLayout>> = RwLock::new(HashMap::new());
+    /// The proving and verifying key caches for the circuits
+    ///
+    /// We cache these results so that they may be derived from the SRS once and then reused across threads
+    static ref CIRCUIT_KEY_CACHE: RwLock<HashMap<String, SharedCircuitKeys>> = RwLock::new(HashMap::new());
 }
 
 // ---------------
@@ -692,11 +700,15 @@ impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
 // | Circuit Traits |
 // ------------------
 
-/// A helper to get the proving and verifying keys for a circuit in tests
-#[cfg(feature = "test-helpers")]
+/// A helper to get the proving and verifying keys for a circuit, possibly read
+/// from cache
 pub fn setup_preprocessed_keys<C: SingleProverCircuit>(
-) -> (ProvingKey<SystemCurve>, VerifyingKey<SystemCurve>) {
-    use crate::test_helpers::TESTING_SRS;
+) -> (Arc<ProvingKey<SystemCurve>>, Arc<VerifyingKey<SystemCurve>>) {
+    // Check the cache first for the keys
+    let name = C::name();
+    if let Some((pk, vk)) = CIRCUIT_KEY_CACHE.read().unwrap().get(&name).cloned() {
+        return (pk, vk);
+    }
 
     // Create a dummy circuit of correct topology to generate the keys
     // We use zero'd scalars here to give valid boolean types as well as scalar
@@ -718,8 +730,12 @@ pub fn setup_preprocessed_keys<C: SingleProverCircuit>(
     C::apply_constraints(witness_var, statement_var, &mut cs).unwrap();
     cs.finalize_for_arithmetization().unwrap();
 
-    // Generate the keys
-    PlonkKzgSnark::<SystemCurve>::preprocess(&TESTING_SRS, &cs).unwrap()
+    // Generate the keys and cache them
+    let (pk, vk) = PlonkKzgSnark::<SystemCurve>::preprocess(&SYSTEM_SRS, &cs).unwrap();
+    let pair = (Arc::new(pk), Arc::new(vk));
+
+    CIRCUIT_KEY_CACHE.write().unwrap().insert(C::name(), pair.clone());
+    pair
 }
 
 /// Defines the abstraction of a Circuit
@@ -748,33 +764,13 @@ pub trait SingleProverCircuit: Sized {
     // ----------------------------
 
     /// Returns a reference to the proving key for the circuit
-    #[cfg(not(feature = "test-helpers"))]
     fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
-        unimplemented!("proving_key: Not yet implemented for non-test circuits")
-    }
-
-    /// Returns a reference to the proving key for the circuit
-    ///
-    /// Default implementation of the `proving_key` method for tests
-    #[cfg(feature = "test-helpers")]
-    fn proving_key() -> Arc<ProvingKey<SystemCurve>> {
-        let (pk, _) = setup_preprocessed_keys::<Self>();
-        Arc::new(pk)
+        setup_preprocessed_keys::<Self>().0
     }
 
     /// Returns a reference to the verifying key for the circuit
-    #[cfg(not(feature = "test-helpers"))]
     fn verifying_key() -> Arc<VerifyingKey<SystemCurve>> {
-        unimplemented!("verifying_key: Not yet implemented for non-test circuits")
-    }
-
-    /// Returns a reference to the verifying key for the circuit
-    ///
-    /// Default implementation of the `verifying_key` method for tests
-    #[cfg(feature = "test-helpers")]
-    fn verifying_key() -> Arc<VerifyingKey<SystemCurve>> {
-        let (_, vk) = setup_preprocessed_keys::<Self>();
-        Arc::new(vk)
+        setup_preprocessed_keys::<Self>().1
     }
 
     // -----------------
@@ -1034,5 +1030,51 @@ pub trait MultiProverCircuit {
         proof: &Proof<SystemCurve>,
     ) -> Result<(), VerifierError> {
         Self::BaseCircuit::verify(statement, proof)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{sync::Arc, thread};
+
+    use mpc_plonk::errors::PlonkError;
+
+    use crate::PlonkCircuit;
+
+    use super::{CircuitBaseType, SingleProverCircuit, CIRCUIT_KEY_CACHE};
+
+    /// A dummy circuit that applies no constraints
+    struct DummyCircuit;
+    impl SingleProverCircuit for DummyCircuit {
+        type Witness = ();
+        type Statement = ();
+
+        fn name() -> String {
+            "DummyCircuit".to_string()
+        }
+
+        fn apply_constraints(
+            _witness_var: <Self::Witness as CircuitBaseType>::VarType,
+            _statement_var: <Self::Statement as CircuitBaseType>::VarType,
+            _cs: &mut PlonkCircuit,
+        ) -> Result<(), PlonkError> {
+            Ok(())
+        }
+    }
+
+    /// Test that the circuit key cache is properly shared across threads
+    #[test]
+    fn test_shared_cache() {
+        // Generate the key once
+        let pk = DummyCircuit::proving_key();
+
+        // Read lock the cache so that the spawned thread cannot write to it, i.e. it
+        // must read from cache
+        // This will deadlock if the cache is not shared properly
+        let _guard = CIRCUIT_KEY_CACHE.read().unwrap();
+        let pk2 = thread::spawn(DummyCircuit::proving_key).join().unwrap();
+
+        // Ensure that the two keys are pointing to the same value
+        assert!(Arc::ptr_eq(&pk, &pk2))
     }
 }
