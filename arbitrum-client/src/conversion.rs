@@ -81,7 +81,7 @@ fn to_contract_external_transfer(
 }
 
 /// Convert a [`PublicSigningKey`] to its corresponding smart contract type
-fn to_contract_public_signing_key(
+pub fn to_contract_public_signing_key(
     public_signing_key: &PublicSigningKey,
 ) -> Result<ContractPublicSigningKey, ConversionError> {
     let x = try_unwrap_scalars(&public_signing_key.x.to_scalars())?;

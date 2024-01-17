@@ -277,7 +277,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     // Update the wallet by depositing into the pool
     let old_wallet = wallet.clone();
 
-    let mint = biguint_from_hex_string(&test_args.erc20_addr).unwrap();
+    let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
     let amount = 10u64;
 
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });

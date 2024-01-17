@@ -26,6 +26,8 @@ RUN RUSTFLAGS="-C link-args=-rdynamic" cargo install --force cargo-stylus
 RUN cargo install wasm-opt --locked
 
 # Clone the contracts repo
+# We ADD the version file first to cache the git clone appropriately
+ADD https://api.github.com/repos/renegade-fi/renegade-contracts/git/refs/heads/main /renegade-contracts-version.json
 WORKDIR /sources
 RUN git clone \
     https://github.com/renegade-fi/renegade-contracts.git

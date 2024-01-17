@@ -60,4 +60,6 @@ COPY task-driver/integration ./integration
 
 RUN cargo build --quiet --test integration --features "integration"
 
+COPY --from=sequencer /deployments.json /deployments.json
+
 CMD [ "cargo", "test" ]
