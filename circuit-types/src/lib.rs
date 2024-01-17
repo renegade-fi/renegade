@@ -397,26 +397,3 @@ pub mod native_helpers {
         (private_shares, blinded_public_shares)
     }
 }
-
-/// Helpers for tests
-#[cfg(feature = "test-helpers")]
-pub mod test_helpers {
-    use constants::SystemCurve;
-    use jf_primitives::pcs::prelude::UnivariateUniversalParams;
-    use lazy_static::lazy_static;
-    use mpc_plonk::proof_system::{PlonkKzgSnark, UniversalSNARK};
-    use rand::thread_rng;
-
-    /// The maximum degree SRS to allocate for testing circuits
-    const MAX_DEGREE_TESTING: usize = 65536;
-
-    lazy_static! {
-        /// A universal SRS for testing circuits that is generated once and used
-        /// across circuits
-        pub static ref TESTING_SRS: UnivariateUniversalParams<SystemCurve> = {
-            let mut rng = thread_rng();
-            PlonkKzgSnark::<SystemCurve>::universal_setup_for_testing(MAX_DEGREE_TESTING, &mut rng)
-                .unwrap()
-        };
-    }
-}

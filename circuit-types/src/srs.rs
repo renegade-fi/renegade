@@ -27,7 +27,7 @@ use renegade_crypto::fields::get_base_field_modulus;
 
 lazy_static! {
     /// The system SRS included from the `.ptau` file
-    static ref SYSTEM_SRS: UnivariateUniversalParams<SystemCurve> = {
+    pub static ref SYSTEM_SRS: UnivariateUniversalParams<SystemCurve> = {
         let bytes = include_bytes!("../../srs/srs.ptau");
         parse_ptau_file(bytes).unwrap()
     };
@@ -36,7 +36,7 @@ lazy_static! {
 /// The maximum power of two that the SRS supports
 const MAX_SRS_POWER: usize = 16;
 /// The maximum degree that the SRS supports
-pub const MAX_SRS_DEGREE: usize = 1 << MAX_SRS_POWER;
+pub const MAX_SRS_DEGREE: usize = (1 << MAX_SRS_POWER) + 2;
 
 /// The number of bytes in the magic string
 const MAGIC_STRING_LEN: usize = 4;
@@ -208,14 +208,52 @@ fn invalid_data_error(msg: &str) -> std::io::Error {
 // TODO: Test the parsing logic
 #[cfg(test)]
 mod test {
+    use ark_bn254::{Bn254, G1Affine, G2Affine};
+    use ark_ec::pairing::Pairing;
+    use rand::{seq::IteratorRandom, thread_rng};
+
     use crate::srs::MAX_SRS_DEGREE;
 
     use super::SYSTEM_SRS;
+
+    /// Checks that the ratio between two sets of points is the same with one
+    /// set in G1 and one set in G2
+    ///
+    /// I.e. for (A, B) \in G_1^2, (C, D) \in G_2^2 check that there exists x
+    /// such that B = A * x and D = C * x
+    fn same_ratio(a: &G1Affine, b: &G1Affine, c: &G2Affine, d: &G2Affine) -> bool {
+        Bn254::pairing(a, d) == Bn254::pairing(b, c)
+    }
 
     /// Tests that the parsed SRS is the correct length
     #[test]
     fn test_srs_length() {
         let srs = SYSTEM_SRS.clone();
         assert_eq!(srs.powers_of_g.len(), MAX_SRS_DEGREE + 1);
+    }
+
+    /// Tests that the SRS is a valid set of powers of tau
+    ///
+    /// Effectively uses a simplified version of the verification method in:
+    ///     https://eprint.iacr.org/2017/1050.pdf  
+    ///
+    /// We subsample the SRS here to keep the test runtime reasonable, since the
+    /// invariant checked here should be held uniformly, this should be
+    /// sufficient
+    #[test]
+    fn test_srs_powers() {
+        const NUM_SAMPLES: usize = 100;
+        let mut rng = thread_rng();
+        let srs = SYSTEM_SRS.clone();
+
+        // Check the ratio between the successive powers against the ratio between H and
+        // \beta * H. These ratios should all be \beta, the secret exponent
+        let h = &srs.h;
+        let beta_h = &srs.beta_h;
+
+        for window in srs.powers_of_g.windows(2 /* size */).choose_multiple(&mut rng, NUM_SAMPLES) {
+            let (a, b) = (&window[0], &window[1]);
+            assert!(same_ratio(a, b, h, beta_h));
+        }
     }
 }
