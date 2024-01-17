@@ -3,9 +3,10 @@
 
 use std::ops::Neg;
 
+use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use bigdecimal::BigDecimal;
-use constants::Scalar;
+use constants::{Scalar, SystemCurveGroup};
 use ethers_core::types::U256;
 use num_bigint::{BigInt, BigUint, Sign};
 
@@ -16,9 +17,14 @@ use num_bigint::{BigInt, BigUint, Sign};
 /// The number of bytes in a U256
 pub const U256_BYTES: usize = 256 / 8;
 
-/// Return the modulus `p` of the `Scalar` ($Z_p$) field as a `BigUint`
+/// Return the modulus `r` of the `Scalar` ($Z_r$) field as a `BigUint`
 pub fn get_scalar_field_modulus() -> BigUint {
     Scalar::Field::MODULUS.into()
+}
+
+/// Return the modulus `q` of the `Scalar` ($Z_q$) field as a `BigUint`
+pub fn get_base_field_modulus() -> BigUint {
+    <SystemCurveGroup as CurveGroup>::BaseField::MODULUS.into()
 }
 
 // ---------------------------

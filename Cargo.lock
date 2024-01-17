@@ -1301,11 +1301,14 @@ dependencies = [
 name = "circuit-types"
 version = "0.1.0"
 dependencies = [
+ "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
  "ark-mpc",
+ "ark-serialize 0.4.2",
  "async-trait",
  "bigdecimal",
+ "byteorder",
  "circuit-macros",
  "constants",
  "futures",

@@ -8,9 +8,11 @@ test-helpers = ["mpc-plonk/test-srs"]
 
 [dependencies]
 # === Crytography === #
+ark-bn254 = "0.4"
 ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true }
+ark-serialize = "0.4"
 jf-primitives = { workspace = true }
 k256 = { version = "0.13", features = ["expose-field"] }
 mpc-plonk = { workspace = true }
@@ -31,11 +33,11 @@ constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc === #
+byteorder = "1.5"
 itertools = "0.10"
 lazy_static = "1.4"
 serde = { version = "1.0.139", features = ["serde_derive"] }
 serde_json = "1.0"
-
 
 [dev-dependencies]
 test-helpers = { path = "../test-helpers" }
