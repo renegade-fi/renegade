@@ -415,6 +415,13 @@ pub struct MatchBundle {
     pub commitments_link1: PlonkLinkProof,
 }
 
+impl MatchBundle {
+    /// Clone the match proof out from behind the `Arc`
+    pub fn copy_match_proof(&self) -> SizedValidMatchSettleBundle {
+        SizedValidMatchSettleBundle::clone(&self.match_proof)
+    }
+}
+
 impl Serialize for MatchBundle {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

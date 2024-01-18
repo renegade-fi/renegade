@@ -13,6 +13,7 @@ use ethers::{
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
+use tracing::log;
 
 use crate::{
     abi::{
@@ -139,7 +140,10 @@ impl ArbitrumClient {
             <processMatchSettleCall as SolCall>::SELECTOR => {
                 parse_shares_from_process_match_settle(&calldata, public_blinder_share)
             },
-            _ => Err(ArbitrumClientError::InvalidSelector),
+            sel => {
+                log::error!("invalid selector when parsing public shares: {sel:?}");
+                Err(ArbitrumClientError::InvalidSelector)
+            },
         }
     }
 }

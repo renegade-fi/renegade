@@ -1,8 +1,12 @@
 //! Integration tests for contract interaction client functionality
 
 use circuit_types::transfers::ExternalTransfer;
-use common::types::proof_bundles::mocks::{
-    dummy_valid_match_settle_bundle, dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle,
+use common::types::proof_bundles::{
+    mocks::{
+        dummy_link_proof, dummy_valid_match_settle_bundle, dummy_valid_wallet_update_bundle,
+        dummy_validity_proof_bundle,
+    },
+    MatchBundle,
 };
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
@@ -70,11 +74,17 @@ async fn test_process_match_settle(test_args: IntegrationTestArgs) -> Result<()>
     let party_1_new_shares = random_wallet_shares();
     valid_match_settle_proof_bundle.statement.party1_modified_shares = party_1_new_shares.clone();
 
+    let match_bundle = MatchBundle {
+        match_proof: valid_match_settle_proof_bundle.into(),
+        commitments_link0: dummy_link_proof(),
+        commitments_link1: dummy_link_proof(),
+    };
+
     client
         .process_match_settle(
             &party_0_validity_proof_bundle,
             &party_1_validity_proof_bundle,
-            &valid_match_settle_proof_bundle,
+            &match_bundle,
         )
         .await?;
 

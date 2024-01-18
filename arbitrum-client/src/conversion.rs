@@ -8,7 +8,7 @@ use circuit_types::{
     keychain::PublicSigningKey,
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
-    PlonkProof, PolynomialCommitment, SizedWalletShare,
+    PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
 };
 use circuits::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,
@@ -16,10 +16,12 @@ use circuits::zk_circuits::{
     valid_wallet_create::SizedValidWalletCreateStatement,
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
+use common::types::proof_bundles::{MatchBundle, OrderValidityProofBundle};
 use constants::{Scalar, ScalarField};
 use contracts_common::types::{
-    ExternalTransfer as ContractExternalTransfer, Proof as ContractProof,
-    PublicSigningKey as ContractPublicSigningKey,
+    ExternalTransfer as ContractExternalTransfer, LinkingProof as ContractLinkingProof,
+    MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
+    Proof as ContractProof, PublicSigningKey as ContractPublicSigningKey,
     ValidCommitmentsStatement as ContractValidCommitmentsStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
     ValidReblindStatement as ContractValidReblindStatement,
@@ -55,6 +57,16 @@ pub fn to_contract_proof(proof: &PlonkProof) -> Result<ContractProof, Conversion
             .try_into()
             .map_err(|_| ConversionError::InvalidLength)?,
         z_bar: proof.poly_evals.perm_next_eval,
+    })
+}
+
+/// Convert a [`LinkingProof`] to its corresponding smart contract type
+pub fn to_contract_link_proof(
+    proof: &PlonkLinkProof,
+) -> Result<ContractLinkingProof, ConversionError> {
+    Ok(ContractLinkingProof {
+        linking_poly_opening: proof.opening_proof.proof,
+        linking_quotient_poly_comm: proof.quotient_commitment.0,
     })
 }
 
@@ -170,6 +182,36 @@ pub fn to_contract_valid_match_settle_statement(
         party1_receive_balance_index: statement.party1_indices.balance_receive as u64,
         party1_order_index: statement.party1_indices.order as u64,
     }
+}
+
+/// Build a [`MatchProofs`] contract type from a set of proof bundles
+pub fn build_match_proofs(
+    party0_validity_proofs: &OrderValidityProofBundle,
+    party1_validity_proofs: &OrderValidityProofBundle,
+    match_settle_proof: &PlonkProof,
+) -> Result<ContractMatchProofs, ConversionError> {
+    Ok(ContractMatchProofs {
+        valid_commitments_0: to_contract_proof(&party0_validity_proofs.commitment_proof.proof)?,
+        valid_reblind_0: to_contract_proof(&party0_validity_proofs.reblind_proof.proof)?,
+        valid_commitments_1: to_contract_proof(&party1_validity_proofs.commitment_proof.proof)?,
+        valid_reblind_1: to_contract_proof(&party1_validity_proofs.reblind_proof.proof)?,
+        valid_match_settle: to_contract_proof(match_settle_proof)?,
+    })
+}
+
+/// Build a [`MatchLinkingProofs`] contract type from a set of match linking
+/// bundles
+pub fn build_match_linking_proofs(
+    party0_validity_proofs: &OrderValidityProofBundle,
+    party1_validity_proofs: &OrderValidityProofBundle,
+    match_bundle: &MatchBundle,
+) -> Result<ContractMatchLinkingProofs, ConversionError> {
+    Ok(ContractMatchLinkingProofs {
+        valid_reblind_commitments_0: to_contract_link_proof(&party0_validity_proofs.linking_proof)?,
+        valid_reblind_commitments_1: to_contract_link_proof(&party1_validity_proofs.linking_proof)?,
+        valid_commitments_match_settle_0: to_contract_link_proof(&match_bundle.commitments_link0)?,
+        valid_commitments_match_settle_1: to_contract_link_proof(&match_bundle.commitments_link1)?,
+    })
 }
 
 // ------------------------

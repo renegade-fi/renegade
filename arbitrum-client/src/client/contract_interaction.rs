@@ -4,8 +4,8 @@
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
 use common::types::proof_bundles::{
     GenericMatchSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-    OrderValidityProofBundle, SizedValidCommitmentsBundle, SizedValidMatchSettleBundle,
-    SizedValidReblindBundle, SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
+    MatchBundle, OrderValidityProofBundle, SizedValidWalletCreateBundle,
+    SizedValidWalletUpdateBundle,
 };
 use constants::Scalar;
 use contracts_common::types::MatchPayload;
@@ -14,9 +14,10 @@ use tracing::log::info;
 
 use crate::{
     conversion::{
-        to_contract_proof, to_contract_valid_commitments_statement,
-        to_contract_valid_match_settle_statement, to_contract_valid_reblind_statement,
-        to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
+        build_match_linking_proofs, build_match_proofs, to_contract_proof,
+        to_contract_valid_commitments_statement, to_contract_valid_match_settle_statement,
+        to_contract_valid_reblind_statement, to_contract_valid_wallet_create_statement,
+        to_contract_valid_wallet_update_statement,
     },
     errors::ArbitrumClientError,
     helpers::{send_tx, serialize_calldata},
@@ -131,34 +132,24 @@ impl ArbitrumClient {
         &self,
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
-        valid_match_settle: &SizedValidMatchSettleBundle,
+        match_bundle: &MatchBundle,
     ) -> Result<(), ArbitrumClientError> {
         // Destructure proof bundles
 
         let GenericMatchSettleBundle {
             statement: valid_match_settle_statement,
             proof: valid_match_settle_proof,
-        } = valid_match_settle;
+        } = match_bundle.copy_match_proof();
 
-        let SizedValidCommitmentsBundle {
-            statement: party_0_valid_commitments_statement,
-            proof: party_0_valid_commitments_proof,
-        } = party0_validity_proofs.copy_commitment_proof();
+        let party_0_valid_commitments_statement = party0_validity_proofs.commitment_proof.statement;
 
-        let SizedValidReblindBundle {
-            statement: party_0_valid_reblind_statement,
-            proof: party_0_valid_reblind_proof,
-        } = party0_validity_proofs.copy_reblind_proof();
+        let party_0_valid_reblind_statement =
+            party0_validity_proofs.reblind_proof.statement.clone();
 
-        let SizedValidCommitmentsBundle {
-            statement: party_1_valid_commitments_statement,
-            proof: party_1_valid_commitments_proof,
-        } = party1_validity_proofs.copy_commitment_proof();
+        let party_1_valid_commitments_statement = party1_validity_proofs.commitment_proof.statement;
 
-        let SizedValidReblindBundle {
-            statement: party_1_valid_reblind_statement,
-            proof: party_1_valid_reblind_proof,
-        } = party1_validity_proofs.copy_reblind_proof();
+        let party_1_valid_reblind_statement =
+            party1_validity_proofs.reblind_proof.statement.clone();
 
         let party_0_match_payload = MatchPayload {
             valid_commitments_statement: to_contract_valid_commitments_statement(
@@ -178,47 +169,41 @@ impl ArbitrumClient {
             ),
         };
 
+        let match_proofs = build_match_proofs(
+            party0_validity_proofs,
+            party1_validity_proofs,
+            &valid_match_settle_proof,
+        )
+        .map_err(ArbitrumClientError::Conversion)?;
+
+        let match_link_proofs = build_match_linking_proofs(
+            party0_validity_proofs,
+            party1_validity_proofs,
+            match_bundle,
+        )
+        .map_err(ArbitrumClientError::Conversion)?;
+
         // Serialize calldata
 
         let party_0_match_payload_calldata = serialize_calldata(&party_0_match_payload)?;
-
-        let party_0_valid_commitments_proof = to_contract_proof(&party_0_valid_commitments_proof)?;
-        let party_0_valid_commitments_proof_calldata =
-            serialize_calldata(&party_0_valid_commitments_proof)?;
-
-        let party_0_valid_reblind_proof = to_contract_proof(&party_0_valid_reblind_proof)?;
-        let party_0_valid_reblind_proof_calldata =
-            serialize_calldata(&party_0_valid_reblind_proof)?;
-
         let party_1_match_payload_calldata = serialize_calldata(&party_1_match_payload)?;
 
-        let party_1_valid_commitments_proof = to_contract_proof(&party_1_valid_commitments_proof)?;
-        let party_1_valid_commitments_proof_calldata =
-            serialize_calldata(&party_1_valid_commitments_proof)?;
-
-        let party_1_valid_reblind_proof = to_contract_proof(&party_1_valid_reblind_proof)?;
-        let party_1_valid_reblind_proof_calldata =
-            serialize_calldata(&party_1_valid_reblind_proof)?;
-
         let contract_valid_match_settle_statement =
-            to_contract_valid_match_settle_statement(valid_match_settle_statement);
+            to_contract_valid_match_settle_statement(&valid_match_settle_statement);
         let valid_match_settle_statement_calldata =
             serialize_calldata(&contract_valid_match_settle_statement)?;
 
-        let valid_match_settle_proof = to_contract_proof(valid_match_settle_proof)?;
-        let valid_match_settle_proof_calldata = serialize_calldata(&valid_match_settle_proof)?;
+        let match_proofs_calldata = serialize_calldata(&match_proofs)?;
+        let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
 
         // Call `process_match_settle` on darkpool contract
 
         let receipt = send_tx(self.darkpool_contract.process_match_settle(
             party_0_match_payload_calldata,
-            party_0_valid_commitments_proof_calldata,
-            party_0_valid_reblind_proof_calldata,
             party_1_match_payload_calldata,
-            party_1_valid_commitments_proof_calldata,
-            party_1_valid_reblind_proof_calldata,
-            valid_match_settle_proof_calldata,
             valid_match_settle_statement_calldata,
+            match_proofs_calldata,
+            match_link_proofs_calldata,
         ))
         .await?;
 

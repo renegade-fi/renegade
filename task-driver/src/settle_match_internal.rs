@@ -267,11 +267,12 @@ impl SettleMatchInternalTask {
     /// Submit the match transaction
     async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
         // Submit a `match` transaction
-
-        // TODO: Submit link proofs with the tx
-        let match_settle_proof = self.match_bundle.clone().unwrap().match_proof;
         self.arbitrum_client
-            .process_match_settle(&self.order1_proof, &self.order2_proof, &match_settle_proof)
+            .process_match_settle(
+                &self.order1_proof,
+                &self.order2_proof,
+                self.match_bundle.as_ref().unwrap(),
+            )
             .await
             .map_err(|e| SettleMatchInternalTaskError::Arbitrum(e.to_string()))
     }

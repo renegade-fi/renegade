@@ -218,14 +218,12 @@ impl SettleMatchTask {
 
     /// Submit the match transaction to the contract
     async fn submit_match(&self) -> Result<(), SettleMatchTaskError> {
-        // TODO: Send proof links with the transaction
-        let match_settle_proof = &self.match_bundle.match_proof;
         let tx_submit_res = self
             .arbitrum_client
             .process_match_settle(
                 &self.party0_validity_proof,
                 &self.party1_validity_proof,
-                match_settle_proof,
+                &self.match_bundle,
             )
             .await;
 
