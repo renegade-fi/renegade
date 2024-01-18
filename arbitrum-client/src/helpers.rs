@@ -88,7 +88,7 @@ pub fn parse_shares_from_process_match_settle(
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let valid_match_settle_statement = deserialize_calldata::<ContractValidMatchSettleStatement>(
-        &call.valid_match_settle_statement_bytes.into(),
+        &call.valid_match_settle_statement.into(),
     )?;
 
     // The blinder is expected to be the last public wallet share
