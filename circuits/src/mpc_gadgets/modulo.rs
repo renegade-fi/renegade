@@ -36,6 +36,9 @@ fn scalar_mod_2m(val: &ScalarResult, m: usize) -> ScalarResult {
 /// One catch is that if the resulting value of the modulo is less than the
 /// blinding factor, we have to shift the value up by one addition of the
 /// modulus.
+///
+/// TODO: Define a signed integer maximum for this and other MPC gadgets as per:
+///     https://faui1-files.cs.fau.de/filepool/publications/octavian_securescm/smcint-scn10.pdf
 pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
     // The input has 256 bits, so any modulus larger can be ignored
     if M >= 256 {
@@ -53,7 +56,8 @@ pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> Authe
     };
 
     // Generate a random upper half to the scalar
-    let random_upper_bits = scalar_2m * &fabric.random_shared_scalars(1 /* num_scalars */)[0];
+    let random_upper_bits =
+        scalar_2m * &fabric.random_shared_scalars_authenticated(1 /* num_scalars */)[0];
     let blinding_factor = random_upper_bits + &random_lower_bits;
 
     let blinded_value = a + &blinding_factor;
@@ -105,20 +109,17 @@ mod tests {
     use circuit_types::errors::MpcError;
     use constants::Scalar;
     use num_bigint::BigUint;
-    use rand::{thread_rng, RngCore};
+    use rand::{thread_rng, Rng, RngCore};
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::{
-        mpc_gadgets::modulo::{mod_2m, shift_right},
-        SCALAR_BITS_MINUS_TWO,
-    };
+    use crate::mpc_gadgets::modulo::{mod_2m, shift_right};
 
     /// Test the `mod2m` gadget
     #[tokio::test]
     async fn test_mod2m() {
-        const M: usize = SCALAR_BITS_MINUS_TWO;
         let mut rng = thread_rng();
-        let value = Scalar::random(&mut rng);
+        const M: usize = 32;
+        let value = Scalar::from(rng.gen::<u128>());
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);
@@ -129,7 +130,8 @@ mod tests {
         })
         .await;
 
-        assert!(res.unwrap())
+        let res = res.unwrap();
+        assert!(res)
     }
 
     /// Test the shift right gadget

@@ -52,12 +52,15 @@ macro_rules! print_wire {
 #[allow(unused)]
 macro_rules! print_mpc_wire {
     ($x:expr) => {{
-        use crypto::fields::scalar_to_biguint;
+        use circuit_types::traits::MpcType;
         use futures::executor::block_on;
+        use renegade_crypto::fields::scalar_to_biguint;
         use tracing::log;
 
         let x_eval = block_on($x.open());
-        log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+        if $x.fabric().party_id() == 0 {
+            log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+        }
     }};
 }
 
