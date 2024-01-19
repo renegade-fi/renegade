@@ -108,7 +108,18 @@ pub(crate) async fn setup_initial_wallet(
 ) -> Result<()> {
     setup_wallet_shares(blinder_seed, share_seed, wallet);
     allocate_wallet_in_darkpool(wallet, &test_args.arbitrum_client).await?;
-    lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args.clone()).await
+    lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args.clone()).await?;
+
+    // Read the wallet from the global state so that order IDs match
+    *wallet = test_args
+        .global_state
+        .read_wallet_index()
+        .await
+        .read_wallet(&wallet.wallet_id)
+        .await
+        .ok_or_else(|| eyre!("Wallet not found in global state"))?
+        .clone();
+    Ok(())
 }
 
 /// Create a wallet in the contract state and update the Merkle path on the

@@ -41,6 +41,7 @@ use tokio::sync::{
     mpsc::UnboundedSender as TokioSender,
     oneshot::{self, Receiver as TokioReceiver},
 };
+use tracing::log;
 
 // -------------
 // | Constants |
@@ -289,7 +290,11 @@ pub(crate) async fn update_wallet_validity_proofs(
 ) -> Result<(), String> {
     // No validity proofs needed for an empty wallet, they will be re-proven on
     // the next update that adds a non-empty order
-    if wallet.orders.values().all(|o| o.is_zero()) {
+    if !wallet.has_orders_to_match() {
+        log::debug!(
+            "wallet {} has no orders ready for matching, skipping validity proofs",
+            wallet.wallet_id
+        );
         return Ok(());
     }
 
