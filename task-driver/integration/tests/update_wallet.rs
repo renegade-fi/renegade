@@ -21,8 +21,8 @@ use uuid::Uuid;
 
 use crate::{
     helpers::{
-        allocate_wallet_in_darkpool, attach_merkle_opening, biguint_from_address,
-        lookup_wallet_and_check_result, new_wallet_in_darkpool, setup_wallet_shares,
+        attach_merkle_opening, biguint_from_address, lookup_wallet_and_check_result,
+        new_wallet_in_darkpool, setup_initial_wallet,
     },
     IntegrationTestArgs,
 };
@@ -142,7 +142,6 @@ integration_test_async!(test_update_wallet_then_recover);
 async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
     let mut rng = thread_rng();
-    let client = &test_args.arbitrum_client;
 
     // Create a new wallet with a balance already inside
     let blinder_seed = Scalar::random(&mut rng);
@@ -152,9 +151,7 @@ async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Resu
 
     let send_mint = DUMMY_ORDER.send_mint().clone();
     wallet.balances.insert(send_mint.clone(), Balance { mint: send_mint, amount: 10 });
-
-    setup_wallet_shares(blinder_seed, share_seed, &mut wallet);
-    allocate_wallet_in_darkpool(&mut wallet, client).await?;
+    setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Update the wallet by inserting an order
     let old_wallet = wallet.clone();
@@ -176,7 +173,6 @@ integration_test_async!(test_update_wallet__place_order);
 /// Tests cancelling an order in a wallet
 #[allow(non_snake_case)]
 async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Result<()> {
-    let client = &test_args.arbitrum_client;
     let mut rng = thread_rng();
 
     // Create a new wallet with a non-empty order and post it on-chain
@@ -186,9 +182,7 @@ async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Res
     let mut wallet = mock_empty_wallet();
     let order_id = Uuid::new_v4();
     wallet.orders.insert(order_id, DUMMY_ORDER.clone());
-
-    setup_wallet_shares(blinder_seed, share_seed, &mut wallet);
-    allocate_wallet_in_darkpool(&mut wallet, client).await?;
+    setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Update the wallet by removing an order
     let old_wallet = wallet.clone();
@@ -238,7 +232,6 @@ integration_test_async!(test_update_wallet__add_fee);
 /// Tests updating a wallet by removing a fee from the wallet
 #[allow(non_snake_case)]
 async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Result<()> {
-    let client = &test_args.arbitrum_client;
     let mut rng = thread_rng();
 
     // Create a new wallet with a non-empty fee and post it on-chain
@@ -248,8 +241,7 @@ async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Resul
     let mut wallet = mock_empty_wallet();
     wallet.fees.push(DUMMY_FEE.clone());
 
-    setup_wallet_shares(blinder_seed, share_seed, &mut wallet);
-    allocate_wallet_in_darkpool(&mut wallet, client).await?;
+    setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Update the wallet by removing a fee
     let old_wallet = wallet.clone();
