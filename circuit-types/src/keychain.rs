@@ -253,9 +253,9 @@ impl PublicSigningKey {
     }
 
     /// Convert the key to bytes
-    pub fn to_compressed_bytes(&self) -> Vec<u8> {
+    pub fn to_uncompressed_bytes(&self) -> Vec<u8> {
         let verifying_key = K256VerifyingKey::from(self);
-        verifying_key.to_sec1_bytes().to_vec()
+        verifying_key.to_encoded_point(false /* compress */).as_bytes().to_vec()
     }
 }
 

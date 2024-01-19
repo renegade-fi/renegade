@@ -47,7 +47,7 @@ pub fn nonnative_scalar_from_hex_string<const NUM_WORDS: usize>(
 
 /// A helper to serialize a signing key to a hex string
 pub fn public_sign_key_to_hex_string(val: &PublicSigningKey) -> String {
-    let bytes = val.to_compressed_bytes();
+    let bytes = val.to_uncompressed_bytes();
     format!("0x{}", hex::encode(bytes))
 }
 
