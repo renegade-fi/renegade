@@ -1,7 +1,7 @@
 //! Integration tests for settling matches, both internal and cross-cluster
 
 use crate::{
-    helpers::{biguint_from_address, lookup_wallet_and_check_result, new_wallet_in_darkpool},
+    helpers::{lookup_wallet_and_check_result, setup_initial_wallet},
     IntegrationTestArgs,
 };
 use circuit_types::{
@@ -9,7 +9,6 @@ use circuit_types::{
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
     r#match::{MatchResult, OrderSettlementIndices},
-    transfers::{ExternalTransfer, ExternalTransferDirection},
     SizedWallet,
 };
 use circuits::zk_circuits::valid_match_settle::{
@@ -22,10 +21,12 @@ use common::types::{
         ValidMatchSettleBundle,
     },
     wallet::Wallet,
+    wallet_mocks::mock_empty_wallet,
 };
 use constants::Scalar;
 use eyre::{eyre, Result};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_u64;
 use state::RelayerState;
 use task_driver::{settle_match::SettleMatchTask, settle_match_internal::SettleMatchInternalTask};
@@ -33,8 +34,6 @@ use test_helpers::{assert_eq_result, assert_true_result, integration_test_async}
 use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};
 use util::{hex::biguint_from_hex_string, matching_engine::settle_match_into_wallets};
 use uuid::Uuid;
-
-use super::update_wallet::execute_wallet_update;
 
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
@@ -82,41 +81,25 @@ async fn setup_wallet_with_order_balance(
     balance: Balance,
     test_args: IntegrationTestArgs,
 ) -> Result<(Wallet, Scalar, Scalar)> {
-    let client = &test_args.arbitrum_client;
-    let account_addr = biguint_from_address(client.wallet_address());
-    let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
+    let mut rng = thread_rng();
 
-    // Deposit the balance into the wallet
-    let old_wallet = wallet.clone();
+    let blinder_seed = Scalar::random(&mut rng);
+    let share_seed = Scalar::random(&mut rng);
+    let mut wallet = mock_empty_wallet();
+
+    // Add the balance and order into the wallet
     wallet.balances.insert(balance.mint.clone(), balance.clone());
-    wallet.reblind_wallet();
-
-    wallet = execute_wallet_update(
-        old_wallet,
-        wallet.clone(),
-        Some(ExternalTransfer {
-            mint: balance.mint,
-            amount: balance.amount.into(),
-            account_addr,
-            direction: ExternalTransferDirection::Deposit,
-        }),
-        test_args.clone(),
-    )
-    .await?;
-
-    // Add the order to the wallet
-    let old_wallet = wallet.clone();
     wallet.orders.insert(Uuid::new_v4(), order);
-    wallet.reblind_wallet();
+    setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
-    wallet = execute_wallet_update(
-        old_wallet,
-        wallet.clone(),
-        None, // transfer
-        test_args.clone(),
-    )
-    .await?;
-
+    // Re-read the wallet out of the global state so that the order IDs match
+    let wallet = test_args
+        .global_state
+        .read_wallet_index()
+        .await
+        .get_wallet(&wallet.wallet_id)
+        .await
+        .ok_or_else(|| eyre!("wallet not found in state"))?;
     Ok((wallet, blinder_seed, share_seed))
 }
 

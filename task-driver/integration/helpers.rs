@@ -23,7 +23,6 @@ use task_driver::{
     lookup_wallet::LookupWalletTask,
 };
 use test_helpers::{assert_eq_result, assert_true_result};
-use uuid::Uuid;
 
 use crate::IntegrationTestArgs;
 
@@ -45,10 +44,10 @@ pub(crate) async fn lookup_wallet_and_check_result(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     // Start a lookup task for the new wallet
-    let new_wallet_id = Uuid::new_v4();
+    let wallet_id = expected_wallet.wallet_id;
     let state = test_args.global_state;
     let task = LookupWalletTask::new(
-        new_wallet_id,
+        wallet_id,
         blinder_seed,
         share_seed,
         expected_wallet.key_chain.clone(),
@@ -67,7 +66,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
     let state_wallet = state
         .read_wallet_index()
         .await
-        .read_wallet(&new_wallet_id)
+        .read_wallet(&wallet_id)
         .await
         .ok_or_else(|| eyre!("Wallet not found in global state"))?
         .clone();
@@ -94,6 +93,22 @@ pub async fn new_wallet_in_darkpool(client: &ArbitrumClient) -> Result<(Wallet, 
     allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     Ok((wallet, blinder_seed, share_seed))
+}
+
+/// Sets up a new wallet in the system by:
+///     1. Generating secret shares for the wallet
+///     2. Allocating it in the darkpool directly
+///     3. Looking up the wallet in the contract state so that the wallet
+///        appears in the global state
+pub(crate) async fn setup_initial_wallet(
+    blinder_seed: Scalar,
+    share_seed: Scalar,
+    wallet: &mut Wallet,
+    test_args: &IntegrationTestArgs,
+) -> Result<()> {
+    setup_wallet_shares(blinder_seed, share_seed, wallet);
+    allocate_wallet_in_darkpool(wallet, &test_args.arbitrum_client).await?;
+    lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args.clone()).await
 }
 
 /// Create a wallet in the contract state and update the Merkle path on the
@@ -185,8 +200,9 @@ pub fn empty_wallet_from_seed(blinder_stream_seed: Scalar, secret_share_seed: Sc
 }
 
 /// Create shares for a mock wallet given the seeds for the blinder and secret
+/// share CSPRNG streams
 ///
-/// Mutates the wallet to set its shares and blinder
+/// Mutates the wallet in-place to set its shares and blinder
 pub fn setup_wallet_shares(
     blinder_stream_seed: Scalar,
     secret_share_seed: Scalar,
