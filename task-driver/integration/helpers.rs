@@ -179,7 +179,19 @@ pub fn create_empty_api_wallet() -> ApiWallet {
 pub fn empty_wallet_from_seed(blinder_stream_seed: Scalar, secret_share_seed: Scalar) -> Wallet {
     // Create a blank wallet then modify the shares
     let mut wallet = mock_empty_wallet();
+    setup_wallet_shares(blinder_stream_seed, secret_share_seed, &mut wallet);
 
+    wallet
+}
+
+/// Create shares for a mock wallet given the seeds for the blinder and secret
+///
+/// Mutates the wallet to set its shares and blinder
+pub fn setup_wallet_shares(
+    blinder_stream_seed: Scalar,
+    secret_share_seed: Scalar,
+    wallet: &mut Wallet,
+) {
     // Sample the blinder and blinder private share
     let blinder_and_private_share = evaluate_hash_chain(blinder_stream_seed, 2 /* length */);
     let new_blinder = blinder_and_private_share[0];
@@ -197,5 +209,4 @@ pub fn empty_wallet_from_seed(blinder_stream_seed: Scalar, secret_share_seed: Sc
     wallet.blinded_public_shares = blinded_public_shares;
     wallet.private_shares = private_shares;
     wallet.blinder = new_blinder;
-    wallet
 }
