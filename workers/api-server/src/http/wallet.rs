@@ -47,6 +47,10 @@ use super::{
     parse_wallet_id_from_params,
 };
 
+/// The maximum staleness of a timestamp on an order between a request and when
+/// it is processed by the API server
+const MAX_TIMESTAMP_STALENESS_MS: u64 = 5_000; // 5 seconds
+
 // -----------
 // | Helpers |
 // -----------
@@ -55,6 +59,21 @@ use super::{
 pub(super) fn get_current_timestamp() -> u64 {
     let now = SystemTime::now();
     now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
+}
+
+/// Check that a timestamp given by an API request is within the last
+/// `MAX_TIMESTAMP_STALENESS_MS` ms
+///
+/// Assumes the given timestamp is in milliseconds since the epoch
+fn check_timestamp_staleness(timestamp: u64) -> Result<(), ApiServerError> {
+    let now = get_current_timestamp();
+    if now > timestamp && now - timestamp < MAX_TIMESTAMP_STALENESS_MS {
+        Ok(())
+    } else {
+        Err(bad_request(format!(
+            "{ERR_STALE_TIMESTAMP} (current time = {now}, timestamp = {timestamp})"
+        )))
+    }
 }
 
 /// Find the wallet for the given id in the global state
@@ -131,6 +150,8 @@ const ERR_FEES_FULL: &str = "wallet's fee list is full";
 const ERR_FEE_OUT_OF_RANGE: &str = "fee index out of range";
 /// Error message displayed when an update is already in progress on a wallet
 const ERR_UPDATE_IN_PROGRESS: &str = "wallet update already in progress";
+/// The error message emitted when a timestamp is too stale
+const ERR_STALE_TIMESTAMP: &str = "timestamp is too stale";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -462,10 +483,10 @@ impl TypedHandler for CreateOrderHandler {
         }
 
         // Add the order to the new wallet
-        let timestamp = get_current_timestamp();
         let mut new_wallet = old_wallet.clone();
-        let mut new_order: Order = req.order.into();
-        new_order.timestamp = timestamp;
+        let new_order: Order = req.order.into();
+        let timestamp = new_order.timestamp;
+        check_timestamp_staleness(timestamp)?;
 
         new_wallet.orders.insert(id, new_order);
         new_wallet.orders.retain(|_id, order| !order.is_default());
@@ -544,9 +565,9 @@ impl TypedHandler for UpdateOrderHandler {
         // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
 
-        let timestamp = get_current_timestamp();
-        let mut new_order: Order = req.order.into();
-        new_order.timestamp = timestamp;
+        let new_order: Order = req.order.into();
+        let timestamp = new_order.timestamp;
+        check_timestamp_staleness(timestamp)?;
 
         // We edit the value of the underlying map in-place (as opposed to `pop` and
         // `insert`) to maintain ordering of the orders. This is important for
