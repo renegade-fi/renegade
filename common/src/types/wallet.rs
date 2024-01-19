@@ -230,6 +230,27 @@ impl Wallet {
         self.merkle_staleness.store(0, Ordering::Relaxed);
     }
 
+    /// Returns whether any of the orders in the wallet are eligible for
+    /// matching
+    ///
+    /// This amounts to non-default orders with non-zero balances to cover them
+    pub fn has_orders_to_match(&self) -> bool {
+        for order in self.orders.values() {
+            let send_mint = order.send_mint();
+            let has_balance = match self.balances.get(send_mint) {
+                Some(balance) => balance.amount > 0,
+                None => false,
+            };
+
+            // If a single non-default order has a non-zero balance, we can match on it
+            if !order.is_default() && has_balance {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Reblind the wallet, consuming the next set of blinders and secret shares
     pub fn reblind_wallet(&mut self) {
         let private_shares_serialized: Vec<Scalar> = self.private_shares.to_scalars();
