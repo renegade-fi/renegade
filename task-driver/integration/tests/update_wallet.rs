@@ -7,7 +7,7 @@ use circuit_types::{
     order::{Order, OrderSide},
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use common::types::wallet::Wallet;
+use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::Result;
 use lazy_static::lazy_static;
@@ -15,13 +15,14 @@ use num_bigint::BigUint;
 use rand::thread_rng;
 use task_driver::update_wallet::UpdateWalletTask;
 use test_helpers::{assert_true_result, integration_test_async};
+use tracing::log;
 use util::{get_current_time_seconds, hex::biguint_from_hex_string};
 use uuid::Uuid;
 
 use crate::{
     helpers::{
         allocate_wallet_in_darkpool, attach_merkle_opening, biguint_from_address,
-        empty_wallet_from_seed, lookup_wallet_and_check_result, new_wallet_in_darkpool,
+        lookup_wallet_and_check_result, new_wallet_in_darkpool, setup_wallet_shares,
     },
     IntegrationTestArgs,
 };
@@ -103,6 +104,7 @@ async fn execute_wallet_update_and_verify_shares(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     execute_wallet_update(old_wallet, new_wallet.clone(), transfer, test_args.clone()).await?;
+    log::info!("Wallet updated successfully");
     lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, test_args).await
 }
 
@@ -145,11 +147,13 @@ async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Resu
     // Create a new wallet with a balance already inside
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
-    let mut wallet = empty_wallet_from_seed(blinder_seed, share_seed);
+
+    let mut wallet = mock_empty_wallet();
 
     let send_mint = DUMMY_ORDER.send_mint().clone();
     wallet.balances.insert(send_mint.clone(), Balance { mint: send_mint, amount: 10 });
-    wallet.reblind_wallet();
+
+    setup_wallet_shares(blinder_seed, share_seed, &mut wallet);
     allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     // Update the wallet by inserting an order
@@ -178,11 +182,12 @@ async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Res
     // Create a new wallet with a non-empty order and post it on-chain
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
-    let mut wallet = empty_wallet_from_seed(blinder_seed, share_seed);
 
+    let mut wallet = mock_empty_wallet();
     let order_id = Uuid::new_v4();
     wallet.orders.insert(order_id, DUMMY_ORDER.clone());
 
+    setup_wallet_shares(blinder_seed, share_seed, &mut wallet);
     allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     // Update the wallet by removing an order
@@ -239,10 +244,11 @@ async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Resul
     // Create a new wallet with a non-empty fee and post it on-chain
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
-    let mut wallet = empty_wallet_from_seed(blinder_seed, share_seed);
 
+    let mut wallet = mock_empty_wallet();
     wallet.fees.push(DUMMY_FEE.clone());
 
+    setup_wallet_shares(blinder_seed, share_seed, &mut wallet);
     allocate_wallet_in_darkpool(&mut wallet, client).await?;
 
     // Update the wallet by removing a fee
