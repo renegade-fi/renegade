@@ -154,9 +154,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anstream"
-version = "0.6.8"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "628a8f9bd1e24b4e0db2b4bc2d000b001e7dd032d54afa60a68836aeec5aa54a"
+checksum = "6e2e1ebcb11de5c03c67de28a7df593d32191b44939c482e97702baaaa6ab6a5"
 dependencies = [
  "anstyle",
  "anstyle-parse",
@@ -242,7 +242,7 @@ dependencies = [
  "tracing",
  "tungstenite 0.18.0",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -1564,7 +1564,7 @@ dependencies = [
  "tokio",
  "tracing",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "contracts-common"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts.git#369cb55dc9b6243c8301593b0f108aabe525f563"
+source = "git+https://github.com/renegade-fi/renegade-contracts.git#bdc4a338ca03c233e8c6b9ec3b3544f34d9592c3"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -2868,7 +2868,7 @@ dependencies = [
  "serde",
  "serde_json",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -3259,7 +3259,7 @@ dependencies = [
  "libp2p",
  "serde",
  "serde_json",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -3384,7 +3384,7 @@ dependencies = [
  "tokio",
  "tracing",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -3888,7 +3888,7 @@ checksum = "b1a46d1a171d865aa5f83f92695765caa047a9b4cbae2cbf37dbd613a793fd4c"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#0c7801344d0fc827581a08d2a4ec424bbef8369a"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#3b82c9c7bf44b7513d3b045ffa9b53bc813f1960"
 dependencies = [
  "anyhow",
  "ark-bls12-377",
@@ -3932,7 +3932,7 @@ dependencies = [
 [[package]]
 name = "jf-utils"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#0c7801344d0fc827581a08d2a4ec424bbef8369a"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#3b82c9c7bf44b7513d3b045ffa9b53bc813f1960"
 dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
@@ -3959,7 +3959,7 @@ dependencies = [
  "libp2p",
  "libp2p-core",
  "tokio",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -4652,7 +4652,7 @@ dependencies = [
 [[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#0c7801344d0fc827581a08d2a4ec424bbef8369a"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#3b82c9c7bf44b7513d3b045ffa9b53bc813f1960"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -4686,7 +4686,7 @@ dependencies = [
 [[package]]
 name = "mpc-relation"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#0c7801344d0fc827581a08d2a4ec424bbef8369a"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#3b82c9c7bf44b7513d3b045ffa9b53bc813f1960"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
@@ -4921,7 +4921,7 @@ dependencies = [
  "tokio",
  "tracing",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -5144,9 +5144,9 @@ dependencies = [
 
 [[package]]
 name = "openssl"
-version = "0.10.62"
+version = "0.10.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cde4d2d9200ad5909f8dac647e29482e07c3a35de8a13fce7c9c7747ad9f671"
+checksum = "15c9d69dd87a29568d4d017cfe8ec518706046a05184e5aea92d0af890b803c8"
 dependencies = [
  "bitflags 2.4.2",
  "cfg-if",
@@ -5176,9 +5176,9 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.98"
+version = "0.9.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1665caf8ab2dc9aef43d1c0023bd904633a6a05cb30b0ad59bec2ae986e57a7"
+checksum = "22e1bf214306098e4832460f797824c05d25aacdf896f64a985fb0fd992454ae"
 dependencies = [
  "cc",
  "libc",
@@ -7152,9 +7152,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.12.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2593d31f82ead8df961d8bd23a64c2ccf2eb5dd34b0a34bfb4dd54011c72009e"
+checksum = "e6ecd384b10a64542d77071bd64bd7b231f4ed5940fba55e98c3de13824cf3d7"
 
 [[package]]
 name = "snafu"
@@ -7290,7 +7290,7 @@ dependencies = [
  "tui",
  "tui-logger",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -7312,7 +7312,7 @@ dependencies = [
  "serde",
  "serde_json",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -7342,7 +7342,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-slog",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -7583,7 +7583,7 @@ dependencies = [
  "tokio",
  "tracing",
  "util",
- "uuid 1.6.1",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -8288,9 +8288,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e395fcf16a7a3d8127ec99782007af141946b4795001f876d54fb0d55978560"
+checksum = "f00cc9702ca12d3c81455259621e676d0f7251cec66a21e98fe2e9a37db93b2a"
 dependencies = [
  "getrandom 0.2.12",
  "serde",

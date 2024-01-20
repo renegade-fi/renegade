@@ -478,9 +478,10 @@ pub(crate) mod test_helpers {
         }
 
         /// Remove a node from the cluster
-        pub fn remove_node(&self, node_id: usize) {
+        pub fn remove_node(&mut self, node_id: usize) {
             let remove_node = StateTransition::RemoveRaftPeer(node_id as u64);
             self.proposal_senders[node_id - 1].send(remove_node).unwrap();
+            self.handles.remove(node_id - 1);
         }
 
         /// Assert that no crashes have occurred
@@ -701,7 +702,7 @@ mod test {
     fn test_node_leave() {
         const N: usize = 5;
         let mut rng = thread_rng();
-        let cluster = MockReplicationCluster::new(N);
+        let mut cluster = MockReplicationCluster::new(N);
 
         // Remove a node from the cluster
         let removed_node = rng.gen_range(1..=N);
