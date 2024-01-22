@@ -20,7 +20,6 @@ use raft::{
 };
 use rand::{thread_rng, RngCore};
 use slog::Logger;
-use state_proto::StateTransition;
 use system_bus::SystemBus;
 use tracing::log::info;
 use tracing_slog::TracingSlogDrain;
@@ -28,6 +27,7 @@ use tracing_slog::TracingSlogDrain;
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
     storage::db::DB,
+    StateTransition,
 };
 
 use super::{error::ReplicationError, log_store::LogStore, network::RaftNetwork};
@@ -191,9 +191,9 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         // Handle raft cluster changes directly, otherwise append the proposal to the
         // log
         match proposal {
-            StateTransition::AddRaftLearner(peer_id) => self.add_learner(*peer_id),
-            StateTransition::AddRaftPeer(peer_id) => self.add_peer(*peer_id),
-            StateTransition::RemoveRaftPeer(peer_id) => self.remove_peer(*peer_id),
+            StateTransition::AddRaftLearner { peer_id } => self.add_learner(*peer_id),
+            StateTransition::AddRaftPeer { peer_id } => self.add_peer(*peer_id),
+            StateTransition::RemoveRaftPeer { peer_id } => self.remove_peer(*peer_id),
             _ => {
                 let payload = serde_json::to_vec(&proposal)
                     .map_err(|e| ReplicationError::SerializeValue(e.to_string()))?;
@@ -381,13 +381,13 @@ pub(crate) mod test_helpers {
 
     use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender};
     use raft::prelude::Config as RaftConfig;
-    use state_proto::StateTransition;
     use system_bus::SystemBus;
 
     use crate::{
         replication::{error::ReplicationError, network::test_helpers::MockNetwork},
         storage::db::DB,
         test_helpers::mock_db,
+        StateTransition,
     };
 
     use super::{ReplicationNode, ReplicationNodeConfig};
@@ -455,7 +455,7 @@ pub(crate) mod test_helpers {
             // Propose a node addition to the cluster for each of the followers
             let leader_proposal_queue = senders[0].clone();
             for node_id in 2..=n_nodes {
-                let add_node = StateTransition::AddRaftPeer(node_id as u64);
+                let add_node = StateTransition::AddRaftPeer { peer_id: node_id as u64 };
                 leader_proposal_queue.send(add_node).unwrap();
                 thread::sleep(Duration::from_millis(50))
             }
@@ -479,7 +479,7 @@ pub(crate) mod test_helpers {
 
         /// Remove a node from the cluster
         pub fn remove_node(&mut self, node_id: usize) {
-            let remove_node = StateTransition::RemoveRaftPeer(node_id as u64);
+            let remove_node = StateTransition::RemoveRaftPeer { peer_id: node_id as u64 };
             self.proposal_senders[node_id - 1].send(remove_node).unwrap();
             self.handles.remove(node_id - 1);
         }
@@ -580,18 +580,21 @@ pub(crate) mod test_helpers {
 mod test {
     use std::{sync::Arc, thread, time::Duration};
 
-    use common::types::wallet::{Wallet, WalletIdentifier};
+    use common::types::{
+        wallet::{Wallet, WalletIdentifier},
+        wallet_mocks::mock_empty_wallet,
+    };
     use crossbeam::channel::unbounded;
     use rand::{thread_rng, Rng};
-    use state_proto::StateTransition;
 
     use crate::{
-        applicator::{wallet_index::test::dummy_add_wallet, WALLETS_TABLE},
+        applicator::WALLETS_TABLE,
         replication::{
             network::test_helpers::MockNetwork, raft_node::test_helpers::MockReplicationCluster,
         },
         storage::db::DB,
         test_helpers::mock_db,
+        StateTransition,
     };
 
     use super::{ReplicationNode, ReplicationNodeConfig};
@@ -629,8 +632,8 @@ mod test {
         mock_cluster.assert_no_crashes();
 
         // Send a proposal to add a wallet
-        let add_wallet_msg = dummy_add_wallet();
-        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+        let wallet = mock_empty_wallet();
+        let transition = StateTransition::AddWallet { wallet: wallet.clone() };
         mock_cluster.send_proposal(1 /* node_id */, transition);
 
         // Wait a bit for the proposal to be processed
@@ -638,12 +641,11 @@ mod test {
 
         // Check that the wallet was added to the index
         let db = mock_cluster.db(1 /* node_id */);
-        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
-        let wallet_id = expected_wallet.wallet_id;
-        let wallet = find_wallet_in_db(wallet_id, &db);
+        let wallet_id = wallet.wallet_id;
+        let found_wallet = find_wallet_in_db(wallet_id, &db);
 
         mock_cluster.assert_no_crashes();
-        assert_eq!(wallet, expected_wallet);
+        assert_eq!(wallet, found_wallet);
     }
 
     /// Tests two nodes joining the cluster
@@ -652,8 +654,8 @@ mod test {
         let cluster = MockReplicationCluster::new(2 /* n_nodes */);
 
         // Propose a wallet to the first node
-        let add_wallet_msg = dummy_add_wallet();
-        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+        let wallet = mock_empty_wallet();
+        let transition = StateTransition::AddWallet { wallet: wallet.clone() };
         cluster.send_proposal(1 /* node_id */, transition);
 
         // Wait a bit for the proposal to be processed
@@ -663,7 +665,7 @@ mod test {
         let db1 = cluster.db(1 /* node_id */);
         let db2 = cluster.db(2 /* node_id */);
 
-        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
+        let expected_wallet: Wallet = wallet;
         let wallet1 = find_wallet_in_db(expected_wallet.wallet_id, &db1);
         let wallet2 = find_wallet_in_db(expected_wallet.wallet_id, &db2);
 
@@ -680,8 +682,8 @@ mod test {
         let cluster = MockReplicationCluster::new(N);
 
         // Propose a wallet to a random node
-        let add_wallet_msg = dummy_add_wallet();
-        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+        let wallet = mock_empty_wallet();
+        let transition = StateTransition::AddWallet { wallet: wallet.clone() };
         let node_id = rng.gen_range(1..=N);
         cluster.send_proposal(node_id, transition);
 
@@ -691,7 +693,7 @@ mod test {
         let node_id = rng.gen_range(1..=N);
         let db = cluster.db(node_id);
 
-        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
+        let expected_wallet: Wallet = wallet;
         let wallet = find_wallet_in_db(expected_wallet.wallet_id, &db);
 
         assert_eq!(wallet, expected_wallet);
@@ -710,8 +712,8 @@ mod test {
         thread::sleep(Duration::from_millis(50));
 
         // Select a node that was not removed, and propose a new wallet
-        let add_wallet_msg = dummy_add_wallet();
-        let transition = StateTransition::AddWallet(add_wallet_msg.clone());
+        let wallet = mock_empty_wallet();
+        let transition = StateTransition::AddWallet { wallet: wallet.clone() };
 
         let mut node_id = rng.gen_range(1..=N);
         while node_id == removed_node {
@@ -724,7 +726,7 @@ mod test {
         // Check the removed node, verify that it never received the update
         let db = cluster.db(removed_node);
 
-        let expected_wallet: Wallet = add_wallet_msg.wallet.unwrap().try_into().unwrap();
+        let expected_wallet: Wallet = wallet;
         let res: Option<Wallet> = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap();
 
         assert!(res.is_none());

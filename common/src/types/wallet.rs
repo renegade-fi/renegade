@@ -403,7 +403,9 @@ pub mod mocks {
     };
 
     use circuit_types::{
+        fixed_point::FixedPoint,
         keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey},
+        order::{Order, OrderSide},
         traits::BaseType,
         SizedWalletShare,
     };
@@ -412,6 +414,7 @@ pub mod mocks {
     use k256::ecdsa::SigningKey as K256SigningKey;
     use num_bigint::BigUint;
     use rand::thread_rng;
+    use renegade_crypto::fields::scalar_to_biguint;
     use uuid::Uuid;
 
     use crate::types::merkle::MerkleAuthenticationPath;
@@ -455,6 +458,18 @@ pub mod mocks {
         // Reblind the wallet so that the secret shares a valid sharing of the wallet
         wallet.reblind_wallet();
         wallet
+    }
+
+    /// Create a mock order
+    pub fn mock_order() -> Order {
+        let mut rng = thread_rng();
+        let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
+        let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
+        let amount = 10u64;
+        let worst_case_price = FixedPoint::from_integer(100);
+        let timestamp = 0u64;
+
+        Order { quote_mint, base_mint, amount, worst_case_price, timestamp, side: OrderSide::Buy }
     }
 
     /// Create a mock Merkle path for a wallet

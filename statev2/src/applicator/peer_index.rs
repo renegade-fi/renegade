@@ -1,7 +1,5 @@
 //! Applicator methods for the peer index, separated out for discoverability
 
-use std::str::FromStr;
-
 use crate::storage::db::DbTxn;
 
 use super::{
@@ -11,7 +9,6 @@ use common::types::gossip::{PeerInfo, WrappedPeerId};
 use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use itertools::Itertools;
 use libmdbx::RW;
-use state_proto::{AddPeers as AddPeersMsg, RemovePeer as RemovePeerMsg};
 
 impl StateApplicator {
     // -------------
@@ -19,13 +16,12 @@ impl StateApplicator {
     // -------------
 
     /// Add new peers to the peer index
-    pub fn add_peers(&self, msg: AddPeersMsg) -> Result<()> {
+    pub fn add_peers(&self, peers: Vec<PeerInfo>) -> Result<()> {
         let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         // Index each peer
-        for peer in msg.peers.into_iter() {
+        for peer_info in peers.into_iter() {
             // Parse the peer info and mark a successful heartbeat
-            let peer_info = PeerInfo::try_from(peer).map_err(StateApplicatorError::Proto)?;
             peer_info.successful_heartbeat();
 
             // Do not index the peer if the given address is not dialable
@@ -45,9 +41,7 @@ impl StateApplicator {
     }
 
     /// Remove a peer from the peer index
-    pub fn remove_peer(&self, msg: &RemovePeerMsg) -> Result<()> {
-        let peer_id = WrappedPeerId::from_str(&msg.peer_id)
-            .map_err(|e| StateApplicatorError::Parse(format!("PeerId: {}", e)))?;
+    pub fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<()> {
         let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         Self::remove_peer_with_tx(peer_id, &tx)?;
@@ -105,11 +99,14 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        str::FromStr,
+        sync::atomic::Ordering,
+    };
 
-    use common::types::gossip::{PeerInfo, WrappedPeerId};
+    use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
     use multiaddr::Multiaddr;
-    use state_proto::{AddPeers, AddPeersBuilder, ClusterId, PeerId, PeerInfoBuilder, RemovePeer};
 
     use crate::applicator::{
         test_helpers::mock_applicator, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE,
@@ -119,31 +116,15 @@ mod tests {
     // | Helpers |
     // -----------
 
-    /// Create a mock `AddPeers` message for a single peer
-    ///
-    /// Returns both the message and the peer's info
-    fn add_peer_msg() -> (AddPeers, PeerInfo) {
+    /// Build a mock peer's info
+    fn mock_peer() -> PeerInfo {
         // Build an RPC message to add a peer
-        let cluster_id = "1234".to_string();
-        let peer_id = WrappedPeerId::random().to_string();
+        let cluster_id = ClusterId::from_str("1234").unwrap();
+        let peer_id = WrappedPeerId::random();
         let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let addr = Multiaddr::from(addr);
 
-        let peer_info = PeerInfoBuilder::default()
-            .cluster_id(ClusterId { id: cluster_id.clone() })
-            .peer_id(PeerId { id: peer_id.clone() })
-            .addr(addr.to_string())
-            .build()
-            .unwrap();
-
-        let msg = AddPeersBuilder::default().peers(vec![peer_info.clone()]).build().unwrap();
-
-        (msg, PeerInfo::try_from(peer_info).unwrap())
-    }
-
-    /// Create a mock `RemovePeer` message
-    fn remove_peer_msg(peer_id: &WrappedPeerId) -> RemovePeer {
-        RemovePeer { peer_id: peer_id.to_string() }
+        PeerInfo::new(peer_id, cluster_id, addr.clone(), vec![] /* signature */)
     }
 
     // ---------
@@ -155,17 +136,19 @@ mod tests {
     fn test_add_peer() {
         let applicator = mock_applicator();
 
-        let (msg, peer_info) = add_peer_msg();
-        applicator.add_peers(msg).unwrap();
+        let peer = mock_peer();
+        applicator.add_peers(vec![peer.clone()]).unwrap();
 
         // Search for the peer in the db as well as its cluster info
         let db = applicator.db();
-        let info: PeerInfo = db.read(PEER_INFO_TABLE, &peer_info.peer_id).unwrap().unwrap();
+        let info: PeerInfo = db.read(PEER_INFO_TABLE, &peer.peer_id).unwrap().unwrap();
         let cluster_peers: Vec<WrappedPeerId> =
-            db.read(CLUSTER_MEMBERSHIP_TABLE, &peer_info.cluster_id).unwrap().unwrap();
+            db.read(CLUSTER_MEMBERSHIP_TABLE, &peer.cluster_id).unwrap().unwrap();
 
-        assert_eq!(info, peer_info);
-        assert_eq!(cluster_peers, vec![peer_info.peer_id]);
+        // Set the heartbeat as the state will have update it
+        peer.last_heartbeat.store(info.last_heartbeat.load(Ordering::Relaxed), Ordering::Relaxed);
+        assert_eq!(info, peer);
+        assert_eq!(cluster_peers, vec![peer.peer_id]);
     }
 
     /// Tests removing a nonexistent peer from the state
@@ -175,8 +158,7 @@ mod tests {
 
         // Removing the peer should not fail
         let peer_id = WrappedPeerId::random();
-        let msg = remove_peer_msg(&peer_id);
-        applicator.remove_peer(&msg).unwrap();
+        applicator.remove_peer(peer_id).unwrap();
     }
 
     /// Tests removing a peer that does exist
@@ -185,30 +167,32 @@ mod tests {
         let applicator = mock_applicator();
 
         // Add two peers to the state
-        let (mut add_msg1, peer_info1) = add_peer_msg();
-        let (add_msg2, peer_info2) = add_peer_msg();
+        let peer1 = mock_peer();
+        let peer2 = mock_peer();
 
-        add_msg1.peers.extend(add_msg2.peers);
+        let peers = vec![peer1.clone(), peer2.clone()];
 
-        applicator.add_peers(add_msg1).unwrap();
+        applicator.add_peers(peers).unwrap();
 
         // Remove the first peer from the state
-        let remove_msg = remove_peer_msg(&peer_info1.peer_id);
-        applicator.remove_peer(&remove_msg).unwrap();
+        applicator.remove_peer(peer1.peer_id).unwrap();
 
-        // Verify that the first peer isn't present, but the second s
+        // Verify that the first peer isn't present, but the second is
         let db = applicator.db();
-        let info1: Option<PeerInfo> = db.read(PEER_INFO_TABLE, &peer_info1.peer_id).unwrap();
-        let info2: PeerInfo = db.read(PEER_INFO_TABLE, &peer_info2.peer_id).unwrap().unwrap();
+        let info1: Option<PeerInfo> = db.read(PEER_INFO_TABLE, &peer1.peer_id).unwrap();
+        let info2: PeerInfo = db.read(PEER_INFO_TABLE, &peer2.peer_id).unwrap().unwrap();
+
+        // Set the heartbeat as the state will have updated it
+        peer2.last_heartbeat.store(info2.last_heartbeat.load(Ordering::Relaxed), Ordering::Relaxed);
 
         assert!(info1.is_none());
-        assert_eq!(info2, peer_info2);
+        assert_eq!(info2, peer2);
 
         // Verify that the cluster membership for the peers' cluster only contains the
         // second peer
         let cluster_peers: Vec<WrappedPeerId> =
-            db.read(CLUSTER_MEMBERSHIP_TABLE, &peer_info1.cluster_id).unwrap().unwrap();
+            db.read(CLUSTER_MEMBERSHIP_TABLE, &peer1.cluster_id).unwrap().unwrap();
 
-        assert_eq!(cluster_peers, vec![peer_info2.peer_id]);
+        assert_eq!(cluster_peers, vec![peer2.peer_id]);
     }
 }

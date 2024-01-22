@@ -1,8 +1,0 @@
-syntax = "proto3";
-package state;
-
-import "peers.proto";
-import "common.proto";
-import "orders.proto";
-import "wallet.proto";
-import "google/protobuf/empty.proto";

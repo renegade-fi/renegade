@@ -1956,36 +1956,12 @@ dependencies = [
 
 [[package]]
 name = "darling"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b750cb3417fd1b327431a470f388520309479ab0bf5e323505daf0290cd3850"
-dependencies = [
- "darling_core 0.14.4",
- "darling_macro 0.14.4",
-]
-
-[[package]]
-name = "darling"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0209d94da627ab5605dcccf08bb18afa5009cfbef48d8a8b7d7bdbc79be25c5e"
 dependencies = [
- "darling_core 0.20.3",
- "darling_macro 0.20.3",
-]
-
-[[package]]
-name = "darling_core"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "109c1ca6e6b7f82cc233a97004ea8ed7ca123a9af07a8230878fcfda9b158bf0"
-dependencies = [
- "fnv",
- "ident_case",
- "proc-macro2",
- "quote",
- "strsim",
- "syn 1.0.109",
+ "darling_core",
+ "darling_macro",
 ]
 
 [[package]]
@@ -2004,22 +1980,11 @@ dependencies = [
 
 [[package]]
 name = "darling_macro"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4aab4dbc9f7611d8b55048a3a16d2d010c2c8334e46304b40ac1cc14bf3b48e"
-dependencies = [
- "darling_core 0.14.4",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "darling_macro"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "836a9bbc7ad63342d6d6e7b815ccab164bc77a2d95d84bc3117a8c0d5c98e2d5"
 dependencies = [
- "darling_core 0.20.3",
+ "darling_core",
  "quote",
  "syn 2.0.48",
 ]
@@ -2105,37 +2070,6 @@ checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "derive_builder"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d67778784b508018359cbc8696edb3db78160bab2c2a28ba7f56ef6932997f8"
-dependencies = [
- "derive_builder_macro",
-]
-
-[[package]]
-name = "derive_builder_core"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c11bdc11a0c47bc7d37d582b5285da6849c96681023680b906673c5707af7b0f"
-dependencies = [
- "darling 0.14.4",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "derive_builder_macro"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebcda35c7a396850a55ffeac740804b40ffec779b98fffbb1738f4033f0ee79e"
-dependencies = [
- "derive_builder_core",
  "syn 1.0.109",
 ]
 
@@ -4766,12 +4700,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multimap"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
-
-[[package]]
 name = "multistream-select"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5834,60 +5762,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "prost"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "146c289cda302b98a28d40c8b3b90498d6e526dd24ac2ecea73e4e491685b94a"
-dependencies = [
- "bytes",
- "prost-derive",
-]
-
-[[package]]
-name = "prost-build"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c55e02e35260070b6f716a2423c2ff1c3bb1642ddca6f99e1f26d06268a0e2d2"
-dependencies = [
- "bytes",
- "heck",
- "itertools 0.11.0",
- "log",
- "multimap",
- "once_cell",
- "petgraph",
- "prettyplease",
- "prost",
- "prost-types",
- "regex",
- "syn 2.0.48",
- "tempfile",
- "which",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efb6c9a1dd1def8e2124d17e83a20af56f1570d6c2d2bd9e266ccb768df3840e"
-dependencies = [
- "anyhow",
- "itertools 0.11.0",
- "proc-macro2",
- "quote",
- "syn 2.0.48",
-]
-
-[[package]]
-name = "prost-types"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "193898f59edcf43c26227dcd4c8427f00d99d61e95dcde58dabd49fa291d470e"
-dependencies = [
- "prost",
-]
-
-[[package]]
 name = "protobuf"
 version = "2.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6882,7 +6756,7 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93634eb5f75a2323b16de4748022ac4297f9e76b6dced2be287a099f41b5e788"
 dependencies = [
- "darling 0.20.3",
+ "darling",
  "proc-macro2",
  "quote",
  "syn 2.0.48",
@@ -7294,28 +7168,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "state-proto"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "circuit-types",
- "common",
- "constants",
- "derive_builder",
- "eyre",
- "indexmap 2.1.0",
- "itertools 0.11.0",
- "multiaddr",
- "num-bigint",
- "prost",
- "prost-build",
- "serde",
- "serde_json",
- "util",
- "uuid 1.7.0",
-]
-
-[[package]]
 name = "statev2"
 version = "0.1.0"
 dependencies = [
@@ -7336,7 +7188,6 @@ dependencies = [
  "serde",
  "serde_json",
  "slog",
- "state-proto",
  "system-bus",
  "tempfile",
  "tokio",
@@ -8516,18 +8367,6 @@ name = "webpki-roots"
 version = "0.25.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1778a42e8b3b90bff8d0f5032bf22250792889a5cdc752aa0020c84abe3aaf10"
-
-[[package]]
-name = "which"
-version = "4.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
-dependencies = [
- "either",
- "home",
- "once_cell",
- "rustix",
-]
 
 [[package]]
 name = "wide"

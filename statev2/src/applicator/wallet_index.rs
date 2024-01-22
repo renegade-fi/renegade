@@ -7,7 +7,6 @@ use common::types::{
 use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
 use itertools::Itertools;
 use libmdbx::RW;
-use state_proto::{AddWallet as AddWalletMessage, UpdateWallet as UpdateWalletMessage};
 
 use crate::{applicator::error::StateApplicatorError, storage::db::DbTxn};
 
@@ -22,20 +21,12 @@ impl StateApplicator {
     ///
     /// This may happen, for example, when a new wallet is created by
     /// a user on one cluster node, and the others must replicate it
-    pub fn add_wallet(&self, msg: AddWalletMessage) -> Result<()> {
-        // Parse the wallet from the message
-        let wallet: Wallet = msg
-            .wallet
-            .ok_or_else(|| {
-                StateApplicatorError::Parse("AddWalletMessage: missing wallet".to_string())
-            })
-            .and_then(|w| w.try_into().map_err(StateApplicatorError::Proto))?;
-
+    pub fn add_wallet(&self, wallet: &Wallet) -> Result<()> {
         // Add the wallet to the wallet indices
         let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         Self::index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec(), &tx)?;
-        Self::write_wallet_with_tx(&wallet, &tx)?;
+        Self::write_wallet_with_tx(wallet, &tx)?;
 
         tx.commit().map_err(StateApplicatorError::Storage)?;
 
@@ -58,15 +49,7 @@ impl StateApplicator {
     /// on-chain before this method is called. That is, we maintain the
     /// invariant that the state stored by this module is valid -- but
     /// possibly stale -- contract state
-    pub fn update_wallet(&self, msg: UpdateWalletMessage) -> Result<()> {
-        // Parse the wallet from the message
-        let wallet: Wallet = msg
-            .wallet
-            .ok_or_else(|| {
-                StateApplicatorError::Parse("UpdateWalletMessage: missing wallet".to_string())
-            })
-            .and_then(|w| w.try_into().map_err(StateApplicatorError::Proto))?;
-
+    pub fn update_wallet(&self, wallet: &Wallet) -> Result<()> {
         let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
 
         // Any new orders in the wallet should be added to the orderbook
@@ -85,7 +68,7 @@ impl StateApplicator {
 
         // Update the order -> wallet mapping and index the wallet
         Self::index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec(), &tx)?;
-        Self::write_wallet_with_tx(&wallet, &tx)?;
+        Self::write_wallet_with_tx(wallet, &tx)?;
 
         tx.commit().map_err(StateApplicatorError::Storage)?;
 
@@ -125,15 +108,9 @@ impl StateApplicator {
 
 #[cfg(all(test, feature = "all-tests"))]
 pub(crate) mod test {
-    use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
-    use constants::{Scalar, MERKLE_HEIGHT};
-    use num_bigint::BigUint;
-    use rand::thread_rng;
-    use state_proto::{
-        AddWallet, AddWalletBuilder, KeyChain as ProtoKeyChain, KeyChainBuilder,
-        Order as ProtoOrder, OrderBuilder, OrderSide, PrivateKeyChainBuilder,
-        PublicKeyChainBuilder, UpdateWalletBuilder, Wallet as ProtoWallet,
-        WalletAuthenticationPathBuilder, WalletBuilder,
+    use common::types::{
+        wallet::Wallet,
+        wallet_mocks::{mock_empty_wallet, mock_order},
     };
     use uuid::Uuid;
 
@@ -143,84 +120,19 @@ pub(crate) mod test {
     // | Helpers |
     // -----------
 
-    /// Create a mock keychain
-    fn dummy_proto_keychain() -> ProtoKeyChain {
-        let mock_wallet = mock_empty_wallet();
-        let public_keys = &mock_wallet.key_chain.public_keys;
-        let secret_keys = &mock_wallet.key_chain.secret_keys;
-
-        let pk_root_bytes = serde_json::to_vec(&public_keys.pk_root).unwrap();
-
-        KeyChainBuilder::default()
-            .public_keys(
-                PublicKeyChainBuilder::default()
-                    .pk_match(public_keys.pk_match.key.into())
-                    .pk_root(pk_root_bytes)
-                    .build()
-                    .unwrap(),
-            )
-            .secret_keys(
-                PrivateKeyChainBuilder::default()
-                    .sk_match(secret_keys.sk_match.key.into())
-                    .build()
-                    .unwrap(),
-            )
-            .build()
-            .unwrap()
-    }
-
-    /// Create a dummy order
-    fn dummy_proto_order() -> ProtoOrder {
-        OrderBuilder::default()
-            .id(Uuid::new_v4().into())
-            .quote_mint(BigUint::from(1u8).into())
-            .base_mint(BigUint::from(2u8).into())
-            .side(OrderSide::Buy.into())
-            .amount(10)
-            .worst_case_price(10.)
-            .timestamp(0)
-            .build()
-            .unwrap()
-    }
-
-    /// Create a dummy proto wallet
-    fn dummy_proto_wallet() -> ProtoWallet {
-        let mut rng = thread_rng();
-        let opening = WalletAuthenticationPathBuilder::default()
-            .leaf_index(0)
-            .value(Scalar::random(&mut rng).into())
-            .path_siblings((0..MERKLE_HEIGHT).map(|_| Scalar::random(&mut rng).into()).collect())
-            .build()
-            .unwrap();
-
-        // Add a single order to allowing us to test order -> wallet indexing
-        WalletBuilder::default()
-            .id(Uuid::new_v4().into())
-            .orders(vec![dummy_proto_order()])
-            .keychain(dummy_proto_keychain())
-            .opening(opening)
-            .blinder(Scalar::random(&mut rng).into())
-            .build()
-            .unwrap()
-    }
-
-    /// Create a dummy `AddWallet` message
-    pub(crate) fn dummy_add_wallet() -> AddWallet {
-        let wallet = dummy_proto_wallet();
-        AddWalletBuilder::default().wallet(wallet).build().unwrap()
-    }
-
     /// Tests adding a new wallet to the index
     #[test]
     fn test_add_wallet() {
         let applicator = mock_applicator();
 
-        // Add a wallet
-        let msg = dummy_add_wallet();
-        applicator.add_wallet(msg.clone()).unwrap();
+        // Add a wallet and an order to the wallet
+        let mut wallet = mock_empty_wallet();
+        wallet.orders.insert(Uuid::new_v4(), mock_order());
+
+        applicator.add_wallet(&wallet).unwrap();
 
         // Check that the wallet is indexed correctly
-        let expected_wallet: Wallet = msg.wallet.unwrap().try_into().unwrap();
+        let expected_wallet: Wallet = wallet;
 
         let db = applicator.db();
         let wallet: Wallet = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap().unwrap();
@@ -240,17 +152,15 @@ pub(crate) mod test {
         let applicator = mock_applicator();
 
         // Add a wallet
-        let msg = dummy_add_wallet();
-        applicator.add_wallet(msg.clone()).unwrap();
+        let mut wallet = mock_empty_wallet();
+        applicator.add_wallet(&wallet).unwrap();
 
-        // Update the wallet by removing the orders
-        let mut wallet = msg.wallet.unwrap();
-        wallet.orders = vec![];
-        let new_msg = UpdateWalletBuilder::default().wallet(wallet.clone()).build().unwrap();
-        applicator.update_wallet(new_msg).unwrap();
+        // Update the wallet by adding an order
+        wallet.orders.insert(Uuid::new_v4(), mock_order());
+        applicator.update_wallet(&wallet).unwrap();
 
         // Check that the indexed wallet is as expected
-        let expected_wallet: Wallet = wallet.try_into().unwrap();
+        let expected_wallet: Wallet = wallet;
         let db = applicator.db();
         let wallet: Wallet = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap().unwrap();
 
