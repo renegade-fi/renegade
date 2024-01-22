@@ -26,8 +26,12 @@ use replication::RaftPeerId;
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
+mod interface;
 pub mod replication;
 pub mod storage;
+
+/// Re-export the state interface
+pub use interface::*;
 
 /// The `StateTransition` type encapsulates all possible state transitions,
 /// allowing transitions to be handled generically before they are applied
@@ -58,15 +62,28 @@ pub enum StateTransition {
 
 #[cfg(test)]
 pub(crate) mod test_helpers {
+    use std::time::Duration;
+
     use tempfile::tempdir;
 
     use crate::storage::db::{DbConfig, DB};
 
+    /// Sleep for the given number of ms
+    pub fn sleep_ms(ms: u64) {
+        std::thread::sleep(Duration::from_millis(ms));
+    }
+
+    /// Get a tempdir to open the DB at
+    pub fn tmp_db_path() -> String {
+        let tempdir = tempdir().unwrap();
+        tempdir.path().to_str().unwrap().to_string()
+    }
+
     /// Create a mock database in a temporary location
     pub fn mock_db() -> DB {
-        let tempdir = tempdir().unwrap();
-        let path = tempdir.path().to_str().unwrap();
+        let path = tmp_db_path();
+        let config = DbConfig { path: path.to_string() };
 
-        DB::new(&DbConfig { path: path.to_string() }).unwrap()
+        DB::new(&config).unwrap()
     }
 }

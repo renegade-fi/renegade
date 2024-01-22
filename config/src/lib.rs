@@ -100,6 +100,9 @@ struct Cli {
     /// A fresh key is generated at startup if this is not present
     #[clap(long, value_parser)]
     pub p2p_key: Option<String>,
+    /// The path at which to open up the database
+    #[clap(long, value_parser, default_value = "./relayer_state.db")]
+    pub db_path: String,
     /// The maximum staleness (number of newer roots observed) to allow on Merkle proofs for 
     /// managed wallets. After this threshold is exceeded, the Merkle proof will be updated
     #[clap(long, value_parser, default_value = "100")]
@@ -190,6 +193,8 @@ pub struct RelayerConfig {
     pub websocket_port: u16,
     /// The local peer's base64 encoded p2p key
     pub p2p_key: Option<String>,
+    /// The path at which to open up the database
+    pub db_path: String,
     /// The maximum staleness (number of newer roots observed) to allow on
     /// Merkle proofs for managed wallets. After this threshold is exceeded,
     /// the Merkle proof will be updated
@@ -243,6 +248,7 @@ impl Clone for RelayerConfig {
             http_port: self.http_port,
             websocket_port: self.websocket_port,
             p2p_key: self.p2p_key.clone(),
+            db_path: self.db_path.clone(),
             max_merkle_staleness: self.max_merkle_staleness,
             allow_local: self.allow_local,
             bind_addr: self.bind_addr,
@@ -339,6 +345,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         allow_local: cli_args.allow_local,
         max_merkle_staleness: cli_args.max_merkle_staleness,
         p2p_key: cli_args.p2p_key,
+        db_path: cli_args.db_path,
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
         disable_price_reporter: cli_args.disable_price_reporter,
