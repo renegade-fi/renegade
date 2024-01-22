@@ -554,7 +554,7 @@ mod test {
         let high = (low..N).choose(&mut rng).unwrap();
 
         // Cap the size at an amount that will give a random number of entries
-        let n_entries = (0..(high - low)).choose(&mut rng).unwrap();
+        let n_entries = (1..(high - low)).choose(&mut rng).unwrap();
         let max_size =
             entries[low..(low + n_entries)].iter().map(|entry| entry.compute_size()).sum::<u32>();
 

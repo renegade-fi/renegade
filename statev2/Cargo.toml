@@ -23,13 +23,12 @@ crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-config = { path = "../../config" }
-constants = { path = "../../constants" }
-external-api = { path = "../../external-api" }
-state-proto = { path = "../proto" }
-system-bus = { path = "../../system-bus" }
+circuit-types = { path = "../circuit-types" }
+common = { path = "../common" }
+config = { path = "../config" }
+constants = { path = "../constants" }
+external-api = { path = "../external-api" }
+system-bus = { path = "../system-bus" }
 
 # === Misc === #
 itertools = "0.10"

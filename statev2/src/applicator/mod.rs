@@ -5,10 +5,9 @@ use std::sync::Arc;
 
 use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
-use state_proto::StateTransition;
 use system_bus::SystemBus;
 
-use crate::storage::db::DB;
+use crate::{storage::db::DB, StateTransition};
 
 use self::error::StateApplicatorError;
 
@@ -76,13 +75,15 @@ impl StateApplicator {
     /// Handle a state transition
     pub fn handle_state_transition(&self, transition: StateTransition) -> Result<()> {
         match transition {
-            StateTransition::AddWallet(msg) => self.add_wallet(msg),
-            StateTransition::UpdateWallet(msg) => self.update_wallet(msg),
-            StateTransition::AddOrder(msg) => self.new_order(msg),
-            StateTransition::AddOrderValidityProof(msg) => self.add_order_validity_proof(msg),
-            StateTransition::NullifyOrders(msg) => self.nullify_orders(msg),
-            StateTransition::AddPeers(msg) => self.add_peers(msg),
-            StateTransition::RemovePeer(msg) => self.remove_peer(&msg),
+            StateTransition::AddWallet { wallet } => self.add_wallet(&wallet),
+            StateTransition::UpdateWallet { wallet } => self.update_wallet(&wallet),
+            StateTransition::AddOrder { order } => self.new_order(order),
+            StateTransition::AddOrderValidityProof { order_id, proof } => {
+                self.add_order_validity_proof(order_id, proof)
+            },
+            StateTransition::NullifyOrders { nullifier } => self.nullify_orders(nullifier),
+            StateTransition::AddPeers { peers } => self.add_peers(peers),
+            StateTransition::RemovePeer { peer_id } => self.remove_peer(peer_id),
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }

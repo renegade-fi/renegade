@@ -2,8 +2,6 @@
 
 use std::{error::Error, fmt::Display};
 
-use state_proto::error::StateProtoError;
-
 use crate::storage::error::StorageError;
 
 /// The error type emitted by the storage applicator
@@ -15,8 +13,6 @@ pub enum StateApplicatorError {
     Storage(StorageError),
     /// An error parsing a message separately from proto errors
     Parse(String),
-    /// An error processing a proto
-    Proto(StateProtoError),
 }
 
 impl Display for StateApplicatorError {
