@@ -46,21 +46,18 @@ const PROPOSAL_QUEUE_DISCONNECTED: &str = "Proposal queue disconnected";
 #[derive(Clone)]
 pub struct ReplicationNodeConfig<N: RaftNetwork> {
     /// The period (in milliseconds) on which to tick the raft node
-    tick_period_ms: u64,
-    /// Optimistically assume that the local node will take the role of leader,
-    /// i.e. that this is the cluster boot node
-    assume_leader: bool,
+    pub tick_period_ms: u64,
     /// A copy of the relayer's config
-    relayer_config: RelayerConfig,
+    pub relayer_config: RelayerConfig,
     /// A reference to the channel on which the replication node may receive
     /// proposals
-    proposal_queue: CrossbeamReceiver<StateTransition>,
+    pub proposal_queue: CrossbeamReceiver<StateTransition>,
     /// A reference to the networking layer that backs the raft node
-    network: N,
+    pub network: N,
     /// A handle on the persistent storage layer underlying the raft node
-    db: Arc<DB>,
+    pub db: Arc<DB>,
     /// A handle to the system-global bus
-    system_bus: SystemBus<SystemBusMessage>,
+    pub system_bus: SystemBus<SystemBusMessage>,
 }
 
 /// A raft node that replicates the relayer's state machine
@@ -94,9 +91,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     ) -> Result<Self, ReplicationError> {
         // Build the log store on top of the DB
         let store = LogStore::new(config.db.clone())?;
-        if config.assume_leader {
-            Self::setup_storage_as_leader(raft_config.id, &store)?;
-        }
+        Self::setup_storage(raft_config.id, &store)?;
 
         // Build a state applicator to handle state transitions
         let applicator = StateApplicator::new(StateApplicatorConfig {
@@ -123,18 +118,22 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         })
     }
 
-    /// Set defaults in the storage module that imply the local peer is the
-    /// leader and the only member of the cluster.
+    /// Set defaults in the storage module that imply the local peer is a
+    /// voter and the only member of the cluster.
+    ///
+    /// This allows the peer to appear to itself as "promotable" which means it
+    /// may campaign for leader election
     ///
     /// This may change as the local peer bootstraps into the network and
     /// discovers cluster peers, at which point it will step down as begin
     /// syncing with the cluster
-    fn setup_storage_as_leader(my_id: u64, storage: &LogStore) -> Result<(), ReplicationError> {
+    fn setup_storage(my_id: u64, storage: &LogStore) -> Result<(), ReplicationError> {
         // Store a default snapshot under the assumption that the raft was just
         // initialized from the local node. This is effectively a raft wherein
         // the first term has just begun, and the log is empty at the first
         // index. We also register the local peer as the only voter known to the
-        // cluster. This ensures that the local peer will elect itself leader
+        // cluster. This ensures that the local peer will elect itself leader if no
+        // other nodes are found
         let mut snap = Snapshot::new();
         let md = snap.mut_metadata();
 
@@ -499,7 +498,7 @@ pub(crate) mod test_helpers {
         proposal_queue: CrossbeamReceiver<StateTransition>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
-        mock_replication_node(id, true /* leader */, db, proposal_queue, network)
+        mock_replication_node(id, db, proposal_queue, network)
     }
 
     /// Create a follower node
@@ -510,7 +509,6 @@ pub(crate) mod test_helpers {
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
         mock_replication_node_with_config(
-            false, // leader
             db,
             proposal_queue,
             network,
@@ -528,13 +526,11 @@ pub(crate) mod test_helpers {
     /// Create a mock node
     pub fn mock_replication_node(
         id: u64,
-        leader: bool,
         db: Arc<DB>,
         proposal_queue: CrossbeamReceiver<StateTransition>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
         mock_replication_node_with_config(
-            leader,
             db,
             proposal_queue,
             network,
@@ -554,7 +550,6 @@ pub(crate) mod test_helpers {
 
     /// Create a moc node with a given raft config
     pub fn mock_replication_node_with_config(
-        leader: bool,
         db: Arc<DB>,
         proposal_queue: CrossbeamReceiver<StateTransition>,
         network: MockNetwork,
@@ -563,7 +558,6 @@ pub(crate) mod test_helpers {
         ReplicationNode::new_with_config(
             ReplicationNodeConfig {
                 tick_period_ms: 10,
-                assume_leader: leader,
                 relayer_config: Default::default(),
                 proposal_queue,
                 network,
@@ -615,7 +609,6 @@ mod test {
         let (_, proposal_receiver) = unbounded();
         let node_config = ReplicationNodeConfig {
             tick_period_ms: 10,
-            assume_leader: true,
             relayer_config: Default::default(),
             proposal_queue: proposal_receiver,
             network: net,
