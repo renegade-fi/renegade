@@ -474,10 +474,11 @@ pub mod mocks {
 
     /// Create a mock Merkle path for a wallet
     pub fn mock_merkle_path() -> MerkleAuthenticationPath {
+        let mut rng = thread_rng();
         MerkleAuthenticationPath::new(
-            [Scalar::zero(); MERKLE_HEIGHT],
+            [Scalar::random(&mut rng); MERKLE_HEIGHT],
             BigUint::from(0u8),
-            Scalar::zero(),
+            Scalar::random(&mut rng),
         )
     }
 }

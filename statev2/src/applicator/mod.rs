@@ -7,7 +7,10 @@ use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
 use system_bus::SystemBus;
 
-use crate::{storage::db::DB, StateTransition};
+use crate::{
+    storage::db::DB, StateTransition, CLUSTER_MEMBERSHIP_TABLE, ORDERS_TABLE,
+    ORDER_TO_WALLET_TABLE, PEER_INFO_TABLE, PRIORITIES_TABLE, WALLETS_TABLE,
+};
 
 use self::error::StateApplicatorError;
 
@@ -22,21 +25,6 @@ pub mod wallet_index;
 
 /// A type alias for the result type given by the applicator
 pub(crate) type Result<T> = std::result::Result<T, StateApplicatorError>;
-
-/// The name of the db table that stores peer information
-pub(crate) const PEER_INFO_TABLE: &str = "peer-info";
-/// The name of the db table that stores cluster membership information
-pub(crate) const CLUSTER_MEMBERSHIP_TABLE: &str = "cluster-membership";
-
-/// The name of the db table that stores order and cluster priorities
-pub(crate) const PRIORITIES_TABLE: &str = "priorities";
-/// The name of the table that stores orders by their ID
-pub(crate) const ORDERS_TABLE: &str = "orders";
-
-/// The name of the db table that maps order to their encapsulating wallet
-pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
-/// The name of the db table that stores wallet information
-pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
 /// The config for the state applicator
 #[derive(Clone)]

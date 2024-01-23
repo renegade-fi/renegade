@@ -7,6 +7,7 @@
 //! they expose
 
 pub mod raft_log;
+pub mod wallet_index;
 
 use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
 
