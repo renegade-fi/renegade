@@ -406,7 +406,9 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     ) -> Result<(), ReplicationError> {
         // If the proposal is not local to the node, or if the channel is dropped, no
         // notification is needed
-        if let Some(resp) = self.proposal_responses.remove(id) && !resp.is_closed() {
+        if let Some(resp) = self.proposal_responses.remove(id)
+            && !resp.is_closed()
+        {
             resp.send(res).map_err(|_| {
                 ReplicationError::ProposalResponse(ERR_PROPOSAL_RESPONSE.to_string())
             })?;
