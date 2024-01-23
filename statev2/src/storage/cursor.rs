@@ -37,6 +37,16 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         Self { inner: cursor, buffered_value: None, _phantom: PhantomData }
     }
 
+    /// Return an iterator over only the keys in the table
+    pub fn keys(self) -> impl Iterator<Item = Result<K, StorageError>> {
+        <Self as Iterator>::map(self, |res| res.map(|(k, _v)| k))
+    }
+
+    /// Return an iterator over only the values in the table
+    pub fn values(self) -> impl Iterator<Item = Result<V, StorageError>> {
+        <Self as Iterator>::map(self, |res| res.map(|(_k, v)| v))
+    }
+
     /// Get the key/value at the current position
     pub fn get_current(&mut self) -> Result<Option<(K, V)>, StorageError> {
         if let Some((k, v)) = self.buffered_value.take() {
