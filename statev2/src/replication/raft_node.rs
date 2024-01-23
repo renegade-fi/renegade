@@ -647,13 +647,12 @@ mod test {
     use rand::{thread_rng, Rng};
 
     use crate::{
-        applicator::WALLETS_TABLE,
         replication::{
             network::test_helpers::MockNetwork, raft_node::test_helpers::MockReplicationCluster,
         },
         storage::db::DB,
         test_helpers::mock_db,
-        StateTransition,
+        StateTransition, WALLETS_TABLE,
     };
 
     use super::{ReplicationNode, ReplicationNodeConfig};
