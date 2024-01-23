@@ -59,3 +59,9 @@ impl From<ReplicationError> for RaftError {
         }
     }
 }
+
+impl From<StorageError> for ReplicationError {
+    fn from(value: StorageError) -> Self {
+        Self::Storage(value)
+    }
+}
