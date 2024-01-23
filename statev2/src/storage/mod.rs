@@ -10,6 +10,7 @@ pub mod cursor;
 pub mod db;
 pub mod error;
 pub mod traits;
+pub mod tx;
 
 /// A type alias used for reading from the database
 type CowBuffer<'a> = Cow<'a, [u8]>;
