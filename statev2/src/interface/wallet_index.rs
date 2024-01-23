@@ -2,10 +2,7 @@
 
 use common::types::wallet::{Wallet, WalletIdentifier};
 
-use crate::{
-    applicator::WALLETS_TABLE, error::StateError, notifications::ProposalWaiter, State,
-    StateTransition,
-};
+use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
 impl State {
     // -----------
@@ -14,11 +11,9 @@ impl State {
 
     /// Get the wallet with the given id
     pub fn get_wallet(&self, id: &WalletIdentifier) -> Result<Option<Wallet>, StateError> {
-        let db = self.db.clone();
-
-        let tx = db.new_raw_read_tx().map_err(StateError::Db)?;
-        let wallet = tx.read(WALLETS_TABLE, id).map_err(StateError::Db)?;
-        tx.commit().map_err(StateError::Db)?;
+        let tx = self.db.new_read_tx()?;
+        let wallet = tx.get_wallet(id)?;
+        tx.commit()?;
 
         Ok(wallet)
     }

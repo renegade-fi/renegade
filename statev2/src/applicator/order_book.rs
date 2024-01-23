@@ -19,8 +19,7 @@ use libmdbx::{TransactionKind, RW};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    applicator::{error::StateApplicatorError, ORDERS_TABLE, PRIORITIES_TABLE},
-    storage::tx::DbTxn,
+    applicator::error::StateApplicatorError, storage::tx::DbTxn, ORDERS_TABLE, PRIORITIES_TABLE,
 };
 
 use super::{Result, StateApplicator};
@@ -334,9 +333,9 @@ mod test {
     use rand::thread_rng;
     use uuid::Uuid;
 
-    use crate::applicator::{
-        order_book::OrderPriority, test_helpers::mock_applicator, StateApplicator, ORDERS_TABLE,
-        PRIORITIES_TABLE,
+    use crate::{
+        applicator::{order_book::OrderPriority, test_helpers::mock_applicator, StateApplicator},
+        ORDERS_TABLE, PRIORITIES_TABLE,
     };
 
     /// Creates a dummy `AddOrder` message for testing
