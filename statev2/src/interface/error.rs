@@ -22,3 +22,9 @@ impl Display for StateError {
     }
 }
 impl Error for StateError {}
+
+impl From<StorageError> for StateError {
+    fn from(e: StorageError) -> Self {
+        StateError::Db(e)
+    }
+}
