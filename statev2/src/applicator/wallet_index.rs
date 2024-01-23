@@ -8,7 +8,7 @@ use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
 use itertools::Itertools;
 use libmdbx::RW;
 
-use crate::{applicator::error::StateApplicatorError, storage::db::DbTxn};
+use crate::{applicator::error::StateApplicatorError, storage::tx::DbTxn};
 
 use super::{Result, StateApplicator, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
 
@@ -23,7 +23,7 @@ impl StateApplicator {
     /// a user on one cluster node, and the others must replicate it
     pub fn add_wallet(&self, wallet: &Wallet) -> Result<()> {
         // Add the wallet to the wallet indices
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
 
         Self::index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec(), &tx)?;
         Self::write_wallet_with_tx(wallet, &tx)?;
@@ -50,7 +50,7 @@ impl StateApplicator {
     /// invariant that the state stored by this module is valid -- but
     /// possibly stale -- contract state
     pub fn update_wallet(&self, wallet: &Wallet) -> Result<()> {
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
 
         // Any new orders in the wallet should be added to the orderbook
         let nullifier = wallet.get_wallet_nullifier();
