@@ -11,7 +11,7 @@ use super::{
     helpers::find_merkle_path,
 };
 use arbitrum_client::client::ArbitrumClient;
-use ark_mpc::PARTY0;
+use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
@@ -449,7 +449,7 @@ impl SettleMatchInternalTask {
 
         let party1_comms_hint = &self.order2_validity_witness.commitment_linking_hint;
         let commitments_link1 =
-            link_sized_commitments_match_settle(PARTY0, party1_comms_hint, match_link_hint)
+            link_sized_commitments_match_settle(PARTY1, party1_comms_hint, match_link_hint)
                 .map_err(|e| SettleMatchInternalTaskError::ProvingValidity(e.to_string()))?;
 
         Ok(MatchBundle { match_proof, commitments_link0, commitments_link1 })
