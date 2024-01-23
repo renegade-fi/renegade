@@ -16,7 +16,7 @@ impl State {
     pub fn get_wallet(&self, id: &WalletIdentifier) -> Result<Option<Wallet>, StateError> {
         let db = self.db.clone();
 
-        let tx = db.new_read_tx().map_err(StateError::Db)?;
+        let tx = db.new_raw_read_tx().map_err(StateError::Db)?;
         let wallet = tx.read(WALLETS_TABLE, id).map_err(StateError::Db)?;
         tx.commit().map_err(StateError::Db)?;
 
