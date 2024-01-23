@@ -6,6 +6,8 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
+pub mod raft_log;
+
 use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
 
 use super::{
@@ -35,6 +37,11 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get the inner raw `DbTxn`
     pub fn inner(&self) -> &DbTxn<'db, T> {
         &self.inner
+    }
+
+    /// Commit the transaction
+    pub fn commit(self) -> Result<(), StorageError> {
+        self.inner.commit()
     }
 }
 
@@ -157,5 +164,34 @@ impl<'db> DbTxn<'db, RW> {
         self.txn
             .put(&table, key_bytes, value_bytes, WriteFlags::default())
             .map_err(StorageError::TxOp)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::test_helpers::mock_db;
+
+    /// Tests that dropping a tx aborts it
+    #[test]
+    fn test_drop_tx() {
+        let db = mock_db();
+
+        // Create a table
+        const TABLE_NAME: &str = "test";
+        let tx = db.new_write_tx().unwrap();
+        tx.inner().create_table(TABLE_NAME).unwrap();
+        tx.commit().unwrap();
+
+        // Create a new tx and drop it
+        {
+            let tx = db.new_write_tx().unwrap();
+            let inner = tx.inner();
+            inner.write(TABLE_NAME, &"a".to_string(), &1).unwrap();
+        }
+
+        // Check that the update was aborted
+        let tx = db.new_read_tx().unwrap();
+        let value: Option<i32> = tx.inner().read(TABLE_NAME, &"a".to_string()).unwrap();
+        assert_eq!(value, None);
     }
 }
