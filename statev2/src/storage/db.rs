@@ -5,16 +5,13 @@
 
 use std::path::Path;
 
-use libmdbx::{
-    Database, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RO, RW,
-};
+use libmdbx::{Database, WriteMap, RO, RW};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    cursor::DbCursor,
     error::StorageError,
     traits::{Key, Value},
-    CowBuffer,
+    tx::DbTxn,
 };
 
 /// The number of tables to open in the database
@@ -69,7 +66,7 @@ impl DB {
     /// Create a new table in the database
     pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
         // Begin a tx
-        let tx = self.new_write_tx()?;
+        let tx = self.new_raw_write_tx()?;
         tx.create_table(table_name)?;
 
         tx.commit()
@@ -81,7 +78,7 @@ impl DB {
         table_name: &str,
         key: &K,
     ) -> Result<Option<V>, StorageError> {
-        let tx = self.new_read_tx()?;
+        let tx = self.new_raw_read_tx()?;
         let val = tx.read(table_name, key)?;
         tx.commit()?;
 
@@ -95,7 +92,7 @@ impl DB {
         key: &K,
         value: &V,
     ) -> Result<(), StorageError> {
-        let tx = self.new_write_tx()?;
+        let tx = self.new_raw_write_tx()?;
         tx.write(table_name, key, value)?;
         tx.commit()
     }
@@ -104,7 +101,7 @@ impl DB {
     ///
     /// Returns `true` if the key was present in the table
     pub fn delete<K: Key>(&self, table_name: &str, key: &K) -> Result<bool, StorageError> {
-        let tx = self.new_write_tx()?;
+        let tx = self.new_raw_write_tx()?;
         let did_exist = tx.delete(table_name, key)?;
         tx.commit()?;
 
@@ -112,141 +109,19 @@ impl DB {
     }
 
     /// Create a new read-only transaction
-    pub fn new_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
+    pub fn new_raw_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
         let txn = self.db.begin_ro_txn().map_err(StorageError::BeginTx)?;
         Ok(DbTxn::new(txn))
     }
 
     /// Create a new read-write transaction
-    pub fn new_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
+    pub fn new_raw_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
         self.db.begin_rw_txn().map_err(StorageError::BeginTx).map(DbTxn::new)
     }
 
     /// Flush the database to disk
     pub fn sync(&self) -> Result<(), StorageError> {
         self.db.sync(true /* force */).map_err(StorageError::Sync).map(|_| ())
-    }
-}
-
-// ---------------
-// | Transaction |
-// ---------------
-
-/// A transaction in the database
-///
-/// MDBX guarantees isolation between transactions
-pub struct DbTxn<'db, T: TransactionKind> {
-    /// The underlying `mdbx` transaction
-    txn: Transaction<'db, T, WriteMap>,
-}
-
-impl<'db, T: TransactionKind> DbTxn<'db, T> {
-    /// Constructor
-    pub fn new(txn: Transaction<'db, T, WriteMap>) -> Self {
-        Self { txn }
-    }
-
-    /// Get a key from the database
-    pub fn read<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-    ) -> Result<Option<V>, StorageError> {
-        // Read bytes then deserialize as a `serde::Serialize`
-        let value_bytes = self.read_bytes(table_name, key)?;
-        value_bytes.map(|bytes| deserialize_value(&bytes)).transpose()
-    }
-
-    /// Open a cursor in the txn
-    pub fn cursor<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-    ) -> Result<DbCursor<'_, T, K, V>, StorageError> {
-        let table = self.open_table(table_name)?;
-        let cursor = self.txn.cursor(&table).map_err(StorageError::TxOp)?;
-
-        Ok(DbCursor::new(cursor))
-    }
-
-    /// Commit the transaction
-    pub fn commit(self) -> Result<(), StorageError> {
-        self.txn.commit().map_err(StorageError::Commit).map(|_| ())
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Read a byte array directly from the database
-    fn read_bytes<K: Key>(
-        &self,
-        table_name: &str,
-        key: &K,
-    ) -> Result<Option<CowBuffer>, StorageError> {
-        // Serialize the key
-        let key_bytes = serialize_value(key)?;
-
-        // Get the value
-        let table = self.open_table(table_name)?;
-        self.txn.get(&table, &key_bytes).map_err(StorageError::TxOp)
-    }
-
-    /// Open a table if the transaction has not done so already
-    fn open_table(&self, table_name: &str) -> Result<Table, StorageError> {
-        self.txn.open_table(Some(table_name)).map_err(StorageError::OpenTable)
-    }
-}
-
-// Write-enabled implementation
-impl<'db> DbTxn<'db, RW> {
-    /// Create a new table in the database
-    pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
-        self.txn
-            .create_table(Some(table_name), TableFlags::default())
-            .map_err(StorageError::TxOp)
-            .map(|_| ())
-    }
-
-    /// Set a key in the database
-    pub fn write<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &V,
-    ) -> Result<(), StorageError> {
-        let value_bytes = serialize_value(value)?;
-        self.write_bytes(table_name, key, &value_bytes)
-    }
-
-    /// Remove a key from the database
-    pub fn delete<K: Key>(&self, table_name: &str, key: &K) -> Result<bool, StorageError> {
-        // Serialize the key
-        let key_bytes = serialize_value(key)?;
-
-        // Delete the value
-        let table = self.open_table(table_name)?;
-        self.txn.del(&table, key_bytes, None /* data */).map_err(StorageError::TxOp)
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Write a byte array directly to the database
-    fn write_bytes<K: Key>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value_bytes: &[u8],
-    ) -> Result<(), StorageError> {
-        // Serialize the key
-        let key_bytes = serialize_value(key)?;
-
-        // Set the value
-        let table = self.open_table(table_name)?;
-        self.txn
-            .put(&table, key_bytes, value_bytes, WriteFlags::default())
-            .map_err(StorageError::TxOp)
     }
 }
 
@@ -361,7 +236,7 @@ mod test {
         db.write(TABLE_NAME, &key, &value).unwrap();
 
         // Create a read only transaction and read the value twice
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let v1: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
         let v2: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
         tx.commit().unwrap();
@@ -383,13 +258,13 @@ mod test {
         let value1 = TestValue::dummy();
         let value2 = TestValue { a: 5, ..Default::default() };
 
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_raw_write_tx().unwrap();
         tx.write(TABLE_NAME, &key1, &value1).unwrap();
         tx.write(TABLE_NAME, &key2, &value2).unwrap();
         tx.commit().unwrap();
 
         // Read the values back
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let v1: Option<TestValue> = tx.read(TABLE_NAME, &key1).unwrap();
         let v2: Option<TestValue> = tx.read(TABLE_NAME, &key2).unwrap();
         tx.commit().unwrap();
@@ -412,7 +287,7 @@ mod test {
 
         // Create a second table in the write tx
         const TABLE_NAME2: &str = "test_table2";
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_raw_write_tx().unwrap();
         tx.create_table(TABLE_NAME2).unwrap();
 
         tx.write(TABLE_NAME, &key1, &value1).unwrap();
@@ -420,7 +295,7 @@ mod test {
         tx.commit().unwrap();
 
         // Read the values back
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let v1: Option<TestValue> = tx.read(TABLE_NAME, &key1).unwrap();
         let v2: Option<TestValue> = tx.read(TABLE_NAME2, &key2).unwrap();
         tx.commit().unwrap();
@@ -441,7 +316,7 @@ mod test {
 
         // Write an initial value to the table
         let key = "counter".to_string();
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_raw_write_tx().unwrap();
         tx.write(TABLE_NAME, &key, &1u64).unwrap();
         tx.commit().unwrap();
 
@@ -452,7 +327,7 @@ mod test {
             let db_clone = db.clone();
 
             let handle = thread::spawn(move || {
-                let tx = db_clone.new_write_tx().unwrap();
+                let tx = db_clone.new_raw_write_tx().unwrap();
                 let value: u64 = tx.read(TABLE_NAME, &key_clone).unwrap().unwrap();
                 tx.write(TABLE_NAME, &key_clone, &(value + 1)).unwrap();
                 tx.commit().unwrap();
@@ -465,7 +340,7 @@ mod test {
         join_handles.into_iter().for_each(|handle| handle.join().unwrap());
 
         // Now read back the value, it should be incremented twice
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let value: u64 = tx.read(TABLE_NAME, &key).unwrap().unwrap();
         tx.commit().unwrap();
 
@@ -485,7 +360,7 @@ mod test {
         let key = "test_key".to_string();
         let value = TestValue { a: 10, ..Default::default() };
 
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_raw_write_tx().unwrap();
         tx.create_table(TABLE_NAME).unwrap();
         tx.write(TABLE_NAME, &key, &value).unwrap();
         tx.commit().unwrap();
@@ -497,7 +372,7 @@ mod test {
         // Re-open the database at the same path and read the value
         let db = DB::new(&DbConfig { path }).unwrap();
 
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let val: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();
         tx.commit().unwrap();
 

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     applicator::{error::StateApplicatorError, ORDERS_TABLE, PRIORITIES_TABLE},
-    storage::db::DbTxn,
+    storage::tx::DbTxn,
 };
 
 use super::{Result, StateApplicator};
@@ -75,7 +75,7 @@ impl StateApplicator {
     /// Add a new order to the network order book
     pub fn new_order(&self, order: NetworkOrder) -> Result<()> {
         // Index the order
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
         Self::write_order_priority_with_tx(&order, &tx)?;
         Self::add_order_with_tx(&order, &tx)?;
 
@@ -93,7 +93,7 @@ impl StateApplicator {
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
     ) -> Result<()> {
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
         Self::attach_validity_proof_with_tx(&order_id, proof, &tx)?;
         let order_info = Self::read_order_info_unchecked(&order_id, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)?;
@@ -107,7 +107,7 @@ impl StateApplicator {
 
     /// Nullify orders indexed by a given wallet share nullifier
     pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<()> {
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
 
         self.nullify_orders_with_tx(nullifier, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)

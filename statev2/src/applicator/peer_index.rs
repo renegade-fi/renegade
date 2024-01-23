@@ -1,6 +1,6 @@
 //! Applicator methods for the peer index, separated out for discoverability
 
-use crate::storage::db::DbTxn;
+use crate::storage::tx::DbTxn;
 
 use super::{
     error::StateApplicatorError, Result, StateApplicator, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE,
@@ -17,7 +17,7 @@ impl StateApplicator {
 
     /// Add new peers to the peer index
     pub fn add_peers(&self, peers: Vec<PeerInfo>) -> Result<()> {
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
 
         // Index each peer
         for peer_info in peers.into_iter() {
@@ -42,7 +42,7 @@ impl StateApplicator {
 
     /// Remove a peer from the peer index
     pub fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<()> {
-        let tx = self.db().new_write_tx().map_err(StateApplicatorError::Storage)?;
+        let tx = self.db().new_raw_write_tx().map_err(StateApplicatorError::Storage)?;
 
         Self::remove_peer_with_tx(peer_id, &tx)?;
         tx.commit().map_err(StateApplicatorError::Storage)?;

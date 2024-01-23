@@ -163,7 +163,7 @@ mod test {
         let mut values = (0..n).collect::<Vec<_>>();
         values.shuffle(&mut thread_rng());
 
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_raw_write_tx().unwrap();
         for i in values.into_iter() {
             let key = i.to_string();
             tx.write(TEST_TABLE, &key, &i).unwrap();
@@ -182,7 +182,7 @@ mod test {
         db.create_table(TEST_TABLE).unwrap();
 
         // Read the first key, it should be `None`
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String /* key */, String /* value */>(TEST_TABLE).unwrap();
         cursor.seek_first().unwrap();
         let first = cursor.get_current().unwrap();
@@ -202,7 +202,7 @@ mod test {
         db.write(TEST_TABLE, &key, &value).unwrap();
 
         // Read the first key, it should be `Some`
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
         cursor.seek_first().unwrap();
         let first = cursor.get_current().unwrap();
@@ -220,7 +220,7 @@ mod test {
         insert_n_random(&db, N);
 
         // Read the last key, it should be `Some`
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
         cursor.seek_last().unwrap();
         let last = cursor.get_current().unwrap();
@@ -242,7 +242,7 @@ mod test {
         db.write(TEST_TABLE, &k2, &v2).unwrap();
 
         // Read the values out of the cursor
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
         cursor.seek_first().unwrap();
         let first = cursor.get_current().unwrap().unwrap();
@@ -262,7 +262,7 @@ mod test {
         insert_n_random(&db, N);
 
         // Run a cursor over the table
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
         for (i, pair) in cursor.enumerate() {
             let (k, v) = pair.unwrap();
@@ -286,7 +286,7 @@ mod test {
         let seek_index = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
 
         // Seek to the value, assert its correctness, then check the next value
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
         cursor.seek(&seek_index.to_string()).unwrap();
         let (k, v) = cursor.get_current().unwrap().unwrap();
@@ -318,7 +318,7 @@ mod test {
         let seek_index = (1..N).choose(&mut thread_rng()).unwrap();
 
         // Seek to the value, assert its correctness, then check the previous value
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
         cursor.seek(&seek_index.to_string()).unwrap();
         let (k, v) = cursor.get_current().unwrap().unwrap();
@@ -350,7 +350,7 @@ mod test {
 
         // Insert all but one value
         let exclude = (0..(N - 1)).choose(&mut thread_rng()).unwrap();
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_raw_write_tx().unwrap();
         for i in values.into_iter() {
             if i == exclude {
                 continue;
@@ -364,7 +364,7 @@ mod test {
         // Test `seek_geq` to a key that does exist
         let seek_ind = exclude - 1;
 
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
         cursor.seek_geq(&seek_ind.to_string()).unwrap();
         let (k, v) = cursor.get_current().unwrap().unwrap();
@@ -377,7 +377,7 @@ mod test {
         // Now try seeking to a key that doesn't exist
         let seek_ind = exclude;
 
-        let tx = db.new_read_tx().unwrap();
+        let tx = db.new_raw_read_tx().unwrap();
         let mut cursor = tx.cursor::<String, usize>(TEST_TABLE).unwrap();
         cursor.seek_geq(&seek_ind.to_string()).unwrap();
         let (k, v) = cursor.get_current().unwrap().unwrap();
