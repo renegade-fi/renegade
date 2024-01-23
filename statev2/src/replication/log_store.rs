@@ -2,22 +2,21 @@
 //! snapshots, metadata, etc in the storage layer -- concretely an embedded KV
 //! store
 
-use std::{
-    cmp::{self, Ordering},
-    sync::Arc,
-};
+use std::{cmp::Ordering, sync::Arc};
 
-use libmdbx::{TransactionKind, RO};
 use protobuf::Message;
 use raft::{
-    prelude::{
-        ConfState, Entry as RaftEntry, HardState, Snapshot as RaftSnapshot, SnapshotMetadata,
-    },
+    eraftpb::{ConfState, HardState},
+    prelude::{Entry as RaftEntry, Snapshot as RaftSnapshot},
     Error as RaftError, GetEntriesContext, RaftState, Result as RaftResult, Storage,
     StorageError as RaftStorageError,
 };
 
-use crate::storage::{cursor::DbCursor, db::DB, tx::DbTxn, ProtoStorageWrapper};
+use crate::storage::{
+    db::DB,
+    error::StorageError,
+    tx::raft_log::{lsn_to_key, parse_lsn, RAFT_LOGS_TABLE, RAFT_METADATA_TABLE},
+};
 
 use super::error::ReplicationError;
 
@@ -25,37 +24,11 @@ use super::error::ReplicationError;
 // | Constants |
 // -------------
 
-/// The name of the raft metadata table in the database
-pub const RAFT_METADATA_TABLE: &str = "raft-metadata";
-/// The name of the raft logs table in the database
-pub const RAFT_LOGS_TABLE: &str = "raft-logs";
-
-/// The name of the raft hard state key in the KV store
-pub const HARD_STATE_KEY: &str = "hard-state";
-/// The name of the raft conf state key in the KV store
-pub const CONF_STATE_KEY: &str = "conf-state";
-/// The name of the snapshot metadata key in the KV store
-pub const SNAPSHOT_METADATA_KEY: &str = "snapshot-metadata";
-
 /// A marker for a placeholder in an unused variable
 ///
 /// Currently used to indicate that a peer ID is not used in a snapshot
 /// as the snapshot logic does not branch on peer ID
 pub const UNUSED: u64 = 0;
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Parse a raft LSN from a string
-fn parse_lsn(s: &str) -> Result<u64, ReplicationError> {
-    s.parse::<u64>().map_err(|_| ReplicationError::ParseValue(s.to_string()))
-}
-
-/// Format a raft LSN as a string
-fn lsn_to_key(lsn: u64) -> String {
-    lsn.to_string()
-}
 
 // -------------
 // | Log Store |
@@ -75,136 +48,47 @@ impl LogStore {
         db.create_table(RAFT_LOGS_TABLE).map_err(ReplicationError::Storage)?;
 
         // Write a default snapshot to the metadata table
-        let self_ = Self { db };
-        self_.apply_snapshot(&RaftSnapshot::new())?;
+        let tx = db.new_write_tx()?;
+        tx.apply_snapshot(&RaftSnapshot::new())?;
+        tx.commit()?;
 
-        Ok(self_)
-    }
-
-    // -----------
-    // | Getters |
-    // -----------
-
-    /// Read a log entry, returning an error if an entry does not exist for the
-    /// given index
-    pub fn read_log_entry(&self, index: u64) -> Result<RaftEntry, ReplicationError> {
-        let tx = self.db.new_raw_read_tx().map_err(ReplicationError::Storage)?;
-        let entry: ProtoStorageWrapper<RaftEntry> = tx
-            .read(RAFT_LOGS_TABLE, &lsn_to_key(index))
-            .map_err(ReplicationError::Storage)?
-            .ok_or_else(|| ReplicationError::EntryNotFound)?;
-
-        Ok(entry.into_inner())
-    }
-
-    /// Read the `ConfState` of the raft from storage
-    fn read_conf_state_with_tx<T: TransactionKind>(
-        &self,
-        tx: &DbTxn<'_, T>,
-    ) -> Result<ConfState, ReplicationError> {
-        let conf_state: ProtoStorageWrapper<ConfState> = tx
-            .read(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string())
-            .map_err(ReplicationError::Storage)?
-            .unwrap_or_default();
-
-        Ok(conf_state.into_inner())
-    }
-
-    /// Read the `HardState` of the raft from storage
-    fn read_hard_state_with_tx<T: TransactionKind>(
-        &self,
-        tx: &DbTxn<'_, T>,
-    ) -> Result<HardState, ReplicationError> {
-        let hard_state: ProtoStorageWrapper<HardState> = tx
-            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
-            .map_err(ReplicationError::Storage)?
-            .unwrap_or_default();
-
-        Ok(hard_state.into_inner())
-    }
-
-    /// A helper to construct a cursor over the logs
-    fn logs_cursor<T: TransactionKind>(
-        &self,
-        tx: &DbTxn<'_, T>,
-    ) -> Result<DbCursor<'_, T, String, ProtoStorageWrapper<RaftEntry>>, ReplicationError> {
-        tx.cursor(RAFT_LOGS_TABLE).map_err(ReplicationError::Storage)
+        Ok(Self { db })
     }
 
     // -----------
     // | Setters |
     // -----------
 
-    /// Apply a config change to the log store
-    pub fn apply_config_state(&self, change: ConfState) -> Result<(), ReplicationError> {
-        let tx = self.db.new_raw_write_tx().map_err(ReplicationError::Storage)?;
-
-        let value = ProtoStorageWrapper(change);
-        tx.write(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string(), &value)
-            .map_err(ReplicationError::Storage)?;
-
-        tx.commit().map_err(ReplicationError::Storage)
-    }
-
     /// Apply a hard state to the log store
-    pub fn apply_hard_state(&self, state: HardState) -> Result<(), ReplicationError> {
-        let tx = self.db.new_raw_write_tx().map_err(ReplicationError::Storage)?;
+    pub fn apply_hard_state(&self, hard_state: HardState) -> Result<(), ReplicationError> {
+        let tx = self.db.new_write_tx()?;
+        tx.apply_hard_state(hard_state)?;
 
-        let value = ProtoStorageWrapper(state);
-        tx.write(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string(), &value)
-            .map_err(ReplicationError::Storage)?;
-
-        tx.commit().map_err(ReplicationError::Storage)
+        Ok(tx.commit()?)
     }
 
-    /// Append entries to the raft log
+    /// Apply a config state to the log store
+    pub fn apply_config_state(&self, conf_state: ConfState) -> Result<(), ReplicationError> {
+        let tx = self.db.new_write_tx()?;
+        tx.apply_config_state(conf_state)?;
+
+        Ok(tx.commit()?)
+    }
+
+    /// Append entries to the log
     pub fn append_log_entries(&self, entries: Vec<RaftEntry>) -> Result<(), ReplicationError> {
-        let tx = self.db.new_raw_write_tx().map_err(ReplicationError::Storage)?;
-        for entry in entries.into_iter() {
-            let key = lsn_to_key(entry.index);
-            let value = ProtoStorageWrapper(entry);
+        let tx = self.db.new_write_tx()?;
+        tx.append_log_entries(entries)?;
 
-            tx.write(RAFT_LOGS_TABLE, &key, &value).map_err(ReplicationError::Storage)?;
-        }
-
-        tx.commit().map_err(ReplicationError::Storage)
+        Ok(tx.commit()?)
     }
 
     /// Apply a snapshot to the log store
     pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), ReplicationError> {
-        let tx = self.db.new_raw_write_tx().unwrap();
-        let meta = snapshot.get_metadata();
+        let tx = self.db.new_write_tx()?;
+        tx.apply_snapshot(snapshot)?;
 
-        // Write the `ConfState` to the metadata table
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &CONF_STATE_KEY.to_string(),
-            &ProtoStorageWrapper(meta.get_conf_state().clone()),
-        )
-        .map_err(ReplicationError::Storage)?;
-
-        // Write the `HardState` to the metadata table
-        let new_state: ProtoStorageWrapper<HardState> = tx
-            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())
-            .map_err(ReplicationError::Storage)?
-            .unwrap_or_default();
-        let mut new_state = new_state.into_inner();
-
-        new_state.set_term(cmp::max(new_state.get_term(), meta.get_term()));
-        new_state.set_commit(meta.index);
-
-        tx.write(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string(), &ProtoStorageWrapper(new_state))
-            .map_err(ReplicationError::Storage)?;
-
-        // Write the snapshot metadata
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &SNAPSHOT_METADATA_KEY.to_string(),
-            &ProtoStorageWrapper(snapshot.get_metadata().clone()),
-        )
-        .map_err(ReplicationError::Storage)?;
-
-        tx.commit().map_err(ReplicationError::Storage)
+        Ok(tx.commit()?)
     }
 }
 
@@ -212,9 +96,10 @@ impl Storage for LogStore {
     /// Returns the initial raft state
     fn initial_state(&self) -> RaftResult<RaftState> {
         // Read the hard state
-        let tx = self.db.new_raw_read_tx().map_err(RaftError::from)?;
-        let hard_state = self.read_hard_state_with_tx(&tx)?;
-        let conf_state = self.read_conf_state_with_tx(&tx)?;
+        let tx = self.db.new_read_tx()?;
+        let hard_state = tx.read_hard_state()?;
+        let conf_state = tx.read_conf_state()?;
+        tx.commit()?;
 
         Ok(RaftState { hard_state, conf_state })
     }
@@ -230,8 +115,8 @@ impl Storage for LogStore {
         max_size: impl Into<Option<u64>>,
         _context: GetEntriesContext,
     ) -> RaftResult<Vec<RaftEntry>> {
-        let tx = self.db.new_raw_read_tx().map_err(RaftError::from)?;
-        let mut cursor = self.logs_cursor(&tx)?;
+        let tx = self.db.new_read_tx()?;
+        let mut cursor = tx.logs_cursor()?;
 
         // Seek the cursor to the first entry in the range
         cursor.seek_geq(&lsn_to_key(low)).map_err(RaftError::from)?;
@@ -267,9 +152,10 @@ impl Storage for LogStore {
 
     /// Returns the term for a given index in the log
     fn term(&self, idx: u64) -> RaftResult<u64> {
-        match self.read_log_entry(idx).map(|entry| entry.term) {
+        let tx = self.db.new_read_tx()?;
+        match tx.read_log_entry(idx).map(|entry| entry.term) {
             // Check the snapshot if not found
-            Err(ReplicationError::EntryNotFound) => {
+            Err(StorageError::NotFound(_)) => {
                 if let Ok(snap) = self.snapshot(idx, UNUSED)
                     && snap.get_metadata().get_index() == idx
                 {
@@ -284,8 +170,8 @@ impl Storage for LogStore {
 
     /// Returns the index of the first available entry in the log
     fn first_index(&self) -> RaftResult<u64> {
-        let tx = self.db.new_raw_read_tx().map_err(RaftError::from)?;
-        let mut cursor = self.logs_cursor::<RO>(&tx).map_err(RaftError::from)?;
+        let tx = self.db.new_read_tx()?;
+        let mut cursor = tx.logs_cursor()?;
         cursor.seek_first().map_err(RaftError::from)?;
 
         match cursor.get_current().map_err(RaftError::from)? {
@@ -301,8 +187,8 @@ impl Storage for LogStore {
 
     /// Returns the index of the last available entry in the log
     fn last_index(&self) -> RaftResult<u64> {
-        let tx = self.db.new_raw_read_tx().map_err(RaftError::from)?;
-        let mut cursor = self.logs_cursor::<RO>(&tx).map_err(RaftError::from)?;
+        let tx = self.db.new_read_tx()?;
+        let mut cursor = tx.logs_cursor()?;
         cursor.seek_last().map_err(RaftError::from)?;
 
         match cursor.get_current().map_err(RaftError::from)? {
@@ -322,26 +208,18 @@ impl Storage for LogStore {
     ///
     /// The `to` field indicates the peer this will be sent to, unused here
     fn snapshot(&self, request_index: u64, _to: u64) -> RaftResult<RaftSnapshot> {
+        let tx = self.db.new_read_tx()?;
         let mut snap = RaftSnapshot::default();
         let md = snap.mut_metadata();
 
         // Read the snapshot metadata from the metadata table
-        let tx = self.db.new_raw_read_tx().map_err(RaftError::from)?;
-
-        let hard_state = self.read_hard_state_with_tx(&tx)?;
+        let hard_state = tx.read_hard_state()?;
         md.index = hard_state.commit;
 
-        let stored_metadata: SnapshotMetadata = tx
-            .read(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string())
-            .map_err(RaftError::from)?
-            .map(|value: ProtoStorageWrapper<SnapshotMetadata>| value.into_inner())
-            .ok_or_else(|| RaftError::Store(RaftStorageError::SnapshotTemporarilyUnavailable))?;
-
+        let stored_metadata = tx.read_snapshot_metadata()?;
         md.term = match md.index.cmp(&stored_metadata.index) {
             Ordering::Equal => stored_metadata.term,
-            Ordering::Greater => {
-                self.read_log_entry(md.index).map(|entry| entry.term).map_err(RaftError::from)?
-            },
+            Ordering::Greater => tx.read_log_entry(md.index).map(|entry| entry.term)?,
             Ordering::Less => {
                 return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
             },
@@ -351,7 +229,7 @@ impl Storage for LogStore {
             md.index = request_index;
         }
 
-        let conf_state = self.read_conf_state_with_tx(&tx)?;
+        let conf_state = tx.read_conf_state()?;
         md.set_conf_state(conf_state);
 
         Ok(snap)
