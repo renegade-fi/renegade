@@ -20,6 +20,7 @@ serde = { workspace = true, features = ["derive"] }
 
 # === Messaging + Concurrency === #
 crossbeam = { workspace = true }
+futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
@@ -29,6 +30,7 @@ config = { path = "../config" }
 constants = { path = "../constants" }
 external-api = { path = "../external-api" }
 system-bus = { path = "../system-bus" }
+util = { path = "../util" }
 
 # === Misc === #
 itertools = "0.10"

@@ -1,7 +1,7 @@
 //! Defines error types emitted by the replication layer
 
 use raft::{Error as RaftError, StorageError as RaftStorageError};
-use std::io::Error as IOError;
+use std::io::{Error as IOError, ErrorKind as IOErrorKind};
 use std::{error::Error, fmt::Display};
 
 use crate::applicator::error::StateApplicatorError;
@@ -24,6 +24,8 @@ pub enum ReplicationError {
     RecvMessage(IOError),
     /// An error sending a message
     SendMessage(IOError),
+    /// An error sending a response to a proposal
+    ProposalResponse(String),
     /// An error serializing a value
     SerializeValue(String),
     /// An error interacting with storage
@@ -51,6 +53,9 @@ impl From<ReplicationError> for RaftError {
                 RaftError::Store(RaftStorageError::Other(Box::new(ReplicationError::ParseValue(s))))
             },
             ReplicationError::SendMessage(e) | ReplicationError::RecvMessage(e) => RaftError::Io(e),
+            ReplicationError::ProposalResponse(e) => {
+                RaftError::Io(IOError::new(IOErrorKind::Other, e))
+            },
         }
     }
 }

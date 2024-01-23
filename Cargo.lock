@@ -7178,6 +7178,7 @@ dependencies = [
  "crossbeam",
  "external-api",
  "flexbuffers",
+ "futures",
  "itertools 0.10.5",
  "libmdbx",
  "multiaddr",
@@ -7193,6 +7194,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-slog",
+ "util",
  "uuid 1.7.0",
 ]
 

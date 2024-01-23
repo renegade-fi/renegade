@@ -2,6 +2,7 @@
 //! and handles interactions with storage
 
 use std::{
+    collections::HashMap,
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -21,13 +22,16 @@ use raft::{
 use rand::{thread_rng, RngCore};
 use slog::Logger;
 use system_bus::SystemBus;
-use tracing::log::info;
+use tokio::sync::oneshot::Sender as OneshotSender;
+use tracing::log;
 use tracing_slog::TracingSlogDrain;
+use util::err_str;
+use uuid::Uuid;
 
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
     storage::db::DB,
-    StateTransition,
+    Proposal, StateTransition,
 };
 
 use super::{error::ReplicationError, log_store::LogStore, network::RaftNetwork};
@@ -41,6 +45,10 @@ const RAFT_POLL_INTERVAL_MS: u64 = 10; // 10 ms
 
 /// Error message emitted when the proposal queue is disconnected
 const PROPOSAL_QUEUE_DISCONNECTED: &str = "Proposal queue disconnected";
+/// Error message emitted when sending a proposal response fails
+const ERR_PROPOSAL_RESPONSE: &str = "Failed to send proposal response";
+/// Error message emitted when an invalid ID is found in a proposal's context
+const ERR_INVALID_PROPOSAL_ID: &str = "Invalid proposal ID";
 
 /// The config for the local replication node
 #[derive(Clone)]
@@ -51,7 +59,7 @@ pub struct ReplicationNodeConfig<N: RaftNetwork> {
     pub relayer_config: RelayerConfig,
     /// A reference to the channel on which the replication node may receive
     /// proposals
-    pub proposal_queue: CrossbeamReceiver<StateTransition>,
+    pub proposal_queue: CrossbeamReceiver<Proposal>,
     /// A reference to the networking layer that backs the raft node
     pub network: N,
     /// A handle on the persistent storage layer underlying the raft node
@@ -67,12 +75,14 @@ pub struct ReplicationNode<N: RaftNetwork> {
     /// The inner raft node
     inner: RawNode<LogStore>,
     /// The queue on which state transition proposals may be received
-    proposal_queue: CrossbeamReceiver<StateTransition>,
+    proposal_queue: CrossbeamReceiver<Proposal>,
     /// A handle to the state applicator: the module responsible for applying
     /// state transitions to the state machine when they are committed
     applicator: StateApplicator,
     /// The networking layer backing the raft node
     network: N,
+    /// Maps proposal IDs to a response channel for the proposal
+    proposal_responses: HashMap<Uuid, OneshotSender<Result<(), ReplicationError>>>,
 }
 
 impl<N: RaftNetwork> ReplicationNode<N> {
@@ -115,6 +125,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             applicator,
             proposal_queue: config.proposal_queue,
             network: config.network,
+            proposal_responses: HashMap::new(),
         })
     }
 
@@ -157,13 +168,22 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             thread::sleep(poll_interval);
 
             // Check for new proposals
-            while let Some(msg) = self.proposal_queue.try_recv().map(Some).or_else(|e| match e {
-                TryRecvError::Empty => Ok(None),
-                TryRecvError::Disconnected => {
-                    Err(ReplicationError::ProposalQueue(PROPOSAL_QUEUE_DISCONNECTED.to_string()))
-                },
-            })? {
-                self.process_proposal(&msg)?;
+            while let Some(Proposal { transition, response }) =
+                self.proposal_queue.try_recv().map(Some).or_else(|e| match e {
+                    TryRecvError::Empty => Ok(None),
+                    TryRecvError::Disconnected => Err(ReplicationError::ProposalQueue(
+                        PROPOSAL_QUEUE_DISCONNECTED.to_string(),
+                    )),
+                })?
+            {
+                // Generate a unique ID for the proposal
+                let id = Uuid::new_v4();
+                self.proposal_responses.insert(id, response);
+
+                if let Err(e) = self.process_proposal(id, &transition) {
+                    log::error!("Error processing proposal: {e:?}");
+                    self.notify_proposal_sender(&id, Err(e))?;
+                };
             }
 
             // Check for new messages from raft peers
@@ -186,7 +206,11 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     }
 
     /// Process a state transition proposal
-    fn process_proposal(&mut self, proposal: &StateTransition) -> Result<(), ReplicationError> {
+    fn process_proposal(
+        &mut self,
+        id: Uuid,
+        proposal: &StateTransition,
+    ) -> Result<(), ReplicationError> {
         // Handle raft cluster changes directly, otherwise append the proposal to the
         // log
         match proposal {
@@ -194,10 +218,11 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             StateTransition::AddRaftPeer { peer_id } => self.add_peer(*peer_id),
             StateTransition::RemoveRaftPeer { peer_id } => self.remove_peer(*peer_id),
             _ => {
+                let ctx = id.to_bytes_le().to_vec();
                 let payload = serde_json::to_vec(&proposal)
-                    .map_err(|e| ReplicationError::SerializeValue(e.to_string()))?;
+                    .map_err(err_str!(ReplicationError::SerializeValue))?;
 
-                self.inner.propose(vec![] /* context */, payload).map_err(ReplicationError::Raft)
+                self.inner.propose(ctx, payload).map_err(ReplicationError::Raft)
             },
         }
     }
@@ -319,22 +344,30 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             match entry.get_entry_type() {
                 EntryType::EntryNormal => {
                     // Apply a normal entry to the state machine
+                    let entry_id = parse_proposal_id(&entry)?;
                     let entry_bytes = entry.get_data();
                     let transition: StateTransition = serde_json::from_slice(entry_bytes)
-                        .map_err(|e| ReplicationError::ParseValue(e.to_string()))?;
+                        .map_err(err_str!(ReplicationError::ParseValue))?;
 
-                    info!("node {} applying state transition {transition:?}", self.inner.raft.id);
-
-                    self.applicator
+                    log::info!(
+                        "node {} applying state transition {transition:?}",
+                        self.inner.raft.id
+                    );
+                    let res = self
+                        .applicator
                         .handle_state_transition(transition)
-                        .map_err(ReplicationError::Applicator)?;
+                        .map_err(ReplicationError::Applicator);
+
+                    // Notify the proposal sender that the proposal has been
+                    // applied, either successfully or with an error
+                    self.notify_proposal_sender(&entry_id, res)?;
                 },
                 EntryType::EntryConfChangeV2 => {
                     // Apply a config change entry to the state machine
                     let mut config_change = ConfChangeV2::new();
                     config_change
                         .merge_from_bytes(entry.get_data())
-                        .map_err(|e| ReplicationError::ParseValue(e.to_string()))?;
+                        .map_err(err_str!(ReplicationError::ParseValue))?;
 
                     // Forward the config change to the consensus engine
                     let config_state = self
@@ -364,6 +397,36 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     fn update_hard_state(&mut self, hard_state: HardState) -> Result<(), ReplicationError> {
         self.inner.mut_store().apply_hard_state(hard_state)
     }
+
+    /// Notify the proposal sender that the proposal has been applied
+    fn notify_proposal_sender(
+        &mut self,
+        id: &Uuid,
+        res: Result<(), ReplicationError>,
+    ) -> Result<(), ReplicationError> {
+        // If the proposal is not local to the node, or if the channel is dropped, no
+        // notification is needed
+        if let Some(resp) = self.proposal_responses.remove(id) && !resp.is_closed() {
+            resp.send(res).map_err(|_| {
+                ReplicationError::ProposalResponse(ERR_PROPOSAL_RESPONSE.to_string())
+            })?;
+        }
+
+        Ok(())
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Parse a proposal ID from an entry
+fn parse_proposal_id(entry: &Entry) -> Result<Uuid, ReplicationError> {
+    let id_bytes = entry
+        .get_context()
+        .try_into()
+        .map_err(|_| ReplicationError::ParseValue(ERR_INVALID_PROPOSAL_ID.to_string()))?;
+    Ok(Uuid::from_bytes_le(id_bytes))
 }
 
 // ---------
@@ -386,7 +449,7 @@ pub(crate) mod test_helpers {
         replication::{error::ReplicationError, network::test_helpers::MockNetwork},
         storage::db::DB,
         test_helpers::mock_db,
-        StateTransition,
+        Proposal, StateTransition,
     };
 
     use super::{ReplicationNode, ReplicationNodeConfig};
@@ -399,7 +462,7 @@ pub(crate) mod test_helpers {
         /// The dbs of the nodes
         dbs: Vec<Arc<DB>>,
         /// The proposal senders of the nodes
-        proposal_senders: Vec<Sender<StateTransition>>,
+        proposal_senders: Vec<Sender<Proposal>>,
     }
 
     impl MockReplicationCluster {
@@ -454,7 +517,7 @@ pub(crate) mod test_helpers {
             // Propose a node addition to the cluster for each of the followers
             let leader_proposal_queue = senders[0].clone();
             for node_id in 2..=n_nodes {
-                let add_node = StateTransition::AddRaftPeer { peer_id: node_id as u64 };
+                let add_node = StateTransition::AddRaftPeer { peer_id: node_id as u64 }.into();
                 leader_proposal_queue.send(add_node).unwrap();
                 thread::sleep(Duration::from_millis(50))
             }
@@ -473,13 +536,13 @@ pub(crate) mod test_helpers {
         ///
         /// We 1-index here to match the node IDs
         pub fn send_proposal(&self, node_id: usize, proposal: StateTransition) {
-            self.proposal_senders[node_id - 1].send(proposal).unwrap();
+            self.proposal_senders[node_id - 1].send(proposal.into()).unwrap();
         }
 
         /// Remove a node from the cluster
         pub fn remove_node(&mut self, node_id: usize) {
             let remove_node = StateTransition::RemoveRaftPeer { peer_id: node_id as u64 };
-            self.proposal_senders[node_id - 1].send(remove_node).unwrap();
+            self.proposal_senders[node_id - 1].send(remove_node.into()).unwrap();
             self.handles.remove(node_id - 1);
         }
 
@@ -495,7 +558,7 @@ pub(crate) mod test_helpers {
     pub fn mock_leader(
         id: u64,
         db: Arc<DB>,
-        proposal_queue: CrossbeamReceiver<StateTransition>,
+        proposal_queue: CrossbeamReceiver<Proposal>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
         mock_replication_node(id, db, proposal_queue, network)
@@ -505,7 +568,7 @@ pub(crate) mod test_helpers {
     pub fn mock_follower(
         id: u64,
         db: Arc<DB>,
-        proposal_queue: CrossbeamReceiver<StateTransition>,
+        proposal_queue: CrossbeamReceiver<Proposal>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
         mock_replication_node_with_config(
@@ -527,7 +590,7 @@ pub(crate) mod test_helpers {
     pub fn mock_replication_node(
         id: u64,
         db: Arc<DB>,
-        proposal_queue: CrossbeamReceiver<StateTransition>,
+        proposal_queue: CrossbeamReceiver<Proposal>,
         network: MockNetwork,
     ) -> ReplicationNode<MockNetwork> {
         mock_replication_node_with_config(
@@ -551,7 +614,7 @@ pub(crate) mod test_helpers {
     /// Create a moc node with a given raft config
     pub fn mock_replication_node_with_config(
         db: Arc<DB>,
-        proposal_queue: CrossbeamReceiver<StateTransition>,
+        proposal_queue: CrossbeamReceiver<Proposal>,
         network: MockNetwork,
         raft_config: &RaftConfig,
     ) -> ReplicationNode<MockNetwork> {
