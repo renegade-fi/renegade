@@ -2,6 +2,7 @@
 //! proposing state transitions and reading from state
 
 pub mod error;
+pub mod notifications;
 pub mod wallet_index;
 
 use std::{sync::Arc, thread};
@@ -10,6 +11,7 @@ use config::RelayerConfig;
 use crossbeam::channel::{unbounded, Sender as UnboundedSender};
 use external_api::bus_message::SystemBusMessage;
 use system_bus::SystemBus;
+use util::err_str;
 
 use crate::{
     replication::{
@@ -17,16 +19,16 @@ use crate::{
         raft_node::{ReplicationNode, ReplicationNodeConfig},
     },
     storage::db::{DbConfig, DB},
-    StateTransition,
+    Proposal, StateTransition,
 };
 
-use self::error::StateError;
+use self::{error::StateError, notifications::ProposalWaiter};
 
 /// The default tick interval for the raft node
 const DEFAULT_TICK_INTERVAL_MS: u64 = 10; // 10 milliseconds
 
 /// A type alias for a proposal queue of state transitions
-pub type ProposalQueue = UnboundedSender<StateTransition>;
+pub type ProposalQueue = UnboundedSender<Proposal>;
 
 /// A handle on the state that allows workers throughout the node to access the
 /// replication and durability primitives backing the state machine
@@ -75,8 +77,12 @@ impl State {
     // -------------------
 
     /// Send a proposal to the raft node
-    fn send_proposal(&self, proposal: StateTransition) -> Result<(), StateError> {
-        self.proposal_queue.send(proposal).map_err(|e| StateError::Proposal(e.to_string()))
+    fn send_proposal(&self, transition: StateTransition) -> Result<ProposalWaiter, StateError> {
+        let (response, recv) = tokio::sync::oneshot::channel();
+        let proposal = Proposal { transition, response };
+
+        self.proposal_queue.send(proposal).map_err(err_str!(StateError::Proposal))?;
+        Ok(ProposalWaiter::new(recv))
     }
 }
 
@@ -106,19 +112,18 @@ mod test_helpers {
 mod test {
     use common::types::wallet_mocks::mock_empty_wallet;
 
-    use crate::{interface::test_helpers::mock_state, test_helpers::sleep_ms};
+    use crate::interface::test_helpers::mock_state;
 
     /// Test adding a wallet to the state
-    #[test]
-    fn test_add_wallet() {
+    #[tokio::test]
+    async fn test_add_wallet() {
         let state = mock_state();
 
         let wallet = mock_empty_wallet();
-        state.new_wallet(wallet.clone()).unwrap();
+        let res = state.new_wallet(wallet.clone()).unwrap().await;
+        assert!(res.is_ok());
 
-        // Wait for the proposal to be applied
-        sleep_ms(100);
-
+        // Check for the wallet in the state
         let expected_wallet = wallet.clone();
         let actual_wallet = state.get_wallet(&wallet.wallet_id).unwrap().unwrap();
         assert_eq!(expected_wallet, actual_wallet);

@@ -22,8 +22,9 @@ use common::types::{
     proof_bundles::OrderValidityProofBundle,
     wallet::{OrderIdentifier, Wallet},
 };
-use replication::RaftPeerId;
+use replication::{error::ReplicationError, RaftPeerId};
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot::Sender as OneshotSender;
 
 pub mod applicator;
 mod interface;
@@ -33,7 +34,17 @@ pub mod storage;
 /// Re-export the state interface
 pub use interface::*;
 
-/// The `StateTransition` type encapsulates all possible state transitions,
+/// The `Proposal` type wraps a state transition and the channel on which to
+/// send the result of the proposal's application
+#[derive(Debug)]
+pub struct Proposal {
+    /// The state transition to propose
+    pub transition: StateTransition,
+    /// The channel on which to send the result of the proposal's application
+    pub response: OneshotSender<Result<(), ReplicationError>>,
+}
+
+/// The `StateTransitionType` encapsulates all possible state transitions,
 /// allowing transitions to be handled generically before they are applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(missing_docs)]
@@ -58,6 +69,14 @@ pub enum StateTransition {
     RemovePeer { peer_id: WrappedPeerId },
     /// Remove a raft peer from the local consensus cluster
     RemoveRaftPeer { peer_id: RaftPeerId },
+}
+
+impl From<StateTransition> for Proposal {
+    fn from(transition: StateTransition) -> Self {
+        // Create a channel that no worker will ever receive on
+        let (response, _recv) = tokio::sync::oneshot::channel();
+        Self { transition, response }
+    }
 }
 
 #[cfg(test)]

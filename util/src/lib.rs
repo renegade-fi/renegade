@@ -9,6 +9,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod arbitrum;
+pub mod errors;
 pub mod hex;
 pub mod logging;
 pub mod matching_engine;

@@ -2,7 +2,10 @@
 
 use common::types::wallet::{Wallet, WalletIdentifier};
 
-use crate::{applicator::WALLETS_TABLE, error::StateError, State, StateTransition};
+use crate::{
+    applicator::WALLETS_TABLE, error::StateError, notifications::ProposalWaiter, State,
+    StateTransition,
+};
 
 impl State {
     // -----------
@@ -25,7 +28,7 @@ impl State {
     // -----------
 
     /// Propose a new wallet to be added to the index
-    pub fn new_wallet(&self, wallet: Wallet) -> Result<(), StateError> {
+    pub fn new_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AddWallet { wallet })
     }
 }
