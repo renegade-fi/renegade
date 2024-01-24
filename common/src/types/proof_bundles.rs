@@ -465,8 +465,9 @@ pub mod mocks {
     use ark_poly::univariate::DensePolynomial;
     use circuit_types::{traits::BaseType, PlonkLinkProof, PlonkProof, ProofLinkingHint};
     use circuits::zk_circuits::{
-        valid_commitments::ValidCommitmentsStatement,
-        valid_match_settle::ValidMatchSettleStatement, valid_reblind::ValidReblindStatement,
+        valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
+        valid_match_settle::ValidMatchSettleStatement,
+        valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
         valid_wallet_create::ValidWalletCreateStatement,
         valid_wallet_update::ValidWalletUpdateStatement,
     };
@@ -476,8 +477,9 @@ pub mod mocks {
     use mpc_relation::constants::GATE_WIDTH;
 
     use super::{
-        OrderValidityProofBundle, SizedValidCommitmentsBundle, SizedValidMatchSettleBundle,
-        SizedValidReblindBundle, SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
+        OrderValidityProofBundle, OrderValidityWitnessBundle, SizedValidCommitmentsBundle,
+        SizedValidMatchSettleBundle, SizedValidReblindBundle, SizedValidWalletCreateBundle,
+        SizedValidWalletUpdateBundle,
     };
 
     /// Create a dummy proof bundle for `VALID WALLET CREATE`
@@ -511,6 +513,16 @@ pub mod mocks {
             reblind_proof: Arc::new(dummy_valid_reblind_bundle()),
             commitment_proof: Arc::new(dummy_valid_commitments_bundle()),
             linking_proof: dummy_link_proof(),
+        }
+    }
+
+    /// Create a dummy witness to a validity proof bundle
+    pub fn dummy_validity_witness_bundle() -> OrderValidityWitnessBundle {
+        let mut iter = iter::repeat(Scalar::one());
+        OrderValidityWitnessBundle {
+            reblind_witness: Arc::new(SizedValidReblindWitness::from_scalars(&mut iter)),
+            commitment_witness: Arc::new(SizedValidCommitmentsWitness::from_scalars(&mut iter)),
+            commitment_linking_hint: Arc::new(dummy_link_hint()),
         }
     }
 

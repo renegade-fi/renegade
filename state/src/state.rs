@@ -18,10 +18,7 @@ use external_api::bus_message::{
 };
 use gossip_api::heartbeat::HeartbeatMessage;
 use job_types::handshake_manager::HandshakeExecutionJob;
-use libp2p::{
-    identity::{self, Keypair},
-    Multiaddr,
-};
+use libp2p::{identity::Keypair, Multiaddr};
 use rand::{distributions::WeightedIndex, prelude::Distribution, thread_rng};
 use std::{
     collections::HashMap,
@@ -76,14 +73,7 @@ impl RelayerState {
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         // Generate an keypair on curve 25519 for the local peer or fetch from config
-        let local_keypair = args
-            .p2p_key
-            .clone()
-            .map(|b64_encoded| {
-                let decoded = base64::decode(b64_encoded).expect("p2p key formatted incorrectly");
-                identity::Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key")
-            })
-            .unwrap_or_else(identity::Keypair::generate_ed25519);
+        let local_keypair = args.p2p_key.clone();
         let local_peer_id = WrappedPeerId(local_keypair.public().to_peer_id());
         // Setup initial wallets
         let mut wallet_index = WalletIndex::new(local_peer_id);

@@ -28,3 +28,10 @@ impl From<StorageError> for StateError {
         StateError::Db(e)
     }
 }
+
+/// Useful for error types expecting `String`
+impl From<StateError> for String {
+    fn from(e: StateError) -> Self {
+        e.to_string()
+    }
+}
