@@ -6,6 +6,7 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
+pub mod order_book;
 pub mod raft_log;
 pub mod wallet_index;
 
