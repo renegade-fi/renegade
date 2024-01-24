@@ -19,7 +19,7 @@ use circuit_types::wallet::Nullifier;
 use common::types::{
     gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
-    proof_bundles::OrderValidityProofBundle,
+    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, Wallet},
 };
 use replication::{error::ReplicationError, RaftPeerId};
@@ -37,6 +37,9 @@ pub use interface::*;
 // -------------
 // | Constants |
 // -------------
+
+/// The name of the db table that stores node metadata
+pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
 
 /// The name of the db table that stores peer information
 pub(crate) const PEER_INFO_TABLE: &str = "peer-info";
@@ -79,7 +82,11 @@ pub enum StateTransition {
     /// Add an order to the network order book
     AddOrder { order: NetworkOrder },
     /// Add a validity proof to an existing order in the book
-    AddOrderValidityProof { order_id: OrderIdentifier, proof: OrderValidityProofBundle },
+    AddOrderValidityProof {
+        order_id: OrderIdentifier,
+        proof: OrderValidityProofBundle,
+        witness: Option<OrderValidityWitnessBundle>,
+    },
     /// Cancel all orders on a given nullifier
     NullifyOrders { nullifier: Nullifier },
     /// Add a set of peers to the p2p network topology

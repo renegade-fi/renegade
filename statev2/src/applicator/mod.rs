@@ -66,8 +66,8 @@ impl StateApplicator {
             StateTransition::AddWallet { wallet } => self.add_wallet(&wallet),
             StateTransition::UpdateWallet { wallet } => self.update_wallet(&wallet),
             StateTransition::AddOrder { order } => self.new_order(order),
-            StateTransition::AddOrderValidityProof { order_id, proof } => {
-                self.add_order_validity_proof(order_id, proof)
+            StateTransition::AddOrderValidityProof { order_id, proof, witness } => {
+                self.add_order_validity_proof(order_id, proof, witness)
             },
             StateTransition::NullifyOrders { nullifier } => self.nullify_orders(nullifier),
             StateTransition::AddPeers { peers } => self.add_peers(peers),
