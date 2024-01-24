@@ -7,6 +7,7 @@
 //! they expose
 
 pub mod order_book;
+pub mod peer_index;
 pub mod raft_log;
 pub mod wallet_index;
 
