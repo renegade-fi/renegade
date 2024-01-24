@@ -4,6 +4,7 @@ use common::types::{gossip::ClusterId, wallet::Wallet};
 use config::RelayerConfig;
 use external_api::bus_message::SystemBusMessage;
 use job_types::handshake_manager::HandshakeExecutionJob;
+use libp2p::identity::Keypair;
 use system_bus::SystemBus;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
@@ -40,8 +41,8 @@ impl StateMockBuilder {
     }
 
     /// Set the local keypair
-    pub fn local_keypair(mut self, key: String) -> Self {
-        self.config.p2p_key = Some(key);
+    pub fn local_keypair(mut self, key: Keypair) -> Self {
+        self.config.p2p_key = key;
         self
     }
 

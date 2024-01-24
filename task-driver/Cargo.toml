@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-integration = ["state/mocks", "common/mocks", "arbitrum-client/integration"]
+integration = ["statev2/mocks", "common/mocks", "arbitrum-client/integration"]
 
 [[test]]
 name = "integration"
@@ -33,7 +33,7 @@ external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
 job-types = { path = "../workers/job-types" }
 renegade-crypto = { path = "../renegade-crypto" }
-state = { path = "../state" }
+statev2 = { path = "../statev2" }
 system-bus = { path = "../system-bus" }
 util = { path = "../util" }
 
