@@ -7,8 +7,8 @@ use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     wallet::Wallet,
 };
-use ed25519_dalek::{Digest, Keypair, Sha512, SignatureError};
-use libp2p::{Multiaddr, PeerId};
+use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
+use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -180,7 +180,7 @@ pub struct RelayerConfig {
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The cluster keypair
-    pub cluster_keypair: Keypair,
+    pub cluster_keypair: DalekKeypair,
 
     // ----------------------------
     // | Local Node Configuration |
@@ -192,7 +192,7 @@ pub struct RelayerConfig {
     /// The port to listen on for the externally facing websocket API
     pub websocket_port: u16,
     /// The local peer's base64 encoded p2p key
-    pub p2p_key: Option<String>,
+    pub p2p_key: Keypair,
     /// The path at which to open up the database
     pub db_path: String,
     /// The maximum staleness (number of newer roots observed) to allow on
@@ -257,7 +257,7 @@ impl Clone for RelayerConfig {
             disabled_exchanges: self.disabled_exchanges.clone(),
             disable_fee_validation: self.disable_fee_validation,
             wallets: self.wallets.clone(),
-            cluster_keypair: Keypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
+            cluster_keypair: DalekKeypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
             cluster_id: self.cluster_id.clone(),
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),
@@ -313,15 +313,24 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         let keypair = ed25519_dalek::Keypair::from_bytes(&private_key[..]).unwrap();
 
         // Verify that the keypair represents a valid elliptic curve pair
-        if validate_keypair(&keypair).is_err() {
+        if validate_cluster_keypair(&keypair).is_err() {
             panic!("cluster keypair invalid")
         }
 
         keypair
     } else {
         let mut rng = OsRng {};
-        Keypair::generate(&mut rng)
+        DalekKeypair::generate(&mut rng)
     };
+
+    // Parse the p2p keypair or generate one
+    let p2p_key = if let Some(keypair) = cli_args.p2p_key {
+        let decoded = base64::decode(keypair).expect("p2p key formatted incorrectly");
+        Keypair::from_protobuf_encoding(&decoded).expect("error parsing p2p key")
+    } else {
+        Keypair::generate_ed25519()
+    };
+
     let cluster_id = ClusterId::new(&keypair.public);
 
     // Parse the bootstrap servers into multiaddrs
@@ -344,7 +353,7 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         websocket_port: cli_args.websocket_port,
         allow_local: cli_args.allow_local,
         max_merkle_staleness: cli_args.max_merkle_staleness,
-        p2p_key: cli_args.p2p_key,
+        p2p_key,
         db_path: cli_args.db_path,
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
@@ -471,7 +480,7 @@ fn set_contract_from_file(config: &mut RelayerConfig, file: Option<String>) -> R
 /// The public interface does not allow us to more directly check the keypair
 /// as public_key == private_key * ed25519_generator, so we opt for this
 /// instead. Happens once at startup so we are not concerned with performance
-fn validate_keypair(keypair: &Keypair) -> Result<(), SignatureError> {
+fn validate_cluster_keypair(keypair: &DalekKeypair) -> Result<(), SignatureError> {
     // Hash the message
     let mut hash_digest: Sha512 = Sha512::new();
     hash_digest.update(DUMMY_MESSAGE);

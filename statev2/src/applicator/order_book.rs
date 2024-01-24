@@ -7,7 +7,9 @@
 
 use circuit_types::wallet::Nullifier;
 use common::types::{
-    network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle, wallet::OrderIdentifier,
+    network_order::NetworkOrder,
+    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    wallet::OrderIdentifier,
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
@@ -83,14 +85,18 @@ impl StateApplicator {
         &self,
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
+        witness: Option<OrderValidityWitnessBundle>,
     ) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         tx.attach_validity_proof(&order_id, proof)?;
+        if let Some(witness) = witness {
+            tx.attach_validity_witness(&order_id, witness)?;
+        }
+
         let order_info = tx
             .get_order_info(&order_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING.to_string()))?;
-
         tx.commit()?;
 
         self.system_bus().publish(
@@ -128,7 +134,7 @@ impl StateApplicator {
 mod test {
     use common::types::{
         network_order::{test_helpers::dummy_network_order, NetworkOrder, NetworkOrderState},
-        proof_bundles::mocks::dummy_validity_proof_bundle,
+        proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
         wallet::OrderIdentifier,
     };
 
@@ -181,12 +187,33 @@ mod test {
 
         // Then add a validity proof
         let proof = dummy_validity_proof_bundle();
-        applicator.add_order_validity_proof(order.id, proof).unwrap();
+        applicator.add_order_validity_proof(order.id, proof, None /* witness */).unwrap();
 
         // Verify that the order's state is updated
         let db = applicator.db();
         let tx: NetworkOrder = db.read(ORDERS_TABLE, &order_key(&order.id)).unwrap().unwrap();
 
+        assert_eq!(tx.state, NetworkOrderState::Verified);
+        assert!(tx.validity_proofs.is_some());
+    }
+
+    /// Test adding a validity proof with a witness
+    #[test]
+    fn test_add_validity_proof_with_witness() {
+        let applicator = mock_applicator();
+
+        // First add an order
+        let order = dummy_network_order();
+        applicator.new_order(order.clone()).unwrap();
+
+        // Then add a validity proof with a witness
+        let proof = dummy_validity_proof_bundle();
+        let witness = dummy_validity_witness_bundle();
+        applicator.add_order_validity_proof(order.id, proof, Some(witness.clone())).unwrap();
+
+        // Verify that the order's state is updated
+        let db = applicator.db();
+        let tx: NetworkOrder = db.read(ORDERS_TABLE, &order_key(&order.id)).unwrap().unwrap();
         assert_eq!(tx.state, NetworkOrderState::Verified);
         assert!(tx.validity_proofs.is_some());
     }
