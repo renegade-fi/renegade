@@ -4,7 +4,7 @@ use circuit_types::wallet::Nullifier;
 use common::types::{
     gossip::ClusterId,
     network_order::{NetworkOrder, NetworkOrderState},
-    proof_bundles::OrderValidityProofBundle,
+    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
 use libmdbx::{TransactionKind, RW};
@@ -126,6 +126,18 @@ impl<'db> StateTxn<'db, RW> {
         order.validity_proofs = Some(proof);
         order.public_share_nullifier = new_nullifier;
         order.state = NetworkOrderState::Verified;
+
+        self.write_order(&order)
+    }
+
+    /// Attach a validity witness to an order
+    pub fn attach_validity_witness(
+        &self,
+        order_id: &OrderIdentifier,
+        witness: OrderValidityWitnessBundle,
+    ) -> Result<(), StorageError> {
+        let mut order = self.get_order_info_or_err(order_id)?;
+        order.validity_proof_witnesses = Some(witness);
 
         self.write_order(&order)
     }

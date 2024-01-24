@@ -2,7 +2,9 @@
 //! proposing state transitions and reading from state
 
 pub mod error;
+pub mod node_metadata;
 pub mod notifications;
+pub mod order_book;
 pub mod wallet_index;
 
 use std::{sync::Arc, thread};
@@ -68,8 +70,10 @@ impl State {
             raft.run().expect("Raft node failed");
         });
 
-        // Return the state handle
-        Ok(Self { db, proposal_queue: Arc::new(proposal_send) })
+        // Setup the node metadata from the config
+        let self_ = Self { db, proposal_queue: Arc::new(proposal_send) };
+        self_.setup_node_metadata(config)?;
+        Ok(self_)
     }
 
     // -------------------

@@ -7,6 +7,9 @@
 **/no_commit
 **/deployments.json
 
+# DB
+**/*.db
+
 # vscode + vim
 .idea
 .vscode
