@@ -2,6 +2,7 @@
 
 //! Groups the types used to represent the gossip network primitives
 
+use derivative::Derivative;
 use ed25519_dalek::{Digest, Keypair, PublicKey, Sha512, Signature, SignatureError};
 use libp2p::{Multiaddr, PeerId};
 use libp2p_identity::ParseError as PeerIdParseError;
@@ -13,7 +14,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     ops::Deref,
     str::FromStr,
-    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 use util::networking::is_dialable_multiaddr;
@@ -25,19 +25,20 @@ use util::networking::is_dialable_multiaddr;
 pub const CLUSTER_MANAGEMENT_TOPIC_PREFIX: &str = "cluster-management";
 
 /// Contains information about connected peers
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Derivative)]
+#[derivative(PartialEq, Eq)]
 pub struct PeerInfo {
     /// The identifier used by libp2p for a peer
     pub peer_id: WrappedPeerId,
     /// The multiaddr of the peer
     pub addr: Multiaddr,
     /// Last time a successful heartbeat was received from this peer
-    #[serde(skip)]
-    pub last_heartbeat: AtomicU64,
+    pub last_heartbeat: u64,
     /// The ID of the cluster the peer belongs to
     pub cluster_id: ClusterId,
     /// The signature of the peer's ID with their cluster private key, used to
     /// prove that the peer is a valid cluster member
+    #[derivative(PartialEq = "ignore")]
     pub cluster_auth_signature: Vec<u8>,
 }
 
@@ -46,21 +47,10 @@ impl Default for PeerInfo {
         Self {
             peer_id: WrappedPeerId(PeerId::random()),
             addr: Multiaddr::empty(),
-            last_heartbeat: AtomicU64::from(0u64),
+            last_heartbeat: 0,
             cluster_id: ClusterId("0".to_string()),
             cluster_auth_signature: vec![],
         }
-    }
-}
-
-impl Eq for PeerInfo {}
-impl PartialEq for PeerInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.peer_id == other.peer_id
-            && self.addr == other.addr
-            && self.last_heartbeat.load(Ordering::Relaxed)
-                == other.last_heartbeat.load(Ordering::Relaxed)
-            && self.cluster_id == other.cluster_id
     }
 }
 
@@ -77,7 +67,7 @@ impl PeerInfo {
             peer_id,
             cluster_id,
             cluster_auth_signature,
-            last_heartbeat: AtomicU64::new(current_time_seconds()),
+            last_heartbeat: current_time_seconds(),
         }
     }
 
@@ -129,26 +119,13 @@ impl PeerInfo {
     }
 
     /// Records a successful heartbeat
-    pub fn successful_heartbeat(&self) {
-        self.last_heartbeat.store(current_time_seconds(), Ordering::Relaxed);
+    pub fn successful_heartbeat(&mut self) {
+        self.last_heartbeat = current_time_seconds();
     }
 
     /// Get the last time a heartbeat was recorded for this peer
     pub fn get_last_heartbeat(&self) -> u64 {
-        self.last_heartbeat.load(Ordering::Relaxed)
-    }
-}
-
-/// Clones PeerInfo to reference the current time for the last heartbeat
-impl Clone for PeerInfo {
-    fn clone(&self) -> Self {
-        Self {
-            peer_id: self.peer_id,
-            cluster_id: self.cluster_id.clone(),
-            addr: self.addr.clone(),
-            cluster_auth_signature: self.cluster_auth_signature.clone(),
-            last_heartbeat: AtomicU64::new(self.last_heartbeat.load(Ordering::Relaxed)),
-        }
+        self.last_heartbeat
     }
 }
 
@@ -288,9 +265,32 @@ fn current_time_seconds() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_secs()
 }
 
+#[cfg(feature = "mocks")]
+pub mod mocks {
+    //! Mocks for peer info types
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        str::FromStr,
+    };
+
+    use libp2p::Multiaddr;
+
+    use super::{ClusterId, PeerInfo, WrappedPeerId};
+
+    /// Build a mock peer's info
+    pub fn mock_peer() -> PeerInfo {
+        // Build an RPC message to add a peer
+        let cluster_id = ClusterId::from_str("1234").unwrap();
+        let peer_id = WrappedPeerId::random();
+        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let addr = Multiaddr::from(addr);
+
+        PeerInfo::new(peer_id, cluster_id, addr.clone(), vec![] /* signature */)
+    }
+}
+
 #[cfg(test)]
 mod types_test {
-    use std::sync::atomic::AtomicU64;
 
     use ed25519_dalek::Keypair as DalekKeypair;
     use libp2p::{identity::Keypair, Multiaddr, PeerId};
@@ -312,7 +312,7 @@ mod types_test {
             peer_id,
             cluster_id,
             cluster_auth_signature: Vec::new(),
-            last_heartbeat: AtomicU64::new(0),
+            last_heartbeat: 0,
             addr: Multiaddr::empty(),
         };
 

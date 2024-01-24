@@ -224,13 +224,14 @@ impl RelayerState {
                 && info.verify_cluster_auth_sig().is_ok()
             {
                 // Record a dummy heartbeat to setup the initial state
+                let mut info = info.clone();
                 info.successful_heartbeat();
                 locked_peer_index.add_peer(info.clone()).await;
 
                 // Push a message onto the bus indicating the new peer discovery
                 self.system_bus.publish(
                     NETWORK_TOPOLOGY_TOPIC.to_string(),
-                    SystemBusMessage::NewPeer { peer: info.clone() },
+                    SystemBusMessage::NewPeer { peer: info },
                 );
             } else {
                 continue;

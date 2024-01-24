@@ -211,7 +211,7 @@ impl PeerIndex {
 
     /// Record a successful heartbeat for a peer
     pub async fn record_heartbeat(&self, peer_id: &WrappedPeerId) {
-        if let Some(peer_info_guard) = self.write_peer(peer_id).await {
+        if let Some(mut peer_info_guard) = self.write_peer(peer_id).await {
             peer_info_guard.successful_heartbeat();
         }
     }
