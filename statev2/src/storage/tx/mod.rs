@@ -6,6 +6,7 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
+pub mod node_metadata;
 pub mod order_book;
 pub mod peer_index;
 pub mod raft_log;
@@ -45,6 +46,13 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Commit the transaction
     pub fn commit(self) -> Result<(), StorageError> {
         self.inner.commit()
+    }
+}
+
+impl<'db> StateTxn<'db, RW> {
+    /// Create a table in the database
+    pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
+        self.inner.create_table(table_name)
     }
 }
 
