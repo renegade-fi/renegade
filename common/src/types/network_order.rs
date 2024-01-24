@@ -173,6 +173,35 @@ impl Display for NetworkOrderState {
     }
 }
 
+#[cfg(feature = "mocks")]
+pub mod test_helpers {
+    //! Test helpers for creating dummy network orders
+    use std::str::FromStr;
+
+    use constants::Scalar;
+    use rand::thread_rng;
+    use uuid::Uuid;
+
+    use crate::types::gossip::ClusterId;
+
+    use super::{NetworkOrder, NetworkOrderState};
+
+    /// Create a dummy network order
+    pub fn dummy_network_order() -> NetworkOrder {
+        let mut rng = thread_rng();
+        NetworkOrder {
+            id: Uuid::new_v4(),
+            public_share_nullifier: Scalar::random(&mut rng),
+            cluster: ClusterId::from_str("cluster").unwrap(),
+            state: NetworkOrderState::Received,
+            validity_proofs: None,
+            validity_proof_witnesses: None,
+            timestamp: 0,
+            local: true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
