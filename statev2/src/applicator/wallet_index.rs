@@ -54,7 +54,7 @@ impl StateApplicator {
                     self.config.cluster_id.clone(),
                     true, // local
                 ),
-                tx.inner(), // TODO: Update with order book changes
+                &tx,
             )?;
         }
 
