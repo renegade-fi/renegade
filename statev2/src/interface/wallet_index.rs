@@ -26,4 +26,9 @@ impl State {
     pub fn new_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AddWallet { wallet })
     }
+
+    /// Update a wallet in the index
+    pub fn update_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateWallet { wallet })
+    }
 }
