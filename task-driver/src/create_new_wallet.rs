@@ -28,6 +28,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::types::ApiWallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
+use statev2::error::StateError;
 use statev2::State;
 
 use crate::helpers::enqueue_proof_job;
@@ -73,6 +74,8 @@ pub enum NewWalletTaskError {
     SendMessage(String),
     /// Error setting up the task
     Setup(String),
+    /// Error interacting with global state
+    State(String),
 }
 
 impl Display for NewWalletTaskError {
@@ -81,6 +84,12 @@ impl Display for NewWalletTaskError {
     }
 }
 impl Error for NewWalletTaskError {}
+
+impl From<StateError> for NewWalletTaskError {
+    fn from(e: StateError) -> Self {
+        NewWalletTaskError::State(e.to_string())
+    }
+}
 
 // -------------------
 // | Task Definition |
@@ -223,9 +232,6 @@ impl NewWalletTask {
 
     /// Generate a proof of `VALID WALLET CREATE` for the new wallet
     async fn generate_proof(&mut self) -> Result<(), NewWalletTaskError> {
-        // Index the wallet in the global state
-        self.global_state.add_wallets(vec![self.wallet.clone()]).await;
-
         // Construct the witness and statement for the proof
         let (witness, statement) = self.get_witness_statement();
 
@@ -259,14 +265,10 @@ impl NewWalletTask {
             .await
             .map_err(|err| NewWalletTaskError::Arbitrum(err.to_string()))?;
 
-        // Add the authentication path to the wallet in the global state
-        self.global_state
-            .read_wallet_index()
-            .await
-            .add_wallet_merkle_proof(&self.wallet.wallet_id, wallet_auth_path)
-            .await;
-
-        Ok(())
+        // Index the wallet in the global state
+        let mut wallet = self.wallet.clone();
+        wallet.merkle_proof = Some(wallet_auth_path);
+        Ok(self.global_state.new_wallet(wallet)?.await?)
     }
 
     // -----------

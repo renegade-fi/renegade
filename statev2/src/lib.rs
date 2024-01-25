@@ -113,13 +113,20 @@ impl From<StateTransition> for Proposal {
 // | Tests |
 // ---------
 
-#[cfg(test)]
-pub(crate) mod test_helpers {
+#[cfg(any(test, feature = "mocks"))]
+pub mod test_helpers {
+    //! Test helpers for the state crate
     use std::time::Duration;
 
+    use config::RelayerConfig;
+    use system_bus::SystemBus;
     use tempfile::tempdir;
 
-    use crate::storage::db::{DbConfig, DB};
+    use crate::{
+        replication::network::test_helpers::MockNetwork,
+        storage::db::{DbConfig, DB},
+        State,
+    };
 
     /// Sleep for the given number of ms
     pub fn sleep_ms(ms: u64) {
@@ -138,5 +145,16 @@ pub(crate) mod test_helpers {
         let config = DbConfig { path: path.to_string() };
 
         DB::new(&config).unwrap()
+    }
+
+    /// Create a mock state instance
+    pub fn mock_state() -> State {
+        let config = RelayerConfig { db_path: tmp_db_path(), ..Default::default() };
+        let net = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
+        let state = State::new(&config, net, SystemBus::new()).unwrap();
+
+        // Wait for a leader election before returning
+        sleep_ms(500);
+        state
     }
 }
