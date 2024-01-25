@@ -17,7 +17,7 @@ use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
 use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::Serialize;
-use state::RelayerState;
+use statev2::{error::StateError, State};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use uuid::Uuid;
@@ -49,7 +49,7 @@ pub struct LookupWalletTask {
     /// A sender to the network manager's work queue
     pub network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task's execution
@@ -90,6 +90,8 @@ pub enum LookupWalletTaskError {
     ProofGeneration(String),
     /// Error interacting with the arbitrum client
     Arbitrum(String),
+    /// Error interacting with global state
+    State(String),
 }
 
 impl Display for LookupWalletTaskError {
@@ -99,6 +101,12 @@ impl Display for LookupWalletTaskError {
 }
 
 impl Error for LookupWalletTaskError {}
+
+impl From<StateError> for LookupWalletTaskError {
+    fn from(e: StateError) -> Self {
+        LookupWalletTaskError::State(e.to_string())
+    }
+}
 
 #[async_trait]
 impl Task for LookupWalletTask {
@@ -157,7 +165,7 @@ impl LookupWalletTask {
         key_chain: KeyChain,
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Self {
         Self {
@@ -218,7 +226,7 @@ impl LookupWalletTask {
             .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
         wallet.merkle_proof = Some(authentication_path);
 
-        self.global_state.update_wallet(wallet.clone()).await;
+        self.global_state.new_wallet(wallet.clone())?.await?;
         self.wallet = Some(wallet);
 
         Ok(())

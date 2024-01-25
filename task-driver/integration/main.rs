@@ -22,8 +22,7 @@ use gossip_api::gossip::GossipOutbound;
 use helpers::new_mock_task_driver;
 use job_types::proof_manager::ProofManagerJob;
 use proof_manager::mock::MockProofManager;
-use state::mock::StateMockBuilder;
-use state::RelayerState;
+use statev2::{test_helpers::mock_state, State};
 use task_driver::driver::TaskDriver;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
@@ -90,7 +89,7 @@ struct IntegrationTestArgs {
     /// Held here to avoid closing the channel on `Drop`
     _network_receiver: Arc<TokioReceiver<GossipOutbound>>,
     /// A reference to the global state of the mock proof manager
-    global_state: RelayerState,
+    global_state: State,
     /// The job queue for the mock proof manager
     proof_job_queue: CrossbeamSender<ProofManagerJob>,
     /// The mock task driver created for these tests
@@ -134,8 +133,8 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 /// Create a global state mock for the `task-driver` integration tests
-fn setup_global_state_mock() -> RelayerState {
-    StateMockBuilder::default().disable_fee_validation().build()
+fn setup_global_state_mock() -> State {
+    mock_state()
 }
 
 /// Setup a mock `ArbitrumClient` for the integration tests

@@ -11,8 +11,7 @@ FROM rust:1.63-slim-buster AS builder
 
 # Install pkg-config, openssl
 RUN apt-get update && \
-    apt-get install -y pkg-config && \
-    apt-get install -y libssl-dev 
+    apt-get install -y pkg-config libssl-dev clang 
 
 # Build the rust toolchain before adding any dependencies; this is the slowest
 # step and we would like to cache it before anything else
