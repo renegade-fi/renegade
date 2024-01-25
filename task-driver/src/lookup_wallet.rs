@@ -226,7 +226,7 @@ impl LookupWalletTask {
             .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
         wallet.merkle_proof = Some(authentication_path);
 
-        self.global_state.new_wallet(wallet.clone())?.await?;
+        self.global_state.update_wallet(wallet.clone())?.await?;
         self.wallet = Some(wallet);
 
         Ok(())
