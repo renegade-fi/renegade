@@ -84,13 +84,7 @@ pub(crate) async fn execute_wallet_update(
     assert_true_result!(success)?;
 
     // Fetch the updated wallet from state
-    test_args
-        .global_state
-        .read_wallet_index()
-        .await
-        .get_wallet(&id)
-        .await
-        .ok_or_else(|| eyre::eyre!("Wallet not found in state"))
+    test_args.global_state.get_wallet(&id)?.ok_or_else(|| eyre::eyre!("Wallet not found in state"))
 }
 
 /// Execute a wallet update, then lookup the new wallet from on-chain state and
@@ -155,7 +149,7 @@ async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Resu
 
     // Update the wallet by inserting an order
     let old_wallet = wallet.clone();
-    wallet.orders.insert(Uuid::new_v4(), DUMMY_ORDER.clone());
+    wallet.add_order(Uuid::new_v4(), DUMMY_ORDER.clone()).unwrap();
     wallet.reblind_wallet();
 
     execute_wallet_update_and_verify_shares(
