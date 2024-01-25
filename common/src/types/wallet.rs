@@ -42,6 +42,13 @@ pub type WalletIdentifier = Uuid;
 /// An identifier of an order used for caching
 pub type OrderIdentifier = Uuid;
 
+/// Error message emitted when the balances of a wallet are full
+const ERR_BALANCES_FULL: &str = "balances full";
+/// Error message emitted when a balance overflows
+const ERR_BALANCE_OVERFLOW: &str = "balance overflowed";
+/// Error message emitted when the orders of a wallet are full
+const ERR_ORDERS_FULL: &str = "orders full";
+
 /// Represents the private keys a relayer has access to for a given wallet
 #[derive(Clone, Debug, Derivative, Serialize, Deserialize)]
 #[derivative(PartialEq, Eq)]
@@ -185,6 +192,10 @@ impl From<Wallet> for SizedCircuitWallet {
 
 // TODO: Remove wallet locking methods
 impl Wallet {
+    // -----------
+    // | Getters |
+    // -----------
+
     /// Try to lock the wallet for an update
     ///
     /// Returns `true` if the update succeeded
@@ -251,6 +262,10 @@ impl Wallet {
         false
     }
 
+    // -----------
+    // | Setters |
+    // -----------
+
     /// Reblind the wallet, consuming the next set of blinders and secret shares
     pub fn reblind_wallet(&mut self) {
         let private_shares_serialized: Vec<Scalar> = self.private_shares.to_scalars();
@@ -285,6 +300,68 @@ impl Wallet {
         self.orders.retain(|_id, order| !order.is_default());
         self.fees.retain(|fee| !fee.is_default());
     }
+
+    // --- Balances --- //
+
+    /// Add a balance to the wallet, replacing the first default balance
+    pub fn add_balance(&mut self, balance: &Balance) -> Result<(), String> {
+        // If the balance exists, increment it
+        if let Some(balance) = self.balances.get_mut(&balance.mint) {
+            balance.amount = balance
+                .amount
+                .checked_add(balance.amount)
+                .ok_or(ERR_BALANCE_OVERFLOW.to_string())?;
+            return Ok(());
+        }
+
+        // Otherwise, add the balance
+        if self.balances.len() < MAX_BALANCES {
+            self.balances.insert(balance.mint.clone(), balance.clone());
+            return Ok(());
+        }
+
+        // If the balances are full, try to find a balance to overwrite
+        let key = self
+            .balances
+            .iter()
+            .find_map(|(_, balance)| balance.is_zero().then(|| balance.mint.clone()))
+            .ok_or_else(|| ERR_BALANCES_FULL.to_string())?;
+        let (insert_index, _, _) = self.balances.swap_remove_full(&key).unwrap();
+
+        // Place the new key value pair at the same index
+        let (idx, _) = self.balances.insert_full(balance.mint.clone(), balance.clone());
+        self.balances.swap_indices(idx, insert_index);
+
+        Ok(())
+    }
+
+    // --- Orders --- //
+
+    /// Add an order to the wallet, replacing the first default order if the
+    /// wallet is full
+    pub fn add_order(&mut self, id: Uuid, order: Order) -> Result<(), String> {
+        // Append if the orders are not full
+        if self.orders.len() < MAX_ORDERS {
+            self.orders.insert(id, order);
+            return Ok(());
+        }
+
+        // Otherwise try to find an order to overwrite
+        let (&key, _) = self
+            .orders
+            .iter()
+            .find(|(_, order)| order.is_zero())
+            .ok_or_else(|| ERR_ORDERS_FULL.to_string())?;
+        let (insert_index, _, _) = self.orders.swap_remove_full(&key).unwrap();
+
+        // Place the new key value pair at the same index
+        let (idx, _) = self.orders.insert_full(id, order);
+        self.orders.swap_indices(idx, insert_index);
+
+        Ok(())
+    }
+
+    // --- Matches --- //
 
     /// Get the balance, fee, and fee_balance for an order by specifying the
     /// order directly
@@ -480,5 +557,148 @@ pub mod mocks {
             BigUint::from(0u8),
             Scalar::random(&mut rng),
         )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use circuit_types::balance::Balance;
+    use constants::{MAX_BALANCES, MAX_ORDERS};
+    use num_bigint::BigUint;
+    use rand::{distributions::uniform::SampleRange, thread_rng};
+    use uuid::Uuid;
+
+    use super::mocks::{mock_empty_wallet, mock_order};
+
+    /// Tests adding a balance to an empty wallet
+    #[test]
+    fn test_add_balance_append() {
+        let mut wallet = mock_empty_wallet();
+        let balance1 = Balance { mint: BigUint::from(1u8), amount: 10 };
+        let balance2 = Balance { mint: BigUint::from(2u8), amount: 10 };
+        wallet.add_balance(&balance1).unwrap();
+        wallet.add_balance(&balance2).unwrap();
+
+        assert_eq!(wallet.balances.len(), 2);
+        assert_eq!(wallet.balances.get_index_of(&balance2.mint), Some(1));
+    }
+
+    /// Tests adding a balance when one already exists in the wallet
+    #[test]
+    fn test_add_balance_existing() {
+        let mut wallet = mock_empty_wallet();
+        let balance1 = Balance { mint: BigUint::from(1u8), amount: 10 };
+        let balance2 = Balance { mint: BigUint::from(1u8), amount: 10 };
+        wallet.add_balance(&balance1).unwrap();
+        wallet.add_balance(&balance2).unwrap();
+
+        assert_eq!(wallet.balances.len(), 1);
+        assert_eq!(wallet.balances.get_index_of(&balance1.mint), Some(0));
+        assert_eq!(wallet.balances.get(&balance1.mint).unwrap().amount, 20);
+    }
+
+    /// Tests adding a balance that overrides a zero'd balance
+    #[test]
+    fn test_add_balance_overwrite() {
+        let mut wallet = mock_empty_wallet();
+
+        // Fill the wallet
+        for i in 0..MAX_BALANCES {
+            let balance = Balance { mint: BigUint::from(i), amount: 10 };
+            wallet.add_balance(&balance).unwrap();
+        }
+
+        // Zero a random balance
+        let mut rng = thread_rng();
+        let idx = (0..MAX_BALANCES).sample_single(&mut rng);
+        wallet.balances.get_index_mut(idx).unwrap().1.amount = 0;
+
+        // Add a new balance
+        let balance = Balance { mint: BigUint::from(42u8), amount: 10 };
+        wallet.add_balance(&balance).unwrap();
+
+        // Check that the balance overrode the correct idx
+        assert_eq!(wallet.balances.get_index_of(&balance.mint), Some(idx));
+    }
+
+    /// Tests adding a balance when the wallet is full
+    #[test]
+    #[should_panic(expected = "balances full")]
+    fn test_add_balance_full() {
+        let mut wallet = mock_empty_wallet();
+
+        // Fill the wallet
+        for i in 0..MAX_BALANCES {
+            let balance = Balance { mint: BigUint::from(i), amount: 10 };
+            wallet.add_balance(&balance).unwrap();
+        }
+
+        // Attempt to add another balance
+        let balance = Balance { mint: BigUint::from(42u8), amount: 10 };
+        wallet.add_balance(&balance).unwrap();
+    }
+
+    /// Tests adding an order that appends to the wallet
+    #[test]
+    fn test_add_order_append() {
+        let mut wallet = mock_empty_wallet();
+
+        // Add two orders to the wallet
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+        let order1 = mock_order();
+        let order2 = mock_order();
+        wallet.add_order(id1, order1).unwrap();
+        wallet.add_order(id2, order2).unwrap();
+
+        // Check that the orders were added
+        assert_eq!(wallet.orders.len(), 2);
+        assert_eq!(wallet.orders.get_index_of(&id1), Some(0));
+        assert_eq!(wallet.orders.get_index_of(&id2), Some(1));
+    }
+
+    /// Tests adding an order that overwrites a default order
+    #[test]
+    fn test_add_order_overwrite() {
+        let mut wallet = mock_empty_wallet();
+
+        // Fill the orders with default orders
+        for _ in 0..MAX_ORDERS {
+            let id = Uuid::new_v4();
+            let order = mock_order();
+            wallet.add_order(id, order).unwrap();
+        }
+
+        // Zero a random order
+        let mut rng = thread_rng();
+        let idx = (0..MAX_ORDERS).sample_single(&mut rng);
+        wallet.orders.get_index_mut(idx).unwrap().1.amount = 0;
+
+        // Add a new order
+        let id = Uuid::new_v4();
+        let order = mock_order();
+        wallet.add_order(id, order).unwrap();
+
+        // Check that the order overrode the correct idx
+        assert_eq!(wallet.orders.get_index_of(&id), Some(idx));
+    }
+
+    /// Tests adding an order when the wallet is full
+    #[test]
+    #[should_panic(expected = "orders full")]
+    fn test_add_order_full() {
+        let mut wallet = mock_empty_wallet();
+
+        // Fill the wallet
+        for _ in 0..MAX_ORDERS {
+            let id = Uuid::new_v4();
+            let order = mock_order();
+            wallet.add_order(id, order).unwrap();
+        }
+
+        // Attempt to add another order
+        let id = Uuid::new_v4();
+        let order = mock_order();
+        wallet.add_order(id, order).unwrap();
     }
 }

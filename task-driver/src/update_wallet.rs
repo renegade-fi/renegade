@@ -20,7 +20,8 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
-use state::RelayerState;
+use statev2::error::StateError;
+use statev2::State;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::helpers::{enqueue_proof_job, find_merkle_path};
@@ -61,7 +62,7 @@ pub struct UpdateWalletTask {
     /// A sender to the network manager's work queue
     pub network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task
@@ -78,7 +79,9 @@ pub enum UpdateWalletTaskError {
     /// An error occurred interacting with Arbitrum
     Arbitrum(String),
     /// A state element was not found that is necessary for task execution
-    StateMissing(String),
+    Missing(String),
+    /// An error interacting with the relayer state
+    State(String),
     /// An error while updating validity proofs for a wallet
     UpdatingValidityProofs(String),
     /// Wallet is already locked, cannot update
@@ -92,6 +95,12 @@ impl Display for UpdateWalletTaskError {
 }
 
 impl Error for UpdateWalletTaskError {}
+
+impl From<StateError> for UpdateWalletTaskError {
+    fn from(e: StateError) -> Self {
+        UpdateWalletTaskError::State(e.to_string())
+    }
+}
 
 /// Defines the state of the deposit update wallet task
 #[derive(Clone, Debug)]
@@ -215,7 +224,7 @@ impl UpdateWalletTask {
         wallet_update_signature: Vec<u8>,
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, UpdateWalletTaskError> {
         if !old_wallet.try_lock_wallet() {
@@ -286,7 +295,7 @@ impl UpdateWalletTask {
 
         // After the state is finalized on-chain, re-index the wallet in the global
         // state
-        self.global_state.update_wallet(self.new_wallet.clone()).await;
+        self.global_state.update_wallet(self.new_wallet.clone())?.await?;
         Ok(())
     }
 
@@ -332,10 +341,11 @@ impl UpdateWalletTask {
         UpdateWalletTaskError,
     > {
         // Get the Merkle opening previously stored to the wallet
-        let merkle_opening =
-            self.old_wallet.merkle_proof.clone().ok_or_else(|| {
-                UpdateWalletTaskError::StateMissing(ERR_NO_MERKLE_PROOF.to_string())
-            })?;
+        let merkle_opening = self
+            .old_wallet
+            .merkle_proof
+            .clone()
+            .ok_or_else(|| UpdateWalletTaskError::Missing(ERR_NO_MERKLE_PROOF.to_string()))?;
         let merkle_root = merkle_opening.compute_root();
 
         // Build the witness and statement
