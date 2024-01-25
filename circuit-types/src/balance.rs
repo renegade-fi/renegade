@@ -38,4 +38,9 @@ impl Balance {
     pub fn is_default(&self) -> bool {
         self.eq(&Balance::default())
     }
+
+    /// Whether or not the balance is zero'd
+    pub fn is_zero(&self) -> bool {
+        self.amount == 0
+    }
 }

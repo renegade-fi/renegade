@@ -19,7 +19,10 @@ use tokio::{
 use tracing::log;
 use uuid::Uuid;
 
-use crate::{create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState};
+use crate::{
+    create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState,
+    update_wallet::UpdateWalletTaskState,
+};
 
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
@@ -116,8 +119,8 @@ pub enum StateWrapper {
     // SettleMatchInternal(SettleMatchInternalTaskState),
     // /// The state object for the update Merkle proof task
     // UpdateMerkleProof(UpdateMerkleProofTaskState),
-    // /// The state object for the update wallet task
-    // UpdateWallet(UpdateWalletTaskState),
+    /// The state object for the update wallet task
+    UpdateWallet(UpdateWalletTaskState),
 }
 
 impl Display for StateWrapper {
@@ -127,7 +130,7 @@ impl Display for StateWrapper {
             StateWrapper::NewWallet(state) => state.to_string(),
             // StateWrapper::SettleMatch(state) => state.to_string(),
             // StateWrapper::SettleMatchInternal(state) => state.to_string(),
-            // StateWrapper::UpdateWallet(state) => state.to_string(),
+            StateWrapper::UpdateWallet(state) => state.to_string(),
             // StateWrapper::UpdateMerkleProof(state) => state.to_string(),
         };
         write!(f, "{out}")
