@@ -91,32 +91,10 @@ impl State {
 }
 
 #[cfg(test)]
-mod test_helpers {
-    use crate::{
-        replication::network::test_helpers::MockNetwork,
-        test_helpers::{sleep_ms, tmp_db_path},
-        State,
-    };
-    use config::RelayerConfig;
-    use system_bus::SystemBus;
-
-    /// Create a mock state instance
-    pub fn mock_state() -> State {
-        let config = RelayerConfig { db_path: tmp_db_path(), ..Default::default() };
-        let net = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
-        let state = State::new(&config, net, SystemBus::new()).unwrap();
-
-        // Wait for a leader election before returning
-        sleep_ms(500);
-        state
-    }
-}
-
-#[cfg(test)]
 mod test {
     use common::types::wallet_mocks::mock_empty_wallet;
 
-    use crate::interface::test_helpers::mock_state;
+    use crate::test_helpers::mock_state;
 
     /// Test adding a wallet to the state
     #[tokio::test]

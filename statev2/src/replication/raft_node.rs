@@ -349,7 +349,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                     let transition: StateTransition = serde_json::from_slice(entry_bytes)
                         .map_err(err_str!(ReplicationError::ParseValue))?;
 
-                    log::info!(
+                    log::debug!(
                         "node {} applying state transition {transition:?}",
                         self.inner.raft.id
                     );

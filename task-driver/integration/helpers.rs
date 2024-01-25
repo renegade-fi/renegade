@@ -13,7 +13,7 @@ use common::types::{
 use constants::Scalar;
 use ethers::types::Address;
 use external_api::types::ApiWallet;
-use eyre::{eyre, Result};
+use eyre::Result;
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
@@ -63,13 +63,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
 
     // Check the global state for the wallet and verify that it was correctly
     // recovered
-    let state_wallet = state
-        .read_wallet_index()
-        .await
-        .read_wallet(&wallet_id)
-        .await
-        .ok_or_else(|| eyre!("Wallet not found in global state"))?
-        .clone();
+    let state_wallet = state.get_wallet(&wallet_id)?.unwrap();
 
     // Compare the secret shares directly
     assert_eq_result!(state_wallet.blinded_public_shares, expected_wallet.blinded_public_shares)?;
@@ -111,14 +105,7 @@ pub(crate) async fn setup_initial_wallet(
     lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args.clone()).await?;
 
     // Read the wallet from the global state so that order IDs match
-    *wallet = test_args
-        .global_state
-        .read_wallet_index()
-        .await
-        .read_wallet(&wallet.wallet_id)
-        .await
-        .ok_or_else(|| eyre!("Wallet not found in global state"))?
-        .clone();
+    *wallet = test_args.global_state.get_wallet(&wallet.wallet_id)?.unwrap();
     Ok(())
 }
 

@@ -14,10 +14,10 @@
 #![feature(generic_const_exprs)]
 #![feature(iter_advance_by)]
 
-// pub mod create_new_wallet;
+pub mod create_new_wallet;
 pub mod driver;
 mod helpers;
-// pub mod lookup_wallet;
+pub mod lookup_wallet;
 // pub mod settle_match;
 // pub mod settle_match_internal;
 // pub mod update_merkle_proof;

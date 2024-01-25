@@ -27,8 +27,9 @@ pub trait RaftNetwork {
     fn try_recv(&mut self) -> Result<Option<RaftMessage>, Self::Error>;
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 pub(crate) mod test_helpers {
+    //! Test helpers for the network abstraction
     use crossbeam::channel::{
         unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
     };
@@ -66,6 +67,7 @@ pub(crate) mod test_helpers {
         }
 
         /// Create a double sided mock connection
+        #[allow(dead_code)]
         pub fn new_duplex_conn() -> (Self, Self) {
             let mut res = Self::new_n_way_mesh(2 /* n_nodes */);
             (res.remove(0), res.remove(0))
