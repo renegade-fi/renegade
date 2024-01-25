@@ -369,6 +369,11 @@ impl OrderValidityWitnessBundle {
     pub fn copy_commitment_witness(&self) -> SizedValidCommitmentsWitness {
         SizedValidCommitmentsWitness::clone(&self.commitment_witness)
     }
+
+    /// Clone the linking hint out from behind the reference
+    pub fn copy_commitment_linking_hint(&self) -> ProofLinkingHint {
+        ProofLinkingHint::clone(&self.commitment_linking_hint)
+    }
 }
 
 impl Serialize for OrderValidityWitnessBundle {
@@ -376,7 +381,12 @@ impl Serialize for OrderValidityWitnessBundle {
     where
         S: serde::Serializer,
     {
-        (self.copy_reblind_witness(), self.copy_commitment_witness()).serialize(serializer)
+        (
+            self.copy_reblind_witness(),
+            self.copy_commitment_witness(),
+            self.copy_commitment_linking_hint(),
+        )
+            .serialize(serializer)
     }
 }
 
