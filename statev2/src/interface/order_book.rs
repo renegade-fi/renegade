@@ -49,7 +49,7 @@ mod test {
         proof_bundles::mocks::dummy_validity_proof_bundle,
     };
 
-    use crate::interface::test_helpers::mock_state;
+    use crate::test_helpers::mock_state;
 
     /// Test adding an order to the state
     #[tokio::test]
