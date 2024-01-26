@@ -135,13 +135,11 @@ mod test {
     use common::types::{
         network_order::{test_helpers::dummy_network_order, NetworkOrder, NetworkOrderState},
         proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
-        wallet::OrderIdentifier,
     };
 
     use crate::{
         applicator::{order_book::OrderPriority, test_helpers::mock_applicator},
-        storage::tx::order_book::{nullifier_key, order_key},
-        ORDERS_TABLE, PRIORITIES_TABLE,
+        PRIORITIES_TABLE,
     };
 
     /// Tests adding an order to the order book
@@ -155,19 +153,13 @@ mod test {
 
         // Verify the order is indexed
         let db = applicator.db();
-        let order = db
-            .read::<_, NetworkOrder>(ORDERS_TABLE, &order_key(&expected_order.id))
-            .unwrap()
-            .unwrap();
+        let tx = db.new_read_tx().unwrap();
+        let order = tx.get_order_info(&expected_order.id).unwrap().unwrap();
 
         assert_eq!(order, expected_order);
 
         // Verify that the order is indexed by its nullifier
-        let orders: Vec<OrderIdentifier> = db
-            .read(ORDERS_TABLE, &nullifier_key(expected_order.public_share_nullifier))
-            .unwrap()
-            .unwrap();
-
+        let orders = tx.get_orders_by_nullifier(expected_order.public_share_nullifier).unwrap();
         assert_eq!(orders, vec![expected_order.id]);
 
         // Verify that the priority of the order is set to the default
@@ -191,10 +183,11 @@ mod test {
 
         // Verify that the order's state is updated
         let db = applicator.db();
-        let tx: NetworkOrder = db.read(ORDERS_TABLE, &order_key(&order.id)).unwrap().unwrap();
+        let tx = db.new_read_tx().unwrap();
+        let order = tx.get_order_info(&order.id).unwrap().unwrap();
 
-        assert_eq!(tx.state, NetworkOrderState::Verified);
-        assert!(tx.validity_proofs.is_some());
+        assert_eq!(order.state, NetworkOrderState::Verified);
+        assert!(order.validity_proofs.is_some());
     }
 
     /// Test adding a validity proof with a witness
@@ -213,9 +206,12 @@ mod test {
 
         // Verify that the order's state is updated
         let db = applicator.db();
-        let tx: NetworkOrder = db.read(ORDERS_TABLE, &order_key(&order.id)).unwrap().unwrap();
-        assert_eq!(tx.state, NetworkOrderState::Verified);
-        assert!(tx.validity_proofs.is_some());
+        let tx = db.new_read_tx().unwrap();
+        let order: NetworkOrder = tx.get_order_info(&order.id).unwrap().unwrap();
+
+        assert_eq!(order.state, NetworkOrderState::Verified);
+        assert!(order.validity_proofs.is_some());
+        assert!(order.validity_proof_witnesses.is_some());
     }
 
     /// Test nullifying orders
@@ -235,14 +231,14 @@ mod test {
 
         // Verify that the first order is cancelled
         let db = applicator.db();
-        let order1: NetworkOrder = db.read(ORDERS_TABLE, &order_key(&order1.id)).unwrap().unwrap();
+        let tx = db.new_read_tx().unwrap();
+        let order1: NetworkOrder = tx.get_order_info(&order1.id).unwrap().unwrap();
 
         assert_eq!(order1.state, NetworkOrderState::Cancelled);
 
         // Verify that the second order is unmodified
-        let expected_order2: NetworkOrder = order2;
-        let order2: NetworkOrder =
-            db.read(ORDERS_TABLE, &order_key(&expected_order2.id)).unwrap().unwrap();
+        let expected_order2: NetworkOrder = order2.clone();
+        let order2: NetworkOrder = tx.get_order_info(&order2.id).unwrap().unwrap();
 
         assert_eq!(order2, expected_order2);
     }

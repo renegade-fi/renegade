@@ -28,7 +28,8 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
-use state::RelayerState;
+use statev2::error::StateError;
+use statev2::State;
 use tokio::{sync::mpsc::UnboundedSender as TokioSender, task::JoinHandle as TokioJoinHandle};
 use util::matching_engine::settle_match_into_wallets;
 
@@ -73,7 +74,7 @@ pub struct SettleMatchInternalTask {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// The work queue to add proof management jobs to
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task
@@ -124,6 +125,8 @@ pub enum SettleMatchInternalTaskError {
     Arbitrum(String),
     /// A wallet is already locked
     WalletLocked(WalletIdentifier),
+    /// An error interacting with the global state
+    State(String),
 }
 
 impl Display for SettleMatchInternalTaskError {
@@ -132,6 +135,12 @@ impl Display for SettleMatchInternalTaskError {
     }
 }
 impl Error for SettleMatchInternalTaskError {}
+
+impl From<StateError> for SettleMatchInternalTaskError {
+    fn from(err: StateError) -> Self {
+        Self::State(err.to_string())
+    }
+}
 
 #[async_trait]
 impl Task for SettleMatchInternalTask {
@@ -211,7 +220,7 @@ impl SettleMatchInternalTask {
         match_result: MatchResult,
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     ) -> Result<Self, SettleMatchInternalTaskError> {
         let mut self_ = Self {
@@ -282,8 +291,8 @@ impl SettleMatchInternalTask {
         // Nullify orders on the newly matched values
         let nullifier1 = self.order1_proof.reblind_proof.statement.original_shares_nullifier;
         let nullifier2 = self.order2_proof.reblind_proof.statement.original_shares_nullifier;
-        self.global_state.nullify_orders(nullifier1).await;
-        self.global_state.nullify_orders(nullifier2).await;
+        self.global_state.nullify_orders(nullifier1)?;
+        self.global_state.nullify_orders(nullifier2)?;
 
         // Lookup the wallets that manage each order
         let mut wallet1 = self.find_wallet_for_order(&self.order_id1).await?;
@@ -301,8 +310,8 @@ impl SettleMatchInternalTask {
         self.find_opening(&mut wallet2).await?;
 
         // Re-index the updated wallets in the global state
-        self.global_state.update_wallet(wallet1).await;
-        self.global_state.update_wallet(wallet2).await;
+        self.global_state.update_wallet(wallet1)?.await?;
+        self.global_state.update_wallet(wallet2)?.await?;
 
         Ok(())
     }
@@ -371,12 +380,11 @@ impl SettleMatchInternalTask {
         &self,
         order: &OrderIdentifier,
     ) -> Result<Wallet, SettleMatchInternalTaskError> {
-        let locked_wallet_index = self.global_state.read_wallet_index().await;
-        let wallet_id = locked_wallet_index.get_wallet_for_order(order).ok_or_else(|| {
+        let wallet_id = self.global_state.get_wallet_for_order(order)?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })?;
 
-        locked_wallet_index.get_wallet(&wallet_id).await.ok_or_else(|| {
+        self.global_state.get_wallet(&wallet_id)?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })
     }
@@ -470,7 +478,7 @@ impl SettleMatchInternalTask {
     fn spawn_update_proofs_task(
         wallet: Wallet,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-        global_state: RelayerState,
+        global_state: State,
         network_sender: TokioSender<GossipOutbound>,
     ) -> TokioJoinHandle<Result<(), String>> {
         tokio::spawn(async move {
