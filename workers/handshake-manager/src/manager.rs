@@ -762,7 +762,7 @@ impl HandshakeExecutor {
         party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
         match_bundle: MatchBundle,
-    ) -> TaskIdentifier {
+    ) -> Result<TaskIdentifier, HandshakeManagerError> {
         // Submit the match to the contract
         let task = SettleMatchTask::new(
             handshake_state,
@@ -774,7 +774,8 @@ impl HandshakeExecutor {
             self.global_state.clone(),
             self.proof_manager_work_queue.clone(),
         )
-        .await;
+        .await
+        .map_err(|err| HandshakeManagerError::TaskError(err.to_string()))?;
         self.task_driver.start_task(task).await.0
     }
 }

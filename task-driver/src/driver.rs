@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::{
     create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState,
+    settle_match::SettleMatchTaskState, settle_match_internal::SettleMatchInternalTaskState,
     update_wallet::UpdateWalletTaskState,
 };
 
@@ -113,10 +114,10 @@ pub enum StateWrapper {
     LookupWallet(LookupWalletTaskState),
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
-    // /// The state object for the settle match task
-    // SettleMatch(SettleMatchTaskState),
-    // /// The state object for the settle match internal task
-    // SettleMatchInternal(SettleMatchInternalTaskState),
+    /// The state object for the settle match task
+    SettleMatch(SettleMatchTaskState),
+    /// The state object for the settle match internal task
+    SettleMatchInternal(SettleMatchInternalTaskState),
     // /// The state object for the update Merkle proof task
     // UpdateMerkleProof(UpdateMerkleProofTaskState),
     /// The state object for the update wallet task
@@ -128,8 +129,8 @@ impl Display for StateWrapper {
         let out = match self {
             StateWrapper::LookupWallet(state) => state.to_string(),
             StateWrapper::NewWallet(state) => state.to_string(),
-            // StateWrapper::SettleMatch(state) => state.to_string(),
-            // StateWrapper::SettleMatchInternal(state) => state.to_string(),
+            StateWrapper::SettleMatch(state) => state.to_string(),
+            StateWrapper::SettleMatchInternal(state) => state.to_string(),
             StateWrapper::UpdateWallet(state) => state.to_string(),
             // StateWrapper::UpdateMerkleProof(state) => state.to_string(),
         };

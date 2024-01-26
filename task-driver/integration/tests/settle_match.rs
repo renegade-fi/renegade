@@ -28,7 +28,7 @@ use eyre::{eyre, Result};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_u64;
-use state::RelayerState;
+use statev2::State;
 use task_driver::{settle_match::SettleMatchTask, settle_match_internal::SettleMatchInternalTask};
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};
@@ -92,14 +92,6 @@ async fn setup_wallet_with_order_balance(
     wallet.orders.insert(Uuid::new_v4(), order);
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
-    // Re-read the wallet out of the global state so that the order IDs match
-    let wallet = test_args
-        .global_state
-        .read_wallet_index()
-        .await
-        .get_wallet(&wallet.wallet_id)
-        .await
-        .ok_or_else(|| eyre!("wallet not found in state"))?;
     Ok((wallet, blinder_seed, share_seed))
 }
 
@@ -167,28 +159,22 @@ async fn setup_match_result(
 /// Get the validity proof bundle for the first order in a given wallet
 async fn get_first_order_proofs(
     wallet: &Wallet,
-    state: &RelayerState,
+    state: &State,
 ) -> Result<OrderValidityProofBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
-        .read_order_book()
-        .await
-        .get_validity_proofs(order_id)
-        .await
+        .get_validity_proofs(order_id)?
         .ok_or_else(|| eyre!("Order validity proof bundle not found"))
 }
 
 /// Get the validity proof witness for the first order in a given wallet
 async fn get_first_order_witness(
     wallet: &Wallet,
-    state: &RelayerState,
+    state: &State,
 ) -> Result<OrderValidityWitnessBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
-        .read_order_book()
-        .await
-        .get_validity_proof_witnesses(order_id)
-        .await
+        .get_validity_proof_witness(order_id)?
         .ok_or_else(|| eyre!("Order validity witness bundle not found"))
 }
 
@@ -280,12 +266,8 @@ async fn verify_settlement(
     wallet.apply_match(&match_res, &first_order);
 
     // 2. Lookup the wallet in global state, verify that this matches the expected
-    let new_wallet = state
-        .read_wallet_index()
-        .await
-        .get_wallet(&wallet.wallet_id)
-        .await
-        .ok_or_else(|| eyre!("wallet not found in state"))?;
+    let new_wallet =
+        state.get_wallet(&wallet.wallet_id)?.ok_or_else(|| eyre!("wallet not found in state"))?;
 
     let circuit_wallet1: SizedWallet = wallet.clone().into();
     let circuit_wallet2: SizedWallet = new_wallet.clone().into();
@@ -386,7 +368,7 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
         state.clone(),
         test_args.proof_job_queue.clone(),
     )
-    .await;
+    .await?;
 
     let (_id, handle) = test_args.driver.start_task(task).await;
     let res = handle.await?;

@@ -1,6 +1,6 @@
 //! Helpers for proposing wallet index changes and reading the index
 
-use common::types::wallet::{Wallet, WalletIdentifier};
+use common::types::wallet::{OrderIdentifier, Wallet, WalletIdentifier};
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
@@ -16,6 +16,18 @@ impl State {
         tx.commit()?;
 
         Ok(wallet)
+    }
+
+    /// Get the wallet that contains the given order ID
+    pub fn get_wallet_for_order(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<Option<WalletIdentifier>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet_id = tx.get_wallet_for_order(order_id)?;
+        tx.commit()?;
+
+        Ok(wallet_id)
     }
 
     // -----------
