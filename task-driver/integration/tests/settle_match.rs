@@ -163,7 +163,7 @@ async fn get_first_order_proofs(
 ) -> Result<OrderValidityProofBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
-        .get_validity_proofs(order_id)?
+        .get_validity_proofs(&order_id)?
         .ok_or_else(|| eyre!("Order validity proof bundle not found"))
 }
 
@@ -174,7 +174,7 @@ async fn get_first_order_witness(
 ) -> Result<OrderValidityWitnessBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
-        .get_validity_proof_witness(order_id)?
+        .get_validity_proof_witness(&order_id)?
         .ok_or_else(|| eyre!("Order validity witness bundle not found"))
 }
 
@@ -262,8 +262,8 @@ async fn verify_settlement(
     // 1. Apply the match to the wallet
     wallet.reblind_wallet();
 
-    let first_order = *wallet.orders.first().unwrap().0;
-    wallet.apply_match(&match_res, &first_order);
+    let first_order = wallet.orders.first().unwrap().0;
+    wallet.apply_match(&match_res, &first_order).unwrap();
 
     // 2. Lookup the wallet in global state, verify that this matches the expected
     let new_wallet =
@@ -305,8 +305,8 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     let (network_sender, _network_recv) = unbounded_channel();
     let task = SettleMatchInternalTask::new(
         FixedPoint::from_f64_round_down(EXECUTION_PRICE),
-        *buy_wallet.orders.first().unwrap().0,
-        *sell_wallet.orders.first().unwrap().0,
+        buy_wallet.orders.first().unwrap().0,
+        sell_wallet.orders.first().unwrap().0,
         get_first_order_proofs(&buy_wallet, state).await?,
         get_first_order_witness(&buy_wallet, state).await?,
         get_first_order_proofs(&sell_wallet, state).await?,
@@ -352,8 +352,8 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     let (match_res, match_settle_proof) =
         setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
     let handshake_state = HandshakeState {
-        local_order_id: *buy_wallet.orders.first().unwrap().0,
-        peer_order_id: *sell_wallet.orders.first().unwrap().0,
+        local_order_id: buy_wallet.orders.first().unwrap().0,
+        peer_order_id: sell_wallet.orders.first().unwrap().0,
         ..mock_handshake_state()
     };
 
@@ -386,9 +386,9 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     .await?;
 
     // The second wallet we must verify by looking up on-chain
-    let sell_order_id = *sell_wallet.orders.first().unwrap().0;
+    let sell_order_id = sell_wallet.orders.first().unwrap().0;
     sell_wallet.reblind_wallet();
-    sell_wallet.apply_match(&match_res, &sell_order_id);
+    sell_wallet.apply_match(&match_res, &sell_order_id).unwrap();
 
     lookup_wallet_and_check_result(
         &sell_wallet,

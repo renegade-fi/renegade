@@ -14,7 +14,7 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as TokioRwLock;
 
 pub mod default_wrapper;
-pub mod ordered_map;
+pub mod keyed_list;
 pub mod types;
 pub mod worker;
 
