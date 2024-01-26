@@ -163,7 +163,7 @@ impl<K: Eq, V: Clone> KeyedList<K, V> {
     /// Removes a key from the map, returning the value at the key if the key
     /// was previously in the map.
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        let index = self.elems.iter().position(|(k, _)| k == key)?;
+        let index = self.index_of(key)?;
         Some(self.elems.remove(index).1)
     }
 
