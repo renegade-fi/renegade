@@ -2,7 +2,6 @@
 
 use std::{
     collections::HashSet,
-    hash::Hash,
     iter,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -27,13 +26,14 @@ use circuit_types::{
 };
 use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
 use derivative::Derivative;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::hash::evaluate_hash_chain;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use tracing::log;
 use uuid::Uuid;
+
+use crate::keyed_list::KeyedList;
 
 use super::{gossip::WrappedPeerId, merkle::MerkleAuthenticationPath};
 
@@ -87,11 +87,9 @@ pub struct Wallet {
     /// We use an `IndexMap` here to preserve the order of insertion
     /// on the orders. This is necessary because we must have
     /// order parity with the secret shared wallet stored on-chain
-    #[serde(serialize_with = "serialize_indexmap", deserialize_with = "deserialize_indexmap")]
-    pub orders: IndexMap<OrderIdentifier, Order>,
+    pub orders: KeyedList<OrderIdentifier, Order>,
     /// A mapping of mint to Balance information
-    #[serde(serialize_with = "serialize_indexmap", deserialize_with = "deserialize_indexmap")]
-    pub balances: IndexMap<BigUint, Balance>,
+    pub balances: KeyedList<BigUint, Balance>,
     /// A list of the fees in this wallet
     pub fees: Vec<Fee>,
     /// The keys that the relayer has access to for this wallet
@@ -130,31 +128,6 @@ pub struct Wallet {
 /// TODO: Remove this when we remove the field
 fn default_update_lock() -> Arc<AtomicBool> {
     Arc::new(AtomicBool::default())
-}
-
-/// Custom serialization for an `IndexMap` type that preserves insertion
-/// ordering
-fn serialize_indexmap<S, K, V>(map: &IndexMap<K, V>, s: S) -> Result<S::Ok, S::Error>
-where
-    K: Serialize + Clone,
-    V: Serialize + Clone,
-    S: Serializer,
-{
-    // Convert to a vector of key-value pairs to preserve ordering
-    let vec: Vec<(K, V)> = map.clone().into_iter().collect();
-    vec.serialize(s)
-}
-
-/// Custom deserialization for an `IndexMap` type that preserves insertion
-/// ordering
-fn deserialize_indexmap<'de, D, K, V>(d: D) -> Result<IndexMap<K, V>, D::Error>
-where
-    D: Deserializer<'de>,
-    K: Deserialize<'de> + Eq + Hash,
-    V: Deserialize<'de>,
-{
-    let vec: Vec<(K, V)> = Vec::deserialize(d)?;
-    Ok(vec.into_iter().collect())
 }
 
 impl From<Wallet> for SizedCircuitWallet {
@@ -304,7 +277,7 @@ impl Wallet {
     // --- Balances --- //
 
     /// Add a balance to the wallet, replacing the first default balance
-    pub fn add_balance(&mut self, balance: &Balance) -> Result<(), String> {
+    pub fn add_balance(&mut self, balance: Balance) -> Result<(), String> {
         // If the balance exists, increment it
         if let Some(balance) = self.balances.get_mut(&balance.mint) {
             balance.amount = balance
@@ -316,21 +289,18 @@ impl Wallet {
 
         // Otherwise, add the balance
         if self.balances.len() < MAX_BALANCES {
-            self.balances.insert(balance.mint.clone(), balance.clone());
+            self.balances.insert(balance.mint.clone(), balance);
             return Ok(());
         }
 
         // If the balances are full, try to find a balance to overwrite
-        let key = self
+        let idx = self
             .balances
             .iter()
-            .find_map(|(_, balance)| balance.is_zero().then(|| balance.mint.clone()))
+            .enumerate()
+            .find_map(|(i, (_, balance))| balance.is_zero().then_some(i))
             .ok_or_else(|| ERR_BALANCES_FULL.to_string())?;
-        let (insert_index, _, _) = self.balances.swap_remove_full(&key).unwrap();
-
-        // Place the new key value pair at the same index
-        let (idx, _) = self.balances.insert_full(balance.mint.clone(), balance.clone());
-        self.balances.swap_indices(idx, insert_index);
+        self.balances.replace_at_index(idx, balance.mint.clone(), balance);
 
         Ok(())
     }
@@ -347,16 +317,13 @@ impl Wallet {
         }
 
         // Otherwise try to find an order to overwrite
-        let (&key, _) = self
+        let idx = self
             .orders
             .iter()
-            .find(|(_, order)| order.is_zero())
+            .enumerate()
+            .find_map(|(i, (_, order))| order.is_zero().then_some(i))
             .ok_or_else(|| ERR_ORDERS_FULL.to_string())?;
-        let (insert_index, _, _) = self.orders.swap_remove_full(&key).unwrap();
-
-        // Place the new key value pair at the same index
-        let (idx, _) = self.orders.insert_full(id, order);
-        self.orders.swap_indices(idx, insert_index);
+        self.orders.replace_at_index(idx, id, order);
 
         Ok(())
     }
@@ -390,7 +357,11 @@ impl Wallet {
     }
 
     /// Settle a match on the given order into the wallet
-    pub fn apply_match(&mut self, match_res: &MatchResult, order_id: &OrderIdentifier) {
+    pub fn apply_match(
+        &mut self,
+        match_res: &MatchResult,
+        order_id: &OrderIdentifier,
+    ) -> Result<(), String> {
         // Subtract the matched volume from the order
         let order = self.orders.get_mut(order_id).unwrap();
         order.amount =
@@ -411,12 +382,13 @@ impl Wallet {
         send_balance.amount =
             send_balance.amount.checked_sub(send_amount).expect("balance underflow");
 
-        let receive_balance = self
-            .balances
-            .entry(receive_mint)
-            .or_insert_with_key(|mint| Balance { mint: mint.clone(), amount: 0 });
-        receive_balance.amount =
-            receive_balance.amount.checked_add(receive_amount).expect("balance overflow");
+        if !self.balances.contains_key(&receive_mint) {
+            self.add_balance(Balance { mint: receive_mint.clone(), amount: 0 })?;
+        }
+
+        let recv_balance = self.balances.get_mut(&receive_mint).unwrap();
+        recv_balance.amount =
+            recv_balance.amount.checked_add(receive_amount).expect("balance overflow");
 
         // Update the public shares of the wallet, reblinding the wallet should be done
         // separately
@@ -429,6 +401,7 @@ impl Wallet {
 
         // Invalidate the Merkle opening
         self.invalidate_merkle_opening();
+        Ok(())
     }
 
     /// Update a wallet from a given set of private and (blinded) public secret
@@ -487,14 +460,13 @@ pub mod mocks {
         SizedWalletShare,
     };
     use constants::{Scalar, MERKLE_HEIGHT};
-    use indexmap::IndexMap;
     use k256::ecdsa::SigningKey as K256SigningKey;
     use num_bigint::BigUint;
     use rand::thread_rng;
     use renegade_crypto::fields::scalar_to_biguint;
     use uuid::Uuid;
 
-    use crate::types::merkle::MerkleAuthenticationPath;
+    use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
     use super::{KeyChain, PrivateKeyChain, Wallet, WalletMetadata};
 
@@ -512,8 +484,8 @@ pub mod mocks {
 
         let mut wallet = Wallet {
             wallet_id: Uuid::new_v4(),
-            orders: IndexMap::default(),
-            balances: IndexMap::default(),
+            orders: KeyedList::default(),
+            balances: KeyedList::default(),
             fees: vec![],
             key_chain: KeyChain {
                 public_keys: PublicKeyChain { pk_root, pk_match },
@@ -576,11 +548,11 @@ mod test {
         let mut wallet = mock_empty_wallet();
         let balance1 = Balance { mint: BigUint::from(1u8), amount: 10 };
         let balance2 = Balance { mint: BigUint::from(2u8), amount: 10 };
-        wallet.add_balance(&balance1).unwrap();
-        wallet.add_balance(&balance2).unwrap();
+        wallet.add_balance(balance1.clone()).unwrap();
+        wallet.add_balance(balance2.clone()).unwrap();
 
         assert_eq!(wallet.balances.len(), 2);
-        assert_eq!(wallet.balances.get_index_of(&balance2.mint), Some(1));
+        assert_eq!(wallet.balances.index_of(&balance2.mint), Some(1));
     }
 
     /// Tests adding a balance when one already exists in the wallet
@@ -589,11 +561,11 @@ mod test {
         let mut wallet = mock_empty_wallet();
         let balance1 = Balance { mint: BigUint::from(1u8), amount: 10 };
         let balance2 = Balance { mint: BigUint::from(1u8), amount: 10 };
-        wallet.add_balance(&balance1).unwrap();
-        wallet.add_balance(&balance2).unwrap();
+        wallet.add_balance(balance1.clone()).unwrap();
+        wallet.add_balance(balance2.clone()).unwrap();
 
         assert_eq!(wallet.balances.len(), 1);
-        assert_eq!(wallet.balances.get_index_of(&balance1.mint), Some(0));
+        assert_eq!(wallet.balances.index_of(&balance1.mint), Some(0));
         assert_eq!(wallet.balances.get(&balance1.mint).unwrap().amount, 20);
     }
 
@@ -605,20 +577,20 @@ mod test {
         // Fill the wallet
         for i in 0..MAX_BALANCES {
             let balance = Balance { mint: BigUint::from(i), amount: 10 };
-            wallet.add_balance(&balance).unwrap();
+            wallet.add_balance(balance).unwrap();
         }
 
         // Zero a random balance
         let mut rng = thread_rng();
         let idx = (0..MAX_BALANCES).sample_single(&mut rng);
-        wallet.balances.get_index_mut(idx).unwrap().1.amount = 0;
+        wallet.balances.get_index_mut(idx).unwrap().amount = 0;
 
         // Add a new balance
         let balance = Balance { mint: BigUint::from(42u8), amount: 10 };
-        wallet.add_balance(&balance).unwrap();
+        wallet.add_balance(balance.clone()).unwrap();
 
         // Check that the balance overrode the correct idx
-        assert_eq!(wallet.balances.get_index_of(&balance.mint), Some(idx));
+        assert_eq!(wallet.balances.index_of(&balance.mint), Some(idx));
     }
 
     /// Tests adding a balance when the wallet is full
@@ -630,12 +602,12 @@ mod test {
         // Fill the wallet
         for i in 0..MAX_BALANCES {
             let balance = Balance { mint: BigUint::from(i), amount: 10 };
-            wallet.add_balance(&balance).unwrap();
+            wallet.add_balance(balance).unwrap();
         }
 
         // Attempt to add another balance
         let balance = Balance { mint: BigUint::from(42u8), amount: 10 };
-        wallet.add_balance(&balance).unwrap();
+        wallet.add_balance(balance).unwrap();
     }
 
     /// Tests adding an order that appends to the wallet
@@ -653,8 +625,8 @@ mod test {
 
         // Check that the orders were added
         assert_eq!(wallet.orders.len(), 2);
-        assert_eq!(wallet.orders.get_index_of(&id1), Some(0));
-        assert_eq!(wallet.orders.get_index_of(&id2), Some(1));
+        assert_eq!(wallet.orders.index_of(&id1), Some(0));
+        assert_eq!(wallet.orders.index_of(&id2), Some(1));
     }
 
     /// Tests adding an order that overwrites a default order
@@ -672,7 +644,7 @@ mod test {
         // Zero a random order
         let mut rng = thread_rng();
         let idx = (0..MAX_ORDERS).sample_single(&mut rng);
-        wallet.orders.get_index_mut(idx).unwrap().1.amount = 0;
+        wallet.orders.get_index_mut(idx).unwrap().amount = 0;
 
         // Add a new order
         let id = Uuid::new_v4();
@@ -680,7 +652,7 @@ mod test {
         wallet.add_order(id, order).unwrap();
 
         // Check that the order overrode the correct idx
-        assert_eq!(wallet.orders.get_index_of(&id), Some(idx));
+        assert_eq!(wallet.orders.index_of(&id), Some(idx));
     }
 
     /// Tests adding an order when the wallet is full

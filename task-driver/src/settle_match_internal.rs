@@ -299,8 +299,12 @@ impl SettleMatchInternalTask {
         let mut wallet2 = self.find_wallet_for_order(&self.order_id2).await?;
 
         // Apply the match to each of the wallets
-        wallet1.apply_match(&self.match_result, &self.order_id1);
-        wallet2.apply_match(&self.match_result, &self.order_id2);
+        wallet1
+            .apply_match(&self.match_result, &self.order_id1)
+            .map_err(SettleMatchInternalTaskError::State)?;
+        wallet2
+            .apply_match(&self.match_result, &self.order_id2)
+            .map_err(SettleMatchInternalTaskError::State)?;
 
         // Reblind both wallets and update their merkle openings
         wallet1.reblind_wallet();
