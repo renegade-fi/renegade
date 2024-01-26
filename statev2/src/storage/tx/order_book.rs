@@ -52,7 +52,19 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         order_id: &OrderIdentifier,
     ) -> Result<Option<NetworkOrder>, StorageError> {
         let key = order_key(order_id);
-        self.inner().read(ORDERS_TABLE, &key)
+
+        // The `NetworkOrder` type skips the validity proof witnesses when serializing
+        // for gossip layer safety, so we store them adjacently and must here re-attach
+        // the witness
+        let res = self
+            .inner()
+            .read::<_, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(ORDERS_TABLE, &key)?
+            .map(|(mut order, witness)| {
+                order.validity_proof_witnesses = witness;
+                order
+            });
+
+        Ok(res)
     }
 
     /// Get the orders associated with a given nullifier
@@ -93,7 +105,12 @@ impl<'db> StateTxn<'db, RW> {
     /// Add an order to the order book
     pub fn write_order(&self, order: &NetworkOrder) -> Result<(), StorageError> {
         let key = order_key(&order.id);
-        self.inner().write(ORDERS_TABLE, &key, order)
+
+        // The `NetworkOrder` type skips the validity proof witnesses when serializing
+        // for gossip layer safety, so we store them adjacently
+        let mut order = order.clone();
+        let validity_witness = order.validity_proof_witnesses.take();
+        self.inner().write(ORDERS_TABLE, &key, &(order, validity_witness))
     }
 
     /// Write the priority of an order
@@ -221,7 +238,9 @@ mod test {
 
     use common::types::{
         network_order::{test_helpers::dummy_network_order, NetworkOrderState},
-        proof_bundles::mocks::{dummy_valid_reblind_bundle, dummy_validity_proof_bundle},
+        proof_bundles::mocks::{
+            dummy_valid_reblind_bundle, dummy_validity_proof_bundle, dummy_validity_witness_bundle,
+        },
     };
     use constants::Scalar;
     use rand::thread_rng;
@@ -286,6 +305,32 @@ mod test {
 
         let new_nullifiers = tx.get_orders_by_nullifier(nullifier).unwrap();
         assert_eq!(new_nullifiers, vec![order.id]);
+    }
+
+    /// Tests attaching a validity witness to an order
+    #[test]
+    fn test_write_validity_witness() {
+        let db = mock_db();
+        db.create_table(ORDERS_TABLE).unwrap();
+        db.create_table(PRIORITIES_TABLE).unwrap();
+
+        // Write the order to the book
+        let order = dummy_network_order();
+        let tx = db.new_write_tx().unwrap();
+        tx.write_order(&order).unwrap();
+        tx.commit().unwrap();
+
+        // Attach a validity proof to the order
+        let witness = dummy_validity_witness_bundle();
+
+        let tx = db.new_write_tx().unwrap();
+        tx.attach_validity_witness(&order.id, witness).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the order is updated
+        let tx = db.new_read_tx().unwrap();
+        let stored_order = tx.get_order_info(&order.id).unwrap().unwrap();
+        assert!(stored_order.validity_proof_witnesses.is_some());
     }
 
     /// Tests nullifying an order

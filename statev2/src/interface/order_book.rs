@@ -1,5 +1,6 @@
 //! State interface for the order book
 
+use circuit_types::wallet::Nullifier;
 use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -22,6 +23,24 @@ impl State {
         Ok(tx.get_order_info(order_id)?)
     }
 
+    /// Get the validity proofs for an order
+    pub fn get_validity_proofs(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<Option<OrderValidityProofBundle>, StateError> {
+        let order = self.get_order(order_id)?;
+        Ok(order.and_then(|o| o.validity_proofs))
+    }
+
+    /// Get the validity proof witness for an order
+    pub fn get_validity_proof_witness(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<Option<OrderValidityWitnessBundle>, StateError> {
+        let order = self.get_order(order_id)?;
+        Ok(order.and_then(|o| o.validity_proof_witnesses))
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -39,6 +58,11 @@ impl State {
         witness: Option<OrderValidityWitnessBundle>,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AddOrderValidityProof { order_id, proof, witness })
+    }
+
+    /// Nullify all orders on the given nullifier
+    pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::NullifyOrders { nullifier })
     }
 }
 
