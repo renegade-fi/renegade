@@ -24,7 +24,8 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::ProofManagerJob;
 use serde::Serialize;
-use state::RelayerState;
+use statev2::error::StateError;
+use statev2::State;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use super::{
@@ -65,7 +66,7 @@ pub struct SettleMatchTask {
     /// A sender to the network manager's work queue
     pub network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The state of the task
@@ -112,11 +113,13 @@ pub enum SettleMatchTaskError {
     /// Error sending a message to another local worker
     SendMessage(String),
     /// Error when state is missing for settlement
-    StateMissing(String),
+    Missing(String),
     /// Error interacting with Arbitrum
     Arbitrum(String),
     /// Error updating validity proofs for a wallet
     UpdatingValidityProofs(String),
+    /// Error interacting with global state
+    State(String),
 }
 
 impl Display for SettleMatchTaskError {
@@ -126,6 +129,12 @@ impl Display for SettleMatchTaskError {
 }
 
 impl Error for SettleMatchTaskError {}
+
+impl From<StateError> for SettleMatchTaskError {
+    fn from(err: StateError) -> Self {
+        SettleMatchTaskError::State(err.to_string())
+    }
+}
 
 #[async_trait]
 impl Task for SettleMatchTask {
@@ -189,16 +198,14 @@ impl SettleMatchTask {
         party1_validity_proof: OrderValidityProofBundle,
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-    ) -> Self {
+    ) -> Result<Self, SettleMatchTaskError> {
         let wallet_id = global_state
-            .read_wallet_index()
-            .await
-            .get_wallet_for_order(&handshake_state.local_order_id)
-            .expect("could not find wallet for local matched order");
+            .get_wallet_for_order(&handshake_state.local_order_id)?
+            .ok_or_else(|| SettleMatchTaskError::Missing(ERR_WALLET_NOT_FOUND.to_string()))?;
 
-        Self {
+        Ok(Self {
             wallet_id,
             handshake_state,
             match_bundle,
@@ -209,7 +216,7 @@ impl SettleMatchTask {
             global_state,
             proof_manager_work_queue,
             task_state: SettleMatchTaskState::Pending,
-        }
+        })
     }
 
     // --------------
@@ -251,8 +258,8 @@ impl SettleMatchTask {
         // Cancel all orders on both nullifiers, await new validity proofs
         let party0_reblind_statement = &self.party0_validity_proof.reblind_proof.statement;
         let party1_reblind_statement = &self.party1_validity_proof.reblind_proof.statement;
-        self.global_state.nullify_orders(party0_reblind_statement.original_shares_nullifier).await;
-        self.global_state.nullify_orders(party1_reblind_statement.original_shares_nullifier).await;
+        self.global_state.nullify_orders(party0_reblind_statement.original_shares_nullifier)?;
+        self.global_state.nullify_orders(party1_reblind_statement.original_shares_nullifier)?;
 
         // Find the wallet's new Merkle opening
         let opening = find_merkle_path(&wallet, &self.arbitrum_client)
@@ -261,16 +268,13 @@ impl SettleMatchTask {
         wallet.merkle_proof = Some(opening);
 
         // Index the updated wallet in global state
-        self.global_state.update_wallet(wallet).await;
-
+        self.global_state.update_wallet(wallet)?.await?;
         Ok(())
     }
 
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
-        let wallet =
-            self.global_state.read_wallet_index().await.get_wallet(&self.wallet_id).await.unwrap();
-
+        let wallet = self.global_state.get_wallet(&self.wallet_id)?.unwrap();
         update_wallet_validity_proofs(
             &wallet,
             self.proof_manager_work_queue.clone(),
@@ -288,11 +292,8 @@ impl SettleMatchTask {
     /// Get the wallet that this settlement task is operating on
     async fn get_wallet(&self) -> Result<Wallet, SettleMatchTaskError> {
         self.global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&self.wallet_id)
-            .await
-            .ok_or_else(|| SettleMatchTaskError::StateMissing(ERR_WALLET_NOT_FOUND.to_string()))
+            .get_wallet(&self.wallet_id)?
+            .ok_or_else(|| SettleMatchTaskError::State(ERR_WALLET_NOT_FOUND.to_string()))
     }
 
     /// Get the new private and blinded public shares for the wallet after
@@ -301,15 +302,12 @@ impl SettleMatchTask {
         &self,
     ) -> Result<(SizedWalletShare, SizedWalletShare), SettleMatchTaskError> {
         // Fetch private shares from the validity proof's witness
-        let validity_witness = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_validity_proof_witnesses(&self.handshake_state.local_order_id)
-            .await
-            .ok_or_else(|| {
-                SettleMatchTaskError::StateMissing(ERR_VALIDITY_WITNESS_NOT_FOUND.to_string())
+        let order_id = self.handshake_state.local_order_id;
+        let validity_witness =
+            self.global_state.get_validity_proof_witness(&order_id)?.ok_or_else(|| {
+                SettleMatchTaskError::Missing(ERR_VALIDITY_WITNESS_NOT_FOUND.to_string())
             })?;
+
         let private_shares =
             validity_witness.reblind_witness.reblinded_wallet_private_shares.clone();
 
