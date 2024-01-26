@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::{
     create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState,
     settle_match::SettleMatchTaskState, settle_match_internal::SettleMatchInternalTaskState,
-    update_wallet::UpdateWalletTaskState,
+    update_merkle_proof::UpdateMerkleProofTaskState, update_wallet::UpdateWalletTaskState,
 };
 
 /// The amount to increase the backoff delay by every retry
@@ -118,8 +118,8 @@ pub enum StateWrapper {
     SettleMatch(SettleMatchTaskState),
     /// The state object for the settle match internal task
     SettleMatchInternal(SettleMatchInternalTaskState),
-    // /// The state object for the update Merkle proof task
-    // UpdateMerkleProof(UpdateMerkleProofTaskState),
+    /// The state object for the update Merkle proof task
+    UpdateMerkleProof(UpdateMerkleProofTaskState),
     /// The state object for the update wallet task
     UpdateWallet(UpdateWalletTaskState),
 }
@@ -132,7 +132,7 @@ impl Display for StateWrapper {
             StateWrapper::SettleMatch(state) => state.to_string(),
             StateWrapper::SettleMatchInternal(state) => state.to_string(),
             StateWrapper::UpdateWallet(state) => state.to_string(),
-            // StateWrapper::UpdateMerkleProof(state) => state.to_string(),
+            StateWrapper::UpdateMerkleProof(state) => state.to_string(),
         };
         write!(f, "{out}")
     }
