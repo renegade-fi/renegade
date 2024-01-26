@@ -14,7 +14,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::ProofManagerJob;
 use serde::Serialize;
-use state::RelayerState;
+use statev2::{error::StateError, State};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
@@ -36,7 +36,7 @@ pub struct UpdateMerkleProofTask {
     /// The arbitrum client to use for submitting transactions
     pub arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// A sender to the network manager's work queue
@@ -50,6 +50,8 @@ pub struct UpdateMerkleProofTask {
 pub enum UpdateMerkleProofTaskError {
     /// An error occurred interacting with Arbitrum
     Arbitrum(String),
+    /// An error interacting with global state
+    State(String),
     /// An error while updating validity proofs for a wallet
     UpdatingValidityProofs(String),
     /// Wallet is already locked, cannot update
@@ -62,6 +64,12 @@ impl Display for UpdateMerkleProofTaskError {
     }
 }
 impl Error for UpdateMerkleProofTaskError {}
+
+impl From<StateError> for UpdateMerkleProofTaskError {
+    fn from(value: StateError) -> Self {
+        UpdateMerkleProofTaskError::State(value.to_string())
+    }
+}
 
 /// Defines the state of the deposit balance task
 #[derive(Clone, Debug)]
@@ -159,7 +167,7 @@ impl UpdateMerkleProofTask {
     pub async fn new(
         wallet: Wallet,
         arbitrum_client: ArbitrumClient,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         network_sender: TokioSender<GossipOutbound>,
     ) -> Result<Self, UpdateMerkleProofTaskError> {
@@ -193,7 +201,7 @@ impl UpdateMerkleProofTask {
         self.wallet.merkle_staleness.store(0, Ordering::Relaxed);
 
         // Update the global state
-        self.global_state.update_wallet(self.wallet.clone()).await;
+        self.global_state.update_wallet(self.wallet.clone())?.await?;
         Ok(())
     }
 
