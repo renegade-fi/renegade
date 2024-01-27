@@ -201,9 +201,8 @@ impl HandshakeExecutor {
         // peer's proposed prices list
         let my_order = self
             .global_state
-            .get_order(my_order_id)
-            .await
-            .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
+            .get_managed_order(my_order_id)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
         let (base, quote) = self.token_pair_for_order(&my_order);
 
         let proposed_price = proposed_prices.find_pair(&base, &quote);

@@ -12,7 +12,7 @@ use job_types::{
     handshake_manager::HandshakeExecutionJob, price_reporter::PriceReporterManagerJob,
     proof_manager::ProofManagerJob,
 };
-use state::RelayerState;
+use statev2::State;
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
 use tokio::{
@@ -30,7 +30,7 @@ use super::{error::HandshakeManagerError, manager::HandshakeManager};
 /// The config type for the handshake manager
 pub struct HandshakeManagerConfig {
     /// The relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The channel on which to send outbound network requests
     pub network_channel: TokioSender<GossipOutbound>,
     /// The price reporter's job queue

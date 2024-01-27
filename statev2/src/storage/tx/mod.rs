@@ -14,6 +14,13 @@ pub mod wallet_index;
 
 use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
 
+use crate::{
+    CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE, ORDER_TO_WALLET_TABLE,
+    PEER_INFO_TABLE, PRIORITIES_TABLE, WALLETS_TABLE,
+};
+
+use self::raft_log::RAFT_METADATA_TABLE;
+
 use super::{
     cursor::DbCursor,
     db::{deserialize_value, serialize_value},
@@ -47,12 +54,85 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     pub fn commit(self) -> Result<(), StorageError> {
         self.inner.commit()
     }
+
+    /// Read a set type from a table
+    ///
+    /// Assumes the set is represented by a vector
+    pub fn read_set<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+    ) -> Result<Vec<V>, StorageError> {
+        Ok(self.inner().read(table_name, key)?.unwrap_or_default())
+    }
 }
 
 impl<'db> StateTxn<'db, RW> {
     /// Create a table in the database
     pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
         self.inner.create_table(table_name)
+    }
+
+    /// Create the tables used by the state interface
+    pub fn setup_tables(&self) -> Result<(), StorageError> {
+        for table in [
+            PEER_INFO_TABLE,
+            CLUSTER_MEMBERSHIP_TABLE,
+            PRIORITIES_TABLE,
+            ORDERS_TABLE,
+            ORDER_TO_WALLET_TABLE,
+            WALLETS_TABLE,
+            NODE_METADATA_TABLE,
+            RAFT_METADATA_TABLE,
+        ]
+        .iter()
+        {
+            self.create_table(table)?;
+        }
+
+        Ok(())
+    }
+
+    /// Add a value to a set type
+    ///
+    /// Assumes the underlying set is represented by a vector
+    pub(crate) fn add_to_set<K: Key, V: Value + PartialEq>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &V,
+    ) -> Result<(), StorageError> {
+        // Read the set
+        let mut set = self.read_set(table_name, key)?;
+
+        // Check if the value is already in the set
+        if !set.contains(value) {
+            set.push(value.clone());
+            self.inner().write(table_name, key, &set)?;
+        }
+
+        Ok(())
+    }
+
+    /// Remove a value from a set type
+    ///
+    /// Assumes the underlying set is represented by a vector
+    pub(crate) fn remove_from_set<K: Key, V: Value + PartialEq>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &V,
+    ) -> Result<(), StorageError> {
+        // Read the set
+        let mut set = self.read_set::<K, V>(table_name, key)?;
+
+        // Remove the value if it exists in the set
+        set.retain(|v| v != value);
+
+        // Write the updated set back to the database
+        self.inner().write(table_name, key, &set)?;
+
+        Ok(())
     }
 }
 
