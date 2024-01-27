@@ -88,9 +88,7 @@ impl HandshakeExecutor {
         // Fetch the handshake state from the state index
         let handshake_state =
             self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(
-                    "missing handshake state for request".to_string(),
-                )
+                HandshakeManagerError::State("missing handshake state for request".to_string())
             })?;
 
         // Build a cancel channel; the coordinator may use this to cancel (shootdown) an
@@ -141,12 +139,9 @@ impl HandshakeExecutor {
         // values in `VALID MATCH MPC`
         let proof_witnesses = self
             .global_state
-            .read_order_book()
-            .await
-            .get_validity_proof_witnesses(&handshake_state.local_order_id)
-            .await
+            .get_validity_proof_witness(&handshake_state.local_order_id)?
             .ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(
+                HandshakeManagerError::State(
                     "missing validity proof witness, cannot link proofs".to_string(),
                 )
             })?;

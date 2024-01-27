@@ -16,7 +16,7 @@ use common::{
 };
 use constants::Scalar;
 use crossbeam::channel::Sender;
-use state::RelayerState;
+use statev2::State;
 use uuid::Uuid;
 
 /// Error message thrown when a nullifier cannot be found
@@ -26,19 +26,19 @@ const ERR_NULLIFIER_MISSING: &str = "nullifier not found for order";
 ///
 /// Abstracts mostly over the concurrent access patterns used by the thread pool
 /// of handshake executors
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct HandshakeStateIndex {
     /// The underlying map of request identifiers to state machine instances
     state_map: AsyncShared<HashMap<Uuid, HandshakeState>>,
     /// A mapping from nullifier to a set of request_ids on that nullifier
     nullifier_map: AsyncShared<HashMap<Scalar, HashSet<Uuid>>>,
     /// A copy of the relayer global state
-    global_state: RelayerState,
+    global_state: State,
 }
 
 impl HandshakeStateIndex {
     /// Creates a new instance of the state index
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self {
             state_map: new_async_shared(HashMap::new()),
             nullifier_map: new_async_shared(HashMap::new()),
@@ -62,15 +62,13 @@ impl HandshakeStateIndex {
         execution_price: FixedPoint,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order
-        let locked_order_book = self.global_state.read_order_book().await;
-        let local_nullifier =
-            locked_order_book.get_nullifier(&local_order_id).await.ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(ERR_NULLIFIER_MISSING.to_string())
-            })?;
-        let peer_nullifier =
-            locked_order_book.get_nullifier(&peer_order_id).await.ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(ERR_NULLIFIER_MISSING.to_string())
-            })?;
+        let state = &self.global_state;
+        let local_nullifier = state
+            .get_nullifier_for_order(&local_order_id)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NULLIFIER_MISSING.to_string()))?;
+        let peer_nullifier = state
+            .get_nullifier_for_order(&peer_order_id)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NULLIFIER_MISSING.to_string()))?;
 
         // Index by request ID
         {
