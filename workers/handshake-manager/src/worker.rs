@@ -12,7 +12,7 @@ use job_types::{
     handshake_manager::HandshakeExecutionJob, price_reporter::PriceReporterManagerJob,
     proof_manager::ProofManagerJob,
 };
-use statev2::State;
+use state::State;
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
 use tokio::{

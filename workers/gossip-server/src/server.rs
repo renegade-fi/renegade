@@ -20,7 +20,7 @@ use gossip_api::{
 };
 use job_types::gossip_server::GossipServerJob;
 use lru::LruCache;
-use statev2::State;
+use state::State;
 use std::{
     num::NonZeroUsize,
     thread::{self, Builder, JoinHandle},

@@ -28,8 +28,8 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::types::ApiWallet;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
-use statev2::error::StateError;
-use statev2::State;
+use state::error::StateError;
+use state::State;
 
 use crate::helpers::enqueue_proof_job;
 

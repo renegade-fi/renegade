@@ -9,7 +9,7 @@ use gossip_api::{
     heartbeat::HeartbeatMessage,
 };
 use job_types::gossip_server::GossipServerJob;
-use statev2::State;
+use state::State;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use util::get_current_time_seconds;
@@ -34,6 +34,7 @@ pub(super) const HEARTBEAT_FAILURE_MS: u64 = 20_000; // 20 seconds
 pub(super) const CLUSTER_HEARTBEAT_FAILURE_MS: u64 = 7_000; // 7 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
+#[allow(unused)]
 pub(super) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 30_000; // 30 seconds
 /// The size of the peer expiry cache to keep around
 pub(super) const EXPIRY_CACHE_SIZE: usize = 100;
@@ -67,7 +68,7 @@ impl GossipProtocolExecutor {
         let mut peers_to_add = Vec::new();
         let state = &self.global_state;
         for (peer_id, info) in message.known_peers.into_iter() {
-            if !state.get_peer_info(&peer_id)?.is_none() {
+            if state.get_peer_info(&peer_id)?.is_some() {
                 peers_to_add.push(info);
             }
         }
@@ -86,7 +87,7 @@ impl GossipProtocolExecutor {
     /// Returns a boolean indicating whether the peer is now indexed in the peer
     /// info state. This value may be false if the peer has been recently
     /// expired and its invisibility window has not elapsed
-    pub(super) async fn add_new_peers(&self, peers: Vec<PeerInfo>) -> Result<(), GossipError> {
+    pub(super) async fn add_new_peers(&self, _peers: Vec<PeerInfo>) -> Result<(), GossipError> {
         todo!("implement this with gossip refactor");
         // // Filter out peers that are in their expiry window
         // // or those that are missing peer info
@@ -125,6 +126,7 @@ impl GossipProtocolExecutor {
 
     /// Adds new addresses to the address index in the network manager so that
     /// they may be dialed on outbound
+    #[allow(unused)]
     fn add_new_addrs(
         &self,
         peer_ids: &[WrappedPeerId],
@@ -160,8 +162,7 @@ impl GossipProtocolExecutor {
             })
             .map_err(|err| GossipError::SendMessage(err.to_string()))?;
 
-        self.maybe_expire_peer(recipient_peer_id).await;
-        Ok(())
+        self.maybe_expire_peer(recipient_peer_id).await
     }
 
     /// Expires peers that have timed out due to consecutive failed heartbeats

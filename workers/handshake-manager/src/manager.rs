@@ -38,7 +38,7 @@ use job_types::{
 };
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use statev2::State;
+use state::State;
 use std::{
     convert::TryInto,
     thread::JoinHandle,

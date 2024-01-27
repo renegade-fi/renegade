@@ -22,7 +22,7 @@ use gossip_api::gossip::GossipOutbound;
 use helpers::new_mock_task_driver;
 use job_types::proof_manager::ProofManagerJob;
 use proof_manager::mock::MockProofManager;
-use statev2::{test_helpers::mock_state, State};
+use state::{test_helpers::mock_state, State};
 use task_driver::driver::TaskDriver;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
