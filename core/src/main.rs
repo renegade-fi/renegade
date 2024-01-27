@@ -29,8 +29,8 @@ use job_types::{
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{manager::PriceReporterManager, worker::PriceReporterManagerConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use state::tui::StateTuiApp;
-use state::RelayerState;
+use statev2::tui::StateTuiApp;
+use statev2::{replication::network::test_helpers::MockNetwork, State};
 use system_bus::SystemBus;
 use task_driver::driver::{TaskDriver, TaskDriverConfig};
 
@@ -97,13 +97,10 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::unbounded_channel::<PriceReporterManagerJob>();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
-    // Construct the global state and warm up the config orders by generating proofs
-    // of `VALID COMMITMENTS`
-    let global_state = RelayerState::initialize_global_state(
-        &args,
-        handshake_worker_sender.clone(),
-        system_bus.clone(),
-    );
+    // Construct a global state
+    // TODO: Replace with gossip network once implemented
+    let network = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
+    let global_state = State::new(&args, network, system_bus.clone())?;
 
     // Configure logging and TUI
     if args.debug {
