@@ -14,19 +14,28 @@ impl State {
     /// Get the peer ID of the local node
     pub fn get_peer_id(&self) -> Result<WrappedPeerId, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_peer_id()?)
+        let peer_id = tx.get_peer_id()?;
+        tx.commit()?;
+
+        Ok(peer_id)
     }
 
     /// Get the cluster ID of the local node
     pub fn get_cluster_id(&self) -> Result<ClusterId, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_cluster_id()?)
+        let cluster_id = tx.get_cluster_id()?;
+        tx.commit()?;
+
+        Ok(cluster_id)
     }
 
     /// Get the libp2p keypair of the local node
     pub fn get_node_keypair(&self) -> Result<Keypair, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_node_keypair()?)
+        let keypair = tx.get_node_keypair()?;
+        tx.commit()?;
+
+        Ok(keypair)
     }
 
     // -----------
