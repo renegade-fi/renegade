@@ -25,3 +25,4 @@ jobs:
             -D clippy::missing_docs_in_private_items
             -D clippy::needless_pass_by_value
             -D clippy::needless_pass_by_ref_mut
+            -D clippy::unused_async

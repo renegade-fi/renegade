@@ -71,7 +71,7 @@ impl StateApplicator {
     pub fn new_order(&self, order: NetworkOrder) -> Result<()> {
         // Index the order, it's priority, and its nullifier
         let tx = self.db().new_write_tx()?;
-        Self::add_order_with_tx(&order, &tx)?;
+        self.add_order_with_tx(order.clone(), &tx)?;
         tx.commit()?;
 
         // Push a message to the bus
@@ -118,10 +118,23 @@ impl StateApplicator {
     // -----------
 
     /// Add an order within a given transaction
-    pub(crate) fn add_order_with_tx(order: &NetworkOrder, tx: &StateTxn<RW>) -> Result<()> {
+    pub(crate) fn add_order_with_tx(
+        &self,
+        mut order: NetworkOrder,
+        tx: &StateTxn<RW>,
+    ) -> Result<()> {
+        // Add to the locally managed orders
+        let my_cluster = &self.config.cluster_id;
+        if &order.cluster == my_cluster {
+            order.local = true;
+            tx.mark_order_local(&order.id)?;
+        } else {
+            order.local = false;
+        }
+
         // Update the order priority, the order, and its nullifier
-        tx.write_order_priority(order)?;
-        tx.write_order(order)?;
+        tx.write_order_priority(&order)?;
+        tx.write_order(&order)?;
         Ok(tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?)
     }
 }
@@ -166,6 +179,27 @@ mod test {
         let priority: OrderPriority =
             db.read(PRIORITIES_TABLE, &expected_order.id).unwrap().unwrap();
         assert_eq!(priority, OrderPriority::default());
+    }
+
+    /// Tests adding a local order to the book
+    #[test]
+    fn test_add_local_order() {
+        let applicator = mock_applicator();
+
+        // Add a local order to the book
+        let mut local_order = dummy_network_order();
+        // Set the cluster ID of the order to the mock applicator's cluster ID
+        local_order.cluster = applicator.config.cluster_id.clone();
+        local_order.local = true; // Mark the order as locally managed
+
+        applicator.new_order(local_order.clone()).unwrap();
+
+        // Read the locally managed orders and verify that the added order is present
+        let db = applicator.db();
+        let tx = db.new_read_tx().unwrap();
+        let local_orders = tx.get_local_orders().unwrap();
+
+        assert_eq!(local_orders, vec![local_order.id]);
     }
 
     /// Test adding a validity proof to an order
