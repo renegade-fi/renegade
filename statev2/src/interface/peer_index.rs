@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use common::types::gossip::{PeerInfo, WrappedPeerId};
+use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 
 use crate::{error::StateError, State};
 
@@ -27,5 +27,17 @@ impl State {
         tx.commit()?;
 
         Ok(info_map)
+    }
+
+    /// Get all the peers known in a given cluster
+    pub fn get_cluster_peers(
+        &self,
+        cluster_id: &ClusterId,
+    ) -> Result<Vec<WrappedPeerId>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let peers = tx.get_cluster_peers(cluster_id)?;
+        tx.commit()?;
+
+        Ok(peers)
     }
 }
