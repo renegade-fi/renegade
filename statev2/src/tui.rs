@@ -5,7 +5,6 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use futures::executor::block_on;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::{
@@ -32,7 +31,7 @@ use std::io;
 
 use config::RelayerConfig;
 
-use super::RelayerState;
+use super::State;
 
 /// A convenience string for ENABLED
 const STR_ENABLED: &str = "ENABLED";
@@ -72,7 +71,7 @@ pub struct StateTuiApp {
     /// A copy of the config passed to the relayer
     config: RelayerConfig,
     /// A copy of the global state to read from
-    global_state: RelayerState,
+    global_state: State,
     /// A terminal implementation for creating the TUI
     terminal: RefCell<Terminal<CrosstermBackend<Stdout>>>,
 }
@@ -101,7 +100,7 @@ impl ToString for AppTab {
 
 impl StateTuiApp {
     /// Create a new instance of the state app
-    pub fn new(config: RelayerConfig, global_state: RelayerState) -> Self {
+    pub fn new(config: RelayerConfig, global_state: State) -> Self {
         // Setup the terminal
         enable_raw_mode().unwrap();
         let mut stdout = io::stdout();
@@ -316,17 +315,10 @@ impl StateTuiApp {
     /// Create a metadata pane
     fn create_metadata_pane(&self) -> List {
         // Fetch the relevant state
-        let peer_id = self.global_state.local_peer_id();
-        let cluster_id = self.global_state.local_cluster_id.clone();
-        let local_addr = block_on(async {
-            self.global_state
-                .read_peer_index()
-                .await
-                .get_peer_info(&peer_id)
-                .await
-                .unwrap_or_default()
-                .get_addr()
-        });
+        let peer_id = self.global_state.get_peer_id().unwrap();
+        let cluster_id = self.global_state.get_cluster_id().unwrap();
+        let local_addr =
+            self.global_state.get_peer_info(&peer_id).unwrap().unwrap_or_default().get_addr();
         let full_addr = format!("{local_addr}/p2p/{peer_id}");
         let price_reporter_enabled =
             if self.config.disable_price_reporter { STR_DISABLED } else { STR_ENABLED };
@@ -384,9 +376,8 @@ impl StateTuiApp {
     /// Create a cluster metadata pane    
     fn create_cluster_metadata_pane(&self) -> List {
         // Read the relevant state
-        let cluster_id = self.global_state.local_cluster_id.clone();
-        let cluster_peers =
-            block_on(self.global_state.get_local_cluster_peers(true /* include_self */));
+        let cluster_id = self.global_state.get_cluster_id().unwrap();
+        let cluster_peers = self.global_state.get_cluster_peers(&cluster_id).unwrap();
 
         // Style and collect into a list
         let line1 = Spans::from(vec![
@@ -408,9 +399,8 @@ impl StateTuiApp {
     /// Create a peer index pane    
     fn create_peer_index_pane(&self) -> Table {
         // Read the necessary state
-        let local_peer_id = self.global_state.local_peer_id();
-        let peer_info =
-            block_on(async { self.global_state.read_peer_index().await.get_info_map().await });
+        let local_peer_id = self.global_state.get_peer_id().unwrap();
+        let peer_info = self.global_state.get_peer_info_map().unwrap();
 
         // Sort the keys so that the table does not re-arrange every frame
         let mut sorted_keys = peer_info.keys().cloned().collect_vec();
@@ -444,19 +434,15 @@ impl StateTuiApp {
 
     /// Create an order book pane
     fn create_order_book_pane(&self) -> Table {
-        // Read the necessary state
-        let order_book = block_on(async {
-            self.global_state.read_order_book().await.get_order_book_snapshot().await
-        });
-
-        let mut sorted_keys = order_book.keys().clone().collect_vec();
-        sorted_keys.sort();
+        // Read the order book and sort to stabilize the output
+        let mut order_book = self.global_state.get_all_orders().unwrap();
+        order_book.sort_by_key(|o| o.id);
 
         // Style and collect into a table
         let mut rows = Vec::new();
-        for (order_id, info) in sorted_keys.iter().map(|key| (*key, order_book.get(key).unwrap())) {
-            let local_nonlocal = if info.local { "local" } else { "nonlocal" }.to_string();
-            let row = Row::new(vec![order_id.to_string(), info.state.to_string(), local_nonlocal])
+        for order in order_book.into_iter() {
+            let local_nonlocal = if order.local { "local" } else { "nonlocal" }.to_string();
+            let row = Row::new(vec![order.id.to_string(), order.state.to_string(), local_nonlocal])
                 .style(*TABLE_ROW_STYLE);
 
             rows.push(row)
