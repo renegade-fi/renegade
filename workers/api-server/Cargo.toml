@@ -31,7 +31,7 @@ renegade-crypto = { path = "../../renegade-crypto" }
 external-api = { path = "../../external-api" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
-state = { path = "../../state" }
+statev2 = { path = "../../statev2" }
 system-bus = { path = "../../system-bus" }
 task-driver = { path = "../../task-driver" }
 

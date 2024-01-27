@@ -7,7 +7,7 @@ use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCo
 use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use state::RelayerState;
+use statev2::State;
 use tracing::log;
 
 use crate::error::{bad_request, not_found};
@@ -151,12 +151,12 @@ pub struct Router {
     router: MatchRouter<(Box<dyn Handler>, bool)>,
     /// A copy of the relayer global state, used to lookup wallet keys for
     /// authentication
-    global_state: RelayerState,
+    global_state: State,
 }
 
 impl Router {
     /// Create a new router with no routes established
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         let router = MatchRouter::new();
         Self { router, global_state }
     }
@@ -271,10 +271,7 @@ impl Router {
         // Lookup the wallet in the global state
         let wallet = self
             .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+            .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         // Get the request bytes
