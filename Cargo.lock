@@ -233,7 +233,7 @@ dependencies = [
  "renegade-crypto",
  "serde",
  "serde_json",
- "statev2",
+ "state",
  "system-bus",
  "task-driver",
  "tokio",
@@ -1228,7 +1228,7 @@ dependencies = [
  "job-types",
  "lazy_static",
  "renegade-crypto",
- "statev2",
+ "state",
  "task-driver",
  "tokio",
  "tracing",
@@ -1821,22 +1821,6 @@ name = "crossterm"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e64e6c0fbe2c17357405f7c758c1ef960fce08bdfb2c03d88d2a18d7e09c4b67"
-dependencies = [
- "bitflags 1.3.2",
- "crossterm_winapi",
- "libc",
- "mio",
- "parking_lot 0.12.1",
- "signal-hook",
- "signal-hook-mio",
- "winapi",
-]
-
-[[package]]
-name = "crossterm"
-version = "0.26.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a84cda67535339806297f1b331d6dd6320470d2a0fe65381e79ee9e156dd3d13"
 dependencies = [
  "bitflags 1.3.2",
  "crossterm_winapi",
@@ -3230,7 +3214,7 @@ dependencies = [
  "job-types",
  "libp2p",
  "lru 0.11.1",
- "statev2",
+ "state",
  "tokio",
  "tracing",
  "util",
@@ -3336,7 +3320,7 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
- "statev2",
+ "state",
  "system-bus",
  "task-driver",
  "test-helpers",
@@ -4869,7 +4853,7 @@ dependencies = [
  "libp2p-swarm",
  "libp2p-swarm-derive",
  "serde_json",
- "statev2",
+ "state",
  "system-bus",
  "tokio",
  "tracing",
@@ -6192,7 +6176,7 @@ dependencies = [
  "network-manager",
  "price-reporter",
  "proof-manager",
- "statev2",
+ "state",
  "system-bus",
  "task-driver",
  "tokio",
@@ -7162,40 +7146,6 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "base64 0.13.1",
- "circuit-types",
- "circuits",
- "common",
- "config",
- "constants",
- "crossterm 0.26.1",
- "external-api",
- "futures",
- "futures-util",
- "gossip-api",
- "indexmap 2.1.0",
- "itertools 0.10.5",
- "job-types",
- "lazy_static",
- "libp2p",
- "num-bigint",
- "rand 0.8.5",
- "renegade-crypto",
- "serde",
- "serde_json",
- "system-bus",
- "tokio",
- "tracing",
- "tui",
- "tui-logger",
- "util",
- "uuid 1.7.0",
-]
-
-[[package]]
-name = "statev2"
-version = "0.1.0"
-dependencies = [
  "circuit-types",
  "common",
  "config",
@@ -7461,7 +7411,7 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
- "statev2",
+ "state",
  "system-bus",
  "test-helpers",
  "tokio",

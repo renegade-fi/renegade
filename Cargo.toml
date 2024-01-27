@@ -12,7 +12,6 @@ members = [
 	"gossip-api",
 	"renegade-crypto",
 	"state",
-	"statev2",
 	"system-bus",
 	"task-driver",
 	"test-helpers",
