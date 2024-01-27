@@ -1849,6 +1849,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossterm"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f476fe445d41c9e991fd07515a6f463074b782242ccf4a5b7b1d1012e70824df"
+dependencies = [
+ "bitflags 2.4.2",
+ "crossterm_winapi",
+ "libc",
+ "mio",
+ "parking_lot 0.12.1",
+ "signal-hook",
+ "signal-hook-mio",
+ "winapi",
+]
+
+[[package]]
 name = "crossterm_winapi"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6175,7 +6191,7 @@ dependencies = [
  "network-manager",
  "price-reporter",
  "proof-manager",
- "state",
+ "statev2",
  "system-bus",
  "task-driver",
  "tokio",
@@ -7184,10 +7200,12 @@ dependencies = [
  "config",
  "constants",
  "crossbeam",
+ "crossterm 0.27.0",
  "external-api",
  "flexbuffers",
  "futures",
  "itertools 0.10.5",
+ "lazy_static",
  "libmdbx",
  "libp2p",
  "multiaddr",
@@ -7203,6 +7221,8 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-slog",
+ "tui",
+ "tui-logger",
  "util",
  "uuid 1.7.0",
 ]

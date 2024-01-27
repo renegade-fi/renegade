@@ -30,6 +30,7 @@ pub mod applicator;
 mod interface;
 pub mod replication;
 pub mod storage;
+pub mod tui;
 
 /// Re-export the state interface
 pub use interface::*;

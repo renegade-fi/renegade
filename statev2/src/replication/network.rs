@@ -28,7 +28,7 @@ pub trait RaftNetwork {
 }
 
 #[cfg(any(test, feature = "mocks"))]
-pub(crate) mod test_helpers {
+pub mod test_helpers {
     //! Test helpers for the network abstraction
     use crossbeam::channel::{
         unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
