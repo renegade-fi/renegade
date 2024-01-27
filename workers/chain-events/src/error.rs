@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt::Display};
 
-use statev2::error::StateError;
+use state::error::StateError;
 
 /// The error type that the event listener emits
 #[derive(Clone, Debug)]

@@ -2,7 +2,7 @@
 
 use std::fmt::Display;
 
-use statev2::error::StateError;
+use state::error::StateError;
 
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]

@@ -228,7 +228,7 @@ impl GossipProtocolExecutor {
         let cluster_id = self.global_state.get_cluster_id()?;
         self.network_channel
             .send(GossipOutbound::Pubsub {
-                topic: self.global_state.get_cluster_id()?.get_management_topic(),
+                topic: cluster_id.get_management_topic(),
                 message: PubsubMessage::ClusterManagement { cluster_id, message },
             })
             .map_err(|err| GossipError::SendMessage(err.to_string()))

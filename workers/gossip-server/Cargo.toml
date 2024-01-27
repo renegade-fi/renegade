@@ -18,7 +18,7 @@ circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
-statev2 = { path = "../../statev2" }
+state = { path = "../../state" }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #

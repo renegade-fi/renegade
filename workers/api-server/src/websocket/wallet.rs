@@ -1,7 +1,7 @@
 //! Handler definitions for wallet websocket topics
 use async_trait::async_trait;
 use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
-use statev2::State;
+use state::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{

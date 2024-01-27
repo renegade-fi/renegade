@@ -10,7 +10,7 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
-use statev2::State;
+use state::State;
 
 use crate::{
     error::{not_found, ApiServerError},
