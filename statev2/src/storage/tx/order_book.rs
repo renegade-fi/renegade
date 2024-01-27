@@ -34,6 +34,11 @@ pub fn nullifier_key(nullifier: Nullifier) -> String {
     format!("nullifier:{nullifier}")
 }
 
+/// The key for the locally managed order set
+pub fn locally_managed_key() -> String {
+    "local-orders".to_string()
+}
+
 // -----------
 // | Getters |
 // -----------
@@ -67,13 +72,36 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         Ok(res)
     }
 
+    /// Get the priority for an order
+    pub fn get_order_priority(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<OrderPriority, StorageError> {
+        // Lookup the order info
+        let info = self
+            .get_order_info(order_id)?
+            .ok_or_else(|| StorageError::NotFound(ERR_ORDER_NOT_FOUND.to_string()))?;
+
+        let cluster_priority = self.get_cluster_priority(&info.cluster)?;
+        let order_priority =
+            self.inner().read(PRIORITIES_TABLE, order_id)?.unwrap_or(ORDER_DEFAULT_PRIORITY);
+
+        Ok(OrderPriority { cluster_priority, order_priority })
+    }
+
+    /// Get the IDs of orders managed by the local peer's cluster
+    pub fn get_local_orders(&self) -> Result<Vec<OrderIdentifier>, StorageError> {
+        let key = locally_managed_key();
+        self.read_set(ORDERS_TABLE, &key)
+    }
+
     /// Get the orders associated with a given nullifier
     pub fn get_orders_by_nullifier(
         &self,
         nullifier: Nullifier,
     ) -> Result<Vec<OrderIdentifier>, StorageError> {
         let key = nullifier_key(nullifier);
-        self.inner().read(ORDERS_TABLE, &key).map(|set| set.unwrap_or_default())
+        self.read_set(ORDERS_TABLE, &key)
     }
 
     /// Get all orders in the book
@@ -211,18 +239,19 @@ impl<'db> StateTxn<'db, RW> {
         self.add_to_nullifier_set(new_nullifier, order_id)
     }
 
-    // --- Helpers --- //
-
-    /// Write a nullifier set
-    #[allow(clippy::needless_pass_by_value)]
-    fn write_nullifier_set(
-        &self,
-        nullifier: Nullifier,
-        order_ids: Vec<OrderIdentifier>,
-    ) -> Result<(), StorageError> {
-        let key = nullifier_key(nullifier);
-        self.inner().write(ORDERS_TABLE, &key, &order_ids)
+    /// Add an order to the locally managed orders set
+    pub fn mark_order_local(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+        let key = locally_managed_key();
+        self.add_to_set(ORDERS_TABLE, &key, order_id)
     }
+
+    /// Remove an order from the locally managed orders set
+    pub fn remove_local_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+        let key = locally_managed_key();
+        self.remove_from_set(ORDERS_TABLE, &key, order_id)
+    }
+
+    // --- Helpers --- //
 
     /// Add an order to a nullifier set
     fn add_to_nullifier_set(
@@ -230,10 +259,8 @@ impl<'db> StateTxn<'db, RW> {
         nullifier: Nullifier,
         order_id: &OrderIdentifier,
     ) -> Result<(), StorageError> {
-        let mut nullifier_set = self.get_orders_by_nullifier(nullifier)?;
-        nullifier_set.push(*order_id);
-
-        self.write_nullifier_set(nullifier, nullifier_set)
+        let key = nullifier_key(nullifier);
+        self.add_to_set(ORDERS_TABLE, &key, order_id)
     }
 
     /// Remove an order from a nullifier set
@@ -242,10 +269,8 @@ impl<'db> StateTxn<'db, RW> {
         nullifier: Nullifier,
         order_id: &OrderIdentifier,
     ) -> Result<(), StorageError> {
-        let mut nullifier_set = self.get_orders_by_nullifier(nullifier)?;
-        nullifier_set.retain(|id| id != order_id);
-
-        self.write_nullifier_set(nullifier, nullifier_set)
+        let key = nullifier_key(nullifier);
+        self.remove_from_set(ORDERS_TABLE, &key, order_id)
     }
 }
 
@@ -405,5 +430,41 @@ mod test {
 
         let stored_order = tx.get_order_info(&order2.id).unwrap().unwrap();
         assert_eq!(stored_order, order2);
+    }
+
+    /// Tests adding and removing local orders
+    #[test]
+    fn test_local_orders() {
+        let db = mock_db();
+        db.create_table(ORDERS_TABLE).unwrap();
+
+        // Write a few orders to the book and mark them as local
+        let order1 = dummy_network_order();
+        let order2 = dummy_network_order();
+        let tx = db.new_write_tx().unwrap();
+        tx.write_order(&order1).unwrap();
+        tx.write_order(&order2).unwrap();
+        tx.mark_order_local(&order1.id).unwrap();
+        tx.mark_order_local(&order2.id).unwrap();
+        tx.commit().unwrap();
+
+        // Check that all orders are marked as local
+        let tx = db.new_read_tx().unwrap();
+        let local_orders = tx.get_local_orders().unwrap();
+        assert!(local_orders.contains(&order1.id));
+        assert!(local_orders.contains(&order2.id));
+        assert_eq!(local_orders.len(), 2);
+
+        // Remove one order from the local orders set
+        let tx = db.new_write_tx().unwrap();
+        tx.remove_local_order(&order2.id).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the correct order is removed and the others remain
+        let tx = db.new_read_tx().unwrap();
+        let local_orders = tx.get_local_orders().unwrap();
+        assert!(local_orders.contains(&order1.id));
+        assert!(!local_orders.contains(&order2.id));
+        assert_eq!(local_orders.len(), 1);
     }
 }

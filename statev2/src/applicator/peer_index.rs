@@ -58,8 +58,8 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod tests {
-    use crate::applicator::{
-        test_helpers::mock_applicator, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE,
+    use crate::{
+        applicator::test_helpers::mock_applicator, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE,
     };
     use common::types::gossip::{mocks::mock_peer, PeerInfo, WrappedPeerId};
 

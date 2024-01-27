@@ -10,7 +10,7 @@ use itertools::Itertools;
 use rand::{seq::SliceRandom, thread_rng};
 use task_driver::settle_match_internal::SettleMatchInternalTask;
 use tracing::log;
-use util::matching_engine::match_orders;
+use util::{matching_engine::match_orders, res_some};
 
 use crate::{
     error::HandshakeManagerError,
@@ -47,15 +47,13 @@ impl HandshakeExecutor {
         let my_order = wallet
             .orders
             .get(&network_order.id)
-            .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_ORDER.to_string()))?;
-        let (my_proof, my_witness) =
-            self.get_validity_proof_and_witness(&network_order.id).await.ok_or_else(|| {
-                HandshakeManagerError::StateNotFound(ERR_MISSING_PROOFS.to_string())
-            })?;
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
+        let (my_proof, my_witness) = self
+            .get_validity_proof_and_witness(&network_order.id)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_MISSING_PROOFS.to_string()))?;
 
         // Fetch all other orders that are ready for matches
-        let other_orders =
-            self.global_state.read_order_book().await.get_local_scheduleable_orders().await;
+        let other_orders = self.global_state.get_locally_matchable_orders()?;
 
         // Sample a price to match the order at
         let (base, quote) = self.token_pair_for_order(my_order);
@@ -82,23 +80,21 @@ impl HandshakeExecutor {
             // Same wallet
             let wallet_id = self
                 .global_state
-                .read_wallet_index()
-                .await
-                .get_wallet_for_order(order_id)
-                .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
+                .get_wallet_for_order(order_id)?
+                .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
             if wallet_id == wallet.wallet_id {
                 continue;
             }
 
             // Lookup the witness used for this order
             let (other_proof, other_witness) =
-                match self.get_validity_proof_and_witness(order_id).await {
+                match self.get_validity_proof_and_witness(order_id)? {
                     Some(proof) => proof,
                     None => continue,
                 };
 
             // Lookup the other order and match on it
-            let res = match self.global_state.get_order(order_id).await {
+            let res = match self.global_state.get_managed_order(order_id)? {
                 Some(order) => match_orders(
                     my_order,
                     &order,
@@ -152,15 +148,16 @@ impl HandshakeExecutor {
     }
 
     /// Get the validity proof and witness for a given order
-    async fn get_validity_proof_and_witness(
+    fn get_validity_proof_and_witness(
         &self,
         order_id: &OrderIdentifier,
-    ) -> Option<(OrderValidityProofBundle, OrderValidityWitnessBundle)> {
-        let locked_order_book = self.global_state.read_order_book().await;
-        let proof = locked_order_book.get_validity_proofs(order_id).await?;
-        let witness = locked_order_book.get_validity_proof_witnesses(order_id).await?;
+    ) -> Result<Option<(OrderValidityProofBundle, OrderValidityWitnessBundle)>, HandshakeManagerError>
+    {
+        let state = &self.global_state;
+        let proof = res_some!(state.get_validity_proofs(order_id)?);
+        let witness = res_some!(state.get_validity_proof_witness(order_id)?);
 
-        Some((proof, witness))
+        Ok(Some((proof, witness)))
     }
 
     /// Fetch the order and wallet for the given order identifier
@@ -168,20 +165,16 @@ impl HandshakeExecutor {
         &self,
         order: &OrderIdentifier,
     ) -> Result<(NetworkOrder, Wallet), HandshakeManagerError> {
-        let order = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_order_info(order)
-            .await
-            .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_ORDER.to_string()))?;
+        let state = &self.global_state;
+        let order = state
+            .get_order(order)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
 
-        let locked_wallet_index = self.global_state.read_wallet_index().await;
-        let wallet = match locked_wallet_index.get_wallet_for_order(&order.id) {
-            Some(wallet) => locked_wallet_index.get_wallet(&wallet).await,
+        let wallet = match state.get_wallet_for_order(&order.id)? {
+            Some(wallet) => state.get_wallet(&wallet)?,
             None => None,
         }
-        .ok_or_else(|| HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string()))?;
+        .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
 
         Ok((order, wallet))
     }
