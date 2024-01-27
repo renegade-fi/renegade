@@ -2,6 +2,8 @@
 
 use std::fmt::Display;
 
+use statev2::error::StateError;
+
 /// The core error type for the handshake manager
 #[derive(Clone, Debug)]
 pub enum HandshakeManagerError {
@@ -24,11 +26,8 @@ pub enum HandshakeManagerError {
     SetupError(String),
     /// An error executing a settlement task
     TaskError(String),
-    /// A state element was referenced, but cannot be found locally
-    ///
-    /// This may happen if, for example, an order is cancelled during the course
-    /// of a match
-    StateNotFound(String),
+    /// Error interacting with global state
+    State(String),
     /// Error verifying a proof
     VerificationError(String),
 }
@@ -36,5 +35,11 @@ pub enum HandshakeManagerError {
 impl Display for HandshakeManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<StateError> for HandshakeManagerError {
+    fn from(value: StateError) -> Self {
+        HandshakeManagerError::State(value.to_string())
     }
 }

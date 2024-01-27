@@ -141,10 +141,18 @@ pub mod test_helpers {
 
     /// Create a mock database in a temporary location
     pub fn mock_db() -> DB {
+        // Open the DB
         let path = tmp_db_path();
         let config = DbConfig { path: path.to_string() };
 
-        DB::new(&config).unwrap()
+        let db = DB::new(&config).unwrap();
+
+        // Setup the tables
+        let tx = db.new_write_tx().unwrap();
+        tx.setup_tables().unwrap();
+        tx.commit().unwrap();
+
+        db
     }
 
     /// Create a mock state instance

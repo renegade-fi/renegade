@@ -33,6 +33,10 @@ const DEFAULT_TICK_INTERVAL_MS: u64 = 10; // 10 milliseconds
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
 
+// -------------------
+// | State Interface |
+// -------------------
+
 /// A handle on the state that allows workers throughout the node to access the
 /// replication and durability primitives backing the state machine
 #[derive(Clone)]
@@ -53,6 +57,11 @@ impl State {
         // Open up the DB
         let db = DB::new(&DbConfig { path: config.db_path.clone() }).map_err(StateError::Db)?;
         let db = Arc::new(db);
+
+        // Setup the tables in the DB
+        let tx = db.new_write_tx()?;
+        tx.setup_tables()?;
+        tx.commit()?;
 
         // Create a proposal queue and the raft config
         let (proposal_send, proposal_recv) = unbounded();

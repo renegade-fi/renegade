@@ -1,6 +1,8 @@
 //! Helpers for proposing wallet index changes and reading the index
 
+use circuit_types::order::Order;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletIdentifier};
+use util::res_some;
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
@@ -16,6 +18,16 @@ impl State {
         tx.commit()?;
 
         Ok(wallet)
+    }
+
+    /// Get the plaintext order for a locally managed order ID
+    pub fn get_managed_order(&self, id: &OrderIdentifier) -> Result<Option<Order>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet_id = res_some!(tx.get_wallet_for_order(id)?);
+        let wallet = res_some!(tx.get_wallet(&wallet_id)?);
+        tx.commit()?;
+
+        Ok(wallet.orders.get(id).cloned())
     }
 
     /// Get the wallet that contains the given order ID

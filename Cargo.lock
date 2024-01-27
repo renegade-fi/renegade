@@ -3315,7 +3315,7 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
- "state",
+ "statev2",
  "system-bus",
  "task-driver",
  "test-helpers",

@@ -7,10 +7,7 @@ use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
 use system_bus::SystemBus;
 
-use crate::{
-    storage::db::DB, StateTransition, CLUSTER_MEMBERSHIP_TABLE, ORDERS_TABLE,
-    ORDER_TO_WALLET_TABLE, PEER_INFO_TABLE, PRIORITIES_TABLE, WALLETS_TABLE,
-};
+use crate::{storage::db::DB, StateTransition};
 
 use self::error::StateApplicatorError;
 
@@ -55,8 +52,6 @@ pub struct StateApplicator {
 impl StateApplicator {
     /// Create a new state applicator
     pub fn new(config: StateApplicatorConfig) -> Result<Self> {
-        Self::create_db_tables(&config.db)?;
-
         Ok(Self { config })
     }
 
@@ -74,24 +69,6 @@ impl StateApplicator {
             StateTransition::RemovePeer { peer_id } => self.remove_peer(peer_id),
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
-    }
-
-    /// Create tables in the DB if not already created
-    fn create_db_tables(db: &DB) -> Result<()> {
-        for table in [
-            PEER_INFO_TABLE,
-            CLUSTER_MEMBERSHIP_TABLE,
-            PRIORITIES_TABLE,
-            ORDERS_TABLE,
-            ORDER_TO_WALLET_TABLE,
-            WALLETS_TABLE,
-        ]
-        .iter()
-        {
-            db.create_table(table).map_err(Into::<StateApplicatorError>::into)?;
-        }
-
-        Ok(())
     }
 
     /// Get a reference to the db
