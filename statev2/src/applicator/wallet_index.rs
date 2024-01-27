@@ -47,8 +47,8 @@ impl StateApplicator {
         // Any new orders in the wallet should be added to the orderbook
         let nullifier = wallet.get_wallet_nullifier();
         for (id, _order) in wallet.orders.iter().filter(|(_id, order)| !order.is_zero()) {
-            Self::add_order_with_tx(
-                &NetworkOrder::new(
+            self.add_order_with_tx(
+                NetworkOrder::new(
                     *id,
                     nullifier,
                     self.config.cluster_id.clone(),
@@ -82,7 +82,7 @@ pub(crate) mod test {
     };
     use uuid::Uuid;
 
-    use crate::applicator::{test_helpers::mock_applicator, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
+    use crate::{applicator::test_helpers::mock_applicator, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
 
     // -----------
     // | Helpers |
