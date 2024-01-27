@@ -2,6 +2,8 @@
 
 use std::{error::Error, fmt::Display};
 
+use statev2::error::StateError;
+
 /// The error type that the event listener emits
 #[derive(Clone, Debug)]
 pub enum OnChainEventListenerError {
@@ -13,6 +15,8 @@ pub enum OnChainEventListenerError {
     SendMessage(String),
     /// Error setting up the on-chain event listener
     Setup(String),
+    /// Error interacting with global state
+    State(String),
     /// The stream unexpectedly stopped
     StreamEnded,
     /// An error starting up a task
@@ -25,3 +29,9 @@ impl Display for OnChainEventListenerError {
     }
 }
 impl Error for OnChainEventListenerError {}
+
+impl From<StateError> for OnChainEventListenerError {
+    fn from(e: StateError) -> Self {
+        OnChainEventListenerError::State(e.to_string())
+    }
+}

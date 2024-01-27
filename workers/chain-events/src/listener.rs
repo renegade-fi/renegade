@@ -7,13 +7,13 @@ use arbitrum_client::{
     client::ArbitrumClient,
     constants::{MERKLE_NODE_CHANGED_EVENT_NAME, NULLIFIER_SPENT_EVENT_NAME},
 };
-use common::types::{wallet::WalletIdentifier, CancelChannel};
+use common::types::{wallet::Wallet, CancelChannel};
 use crossbeam::channel::Sender as CrossbeamSender;
 use ethers::{prelude::StreamExt, types::Filter};
 use gossip_api::gossip::GossipOutbound;
 use job_types::{handshake_manager::HandshakeExecutionJob, proof_manager::ProofManagerJob};
 use renegade_crypto::fields::u256_to_scalar;
-use state::RelayerState;
+use statev2::State;
 use task_driver::{
     driver::TaskDriver,
     update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskError},
@@ -45,7 +45,7 @@ pub struct OnChainEventListenerConfig {
     /// An arbitrum client for listening to events
     pub arbitrum_client: ArbitrumClient,
     /// A copy of the relayer global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// A sender to the handshake manager's job queue, used to enqueue
     /// MPC shootdown jobs
     pub handshake_manager_job_queue: TokioSender<HandshakeExecutionJob>,
@@ -79,7 +79,7 @@ pub struct OnChainEventListenerExecutor {
     /// A copy of the config that the executor maintains
     config: OnChainEventListenerConfig,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
 }
 
 impl OnChainEventListenerExecutor {
@@ -162,7 +162,7 @@ impl OnChainEventListenerExecutor {
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
         // Nullify any orders that used this nullifier in their validity proof
-        self.config.global_state.nullify_orders(nullifier).await;
+        self.config.global_state.nullify_orders(nullifier)?.await?;
 
         Ok(())
     }
@@ -177,14 +177,11 @@ impl OnChainEventListenerExecutor {
             return Ok(());
         }
 
-        let wallet_ids = self.global_state.read_wallet_index().await.get_all_wallet_ids();
-        for id in wallet_ids.iter() {
+        for wallet in self.global_state.get_all_wallets()?.into_iter() {
             // Increment the staleness on the wallet
-            let staleness = self.global_state.get_wallet_merkle_staleness(id).await.unwrap();
-
-            let last_val = staleness.fetch_add(1, Ordering::Relaxed);
+            let last_val = wallet.merkle_staleness.fetch_add(1, Ordering::Relaxed);
             if last_val > self.config.max_root_staleness {
-                self.update_wallet_merkle_path(id).await?;
+                self.update_wallet_merkle_path(wallet).await?;
             }
         }
 
@@ -197,11 +194,8 @@ impl OnChainEventListenerExecutor {
     /// on subsequent events streamed into the listener
     async fn update_wallet_merkle_path(
         &self,
-        wallet_id: &WalletIdentifier,
+        wallet: Wallet,
     ) -> Result<(), OnChainEventListenerError> {
-        let wallet =
-            self.global_state.read_wallet_index().await.get_wallet(wallet_id).await.unwrap();
-
         let task = match UpdateMerkleProofTask::new(
             wallet,
             self.arbitrum_client().clone(),
