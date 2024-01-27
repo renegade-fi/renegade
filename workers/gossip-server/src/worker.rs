@@ -9,7 +9,7 @@ use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::gossip_server::GossipServerJob;
 use libp2p::Multiaddr;
-use statev2::State;
+use state::State;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};

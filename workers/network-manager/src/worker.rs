@@ -11,7 +11,7 @@ use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob};
-use statev2::State;
+use state::State;
 use system_bus::SystemBus;
 
 use libp2p::multiaddr::{Multiaddr, Protocol};

@@ -30,7 +30,7 @@ use libp2p::{
     swarm::SwarmEvent,
     Multiaddr, Swarm,
 };
-use statev2::State;
+use state::State;
 use system_bus::SystemBus;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;

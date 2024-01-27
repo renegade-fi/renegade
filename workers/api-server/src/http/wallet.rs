@@ -29,7 +29,7 @@ use hyper::{HeaderMap, StatusCode};
 use job_types::proof_manager::ProofManagerJob;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
-use statev2::State;
+use state::State;
 use task_driver::{
     create_new_wallet::NewWalletTask, driver::TaskDriver, lookup_wallet::LookupWalletTask,
     update_wallet::UpdateWalletTask,

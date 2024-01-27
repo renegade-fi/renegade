@@ -7,7 +7,7 @@ use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::{price_reporter::PriceReporterManagerJob, proof_manager::ProofManagerJob};
-use statev2::State;
+use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
