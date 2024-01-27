@@ -4864,7 +4864,7 @@ dependencies = [
  "libp2p-swarm",
  "libp2p-swarm-derive",
  "serde_json",
- "state",
+ "statev2",
  "system-bus",
  "tokio",
  "tracing",

@@ -2,7 +2,7 @@
 
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use config::RelayerConfig;
-use libp2p::identity::Keypair;
+use libp2p::{core::Multiaddr, identity::Keypair};
 
 use crate::{error::StateError, State, NODE_METADATA_TABLE};
 
@@ -41,6 +41,13 @@ impl State {
     // -----------
     // | Setters |
     // -----------
+
+    /// Set the known public address of the local peer when discovered
+    pub fn update_local_peer_addr(&self, addr: &Multiaddr) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+        tx.set_local_addr(addr)?;
+        Ok(tx.commit()?)
+    }
 
     /// Setup the node metadata table from a relayer config
     pub fn setup_node_metadata(&self, config: &RelayerConfig) -> Result<(), StateError> {
