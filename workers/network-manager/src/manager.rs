@@ -30,7 +30,7 @@ use libp2p::{
     swarm::SwarmEvent,
     Multiaddr, Swarm,
 };
-use state::RelayerState;
+use statev2::State;
 use system_bus::SystemBus;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
@@ -104,17 +104,16 @@ pub struct NetworkManager {
 /// messages from other peers.
 impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
-    pub(super) async fn update_global_state_after_startup(&self) {
+    pub async fn update_global_state_after_startup(&self) -> Result<(), NetworkManagerError> {
         // Add self to peer info index
-        self.config
-            .global_state
-            .add_peer_unchecked(PeerInfo::new_with_cluster_secret_key(
-                self.local_peer_id,
-                self.cluster_id.clone(),
-                self.local_addr.clone(),
-                self.config.cluster_keypair.as_ref().unwrap(),
-            ))
-            .await;
+        let waiter = self.config.global_state.add_peer(PeerInfo::new_with_cluster_secret_key(
+            self.local_peer_id,
+            self.cluster_id.clone(),
+            self.local_addr.clone(),
+            self.config.cluster_keypair.as_ref().unwrap(),
+        ))?;
+
+        Ok(waiter.await?)
     }
 
     /// Setup pubsub subscriptions for the network manager
@@ -186,7 +185,7 @@ pub(super) struct NetworkManagerExecutor {
     /// The sender for the handshake manager's work queue
     handshake_work_queue: TokioSender<HandshakeExecutionJob>,
     /// A reference to the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A reference to the system bus for consuming internal pubsub events
     system_bus: SystemBus<SystemBusMessage>,
     /// The cancel channel that the coordinator thread may use to cancel this
@@ -206,7 +205,7 @@ impl NetworkManagerExecutor {
         job_channel: UnboundedReceiver<GossipOutbound>,
         gossip_work_queue: TokioSender<GossipServerJob>,
         handshake_work_queue: TokioSender<HandshakeExecutionJob>,
-        global_state: RelayerState,
+        global_state: State,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Self {

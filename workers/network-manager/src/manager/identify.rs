@@ -28,12 +28,12 @@ impl NetworkManagerExecutor {
 
                 // Update the addr in the global state
                 log::info!("discovered local peer's public IP: {:?}", local_addr);
-                self.global_state.update_local_peer_addr(local_addr).await;
+                self.global_state.update_local_peer_addr(&local_addr)?;
                 self.discovered_identity = true;
 
                 // Optimistically broadcast the discovered identity to the network via
                 // the heartbeat sub-protocol
-                for peer in self.global_state.read_peer_index().await.get_all_peer_ids() {
+                for peer in self.global_state.get_peer_info_map()?.into_keys() {
                     if let Err(e) =
                         self.gossip_work_queue.send(GossipServerJob::ExecuteHeartbeat(peer))
                     {
