@@ -1228,7 +1228,7 @@ dependencies = [
  "job-types",
  "lazy_static",
  "renegade-crypto",
- "state",
+ "statev2",
  "task-driver",
  "tokio",
  "tracing",
