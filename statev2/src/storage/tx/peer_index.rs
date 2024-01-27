@@ -81,13 +81,7 @@ impl<'db> StateTxn<'db, RW> {
         peer_id: &WrappedPeerId,
         cluster_id: &ClusterId,
     ) -> Result<(), StorageError> {
-        let mut peers = self.get_cluster_peers(cluster_id)?;
-        if !peers.contains(peer_id) {
-            peers.push(*peer_id);
-            self.inner().write(CLUSTER_MEMBERSHIP_TABLE, cluster_id, &peers)?;
-        }
-
-        Ok(())
+        self.add_to_set(CLUSTER_MEMBERSHIP_TABLE, cluster_id, peer_id)
     }
 
     /// Remove a peer from the given cluster list
@@ -96,13 +90,7 @@ impl<'db> StateTxn<'db, RW> {
         peer_id: &WrappedPeerId,
         cluster_id: &ClusterId,
     ) -> Result<(), StorageError> {
-        let mut peers = self.get_cluster_peers(cluster_id)?;
-        if let Some(pos) = peers.iter().position(|p| p == peer_id) {
-            peers.remove(pos);
-            self.inner().write(CLUSTER_MEMBERSHIP_TABLE, cluster_id, &peers)?;
-        }
-
-        Ok(())
+        self.remove_from_set(CLUSTER_MEMBERSHIP_TABLE, cluster_id, peer_id)
     }
 }
 
