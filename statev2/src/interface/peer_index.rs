@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 
-use crate::{error::StateError, State};
+use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
 impl State {
     // -----------
@@ -39,5 +39,14 @@ impl State {
         tx.commit()?;
 
         Ok(peers)
+    }
+
+    // -----------
+    // | Setters |
+    // -----------
+
+    /// Add a peer to the peer index
+    pub fn add_peer(&self, peer: PeerInfo) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::AddPeers { peers: vec![peer] })
     }
 }

@@ -2,8 +2,10 @@
 
 use std::fmt::Display;
 
+use statev2::error::StateError;
+
 /// The generic error type for the network manager
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum NetworkManagerError {
     /// Authentication error, e.g. failed signature verification
     Authentication(String),
@@ -17,10 +19,18 @@ pub enum NetworkManagerError {
     SetupError(String),
     /// An error serializing or deserializing a message
     Serialization(String),
+    /// An error interacting with global state
+    State(String),
 }
 
 impl Display for NetworkManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<StateError> for NetworkManagerError {
+    fn from(value: StateError) -> Self {
+        NetworkManagerError::State(value.to_string())
     }
 }

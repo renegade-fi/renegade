@@ -30,7 +30,7 @@ common = { path = "../../common" }
 external-api = { path = "../../external-api" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
-state = { path = "../../state" }
+statev2 = { path = "../../statev2" }
 system-bus = { path = "../../system-bus" }
 util = { path = "../../util" }
 
