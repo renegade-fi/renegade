@@ -11,7 +11,7 @@ use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob};
-use state::RelayerState;
+use statev2::State;
 use system_bus::SystemBus;
 
 use libp2p::multiaddr::{Multiaddr, Protocol};
@@ -35,7 +35,6 @@ use super::{
 const NETWORK_MANAGER_N_THREADS: usize = 3;
 
 /// The worker configuration for the network manager
-#[derive(Debug)]
 pub struct NetworkManagerConfig {
     /// The port to listen for inbound traffic on
     pub port: u16,
@@ -64,7 +63,7 @@ pub struct NetworkManagerConfig {
     /// The system bus, used to stream internal pubsub messages
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The global shared state of the local relayer
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The channel on which the coordinator can send a cancel signal to
     /// all network worker threads
     pub cancel_channel: CancelChannel,
@@ -75,8 +74,8 @@ impl Worker for NetworkManager {
     type Error = NetworkManagerError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        let local_peer_id = config.global_state.local_peer_id;
-        let local_keypair = config.global_state.local_keypair.clone();
+        let local_peer_id = config.global_state.get_peer_id()?;
+        let local_keypair = config.global_state.get_node_keypair()?;
 
         // If the local node is given a known dialable addr for itself at startup,
         // construct the local addr directly, otherwise set it to the canonical
@@ -141,10 +140,7 @@ impl Worker for NetworkManager {
         )?;
 
         // Add any bootstrap addresses to the peer info table
-        let peer_index = block_on(async {
-            self.config.global_state.read_peer_index().await.get_info_map().await
-        });
-
+        let peer_index = self.config.global_state.get_peer_info_map()?;
         for (peer_id, peer_info) in peer_index.iter() {
             log::info!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
             behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
@@ -157,7 +153,7 @@ impl Worker for NetworkManager {
         swarm.listen_on(addr).map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
-        block_on(self.update_global_state_after_startup());
+        block_on(self.update_global_state_after_startup())?;
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;
 
