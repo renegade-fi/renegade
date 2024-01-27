@@ -18,7 +18,7 @@ common = { path = "../../common" }
 renegade-crypto = { path = "../../renegade-crypto" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
-state = { path = "../../state" }
+statev2 = { path = "../../statev2" }
 task-driver = { path = "../../task-driver" }
 
 # === Misc Dependencies === #

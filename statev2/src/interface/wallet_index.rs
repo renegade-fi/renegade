@@ -30,6 +30,15 @@ impl State {
         Ok(wallet_id)
     }
 
+    /// Get the ids of all wallets managed by the local relayer
+    pub fn get_all_wallets(&self) -> Result<Vec<Wallet>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallets = tx.get_all_wallets()?;
+        tx.commit()?;
+
+        Ok(wallets)
+    }
+
     // -----------
     // | Setters |
     // -----------

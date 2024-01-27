@@ -14,12 +14,18 @@ impl State {
     /// Get the peer info for a given peer
     pub fn get_peer_info(&self, peer_id: &WrappedPeerId) -> Result<Option<PeerInfo>, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_peer_info(peer_id)?)
+        let peer_info = tx.get_peer_info(peer_id)?;
+        tx.commit()?;
+
+        Ok(peer_info)
     }
 
     /// Get the peer info map from the peer index
     pub fn get_peer_info_map(&self) -> Result<HashMap<WrappedPeerId, PeerInfo>, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_info_map()?)
+        let info_map = tx.get_info_map()?;
+        tx.commit()?;
+
+        Ok(info_map)
     }
 }
