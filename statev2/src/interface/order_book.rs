@@ -20,7 +20,10 @@ impl State {
         order_id: &OrderIdentifier,
     ) -> Result<Option<NetworkOrder>, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_order_info(order_id)?)
+        let info = tx.get_order_info(order_id)?;
+        tx.commit()?;
+
+        Ok(info)
     }
 
     /// Get the validity proofs for an order
@@ -44,7 +47,10 @@ impl State {
     /// Get all known orders in the book
     pub fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StateError> {
         let tx = self.db.new_read_tx()?;
-        Ok(tx.get_all_orders()?)
+        let orders = tx.get_all_orders()?;
+        tx.commit()?;
+
+        Ok(orders)
     }
 
     // -----------
