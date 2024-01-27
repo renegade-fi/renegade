@@ -14,7 +14,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::ProofManagerJob;
 use serde::Serialize;
-use statev2::{error::StateError, State};
+use state::{error::StateError, State};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{

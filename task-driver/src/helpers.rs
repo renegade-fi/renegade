@@ -36,7 +36,7 @@ use gossip_api::{
 };
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use num_bigint::BigUint;
-use statev2::State;
+use state::State;
 use tokio::sync::{
     mpsc::UnboundedSender as TokioSender,
     oneshot::{self, Receiver as TokioReceiver},

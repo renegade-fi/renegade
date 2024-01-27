@@ -28,7 +28,7 @@ use eyre::{eyre, Result};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_u64;
-use statev2::State;
+use state::State;
 use task_driver::{settle_match::SettleMatchTask, settle_match_internal::SettleMatchInternalTask};
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};

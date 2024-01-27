@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use statev2::error::StateError;
+use state::error::StateError;
 
 /// Defines an error for Gossip operation
 #[derive(Clone, Debug)]
