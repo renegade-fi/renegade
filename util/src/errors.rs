@@ -18,5 +18,17 @@ macro_rules! err_str {
 macro_rules! raw_err_str {
     ($fmt:expr $(, $($arg:tt)*)?) => {
         |e| format!($fmt $(, $($arg)*)?, e)
+    }
+}
+
+/// A helper macro for returning early in the case that an option is `None`
+/// wherein the return type is `Result<Option<T>, E>`
+#[macro_export]
+macro_rules! res_some {
+    ($x:expr) => {
+        match $x {
+            Some(x) => x,
+            None => return Ok(None),
+        }
     };
 }

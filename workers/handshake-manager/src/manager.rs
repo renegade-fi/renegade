@@ -38,7 +38,7 @@ use job_types::{
 };
 use libp2p::request_response::ResponseChannel;
 use portpicker::pick_unused_port;
-use state::RelayerState;
+use statev2::State;
 use std::{
     convert::TryInto,
     thread::JoinHandle,
@@ -79,6 +79,8 @@ pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
 pub(super) const ERR_NO_WALLET: &str = "wallet not found in state";
 /// Error message emitted when an order cannot be found in the global state
 pub(super) const ERR_NO_ORDER: &str = "order not found in state";
+/// Error message emitted when an order validity proof cannot be found
+const ERR_NO_PROOF: &str = "no order validity proof found for order";
 /// Error message emitted when price data cannot be found for a token pair
 const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
@@ -125,12 +127,12 @@ pub struct HandshakeExecutor {
     pub(crate) network_channel: TokioSender<GossipOutbound>,
     /// The pricer reporter's work queue, used for fetching price reports
     pub(crate) price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
-    /// A Starknet client used for interacting with the contract
+    /// An Arbitrum client used for interacting with the contract
     pub(crate) arbitrum_client: ArbitrumClient,
     /// The channel on which to send proof manager jobs
     pub(crate) proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The global relayer state
-    pub(crate) global_state: RelayerState,
+    pub(crate) global_state: State,
     /// The task driver, used to manage long-running async tasks
     pub(crate) task_driver: TaskDriver,
     /// The system bus used to publish internal broadcast messages
@@ -149,7 +151,7 @@ impl HandshakeExecutor {
         price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
         arbitrum_client: ArbitrumClient,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-        global_state: RelayerState,
+        global_state: State,
         task_driver: TaskDriver,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
@@ -284,15 +286,14 @@ impl HandshakeExecutor {
 
                 // Fetch the validity proofs of the party
                 let (party0_proof, party1_proof) = {
-                    let locked_order_book = self.global_state.read_order_book().await;
-                    let local_validity_proof = locked_order_book
-                        .get_validity_proofs(&order_state.local_order_id)
-                        .await
-                        .unwrap();
-                    let remote_validity_proof = locked_order_book
-                        .get_validity_proofs(&order_state.peer_order_id)
-                        .await
-                        .unwrap();
+                    let local_validity_proof = self
+                        .global_state
+                        .get_validity_proofs(&order_state.local_order_id)?
+                        .ok_or_else(|| HandshakeManagerError::State(ERR_NO_PROOF.to_string()))?;
+                    let remote_validity_proof = self
+                        .global_state
+                        .get_validity_proofs(&order_state.peer_order_id)?
+                        .ok_or_else(|| HandshakeManagerError::State(ERR_NO_PROOF.to_string()))?;
 
                     match order_state.role {
                         ConnectionRole::Dialer => (local_validity_proof, remote_validity_proof),
@@ -318,9 +319,7 @@ impl HandshakeExecutor {
 
                 // Record the match in the cache
                 self.record_completed_match(request_id).await?;
-                self.submit_match(party0_proof, party1_proof, order_state, res).await;
-
-                Ok(())
+                self.submit_match(party0_proof, party1_proof, order_state, res).await.map(|_| ())
             },
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
@@ -341,7 +340,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         if let Some(local_order_id) = self.choose_match_proposal(peer_order_id).await {
             // Choose a peer to match this order with
-            let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id).await;
+            let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id)?;
             if managing_peer.is_none() {
                 // TODO: Lower the order priority for this order
                 return Ok(());
@@ -357,7 +356,7 @@ impl HandshakeExecutor {
                     message: GossipRequest::Handshake {
                         request_id,
                         message: HandshakeMessage::ProposeMatchCandidate {
-                            peer_id: self.global_state.local_peer_id(),
+                            peer_id: self.global_state.get_peer_id()?,
                             sender_order: local_order_id,
                             peer_order: peer_order_id,
                             price_vector: price_vector.clone(),
@@ -367,10 +366,10 @@ impl HandshakeExecutor {
                 .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
             // Determine the execution price for the new order
-            let order =
-                self.global_state.get_order(&local_order_id).await.ok_or_else(|| {
-                    HandshakeManagerError::StateNotFound(ERR_NO_WALLET.to_string())
-                })?;
+            let order = self
+                .global_state
+                .get_managed_order(&local_order_id)?
+                .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
             let (base, quote) = self.token_pair_for_order(&order);
 
             let execution_price = price_vector
@@ -466,8 +465,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         // Only accept the proposed order pair if the peer's order has already been
         // verified by the local node
-        let peer_order_info =
-            self.global_state.read_order_book().await.get_order_info(&sender_order).await;
+        let peer_order_info = self.global_state.get_order(&sender_order)?;
         if peer_order_info.is_none()
             || peer_order_info.unwrap().state != NetworkOrderState::Verified
         {
@@ -482,7 +480,7 @@ impl HandshakeExecutor {
 
         // Do not accept handshakes on local orders that we don't have
         // validity proof or witness for
-        if !self.global_state.read_order_book().await.order_ready_for_handshake(&my_order).await {
+        if !self.global_state.order_ready_for_match(&my_order)? {
             return self.reject_match_proposal(
                 request_id,
                 sender_order,
@@ -553,7 +551,7 @@ impl HandshakeExecutor {
         // Send a pubsub message indicating intent to match on the given order pair
         // Cluster peers will then avoid scheduling this match until the match either
         // completes, or the cache entry's invisibility window times out
-        let cluster_id = { self.global_state.local_cluster_id.clone() };
+        let cluster_id = self.global_state.get_cluster_id()?;
         self.network_channel
             .send(GossipOutbound::Pubsub {
                 topic: cluster_id.get_management_topic(),
@@ -565,7 +563,7 @@ impl HandshakeExecutor {
             .map_err(|err| HandshakeManagerError::SendMessage(err.to_string()))?;
 
         let resp = HandshakeMessage::AcceptMatchCandidate {
-            peer_id: self.global_state.local_peer_id(),
+            peer_id: self.global_state.get_peer_id()?,
             port: local_port,
             previously_matched,
             order1: my_order,
@@ -586,7 +584,7 @@ impl HandshakeExecutor {
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), HandshakeManagerError> {
         let message = HandshakeMessage::RejectMatchCandidate {
-            peer_id: self.global_state.local_peer_id,
+            peer_id: self.global_state.get_peer_id()?,
             peer_order,
             sender_order: local_order,
             reason,
@@ -691,8 +689,7 @@ impl HandshakeExecutor {
     /// Chooses an order to match against a remote order
     async fn choose_match_proposal(&self, peer_order: OrderIdentifier) -> Option<OrderIdentifier> {
         let locked_handshake_cache = self.handshake_cache.read().await;
-        let local_verified_orders =
-            self.global_state.read_order_book().await.get_local_scheduleable_orders().await;
+        let local_verified_orders = self.global_state.get_locally_matchable_orders().ok()?;
 
         // Choose an order that isn't cached
         for order_id in local_verified_orders.iter() {
@@ -717,16 +714,13 @@ impl HandshakeExecutor {
             .await
             .mark_completed(state.local_order_id, state.peer_order_id);
 
-        // Write to global state for debugging
-        self.global_state.mark_order_pair_matched(state.local_order_id, state.peer_order_id).await;
-
         // Update the state of the handshake in the completed state
         self.handshake_state_index.completed(&request_id).await;
 
         // Send a message to cluster peers indicating that the local peer has completed
         // a match Cluster peers should cache the matched order pair as
         // completed and not initiate matches on this pair going forward
-        let cluster_id = self.global_state.local_cluster_id.clone();
+        let cluster_id = self.global_state.get_cluster_id()?;
         self.network_channel
             .send(GossipOutbound::Pubsub {
                 topic: cluster_id.get_management_topic(),
@@ -775,7 +769,9 @@ impl HandshakeExecutor {
         )
         .await
         .map_err(|err| HandshakeManagerError::TaskError(err.to_string()))?;
-        self.task_driver.start_task(task).await.0
+
+        let (id, _handle) = self.task_driver.start_task(task).await;
+        Ok(id)
     }
 }
 
@@ -786,7 +782,7 @@ pub struct HandshakeScheduler {
     /// The UnboundedSender to enqueue jobs on
     job_sender: TokioSender<HandshakeExecutionJob>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// The cancel channel to receive cancel signals on
     cancel: CancelChannel,
 }
@@ -795,7 +791,7 @@ impl HandshakeScheduler {
     /// Construct a new timer
     pub fn new(
         job_sender: TokioSender<HandshakeExecutionJob>,
-        global_state: RelayerState,
+        global_state: State,
         cancel: CancelChannel,
     ) -> Self {
         Self { job_sender, global_state, cancel }
@@ -813,7 +809,7 @@ impl HandshakeScheduler {
                 // Enqueue handshakes periodically according to a timer
                 _ = tokio::time::sleep(refresh_interval) => {
                     // Enqueue a job to handshake with the randomly selected peer
-                    if let Some(order) = self.global_state.choose_handshake_order().await {
+                    if let Some(order) = self.global_state.choose_handshake_order().ok().flatten() {
                         if let Err(e) = self
                             .job_sender
                             .send(HandshakeExecutionJob::PerformHandshake { order })
