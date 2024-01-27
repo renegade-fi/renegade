@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use statev2::error::StateError;
+
 /// Defines an error for Gossip operation
 #[derive(Clone, Debug)]
 pub enum GossipError {
@@ -20,6 +22,8 @@ pub enum GossipError {
     ServerSetup(String),
     /// An error forwarding a message to the network manager
     SendMessage(String),
+    /// An error interacting with the global state
+    State(String),
     /// An error occurred executing an Arbitrum RPC
     Arbitrum(String),
     /// Timer failed to send a heartbeat
@@ -33,5 +37,11 @@ pub enum GossipError {
 impl fmt::Display for GossipError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<StateError> for GossipError {
+    fn from(e: StateError) -> Self {
+        Self::State(e.to_string())
     }
 }
