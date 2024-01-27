@@ -17,7 +17,7 @@ use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
 use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::Serialize;
-use statev2::{error::StateError, State};
+use state::{error::StateError, State};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use uuid::Uuid;

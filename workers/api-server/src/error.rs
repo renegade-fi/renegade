@@ -3,7 +3,7 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use hyper::{Body, Response, StatusCode};
-use statev2::error::StateError;
+use state::error::StateError;
 
 use super::router::{build_500_response, build_response_from_status_code};
 

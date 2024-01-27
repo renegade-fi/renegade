@@ -16,7 +16,7 @@ use common::{
 };
 use constants::Scalar;
 use crossbeam::channel::Sender;
-use statev2::State;
+use state::State;
 use uuid::Uuid;
 
 /// Error message thrown when a nullifier cannot be found

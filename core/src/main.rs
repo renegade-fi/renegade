@@ -29,8 +29,8 @@ use job_types::{
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{manager::PriceReporterManager, worker::PriceReporterManagerConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use statev2::tui::StateTuiApp;
-use statev2::{replication::network::test_helpers::MockNetwork, State};
+use state::tui::StateTuiApp;
+use state::{replication::network::test_helpers::MockNetwork, State};
 use system_bus::SystemBus;
 use task_driver::driver::{TaskDriver, TaskDriverConfig};
 
