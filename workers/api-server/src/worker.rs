@@ -7,7 +7,7 @@ use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::{price_reporter::PriceReporterManagerJob, proof_manager::ProofManagerJob};
-use state::RelayerState;
+use statev2::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
@@ -54,7 +54,7 @@ pub struct ApiServerConfig {
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
     /// The relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// The task driver, used to create and manage long-running async tasks
     pub task_driver: TaskDriver,
     /// The system pubsub bus that all workers have access to
