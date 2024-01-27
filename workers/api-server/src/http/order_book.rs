@@ -7,12 +7,11 @@
 use async_trait::async_trait;
 use external_api::{
     http::order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
-    types::ApiNetworkOrder,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
-use state::RelayerState;
+use statev2::State;
 
 use crate::{
     error::{not_found, ApiServerError},
@@ -42,15 +41,15 @@ pub(super) const GET_NETWORK_ORDER_BY_ID_ROUTE: &str = "/v0/order_book/orders/:o
 // ----------------------
 
 /// Handler for the GET /order_book/orders route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetNetworkOrdersHandler {
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
 }
 
 impl GetNetworkOrdersHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -66,31 +65,24 @@ impl TypedHandler for GetNetworkOrdersHandler {
         _req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let orders: Vec<ApiNetworkOrder> = self
-            .global_state
-            .read_order_book()
-            .await
-            .get_order_book_snapshot()
-            .await
-            .values()
-            .cloned()
-            .map(|order| order.into())
-            .collect_vec();
+        // Fetch all orders from state and convert to api type
+        let all_orders = self.global_state.get_all_orders()?;
+        let orders = all_orders.into_iter().map(Into::into).collect_vec();
 
         Ok(GetNetworkOrdersResponse { orders })
     }
 }
 
 /// Handler for the GET /order_book/orders route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetNetworkOrderByIdHandler {
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
 }
 
 impl GetNetworkOrderByIdHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -107,9 +99,7 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
-        if let Some(order) =
-            self.global_state.read_order_book().await.get_order_info(&order_id).await
-        {
+        if let Some(order) = self.global_state.get_order(&order_id)? {
             Ok(GetNetworkOrderByIdResponse { order: order.into() })
         } else {
             Err(not_found(ERR_ORDER_NOT_FOUND.to_string()))

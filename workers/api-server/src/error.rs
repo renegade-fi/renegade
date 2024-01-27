@@ -3,11 +3,12 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use hyper::{Body, Response, StatusCode};
+use statev2::error::StateError;
 
 use super::router::{build_500_response, build_response_from_status_code};
 
 /// The error type for errors that occur during ApiServer execution
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum ApiServerError {
     /// An http error code, should be forwarded as a response
     HttpStatusCode(StatusCode, String),
@@ -15,6 +16,8 @@ pub enum ApiServerError {
     HttpServerFailure(String),
     /// Error setting up the API server
     Setup(String),
+    /// Error interacting with global state
+    State(StateError),
     /// Websocket server has failed
     WebsocketServerFailure(String),
 }
@@ -22,6 +25,12 @@ pub enum ApiServerError {
 impl Display for ApiServerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<StateError> for ApiServerError {
+    fn from(value: StateError) -> Self {
+        ApiServerError::State(value)
     }
 }
 

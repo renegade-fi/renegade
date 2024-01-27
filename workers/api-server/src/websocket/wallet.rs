@@ -1,7 +1,7 @@
 //! Handler definitions for wallet websocket topics
 use async_trait::async_trait;
 use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
-use state::RelayerState;
+use statev2::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
@@ -27,14 +27,14 @@ const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 #[derive(Clone)]
 pub struct WalletTopicHandler {
     /// A copy of the relayer global state
-    global_state: RelayerState,
+    global_state: State,
     /// A reference to the relayer global system bus
     system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl WalletTopicHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState, system_bus: SystemBus<SystemBusMessage>) -> Self {
+    pub fn new(global_state: State, system_bus: SystemBus<SystemBusMessage>) -> Self {
         Self { global_state, system_bus }
     }
 }
@@ -51,7 +51,7 @@ impl WebsocketTopicHandler for WalletTopicHandler {
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 
         // If the wallet doesn't exist, throw an error
-        if self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await.is_none() {
+        if self.global_state.get_wallet(&wallet_id)?.is_none() {
             return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         }
 

@@ -41,6 +41,12 @@ impl State {
         Ok(order.and_then(|o| o.validity_proof_witnesses))
     }
 
+    /// Get all known orders in the book
+    pub fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        Ok(tx.get_all_orders()?)
+    }
+
     // -----------
     // | Setters |
     // -----------

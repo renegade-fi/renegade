@@ -47,16 +47,16 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     ///
     /// TODO: This method will be expensive with scale, we may want to cache the
     /// heartbeat message
-    pub fn get_info_map(&self) -> HashMap<WrappedPeerId, PeerInfo> {
+    pub fn get_info_map(&self) -> Result<HashMap<WrappedPeerId, PeerInfo>, StorageError> {
         let peer_cursor = self.inner().cursor::<WrappedPeerId, PeerInfo>(PEER_INFO_TABLE).unwrap();
 
         let mut res = HashMap::new();
         for elem in peer_cursor {
-            let (id, peer) = elem.unwrap();
+            let (id, peer) = elem?;
             res.insert(id, peer);
         }
 
-        res
+        Ok(res)
     }
 }
 
@@ -231,7 +231,7 @@ mod test {
 
         // Get the info map
         let tx = db.new_read_tx().unwrap();
-        let info_map = tx.get_info_map();
+        let info_map = tx.get_info_map().unwrap();
 
         // Check if all peer ids are retrieved
         assert_eq!(info_map.len(), 2);
