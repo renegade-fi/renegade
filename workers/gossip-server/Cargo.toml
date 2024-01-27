@@ -18,9 +18,10 @@ circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
-state = { path = "../../state" }
+statev2 = { path = "../../statev2" }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #
+itertools = { workspace = true }
 lru = "0.11"
 tracing = "0.1"

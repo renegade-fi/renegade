@@ -24,6 +24,15 @@ impl State {
     // | Getters |
     // -----------
 
+    /// Returns whether or not the state contains a given order
+    pub fn contains_order(&self, order_id: &OrderIdentifier) -> Result<bool, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let contains = tx.contains_order(order_id)?;
+        tx.commit()?;
+
+        Ok(contains)
+    }
+
     /// Get an order
     pub fn get_order(
         &self,

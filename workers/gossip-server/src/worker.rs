@@ -9,7 +9,7 @@ use futures::executor::block_on;
 use gossip_api::gossip::GossipOutbound;
 use job_types::gossip_server::GossipServerJob;
 use libp2p::Multiaddr;
-use state::RelayerState;
+use statev2::State;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
@@ -34,7 +34,7 @@ pub struct GossipServerConfig {
     /// The arbitrum client used for querying contract state
     pub arbitrum_client: ArbitrumClient,
     /// A reference to the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
     /// A job queue to send outbound heartbeat requests on
     pub job_sender: TokioSender<GossipServerJob>,
     /// A job queue to receive inbound heartbeat requests on
@@ -72,7 +72,7 @@ impl Worker for GossipServer {
         let protocol_executor = GossipProtocolExecutor::new(
             self.config.network_sender.clone(),
             self.config.job_receiver.take().unwrap(),
-            self.config.global_state.clone(),
+            self.state().clone(),
             self.config.clone(),
             self.config.cancel_channel.clone(),
         )?;

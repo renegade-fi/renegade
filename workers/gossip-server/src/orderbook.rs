@@ -79,8 +79,7 @@ impl GossipProtocolExecutor {
         order_id: OrderIdentifier,
         response_channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), GossipError> {
-        let order_info = self.global_state.read_order_book().await.get_order_info(&order_id).await;
-
+        let order_info = self.global_state.get_order(&order_id)?;
         self.network_channel
             .send(GossipOutbound::Response {
                 channel: response_channel,
@@ -104,10 +103,10 @@ impl GossipProtocolExecutor {
         let proof = order_info.validity_proofs.take();
 
         // Index the order in the `Received` state
-        let is_local = order_info.cluster == self.global_state.local_cluster_id;
+        let is_local = order_info.cluster == self.global_state.get_cluster_id()?;
         order_info.state = NetworkOrderState::Received;
         order_info.local = is_local;
-        self.global_state.add_order(order_info).await;
+        self.global_state.add_order(order_info)?.await?;
 
         // If there is a proof attached to the order, verify it and transition to
         // `Verified`
@@ -133,7 +132,9 @@ impl GossipProtocolExecutor {
 
             // Update the state of the order to `Verified` by attaching the verified
             // validity proof
-            self.global_state.add_order_validity_proofs(&order_id, proof_bundle).await;
+            self.global_state
+                .add_order_validity_proof(order_id, proof_bundle, None /* witness */)?
+                .await?;
         }
 
         Ok(())
@@ -157,10 +158,10 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        let is_local = cluster == self.global_state.local_cluster_id;
+        let is_local = cluster == self.global_state.get_cluster_id()?;
         self.global_state
-            .add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))
-            .await;
+            .add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))?
+            .await?;
         Ok(())
     }
 
@@ -174,7 +175,7 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
         proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
-        let is_local = cluster.eq(&self.global_state.local_cluster_id);
+        let is_local = cluster == self.global_state.get_cluster_id()?;
 
         // Verify the proof
         if !is_local {
@@ -189,18 +190,20 @@ impl GossipProtocolExecutor {
         }
 
         // Add the order to the book in the `Validated` state
-        if !self.global_state.read_order_book().await.contains_order(&order_id) {
+        if !self.global_state.contains_order(&order_id)? {
             self.global_state
                 .add_order(NetworkOrder::new(
                     order_id,
                     proof_bundle.reblind_proof.statement.original_shares_nullifier,
                     cluster,
                     is_local,
-                ))
-                .await;
+                ))?
+                .await?;
         }
 
-        self.global_state.add_order_validity_proofs(&order_id, proof_bundle).await;
+        self.global_state
+            .add_order_validity_proof(order_id, proof_bundle, None /* witness */)?
+            .await?;
 
         // If the order is locally managed, also fetch the wintess used in the proof,
         // this is used for proof linking. I.e. the local node needs the commitment
@@ -219,16 +222,14 @@ impl GossipProtocolExecutor {
         let message =
             ClusterManagementMessage::RequestOrderValidityWitness(ValidityWitnessRequest {
                 order_id,
-                sender: self.global_state.local_peer_id,
+                sender: self.global_state.get_peer_id()?,
             });
 
+        let cluster_id = self.global_state.get_cluster_id()?;
         self.network_channel
             .send(GossipOutbound::Pubsub {
-                topic: self.global_state.local_cluster_id.get_management_topic(),
-                message: PubsubMessage::ClusterManagement {
-                    cluster_id: self.global_state.local_cluster_id.clone(),
-                    message,
-                },
+                topic: self.global_state.get_cluster_id()?.get_management_topic(),
+                message: PubsubMessage::ClusterManagement { cluster_id, message },
             })
             .map_err(|err| GossipError::SendMessage(err.to_string()))
     }
@@ -243,25 +244,18 @@ impl GossipProtocolExecutor {
         // authentication of the message is done at the network manager level,
         // so this check is a bit redundant, but worth doing
         {
-            let info = self
-                .global_state
-                .read_peer_index()
-                .await
-                .get_peer_info(&requesting_peer)
-                .await
-                .ok_or_else(|| {
-                    GossipError::MissingState("peer info not found in state".to_string())
-                })?;
+            let info = self.global_state.get_peer_info(&requesting_peer)?.ok_or_else(|| {
+                GossipError::MissingState("peer info not found in state".to_string())
+            })?;
 
-            if info.get_cluster_id() != self.global_state.local_cluster_id {
+            if info.get_cluster_id() != self.global_state.get_cluster_id()? {
                 return Ok(());
             }
         } // peer_index lock released
 
         // If the local peer has a copy of the witness stored locally, send it to the
         // peer
-        if let Some(order_info) =
-            self.global_state.read_order_book().await.get_order_info(&order_id).await
+        if let Some(order_info) = self.global_state.get_order(&order_id)?
             && let Some(witness) = order_info.validity_proof_witnesses
         {
             self.network_channel
@@ -279,14 +273,10 @@ impl GossipProtocolExecutor {
     /// COMMITMENTS`
     async fn handle_validity_witness_response(
         &self,
-        order_id: OrderIdentifier,
-        witnesses: OrderValidityWitnessBundle,
+        _order_id: OrderIdentifier,
+        _witnesses: OrderValidityWitnessBundle,
     ) {
-        self.global_state
-            .read_order_book()
-            .await
-            .attach_validity_proof_witness(&order_id, witnesses)
-            .await;
+        todo!("remove this method, use raft consensus for this")
     }
 
     /// Verify the validity proofs (`VALID REBLIND` and `VALID COMMITMENTS`) of
