@@ -76,6 +76,23 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         self.inner().read(ORDERS_TABLE, &key).map(|set| set.unwrap_or_default())
     }
 
+    /// Get all orders in the book
+    pub fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StorageError> {
+        // Build a cursor over the table
+        let cursor = self
+            .inner()
+            .cursor::<String, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(ORDERS_TABLE)?;
+
+        // Destructure the result and handle errors
+        let mut res = Vec::new();
+        for elem in cursor.values() {
+            let (order, _) = elem?;
+            res.push(order);
+        }
+
+        Ok(res)
+    }
+
     // --- Helpers --- //
 
     /// Get an order and error if it is not present
@@ -243,6 +260,7 @@ mod test {
         },
     };
     use constants::Scalar;
+    use itertools::Itertools;
     use rand::thread_rng;
 
     use crate::{test_helpers::mock_db, ORDERS_TABLE, PRIORITIES_TABLE};
@@ -264,6 +282,31 @@ mod test {
 
         let stored_order = tx.get_order_info(&order.id).unwrap().unwrap();
         assert_eq!(order, stored_order);
+    }
+
+    /// Tests getting all orders in the book
+    #[test]
+    fn test_get_all_orders() {
+        let db = mock_db();
+        db.create_table(ORDERS_TABLE).unwrap();
+
+        // Write a handful of orders to the book
+        const N: usize = 10;
+        let mut orders = (0..N).map(|_| dummy_network_order()).collect_vec();
+        let tx = db.new_write_tx().unwrap();
+        for order in orders.iter() {
+            tx.write_order(order).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Read back all the orders
+        let tx = db.new_read_tx().unwrap();
+        let mut all_orders = tx.get_all_orders().unwrap();
+
+        // Sort the orders by ID and compare
+        all_orders.sort_by(|a, b| a.id.cmp(&b.id));
+        orders.sort_by(|a, b| a.id.cmp(&b.id));
+        assert_eq!(all_orders, orders);
     }
 
     /// Tests attaching a validity proof to an order

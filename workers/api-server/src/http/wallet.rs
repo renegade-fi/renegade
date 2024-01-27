@@ -10,7 +10,7 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::wallet::{KeyChain, Wallet, WalletIdentifier};
-use constants::{MAX_FEES, MAX_ORDERS};
+use constants::MAX_FEES;
 use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::{
     http::wallet::{
@@ -26,11 +26,10 @@ use external_api::{
 };
 use gossip_api::gossip::GossipOutbound;
 use hyper::{HeaderMap, StatusCode};
-use itertools::Itertools;
 use job_types::proof_manager::ProofManagerJob;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
-use state::RelayerState;
+use statev2::State;
 use task_driver::{
     create_new_wallet::NewWalletTask, driver::TaskDriver, lookup_wallet::LookupWalletTask,
     update_wallet::UpdateWalletTask,
@@ -81,15 +80,11 @@ fn check_timestamp_staleness(timestamp: u64) -> Result<(), ApiServerError> {
 /// Attempts to acquire the lock for an update on the wallet
 async fn find_wallet_for_update(
     wallet_id: WalletIdentifier,
-    state: &RelayerState,
+    state: &State,
 ) -> Result<Wallet, ApiServerError> {
     // Find the wallet in global state and use its keys to authenticate the request
-    let wallet = state
-        .read_wallet_index()
-        .await
-        .get_wallet(&wallet_id)
-        .await
-        .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
+    let wallet =
+        state.get_wallet(&wallet_id)?.ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
     // Acquire the lock for the wallet
     if wallet.is_locked() {
@@ -142,8 +137,6 @@ pub(super) const REMOVE_FEE_ROUTE: &str = "/v0/wallet/:wallet_id/fees/:index/rem
 const ERR_INSUFFICIENT_BALANCE: &str = "insufficient balance";
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
-/// Error message displayed when `MAX_ORDERS` is exceeded
-const ERR_ORDERS_FULL: &str = "wallet's orderbook is full";
 /// The error message to display when a fee list is full
 const ERR_FEES_FULL: &str = "wallet's fee list is full";
 /// The error message to display when a fee index is out of range
@@ -158,15 +151,14 @@ const ERR_STALE_TIMESTAMP: &str = "timestamp is too stale";
 // -------------------------
 
 /// Handler for the GET /wallet/:id route
-#[derive(Debug)]
 pub struct GetWalletHandler {
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
 }
 
 impl GetWalletHandler {
     /// Create a new handler for the /v0/wallet/:id route
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -183,29 +175,13 @@ impl TypedHandler for GetWalletHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let mut wallet = if let Some(wallet) =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
-        {
-            wallet
-        } else {
-            return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
-        };
+        let mut wallet = self
+            .global_state
+            .get_wallet(&wallet_id)?
+            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         // Filter out empty orders, balances, and fees
-        wallet.orders = wallet
-            .orders
-            .into_iter()
-            .filter(|(_id, order)| !order.is_default())
-            .map(|(id, order)| (id, order))
-            .collect();
-        wallet.balances = wallet
-            .balances
-            .into_iter()
-            .filter(|(_mint, balance)| !balance.is_default())
-            .map(|(mint, balance)| (mint, balance))
-            .collect();
-        wallet.fees.retain(|fee| !fee.is_default());
-
+        wallet.remove_default_elements();
         Ok(GetWalletResponse { wallet: wallet.into() })
     }
 }
@@ -215,7 +191,7 @@ pub struct CreateWalletHandler {
     /// An arbitrum client
     arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -228,7 +204,7 @@ impl CreateWalletHandler {
     /// Constructor
     pub fn new(
         arbitrum_client: ArbitrumClient,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -271,7 +247,7 @@ pub struct FindWalletHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -285,7 +261,7 @@ impl FindWalletHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -336,15 +312,15 @@ impl TypedHandler for FindWalletHandler {
 // -------------------------
 
 /// Handler for the GET /wallet/:id/orders route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetOrdersHandler {
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
 }
 
 impl GetOrdersHandler {
     /// Create a new handler for the /wallet/:id/orders route
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -361,34 +337,27 @@ impl TypedHandler for GetOrdersHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(wallet) =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
-        {
-            // Filter out default orders used to pad the wallet to the circuit size
-            let non_default_orders = wallet
-                .orders
-                .into_iter()
-                .filter(|(_id, order)| !order.is_default())
-                .map(ApiOrder::from)
-                .collect_vec();
+        let mut wallet = self
+            .global_state
+            .get_wallet(&wallet_id)?
+            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
-            Ok(GetOrdersResponse { orders: non_default_orders })
-        } else {
-            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
-        }
+        wallet.remove_default_elements();
+        let orders = wallet.orders.into_iter().map(ApiOrder::from).collect();
+        Ok(GetOrdersResponse { orders })
     }
 }
 
 /// Handler for the GET /wallet/:id/orders/:id route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetOrderByIdHandler {
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
 }
 
 impl GetOrderByIdHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -410,10 +379,7 @@ impl TypedHandler for GetOrderByIdHandler {
         // Find the wallet in global state and use its keys to authenticate the request
         let wallet = self
             .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
+            .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         if let Some(order) = wallet.orders.get(&order_id).cloned() {
@@ -431,7 +397,7 @@ pub struct CreateOrderHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -444,7 +410,7 @@ impl CreateOrderHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -474,22 +440,13 @@ impl TypedHandler for CreateOrderHandler {
 
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.global_state).await?;
-
-        // Ensure that there is space below MAX_ORDERS for the new order
-        let num_orders = old_wallet.orders.values().filter(|order| !order.is_default()).count();
-
-        if num_orders >= MAX_ORDERS {
-            return Err(bad_request(ERR_ORDERS_FULL.to_string()));
-        }
-
-        // Add the order to the new wallet
         let mut new_wallet = old_wallet.clone();
         let new_order: Order = req.order.into();
+
+        // Check that the timestamp is not too old, then add to the wallet
         let timestamp = new_order.timestamp;
         check_timestamp_staleness(timestamp)?;
-
-        new_wallet.orders.insert(id, new_order);
-        new_wallet.orders.retain(|_id, order| !order.is_default());
+        new_wallet.add_order(id, new_order).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
@@ -518,7 +475,7 @@ pub struct UpdateOrderHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -531,7 +488,7 @@ impl UpdateOrderHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -573,19 +530,11 @@ impl TypedHandler for UpdateOrderHandler {
         // `insert`) to maintain ordering of the orders. This is important for
         // the circuit, which relies on the order of the orders to be consistent
         // between the old and new wallets
-        let index = new_wallet
+        let order = new_wallet
             .orders
-            .get_index_of(&order_id)
+            .get_mut(&order_id)
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
-        new_wallet
-            .orders
-            .get_index_mut(index)
-            .map(|(_, order)| {
-                *order = new_order;
-            })
-            // Unwrap is safe as the index is necessarily valid
-            .unwrap();
-
+        *order = new_order;
         new_wallet.reblind_wallet();
 
         // Spawn a task to handle the order creation flow
@@ -614,7 +563,7 @@ pub struct CancelOrderHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -627,7 +576,7 @@ impl CancelOrderHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -690,15 +639,15 @@ impl TypedHandler for CancelOrderHandler {
 // --------------------------
 
 /// Handler for the GET /wallet/:id/balances route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetBalancesHandler {
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
 }
 
 impl GetBalancesHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -715,18 +664,12 @@ impl TypedHandler for GetBalancesHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(wallet) =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
-        {
+        if let Some(mut wallet) = self.global_state.get_wallet(&wallet_id)? {
             // Filter out the default balances used to pad the wallet to the circuit size
-            let non_default_balances = wallet
-                .balances
-                .into_values()
-                .filter(|balance| !balance.is_default())
-                .map(ApiBalance::from)
-                .collect_vec();
+            wallet.remove_default_elements();
+            let balances = wallet.balances.into_values().map(ApiBalance::from).collect();
 
-            Ok(GetBalancesResponse { balances: non_default_balances })
+            Ok(GetBalancesResponse { balances })
         } else {
             Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
         }
@@ -734,15 +677,15 @@ impl TypedHandler for GetBalancesHandler {
 }
 
 /// Handler for the GET /wallet/:wallet_id/balances/:mint route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetBalanceByMintHandler {
     /// A copy of the relayer-global state
-    pub global_state: RelayerState,
+    pub global_state: State,
 }
 
 impl GetBalanceByMintHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -761,9 +704,7 @@ impl TypedHandler for GetBalanceByMintHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mint = parse_mint_from_params(&params)?;
 
-        if let Some(wallet) =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
-        {
+        if let Some(wallet) = self.global_state.get_wallet(&wallet_id)? {
             let balance = wallet
                 .balances
                 .get(&mint)
@@ -785,7 +726,7 @@ pub struct DepositBalanceHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -798,7 +739,7 @@ impl DepositBalanceHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -831,11 +772,10 @@ impl TypedHandler for DepositBalanceHandler {
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
+        let amount = req.amount.to_u64().unwrap();
         new_wallet
-            .balances
-            .entry(req.mint.clone())
-            .or_insert(StateBalance { mint: req.mint.clone(), amount: 0u64 })
-            .amount += req.amount.to_u64().unwrap();
+            .add_balance(StateBalance { mint: req.mint.clone(), amount })
+            .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
         // Begin an update-wallet task
@@ -869,7 +809,7 @@ pub struct WithdrawBalanceHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -882,7 +822,7 @@ impl WithdrawBalanceHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -956,15 +896,15 @@ impl TypedHandler for WithdrawBalanceHandler {
 // ----------------------
 
 /// Handler for the GET /wallet/:id/fees route
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GetFeesHandler {
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
 }
 
 impl GetFeesHandler {
     /// Constructor
-    pub fn new(global_state: RelayerState) -> Self {
+    pub fn new(global_state: State) -> Self {
         Self { global_state }
     }
 }
@@ -982,18 +922,12 @@ impl TypedHandler for GetFeesHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
-        if let Some(wallet) =
-            self.global_state.read_wallet_index().await.get_wallet(&wallet_id).await
-        {
+        if let Some(mut wallet) = self.global_state.get_wallet(&wallet_id)? {
             // Filter out all the default fees used to pad the wallet to the circuit size
-            let non_default_fees = wallet
-                .fees
-                .into_iter()
-                .filter(|fee| !fee.is_default())
-                .map(ApiFee::from)
-                .collect_vec();
+            wallet.remove_default_elements();
+            let fees = wallet.fees.into_iter().map(ApiFee::from).collect();
 
-            Ok(GetFeesResponse { fees: non_default_fees })
+            Ok(GetFeesResponse { fees })
         } else {
             Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
         }
@@ -1007,7 +941,7 @@ pub struct AddFeeHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -1020,7 +954,7 @@ impl AddFeeHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {
@@ -1088,7 +1022,7 @@ pub struct RemoveFeeHandler {
     /// A sender to the network manager's work queue
     network_sender: TokioSender<GossipOutbound>,
     /// A copy of the relayer-global state
-    global_state: RelayerState,
+    global_state: State,
     /// A sender to the proof manager's work queue, used to enqueue
     /// proofs of `VALID NEW WALLET` and await their completion
     proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
@@ -1101,7 +1035,7 @@ impl RemoveFeeHandler {
     pub fn new(
         arbitrum_client: ArbitrumClient,
         network_sender: TokioSender<GossipOutbound>,
-        global_state: RelayerState,
+        global_state: State,
         proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
         task_driver: TaskDriver,
     ) -> Self {

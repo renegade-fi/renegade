@@ -13,7 +13,7 @@ use hyper::{
 };
 use num_bigint::BigUint;
 use num_traits::Num;
-use state::RelayerState;
+use statev2::State;
 use std::{
     convert::Infallible,
     net::SocketAddr,
@@ -185,14 +185,14 @@ pub(super) struct HttpServer {
 
 impl HttpServer {
     /// Create a new http server
-    pub(super) fn new(config: ApiServerConfig, global_state: RelayerState) -> Self {
+    pub(super) fn new(config: ApiServerConfig, global_state: State) -> Self {
         // Build the router, server, and register routes
         let router = Self::build_router(&config, global_state);
         Self { router: Arc::new(router), config }
     }
 
     /// Build a router and register routes on it
-    fn build_router(config: &ApiServerConfig, global_state: RelayerState) -> Router {
+    fn build_router(config: &ApiServerConfig, global_state: State) -> Router {
         // Build the router and register its routes
         let mut router = Router::new(global_state.clone());
 

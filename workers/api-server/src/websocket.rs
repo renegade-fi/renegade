@@ -356,17 +356,12 @@ impl WebsocketServer {
             .map_err(|_| bad_request(ERR_HEADER_PARSE.to_string()))?;
 
         // Look up the verification key in the global state
-        let pk_root = self
+        let wallet = self
             .config
             .global_state
-            .read_wallet_index()
-            .await
-            .get_wallet(&wallet_id)
-            .await
-            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?
-            .key_chain
-            .public_keys
-            .pk_root;
+            .get_wallet(&wallet_id)?
+            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
+        let pk_root = wallet.key_chain.public_keys.pk_root;
 
         // Serialize the body to bytes
         let body_serialized =
