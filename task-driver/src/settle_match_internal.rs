@@ -28,8 +28,8 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use gossip_api::gossip::GossipOutbound;
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use serde::Serialize;
-use statev2::error::StateError;
-use statev2::State;
+use state::error::StateError;
+use state::State;
 use tokio::{sync::mpsc::UnboundedSender as TokioSender, task::JoinHandle as TokioJoinHandle};
 use util::matching_engine::settle_match_into_wallets;
 

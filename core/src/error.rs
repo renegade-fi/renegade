@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt::Display;
 
-use statev2::error::StateError;
+use state::error::StateError;
 
 /// An error type at the coordinator level
 #[derive(Clone, Debug)]
