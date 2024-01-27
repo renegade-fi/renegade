@@ -2,7 +2,7 @@
 
 use std::fmt::Display;
 
-use statev2::error::StateError;
+use state::error::StateError;
 
 /// The generic error type for the network manager
 #[derive(Debug)]

@@ -13,7 +13,7 @@ use ethers::{prelude::StreamExt, types::Filter};
 use gossip_api::gossip::GossipOutbound;
 use job_types::{handshake_manager::HandshakeExecutionJob, proof_manager::ProofManagerJob};
 use renegade_crypto::fields::u256_to_scalar;
-use statev2::State;
+use state::State;
 use task_driver::{
     driver::TaskDriver,
     update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskError},
