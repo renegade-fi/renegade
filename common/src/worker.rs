@@ -15,7 +15,7 @@ pub trait Worker {
     /// The configuration needed to spawn the implementing worker
     type WorkerConfig;
     /// The error type that results from an invalid startup or cleanup
-    type Error: 'static + Send + Clone + Debug;
+    type Error: 'static + Send + Debug;
 
     /// Create a new instance of the implementing worker
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>

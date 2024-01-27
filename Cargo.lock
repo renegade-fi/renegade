@@ -233,7 +233,7 @@ dependencies = [
  "renegade-crypto",
  "serde",
  "serde_json",
- "state",
+ "statev2",
  "system-bus",
  "task-driver",
  "tokio",

@@ -5,6 +5,7 @@ pub mod error;
 pub mod node_metadata;
 pub mod notifications;
 pub mod order_book;
+pub mod peer_index;
 pub mod wallet_index;
 
 use std::{sync::Arc, thread};
