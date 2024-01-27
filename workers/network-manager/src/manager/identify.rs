@@ -33,7 +33,7 @@ impl NetworkManagerExecutor {
 
                 // Optimistically broadcast the discovered identity to the network via
                 // the heartbeat sub-protocol
-                for peer in self.global_state.get_peer_info_map()?.into_keys() {
+                for peer in self.global_state.get_all_peers_ids(false /* include_self */)? {
                     if let Err(e) =
                         self.gossip_work_queue.send(GossipServerJob::ExecuteHeartbeat(peer))
                     {
