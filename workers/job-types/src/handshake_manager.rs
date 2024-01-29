@@ -4,7 +4,7 @@ use ark_mpc::network::QuicTwoPartyNet;
 use circuit_types::wallet::Nullifier;
 use common::types::{gossip::WrappedPeerId, wallet::OrderIdentifier};
 use constants::SystemCurveGroup;
-use gossip_api::{gossip::AuthenticatedGossipResponse, handshake::HandshakeMessage};
+use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
 use libp2p::request_response::ResponseChannel;
 use uuid::Uuid;
 
@@ -62,9 +62,6 @@ pub enum HandshakeExecutionJob {
     },
     /// Process a handshake request
     ProcessHandshakeMessage {
-        /// The request identifier that will be used to track and index
-        /// handshake communications
-        request_id: Uuid,
         /// The peer requesting to handshake
         peer_id: WrappedPeerId,
         /// The handshake request message contents
