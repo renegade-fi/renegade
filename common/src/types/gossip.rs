@@ -138,6 +138,11 @@ impl WrappedPeerId {
     pub fn random() -> Self {
         Self(PeerId::random())
     }
+
+    /// Get the underlying peer ID
+    pub fn inner(&self) -> PeerId {
+        self.0
+    }
 }
 
 impl FromStr for WrappedPeerId {
