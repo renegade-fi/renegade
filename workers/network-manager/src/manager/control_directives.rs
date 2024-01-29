@@ -5,9 +5,11 @@ use std::net::SocketAddr;
 
 use ark_mpc::network::QuicTwoPartyNet;
 use common::types::handshake::ConnectionRole;
-use gossip_api::gossip::ManagerControlDirective;
 use itertools::Itertools;
-use job_types::handshake_manager::HandshakeExecutionJob;
+use job_types::{
+    handshake_manager::HandshakeExecutionJob, network_manager::NetworkManagerControlSignal,
+};
+use libp2p::PeerId;
 use libp2p_core::{Endpoint, Multiaddr};
 use libp2p_swarm::{ConnectionId, NetworkBehaviour};
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
@@ -27,62 +29,12 @@ impl NetworkManagerExecutor {
     /// local network manager itself
     pub(super) fn handle_control_directive(
         &mut self,
-        command: ManagerControlDirective,
+        command: NetworkManagerControlSignal,
     ) -> Result<(), NetworkManagerError> {
         match command {
             // Register a new peer in the distributed routing tables
-            ManagerControlDirective::NewAddr { peer_id, address } => {
-                // If we cannot parse the address or it is not dialable, skip indexing
-                if !is_dialable_multiaddr(&address, self.allow_local) {
-                    log::info!("skipping local addr {:?}", address);
-                    return Ok(());
-                }
-
-                self.swarm.behaviour_mut().kademlia_dht.add_address(&peer_id, address);
-
-                Ok(())
-            },
-
-            // Build an MPC net for the given peers to communicate over
-            ManagerControlDirective::BrokerMpcNet {
-                request_id,
-                peer_id,
-                peer_port,
-                local_port,
-                local_role,
-            } => {
-                // Lookup known remote addresses for the peer
-                let known_peer_addrs = self
-                    .swarm
-                    .behaviour_mut()
-                    .handle_pending_outbound_connection(
-                        ConnectionId::new_unchecked(0),
-                        Some(peer_id.0),
-                        &[],
-                        Endpoint::Dialer,
-                    )
-                    .map_err(|_| NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string()))?;
-
-                // Spawn a separate task to asynchronously dial the peer and respond to
-                // the handshake manager's brokerage request
-                let allow_local = self.allow_local;
-                let handshake_queue_clone = self.handshake_work_queue.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = Self::broker_mpc_net(
-                        allow_local,
-                        request_id,
-                        peer_port,
-                        local_port,
-                        local_role,
-                        known_peer_addrs,
-                        handshake_queue_clone,
-                    )
-                    .await
-                    {
-                        log::error!("error brokering MPC network: {e}");
-                    }
-                });
-
+            NetworkManagerControlSignal::NewAddr { peer_id, address } => {
+                self.handle_new_addr(peer_id.inner(), address);
                 Ok(())
             },
 
@@ -93,20 +45,103 @@ impl NetworkManagerExecutor {
             // up, because at startup, there are no known peers to publish to. The network manager
             // gives the gossip server some time to discover new addresses before
             // publishing to the network.
-            ManagerControlDirective::GossipWarmupComplete => {
-                self.warmup_finished = true;
-                // Forward all buffered messages to the network
-                for buffered_message in self.warmup_buffer.drain(..).collect_vec() {
-                    self.forward_outbound_pubsub(buffered_message.topic, buffered_message.message)?;
-                }
-
-                Ok(())
+            NetworkManagerControlSignal::GossipWarmupComplete => {
+                self.handle_gossip_warmup_complete()
             },
+
+            // Build an MPC net for the given peers to communicate over
+            NetworkManagerControlSignal::BrokerMpcNet {
+                request_id,
+                peer_id,
+                peer_port,
+                local_port,
+                local_role,
+            } => self.handle_broker_mpc_net_request(
+                peer_id.inner(),
+                request_id,
+                peer_port,
+                local_port,
+                local_role,
+            ),
         }
+    }
+
+    /// Handle a new address added to the peer index
+    fn handle_new_addr(&mut self, peer_id: PeerId, addr: Multiaddr) {
+        // If we cannot parse the address or it is not dialable, skip indexing
+        if !is_dialable_multiaddr(&addr, self.allow_local) {
+            log::info!("skipping local addr {addr:?}");
+            return;
+        }
+
+        self.swarm.behaviour_mut().kademlia_dht.add_address(&peer_id, addr);
+    }
+
+    /// Handle a complete gossip warmup
+    fn handle_gossip_warmup_complete(&mut self) -> Result<(), NetworkManagerError> {
+        self.warmup_finished = true;
+        // Forward all buffered messages to the network
+        for buffered_message in self.warmup_buffer.drain(..).collect_vec() {
+            self.forward_outbound_pubsub(buffered_message.topic, buffered_message.message)?;
+        }
+
+        Ok(())
+    }
+
+    /// Handle a request to broker an MPC net between the local and remote peer
+    fn handle_broker_mpc_net_request(
+        &mut self,
+        peer_id: PeerId,
+        request_id: Uuid,
+        peer_port: u16,
+        local_port: u16,
+        local_role: ConnectionRole,
+    ) -> Result<(), NetworkManagerError> {
+        // Get the known addresses for the peer
+        let known_peer_addrs = self
+            .swarm
+            .behaviour_mut()
+            .handle_pending_outbound_connection(
+                ConnectionId::new_unchecked(0),
+                Some(peer_id),
+                &[],
+                Endpoint::Dialer,
+            )
+            .map_err(|_| NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string()))?;
+
+        // If we have no known addresses for the peer, return an error
+        if known_peer_addrs.is_empty() {
+            return Err(NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string()));
+        }
+
+        // Spawn a separate task to asynchronously dial the peer and respond to
+        // the handshake manager's brokerage request
+        let allow_local = self.allow_local;
+        let handshake_queue_clone = self.handshake_work_queue.clone();
+        tokio::spawn(async move {
+            if let Err(e) = Self::broker_mpc_net(
+                allow_local,
+                request_id,
+                peer_port,
+                local_port,
+                local_role,
+                known_peer_addrs,
+                handshake_queue_clone,
+            )
+            .await
+            {
+                log::error!("error brokering MPC network: {e}");
+            }
+        });
+
+        Ok(())
     }
 
     /// Broker an MPC net between the local and remote peer using the given
     /// known addresses
+    ///
+    /// This helper is broken out from the above to avoid moving `self` into the
+    /// async task spawned to call this method
     async fn broker_mpc_net(
         allow_local: bool,
         request_id: Uuid,
