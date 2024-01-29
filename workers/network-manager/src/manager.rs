@@ -1,7 +1,6 @@
 //! The network manager handles lower level interaction with the p2p network
 mod control_directives;
 mod identify;
-mod internal_events;
 mod pubsub;
 mod request_response;
 
@@ -13,15 +12,12 @@ use common::{
     },
 };
 use ed25519_dalek::Keypair as SigKeypair;
-use external_api::bus_message::{SystemBusMessage, ALL_WALLET_UPDATES_TOPIC};
 use futures::StreamExt;
-use gossip_api::{
-    gossip::{
-        AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipOutbound, PubsubMessage,
-    },
-    orderbook_management::ORDER_BOOK_TOPIC,
+use gossip_api::pubsub::{orderbook::ORDER_BOOK_TOPIC, PubsubMessage};
+use job_types::{
+    gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob,
+    network_manager::NetworkManagerJob,
 };
-use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob};
 use libp2p::{
     gossipsub::{Event as GossipsubEvent, Sha256Topic},
     identity::Keypair,
@@ -31,7 +27,6 @@ use libp2p::{
     Multiaddr, Swarm,
 };
 use state::State;
-use system_bus::SystemBus;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
@@ -47,8 +42,6 @@ use super::{
 /// Occurs when a peer cannot be dialed because their address is not indexed in
 /// the network behavior
 const ERR_NO_KNOWN_ADDR: &str = "no known address for peer";
-/// Emitted when signature verification for an authenticated request fails
-const ERR_SIG_VERIFY: &str = "signature verification failed";
 /// Error emitted when brokering an MPC network with a peer fails
 const ERR_BROKER_MPC_NET: &str = "failed to broker MPC network";
 
@@ -117,7 +110,7 @@ impl NetworkManager {
     }
 
     /// Setup pubsub subscriptions for the network manager
-    pub(super) fn setup_pubsub_subscriptions(
+    pub fn setup_pubsub_subscriptions(
         &self,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {
@@ -179,15 +172,13 @@ pub(super) struct NetworkManagerExecutor {
     ///
     /// The runtime driver thread takes ownership of this channel via `take` in
     /// the execution loop
-    job_channel: DefaultWrapper<Option<UnboundedReceiver<GossipOutbound>>>,
+    job_channel: DefaultWrapper<Option<UnboundedReceiver<NetworkManagerJob>>>,
     /// The sender for the gossip server's work queue
     gossip_work_queue: TokioSender<GossipServerJob>,
     /// The sender for the handshake manager's work queue
     handshake_work_queue: TokioSender<HandshakeExecutionJob>,
     /// A reference to the relayer-global state
     global_state: State,
-    /// A reference to the system bus for consuming internal pubsub events
-    system_bus: SystemBus<SystemBusMessage>,
     /// The cancel channel that the coordinator thread may use to cancel this
     /// worker
     cancel: DefaultWrapper<Option<CancelChannel>>,
@@ -196,17 +187,16 @@ pub(super) struct NetworkManagerExecutor {
 impl NetworkManagerExecutor {
     /// Create a new executor
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn new(
+    pub fn new(
         p2p_port: u16,
         local_peer_id: WrappedPeerId,
         allow_local: bool,
         cluster_key: SigKeypair,
         swarm: Swarm<ComposedNetworkBehavior>,
-        job_channel: UnboundedReceiver<GossipOutbound>,
+        job_channel: UnboundedReceiver<NetworkManagerJob>,
         gossip_work_queue: TokioSender<GossipServerJob>,
         handshake_work_queue: TokioSender<HandshakeExecutionJob>,
         global_state: State,
-        system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Self {
         Self {
@@ -222,7 +212,6 @@ impl NetworkManagerExecutor {
             gossip_work_queue,
             handshake_work_queue,
             global_state,
-            system_bus,
             cancel: DefaultWrapper::new(Some(cancel)),
         }
     }
@@ -233,21 +222,17 @@ impl NetworkManagerExecutor {
     ///         handler threads
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
-    pub(super) async fn executor_loop(mut self) -> NetworkManagerError {
+    pub async fn executor_loop(mut self) -> NetworkManagerError {
         log::info!("Starting executor loop for network manager...");
         let mut cancel_channel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
 
-        // Subscribe to internal system bus topics
-        let mut wallet_update_reader =
-            self.system_bus.subscribe(ALL_WALLET_UPDATES_TOPIC.to_string());
-
         loop {
             tokio::select! {
                 // Handle network requests from worker components of the relayer
-                Some(message) = job_channel.recv() => {
+                Some(job) = job_channel.recv() => {
                     // Forward the message
-                    if let Err(err) = self.handle_outbound_message(message) {
+                    if let Err(err) = self.handle_job(job) {
                         log::info!("Error sending outbound message: {}", err);
                     }
                 },
@@ -270,17 +255,6 @@ impl NetworkManagerExecutor {
                     }
                 }
 
-                // Handle wallet update messages from the system bus
-                wallet_update = wallet_update_reader.next_message() => {
-                    if let SystemBusMessage::InternalWalletUpdate { wallet } = wallet_update {
-                        if let Err(e) = self.handle_wallet_update(wallet).await {
-                            log::error!("error handling wallet update: {}", e);
-                        }
-                    } else {
-                        log::error!("received unexpected message on wallet update channel");
-                    }
-                }
-
                 // Handle a cancel signal from the coordinator
                 _ = cancel_channel.changed() => {
                     return NetworkManagerError::Cancelled("received cancel signal".to_string())
@@ -296,13 +270,12 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
-                if let RequestResponseEvent::Message { peer, message } = request_response {
-                    self.handle_inbound_request_response_message(peer, message)?;
+                if let RequestResponseEvent::Message { message, .. } = request_response {
+                    self.handle_inbound_request_response_message(message)?;
                 }
 
                 Ok(())
             },
-            // Pubsub events currently do nothing
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
                     self.handle_inbound_pubsub_message(message)?;
@@ -312,46 +285,17 @@ impl NetworkManagerExecutor {
             },
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => Ok(()),
-
-            // Identify events do nothing for now, the behavior automatically updates the
-            // `external_addresses` field in the swarm
             ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e).await,
         }
     }
 
-    /// Handles an outbound message from worker threads to other relayers
-    fn handle_outbound_message(&mut self, msg: GossipOutbound) -> Result<(), NetworkManagerError> {
-        match msg {
-            GossipOutbound::Request { peer_id, message } => {
-                // Attach a signature if necessary
-                let req_body =
-                    AuthenticatedGossipRequest::new_with_body(message, &self.cluster_key)
-                        .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
-
-                self.swarm.behaviour_mut().request_response.send_request(&peer_id, req_body);
-
-                Ok(())
-            },
-            GossipOutbound::Response { channel, message } => {
-                // Attach a signature if necessary
-                let req_body =
-                    AuthenticatedGossipResponse::new_with_body(message, &self.cluster_key)
-                        .map_err(|err| NetworkManagerError::Authentication(err.to_string()))?;
-
-                self.swarm
-                    .behaviour_mut()
-                    .request_response
-                    .send_response(channel, req_body)
-                    .map_err(|_| {
-                        NetworkManagerError::Network(
-                            "error sending response, channel closed".to_string(),
-                        )
-                    })
-            },
-            GossipOutbound::Pubsub { topic, message } => {
-                self.forward_outbound_pubsub(topic, message)
-            },
-            GossipOutbound::ManagementMessage(command) => self.handle_control_directive(command),
+    /// Handle a job originating from elsewhere in the local node
+    fn handle_job(&mut self, job: NetworkManagerJob) -> Result<(), NetworkManagerError> {
+        match job {
+            NetworkManagerJob::Pubsub(topic, msg) => self.forward_outbound_pubsub(topic, msg),
+            NetworkManagerJob::Request(peer, req) => self.handle_outbound_req(peer.inner(), req),
+            NetworkManagerJob::Response(resp, chan) => self.handle_outbound_resp(resp, chan),
+            NetworkManagerJob::Internal(cmd) => self.handle_control_directive(cmd),
         }
     }
 }
