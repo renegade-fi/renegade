@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use gossip_api::heartbeat::HeartbeatMessage;
+use gossip_api::request_response::heartbeat::HeartbeatMessage;
 
 use crate::{
     error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
