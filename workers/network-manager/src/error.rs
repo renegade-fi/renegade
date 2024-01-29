@@ -2,6 +2,7 @@
 
 use std::fmt::Display;
 
+use ed25519_dalek::SignatureError;
 use state::error::StateError;
 
 /// The generic error type for the network manager
@@ -26,6 +27,12 @@ pub enum NetworkManagerError {
 impl Display for NetworkManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<SignatureError> for NetworkManagerError {
+    fn from(value: SignatureError) -> Self {
+        NetworkManagerError::Authentication(value.to_string())
     }
 }
 

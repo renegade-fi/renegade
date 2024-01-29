@@ -9,7 +9,7 @@ use common::worker::Worker;
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
-use gossip_api::gossip::GossipOutbound;
+use job_types::network_manager::NetworkManagerJob;
 use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob};
 use state::State;
 use system_bus::SystemBus;
@@ -55,7 +55,7 @@ pub struct NetworkManagerConfig {
     /// This is wrapped in an option to allow the worker thread to take
     /// ownership of the work queue once it is started. The coordinator
     /// will be left with `None` after this happens
-    pub send_channel: Option<UnboundedReceiver<GossipOutbound>>,
+    pub send_channel: Option<UnboundedReceiver<NetworkManagerJob>>,
     /// The work queue to forward inbound heartbeat requests to
     pub gossip_work_queue: UnboundedSender<GossipServerJob>,
     /// The work queue to forward inbound handshake requests to
@@ -168,7 +168,6 @@ impl Worker for NetworkManager {
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
             self.config.global_state.clone(),
-            self.config.system_bus.clone(),
             self.config.cancel_channel.clone(),
         );
 
