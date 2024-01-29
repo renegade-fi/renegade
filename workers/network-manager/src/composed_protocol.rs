@@ -8,7 +8,7 @@
 //!         primitives.
 
 use async_trait::async_trait;
-use gossip_api::gossip::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
+use gossip_api::request_response::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
 use libp2p::{
     core::upgrade::{read_length_prefixed, write_length_prefixed},
     futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
@@ -181,9 +181,8 @@ impl ProtocolName for RelayerGossipProtocol {
 }
 
 /// The request/response codec used in the gossip protocol
-#[derive(Clone)]
-pub struct RelayerGossipCodec {}
-
+#[derive(Clone, Default)]
+pub struct RelayerGossipCodec;
 impl RelayerGossipCodec {
     /// Create a new instance of the marshal/unmarshal codec
     pub fn new() -> Self {
