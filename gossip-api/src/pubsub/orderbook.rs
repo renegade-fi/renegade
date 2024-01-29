@@ -1,36 +1,16 @@
-//! Defines types related to orderbook message passing within the p2p network
+//! Pubsub message types for broadcasting order information to peers
 
 use circuit_types::wallet::Nullifier;
 use common::types::{
-    gossip::ClusterId, network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle,
-    wallet::OrderIdentifier,
+    gossip::ClusterId, proof_bundles::OrderValidityProofBundle, wallet::OrderIdentifier,
 };
 use serde::{Deserialize, Serialize};
 
 /// The network pubsub topic to use for listening to orderbook changes
 pub const ORDER_BOOK_TOPIC: &str = "orderbook";
 
-/// The message type used to request order information from a peer
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OrderInfoRequest {
-    /// The ID of the order
-    pub order_id: OrderIdentifier,
-}
-
-/// The message type used to response with order information to a peer
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OrderInfoResponse {
-    /// The ID of the order that the info is attached to
-    pub order_id: OrderIdentifier,
-    /// The order information stored locally for the order
-    ///
-    /// Value is `None` if the local peer does not store the order
-    pub info: Option<NetworkOrder>,
-}
-
 /// The message type attached to an OrderBookManagement pubsub message
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
 pub enum OrderBookManagementMessage {
     /// A new order has been added to the book, peers should place it in the
     /// received state in their local book
