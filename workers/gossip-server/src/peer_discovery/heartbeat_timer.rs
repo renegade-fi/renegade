@@ -22,7 +22,6 @@ impl HeartbeatTimer {
         intra_cluster_interval_ms: u64,
         inter_cluster_interval_ms: u64,
         global_state: State,
-    ) -> Self {
         // Narrowing cast is okay, precision is not important here
         let intra_cluster_wait_period = Duration::from_millis(intra_cluster_interval_ms);
         let inter_cluster_wait_period = Duration::from_millis(inter_cluster_interval_ms);

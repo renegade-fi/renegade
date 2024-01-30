@@ -3,6 +3,9 @@
 use common::types::{network_order::NetworkOrder, wallet::Wallet};
 use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
 use itertools::Itertools;
+use libmdbx::RW;
+
+use crate::storage::tx::StateTxn;
 
 use super::{Result, StateApplicator};
 
@@ -47,7 +50,7 @@ impl StateApplicator {
         // Any new orders in the wallet should be added to the orderbook
         let nullifier = wallet.get_wallet_nullifier();
         for (id, _order) in wallet.orders.iter().filter(|(_id, order)| !order.is_zero()) {
-            self.add_order_with_tx(
+            self.add_local_order_with_tx(
                 NetworkOrder::new(
                     *id,
                     nullifier,
@@ -71,6 +74,26 @@ impl StateApplicator {
         );
 
         Ok(())
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Add an order within a given transaction
+    pub(crate) fn add_local_order_with_tx(
+        &self,
+        mut order: NetworkOrder,
+        tx: &StateTxn<RW>,
+    ) -> Result<()> {
+        // Add to the locally managed orders
+        order.local = true;
+        tx.mark_order_local(&order.id)?;
+
+        // Update the order priority, the order, and its nullifier
+        tx.write_order_priority(&order)?;
+        tx.write_order(&order)?;
+        Ok(tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?)
     }
 }
 

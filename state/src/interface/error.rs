@@ -10,6 +10,8 @@ use crate::{replication::error::ReplicationError, storage::error::StorageError};
 pub enum StateError {
     /// A database error
     Db(StorageError),
+    /// Invalid state update passed to the interface
+    InvalidUpdate(String),
     /// An error sending a proposal to the replication layer
     Proposal(String),
     /// An error in the replication substrate

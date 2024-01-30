@@ -15,10 +15,7 @@
 #![feature(io_error_more)]
 #![feature(generic_const_exprs)]
 
-use circuit_types::wallet::Nullifier;
 use common::types::{
-    gossip::{PeerInfo, WrappedPeerId},
-    network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, Wallet},
 };
@@ -80,24 +77,16 @@ pub enum StateTransition {
     AddWallet { wallet: Wallet },
     /// Update a wallet in the managed state
     UpdateWallet { wallet: Wallet },
-    /// Add an order to the network order book
-    AddOrder { order: NetworkOrder },
     /// Add a validity proof to an existing order in the book
-    AddOrderValidityProof {
+    AddOrderValidityBundle {
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
-        witness: Option<OrderValidityWitnessBundle>,
+        witness: OrderValidityWitnessBundle,
     },
-    /// Cancel all orders on a given nullifier
-    NullifyOrders { nullifier: Nullifier },
-    /// Add a set of peers to the p2p network topology
-    AddPeers { peers: Vec<PeerInfo> },
     /// Add a raft learner to the cluster
     AddRaftLearner { peer_id: RaftPeerId },
     /// Add a raft peer to the local consensus cluster
     AddRaftPeer { peer_id: RaftPeerId },
-    /// Remove a peer from the p2p network topology
-    RemovePeer { peer_id: WrappedPeerId },
     /// Remove a raft peer from the local consensus cluster
     RemoveRaftPeer { peer_id: RaftPeerId },
 }
@@ -158,7 +147,8 @@ pub mod test_helpers {
 
     /// Create a mock state instance
     pub fn mock_state() -> State {
-        let config = RelayerConfig { db_path: tmp_db_path(), ..Default::default() };
+        let config =
+            RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
         let net = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
         let state = State::new(&config, net, SystemBus::new()).unwrap();
 
