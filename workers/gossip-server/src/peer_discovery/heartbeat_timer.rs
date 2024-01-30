@@ -11,7 +11,7 @@ use crate::errors::GossipError;
 /// HeartbeatTimer handles the process of enqueuing jobs to perform
 /// a heartbeat on regular intervals
 #[derive(Debug)]
-pub(super) struct HeartbeatTimer;
+pub struct HeartbeatTimer;
 
 impl HeartbeatTimer {
     /// Spawns two timers, one for sending intra-cluster heartbeat messages,

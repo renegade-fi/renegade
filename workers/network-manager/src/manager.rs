@@ -99,14 +99,14 @@ impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
     pub async fn update_global_state_after_startup(&self) -> Result<(), NetworkManagerError> {
         // Add self to peer info index
-        let waiter = self.config.global_state.add_peer(PeerInfo::new_with_cluster_secret_key(
+        self.config.global_state.add_peer(PeerInfo::new_with_cluster_secret_key(
             self.local_peer_id,
             self.cluster_id.clone(),
             self.local_addr.clone(),
             self.config.cluster_keypair.as_ref().unwrap(),
         ))?;
 
-        Ok(waiter.await?)
+        Ok(())
     }
 
     /// Setup pubsub subscriptions for the network manager
