@@ -4,17 +4,14 @@ use std::{collections::HashMap, thread, time::Duration};
 
 use common::types::gossip::{PeerInfo, WrappedPeerId};
 use futures::executor::block_on;
-use gossip_api::{
-    gossip::{GossipOutbound, GossipRequest, ManagerControlDirective},
-    heartbeat::HeartbeatMessage,
-};
-use job_types::gossip_server::GossipServerJob;
+use gossip_api::request_response::{heartbeat::HeartbeatMessage, GossipRequest};
+use job_types::{gossip_server::GossipServerJob, network_manager::NetworkManagerJob};
 use state::State;
 use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
-use util::get_current_time_seconds;
+use util::{err_str, get_current_time_seconds};
 
-use super::{errors::GossipError, server::GossipProtocolExecutor};
+use crate::{errors::GossipError, server::GossipProtocolExecutor};
 
 // -------------
 // | Constants |
@@ -45,14 +42,45 @@ pub(super) const EXPIRY_CACHE_SIZE: usize = 100;
 
 /// Heartbeat implementation of the protocol executor
 impl GossipProtocolExecutor {
-    /// Records a successful heartbeat
-    pub(super) async fn record_heartbeat(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
-        Ok(self.global_state.record_heartbeat(&peer_id)?)
+    // ------------
+    // | Outbound |
+    // ------------
+
+    /// Sends heartbeat message to peers to exchange network information and
+    /// ensure liveness
+    pub async fn send_heartbeat(
+        &self,
+        recipient_peer_id: WrappedPeerId,
+    ) -> Result<(), GossipError> {
+        if recipient_peer_id == self.config.local_peer_id {
+            return Ok(());
+        }
+
+        let heartbeat_message = self.global_state.construct_heartbeat()?;
+        let msg = GossipRequest::Heartbeat(heartbeat_message);
+        let job = NetworkManagerJob::Request(recipient_peer_id, msg);
+
+        self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
+        self.maybe_expire_peer(recipient_peer_id).await
     }
 
-    /// Build a heartbeat message
-    pub fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
-        Ok(self.global_state.construct_heartbeat()?)
+    // ---------------------
+    // | Inbound Heartbeat |
+    // ---------------------
+
+    /// Handle a heartbeat message from a peer
+    pub fn handle_heartbeat(
+        &self,
+        peer: &WrappedPeerId,
+        message: HeartbeatMessage,
+    ) -> Result<(), GossipError> {
+        // Record the heartbeat
+        self.record_heartbeat(peer)?;
+
+        // Merge the peer info from the heartbeat into the local state
+        self.merge_state_from_message(message)?;
+
+        Ok(())
     }
 
     /// Sync the replication state when a heartbeat is received
@@ -61,7 +89,7 @@ impl GossipProtocolExecutor {
     ///      1. Check if the peer sent a replication list for this wallet
     ///      2. Add any new peers from that list to the local state
     /// TODO: There is probably a cleaner way to do this
-    pub(super) async fn merge_state_from_message(
+    pub(super) fn merge_state_from_message(
         &self,
         message: HeartbeatMessage,
     ) -> Result<(), GossipError> {
@@ -87,7 +115,7 @@ impl GossipProtocolExecutor {
     /// Returns a boolean indicating whether the peer is now indexed in the peer
     /// info state. This value may be false if the peer has been recently
     /// expired and its invisibility window has not elapsed
-    pub(super) async fn add_new_peers(&self, _peers: Vec<PeerInfo>) -> Result<(), GossipError> {
+    pub(super) fn add_new_peers(&self, _peers: Vec<PeerInfo>) -> Result<(), GossipError> {
         todo!("implement this with gossip refactor");
         // // Filter out peers that are in their expiry window
         // // or those that are missing peer info
@@ -144,27 +172,6 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
-    /// Sends heartbeat message to peers to exchange network information and
-    /// ensure liveness
-    pub(super) async fn send_heartbeat(
-        &self,
-        recipient_peer_id: WrappedPeerId,
-    ) -> Result<(), GossipError> {
-        if recipient_peer_id == self.config.local_peer_id {
-            return Ok(());
-        }
-
-        let heartbeat_message = self.global_state.construct_heartbeat()?;
-        self.network_channel
-            .send(GossipOutbound::Request {
-                peer_id: recipient_peer_id,
-                message: GossipRequest::Heartbeat(heartbeat_message),
-            })
-            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-
-        self.maybe_expire_peer(recipient_peer_id).await
-    }
-
     /// Expires peers that have timed out due to consecutive failed heartbeats
     async fn maybe_expire_peer(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
         // Find the peer's info in global state
@@ -204,121 +211,18 @@ impl GossipProtocolExecutor {
 
         Ok(())
     }
-}
 
-/// HeartbeatTimer handles the process of enqueuing jobs to perform
-/// a heartbeat on regular intervals
-#[derive(Debug)]
-pub(super) struct HeartbeatTimer;
+    // -----------
+    // | Helpers |
+    // -----------
 
-impl HeartbeatTimer {
-    /// Spawns two timers, one for sending intra-cluster heartbeat messages,
-    /// another for inter-cluster The interval parameters specify how often
-    /// the timers should cycle through all peers in their target list
-    pub fn new(
-        job_queue: TokioSender<GossipServerJob>,
-        intra_cluster_interval_ms: u64,
-        inter_cluster_interval_ms: u64,
-        global_state: State,
-    ) -> Self {
-        // Narrowing cast is okay, precision is not important here
-        let intra_cluster_duration_seconds = intra_cluster_interval_ms / 1000;
-        let intra_cluster_duration_nanos =
-            (intra_cluster_interval_ms % 1000 * NANOS_PER_MILLI) as u32;
-        let intra_cluster_wait_period =
-            Duration::new(intra_cluster_duration_seconds, intra_cluster_duration_nanos);
-
-        let inter_cluster_duration_seconds = inter_cluster_interval_ms / 1000;
-        let inter_cluster_duration_nanos =
-            (inter_cluster_interval_ms % 1000 * NANOS_PER_MILLI) as u32;
-        let inter_cluster_wait_period =
-            Duration::new(inter_cluster_duration_seconds, inter_cluster_duration_nanos);
-
-        // Begin the timing loops
-        let job_queue_clone = job_queue.clone();
-        let global_state_clone = global_state.clone();
-        thread::Builder::new()
-            .name("intra-cluster-heartbeat-timer".to_string())
-            .spawn(move || {
-                block_on(Self::intra_cluster_execution_loop(
-                    job_queue_clone,
-                    intra_cluster_wait_period,
-                    global_state_clone,
-                ))
-            })
-            .unwrap();
-
-        thread::Builder::new()
-            .name("non-cluster-heartbeat-timer".to_string())
-            .spawn(move || {
-                block_on(Self::inter_cluster_execution_loop(
-                    job_queue,
-                    inter_cluster_wait_period,
-                    global_state,
-                ))
-            })
-            .unwrap();
-
-        Self {}
+    /// Records a successful heartbeat
+    pub(super) fn record_heartbeat(&self, peer_id: &WrappedPeerId) -> Result<(), GossipError> {
+        Ok(self.global_state.record_heartbeat(peer_id)?)
     }
 
-    /// Main timing loop for heartbeats sent to non-cluster nodes
-    ///
-    /// We space out the heartbeat requests to give a better traffic pattern.
-    /// This means that in each time quantum, one heartbeat is scheduled. We
-    /// compute the length of a time quantum with respect to the heartbeat
-    /// period constant defined above. That is, we specify the interval in
-    /// between heartbeats for a given peer, and space out all heartbeats in
-    /// that interval
-    async fn inter_cluster_execution_loop(
-        job_queue: TokioSender<GossipServerJob>,
-        wait_period: Duration,
-        global_state: State,
-    ) -> Result<(), GossipError> {
-        let cluster_id = global_state.get_cluster_id()?;
-
-        loop {
-            // Get all peers not in the local peer's cluster
-            let mut peers = global_state.get_peer_info_map()?;
-            peers.retain(|_, peer_info| peer_info.get_cluster_id() != cluster_id);
-            // Compute the time to sleep for, may change between loops if peers are
-            // added or removed
-            let wait_time = wait_period / (peers.len() as u32);
-
-            for peer in peers.into_keys() {
-                if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer)) {
-                    return Err(GossipError::TimerFailed(err.to_string()));
-                }
-
-                thread::sleep(wait_time);
-            }
-        }
-    }
-
-    /// The main timing loop for heartbeats send to in-cluster peers
-    ///
-    /// Slightly more readable to break this out into its own method as opposed
-    /// to adding more control flow statements above
-    async fn intra_cluster_execution_loop(
-        job_queue: TokioSender<GossipServerJob>,
-        wait_period: Duration,
-        global_state: State,
-    ) -> Result<(), GossipError> {
-        let local_peer_id = global_state.get_peer_id()?;
-        let cluster_id = global_state.get_cluster_id()?;
-
-        loop {
-            // Get all peers in the local peer's cluster
-            let peers = global_state.get_cluster_peers(&cluster_id)?;
-            let wait_time = wait_period / (peers.len() as u32);
-
-            for peer in peers.into_iter().filter(|peer| peer != &local_peer_id) {
-                if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer)) {
-                    return Err(GossipError::TimerFailed(err.to_string()));
-                }
-
-                thread::sleep(wait_time);
-            }
-        }
+    /// Build a heartbeat message
+    pub fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
+        Ok(self.global_state.construct_heartbeat()?)
     }
 }
