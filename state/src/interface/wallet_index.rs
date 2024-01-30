@@ -1,4 +1,7 @@
 //! Helpers for proposing wallet index changes and reading the index
+//!
+//! Wallet index updates must go through raft consensus so that the leader may
+//! order them
 
 use circuit_types::order::Order;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletIdentifier};

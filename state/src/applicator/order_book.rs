@@ -5,18 +5,15 @@
 //! index orders outside of the DB as well in an in-memory data structure for
 //! efficient lookup
 
-use circuit_types::wallet::Nullifier;
 use common::types::{
-    network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
-use libmdbx::RW;
 use serde::{Deserialize, Serialize};
 
-use crate::{applicator::error::StateApplicatorError, storage::tx::StateTxn};
+use crate::applicator::error::StateApplicatorError;
 
 use super::{Result, StateApplicator};
 
@@ -67,32 +64,17 @@ impl StateApplicator {
     // | Interface |
     // -------------
 
-    /// Add a new order to the network order book
-    pub fn new_order(&self, order: NetworkOrder) -> Result<()> {
-        // Index the order, it's priority, and its nullifier
-        let tx = self.db().new_write_tx()?;
-        self.add_order_with_tx(order.clone(), &tx)?;
-        tx.commit()?;
-
-        // Push a message to the bus
-        self.system_bus()
-            .publish(ORDER_STATE_CHANGE_TOPIC.to_string(), SystemBusMessage::NewOrder { order });
-        Ok(())
-    }
-
     /// Add a validity proof for an order
     pub fn add_order_validity_proof(
         &self,
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
-        witness: Option<OrderValidityWitnessBundle>,
+        witness: OrderValidityWitnessBundle,
     ) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         tx.attach_validity_proof(&order_id, proof)?;
-        if let Some(witness) = witness {
-            tx.attach_validity_witness(&order_id, witness)?;
-        }
+        tx.attach_validity_witness(&order_id, witness)?;
 
         let order_info = tx
             .get_order_info(&order_id)?
@@ -105,38 +87,6 @@ impl StateApplicator {
         );
         Ok(())
     }
-
-    /// Nullify orders indexed by a given wallet share nullifier
-    pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<()> {
-        let tx = self.db().new_write_tx()?;
-        tx.nullify_orders(nullifier)?;
-        Ok(tx.commit()?)
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Add an order within a given transaction
-    pub(crate) fn add_order_with_tx(
-        &self,
-        mut order: NetworkOrder,
-        tx: &StateTxn<RW>,
-    ) -> Result<()> {
-        // Add to the locally managed orders
-        let my_cluster = &self.config.cluster_id;
-        if &order.cluster == my_cluster {
-            order.local = true;
-            tx.mark_order_local(&order.id)?;
-        } else {
-            order.local = false;
-        }
-
-        // Update the order priority, the order, and its nullifier
-        tx.write_order_priority(&order)?;
-        tx.write_order(&order)?;
-        Ok(tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?)
-    }
 }
 
 // ---------
@@ -146,61 +96,11 @@ impl StateApplicator {
 #[cfg(all(test, feature = "all-tests"))]
 mod test {
     use common::types::{
-        network_order::{test_helpers::dummy_network_order, NetworkOrder, NetworkOrderState},
+        network_order::{test_helpers::dummy_network_order, NetworkOrderState},
         proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
     };
 
-    use crate::{
-        applicator::{order_book::OrderPriority, test_helpers::mock_applicator},
-        PRIORITIES_TABLE,
-    };
-
-    /// Tests adding an order to the order book
-    #[test]
-    fn test_add_order() {
-        let applicator = mock_applicator();
-
-        // Add an order to the book
-        let expected_order = dummy_network_order();
-        applicator.new_order(expected_order.clone()).unwrap();
-
-        // Verify the order is indexed
-        let db = applicator.db();
-        let tx = db.new_read_tx().unwrap();
-        let order = tx.get_order_info(&expected_order.id).unwrap().unwrap();
-
-        assert_eq!(order, expected_order);
-
-        // Verify that the order is indexed by its nullifier
-        let orders = tx.get_orders_by_nullifier(expected_order.public_share_nullifier).unwrap();
-        assert_eq!(orders, vec![expected_order.id]);
-
-        // Verify that the priority of the order is set to the default
-        let priority: OrderPriority =
-            db.read(PRIORITIES_TABLE, &expected_order.id).unwrap().unwrap();
-        assert_eq!(priority, OrderPriority::default());
-    }
-
-    /// Tests adding a local order to the book
-    #[test]
-    fn test_add_local_order() {
-        let applicator = mock_applicator();
-
-        // Add a local order to the book
-        let mut local_order = dummy_network_order();
-        // Set the cluster ID of the order to the mock applicator's cluster ID
-        local_order.cluster = applicator.config.cluster_id.clone();
-        local_order.local = true; // Mark the order as locally managed
-
-        applicator.new_order(local_order.clone()).unwrap();
-
-        // Read the locally managed orders and verify that the added order is present
-        let db = applicator.db();
-        let tx = db.new_read_tx().unwrap();
-        let local_orders = tx.get_local_orders().unwrap();
-
-        assert_eq!(local_orders, vec![local_order.id]);
-    }
+    use crate::applicator::test_helpers::mock_applicator;
 
     /// Test adding a validity proof to an order
     #[test]
@@ -209,11 +109,14 @@ mod test {
 
         // First add an order
         let order = dummy_network_order();
-        applicator.new_order(order.clone()).unwrap();
+        let tx = applicator.db().new_write_tx().unwrap();
+        tx.write_order(&order).unwrap();
+        tx.commit().unwrap();
 
         // Then add a validity proof
         let proof = dummy_validity_proof_bundle();
-        applicator.add_order_validity_proof(order.id, proof, None /* witness */).unwrap();
+        let witness = dummy_validity_witness_bundle();
+        applicator.add_order_validity_proof(order.id, proof, witness).unwrap();
 
         // Verify that the order's state is updated
         let db = applicator.db();
@@ -222,58 +125,5 @@ mod test {
 
         assert_eq!(order.state, NetworkOrderState::Verified);
         assert!(order.validity_proofs.is_some());
-    }
-
-    /// Test adding a validity proof with a witness
-    #[test]
-    fn test_add_validity_proof_with_witness() {
-        let applicator = mock_applicator();
-
-        // First add an order
-        let order = dummy_network_order();
-        applicator.new_order(order.clone()).unwrap();
-
-        // Then add a validity proof with a witness
-        let proof = dummy_validity_proof_bundle();
-        let witness = dummy_validity_witness_bundle();
-        applicator.add_order_validity_proof(order.id, proof, Some(witness.clone())).unwrap();
-
-        // Verify that the order's state is updated
-        let db = applicator.db();
-        let tx = db.new_read_tx().unwrap();
-        let order: NetworkOrder = tx.get_order_info(&order.id).unwrap().unwrap();
-
-        assert_eq!(order.state, NetworkOrderState::Verified);
-        assert!(order.validity_proofs.is_some());
-        assert!(order.validity_proof_witnesses.is_some());
-    }
-
-    /// Test nullifying orders
-    #[test]
-    fn test_nullify_orders() {
-        let applicator = mock_applicator();
-
-        // Add two orders to the book
-        let order1 = dummy_network_order();
-        let order2 = dummy_network_order();
-
-        applicator.new_order(order1.clone()).unwrap();
-        applicator.new_order(order2.clone()).unwrap();
-
-        // Nullify the first order
-        applicator.nullify_orders(order1.public_share_nullifier).unwrap();
-
-        // Verify that the first order is cancelled
-        let db = applicator.db();
-        let tx = db.new_read_tx().unwrap();
-        let order1: NetworkOrder = tx.get_order_info(&order1.id).unwrap().unwrap();
-
-        assert_eq!(order1.state, NetworkOrderState::Cancelled);
-
-        // Verify that the second order is unmodified
-        let expected_order2: NetworkOrder = order2.clone();
-        let order2: NetworkOrder = tx.get_order_info(&order2.id).unwrap().unwrap();
-
-        assert_eq!(order2, expected_order2);
     }
 }
