@@ -1,4 +1,9 @@
 //! State interface for the order book
+//!
+//! Order book setters do not need to go through raft consensus, so they are set
+//! directly via this interface. This is because the order book interface is one
+//! of unconditional writes only and inconsistent state is okay between cluster
+//! peers
 
 use circuit_types::wallet::Nullifier;
 use common::types::{
@@ -7,6 +12,8 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
+use constants::ORDER_STATE_CHANGE_TOPIC;
+use external_api::bus_message::SystemBusMessage;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     seq::SliceRandom,
@@ -18,6 +25,10 @@ use crate::{
     error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
     StateTransition,
 };
+
+/// The error message emitted when a caller attempts to add a local order
+/// directly
+const ERR_LOCAL_ORDER: &str = "local order should be updated through a wallet update";
 
 impl State {
     // -----------
@@ -164,8 +175,24 @@ impl State {
     // -----------
 
     /// Add an order to the book
-    pub fn add_order(&self, order: NetworkOrder) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddOrder { order })
+    pub fn add_order(&self, mut order: NetworkOrder) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+
+        // Local orders should be added to the state through a wallet update written to
+        // the raft log
+        let cluster_id = tx.get_cluster_id()?;
+        let is_local = order.cluster == cluster_id;
+        if is_local {
+            return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
+        }
+
+        // Add the local order to the state
+        order.local = false;
+        tx.write_order_priority(&order)?;
+        tx.write_order(&order)?;
+        tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?;
+
+        Ok(tx.commit()?)
     }
 
     /// Add a validity proof to an order
@@ -173,14 +200,42 @@ impl State {
         &self,
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
-        witness: Option<OrderValidityWitnessBundle>,
+    ) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+        tx.attach_validity_proof(&order_id, proof)?;
+
+        // Read back the order and check if it is local, if so, abort
+        let order = tx.get_order_info(&order_id)?.unwrap();
+        if order.local {
+            return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
+        }
+
+        tx.commit()?;
+
+        // Push a notification to the system bus
+        self.bus.publish(
+            ORDER_STATE_CHANGE_TOPIC.to_string(),
+            SystemBusMessage::OrderStateChange { order },
+        );
+        Ok(())
+    }
+
+    /// Add a validity proof and witness to an order managed by the local node
+    pub fn add_local_order_validity_bundle(
+        &self,
+        order_id: OrderIdentifier,
+        proof: OrderValidityProofBundle,
+        witness: OrderValidityWitnessBundle,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddOrderValidityProof { order_id, proof, witness })
+        self.send_proposal(StateTransition::AddOrderValidityBundle { order_id, proof, witness })
     }
 
     /// Nullify all orders on the given nullifier
-    pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::NullifyOrders { nullifier })
+    pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+        tx.nullify_orders(nullifier)?;
+
+        Ok(tx.commit()?)
     }
 }
 
@@ -199,7 +254,7 @@ mod test {
         let state = mock_state();
 
         let order = dummy_network_order();
-        state.add_order(order.clone()).unwrap().await.unwrap();
+        state.add_order(order.clone()).unwrap();
 
         // Check for the order in the state
         let stored_order = state.get_order(&order.id).unwrap();
@@ -212,7 +267,7 @@ mod test {
         let state = mock_state();
 
         let order = dummy_network_order();
-        state.add_order(order.clone()).unwrap().await.unwrap();
+        state.add_order(order.clone()).unwrap();
 
         // Check for the order in the state
         let stored_order = state.get_order(&order.id).unwrap();
@@ -220,11 +275,31 @@ mod test {
 
         // Add a validity proof to the order
         let proof = dummy_validity_proof_bundle();
-        state.add_order_validity_proof(order.id, proof, None /* witness */).unwrap().await.unwrap();
+        state.add_order_validity_proof(order.id, proof).unwrap();
 
         // Check for the order in the state
         let stored_order = state.get_order(&order.id).unwrap().unwrap();
         assert_eq!(stored_order.state, NetworkOrderState::Verified);
         assert!(stored_order.validity_proofs.is_some());
+    }
+
+    /// Tests nullifying an order
+    #[tokio::test]
+    async fn test_nullify_order() {
+        let state = mock_state();
+
+        let order = dummy_network_order();
+        state.add_order(order.clone()).unwrap();
+
+        // Check for the order in the state
+        let stored_order = state.get_order(&order.id).unwrap();
+        assert_eq!(stored_order, Some(order.clone()));
+
+        // Nullify the order
+        state.nullify_orders(order.public_share_nullifier).unwrap();
+
+        // Check for the order in the state
+        let stored_order = state.get_order(&order.id).unwrap().unwrap();
+        assert_eq!(stored_order.state, NetworkOrderState::Cancelled);
     }
 }

@@ -1,14 +1,18 @@
 //! State interface for peer index methods
+//!
+//! Peer index sets do not need to go through raft consensus, so they are
+//! set directly via this interface. This is because the peer index interface is
+//! one of unconditional writes only and inconsistent state is okay between
+//! cluster peers
 
 use std::collections::HashMap;
 
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
+use itertools::Itertools;
 
-use crate::{
-    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
-    StateTransition,
-};
+use crate::{error::StateError, storage::error::StorageError, State};
 
 impl State {
     // -----------
@@ -69,9 +73,20 @@ impl State {
     }
 
     /// Construct a heartbeat message from the state
+    ///
+    /// TODO: Cache this if it becomes a bottleneck
     pub fn construct_heartbeat(&self) -> Result<HeartbeatMessage, StateError> {
-        let info_map = self.get_peer_info_map()?;
-        Ok(HeartbeatMessage { known_peers: info_map })
+        let tx = self.db.new_read_tx()?;
+        let peers = tx.get_info_map()?;
+        let orders = tx.get_all_orders()?;
+        tx.commit()?;
+
+        // Filter out cancelled orders
+        let known_peers = peers.into_keys().collect_vec();
+        let known_orders =
+            orders.into_iter().filter(|order| !order.is_cancelled()).map(|o| o.id).collect();
+
+        Ok(HeartbeatMessage { known_peers, known_orders })
     }
 
     // -----------
@@ -79,18 +94,50 @@ impl State {
     // -----------
 
     /// Add a peer to the peer index
-    pub fn add_peer(&self, peer: PeerInfo) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddPeers { peers: vec![peer] })
-    }
-
-    /// Remove a peer that has been expired
-    pub fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::RemovePeer { peer_id })
+    pub fn add_peer(&self, peer: PeerInfo) -> Result<(), StateError> {
+        self.add_peer_batch(vec![peer])
     }
 
     /// Add a batch of peers to the index
-    pub fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddPeers { peers })
+    pub fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
+        // Index each peer
+        let tx = self.db.new_write_tx()?;
+        for mut peer in peers.into_iter() {
+            // Parse the peer info and mark a successful heartbeat
+            peer.successful_heartbeat();
+
+            // Do not index the peer if the given address is not dialable
+            if !peer.is_dialable(self.allow_local) {
+                continue;
+            }
+
+            // Add the peer to the store
+            tx.write_peer(&peer)?;
+            tx.add_to_cluster(&peer.peer_id, &peer.cluster_id)?;
+            self.bus
+                .publish(NETWORK_TOPOLOGY_TOPIC.to_string(), SystemBusMessage::NewPeer { peer });
+        }
+
+        // Commit the transaction
+        Ok(tx.commit()?)
+    }
+
+    /// Remove a peer that has been expired
+    pub fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+        if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
+            tx.remove_from_cluster(&peer_id, &peer_info.cluster_id)?;
+            tx.remove_peer(&peer_id)?;
+        }
+
+        // Commit and send a message to the bus
+        tx.commit()?;
+        self.bus.publish(
+            NETWORK_TOPOLOGY_TOPIC.to_string(),
+            SystemBusMessage::PeerExpired { peer: peer_id },
+        );
+
+        Ok(())
     }
 
     /// Record a successful heartbeat on a peer
@@ -107,5 +154,89 @@ impl State {
 
         tx.commit()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::str::FromStr;
+
+    use common::types::gossip::{mocks::mock_peer, ClusterId};
+
+    use crate::test_helpers::mock_state;
+
+    /// Tests adding a peer to the peer index
+    #[test]
+    fn test_add_peer() {
+        let state = mock_state();
+        let peer1 = mock_peer();
+        let mut peer2 = mock_peer();
+        let mut peer3 = mock_peer();
+
+        peer2.cluster_id = ClusterId::from_str("test-cluster-2").unwrap();
+        peer3.cluster_id = peer1.cluster_id.clone();
+
+        // Add the peers
+        state.add_peer(peer1.clone()).unwrap();
+        state.add_peer(peer2.clone()).unwrap();
+        state.add_peer(peer3.clone()).unwrap();
+
+        // Check that the first peer was added
+        let peer_info = state.get_peer_info(&peer1.peer_id).unwrap().unwrap();
+        assert_eq!(peer_info, peer1);
+
+        // Check the cluster peers method
+        let cluster_peers = state.get_cluster_peers(&peer1.cluster_id).unwrap();
+        assert_eq!(cluster_peers, vec![peer1.peer_id, peer3.peer_id]);
+
+        // Check the non-cluster peers method
+        let non_cluster_peers = state.get_non_cluster_peers(&peer1.cluster_id).unwrap();
+        assert_eq!(non_cluster_peers, vec![peer2.peer_id]);
+
+        // Check the info map
+        let info_map = state.get_peer_info_map().unwrap();
+        assert_eq!(info_map.len(), 3);
+        assert_eq!(info_map.get(&peer1.peer_id), Some(&peer1));
+        assert_eq!(info_map.get(&peer2.peer_id), Some(&peer2));
+        assert_eq!(info_map.get(&peer3.peer_id), Some(&peer3));
+    }
+
+    /// Tests removing a peer from the state
+    #[test]
+    fn test_remove_peer() {
+        let state = mock_state();
+        let peer1 = mock_peer();
+        let mut peer2 = mock_peer();
+        let mut peer3 = mock_peer();
+
+        peer2.cluster_id = ClusterId::from_str("test-cluster-2").unwrap();
+        peer3.cluster_id = peer1.cluster_id.clone();
+
+        // Add the peers
+        state.add_peer(peer1.clone()).unwrap();
+        state.add_peer(peer2.clone()).unwrap();
+        state.add_peer(peer3.clone()).unwrap();
+
+        // Remove a peer
+        state.remove_peer(peer1.peer_id).unwrap();
+
+        // Check that the peer was removed
+        let peer_info = state.get_peer_info(&peer1.peer_id).unwrap();
+        assert!(peer_info.is_none());
+
+        // Check the cluster peers method
+        let cluster_peers = state.get_cluster_peers(&peer1.cluster_id).unwrap();
+        assert_eq!(cluster_peers, vec![peer3.peer_id]);
+
+        // Check the non-cluster peers method
+        let non_cluster_peers = state.get_non_cluster_peers(&peer1.cluster_id).unwrap();
+        assert_eq!(non_cluster_peers, vec![peer2.peer_id]);
+
+        // Check the info map
+        let info_map = state.get_peer_info_map().unwrap();
+        assert_eq!(info_map.len(), 2);
+        assert_eq!(info_map.get(&peer1.peer_id), None);
+        assert_eq!(info_map.get(&peer2.peer_id), Some(&peer2));
+        assert_eq!(info_map.get(&peer3.peer_id), Some(&peer3));
     }
 }
