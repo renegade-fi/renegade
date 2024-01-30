@@ -20,6 +20,7 @@ use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
     request_response::{orderbook::OrderInfoResponse, GossipResponse},
 };
+use tracing::log;
 use util::err_str;
 
 use super::{errors::GossipError, server::GossipProtocolExecutor};
@@ -38,11 +39,12 @@ impl GossipProtocolExecutor {
     /// Handles a request for order information from a peer
     pub(crate) fn handle_order_info_request(
         &self,
-        order_id: OrderIdentifier,
+        order_ids: Vec<OrderIdentifier>,
     ) -> Result<GossipResponse, GossipError> {
-        let info = self.global_state.get_order(&order_id)?;
-        let resp = OrderInfoResponse { order_id, info };
+        let info = self.global_state.get_orders_batch(&order_ids)?;
+        let order_info = info.into_iter().flatten().collect();
 
+        let resp = OrderInfoResponse { order_info };
         Ok(GossipResponse::OrderInfo(resp))
     }
 
@@ -53,46 +55,43 @@ impl GossipProtocolExecutor {
     /// Handles a response to a request for order info
     pub(crate) async fn handle_order_info_response(
         &self,
-        order_info: Option<NetworkOrder>,
+        order_info: Vec<NetworkOrder>,
     ) -> Result<(), GossipError> {
-        if order_info.is_none() {
-            return Ok(());
-        }
-        let mut order_info = order_info.unwrap();
+        for mut order in order_info.into_iter() {
+            let order_id = order.id;
 
-        // Skip local orders, their state is added on wallet update through raft
-        // consensus
-        let is_local = order_info.cluster == self.global_state.get_cluster_id()?;
-        if is_local {
-            return Ok(());
-        }
+            // Skip local orders, their state is added on wallet update through raft
+            // consensus
+            let is_local = order.cluster == self.global_state.get_cluster_id()?;
+            if is_local {
+                log::debug!("skipping local order {order_id}");
+                continue;
+            }
 
-        // Move fields out of `order_info` before transferring ownership
-        let order_id = order_info.id;
-        let proof = order_info.validity_proofs.take();
+            // Move fields out of `order_info` before transferring ownership
+            let proof = order.validity_proofs.take();
 
-        order_info.state = NetworkOrderState::Received;
-        order_info.local = is_local;
-        self.global_state.add_order(order_info)?.await?;
+            order.state = NetworkOrderState::Received;
+            order.local = is_local;
+            self.global_state.add_order(order)?;
 
-        // If there is a proof attached to the order, verify it and transition to
-        // `Verified`. If the order is locally managed, the raft consensus will take
-        // care of indexing the order
-        if let Some(proof_bundle) = proof {
-            // Spawn a blocking task to avoid consuming the gossip server's thread pool
-            let self_clone = self.clone();
-            let bundle_clone = proof_bundle.clone();
-            tokio::task::spawn_blocking(move || {
-                block_on(self_clone.verify_validity_proofs(&bundle_clone))
-            })
-            .await
-            .unwrap()?;
+            // If there is a proof attached to the order, verify it and transition to
+            // `Verified`. If the order is locally managed, the raft consensus will take
+            // care of indexing the order
+            if let Some(proof_bundle) = proof {
+                // Spawn a blocking task to avoid consuming the gossip server's thread pool
+                let self_clone = self.clone();
+                let bundle_clone = proof_bundle.clone();
+                tokio::task::spawn_blocking(move || {
+                    block_on(self_clone.verify_validity_proofs(&bundle_clone))
+                })
+                .await
+                .unwrap()?;
 
-            // Update the state of the order to `Verified` by attaching the verified
-            // validity proof
-            self.global_state
-                .add_order_validity_proof(order_id, proof_bundle, None /* witness */)?
-                .await?;
+                // Update the state of the order to `Verified` by attaching the verified
+                // validity proof
+                self.global_state.add_order_validity_proof(order_id, proof_bundle)?;
+            }
         }
 
         Ok(())
@@ -132,9 +131,7 @@ impl GossipProtocolExecutor {
 
         // Ensure that the nullifier has not been used for this order
         self.assert_nullifier_unused(nullifier).await?;
-        self.global_state
-            .add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))?
-            .await?;
+        self.global_state.add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))?;
         Ok(())
     }
 
@@ -166,19 +163,15 @@ impl GossipProtocolExecutor {
 
         // Add the order to the book in the `Validated` state
         if !self.global_state.contains_order(&order_id)? {
-            self.global_state
-                .add_order(NetworkOrder::new(
-                    order_id,
-                    proof_bundle.reblind_proof.statement.original_shares_nullifier,
-                    cluster,
-                    is_local,
-                ))?
-                .await?;
+            self.global_state.add_order(NetworkOrder::new(
+                order_id,
+                proof_bundle.reblind_proof.statement.original_shares_nullifier,
+                cluster,
+                is_local,
+            ))?;
         }
 
-        self.global_state
-            .add_order_validity_proof(order_id, proof_bundle, None /* witness */)?
-            .await?;
+        self.global_state.add_order_validity_proof(order_id, proof_bundle)?;
 
         Ok(())
     }

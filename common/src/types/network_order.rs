@@ -91,6 +91,11 @@ impl NetworkOrder {
         }
     }
 
+    /// Whether the order is cancelled
+    pub fn is_cancelled(&self) -> bool {
+        self.state == NetworkOrderState::Cancelled
+    }
+
     /// Returns whether the order is ready for matching
     ///
     /// This amounts to whether the order has validity proofs and witnesses

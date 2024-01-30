@@ -7,7 +7,7 @@ use crate::{check_signature, sign_message, GossipDestination};
 
 use self::{
     handshake::HandshakeMessage,
-    heartbeat::{BootstrapRequest, HeartbeatMessage},
+    heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
     orderbook::{OrderInfoRequest, OrderInfoResponse},
 };
 
@@ -68,6 +68,8 @@ pub enum GossipRequest {
     Bootstrap(BootstrapRequest),
     /// A request from a peer initiating a heartbeat
     Heartbeat(HeartbeatMessage),
+    /// A request for peer info
+    PeerInfo(PeerInfoRequest),
 
     // --- Handshakes --- //
     /// A request from a peer communicating about a potential handshake
@@ -88,6 +90,7 @@ impl GossipRequest {
             GossipRequest::Ack => false,
             GossipRequest::Bootstrap(..) => false,
             GossipRequest::Heartbeat(..) => false,
+            GossipRequest::PeerInfo(..) => false,
             GossipRequest::Handshake { .. } => false,
             GossipRequest::OrderInfo(..) => false,
         }
@@ -99,8 +102,9 @@ impl GossipRequest {
             GossipRequest::Ack => GossipDestination::NetworkManager,
             GossipRequest::Bootstrap(..) => GossipDestination::GossipServer,
             GossipRequest::Heartbeat(..) => GossipDestination::GossipServer,
-            GossipRequest::Handshake { .. } => GossipDestination::HandshakeManager,
+            GossipRequest::PeerInfo(..) => GossipDestination::GossipServer,
             GossipRequest::OrderInfo(..) => GossipDestination::GossipServer,
+            GossipRequest::Handshake { .. } => GossipDestination::HandshakeManager,
         }
     }
 }
@@ -163,6 +167,8 @@ pub enum GossipResponse {
     Heartbeat(HeartbeatMessage),
     /// A response from a peer communicating about a potential handshake
     Handshake(HandshakeMessage),
+    /// A response from a peer to a sender's request for peer info
+    PeerInfo(PeerInfoResponse),
     /// A response to a request for order information
     OrderInfo(OrderInfoResponse),
 }
@@ -178,6 +184,7 @@ impl GossipResponse {
             GossipResponse::Heartbeat(..) => false,
             GossipResponse::Handshake { .. } => false,
             GossipResponse::OrderInfo(..) => false,
+            GossipResponse::PeerInfo(..) => false,
         }
     }
 
@@ -186,8 +193,9 @@ impl GossipResponse {
         match self {
             GossipResponse::Ack => GossipDestination::NetworkManager,
             GossipResponse::Heartbeat(..) => GossipDestination::GossipServer,
-            GossipResponse::Handshake { .. } => GossipDestination::HandshakeManager,
+            GossipResponse::PeerInfo(..) => GossipDestination::GossipServer,
             GossipResponse::OrderInfo(..) => GossipDestination::GossipServer,
+            GossipResponse::Handshake { .. } => GossipDestination::HandshakeManager,
         }
     }
 }

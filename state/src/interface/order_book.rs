@@ -56,6 +56,24 @@ impl State {
         Ok(info)
     }
 
+    /// Get a batch of orders
+    ///
+    /// Returns `None` for the orders that are not in the state
+    pub fn get_orders_batch(
+        &self,
+        order_ids: &[OrderIdentifier],
+    ) -> Result<Vec<Option<NetworkOrder>>, StateError> {
+        let tx = self.db.new_read_tx()?;
+
+        let mut orders = Vec::with_capacity(order_ids.len());
+        for id in order_ids.iter() {
+            orders.push(tx.get_order_info(id)?);
+        }
+
+        tx.commit()?;
+        Ok(orders)
+    }
+
     /// Get the nullifier for an order
     pub fn get_nullifier_for_order(
         &self,
@@ -102,6 +120,27 @@ impl State {
 
         Ok(orders)
     }
+
+    // --- Heartbeat --- //
+
+    /// Given a list of order IDs, return the subset that are not in the state
+    pub fn get_missing_orders(
+        &self,
+        order_ids: &[OrderIdentifier],
+    ) -> Result<Vec<OrderIdentifier>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let mut missing = Vec::new();
+        for id in order_ids.iter() {
+            if !tx.contains_order(id)? {
+                missing.push(*id);
+            }
+        }
+        tx.commit()?;
+
+        Ok(missing)
+    }
+
+    // --- Match --- //
 
     /// Sample a peer in the cluster managing an order
     pub fn get_peer_managing_order(
@@ -249,8 +288,8 @@ mod test {
     use crate::test_helpers::mock_state;
 
     /// Test adding an order to the state
-    #[tokio::test]
-    async fn test_add_order() {
+    #[test]
+    fn test_add_order() {
         let state = mock_state();
 
         let order = dummy_network_order();
@@ -261,9 +300,52 @@ mod test {
         assert_eq!(stored_order, Some(order));
     }
 
+    /// Tests the `get_orders_batch` method with missing orders
+    #[test]
+    fn test_get_orders_batch() {
+        let state = mock_state();
+
+        // Create two orders and only add one
+        let order1 = dummy_network_order();
+        let order2 = dummy_network_order();
+
+        state.add_order(order1.clone()).unwrap();
+
+        // Get the orders in a batch call
+        let res = state.get_orders_batch(&[order1.id, order2.id]).unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0], Some(order1));
+        assert_eq!(res[1], None);
+    }
+
+    /// Tests getting the missing orders
+    #[test]
+    fn test_get_missing_orders() {
+        let state = mock_state();
+
+        // Create three orders and only add one
+        let order1 = dummy_network_order();
+        let order2 = dummy_network_order();
+        let order3 = dummy_network_order();
+
+        state.add_order(order1.clone()).unwrap();
+
+        // Check for the order in the state
+        let stored_order = state.get_order(&order1.id).unwrap();
+        assert_eq!(stored_order.unwrap(), order1);
+
+        // Get the missing orders
+        let mut missing = state.get_missing_orders(&[order1.id, order2.id, order3.id]).unwrap();
+        missing.sort();
+        let mut expected = vec![order2.id, order3.id];
+        expected.sort();
+
+        assert_eq!(missing, expected);
+    }
+
     /// Test adding a validity proof to an order
-    #[tokio::test]
-    async fn test_add_order_validity_proof() {
+    #[test]
+    fn test_add_order_validity_proof() {
         let state = mock_state();
 
         let order = dummy_network_order();
@@ -284,8 +366,8 @@ mod test {
     }
 
     /// Tests nullifying an order
-    #[tokio::test]
-    async fn test_nullify_order() {
+    #[test]
+    fn test_nullify_order() {
         let state = mock_state();
 
         let order = dummy_network_order();
