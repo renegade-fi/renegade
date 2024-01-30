@@ -7,8 +7,15 @@ use gossip_api::{
 };
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
+use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use uuid::Uuid;
 
+/// The task queue type for the network manager
+pub type NetworkManagerQueue = TokioSender<NetworkManagerJob>;
+/// The task queue receiver type for the network manager
+pub type NetworkManagerReceiver = TokioReceiver<NetworkManagerJob>;
+
+/// The job type for the network manager
 #[derive(Debug)]
 pub enum NetworkManagerJob {
     /// Send an outbound pubsub message

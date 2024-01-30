@@ -3893,6 +3893,7 @@ dependencies = [
  "circuits",
  "common",
  "constants",
+ "crossbeam",
  "gossip-api",
  "lazy_static",
  "libp2p",

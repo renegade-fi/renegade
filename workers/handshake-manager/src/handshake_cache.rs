@@ -23,6 +23,10 @@ use lru::LruCache;
 /// A type alias for a HandshakeCache shared between threads
 pub(super) type SharedHandshakeCache<O> = AsyncShared<HandshakeCache<O>>;
 
+/// The amount of time to mark an order pair as invisible for; giving the peer
+/// time to complete a match on this pair
+const HANDSHAKE_INVISIBILITY_WINDOW_MS: u64 = 120_000; // 2 minutes
+
 /// Caches pairs of orders that have already been matched so that we may avoid
 /// attempting to match orders multiple times
 ///
@@ -92,7 +96,8 @@ impl<O: Clone + Eq + Hash + Ord> HandshakeCache<O> {
     /// Mark the given pair as invisible for a duration
     ///
     /// Window represents the amount of time this order pair is invisible for
-    pub fn mark_invisible(&mut self, o1: O, o2: O, window: Duration) {
+    pub fn mark_invisible(&mut self, o1: O, o2: O) {
+        let window = Duration::from_millis(HANDSHAKE_INVISIBILITY_WINDOW_MS);
         self.lru_cache.push(
             Self::cache_tuple(o1, o2),
             HandshakeCacheState::Invisible { until: Instant::now() + window },

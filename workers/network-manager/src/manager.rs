@@ -15,8 +15,9 @@ use ed25519_dalek::Keypair as SigKeypair;
 use futures::StreamExt;
 use gossip_api::pubsub::{orderbook::ORDER_BOOK_TOPIC, PubsubMessage};
 use job_types::{
-    gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob,
-    network_manager::NetworkManagerJob,
+    gossip_server::GossipServerQueue,
+    handshake_manager::HandshakeManagerQueue,
+    network_manager::{NetworkManagerJob, NetworkManagerReceiver},
 };
 use libp2p::{
     gossipsub::{Event as GossipsubEvent, Sha256Topic},
@@ -27,11 +28,9 @@ use libp2p::{
     Multiaddr, Swarm,
 };
 use state::State;
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
 use std::thread::JoinHandle;
-use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::{
     composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},
@@ -97,7 +96,7 @@ pub struct NetworkManager {
 /// messages from other peers.
 impl NetworkManager {
     /// Setup global state after peer_id and address have been assigned
-    pub async fn update_global_state_after_startup(&self) -> Result<(), NetworkManagerError> {
+    pub fn update_global_state_after_startup(&self) -> Result<(), NetworkManagerError> {
         // Add self to peer info index
         self.config.global_state.add_peer(PeerInfo::new_with_cluster_secret_key(
             self.local_peer_id,
@@ -172,11 +171,11 @@ pub(super) struct NetworkManagerExecutor {
     ///
     /// The runtime driver thread takes ownership of this channel via `take` in
     /// the execution loop
-    job_channel: DefaultWrapper<Option<UnboundedReceiver<NetworkManagerJob>>>,
+    job_channel: DefaultWrapper<Option<NetworkManagerReceiver>>,
     /// The sender for the gossip server's work queue
-    gossip_work_queue: TokioSender<GossipServerJob>,
+    gossip_work_queue: GossipServerQueue,
     /// The sender for the handshake manager's work queue
-    handshake_work_queue: TokioSender<HandshakeExecutionJob>,
+    handshake_work_queue: HandshakeManagerQueue,
     /// A reference to the relayer-global state
     global_state: State,
     /// The cancel channel that the coordinator thread may use to cancel this
@@ -193,9 +192,9 @@ impl NetworkManagerExecutor {
         allow_local: bool,
         cluster_key: SigKeypair,
         swarm: Swarm<ComposedNetworkBehavior>,
-        job_channel: UnboundedReceiver<NetworkManagerJob>,
-        gossip_work_queue: TokioSender<GossipServerJob>,
-        handshake_work_queue: TokioSender<HandshakeExecutionJob>,
+        job_channel: NetworkManagerReceiver,
+        gossip_work_queue: GossipServerQueue,
+        handshake_work_queue: HandshakeManagerQueue,
         global_state: State,
         cancel: CancelChannel,
     ) -> Self {
@@ -243,7 +242,7 @@ impl NetworkManagerExecutor {
                         SwarmEvent::Behaviour(event) => {
                             if let Err(err) = self.handle_inbound_message(
                                 event,
-                            ).await {
+                            ) {
                                 log::info!("error in network manager: {:?}", err);
                             }
                         },
@@ -264,7 +263,7 @@ impl NetworkManagerExecutor {
     }
 
     /// Handles a network event from the relayer's protocol
-    async fn handle_inbound_message(
+    fn handle_inbound_message(
         &mut self,
         message: ComposedProtocolEvent,
     ) -> Result<(), NetworkManagerError> {
@@ -285,7 +284,7 @@ impl NetworkManagerExecutor {
             },
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => Ok(()),
-            ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e).await,
+            ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e),
         }
     }
 

@@ -2,18 +2,18 @@
 
 use arbitrum_client::client::ArbitrumClient;
 use common::{types::CancelChannel, worker::Worker};
-use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
-use gossip_api::gossip::GossipOutbound;
-use job_types::{price_reporter::PriceReporterManagerJob, proof_manager::ProofManagerJob};
+use job_types::{
+    network_manager::NetworkManagerQueue, price_reporter::PriceReporterQueue,
+    proof_manager::ProofManagerQueue,
+};
 use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
 use tokio::{
     runtime::{Builder as TokioBuilder, Runtime},
-    sync::mpsc::UnboundedSender as TokioSender,
     task::JoinHandle as TokioJoinHandle,
 };
 
@@ -48,11 +48,11 @@ pub struct ApiServerConfig {
     /// An arbitrum client
     pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
-    pub network_sender: TokioSender<GossipOutbound>,
-    /// The worker job queue for the PriceReporterManager
-    pub price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
+    pub network_sender: NetworkManagerQueue,
+    /// The worker job queue for the PriceReporter
+    pub price_reporter_work_queue: PriceReporterQueue,
     /// The worker job queue for the ProofGenerationManager
-    pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub proof_generation_work_queue: ProofManagerQueue,
     /// The relayer-global state
     pub global_state: State,
     /// The task driver, used to create and manage long-running async tasks

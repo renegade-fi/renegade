@@ -23,8 +23,7 @@ use circuits::{
     },
 };
 use common::types::{proof_bundles::ProofBundle, CancelChannel};
-use crossbeam::channel::Receiver;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
 use tracing::log;
 
@@ -47,7 +46,7 @@ pub(crate) const PROOF_GENERATION_N_THREADS: usize = 10;
 #[derive(Debug)]
 pub struct ProofManager {
     /// The queue on which the proof manager receives new jobs
-    pub(crate) job_queue: Option<Receiver<ProofManagerJob>>,
+    pub(crate) job_queue: Option<ProofManagerReceiver>,
     /// The handle of the main driver thread in the proof generation module
     pub(crate) join_handle: Option<JoinHandle<ProofManagerError>>,
     /// The threadpool of workers generating proofs for the system
@@ -61,7 +60,7 @@ impl ProofManager {
     /// generation jobs onto a thread pool
     #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn execution_loop(
-        job_queue: Receiver<ProofManagerJob>,
+        job_queue: ProofManagerReceiver,
         thread_pool: Arc<ThreadPool>,
         cancel_channel: CancelChannel,
     ) -> Result<(), ProofManagerError> {

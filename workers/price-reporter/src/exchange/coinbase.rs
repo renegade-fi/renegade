@@ -16,7 +16,7 @@ use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::get_current_time_seconds;
 
-use crate::{errors::ExchangeConnectionError, worker::PriceReporterManagerConfig};
+use crate::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
 
 use super::{
     connection::{
@@ -115,7 +115,7 @@ impl CoinbaseConnection {
     }
 
     /// Parse a midpoint price from a websocket message
-    async fn midpoint_from_ws_message(
+    fn midpoint_from_ws_message(
         order_book: &mut CoinbaseOrderBookData,
         message: Message,
     ) -> Result<Option<Price>, ExchangeConnectionError> {
@@ -186,7 +186,7 @@ impl ExchangeConnection for CoinbaseConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: &PriceReporterManagerConfig,
+        config: &PriceReporterConfig,
     ) -> Result<Self, ExchangeConnectionError> {
         // Build the base websocket connection
         let url = Self::websocket_url();
@@ -219,7 +219,7 @@ impl ExchangeConnection for CoinbaseConnection {
                     // The outer `Result` comes from reading from the ws stream, the inner `Result`
                     // comes from parsing the message
                     Ok(val) => {
-                        let res = Self::midpoint_from_ws_message(&mut order_book, val).await;
+                        let res = Self::midpoint_from_ws_message(&mut order_book, val);
                         res.transpose()
                     },
 
