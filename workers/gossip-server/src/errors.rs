@@ -28,6 +28,8 @@ pub enum GossipError {
     Arbitrum(String),
     /// Timer failed to send a heartbeat
     TimerFailed(String),
+    /// An unhandled request type was received
+    UnhandledRequest(String),
     /// An error verifying a peer's proof of `VALID COMMITMENTS`
     ValidCommitmentVerification(String),
     /// An error verifying a peer's proof of `VALID REBLIND`
