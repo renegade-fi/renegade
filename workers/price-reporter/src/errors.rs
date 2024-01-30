@@ -30,12 +30,12 @@ impl Display for ExchangeConnectionError {
     }
 }
 
-/// The core error type thrown by the PriceReporterManager worker.
+/// The core error type thrown by the PriceReporter worker.
 #[derive(Clone, Debug)]
-pub enum PriceReporterManagerError {
+pub enum PriceReporterError {
     /// An external cancel was requested by the worker manager
     Cancelled(String),
-    /// The spawning of the initial PriceReporterManager execution thread failed
+    /// The spawning of the initial PriceReporter execution thread failed
     ManagerSetup(String),
     /// Error creating a PriceReporter
     PriceReporterCreation(String),
@@ -47,8 +47,8 @@ pub enum PriceReporterManagerError {
     _TooManyFailures(ExchangeConnectionError),
 }
 
-impl Error for PriceReporterManagerError {}
-impl Display for PriceReporterManagerError {
+impl Error for PriceReporterError {}
+impl Display for PriceReporterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{self:?}")
     }

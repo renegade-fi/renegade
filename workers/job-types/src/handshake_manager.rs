@@ -6,7 +6,13 @@ use common::types::{gossip::WrappedPeerId, wallet::OrderIdentifier};
 use constants::SystemCurveGroup;
 use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
 use libp2p::request_response::ResponseChannel;
+use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use uuid::Uuid;
+
+/// The job queue for the handshake manager
+pub type HandshakeManagerQueue = TokioSender<HandshakeExecutionJob>;
+/// The job queue receiver for the handshake manager
+pub type HandshakeManagerReceiver = TokioReceiver<HandshakeExecutionJob>;
 
 /// Represents a job for the handshake manager's thread pool to execute
 #[allow(clippy::large_enum_variant)]

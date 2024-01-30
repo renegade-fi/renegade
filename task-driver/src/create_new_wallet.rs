@@ -24,9 +24,8 @@ use common::types::{
     proof_bundles::ValidWalletCreateBundle,
     wallet::{Wallet, WalletIdentifier},
 };
-use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::types::ApiWallet;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
@@ -56,7 +55,7 @@ pub struct NewWalletTask {
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task's execution
     pub task_state: NewWalletTaskState,
 }
@@ -200,7 +199,7 @@ impl NewWalletTask {
         wallet: ApiWallet,
         arbitrum_client: ArbitrumClient,
         global_state: State,
-        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        proof_manager_work_queue: ProofManagerQueue,
     ) -> Result<Self, NewWalletTaskError> {
         // When we cast to a state wallet, the identifier is erased, add
         // it from the request explicitly

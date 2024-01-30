@@ -29,18 +29,17 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
-use crossbeam::channel::Sender as CrossbeamSender;
-use gossip_api::{
-    gossip::{GossipOutbound, PubsubMessage},
-    orderbook_management::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+use gossip_api::pubsub::{
+    orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
+    PubsubMessage,
 };
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::{
+    network_manager::{NetworkManagerJob, NetworkManagerQueue},
+    proof_manager::{ProofJob, ProofManagerJob, ProofManagerQueue},
+};
 use num_bigint::BigUint;
 use state::State;
-use tokio::sync::{
-    mpsc::UnboundedSender as TokioSender,
-    oneshot::{self, Receiver as TokioReceiver},
-};
+use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
 use tracing::log;
 
 // -------------
@@ -71,7 +70,7 @@ const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
 /// Returns a channel on which the proof manager will send the response
 pub(crate) fn enqueue_proof_job(
     job: ProofJob,
-    work_queue: &CrossbeamSender<ProofManagerJob>,
+    work_queue: &ProofManagerQueue,
 ) -> Result<TokioReceiver<ProofBundle>, String> {
     let (response_sender, response_receiver) = oneshot::channel();
     work_queue
@@ -94,7 +93,7 @@ pub(crate) async fn find_merkle_path(
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
 pub(crate) fn construct_wallet_reblind_proof(
     wallet: &Wallet,
-    prover_queue: &CrossbeamSender<ProofManagerJob>,
+    prover_queue: &ProofManagerQueue,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
     // If the wallet doesn't have an authentication path return an error
     let authentication_path =
@@ -138,7 +137,7 @@ pub(crate) fn construct_wallet_reblind_proof(
 pub(crate) fn construct_order_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
-    proof_manager_work_queue: &CrossbeamSender<ProofManagerJob>,
+    proof_manager_work_queue: &ProofManagerQueue,
     fees_disabled: bool,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Build an augmented wallet
@@ -284,9 +283,9 @@ fn choose_fee(wallet: &mut SizedWallet, fees_disabled: bool) -> Result<(Fee, Bal
 /// each order in the wallet
 pub(crate) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
-    proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    proof_manager_work_queue: ProofManagerQueue,
     global_state: State,
-    network_sender: TokioSender<GossipOutbound>,
+    network_sender: NetworkManagerQueue,
 ) -> Result<(), String> {
     // No validity proofs needed for an empty wallet, they will be re-proven on
     // the next update that adds a non-empty order
@@ -352,7 +351,7 @@ async fn link_and_store_proofs(
     commitments_bundle: &ProofBundle,
     reblind_bundle: &ProofBundle,
     global_state: &State,
-    network_sender: &TokioSender<GossipOutbound>,
+    network_sender: &NetworkManagerQueue,
 ) -> Result<(), String> {
     // Prove the link between the reblind and commitments proofs
     let reblind_link_hint = &reblind_bundle.link_hint;
@@ -372,20 +371,16 @@ async fn link_and_store_proofs(
     };
 
     global_state
-        .add_order_validity_proof(*order_id, proof_bundle.clone(), Some(witness_bundle))?
+        .add_local_order_validity_bundle(*order_id, proof_bundle.clone(), witness_bundle)?
         .await?;
 
     // Gossip the updated proofs to the network
-    let message = GossipOutbound::Pubsub {
-        topic: ORDER_BOOK_TOPIC.to_string(),
-        message: PubsubMessage::OrderBookManagement(
-            OrderBookManagementMessage::OrderProofUpdated {
-                order_id: *order_id,
-                cluster: global_state.get_cluster_id()?,
-                proof_bundle,
-            },
-        ),
-    };
+    let message = PubsubMessage::Orderbook(OrderBookManagementMessage::OrderProofUpdated {
+        order_id: *order_id,
+        cluster: global_state.get_cluster_id()?,
+        proof_bundle,
+    });
 
-    network_sender.send(message).map_err(|e| e.to_string())
+    let job = NetworkManagerJob::pubsub(ORDER_BOOK_TOPIC.to_string(), message);
+    network_sender.send(job).map_err(|e| e.to_string())
 }

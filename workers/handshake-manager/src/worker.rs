@@ -5,24 +5,22 @@ use std::thread::{Builder, JoinHandle};
 use arbitrum_client::client::ArbitrumClient;
 use common::types::CancelChannel;
 use common::worker::Worker;
-use crossbeam::channel::Sender as CrossbeamSender;
 use external_api::bus_message::SystemBusMessage;
-use gossip_api::gossip::GossipOutbound;
 use job_types::{
-    handshake_manager::HandshakeExecutionJob, price_reporter::PriceReporterManagerJob,
-    proof_manager::ProofManagerJob,
+    handshake_manager::{HandshakeManagerQueue, HandshakeManagerReceiver},
+    network_manager::NetworkManagerQueue,
+    price_reporter::PriceReporterQueue,
+    proof_manager::ProofManagerQueue,
 };
 use state::State;
 use system_bus::SystemBus;
 use task_driver::driver::TaskDriver;
-use tokio::{
-    runtime::Builder as RuntimeBuilder,
-    sync::mpsc::{UnboundedReceiver, UnboundedSender as TokioSender},
-};
+use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::log;
 
 use crate::manager::{
-    init_price_streams, HandshakeExecutor, HandshakeScheduler, HANDSHAKE_EXECUTOR_N_THREADS,
+    init_price_streams, scheduler::HandshakeScheduler, HandshakeExecutor,
+    HANDSHAKE_EXECUTOR_N_THREADS,
 };
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager};
@@ -32,18 +30,18 @@ pub struct HandshakeManagerConfig {
     /// The relayer-global state
     pub global_state: State,
     /// The channel on which to send outbound network requests
-    pub network_channel: TokioSender<GossipOutbound>,
+    pub network_channel: NetworkManagerQueue,
     /// The price reporter's job queue
-    pub price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
+    pub price_reporter_job_queue: PriceReporterQueue,
     /// An arbitrum client for interacting with the contract
     pub arbitrum_client: ArbitrumClient,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
-    pub job_sender: TokioSender<HandshakeExecutionJob>,
+    pub job_sender: HandshakeManagerQueue,
     /// The job queue on which to receive handshake requests
-    pub job_receiver: Option<UnboundedReceiver<HandshakeExecutionJob>>,
+    pub job_receiver: Option<HandshakeManagerReceiver>,
     /// A sender to forward jobs to the proof manager on
-    pub proof_manager_sender: CrossbeamSender<ProofManagerJob>,
+    pub proof_manager_sender: ProofManagerQueue,
     /// The task driver, used to manage long-running async tasks
     pub task_driver: TaskDriver,
     /// The system bus to which all workers have access

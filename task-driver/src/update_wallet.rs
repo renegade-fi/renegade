@@ -16,13 +16,11 @@ use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
-use crossbeam::channel::Sender as CrossbeamSender;
-use gossip_api::gossip::GossipOutbound;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::network_manager::NetworkManagerQueue;
+use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::helpers::{enqueue_proof_job, find_merkle_path};
 
@@ -60,11 +58,11 @@ pub struct UpdateWalletTask {
     /// The arbitrum client to use for submitting transactions
     pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
-    pub network_sender: TokioSender<GossipOutbound>,
+    pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task
     pub task_state: UpdateWalletTaskState,
 }
@@ -223,9 +221,9 @@ impl UpdateWalletTask {
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
         arbitrum_client: ArbitrumClient,
-        network_sender: TokioSender<GossipOutbound>,
+        network_sender: NetworkManagerQueue,
         global_state: State,
-        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        proof_manager_work_queue: ProofManagerQueue,
     ) -> Result<Self, UpdateWalletTaskError> {
         if !old_wallet.try_lock_wallet() {
             return Err(UpdateWalletTaskError::WalletLocked);

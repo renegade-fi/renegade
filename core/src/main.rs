@@ -19,15 +19,15 @@ use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{watch_worker, Worker};
 use external_api::bus_message::SystemBusMessage;
-use gossip_api::gossip::GossipOutbound;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
+use job_types::network_manager::NetworkManagerJob;
 use job_types::{
     gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob,
-    price_reporter::PriceReporterManagerJob,
+    price_reporter::PriceReporterJob,
 };
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
-use price_reporter::{manager::PriceReporterManager, worker::PriceReporterManagerConfig};
+use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
 use state::tui::StateTuiApp;
 use state::{replication::network::test_helpers::MockNetwork, State};
@@ -88,13 +88,13 @@ async fn main() -> Result<(), CoordinatorError> {
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
-    let (network_sender, network_receiver) = mpsc::unbounded_channel::<GossipOutbound>();
+    let (network_sender, network_receiver) = mpsc::unbounded_channel::<NetworkManagerJob>();
     let (gossip_worker_sender, gossip_worker_receiver) =
         mpsc::unbounded_channel::<GossipServerJob>();
     let (handshake_worker_sender, handshake_worker_receiver) =
         mpsc::unbounded_channel::<HandshakeExecutionJob>();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) =
-        mpsc::unbounded_channel::<PriceReporterManagerJob>();
+        mpsc::unbounded_channel::<PriceReporterJob>();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Construct a global state
@@ -205,7 +205,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Start the price reporter manager
     let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
-    let mut price_reporter_manager = PriceReporterManager::new(PriceReporterManagerConfig {
+    let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
         system_bus: system_bus.clone(),
         job_receiver: Some(price_reporter_worker_receiver).into(),
         cancel_channel: price_reporter_cancel_receiver,
@@ -219,10 +219,7 @@ async fn main() -> Result<(), CoordinatorError> {
     price_reporter_manager.start().expect("failed to start price reporter manager");
     let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
-    watch_worker::<PriceReporterManager>(
-        &mut price_reporter_manager,
-        &price_reporter_failure_sender,
-    );
+    watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
 
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());

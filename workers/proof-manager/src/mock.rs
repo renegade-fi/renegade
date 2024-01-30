@@ -22,8 +22,7 @@ use common::types::proof_bundles::{
     mocks::{dummy_link_hint, dummy_proof},
     ProofBundle,
 };
-use crossbeam::channel::Receiver;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::proof_manager::{ProofJob, ProofManagerReceiver};
 use tokio::{runtime::Handle, sync::oneshot::Sender as TokioSender};
 use tracing::log;
 
@@ -41,7 +40,7 @@ pub struct MockProofManager;
 #[allow(clippy::needless_pass_by_value)]
 impl MockProofManager {
     /// Start a mock proof manager
-    pub fn start(job_queue: Receiver<ProofManagerJob>) {
+    pub fn start(job_queue: ProofManagerReceiver) {
         Handle::current().spawn_blocking(move || {
             if let Err(e) = Self::execution_loop(&job_queue) {
                 log::error!("error in mock proof manager: {e}");
@@ -50,7 +49,7 @@ impl MockProofManager {
     }
 
     /// The execution loop for the mock
-    fn execution_loop(job_queue: &Receiver<ProofManagerJob>) -> Result<(), ProofManagerError> {
+    fn execution_loop(job_queue: &ProofManagerReceiver) -> Result<(), ProofManagerError> {
         loop {
             match job_queue.recv() {
                 Err(_) => {

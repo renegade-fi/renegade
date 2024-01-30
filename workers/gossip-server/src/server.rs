@@ -16,8 +16,8 @@ use gossip_api::{
     request_response::{heartbeat::BootstrapRequest, GossipRequest, GossipResponse},
 };
 use job_types::{
-    gossip_server::GossipServerJob,
-    network_manager::{NetworkManagerControlSignal, NetworkManagerJob},
+    gossip_server::{GossipServerJob, GossipServerQueue, GossipServerReceiver},
+    network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
 };
 use lru::LruCache;
 use state::State;
@@ -26,7 +26,6 @@ use std::{
     thread::{self, Builder, JoinHandle},
     time::Duration,
 };
-use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use tracing::log;
 use util::err_str;
 
@@ -65,7 +64,7 @@ impl GossipServer {
     /// Bootstraps the local node into the network by syncing state with known
     /// bootstrap peers and then advertising the local node's presence to the
     /// cluster
-    pub async fn bootstrap_into_network(&self) -> Result<(), GossipError> {
+    pub fn bootstrap_into_network(&self) -> Result<(), GossipError> {
         // Bootstrap into the network in two steps:
         //  1. Forward all bootstrap addresses to the network manager so it may dial
         //     them
@@ -102,7 +101,7 @@ impl GossipServer {
         }
 
         // Finally, warmup the network then send a cluster join message
-        self.warmup_then_join_cluster().await
+        self.warmup_then_join_cluster()
     }
 
     /// Enqueues a pubsub message to join the local peer's cluster, then spawns
@@ -115,7 +114,7 @@ impl GossipServer {
     ///
     /// This is done to allow the network manager to gossip about network
     /// structure and graft a pubsub mesh before attempting to publish
-    async fn warmup_then_join_cluster(&self) -> Result<(), GossipError> {
+    fn warmup_then_join_cluster(&self) -> Result<(), GossipError> {
         // TODO: Send a raft join message to peers, possibly via pubsub
 
         // Copy items so they may be moved into the spawned thread
@@ -149,9 +148,9 @@ pub struct GossipProtocolExecutor {
     /// time, until its expiry has had time to propagate
     pub peer_expiry_cache: SharedLRUCache,
     /// The channel on which to receive jobs
-    pub job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
+    pub job_receiver: DefaultWrapper<Option<GossipServerReceiver>>,
     /// The channel to send outbound network requests on
-    pub network_channel: TokioSender<NetworkManagerJob>,
+    pub network_channel: NetworkManagerQueue,
     /// The global state of the relayer
     pub global_state: State,
     /// A copy of the config passed to the worker
@@ -163,8 +162,8 @@ pub struct GossipProtocolExecutor {
 impl GossipProtocolExecutor {
     /// Creates a new executor
     pub fn new(
-        network_channel: TokioSender<NetworkManagerJob>,
-        job_receiver: TokioReceiver<GossipServerJob>,
+        network_channel: NetworkManagerQueue,
+        job_receiver: GossipServerReceiver,
         global_state: State,
         config: GossipServerConfig,
         cancel_channel: CancelChannel,
@@ -192,7 +191,7 @@ impl GossipProtocolExecutor {
     /// Runs the executor loop
     pub async fn execution_loop(
         mut self,
-        job_sender: TokioSender<GossipServerJob>,
+        job_sender: GossipServerQueue,
     ) -> Result<(), GossipError> {
         log::info!("Starting executor loop for heartbeat protocol executor...");
 
