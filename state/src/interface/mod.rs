@@ -41,10 +41,14 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 /// replication and durability primitives backing the state machine
 #[derive(Clone)]
 pub struct State {
+    /// Whether or not the node allows local peers when adding to the peer index
+    allow_local: bool,
     /// A handle on the database
     db: Arc<DB>,
     /// A handle on the proposal queue to the raft instance
     proposal_queue: Arc<ProposalQueue>,
+    /// The system bus for sending notifications to other workers
+    bus: SystemBus<SystemBusMessage>,
 }
 
 impl State {
@@ -71,7 +75,7 @@ impl State {
             proposal_queue: proposal_recv,
             network,
             db: db.clone(),
-            system_bus,
+            system_bus: system_bus.clone(),
         };
 
         // Start the raft in a new thread
@@ -81,7 +85,12 @@ impl State {
         });
 
         // Setup the node metadata from the config
-        let self_ = Self { db, proposal_queue: Arc::new(proposal_send) };
+        let self_ = Self {
+            allow_local: config.allow_local,
+            db,
+            proposal_queue: Arc::new(proposal_send),
+            bus: system_bus,
+        };
         self_.setup_node_metadata(config)?;
         Ok(self_)
     }
