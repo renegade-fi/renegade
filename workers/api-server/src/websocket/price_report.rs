@@ -3,9 +3,8 @@
 use async_trait::async_trait;
 use common::types::token::Token;
 use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
-use job_types::price_reporter::PriceReporterManagerJob;
+use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use system_bus::{SystemBus, TopicReader};
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
     error::{bad_request, ApiServerError},
@@ -66,7 +65,7 @@ fn parse_quote_mint_from_url_params(params: &UrlParams) -> Result<String, ApiSer
 #[derive(Clone)]
 pub struct PriceReporterHandler {
     /// A sender to the price reporter's work queue
-    price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
+    price_reporter_work_queue: PriceReporterQueue,
     /// A reference to the relayer-global system bus    
     system_bus: SystemBus<SystemBusMessage>,
 }
@@ -74,7 +73,7 @@ pub struct PriceReporterHandler {
 impl PriceReporterHandler {
     /// Constructor
     pub fn new(
-        price_reporter_work_queue: TokioSender<PriceReporterManagerJob>,
+        price_reporter_work_queue: PriceReporterQueue,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
         Self { price_reporter_work_queue, system_bus }
@@ -99,7 +98,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
 
         // Start a price reporting stream in the manager
         self.price_reporter_work_queue
-            .send(PriceReporterManagerJob::StartPriceReporter {
+            .send(PriceReporterJob::StartPriceReporter {
                 base_token: base.clone(),
                 quote_token: quote.clone(),
             })

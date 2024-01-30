@@ -299,7 +299,7 @@ impl WebsocketServer {
 
                 // Validate auth
                 if route_handler.requires_wallet_auth() {
-                    self.authenticate_subscription(&params, &message).await?;
+                    self.authenticate_subscription(&params, &message)?;
                 }
 
                 // Register the topic subscription in the system bus and in the stream
@@ -345,7 +345,7 @@ impl WebsocketServer {
     }
 
     /// Authenticate a request by verifying a signature of the body by `sk_root`
-    async fn authenticate_subscription(
+    fn authenticate_subscription(
         &self,
         params: &UrlParams,
         message: &ClientWebsocketMessage,

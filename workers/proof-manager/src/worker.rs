@@ -7,8 +7,7 @@ use std::{
 };
 
 use common::{types::CancelChannel, worker::Worker};
-use crossbeam::channel::Receiver;
-use job_types::proof_manager::ProofManagerJob;
+use job_types::proof_manager::ProofManagerReceiver;
 use rayon::ThreadPoolBuilder;
 
 use super::{
@@ -23,7 +22,7 @@ const MAIN_THREAD_NAME: &str = "proof-generation-main";
 #[derive(Clone, Debug)]
 pub struct ProofManagerConfig {
     /// The job queue on which the manager may receive proof generation jobs
-    pub job_queue: Receiver<ProofManagerJob>,
+    pub job_queue: ProofManagerReceiver,
     /// The cancel channel that the coordinator uses to signal to the proof
     /// generation module that it should shut down
     pub cancel_channel: CancelChannel,

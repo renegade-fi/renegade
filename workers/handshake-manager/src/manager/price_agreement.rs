@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 
 use common::types::{exchange::PriceReporterState, token::Token, wallet::OrderIdentifier, Price};
-use gossip_api::handshake::{MidpointPrice, PriceVector};
-use job_types::price_reporter::PriceReporterManagerJob;
+use gossip_api::request_response::handshake::PriceVector;
+use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use lazy_static::lazy_static;
-use tokio::sync::{mpsc::UnboundedSender as TokioSender, oneshot};
+use tokio::sync::oneshot;
 use tracing::log;
 
-use super::{HandshakeExecutor, HandshakeManagerError, ERR_NO_WALLET};
+use super::{HandshakeExecutor, HandshakeManagerError};
 
 /// The maximum percentage deviation that is allowed between a peer's proposed
 /// price and a locally observed price before the proposed price is rejected
@@ -114,11 +114,11 @@ lazy_static! {
 /// streaming, ahead of when we need prices
 #[allow(clippy::needless_pass_by_value)]
 pub fn init_price_streams(
-    price_reporter_job_queue: TokioSender<PriceReporterManagerJob>,
+    price_reporter_job_queue: PriceReporterQueue,
 ) -> Result<(), HandshakeManagerError> {
     for (base, quote) in DEFAULT_PAIRS.iter() {
         price_reporter_job_queue
-            .send(PriceReporterManagerJob::StartPriceReporter {
+            .send(PriceReporterJob::StartPriceReporter {
                 base_token: base.clone(),
                 quote_token: quote.clone(),
             })
@@ -136,7 +136,7 @@ impl HandshakeExecutor {
         for (base, quote) in DEFAULT_PAIRS.iter().cloned() {
             let (sender, receiver) = oneshot::channel();
             self.price_reporter_job_queue
-                .send(PriceReporterManagerJob::PeekMedian {
+                .send(PriceReporterJob::PeekMedian {
                     base_token: base,
                     quote_token: quote,
                     channel: sender,
@@ -196,20 +196,14 @@ impl HandshakeExecutor {
         &self,
         proposed_prices: &PriceVector,
         my_order_id: &OrderIdentifier,
-    ) -> Result<Option<MidpointPrice>, HandshakeManagerError> {
+    ) -> Result<bool, HandshakeManagerError> {
         // Find the price of the asset pair that the local party's order is on in the
         // peer's proposed prices list
-        let my_order = self
-            .global_state
-            .get_managed_order(my_order_id)?
-            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
-        let (base, quote) = self.token_pair_for_order(&my_order);
-
+        let (base, quote) = self.token_pair_for_order(my_order_id)?;
         let proposed_price = proposed_prices.find_pair(&base, &quote);
         if proposed_price.is_none() {
-            return Ok(None);
+            return Ok(false);
         }
-        let (_, _, proposed_price) = proposed_price.unwrap(); // (base, quote, price)
 
         // Validate that the maximum deviation between the proposed prices and the
         // locally observed prices is within the acceptable range
@@ -230,11 +224,11 @@ impl HandshakeExecutor {
             if let Some(my_price) = my_prices.get(&(base, quote)) {
                 let price_deviation = (peer_price - my_price) / my_price;
                 if price_deviation.abs() > MAX_PRICE_DEVIATION {
-                    return Ok(None);
+                    return Ok(false);
                 }
             }
         }
 
-        Ok(Some((base, quote, proposed_price)))
+        Ok(true)
     }
 }

@@ -18,9 +18,11 @@ use arbitrum_client::{
 };
 use clap::Parser;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
-use gossip_api::gossip::GossipOutbound;
 use helpers::new_mock_task_driver;
-use job_types::proof_manager::ProofManagerJob;
+use job_types::{
+    network_manager::{NetworkManagerQueue, NetworkManagerReceiver},
+    proof_manager::ProofManagerJob,
+};
 use proof_manager::mock::MockProofManager;
 use state::{test_helpers::mock_state, State};
 use task_driver::driver::TaskDriver;
@@ -29,9 +31,7 @@ use test_helpers::{
     integration_test_main,
     types::TestVerbosity,
 };
-use tokio::sync::mpsc::{
-    unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
-};
+use tokio::sync::mpsc::unbounded_channel;
 use util::{
     arbitrum::{
         parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
@@ -83,11 +83,11 @@ struct IntegrationTestArgs {
     /// The arbitrum client that resolves to a locally running devnet node
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
-    network_sender: TokioSender<GossipOutbound>,
+    network_sender: NetworkManagerQueue,
     /// A receiver for the network manager's work queue
     ///
     /// Held here to avoid closing the channel on `Drop`
-    _network_receiver: Arc<TokioReceiver<GossipOutbound>>,
+    _network_receiver: Arc<NetworkManagerReceiver>,
     /// A reference to the global state of the mock proof manager
     global_state: State,
     /// The job queue for the mock proof manager
