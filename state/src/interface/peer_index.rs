@@ -49,6 +49,8 @@ impl State {
         Ok(info_map)
     }
 
+    // --- Heartbeat --- //
+
     /// Get all the peers known in a given cluster
     pub fn get_cluster_peers(
         &self,
@@ -70,6 +72,24 @@ impl State {
         info.retain(|_, peer_info| peer_info.get_cluster_id() != *cluster_id);
 
         Ok(info.into_keys().collect())
+    }
+
+    /// Given a list of peers, return the ones that are not in the peer index
+    pub fn get_missing_peers(
+        &self,
+        peers: &[WrappedPeerId],
+    ) -> Result<Vec<WrappedPeerId>, StateError> {
+        let tx = self.db.new_read_tx()?;
+
+        let mut res = Vec::new();
+        for peer in peers.iter().copied() {
+            if tx.get_peer_info(&peer)?.is_none() {
+                res.push(peer);
+            }
+        }
+        tx.commit()?;
+
+        Ok(res)
     }
 
     /// Construct a heartbeat message from the state
@@ -238,5 +258,26 @@ mod test {
         assert_eq!(info_map.get(&peer1.peer_id), None);
         assert_eq!(info_map.get(&peer2.peer_id), Some(&peer2));
         assert_eq!(info_map.get(&peer3.peer_id), Some(&peer3));
+    }
+
+    /// Tests the `get_missing_peers` method
+    #[test]
+    fn test_get_missing_peers() {
+        let state = mock_state();
+        let peer1 = mock_peer();
+        let peer2 = mock_peer();
+        let peer3 = mock_peer();
+
+        // Add the peer
+        state.add_peer(peer1.clone()).unwrap();
+
+        // Check that the missing peers are returned
+        let mut missing_peers =
+            state.get_missing_peers(&[peer1.peer_id, peer2.peer_id, peer3.peer_id]).unwrap();
+        missing_peers.sort();
+        let mut expected = vec![peer2.peer_id, peer3.peer_id];
+        expected.sort();
+
+        assert_eq!(missing_peers, expected);
     }
 }
