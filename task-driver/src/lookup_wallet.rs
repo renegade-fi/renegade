@@ -11,14 +11,11 @@ use async_trait::async_trait;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use common::types::wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata};
 use constants::Scalar;
-use crossbeam::channel::Sender as CrossbeamSender;
-use gossip_api::gossip::GossipOutbound;
 use itertools::Itertools;
-use job_types::proof_manager::ProofManagerJob;
+use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::Serialize;
 use state::{error::StateError, State};
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use uuid::Uuid;
 
@@ -47,11 +44,11 @@ pub struct LookupWalletTask {
     /// An arbitrum client for the task to submit transactions
     pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
-    pub network_sender: TokioSender<GossipOutbound>,
+    pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task's execution
     pub task_state: LookupWalletTaskState,
 }
@@ -164,9 +161,9 @@ impl LookupWalletTask {
         secret_share_stream_seed: Scalar,
         key_chain: KeyChain,
         arbitrum_client: ArbitrumClient,
-        network_sender: TokioSender<GossipOutbound>,
+        network_sender: NetworkManagerQueue,
         global_state: State,
-        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+        proof_manager_work_queue: ProofManagerQueue,
     ) -> Self {
         Self {
             wallet_id,

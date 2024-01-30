@@ -1,6 +1,6 @@
 //! Stores state information relating to the node's configuration
 
-use common::types::gossip::{ClusterId, WrappedPeerId};
+use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 
@@ -46,6 +46,17 @@ impl State {
     pub fn update_local_peer_addr(&self, addr: &Multiaddr) -> Result<(), StateError> {
         let tx = self.db.new_write_tx()?;
         tx.set_local_addr(addr)?;
+        Ok(tx.commit()?)
+    }
+
+    /// Add the local peer's info to the info table
+    pub fn set_local_peer_info(&self, mut info: PeerInfo) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+
+        info.successful_heartbeat();
+        tx.write_peer(&info)?;
+        tx.add_to_cluster(&info.peer_id, &info.cluster_id)?;
+
         Ok(tx.commit()?)
     }
 

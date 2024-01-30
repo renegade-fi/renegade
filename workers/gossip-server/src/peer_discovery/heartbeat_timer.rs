@@ -2,9 +2,8 @@
 
 use std::{thread, time::Duration};
 
-use job_types::gossip_server::GossipServerJob;
+use job_types::gossip_server::{GossipServerJob, GossipServerQueue};
 use state::State;
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::errors::GossipError;
 
@@ -18,11 +17,11 @@ impl HeartbeatTimer {
     /// another for inter-cluster The interval parameters specify how often
     /// the timers should cycle through all peers in their target list
     pub fn new(
-        job_queue: TokioSender<GossipServerJob>,
+        job_queue: GossipServerQueue,
         intra_cluster_interval_ms: u64,
         inter_cluster_interval_ms: u64,
         global_state: State,
-    ) {
+    ) -> Self {
         // Narrowing cast is okay, precision is not important here
         let intra_cluster_wait_period = Duration::from_millis(intra_cluster_interval_ms);
         let inter_cluster_wait_period = Duration::from_millis(inter_cluster_interval_ms);
@@ -71,7 +70,7 @@ impl HeartbeatTimer {
     /// that interval
     fn execution_loop(
         intra_cluster: bool,
-        job_queue: TokioSender<GossipServerJob>,
+        job_queue: GossipServerQueue,
         wait_period: Duration,
         global_state: State,
     ) -> Result<(), GossipError> {
@@ -86,7 +85,9 @@ impl HeartbeatTimer {
                 global_state.get_non_cluster_peers(&cluster_id)?
             };
 
-            let wait_time = wait_period / (peers.len() as u32);
+            let wait_time =
+                if peers.is_empty() { wait_period } else { wait_period / (peers.len() as u32) };
+
             for peer in peers.into_iter().filter(|peer| peer != &local_peer_id) {
                 if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer)) {
                     return Err(GossipError::TimerFailed(err.to_string()));

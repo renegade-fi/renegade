@@ -17,7 +17,7 @@ use tracing::log;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
 
-use crate::{errors::ExchangeConnectionError, worker::PriceReporterManagerConfig};
+use crate::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
 
 use super::{
     connection::{
@@ -139,7 +139,7 @@ impl ExchangeConnection for BinanceConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        _config: &PriceReporterManagerConfig,
+        _config: &PriceReporterConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,

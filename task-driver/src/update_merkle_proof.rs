@@ -10,12 +10,9 @@ use std::{
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::types::wallet::Wallet;
-use crossbeam::channel::Sender as CrossbeamSender;
-use gossip_api::gossip::GossipOutbound;
-use job_types::proof_manager::ProofManagerJob;
+use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 
 use crate::{
     driver::{StateWrapper, Task},
@@ -38,9 +35,9 @@ pub struct UpdateMerkleProofTask {
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub proof_manager_work_queue: ProofManagerQueue,
     /// A sender to the network manager's work queue
-    pub network_sender: TokioSender<GossipOutbound>,
+    pub network_sender: NetworkManagerQueue,
     /// The state of the task
     pub task_state: UpdateMerkleProofTaskState,
 }
@@ -164,12 +161,12 @@ impl Task for UpdateMerkleProofTask {
 
 impl UpdateMerkleProofTask {
     /// Constructor
-    pub async fn new(
+    pub fn new(
         wallet: Wallet,
         arbitrum_client: ArbitrumClient,
         global_state: State,
-        proof_manager_work_queue: CrossbeamSender<ProofManagerJob>,
-        network_sender: TokioSender<GossipOutbound>,
+        proof_manager_work_queue: ProofManagerQueue,
+        network_sender: NetworkManagerQueue,
     ) -> Result<Self, UpdateMerkleProofTaskError> {
         if !wallet.try_lock_wallet() {
             return Err(UpdateMerkleProofTaskError::WalletLocked);

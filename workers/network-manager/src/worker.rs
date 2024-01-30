@@ -3,14 +3,14 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::{Builder, JoinHandle};
 
-use common::types::gossip::ClusterId;
+use common::types::gossip::{ClusterId, PeerInfo};
 use common::types::CancelChannel;
 use common::worker::Worker;
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
-use futures::executor::block_on;
-use job_types::network_manager::NetworkManagerJob;
-use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob};
+use job_types::gossip_server::GossipServerQueue;
+use job_types::handshake_manager::HandshakeManagerQueue;
+use job_types::network_manager::NetworkManagerReceiver;
 use state::State;
 use system_bus::SystemBus;
 
@@ -20,7 +20,6 @@ use libp2p_core::muxing::StreamMuxerBox;
 use libp2p_core::Transport;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tracing::log;
 
 use crate::composed_protocol::ComposedNetworkBehavior;
@@ -55,11 +54,11 @@ pub struct NetworkManagerConfig {
     /// This is wrapped in an option to allow the worker thread to take
     /// ownership of the work queue once it is started. The coordinator
     /// will be left with `None` after this happens
-    pub send_channel: Option<UnboundedReceiver<NetworkManagerJob>>,
+    pub send_channel: Option<NetworkManagerReceiver>,
     /// The work queue to forward inbound heartbeat requests to
-    pub gossip_work_queue: UnboundedSender<GossipServerJob>,
+    pub gossip_work_queue: GossipServerQueue,
     /// The work queue to forward inbound handshake requests to
-    pub handshake_work_queue: UnboundedSender<HandshakeExecutionJob>,
+    pub handshake_work_queue: HandshakeManagerQueue,
     /// The system bus, used to stream internal pubsub messages
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The global shared state of the local relayer
@@ -93,6 +92,15 @@ impl Worker for NetworkManager {
             .with(Protocol::P2p(local_peer_id.0.into()))
             .with(Protocol::Tcp(config.port))
             .with(ip_protoc);
+
+        // Write the local peer's info to the global state once we know the bind addr
+        let info = PeerInfo::new_with_cluster_secret_key(
+            local_peer_id,
+            config.cluster_id.clone(),
+            local_addr.clone(),
+            config.cluster_keypair.as_ref().unwrap(),
+        );
+        config.global_state.set_local_peer_info(info)?;
 
         Ok(Self {
             cluster_id: config.cluster_id.clone(),
@@ -153,7 +161,7 @@ impl Worker for NetworkManager {
         swarm.listen_on(addr).map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
-        block_on(self.update_global_state_after_startup())?;
+        self.update_global_state_after_startup()?;
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;
 

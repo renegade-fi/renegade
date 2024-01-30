@@ -8,17 +8,18 @@ use arbitrum_client::{
     constants::{MERKLE_NODE_CHANGED_EVENT_NAME, NULLIFIER_SPENT_EVENT_NAME},
 };
 use common::types::{wallet::Wallet, CancelChannel};
-use crossbeam::channel::Sender as CrossbeamSender;
 use ethers::{prelude::StreamExt, types::Filter};
-use gossip_api::gossip::GossipOutbound;
-use job_types::{handshake_manager::HandshakeExecutionJob, proof_manager::ProofManagerJob};
+use job_types::{
+    handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
+    network_manager::NetworkManagerQueue,
+    proof_manager::ProofManagerQueue,
+};
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
 use task_driver::{
     driver::TaskDriver,
     update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskError},
 };
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 
 use super::error::OnChainEventListenerError;
@@ -48,12 +49,12 @@ pub struct OnChainEventListenerConfig {
     pub global_state: State,
     /// A sender to the handshake manager's job queue, used to enqueue
     /// MPC shootdown jobs
-    pub handshake_manager_job_queue: TokioSender<HandshakeExecutionJob>,
+    pub handshake_manager_job_queue: HandshakeManagerQueue,
     /// The worker job queue for the ProofGenerationManager
-    pub proof_generation_work_queue: CrossbeamSender<ProofManagerJob>,
+    pub proof_generation_work_queue: ProofManagerQueue,
     /// The work queue for the network manager, used to send outbound gossip
     /// messages
-    pub network_sender: TokioSender<GossipOutbound>,
+    pub network_sender: NetworkManagerQueue,
     /// The task driver, used to create and manage long-running async tasks
     pub task_driver: TaskDriver,
     /// The channel on which the coordinator may send a cancel signal
@@ -135,7 +136,7 @@ impl OnChainEventListenerExecutor {
         // Dispatch based on key
         match event {
             DarkpoolContractEvents::NullifierSpentFilter(event) => {
-                self.handle_nullifier_spent(event).await?;
+                self.handle_nullifier_spent(&event)?;
             },
             DarkpoolContractEvents::NodeChangedFilter(event) => {
                 self.handle_internal_node_update(event).await?;
@@ -150,9 +151,9 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Handle a nullifier spent event
-    async fn handle_nullifier_spent(
+    fn handle_nullifier_spent(
         &self,
-        event: NullifierSpentFilter,
+        event: &NullifierSpentFilter,
     ) -> Result<(), OnChainEventListenerError> {
         // Send an MPC shootdown request to the handshake manager
         let nullifier = u256_to_scalar(&event.nullifier);
@@ -162,7 +163,7 @@ impl OnChainEventListenerExecutor {
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
         // Nullify any orders that used this nullifier in their validity proof
-        self.config.global_state.nullify_orders(nullifier)?.await?;
+        self.config.global_state.nullify_orders(nullifier)?;
 
         Ok(())
     }
@@ -202,9 +203,7 @@ impl OnChainEventListenerExecutor {
             self.config.global_state.clone(),
             self.config.proof_generation_work_queue.clone(),
             self.config.network_sender.clone(),
-        )
-        .await
-        {
+        ) {
             Ok(task) => task,
             Err(UpdateMerkleProofTaskError::WalletLocked) => {
                 // The wallet is locked for an update, the update will give the wallet a new

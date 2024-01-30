@@ -5,14 +5,12 @@ use common::default_wrapper::DefaultWrapper;
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
-use futures::executor::block_on;
-use job_types::gossip_server::GossipServerJob;
-use job_types::network_manager::NetworkManagerJob;
+use job_types::gossip_server::{GossipServerQueue, GossipServerReceiver};
+use job_types::network_manager::NetworkManagerQueue;
 use libp2p::Multiaddr;
 use state::State;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
-use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 
 use super::server::{GOSSIP_EXECUTOR_N_BLOCKING_THREADS, GOSSIP_EXECUTOR_N_THREADS};
 use super::{
@@ -36,11 +34,11 @@ pub struct GossipServerConfig {
     /// A reference to the relayer-global state
     pub global_state: State,
     /// A job queue to send outbound heartbeat requests on
-    pub job_sender: TokioSender<GossipServerJob>,
+    pub job_sender: GossipServerQueue,
     /// A job queue to receive inbound heartbeat requests on
-    pub job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
+    pub job_receiver: DefaultWrapper<Option<GossipServerReceiver>>,
     /// A job queue to send outbound network requests on
-    pub network_sender: TokioSender<NetworkManagerJob>,
+    pub network_sender: NetworkManagerQueue,
     /// The channel on which the coordinator may mandate that the
     /// gossip server cancel its execution
     pub cancel_channel: CancelChannel,
@@ -96,7 +94,7 @@ impl Worker for GossipServer {
         self.protocol_executor_handle = Some(executor_handle);
 
         // Bootstrap the local peer into the gossip network
-        block_on(self.bootstrap_into_network())?;
+        self.bootstrap_into_network()?;
 
         Ok(())
     }
