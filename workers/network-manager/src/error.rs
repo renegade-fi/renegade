@@ -22,6 +22,8 @@ pub enum NetworkManagerError {
     Serialization(String),
     /// An error interacting with global state
     State(String),
+    /// An error when a given request type is unhandled
+    UnhandledRequest(String),
 }
 
 impl Display for NetworkManagerError {

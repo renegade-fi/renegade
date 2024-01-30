@@ -270,8 +270,8 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
-                if let RequestResponseEvent::Message { message, .. } = request_response {
-                    self.handle_inbound_request_response_message(message)?;
+                if let RequestResponseEvent::Message { peer, message, .. } = request_response {
+                    self.handle_inbound_request_response_message(peer, message)?;
                 }
 
                 Ok(())
