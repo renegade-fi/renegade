@@ -143,8 +143,8 @@ async fn setup_match_result(
     // public and private shares to the reblinded and augmented shares; as would
     // happen before a real match
     let state = &test_args.global_state;
-    let witness1 = get_first_order_witness(&wallet1, state).await?;
-    let witness2 = get_first_order_witness(&wallet2, state).await?;
+    let witness1 = get_first_order_witness(&wallet1, state)?;
+    let witness2 = get_first_order_witness(&wallet2, state)?;
 
     wallet1.private_shares = witness1.reblind_witness.reblinded_wallet_private_shares.clone();
     wallet1.blinded_public_shares = witness1.commitment_witness.augmented_public_shares.clone();
@@ -157,10 +157,7 @@ async fn setup_match_result(
 }
 
 /// Get the validity proof bundle for the first order in a given wallet
-async fn get_first_order_proofs(
-    wallet: &Wallet,
-    state: &State,
-) -> Result<OrderValidityProofBundle> {
+fn get_first_order_proofs(wallet: &Wallet, state: &State) -> Result<OrderValidityProofBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
         .get_validity_proofs(&order_id)?
@@ -168,10 +165,7 @@ async fn get_first_order_proofs(
 }
 
 /// Get the validity proof witness for the first order in a given wallet
-async fn get_first_order_witness(
-    wallet: &Wallet,
-    state: &State,
-) -> Result<OrderValidityWitnessBundle> {
+fn get_first_order_witness(wallet: &Wallet, state: &State) -> Result<OrderValidityWitnessBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
         .get_validity_proof_witness(&order_id)?
@@ -307,10 +301,10 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         FixedPoint::from_f64_round_down(EXECUTION_PRICE),
         buy_wallet.orders.first().unwrap().0,
         sell_wallet.orders.first().unwrap().0,
-        get_first_order_proofs(&buy_wallet, state).await?,
-        get_first_order_witness(&buy_wallet, state).await?,
-        get_first_order_proofs(&sell_wallet, state).await?,
-        get_first_order_witness(&sell_wallet, state).await?,
+        get_first_order_proofs(&buy_wallet, state)?,
+        get_first_order_witness(&buy_wallet, state)?,
+        get_first_order_proofs(&sell_wallet, state)?,
+        get_first_order_witness(&sell_wallet, state)?,
         match_res.clone(),
         client.clone(),
         network_sender,
@@ -361,14 +355,13 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     let task = SettleMatchTask::new(
         handshake_state,
         match_settle_proof,
-        get_first_order_proofs(&buy_wallet, state).await?,
-        get_first_order_proofs(&sell_wallet, state).await?,
+        get_first_order_proofs(&buy_wallet, state)?,
+        get_first_order_proofs(&sell_wallet, state)?,
         client.clone(),
         network_sender,
         state.clone(),
         test_args.proof_job_queue.clone(),
-    )
-    .await?;
+    )?;
 
     let (_id, handle) = test_args.driver.start_task(task).await;
     let res = handle.await?;

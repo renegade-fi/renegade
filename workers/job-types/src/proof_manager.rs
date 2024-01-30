@@ -12,7 +12,13 @@ use circuits::zk_circuits::{
     valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
 };
 use common::types::proof_bundles::ProofBundle;
+use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
 use tokio::sync::oneshot::Sender;
+
+/// The queue type for the proof manager
+pub type ProofManagerQueue = CrossbeamSender<ProofManagerJob>;
+/// The receiver type for the proof manager
+pub type ProofManagerReceiver = CrossbeamReceiver<ProofManagerJob>;
 
 // -------------
 // | Job Types |

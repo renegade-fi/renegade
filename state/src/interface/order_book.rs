@@ -202,6 +202,10 @@ impl State {
         tx.commit()?;
 
         // Sample a random priority-weighted order from the result
+        if priorities.is_empty() {
+            return Ok(None);
+        }
+
         let mut rng = thread_rng();
         let distribution = WeightedIndex::new(&priorities).unwrap();
         let sampled = all_orders.get(distribution.sample(&mut rng)).unwrap();

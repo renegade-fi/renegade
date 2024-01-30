@@ -7,12 +7,12 @@ use ark_mpc::network::QuicTwoPartyNet;
 use common::types::handshake::ConnectionRole;
 use itertools::Itertools;
 use job_types::{
-    handshake_manager::HandshakeExecutionJob, network_manager::NetworkManagerControlSignal,
+    handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
+    network_manager::NetworkManagerControlSignal,
 };
 use libp2p::PeerId;
 use libp2p_core::{Endpoint, Multiaddr};
 use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use tokio::sync::mpsc::UnboundedSender as TokioSender;
 use tracing::log;
 use util::networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr};
 use uuid::Uuid;
@@ -149,7 +149,7 @@ impl NetworkManagerExecutor {
         mut local_port: u16,
         local_role: ConnectionRole,
         known_peer_addrs: Vec<Multiaddr>,
-        handshake_work_queue: TokioSender<HandshakeExecutionJob>,
+        handshake_work_queue: HandshakeManagerQueue,
     ) -> Result<(), NetworkManagerError> {
         // Connect on a side-channel to the peer
         let party_id = local_role.get_party_id();

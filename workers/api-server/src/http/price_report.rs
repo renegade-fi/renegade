@@ -5,7 +5,7 @@ use external_api::http::price_report::{
     GetExchangeHealthStatesRequest, GetExchangeHealthStatesResponse,
 };
 use hyper::HeaderMap;
-use job_types::price_reporter::PriceReporterManagerJob;
+use job_types::price_reporter::PriceReporterJob;
 use tokio::sync::oneshot::channel;
 
 use crate::{
@@ -54,7 +54,7 @@ impl TypedHandler for ExchangeHealthStatesHandler {
         let (price_reporter_state_sender, price_reporter_state_receiver) = channel();
         self.config
             .price_reporter_work_queue
-            .send(PriceReporterManagerJob::PeekMedian {
+            .send(PriceReporterJob::PeekMedian {
                 base_token: req.base_token.clone(),
                 quote_token: req.quote_token.clone(),
                 channel: price_reporter_state_sender,
@@ -63,7 +63,7 @@ impl TypedHandler for ExchangeHealthStatesHandler {
         let (exchange_connection_state_sender, exchange_connection_state_receiver) = channel();
         self.config
             .price_reporter_work_queue
-            .send(PriceReporterManagerJob::PeekAllExchanges {
+            .send(PriceReporterJob::PeekAllExchanges {
                 base_token: req.base_token,
                 quote_token: req.quote_token,
                 channel: exchange_connection_state_sender,
