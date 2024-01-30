@@ -14,10 +14,10 @@ use util::{matching_engine::match_orders, res_some};
 
 use crate::{
     error::HandshakeManagerError,
-    manager::{ERR_NO_PRICE_DATA, ERR_NO_WALLET},
+    manager::handshake::{ERR_NO_ORDER, ERR_NO_PRICE_DATA, ERR_NO_WALLET},
 };
 
-use super::{HandshakeExecutor, ERR_NO_ORDER};
+use super::HandshakeExecutor;
 
 /// Error emitted when joining to a task execution fails
 const ERR_TASK_EXECUTION: &str = "settle-match-internal task failed";
@@ -43,7 +43,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         log::info!("Running internal matching engine on order {order}");
         // Lookup the order and its wallet
-        let (network_order, wallet) = self.fetch_order_and_wallet(&order).await?;
+        let (network_order, wallet) = self.fetch_order_and_wallet(&order)?;
         let my_order = wallet
             .orders
             .get(&network_order.id)
@@ -56,7 +56,7 @@ impl HandshakeExecutor {
         let other_orders = self.global_state.get_locally_matchable_orders()?;
 
         // Sample a price to match the order at
-        let (base, quote) = self.token_pair_for_order(my_order);
+        let (base, quote) = self.token_pair_for_order(&network_order.id)?;
         let price = self
             .fetch_price_vector()
             .await?
@@ -161,7 +161,7 @@ impl HandshakeExecutor {
     }
 
     /// Fetch the order and wallet for the given order identifier
-    async fn fetch_order_and_wallet(
+    fn fetch_order_and_wallet(
         &self,
         order: &OrderIdentifier,
     ) -> Result<(NetworkOrder, Wallet), HandshakeManagerError> {

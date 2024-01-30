@@ -19,6 +19,7 @@ constants = { path = "../../constants" }
 gossip-api = { path = "../../gossip-api" }
 
 # === Misc === #
+crossbeam = { workspace = true }
 tokio = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 

@@ -7,6 +7,12 @@ use gossip_api::{
     request_response::{AuthenticatedGossipResponse, GossipRequest, GossipResponse},
 };
 use libp2p::request_response::ResponseChannel;
+use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
+
+/// The queue sender type to send jobs to the gossip server
+pub type GossipServerQueue = TokioSender<GossipServerJob>;
+/// The queue receiver type to receive jobs from the gossip server
+pub type GossipServerReceiver = TokioReceiver<GossipServerJob>;
 
 /// Defines a heartbeat job that can be enqueued by other workers in a relayer
 #[derive(Debug)]

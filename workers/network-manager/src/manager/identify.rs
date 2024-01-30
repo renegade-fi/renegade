@@ -11,7 +11,7 @@ use super::NetworkManagerExecutor;
 
 impl NetworkManagerExecutor {
     /// Handle a message from the Identify protocol
-    pub(super) async fn handle_identify_event(
+    pub(super) fn handle_identify_event(
         &mut self,
         event: IdentifyEvent,
     ) -> Result<(), NetworkManagerError> {

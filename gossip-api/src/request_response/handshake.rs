@@ -38,9 +38,9 @@ impl From<PriceVector> for HashMap<(Token, Token), Price> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HandshakeMessage {
     /// The request ID; used track handshakes across events
-    request_id: Uuid,
+    pub request_id: Uuid,
     /// The type of the message
-    message_type: HandshakeMessageType,
+    pub message_type: HandshakeMessageType,
 }
 
 /// Enumerates the different operations possible via handshake
@@ -61,13 +61,13 @@ pub enum HandshakeMessageType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProposeMatchCandidate {
     /// The ID of the peer proposing a match candidate
-    peer_id: WrappedPeerId,
+    pub peer_id: WrappedPeerId,
     /// The recipient's order that the sender is proposing a match with
-    peer_order: OrderIdentifier,
+    pub peer_order: OrderIdentifier,
     /// The sender's order that it wishes to match against the receiver's
-    sender_order: OrderIdentifier,
+    pub sender_order: OrderIdentifier,
     /// The vector of prices that the sender is proposing to the receiver
-    price_vector: PriceVector,
+    pub price_vector: PriceVector,
 }
 
 /// Reject a proposed match candidate, this can happen for a number of
@@ -76,15 +76,15 @@ pub struct ProposeMatchCandidate {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RejectMatchCandidate {
     /// The ID of the peer rejecting the proposal
-    peer_id: WrappedPeerId,
+    pub peer_id: WrappedPeerId,
     /// The recipient's order, i.e. the order that the proposer used from
     /// their own managed book
-    peer_order: OrderIdentifier,
+    pub peer_order: OrderIdentifier,
     /// The order of the sender, i.e. the peer that rejects the match
     /// proposal
-    sender_order: OrderIdentifier,
+    pub sender_order: OrderIdentifier,
     /// The reason that the rejecting peer is rejecting the proposal
-    reason: MatchRejectionReason,
+    pub reason: MatchRejectionReason,
 }
 
 /// The reason for rejecting a match candidate proposal
@@ -104,11 +104,11 @@ pub enum MatchRejectionReason {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AcceptMatchCandidate {
     /// The ID of the peer ACKing the proposal
-    peer_id: WrappedPeerId,
+    pub peer_id: WrappedPeerId,
     /// The port that the sender can be dialed on to begin the request
-    port: u16,
+    pub port: u16,
     /// The first order to attempt to match
-    order1: OrderIdentifier,
+    pub order1: OrderIdentifier,
     /// The second order to attempt to match
-    order2: OrderIdentifier,
+    pub order2: OrderIdentifier,
 }

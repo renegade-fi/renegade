@@ -1,31 +1,31 @@
 //! Defines the Worker logic for the PriceReporterManger, which simply
-//! dispatches jobs to the PriceReporterManagerExecutor.
+//! dispatches jobs to the PriceReporterExecutor.
 use common::{
-    default_wrapper::DefaultWrapper,
+    default_wrapper::DefaultOption,
     types::{exchange::Exchange, CancelChannel},
     worker::Worker,
 };
 use external_api::bus_message::SystemBusMessage;
-use job_types::price_reporter::PriceReporterManagerJob;
+use job_types::price_reporter::PriceReporterReceiver;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
-use tokio::{runtime::Builder as TokioBuilder, sync::mpsc::UnboundedReceiver as TokioReceiver};
+use tokio::runtime::Builder as TokioBuilder;
 
 use super::{
-    errors::PriceReporterManagerError,
-    manager::{PriceReporterManager, PriceReporterManagerExecutor},
+    errors::PriceReporterError,
+    manager::{PriceReporter, PriceReporterExecutor},
 };
 
 /// The number of threads backing the price reporter manager
 const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
 
-/// The config passed from the coordinator to the PriceReporterManager
+/// The config passed from the coordinator to the PriceReporter
 #[derive(Clone, Debug)]
-pub struct PriceReporterManagerConfig {
+pub struct PriceReporterConfig {
     /// The global system bus
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The receiver for jobs from other workers
-    pub job_receiver: DefaultWrapper<Option<TokioReceiver<PriceReporterManagerJob>>>,
+    pub job_receiver: DefaultOption<PriceReporterReceiver>,
     /// The coinbase API key that the price reporter may use
     pub coinbase_api_key: Option<String>,
     /// The coinbase API secret that the price reporter may use
@@ -41,7 +41,7 @@ pub struct PriceReporterManagerConfig {
     pub cancel_channel: CancelChannel,
 }
 
-impl PriceReporterManagerConfig {
+impl PriceReporterConfig {
     /// Returns true if the necessary configuration information is present
     /// for a given exchange
     ///
@@ -61,9 +61,9 @@ impl PriceReporterManagerConfig {
     }
 }
 
-impl Worker for PriceReporterManager {
-    type WorkerConfig = PriceReporterManagerConfig;
-    type Error = PriceReporterManagerError;
+impl Worker for PriceReporter {
+    type WorkerConfig = PriceReporterConfig;
+    type Error = PriceReporterError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         Ok(Self { config, manager_executor_handle: None, manager_runtime: None })
@@ -71,7 +71,7 @@ impl Worker for PriceReporterManager {
 
     fn is_recoverable(&self) -> bool {
         // Recovery for each PriceReporter is implemented via Error propagation; all
-        // panics in the PriceReporterManager are unrecoverable
+        // panics in the PriceReporter are unrecoverable
         false
     }
 
@@ -90,10 +90,10 @@ impl Worker for PriceReporterManager {
             .enable_io()
             .enable_time()
             .build()
-            .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))?;
+            .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))?;
 
         // Start the loop that dispatches incoming jobs to the executor
-        let manager_executor = PriceReporterManagerExecutor::new(
+        let manager_executor = PriceReporterExecutor::new(
             self.config.job_receiver.take().unwrap(),
             self.config.clone(),
             self.config.cancel_channel.clone(),
@@ -112,7 +112,7 @@ impl Worker for PriceReporterManager {
 
                     runtime.block_on(manager_executor.execution_loop()).err().unwrap()
                 })
-                .map_err(|err| PriceReporterManagerError::ManagerSetup(err.to_string()))
+                .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))
         }?;
 
         self.manager_executor_handle = Some(manager_executor_handle);

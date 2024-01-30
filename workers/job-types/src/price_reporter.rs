@@ -1,14 +1,22 @@
-//! Defines all possible jobs for the PriceReporterManager.
+//! Defines all possible jobs for the PriceReporter.
 use common::types::{
     exchange::{Exchange, ExchangeConnectionState, PriceReporterState},
     token::Token,
 };
 use std::collections::HashMap;
+use tokio::sync::mpsc::{
+    UnboundedReceiver as TokioUnboundedReceiver, UnboundedSender as TokioUnboundedSender,
+};
 use tokio::sync::oneshot::Sender as TokioSender;
 
-/// All possible jobs that the PriceReporterManager accepts.
+/// The queue type for the price reporter
+pub type PriceReporterQueue = TokioUnboundedSender<PriceReporterJob>;
+/// The queue receiver type for the price reporter
+pub type PriceReporterReceiver = TokioUnboundedReceiver<PriceReporterJob>;
+
+/// All possible jobs that the PriceReporter accepts.
 #[derive(Debug)]
-pub enum PriceReporterManagerJob {
+pub enum PriceReporterJob {
     /// Create and start a new PriceReporter for a given token pair.
     ///
     /// If the PriceReporter does not yet exist, spawn it and begin publication

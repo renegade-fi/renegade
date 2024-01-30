@@ -25,13 +25,13 @@ use self::{
     okx::OkxConnection, uni_v3::UniswapV3Connection,
 };
 
-use super::{errors::ExchangeConnectionError, worker::PriceReporterManagerConfig};
+use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
 
 /// Construct a new websocket connection for the given exchange
 pub async fn connect_exchange(
     base_token: &Token,
     quote_token: &Token,
-    config: &PriceReporterManagerConfig,
+    config: &PriceReporterConfig,
     exchange: Exchange,
 ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
     let base_token = base_token.clone();

@@ -1,4 +1,4 @@
-//! Defines the PriceReporter, which is responsible for computing median
+//! Defines the Reporter, which is responsible for computing median
 //! PriceReports by managing individual ExchangeConnections in a fault-tolerant
 //! manner.
 use atomic_float::AtomicF64;
@@ -24,7 +24,7 @@ use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 
 use super::MEDIAN_SOURCE_NAME;
-use super::{errors::ExchangeConnectionError, worker::PriceReporterManagerConfig};
+use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
 
 // -------------
 // | Constants |
@@ -61,7 +61,7 @@ const MEDIAN_PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
 /// The price reporter handles opening connections to exchanges, and computing
 /// price reports and medians from the exchange data
 #[derive(Clone, Debug)]
-pub struct PriceReporter {
+pub struct Reporter {
     /// The base Token (e.g., WETH)
     base_token: Token,
     /// The quote Token (e.g., USDC)
@@ -117,22 +117,22 @@ impl AtomicPriceStreamState {
     }
 }
 
-impl PriceReporter {
+impl Reporter {
     // ----------------------
     // | External Interface |
     // ----------------------
 
-    /// Creates a new PriceReporter.
-    pub async fn new(
+    /// Creates a new Reporter.
+    pub fn new(
         base_token: Token,
         quote_token: Token,
-        config: PriceReporterManagerConfig,
+        config: PriceReporterConfig,
     ) -> Result<Self, ExchangeConnectionError> {
         let supported_exchanges =
             Self::compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
 
         // Create shared memory that the `ConnectionMuxer` will use to communicate with
-        // the `PriceReporter`
+        // the `Reporter`
         let shared_exchange_state =
             AtomicPriceStreamState::new_from_exchanges(&supported_exchanges);
 
@@ -164,7 +164,7 @@ impl PriceReporter {
         Ok(self_)
     }
 
-    /// Non-blocking report of the latest PriceReporterState for the median
+    /// Non-blocking report of the latest ReporterState for the median
     pub fn peek_median(&self) -> PriceReporterState {
         self.get_state()
     }
@@ -224,7 +224,7 @@ impl PriceReporter {
     fn compute_supported_exchanges_for_pair(
         base_token: &Token,
         quote_token: &Token,
-        config: &PriceReporterManagerConfig,
+        config: &PriceReporterConfig,
     ) -> Vec<Exchange> {
         // Compute the intersection of the supported exchanges for each of the assets
         // in the pair, filtering for those not configured
@@ -250,7 +250,7 @@ impl PriceReporter {
     }
 
     /// Given a PriceReport for each Exchange, compute the current
-    /// PriceReporterState. We check for various issues (delayed prices, no
+    /// ReporterState. We check for various issues (delayed prices, no
     /// data yet received, etc.), and if no issues are found, compute the
     /// median PriceReport
     fn get_state(&self) -> PriceReporterState {
@@ -318,7 +318,7 @@ impl PriceReporter {
 
 /// The connection muxer manages a set of websocket connections abstracted as
 /// `ExchangeConnection`s. It is responsible for restarting connections that
-/// fail, and communicating the latest price reports to the `PriceReporter` via
+/// fail, and communicating the latest price reports to the `Reporter` via
 /// an atomic shared memory primitive
 struct ConnectionMuxer {
     /// The base token that the managed connections are reporting on
@@ -326,7 +326,7 @@ struct ConnectionMuxer {
     /// The quote token that the managed connections are reporting on
     quote_token: Token,
     /// The config for the price reporter
-    config: PriceReporterManagerConfig,
+    config: PriceReporterConfig,
     /// The set of exchanges connected
     exchanges: Vec<Exchange>,
     /// The shared memory map from exchange to most recent price
@@ -343,7 +343,7 @@ impl ConnectionMuxer {
     pub fn new(
         base_token: Token,
         quote_token: Token,
-        config: PriceReporterManagerConfig,
+        config: PriceReporterConfig,
         exchanges: Vec<Exchange>,
         exchange_state: AtomicPriceStreamState,
     ) -> Self {
