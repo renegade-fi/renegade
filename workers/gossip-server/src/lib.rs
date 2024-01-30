@@ -6,7 +6,7 @@
 #![allow(incomplete_features)]
 
 pub mod errors;
-mod heartbeat;
 mod orderbook;
+pub(crate) mod peer_discovery;
 pub mod server;
 pub mod worker;

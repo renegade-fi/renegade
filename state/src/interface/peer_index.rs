@@ -57,6 +57,17 @@ impl State {
         Ok(peers)
     }
 
+    /// Get all the peers _not_ in the given cluster
+    pub fn get_non_cluster_peers(
+        &self,
+        cluster_id: &ClusterId,
+    ) -> Result<Vec<WrappedPeerId>, StateError> {
+        let mut info = self.get_peer_info_map()?;
+        info.retain(|_, peer_info| peer_info.get_cluster_id() != *cluster_id);
+
+        Ok(info.into_keys().collect())
+    }
+
     /// Construct a heartbeat message from the state
     pub fn construct_heartbeat(&self) -> Result<HeartbeatMessage, StateError> {
         let info_map = self.get_peer_info_map()?;
