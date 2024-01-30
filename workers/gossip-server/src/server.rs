@@ -12,13 +12,13 @@ use common::{
     AsyncShared,
 };
 use gossip_api::{
-    cluster_management::{ClusterJoinMessage, ClusterManagementMessage},
-    gossip::{
-        GossipOutbound, GossipRequest, GossipResponse, ManagerControlDirective, PubsubMessage,
-    },
-    heartbeat::BootstrapRequest,
+    pubsub::PubsubMessage,
+    request_response::{heartbeat::BootstrapRequest, GossipRequest, GossipResponse},
 };
-use job_types::gossip_server::GossipServerJob;
+use job_types::{
+    gossip_server::GossipServerJob,
+    network_manager::{NetworkManagerControlSignal, NetworkManagerJob},
+};
 use lru::LruCache;
 use state::State;
 use std::{
@@ -28,6 +28,7 @@ use std::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender};
 use tracing::log;
+use util::err_str;
 
 use super::{
     errors::GossipError,
@@ -65,7 +66,7 @@ impl GossipServer {
     /// Bootstraps the local node into the network by syncing state with known
     /// bootstrap peers and then advertising the local node's presence to the
     /// cluster
-    pub(super) async fn bootstrap_into_network(&self) -> Result<(), GossipError> {
+    pub async fn bootstrap_into_network(&self) -> Result<(), GossipError> {
         // Bootstrap into the network in two steps:
         //  1. Forward all bootstrap addresses to the network manager so it may dial
         //     them
@@ -76,28 +77,20 @@ impl GossipServer {
         // messages are processed concurrently
 
         // 1. Forward bootstrap addresses to the network manager
-        for (peer_id, peer_addr) in self.config.bootstrap_servers.iter() {
-            self.config
-                .network_sender
-                .send(GossipOutbound::ManagementMessage(ManagerControlDirective::NewAddr {
-                    peer_id: *peer_id,
-                    address: peer_addr.clone(),
-                }))
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        for (peer_id, address) in self.config.bootstrap_servers.iter().cloned() {
+            let cmd = NetworkManagerControlSignal::NewAddr { peer_id, address };
+            let job = NetworkManagerJob::internal(cmd);
+
+            self.config.network_sender.send(job).map_err(err_str!(GossipError::SendMessage))?;
         }
 
         // 2. Send bootstrap requests to all known peers
         let my_id = self.config.local_peer_id;
         let my_info = self.state().get_peer_info(&my_id)?.unwrap();
-        let req = BootstrapRequest { peer_info: my_info };
+        let req = GossipRequest::Bootstrap(BootstrapRequest { peer_info: my_info });
         for (peer_id, _) in self.config.bootstrap_servers.iter() {
-            self.config
-                .network_sender
-                .send(GossipOutbound::Request {
-                    peer_id: *peer_id,
-                    message: GossipRequest::Bootstrap(req.clone()),
-                })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+            let req = NetworkManagerJob::request(*peer_id, req.clone());
+            self.config.network_sender.send(req).map_err(err_str!(GossipError::SendMessage))?;
         }
 
         // 3. Send heartbeats to all known peers to sync state
@@ -106,10 +99,10 @@ impl GossipServer {
             self.config
                 .job_sender
                 .send(GossipServerJob::ExecuteHeartbeat(peer))
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+                .map_err(err_str!(GossipError::SendMessage))?;
         }
 
-        // Finally,
+        // Finally, warmup the network then send a cluster join message
         self.warmup_then_join_cluster().await
     }
 
@@ -124,27 +117,7 @@ impl GossipServer {
     /// This is done to allow the network manager to gossip about network
     /// structure and graft a pubsub mesh before attempting to publish
     async fn warmup_then_join_cluster(&self) -> Result<(), GossipError> {
-        // Send a pubsub message indicating that the local peer has joined the cluster;
-        // this message will be buffered by the network manager until the warmup
-        // period is complete
-        let my_id = self.config.local_peer_id;
-        let peer_info = self.state().get_peer_info(&my_id)?.unwrap();
-        let message_body = ClusterJoinMessage {
-            peer_id: self.config.local_peer_id,
-            peer_info,
-            addr: self.config.local_addr.clone(),
-        };
-
-        self.config
-            .network_sender
-            .send(GossipOutbound::Pubsub {
-                topic: self.config.cluster_id.get_management_topic(),
-                message: PubsubMessage::ClusterManagement {
-                    cluster_id: self.config.cluster_id.clone(),
-                    message: ClusterManagementMessage::Join(message_body),
-                },
-            })
-            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+        // TODO: Send a raft join message to peers, possibly via pubsub
 
         // Copy items so they may be moved into the spawned thread
         let network_sender_copy = self.config.network_sender.clone();
@@ -155,13 +128,11 @@ impl GossipServer {
             .spawn(move || {
                 // Wait for the network to warmup
                 thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
-                network_sender_copy
-                    .send(GossipOutbound::ManagementMessage(
-                        ManagerControlDirective::GossipWarmupComplete,
-                    ))
-                    .unwrap();
+                let cmd =
+                    NetworkManagerJob::internal(NetworkManagerControlSignal::GossipWarmupComplete);
+                network_sender_copy.send(cmd).unwrap();
             })
-            .map_err(|err| GossipError::ServerSetup(err.to_string()))?;
+            .map_err(err_str!(GossipError::ServerSetup))?;
 
         Ok(())
     }
@@ -177,23 +148,23 @@ pub struct GossipProtocolExecutor {
     /// The peer expiry cache holds peers in an invisibility window so that when
     /// a peer is expired, it cannot be incorrectly re-discovered for some
     /// time, until its expiry has had time to propagate
-    pub(super) peer_expiry_cache: SharedLRUCache,
+    pub peer_expiry_cache: SharedLRUCache,
     /// The channel on which to receive jobs
-    pub(super) job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
+    pub job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
     /// The channel to send outbound network requests on
-    pub(super) network_channel: TokioSender<GossipOutbound>,
+    pub network_channel: TokioSender<NetworkManagerJob>,
     /// The global state of the relayer
-    pub(super) global_state: State,
+    pub global_state: State,
     /// A copy of the config passed to the worker
-    pub(super) config: GossipServerConfig,
+    pub config: GossipServerConfig,
     /// The channel that the coordinator thread uses to cancel gossip execution
-    pub(super) cancel_channel: CancelChannel,
+    pub cancel_channel: CancelChannel,
 }
 
 impl GossipProtocolExecutor {
     /// Creates a new executor
     pub fn new(
-        network_channel: TokioSender<GossipOutbound>,
+        network_channel: TokioSender<NetworkManagerJob>,
         job_receiver: TokioReceiver<GossipServerJob>,
         global_state: State,
         config: GossipServerConfig,
@@ -243,7 +214,6 @@ impl GossipProtocolExecutor {
                 // Await the next job
                 Some(job) = job_receiver.recv() => {
                     let self_clone = self.clone();
-                    #[allow(clippy::redundant_async_block)]
                     tokio::spawn(async move {
                         if let Err(e) = self_clone.handle_job(job).await {
                             log::error!("error handling gossip server job: {e}");
@@ -263,44 +233,57 @@ impl GossipProtocolExecutor {
     /// The main dispatch method for handling jobs
     async fn handle_job(&self, job: GossipServerJob) -> Result<(), GossipError> {
         match job {
-            GossipServerJob::Bootstrap(req, response_channel) => {
-                // Add the bootstrapping peer to the index
-                self.add_new_peers(vec![req.peer_info]).await.map(|_| ())?;
-
-                // Send a heartbeat response for simplicity
-                let heartbeat_resp = GossipResponse::Heartbeat(self.build_heartbeat()?);
-                self.network_channel
-                    .send(GossipOutbound::Response {
-                        channel: response_channel,
-                        message: heartbeat_resp,
-                    })
-                    .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-            },
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id).await?,
-            GossipServerJob::HandleHeartbeatReq { message, channel, .. } => {
-                // Respond on the channel given in the request
-                let heartbeat_resp = GossipResponse::Heartbeat(self.build_heartbeat()?);
-                let res = self
-                    .network_channel
-                    .send(GossipOutbound::Response { channel, message: heartbeat_resp })
-                    .map_err(|err| GossipError::SendMessage(err.to_string()));
+            GossipServerJob::NetworkRequest(peer_id, req, response_chan) => {
+                let resp = self.handle_request(peer_id, req).await?;
+                let job = NetworkManagerJob::response(resp, response_chan);
 
-                // Merge newly discovered peers into local state
-                self.merge_state_from_message(message).await.and(res)?
+                self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
             },
-            GossipServerJob::HandleHeartbeatResp { peer_id, message } => {
-                self.record_heartbeat(peer_id).await?;
-                self.merge_state_from_message(message).await?;
+            GossipServerJob::NetworkResponse(peer_id, resp) => {
+                self.handle_response(peer_id, resp).await?
             },
-            GossipServerJob::Cluster(..) => todo!("use raft join/leave protocol instead"),
-            GossipServerJob::OrderBookManagement(management_message) => {
-                self.handle_order_book_management_job(management_message).await?;
-            },
-            GossipServerJob::WalletUpdate { .. } => {
-                todo!("move this into raft-based consensus");
-            },
+            GossipServerJob::Pubsub(msg) => self.handle_pubsub(msg).await?,
         };
 
         Ok(())
+    }
+
+    /// Handles a gossip request type from a peer
+    async fn handle_request(
+        &self,
+        peer: WrappedPeerId,
+        req: GossipRequest,
+    ) -> Result<GossipResponse, GossipError> {
+        match req {
+            GossipRequest::Bootstrap(req) => self.handle_bootstrap_req(req),
+            GossipRequest::Heartbeat(req) => {
+                self.handle_heartbeat(&peer, req)?;
+                Ok(GossipResponse::Ack)
+            },
+            GossipRequest::OrderInfo(req) => self.handle_order_info_request(req.order_id),
+            req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
+        }
+    }
+
+    /// Handles a gossip response type from a peer
+    async fn handle_response(
+        &self,
+        peer: WrappedPeerId,
+        resp: GossipResponse,
+    ) -> Result<(), GossipError> {
+        match resp {
+            GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, resp),
+            GossipResponse::OrderInfo(resp) => self.handle_order_info_response(resp.info).await,
+            resp => Err(GossipError::UnhandledRequest(format!("{resp:?}"))),
+        }
+    }
+
+    /// Handles an inbound pubsub message from the network
+    async fn handle_pubsub(&self, msg: PubsubMessage) -> Result<(), GossipError> {
+        match msg {
+            PubsubMessage::Orderbook(msg) => self.handle_orderbook_pubsub(msg).await,
+            msg => Err(GossipError::UnhandledRequest(format!("{msg:?}"))),
+        }
     }
 }
