@@ -30,13 +30,12 @@ use tokio::sync::mpsc::{UnboundedReceiver as TokioReceiver, UnboundedSender as T
 use tracing::log;
 use util::err_str;
 
-use super::{
-    errors::GossipError,
-    heartbeat::{
-        HeartbeatTimer, CLUSTER_HEARTBEAT_INTERVAL_MS, EXPIRY_CACHE_SIZE, HEARTBEAT_INTERVAL_MS,
-    },
-    worker::GossipServerConfig,
+use crate::peer_discovery::{
+    heartbeat::{CLUSTER_HEARTBEAT_INTERVAL_MS, EXPIRY_CACHE_SIZE, HEARTBEAT_INTERVAL_MS},
+    heartbeat_timer::HeartbeatTimer,
 };
+
+use super::{errors::GossipError, worker::GossipServerConfig};
 
 /// The number of threads backing the gossip executor's thread pool
 pub(super) const GOSSIP_EXECUTOR_N_THREADS: usize = 5;
@@ -256,12 +255,13 @@ impl GossipProtocolExecutor {
         req: GossipRequest,
     ) -> Result<GossipResponse, GossipError> {
         match req {
-            GossipRequest::Bootstrap(req) => self.handle_bootstrap_req(req),
+            GossipRequest::Bootstrap(req) => self.handle_bootstrap_req(req).await,
             GossipRequest::Heartbeat(req) => {
                 self.handle_heartbeat(&peer, req)?;
                 Ok(GossipResponse::Ack)
             },
-            GossipRequest::OrderInfo(req) => self.handle_order_info_request(req.order_id),
+            GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids),
+            GossipRequest::OrderInfo(req) => self.handle_order_info_request(req.order_ids),
             req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
         }
     }
@@ -274,7 +274,10 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         match resp {
             GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, resp),
-            GossipResponse::OrderInfo(resp) => self.handle_order_info_response(resp.info).await,
+            GossipResponse::OrderInfo(resp) => {
+                self.handle_order_info_response(resp.order_info).await
+            },
+            GossipResponse::PeerInfo(resp) => self.handle_peer_info_resp(resp.peer_info).await,
             resp => Err(GossipError::UnhandledRequest(format!("{resp:?}"))),
         }
     }
