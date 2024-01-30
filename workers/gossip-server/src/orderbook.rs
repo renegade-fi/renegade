@@ -10,22 +10,17 @@ use circuits::{
     },
 };
 use common::types::{
-    gossip::{ClusterId, WrappedPeerId},
+    gossip::ClusterId,
     network_order::{NetworkOrder, NetworkOrderState},
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    proof_bundles::OrderValidityProofBundle,
     wallet::OrderIdentifier,
 };
 use futures::executor::block_on;
 use gossip_api::{
-    cluster_management::{ClusterManagementMessage, ValidityWitnessRequest},
-    gossip::{
-        AuthenticatedGossipResponse, GossipOutbound, GossipRequest, GossipResponse, PubsubMessage,
-    },
-    orderbook_management::OrderInfoResponse,
+    pubsub::orderbook::OrderBookManagementMessage,
+    request_response::{orderbook::OrderInfoResponse, GossipResponse},
 };
-use job_types::gossip_server::OrderBookManagementJob;
-use libp2p::request_response::ResponseChannel;
-use tracing::log;
+use util::err_str;
 
 use super::{errors::GossipError, server::GossipProtocolExecutor};
 
@@ -36,99 +31,62 @@ const ERR_NULLIFIER_USED: &str = "invalid nullifier, already used";
 const ERR_INVALID_MERKLE_ROOT: &str = "invalid merkle root, not in contract history";
 
 impl GossipProtocolExecutor {
-    /// Dispatches messages from the cluster regarding order book management
-    pub(super) async fn handle_order_book_management_job(
-        &self,
-        message: OrderBookManagementJob,
-    ) -> Result<(), GossipError> {
-        match message {
-            OrderBookManagementJob::OrderInfo { order_id, response_channel } => {
-                self.handle_order_info_request(order_id, response_channel).await
-            },
-
-            OrderBookManagementJob::OrderInfoResponse { info, .. } => {
-                if let Some(order_info) = info {
-                    self.handle_order_info_response(order_info).await?;
-                }
-
-                Ok(())
-            },
-
-            OrderBookManagementJob::OrderReceived { order_id, nullifier, cluster } => {
-                self.handle_new_order(order_id, nullifier, cluster).await
-            },
-
-            OrderBookManagementJob::OrderProofUpdated { order_id, cluster, proof_bundle } => {
-                self.handle_new_validity_proof(order_id, cluster, proof_bundle).await
-            },
-
-            OrderBookManagementJob::OrderWitness { order_id, requesting_peer } => {
-                self.handle_validity_witness_request(order_id, requesting_peer).await
-            },
-
-            OrderBookManagementJob::OrderWitnessResponse { order_id, witness } => {
-                self.handle_validity_witness_response(order_id, witness).await;
-                Ok(())
-            },
-        }
-    }
+    // --------------------
+    // | Inbound Requests |
+    // --------------------
 
     /// Handles a request for order information from a peer
-    async fn handle_order_info_request(
+    pub(crate) fn handle_order_info_request(
         &self,
         order_id: OrderIdentifier,
-        response_channel: ResponseChannel<AuthenticatedGossipResponse>,
-    ) -> Result<(), GossipError> {
-        let order_info = self.global_state.get_order(&order_id)?;
-        self.network_channel
-            .send(GossipOutbound::Response {
-                channel: response_channel,
-                message: GossipResponse::OrderInfo(OrderInfoResponse {
-                    order_id,
-                    info: order_info,
-                }),
-            })
-            .map_err(|err| GossipError::SendMessage(err.to_string()))?;
+    ) -> Result<GossipResponse, GossipError> {
+        let info = self.global_state.get_order(&order_id)?;
+        let resp = OrderInfoResponse { order_id, info };
 
-        Ok(())
+        Ok(GossipResponse::OrderInfo(resp))
     }
 
+    // ---------------------
+    // | Inbound Responses |
+    // ---------------------
+
     /// Handles a response to a request for order info
-    async fn handle_order_info_response(
+    pub(crate) async fn handle_order_info_response(
         &self,
-        mut order_info: NetworkOrder,
+        order_info: Option<NetworkOrder>,
     ) -> Result<(), GossipError> {
+        if order_info.is_none() {
+            return Ok(());
+        }
+        let mut order_info = order_info.unwrap();
+
+        // Skip local orders, their state is added on wallet update through raft
+        // consensus
+        let is_local = order_info.cluster == self.global_state.get_cluster_id()?;
+        if is_local {
+            return Ok(());
+        }
+
         // Move fields out of `order_info` before transferring ownership
         let order_id = order_info.id;
         let proof = order_info.validity_proofs.take();
 
-        // Index the order in the `Received` state
-        let is_local = order_info.cluster == self.global_state.get_cluster_id()?;
         order_info.state = NetworkOrderState::Received;
         order_info.local = is_local;
         self.global_state.add_order(order_info)?.await?;
 
         // If there is a proof attached to the order, verify it and transition to
-        // `Verified`
+        // `Verified`. If the order is locally managed, the raft consensus will take
+        // care of indexing the order
         if let Some(proof_bundle) = proof {
-            // We can trust local (i.e. originating from cluster peers) proofs
-            if !is_local {
-                let self_clone = self.clone();
-                let bundle_clone = proof_bundle.clone();
-
-                tokio::task::spawn_blocking(move || {
-                    block_on(self_clone.verify_validity_proofs(&bundle_clone))
-                })
-                .await
-                .unwrap()?;
-            }
-
-            // If the order is a locally managed order, the local peer also needs a copy of
-            // the witness so that it may link commitments between the validity
-            // proof and subsequent match/encryption proofs
-            if is_local {
-                self.request_order_witness(order_id)?;
-            }
+            // Spawn a blocking task to avoid consuming the gossip server's thread pool
+            let self_clone = self.clone();
+            let bundle_clone = proof_bundle.clone();
+            tokio::task::spawn_blocking(move || {
+                block_on(self_clone.verify_validity_proofs(&bundle_clone))
+            })
+            .await
+            .unwrap()?;
 
             // Update the state of the order to `Verified` by attaching the verified
             // validity proof
@@ -140,6 +98,25 @@ impl GossipProtocolExecutor {
         Ok(())
     }
 
+    // -------------------
+    // | Pubsub Messages |
+    // -------------------
+
+    /// Handle an orderbook management message
+    pub(crate) async fn handle_orderbook_pubsub(
+        &self,
+        msg: OrderBookManagementMessage,
+    ) -> Result<(), GossipError> {
+        match msg {
+            OrderBookManagementMessage::OrderReceived { order_id, nullifier, cluster } => {
+                self.handle_new_order(order_id, nullifier, cluster).await
+            },
+            OrderBookManagementMessage::OrderProofUpdated { order_id, cluster, proof_bundle } => {
+                self.handle_new_validity_proof(order_id, cluster, proof_bundle).await
+            },
+        }
+    }
+
     /// Handles a newly discovered order added to the book
     async fn handle_new_order(
         &self,
@@ -147,18 +124,14 @@ impl GossipProtocolExecutor {
         nullifier: Nullifier,
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
-        // Ensure that the nullifier has not been used for this order
-        if self
-            .arbitrum_client()
-            .check_nullifier_used(nullifier)
-            .await
-            .map_err(|err| GossipError::Arbitrum(err.to_string()))?
-        {
-            log::info!("received order with spent nullifier, skipping...");
+        // Skip local orders, their state is added on wallet update through raft
+        let is_local = cluster == self.global_state.get_cluster_id()?;
+        if is_local {
             return Ok(());
         }
 
-        let is_local = cluster == self.global_state.get_cluster_id()?;
+        // Ensure that the nullifier has not been used for this order
+        self.assert_nullifier_unused(nullifier).await?;
         self.global_state
             .add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))?
             .await?;
@@ -175,19 +148,21 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
         proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
+        // Skip local orders, their state is added on wallet update through raft
         let is_local = cluster == self.global_state.get_cluster_id()?;
+        if is_local {
+            return Ok(());
+        }
 
         // Verify the proof
-        if !is_local {
-            let bundle_clone = proof_bundle.clone();
-            let self_clone = self.clone();
+        let bundle_clone = proof_bundle.clone();
+        let self_clone = self.clone();
 
-            tokio::task::spawn_blocking(move || {
-                block_on(self_clone.verify_validity_proofs(&bundle_clone))
-            })
-            .await
-            .unwrap()?;
-        }
+        tokio::task::spawn_blocking(move || {
+            block_on(self_clone.verify_validity_proofs(&bundle_clone))
+        })
+        .await
+        .unwrap()?;
 
         // Add the order to the book in the `Validated` state
         if !self.global_state.contains_order(&order_id)? {
@@ -205,79 +180,12 @@ impl GossipProtocolExecutor {
             .add_order_validity_proof(order_id, proof_bundle, None /* witness */)?
             .await?;
 
-        // If the order is locally managed, also fetch the wintess used in the proof,
-        // this is used for proof linking. I.e. the local node needs the commitment
-        // parameters for each witness element so that it may share commitments
-        // with future proofs
-        if is_local {
-            self.request_order_witness(order_id)?;
-        }
-
         Ok(())
     }
 
-    /// Requests a copy of the witness used in an order's validity proof for a
-    /// locally managed order
-    fn request_order_witness(&self, order_id: OrderIdentifier) -> Result<(), GossipError> {
-        let message =
-            ClusterManagementMessage::RequestOrderValidityWitness(ValidityWitnessRequest {
-                order_id,
-                sender: self.global_state.get_peer_id()?,
-            });
-
-        let cluster_id = self.global_state.get_cluster_id()?;
-        self.network_channel
-            .send(GossipOutbound::Pubsub {
-                topic: cluster_id.get_management_topic(),
-                message: PubsubMessage::ClusterManagement { cluster_id, message },
-            })
-            .map_err(|err| GossipError::SendMessage(err.to_string()))
-    }
-
-    /// Handles a request for a validity proof witness from a peer
-    async fn handle_validity_witness_request(
-        &self,
-        order_id: OrderIdentifier,
-        requesting_peer: WrappedPeerId,
-    ) -> Result<(), GossipError> {
-        // Sanity check that the requesting peer is part of the cluster,
-        // authentication of the message is done at the network manager level,
-        // so this check is a bit redundant, but worth doing
-        {
-            let info = self.global_state.get_peer_info(&requesting_peer)?.ok_or_else(|| {
-                GossipError::MissingState("peer info not found in state".to_string())
-            })?;
-
-            if info.get_cluster_id() != self.global_state.get_cluster_id()? {
-                return Ok(());
-            }
-        } // peer_index lock released
-
-        // If the local peer has a copy of the witness stored locally, send it to the
-        // peer
-        if let Some(order_info) = self.global_state.get_order(&order_id)?
-            && let Some(witness) = order_info.validity_proof_witnesses
-        {
-            self.network_channel
-                .send(GossipOutbound::Request {
-                    peer_id: requesting_peer,
-                    message: GossipRequest::ValidityWitness { order_id, witness },
-                })
-                .map_err(|err| GossipError::SendMessage(err.to_string()))?;
-        }
-
-        Ok(())
-    }
-
-    /// Handle a response from a peer containing a witness for `VALID
-    /// COMMITMENTS`
-    async fn handle_validity_witness_response(
-        &self,
-        _order_id: OrderIdentifier,
-        _witnesses: OrderValidityWitnessBundle,
-    ) {
-        todo!("remove this method, use raft consensus for this")
-    }
+    // -----------
+    // | Helpers |
+    // -----------
 
     /// Verify the validity proofs (`VALID REBLIND` and `VALID COMMITMENTS`) of
     /// an incoming order
@@ -302,7 +210,7 @@ impl GossipProtocolExecutor {
             .arbitrum_client()
             .check_merkle_root_valid(reblind_proof.statement.merkle_root)
             .await
-            .map_err(|err| GossipError::Arbitrum(err.to_string()))?
+            .map_err(err_str!(GossipError::Arbitrum))?
         {
             return Err(GossipError::ValidCommitmentVerification(
                 ERR_INVALID_MERKLE_ROOT.to_string(),
@@ -310,35 +218,27 @@ impl GossipProtocolExecutor {
         }
 
         // Verify the reblind proof
-        if let Err(e) = verify_singleprover_proof::<SizedValidReblind>(
+        verify_singleprover_proof::<SizedValidReblind>(
             reblind_proof.statement,
             &reblind_proof.proof,
-        ) {
-            log::error!("Invalid proof of `VALID REBLIND`");
-            return Err(GossipError::ValidReblindVerification(e.to_string()));
-        }
+        )
+        .map_err(err_str!(GossipError::ValidReblindVerification))?;
 
         // Validate the commitment proof
-        if let Err(e) = verify_singleprover_proof::<SizedValidCommitments>(
+        verify_singleprover_proof::<SizedValidCommitments>(
             commitment_proof.statement,
             &commitment_proof.proof,
-        ) {
-            log::error!("Invalid proof of `VALID COMMITMENTS`");
-            return Err(GossipError::ValidCommitmentVerification(e.to_string()));
-        }
+        )
+        .map_err(err_str!(GossipError::ValidCommitmentVerification))?;
 
         // Validate the proof link between the `VALID REBLIND` and `VALID COMMITMENTS`
         // proofs
-        if let Err(e) = validate_sized_commitments_reblind_link(
+        validate_sized_commitments_reblind_link(
             link_proof,
             &reblind_proof.proof,
             &commitment_proof.proof,
-        ) {
-            log::error!("Invalid proof link between `VALID REBLIND` and `VALID COMMITMENTS`");
-            return Err(GossipError::CommitmentsReblindLinkVerification(e.to_string()));
-        }
-
-        Ok(())
+        )
+        .map_err(err_str!(GossipError::CommitmentsReblindLinkVerification))
     }
 
     /// Assert that a nullifier is unused in the contract, returns a GossipError

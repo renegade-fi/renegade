@@ -6,8 +6,8 @@ use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
 use futures::executor::block_on;
-use gossip_api::gossip::GossipOutbound;
 use job_types::gossip_server::GossipServerJob;
+use job_types::network_manager::NetworkManagerJob;
 use libp2p::Multiaddr;
 use state::State;
 use std::thread::{Builder, JoinHandle};
@@ -40,7 +40,7 @@ pub struct GossipServerConfig {
     /// A job queue to receive inbound heartbeat requests on
     pub job_receiver: DefaultWrapper<Option<TokioReceiver<GossipServerJob>>>,
     /// A job queue to send outbound network requests on
-    pub network_sender: TokioSender<GossipOutbound>,
+    pub network_sender: TokioSender<NetworkManagerJob>,
     /// The channel on which the coordinator may mandate that the
     /// gossip server cancel its execution
     pub cancel_channel: CancelChannel,

@@ -14,9 +14,9 @@ pub enum GossipServerJob {
     /// Execute a heartbeat to a given peer
     ExecuteHeartbeat(WrappedPeerId),
     /// An incoming gossip request
-    NetworkRequest(GossipRequest, ResponseChannel<AuthenticatedGossipResponse>),
+    NetworkRequest(WrappedPeerId, GossipRequest, ResponseChannel<AuthenticatedGossipResponse>),
     /// An incoming gossip response
-    NetworkResponse(GossipResponse),
+    NetworkResponse(WrappedPeerId, GossipResponse),
     /// An incoming pubsub message
     Pubsub(PubsubMessage),
 }
