@@ -69,7 +69,7 @@ impl RaftNetwork for GossipRaftNetwork {
     }
 
     fn send(&mut self, message: RawRaftMessage) -> Result<(), Self::Error> {
-        let peer = self.address_map.blocking_read().get_peer_id(message.to).ok_or_else(|| {
+        let peer = self.address_map.read().unwrap().get_peer_id(message.to).ok_or_else(|| {
             ReplicationError::SendMessage(IOError::new(ErrorKind::NotFound, ERR_PEER_NOT_FOUND))
         })?;
 
