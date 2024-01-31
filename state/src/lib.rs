@@ -113,7 +113,7 @@ pub mod test_helpers {
     use tempfile::tempdir;
 
     use crate::{
-        replication::network::test_helpers::MockNetwork,
+        replication::network::traits::test_helpers::MockNetwork,
         storage::db::{DbConfig, DB},
         State,
     };
@@ -150,7 +150,7 @@ pub mod test_helpers {
         let config =
             RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
         let net = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
-        let state = State::new(&config, net, SystemBus::new()).unwrap();
+        let state = State::new_with_network(&config, net, SystemBus::new()).unwrap();
 
         // Wait for a leader election before returning
         sleep_ms(500);

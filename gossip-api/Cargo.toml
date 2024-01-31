@@ -13,6 +13,8 @@ common = { path = "../common" }
 
 # === Misc Dependencies === #
 libp2p = { workspace = true }
+protobuf = "2.0"
+raft = "0.7"
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
