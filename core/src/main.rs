@@ -30,7 +30,7 @@ use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
 use state::tui::StateTuiApp;
-use state::{replication::network::test_helpers::MockNetwork, State};
+use state::State;
 use system_bus::SystemBus;
 use task_driver::driver::{TaskDriver, TaskDriverConfig};
 
@@ -85,6 +85,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
     let (network_sender, network_receiver) = mpsc::unbounded_channel::<NetworkManagerJob>();
+    let (raft_sender, raft_receiver) = channel::unbounded();
     let (gossip_worker_sender, gossip_worker_receiver) =
         mpsc::unbounded_channel::<GossipServerJob>();
     let (handshake_worker_sender, handshake_worker_receiver) =
@@ -94,9 +95,8 @@ async fn main() -> Result<(), CoordinatorError> {
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
 
     // Construct a global state
-    // TODO: Replace with gossip network once implemented
-    let network = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
-    let global_state = State::new(&args, network, system_bus.clone())?;
+    let global_state =
+        State::new(network_sender.clone(), raft_receiver, &args, system_bus.clone())?;
 
     // Configure logging and TUI
     if args.debug {
@@ -145,6 +145,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cluster_id: args.cluster_id.clone(),
         cluster_keypair: Some(args.cluster_keypair),
         send_channel: Some(network_receiver),
+        raft_queue: raft_sender,
         gossip_work_queue: gossip_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender.clone(),
         global_state: global_state.clone(),
