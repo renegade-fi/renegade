@@ -1,9 +1,19 @@
 //! The network abstraction of the replication layer; defines the interface for
 //! sending and receiving raft messages from cluster peers
 
-use raft::prelude::Message as RaftMessage;
+use crate::replication::error::ReplicationError;
+use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
+use gossip_api::request_response::raft::RaftMessage;
+use raft::prelude::Message as RawRaftMessage;
 
-use super::error::ReplicationError;
+/// The type used for queuing raft messages inbound from the network
+pub type RaftMessageQueue = CrossbeamSender<RaftMessage>;
+/// The receiver end of the raft message queue inbound from the network
+pub type RaftMessageReceiver = CrossbeamReceiver<RaftMessage>;
+
+// -----------
+// | Network |
+// -----------
 
 /// The central trait that must be implemented by any networking layer used
 /// by the replication layer
@@ -14,17 +24,17 @@ pub trait RaftNetwork {
     /// Send a raft message to a peer
     ///
     /// This method MAY NOT not block
-    fn send(&mut self, message: RaftMessage) -> Result<(), Self::Error>;
+    fn send(&mut self, message: RawRaftMessage) -> Result<(), Self::Error>;
 
     /// Receive a raft message from the network
     ///
     /// This method MAY block
-    fn recv(&mut self) -> Result<Option<RaftMessage>, Self::Error>;
+    fn recv(&mut self) -> Result<Option<RawRaftMessage>, Self::Error>;
 
     /// Attempt to receive a raft message from the network
     ///
     /// This method MAY NOT block
-    fn try_recv(&mut self) -> Result<Option<RaftMessage>, Self::Error>;
+    fn try_recv(&mut self) -> Result<Option<RawRaftMessage>, Self::Error>;
 }
 
 #[cfg(any(test, feature = "mocks"))]
