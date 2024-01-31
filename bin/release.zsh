@@ -1,7 +1,9 @@
+set -e
+
 # Set variables
 aws_account_id="377928551571"
 aws_region="ca-central-1"
-ecr_repository_name="renegade-main"
+ecr_repository_name="renegade"
 image_name="renegade-relayer"
 image_tag="latest"
 

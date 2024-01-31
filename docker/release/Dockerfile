@@ -13,24 +13,10 @@ RUN cat rust-toolchain | xargs rustup toolchain install
 RUN apt-get update && \
     apt-get install -y pkg-config && \
     apt-get install -y protobuf-compiler && \
-    apt-get install -y libssl-dev
+    apt-get install -y libssl-dev && \
+    apt-get install -y libclang-dev
 
-COPY Cargo.toml Cargo.lock ./
-COPY ./core/Cargo.toml ./core/Cargo.toml
-COPY ./circuits ./circuits
-COPY ./crypto ./crypto
-COPY ./circuit-macros ./circuit-macros
-COPY ./integration-helpers ./integration-helpers
-
-# Create a dummy entrypoint to build the dependencies
-RUN mkdir core/src
-RUN echo 'fn main() { println!("dummy main!") }' >> core/src/main.rs
-
-# Build the dependencies
-RUN cargo build --release
-
-# Copy the real sources into the build directory and rebuild without the dummy main
-COPY ./core ./core
+COPY ./ ./
 
 # Disable compiler warnings and enable backtraces for panic debugging
 ENV RUSTFLAGS=-Awarnings
@@ -40,7 +26,7 @@ ENV RUST_BACKTRACE=1
 RUN cargo build --release
 
 # Release stage
-FROM --platform=arm64 debian:bullseye-slim
+FROM --platform=arm64 debian:bookworm-slim
 
 RUN apt-get update && \
     apt-get install -y libssl-dev && \
@@ -48,6 +34,5 @@ RUN apt-get update && \
 
 # Copy the binary from the build stage
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
-COPY ./core/resources/no_commit/release.toml /resources/release.toml
 
 ENTRYPOINT [ "/bin/renegade-relayer", "--config-file", "/config.toml" ]
