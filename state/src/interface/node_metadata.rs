@@ -81,7 +81,7 @@ mod test {
     use config::RelayerConfig;
     use system_bus::SystemBus;
 
-    use crate::{replication::network::test_helpers::MockNetwork, State};
+    use crate::{replication::network::traits::test_helpers::MockNetwork, State};
 
     /// Tests the node metadata setup from a mock config
     #[test]
@@ -90,7 +90,7 @@ mod test {
         let config = RelayerConfig::default();
         let network = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
         let bus = SystemBus::new();
-        let state = State::new(&config, network, bus).unwrap();
+        let state = State::new_with_network(&config, network, bus).unwrap();
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();

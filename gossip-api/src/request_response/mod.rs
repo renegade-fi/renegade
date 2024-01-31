@@ -9,11 +9,13 @@ use self::{
     handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
     orderbook::{OrderInfoRequest, OrderInfoResponse},
+    raft::RaftMessage,
 };
 
 pub mod handshake;
 pub mod heartbeat;
 pub mod orderbook;
+pub mod raft;
 
 // -----------------
 // | Request Types |
@@ -75,6 +77,10 @@ pub enum GossipRequest {
     /// A request from a peer communicating about a potential handshake
     Handshake(HandshakeMessage),
 
+    // --- Raft Consensus --- //
+    /// A raft message from a peer
+    Raft(RaftMessage),
+
     // --- Order Book --- //
     /// A request for order information from a peer
     OrderInfo(OrderInfoRequest),
@@ -88,6 +94,8 @@ impl GossipRequest {
     pub fn requires_cluster_auth(&self) -> bool {
         match self {
             GossipRequest::Ack => false,
+            // Raft messages are always cluster authenticated
+            GossipRequest::Raft(..) => true,
             GossipRequest::Bootstrap(..) => false,
             GossipRequest::Heartbeat(..) => false,
             GossipRequest::PeerInfo(..) => false,
@@ -100,6 +108,8 @@ impl GossipRequest {
     pub fn destination(&self) -> GossipDestination {
         match self {
             GossipRequest::Ack => GossipDestination::NetworkManager,
+            // We send to the network manager so that it will implicitly give an ack
+            GossipRequest::Raft(..) => GossipDestination::NetworkManager,
             GossipRequest::Bootstrap(..) => GossipDestination::GossipServer,
             GossipRequest::Heartbeat(..) => GossipDestination::GossipServer,
             GossipRequest::PeerInfo(..) => GossipDestination::GossipServer,
