@@ -3,7 +3,8 @@
 use common::types::gossip::WrappedPeerId;
 use gossip_api::{
     request_response::{
-        AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest, GossipResponse,
+        raft::RaftMessage, AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest,
+        GossipResponse,
     },
     GossipDestination,
 };
@@ -37,7 +38,9 @@ impl NetworkManagerExecutor {
                 request.verify_cluster_auth(&self.cluster_key.public)?;
                 let body = request.body;
                 match body.destination() {
-                    GossipDestination::NetworkManager => self.handle_internal_request(body),
+                    GossipDestination::NetworkManager => {
+                        self.handle_internal_request(body, channel)
+                    },
                     GossipDestination::GossipServer => {
                         let job = GossipServerJob::NetworkRequest(peer, body, channel);
                         self.gossip_work_queue
@@ -67,14 +70,30 @@ impl NetworkManagerExecutor {
     }
 
     /// Handle an internally routed request
-    #[allow(clippy::needless_pass_by_value)]
-    fn handle_internal_request(&self, req: GossipRequest) -> Result<(), NetworkManagerError> {
+    fn handle_internal_request(
+        &mut self,
+        req: GossipRequest,
+        chan: ResponseChannel<AuthenticatedGossipResponse>,
+    ) -> Result<(), NetworkManagerError> {
         match req {
             GossipRequest::Ack => Ok(()),
+            GossipRequest::Raft(raft_message) => self.handle_raft_message(raft_message, chan),
             _ => Err(NetworkManagerError::UnhandledRequest(format!(
                 "unhandled internal request: {req:?}",
             ))),
         }
+    }
+
+    /// Handle a raft message
+    fn handle_raft_message(
+        &mut self,
+        msg: RaftMessage,
+        chan: ResponseChannel<AuthenticatedGossipResponse>,
+    ) -> Result<(), NetworkManagerError> {
+        self.raft_queue.send(msg).map_err(err_str!(NetworkManagerError::EnqueueJob))?;
+
+        // Send back an ack
+        self.handle_outbound_resp(GossipResponse::Ack, chan)
     }
 
     /// Handle an internally routed response
