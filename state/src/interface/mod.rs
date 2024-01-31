@@ -6,16 +6,21 @@ pub mod node_metadata;
 pub mod notifications;
 pub mod order_book;
 pub mod peer_index;
+pub mod raft;
 pub mod wallet_index;
 
-use std::{sync::Arc, thread};
+use std::{
+    sync::{Arc, RwLock},
+    thread,
+};
 
+use ::raft::prelude::Config as RaftConfig;
+use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
 use crossbeam::channel::{unbounded, Sender as UnboundedSender};
 use external_api::bus_message::SystemBusMessage;
 use job_types::network_manager::NetworkManagerQueue;
 use system_bus::SystemBus;
-use tokio::sync::RwLock;
 use util::err_str;
 
 use crate::{
@@ -100,7 +105,7 @@ impl State {
 
         // Create a proposal queue and the raft config
         let (proposal_send, proposal_recv) = unbounded();
-        let raft_config = ReplicationNodeConfig {
+        let replication_config = ReplicationNodeConfig {
             tick_period_ms: DEFAULT_TICK_INTERVAL_MS,
             relayer_config: config.clone(),
             proposal_queue: proposal_recv,
@@ -109,8 +114,12 @@ impl State {
             system_bus: system_bus.clone(),
         };
 
+        // Build a raft config
+        let raft_config = Self::build_raft_config(config);
+
         // Start the raft in a new thread
-        let raft = ReplicationNode::new(raft_config).map_err(StateError::Replication)?;
+        let raft = ReplicationNode::new_with_config(replication_config, &raft_config)
+            .map_err(StateError::Replication)?;
         thread::spawn(move || {
             raft.run().expect("Raft node failed");
         });
@@ -130,6 +139,13 @@ impl State {
     // -------------------
     // | Private Helpers |
     // -------------------
+
+    /// Build the raft config for the node
+    fn build_raft_config(relayer_config: &RelayerConfig) -> RaftConfig {
+        let peer_id = relayer_config.p2p_key.public().to_peer_id();
+        let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
+        RaftConfig { id: raft_id, ..Default::default() }
+    }
 
     /// Send a proposal to the raft node
     fn send_proposal(&self, transition: StateTransition) -> Result<ProposalWaiter, StateError> {

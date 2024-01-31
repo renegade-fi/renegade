@@ -12,6 +12,8 @@ use crate::storage::error::StorageError;
 pub enum ReplicationError {
     /// An error originating from the `StateApplicator`
     Applicator(StateApplicatorError),
+    /// Error applying a config change to the raft cluster
+    ConfChange(String),
     /// A value was not found in storage
     EntryNotFound,
     /// Error parsing a stored value
@@ -46,6 +48,7 @@ impl From<ReplicationError> for RaftError {
             ReplicationError::Applicator(_)
             | ReplicationError::ProposalQueue(_)
             | ReplicationError::SerializeValue(_) => RaftError::ProposalDropped,
+            ReplicationError::ConfChange(e) => RaftError::ConfChangeError(e.to_string()),
             ReplicationError::EntryNotFound => RaftError::Store(RaftStorageError::Unavailable),
             ReplicationError::Raft(e) => e,
             ReplicationError::Storage(e) => e.into(),

@@ -12,7 +12,7 @@ use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
 
-use crate::{error::StateError, storage::error::StorageError, State};
+use crate::{error::StateError, State};
 
 impl State {
     // -----------
@@ -134,6 +134,13 @@ impl State {
             // Add the peer to the store
             tx.write_peer(&peer)?;
             tx.add_to_cluster(&peer.peer_id, &peer.cluster_id)?;
+
+            // If the peer belongs in the same cluster, add it to the raft group
+            let my_cluster_id = tx.get_cluster_id()?;
+            if peer.cluster_id == my_cluster_id {
+                self.add_raft_learner(peer.peer_id)?;
+            }
+
             self.bus
                 .publish(NETWORK_TOPOLOGY_TOPIC.to_string(), SystemBusMessage::NewPeer { peer });
         }
@@ -163,14 +170,10 @@ impl State {
     /// Record a successful heartbeat on a peer
     pub fn record_heartbeat(&self, peer_id: &WrappedPeerId) -> Result<(), StateError> {
         let tx = self.db.new_write_tx()?;
-        let mut peer = tx.get_peer_info(peer_id)?.ok_or_else(|| {
-            StateError::Db(StorageError::NotFound(format!(
-                "Peer {peer_id} not found in peer index",
-            )))
-        })?;
-
-        peer.successful_heartbeat();
-        tx.write_peer(&peer)?;
+        if let Some(mut peer) = tx.get_peer_info(peer_id)? {
+            peer.successful_heartbeat();
+            tx.write_peer(&peer)?;
+        }
 
         tx.commit()?;
         Ok(())
