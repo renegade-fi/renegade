@@ -1,11 +1,13 @@
 //! Provides a primitive by which we translate between gossip peer IDs and
 //! replication layer IDs
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use common::types::gossip::WrappedPeerId;
 use fxhash::hash64 as fxhash64;
-use tokio::sync::RwLock;
 
 /// A translation map wrapped in a thread-safe container
 pub type SharedPeerIdTranslationMap = Arc<RwLock<PeerIdTranslationMap>>;
@@ -25,10 +27,8 @@ impl PeerIdTranslationMap {
 
     /// Insert a new peer ID
     pub fn insert(&mut self, peer_id: WrappedPeerId) {
-        let raft_id = self.get_raft_id(&peer_id);
-        let prev = self.map.insert(raft_id, peer_id);
-
-        assert!(prev.is_none(), "Duplicate peer ID inserted into the translation map")
+        let raft_id = Self::get_raft_id(&peer_id);
+        self.map.insert(raft_id, peer_id);
     }
 
     /// Get a peer ID from a raft ID
@@ -40,7 +40,7 @@ impl PeerIdTranslationMap {
     ///
     /// We hash the underlying peer ID (a mulltihash of the public key) to get a
     /// raft peer ID
-    pub fn get_raft_id(&self, peer_id: &WrappedPeerId) -> u64 {
+    pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
         fxhash64(&peer_id)
     }
 }

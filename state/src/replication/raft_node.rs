@@ -34,7 +34,9 @@ use crate::{
     Proposal, StateTransition,
 };
 
-use super::{error::ReplicationError, log_store::LogStore, network::traits::RaftNetwork};
+use super::{
+    error::ReplicationError, log_store::LogStore, network::traits::RaftNetwork, RaftPeerId,
+};
 
 // -------------
 // | Raft Node |
@@ -81,6 +83,8 @@ pub struct ReplicationNode<N: RaftNetwork> {
     applicator: StateApplicator,
     /// The networking layer backing the raft node
     network: N,
+    /// A handle on the database underlying the state
+    db: Arc<DB>,
     /// Maps proposal IDs to a response channel for the proposal
     proposal_responses: HashMap<Uuid, OneshotSender<Result<(), ReplicationError>>>,
 }
@@ -125,6 +129,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             applicator,
             proposal_queue: config.proposal_queue,
             network: config.network,
+            db: config.db,
             proposal_responses: HashMap::new(),
         })
     }
@@ -214,9 +219,9 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         // Handle raft cluster changes directly, otherwise append the proposal to the
         // log
         match proposal {
-            StateTransition::AddRaftLearner { peer_id } => self.add_learner(*peer_id),
-            StateTransition::AddRaftPeer { peer_id } => self.add_peer(*peer_id),
-            StateTransition::RemoveRaftPeer { peer_id } => self.remove_peer(*peer_id),
+            StateTransition::AddRaftLearner { peer_id } => self.add_learner(id, *peer_id),
+            StateTransition::AddRaftPeer { peer_id } => self.add_peer(id, *peer_id),
+            StateTransition::RemoveRaftPeer { peer_id } => self.remove_peer(id, *peer_id),
             _ => {
                 let ctx = id.to_bytes_le().to_vec();
                 let payload = serde_json::to_vec(&proposal)
@@ -228,40 +233,64 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     }
 
     /// Add a raft learner to the group
-    fn add_learner(&mut self, peer_id: u64) -> Result<(), ReplicationError> {
+    fn add_learner(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
+        // Short-circuit if the peer is already present
+        if self.peer_present(peer_id)? {
+            self.notify_proposal_sender(&request_id, Ok(()))?;
+            return Ok(());
+        }
+
+        log::info!("adding raft learner: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::AddLearnerNode);
 
-        self.conf_change(change)
+        self.conf_change(request_id, change)
     }
 
     /// Add a peer to the raft
-    fn add_peer(&mut self, peer_id: u64) -> Result<(), ReplicationError> {
+    fn add_peer(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
+        // Short-circuit if the peer is already present
+        if self.peer_present(peer_id)? {
+            self.notify_proposal_sender(&request_id, Ok(()))?;
+            return Ok(());
+        }
+
+        log::info!("adding raft voter: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::AddNode);
 
-        self.conf_change(change)
+        self.conf_change(request_id, change)
     }
 
     /// Remove a peer from the raft
-    fn remove_peer(&mut self, peer_id: u64) -> Result<(), ReplicationError> {
+    fn remove_peer(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
+        log::info!("removing raft peer: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::RemoveNode);
 
-        self.conf_change(change)
+        self.conf_change(request_id, change)
+    }
+
+    /// Check if the peer is already present
+    fn peer_present(&self, peer_id: RaftPeerId) -> Result<bool, ReplicationError> {
+        let tx = self.db.new_read_tx()?;
+        let conf_state = tx.read_conf_state()?;
+        tx.commit()?;
+
+        let res = conf_state.voters.contains(&peer_id) || conf_state.learners.contains(&peer_id);
+        Ok(res)
     }
 
     /// Propose a single configuration change to the cluster
-    fn conf_change(&mut self, change: ConfChangeSingle) -> Result<(), ReplicationError> {
+    fn conf_change(&mut self, id: Uuid, change: ConfChangeSingle) -> Result<(), ReplicationError> {
         let mut conf_change = ConfChangeV2::new();
         conf_change.set_changes(RepeatedField::from_vec(vec![change]));
 
-        self.inner
-            .propose_conf_change(vec![] /* context */, conf_change)
-            .map_err(ReplicationError::Raft)
+        let ctx = id.to_bytes_le().to_vec();
+        self.inner.propose_conf_change(ctx, conf_change).map_err(ReplicationError::Raft)
     }
 
     /// Process the ready state of the node
@@ -341,10 +370,10 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 continue;
             }
 
-            match entry.get_entry_type() {
+            let entry_id = parse_proposal_id(&entry)?;
+            let res = match entry.get_entry_type() {
                 EntryType::EntryNormal => {
                     // Apply a normal entry to the state machine
-                    let entry_id = parse_proposal_id(&entry)?;
                     let entry_bytes = entry.get_data();
                     let transition: StateTransition = serde_json::from_slice(entry_bytes)
                         .map_err(err_str!(ReplicationError::ParseValue))?;
@@ -353,33 +382,41 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                         "node {} applying state transition {transition:?}",
                         self.inner.raft.id
                     );
-                    let res = self
-                        .applicator
-                        .handle_state_transition(transition)
-                        .map_err(ReplicationError::Applicator);
 
-                    // Notify the proposal sender that the proposal has been
-                    // applied, either successfully or with an error
-                    self.notify_proposal_sender(&entry_id, res)?;
+                    self.applicator
+                        .handle_state_transition(transition)
+                        .map_err(ReplicationError::Applicator)
                 },
                 EntryType::EntryConfChangeV2 => {
                     // Apply a config change entry to the state machine
                     let mut config_change = ConfChangeV2::new();
+                    // let change_id = parse_conf_change_id(&config_change)?;
                     config_change
                         .merge_from_bytes(entry.get_data())
                         .map_err(err_str!(ReplicationError::ParseValue))?;
 
                     // Forward the config change to the consensus engine
-                    let config_state = self
+                    let res = self
                         .inner
                         .apply_conf_change(&config_change)
-                        .map_err(ReplicationError::Raft)?;
+                        .map_err(ReplicationError::Raft);
 
-                    // Store the new config in the log store
-                    self.inner.mut_store().apply_config_state(config_state)?
+                    // Remap the error, it cannot be cloned
+                    match res {
+                        Ok(conf_state) => {
+                            // Store the new config
+                            self.inner.mut_store().apply_config_state(conf_state)?;
+                            Ok(())
+                        },
+                        Err(e) => Err(ReplicationError::ConfChange(e.to_string())),
+                    }
                 },
                 _ => panic!("unexpected entry type: {entry:?}"),
-            }
+            };
+
+            // Notify the proposal sender that the proposal has been
+            // applied, either successfully or with an error
+            self.notify_proposal_sender(&entry_id, res)?;
         }
 
         Ok(())

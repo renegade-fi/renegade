@@ -133,7 +133,7 @@ impl GossipProtocolExecutor {
         }
 
         // Remove expired peers from global state
-        log::info!("Expiring peer {peer_id:?}");
+        log::info!("Expiring peer {peer_id}");
         self.global_state.remove_peer(peer_id)?;
 
         // Add peers to expiry cache for the duration of their invisibility window. This

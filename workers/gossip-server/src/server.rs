@@ -115,8 +115,6 @@ impl GossipServer {
     /// This is done to allow the network manager to gossip about network
     /// structure and graft a pubsub mesh before attempting to publish
     fn warmup_then_join_cluster(&self) -> Result<(), GossipError> {
-        // TODO: Send a raft join message to peers, possibly via pubsub
-
         // Copy items so they may be moved into the spawned thread
         let network_sender_copy = self.config.network_sender.clone();
         // Spawn a thread to wait on a timeout and then signal to the network manager
