@@ -31,12 +31,14 @@ config = { path = "../config" }
 constants = { path = "../constants" }
 external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
+job-types = { path = "../workers/job-types" }
 system-bus = { path = "../system-bus" }
 util = { path = "../util" }
 
 # === Misc === #
 crossterm = "0.27"
 itertools = "0.10"
+fxhash = "0.2"
 lazy_static = "1.4.0"
 libp2p = { workspace = true }
 rand = "0.8"
