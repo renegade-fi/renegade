@@ -13,12 +13,18 @@ use std::{sync::Arc, thread};
 use config::RelayerConfig;
 use crossbeam::channel::{unbounded, Sender as UnboundedSender};
 use external_api::bus_message::SystemBusMessage;
+use job_types::network_manager::NetworkManagerQueue;
 use system_bus::SystemBus;
+use tokio::sync::RwLock;
 use util::err_str;
 
 use crate::{
     replication::{
-        network::traits::RaftNetwork,
+        network::{
+            address_translation::{PeerIdTranslationMap, SharedPeerIdTranslationMap},
+            gossip::GossipRaftNetwork,
+            traits::{RaftMessageReceiver, RaftNetwork},
+        },
         raft_node::{ReplicationNode, ReplicationNodeConfig},
     },
     storage::db::{DbConfig, DB},
@@ -47,16 +53,41 @@ pub struct State {
     db: Arc<DB>,
     /// A handle on the proposal queue to the raft instance
     proposal_queue: Arc<ProposalQueue>,
+    /// The shared mapping from raft IDs to peer IDs for translation
+    translation_map: SharedPeerIdTranslationMap,
     /// The system bus for sending notifications to other workers
     bus: SystemBus<SystemBusMessage>,
 }
 
 impl State {
-    /// Create a new state handle
+    /// Create a new state handle using a `GossipRaftNetwork`
+    pub fn new(
+        network_outbound: NetworkManagerQueue,
+        raft_inbound: RaftMessageReceiver,
+        config: &RelayerConfig,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<Self, StateError> {
+        let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
+        let network = GossipRaftNetwork::new(network_outbound, raft_inbound, shared_map.clone());
+        Self::new_with_network_and_map(config, network, system_bus, shared_map)
+    }
+
+    /// Create a new state handle with a network specified
     pub fn new_with_network<N: 'static + RaftNetwork + Send>(
         config: &RelayerConfig,
         network: N,
         system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<Self, StateError> {
+        let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
+        Self::new_with_network_and_map(config, network, system_bus, shared_map)
+    }
+
+    /// The base constructor allowing for the variadic constructors above
+    fn new_with_network_and_map<N: 'static + RaftNetwork + Send>(
+        config: &RelayerConfig,
+        network: N,
+        system_bus: SystemBus<SystemBusMessage>,
+        translation_map: SharedPeerIdTranslationMap,
     ) -> Result<Self, StateError> {
         // Open up the DB
         let db = DB::new(&DbConfig { path: config.db_path.clone() }).map_err(StateError::Db)?;
@@ -90,6 +121,7 @@ impl State {
             db,
             proposal_queue: Arc::new(proposal_send),
             bus: system_bus,
+            translation_map,
         };
         self_.setup_node_metadata(config)?;
         Ok(self_)

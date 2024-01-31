@@ -27,7 +27,7 @@ use libp2p::{
     swarm::SwarmEvent,
     Multiaddr, Swarm,
 };
-use state::State;
+use state::{replication::network::traits::RaftMessageQueue, State};
 use tracing::log;
 
 use std::thread::JoinHandle;
@@ -172,6 +172,8 @@ pub(super) struct NetworkManagerExecutor {
     /// The runtime driver thread takes ownership of this channel via `take` in
     /// the execution loop
     job_channel: DefaultWrapper<Option<NetworkManagerReceiver>>,
+    /// The queue to forward raft messages onto
+    raft_queue: RaftMessageQueue,
     /// The sender for the gossip server's work queue
     gossip_work_queue: GossipServerQueue,
     /// The sender for the handshake manager's work queue
@@ -193,6 +195,7 @@ impl NetworkManagerExecutor {
         cluster_key: SigKeypair,
         swarm: Swarm<ComposedNetworkBehavior>,
         job_channel: NetworkManagerReceiver,
+        raft_queue: RaftMessageQueue,
         gossip_work_queue: GossipServerQueue,
         handshake_work_queue: HandshakeManagerQueue,
         global_state: State,
@@ -208,6 +211,7 @@ impl NetworkManagerExecutor {
             warmup_buffer: Vec::new(),
             swarm,
             job_channel: DefaultWrapper::new(Some(job_channel)),
+            raft_queue,
             gossip_work_queue,
             handshake_work_queue,
             global_state,
