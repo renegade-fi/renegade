@@ -11,6 +11,7 @@ use external_api::bus_message::SystemBusMessage;
 use job_types::gossip_server::GossipServerQueue;
 use job_types::handshake_manager::HandshakeManagerQueue;
 use job_types::network_manager::NetworkManagerReceiver;
+use state::replication::network::traits::RaftMessageQueue;
 use state::State;
 use system_bus::SystemBus;
 
@@ -55,6 +56,8 @@ pub struct NetworkManagerConfig {
     /// ownership of the work queue once it is started. The coordinator
     /// will be left with `None` after this happens
     pub send_channel: Option<NetworkManagerReceiver>,
+    /// The queue to send raft messages from the network manager
+    pub raft_queue: RaftMessageQueue,
     /// The work queue to forward inbound heartbeat requests to
     pub gossip_work_queue: GossipServerQueue,
     /// The work queue to forward inbound handshake requests to
@@ -173,6 +176,7 @@ impl Worker for NetworkManager {
             self.config.cluster_keypair.take().unwrap(),
             swarm,
             self.config.send_channel.take().unwrap(),
+            self.config.raft_queue.clone(),
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
             self.config.global_state.clone(),
