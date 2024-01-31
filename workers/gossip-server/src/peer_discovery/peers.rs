@@ -7,6 +7,7 @@ use gossip_api::request_response::{
 };
 use itertools::Itertools;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
+use tracing::log;
 use util::{err_str, get_current_time_seconds};
 
 use crate::{
@@ -79,10 +80,17 @@ impl GossipProtocolExecutor {
             peers
                 .iter()
                 .filter(|peer| {
+                    // Check that the peer is not in its invisibility window
                     if let Some(expired_at) = locked_expiry_cache.get(&peer.peer_id) {
                         if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
                             return false;
                         }
+                    }
+
+                    // Check that the cluster auth signature on the peer is valid
+                    if peer.verify_cluster_auth_sig().is_err() {
+                        log::warn!("Peer {} info has invalid cluster auth signature", peer.peer_id);
+                        return false;
                     }
 
                     // Remove the peer from the expiry cache if its invisibility window has

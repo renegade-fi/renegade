@@ -2,7 +2,7 @@
 
 use protobuf::Message;
 use raft::prelude::Message as RawRaftMessage;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize, Serializer};
 
 // ----------------
 // | Message Type |
@@ -36,7 +36,11 @@ impl Serialize for RaftMessage {
         S: Serializer,
     {
         let bytes = self.0.write_to_bytes().map_err(serde::ser::Error::custom)?;
-        serializer.serialize_bytes(&bytes)
+        let mut seq = serializer.serialize_seq(Some(bytes.len()))?;
+        for byte in bytes {
+            seq.serialize_element(&byte)?;
+        }
+        seq.end()
     }
 }
 
@@ -45,8 +49,8 @@ impl<'de> Deserialize<'de> for RaftMessage {
     where
         D: Deserializer<'de>,
     {
-        let bytes = <&[u8]>::deserialize(deserializer)?;
-        let message = RawRaftMessage::parse_from_bytes(bytes).map_err(serde::de::Error::custom)?;
+        let bytes = <Vec<u8>>::deserialize(deserializer)?;
+        let message = RawRaftMessage::parse_from_bytes(&bytes).map_err(serde::de::Error::custom)?;
         Ok(Self(message))
     }
 }
