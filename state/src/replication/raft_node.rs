@@ -34,7 +34,7 @@ use crate::{
     Proposal, StateTransition,
 };
 
-use super::{error::ReplicationError, log_store::LogStore, network::RaftNetwork};
+use super::{error::ReplicationError, log_store::LogStore, network::traits::RaftNetwork};
 
 // -------------
 // | Raft Node |
@@ -448,7 +448,7 @@ pub(crate) mod test_helpers {
     use system_bus::SystemBus;
 
     use crate::{
-        replication::{error::ReplicationError, network::test_helpers::MockNetwork},
+        replication::{error::ReplicationError, network::traits::test_helpers::MockNetwork},
         storage::db::DB,
         test_helpers::mock_db,
         Proposal, StateTransition,
@@ -648,7 +648,8 @@ mod test {
 
     use crate::{
         replication::{
-            network::test_helpers::MockNetwork, raft_node::test_helpers::MockReplicationCluster,
+            network::traits::test_helpers::MockNetwork,
+            raft_node::test_helpers::MockReplicationCluster,
         },
         storage::db::DB,
         test_helpers::mock_db,
