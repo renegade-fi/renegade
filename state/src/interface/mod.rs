@@ -18,7 +18,7 @@ use util::err_str;
 
 use crate::{
     replication::{
-        network::RaftNetwork,
+        network::traits::RaftNetwork,
         raft_node::{ReplicationNode, ReplicationNodeConfig},
     },
     storage::db::{DbConfig, DB},
@@ -53,7 +53,7 @@ pub struct State {
 
 impl State {
     /// Create a new state handle
-    pub fn new<N: 'static + RaftNetwork + Send>(
+    pub fn new_with_network<N: 'static + RaftNetwork + Send>(
         config: &RelayerConfig,
         network: N,
         system_bus: SystemBus<SystemBusMessage>,
