@@ -149,8 +149,8 @@ pub mod test_helpers {
     pub fn mock_state() -> State {
         let config =
             RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
-        let net = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
-        let state = State::new_with_network(&config, net, SystemBus::new()).unwrap();
+        let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
+        let state = State::new_with_network(&config, nets.remove(0), SystemBus::new()).unwrap();
 
         // Wait for a leader election before returning
         sleep_ms(500);
