@@ -88,9 +88,9 @@ mod test {
     fn test_node_metadata() {
         // Build the state mock manually to use the generated config
         let config = RelayerConfig::default();
-        let network = MockNetwork::new_n_way_mesh(1 /* n_nodes */).remove(0);
+        let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
         let bus = SystemBus::new();
-        let state = State::new_with_network(&config, network, bus).unwrap();
+        let state = State::new_with_network(&config, nets.remove(0), bus).unwrap();
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();
