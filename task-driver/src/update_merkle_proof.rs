@@ -11,66 +11,24 @@ use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::types::wallet::Wallet;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use state::{error::StateError, State};
 
 use crate::{
-    driver::{StateWrapper, Task},
+    driver::StateWrapper,
     helpers::update_wallet_validity_proofs,
+    traits::{Task, TaskContext, TaskError, TaskState},
 };
 
 /// The human-readable name of the the task
 const UPDATE_MERKLE_PROOF_TASK_NAME: &str = "update-merkle-proof";
 
-// -------------------
-// | Task Definition |
-// -------------------
-
-/// Defines the long running flow for updating the Merkle opening for a wallet
-pub struct UpdateMerkleProofTask {
-    /// The wallet to update
-    pub wallet: Wallet,
-    /// The arbitrum client to use for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
-    /// A copy of the relayer-global state
-    pub global_state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
-    /// A sender to the network manager's work queue
-    pub network_sender: NetworkManagerQueue,
-    /// The state of the task
-    pub task_state: UpdateMerkleProofTaskState,
-}
-
-/// The error type for the update merkle proof task
-#[derive(Clone, Debug)]
-pub enum UpdateMerkleProofTaskError {
-    /// An error occurred interacting with Arbitrum
-    Arbitrum(String),
-    /// An error interacting with global state
-    State(String),
-    /// An error while updating validity proofs for a wallet
-    UpdatingValidityProofs(String),
-    /// Wallet is already locked, cannot update
-    WalletLocked,
-}
-
-impl Display for UpdateMerkleProofTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for UpdateMerkleProofTaskError {}
-
-impl From<StateError> for UpdateMerkleProofTaskError {
-    fn from(value: StateError) -> Self {
-        UpdateMerkleProofTaskError::State(value.to_string())
-    }
-}
+// --------------
+// | Task State |
+// --------------
 
 /// Defines the state of the deposit balance task
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UpdateMerkleProofTaskState {
     /// The task is awaiting scheduling
     Pending,
@@ -81,6 +39,16 @@ pub enum UpdateMerkleProofTaskState {
     UpdatingValidityProofs,
     /// The task has finished
     Completed,
+}
+
+impl TaskState for UpdateMerkleProofTaskState {
+    fn commit_point() -> Self {
+        Self::UpdatingValidityProofs
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self, Self::Completed)
+    }
 }
 
 impl Display for UpdateMerkleProofTaskState {
@@ -109,10 +77,95 @@ impl From<UpdateMerkleProofTaskState> for StateWrapper {
     }
 }
 
+// ---------------
+// | Task Errors |
+// ---------------
+
+/// The error type for the update merkle proof task
+#[derive(Clone, Debug)]
+pub enum UpdateMerkleProofTaskError {
+    /// An error occurred interacting with Arbitrum
+    Arbitrum(String),
+    /// An error interacting with global state
+    State(String),
+    /// An error while updating validity proofs for a wallet
+    UpdatingValidityProofs(String),
+    /// Wallet is already locked, cannot update
+    WalletLocked,
+}
+
+impl TaskError for UpdateMerkleProofTaskError {
+    fn retryable(&self) -> bool {
+        matches!(
+            self,
+            UpdateMerkleProofTaskError::Arbitrum(_)
+                | UpdateMerkleProofTaskError::State(_)
+                | UpdateMerkleProofTaskError::UpdatingValidityProofs(_)
+        )
+    }
+}
+
+impl Display for UpdateMerkleProofTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+impl Error for UpdateMerkleProofTaskError {}
+
+impl From<StateError> for UpdateMerkleProofTaskError {
+    fn from(value: StateError) -> Self {
+        UpdateMerkleProofTaskError::State(value.to_string())
+    }
+}
+
+// -------------------
+// | Task Definition |
+// -------------------
+
+/// The task descriptor, containing only the parameterization of the task
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateMerkleProofTaskDescriptor {
+    /// The wallet to update
+    pub wallet: Wallet,
+}
+
+/// Defines the long running flow for updating the Merkle opening for a wallet
+pub struct UpdateMerkleProofTask {
+    /// The wallet to update
+    pub wallet: Wallet,
+    /// The arbitrum client to use for submitting transactions
+    pub arbitrum_client: ArbitrumClient,
+    /// A copy of the relayer-global state
+    pub global_state: State,
+    /// The work queue to add proof management jobs to
+    pub proof_queue: ProofManagerQueue,
+    /// A sender to the network manager's work queue
+    pub network_sender: NetworkManagerQueue,
+    /// The state of the task
+    pub task_state: UpdateMerkleProofTaskState,
+}
+
 #[async_trait]
 impl Task for UpdateMerkleProofTask {
     type Error = UpdateMerkleProofTaskError;
     type State = UpdateMerkleProofTaskState;
+    type Descriptor = UpdateMerkleProofTaskDescriptor;
+
+    async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
+        // TODO: remove wallet locks
+        if !descriptor.wallet.try_lock_wallet() {
+            return Err(UpdateMerkleProofTaskError::WalletLocked);
+        }
+
+        Ok(Self {
+            wallet: descriptor.wallet,
+            arbitrum_client: ctx.arbitrum_client,
+            global_state: ctx.state,
+            proof_queue: ctx.proof_queue,
+            network_sender: ctx.network_queue,
+            task_state: UpdateMerkleProofTaskState::Pending,
+        })
+    }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
@@ -160,28 +213,6 @@ impl Task for UpdateMerkleProofTask {
 // -----------------------
 
 impl UpdateMerkleProofTask {
-    /// Constructor
-    pub fn new(
-        wallet: Wallet,
-        arbitrum_client: ArbitrumClient,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        network_sender: NetworkManagerQueue,
-    ) -> Result<Self, UpdateMerkleProofTaskError> {
-        if !wallet.try_lock_wallet() {
-            return Err(UpdateMerkleProofTaskError::WalletLocked);
-        }
-
-        Ok(Self {
-            wallet,
-            arbitrum_client,
-            global_state,
-            proof_manager_work_queue,
-            network_sender,
-            task_state: UpdateMerkleProofTaskState::Pending,
-        })
-    }
-
     // --------------
     // | Task Steps |
     // --------------
@@ -206,7 +237,7 @@ impl UpdateMerkleProofTask {
     pub async fn update_validity_proofs(&self) -> Result<(), UpdateMerkleProofTaskError> {
         update_wallet_validity_proofs(
             &self.wallet,
-            self.proof_manager_work_queue.clone(),
+            self.proof_queue.clone(),
             self.global_state.clone(),
             self.network_sender.clone(),
         )

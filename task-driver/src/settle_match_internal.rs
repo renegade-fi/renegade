@@ -4,12 +4,9 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use super::{driver::StateWrapper, helpers::find_merkle_path};
 use crate::helpers::{enqueue_proof_job, update_wallet_validity_proofs};
-
-use super::{
-    driver::{StateWrapper, Task},
-    helpers::find_merkle_path,
-};
+use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;
@@ -26,7 +23,7 @@ use common::types::{
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
@@ -44,9 +41,113 @@ const ERR_AWAITING_PROOF: &str = "error awaiting proof";
 /// Error message emitted when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
+// --------------
+// | Task State |
+// --------------
+
+/// The state of the settle match internal task
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SettleMatchInternalTaskState {
+    /// The task is awaiting scheduling
+    Pending,
+    /// The task is proving `VALID MATCH SETTLE` as a singleprover circuit
+    ProvingMatchSettle,
+    /// The task is submitting the match transaction
+    SubmittingMatch,
+    /// The task is updating the wallet state and Merkle openings
+    UpdatingState,
+    /// The task is updating validity proofs for the wallet
+    UpdatingValidityProofs,
+    /// The task has finished
+    Completed,
+}
+
+impl TaskState for SettleMatchInternalTaskState {
+    fn commit_point() -> Self {
+        Self::SubmittingMatch
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self, Self::Completed)
+    }
+}
+
+impl From<SettleMatchInternalTaskState> for StateWrapper {
+    fn from(value: SettleMatchInternalTaskState) -> Self {
+        Self::SettleMatchInternal(value)
+    }
+}
+
+impl Display for SettleMatchInternalTaskState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+
+// ---------------
+// | Task Errors |
+// ---------------
+
+/// The error type that the task emits
+#[derive(Clone, Debug, Serialize)]
+pub enum SettleMatchInternalTaskError {
+    /// Error enqueuing a job with another worker
+    EnqueuingJob(String),
+    /// State necessary for execution cannot be found
+    MissingState(String),
+    /// Error re-proving wallet and order validity
+    ProvingValidity(String),
+    /// Error interacting with Arbitrum
+    Arbitrum(String),
+    /// A wallet is already locked
+    WalletLocked(WalletIdentifier),
+    /// An error interacting with the global state
+    State(String),
+}
+
+impl TaskError for SettleMatchInternalTaskError {
+    fn retryable(&self) -> bool {
+        matches!(self, Self::ProvingValidity(_) | Self::Arbitrum(_) | Self::State(_))
+    }
+}
+
+impl Display for SettleMatchInternalTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+impl Error for SettleMatchInternalTaskError {}
+
+impl From<StateError> for SettleMatchInternalTaskError {
+    fn from(err: StateError) -> Self {
+        Self::State(err.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
+
+/// The descriptor for the task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SettleMatchInternalTaskDescriptor {
+    /// The price at which the match was executed
+    execution_price: FixedPoint,
+    /// The identifier of the first order
+    order_id1: OrderIdentifier,
+    /// The identifier of the second order
+    order_id2: OrderIdentifier,
+    /// The validity proofs for the first order
+    order1_proof: OrderValidityProofBundle,
+    /// The validity proof witness for the first order
+    order1_validity_witness: OrderValidityWitnessBundle,
+    /// The validity proofs for the second order
+    order2_proof: OrderValidityProofBundle,
+    /// The validity proof witness for the second order
+    order2_validity_witness: OrderValidityWitnessBundle,
+    /// The match result
+    match_result: MatchResult,
+}
 
 /// Describe the settle match internal task
 pub struct SettleMatchInternalTask {
@@ -73,78 +174,56 @@ pub struct SettleMatchInternalTask {
     /// A sender to the network manager's work queue
     network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
     /// The work queue to add proof management jobs to
-    proof_manager_work_queue: ProofManagerQueue,
+    proof_queue: ProofManagerQueue,
     /// The state of the task
     task_state: SettleMatchInternalTaskState,
-}
-
-/// The state of the settle match internal task
-#[derive(Clone, Debug, Serialize)]
-pub enum SettleMatchInternalTaskState {
-    /// The task is awaiting scheduling
-    Pending,
-    /// The task is proving `VALID MATCH SETTLE` as a singleprover circuit
-    ProvingMatchSettle,
-    /// The task is submitting the match transaction
-    SubmittingMatch,
-    /// The task is updating the wallet state and Merkle openings
-    UpdatingState,
-    /// The task is updating validity proofs for the wallet
-    UpdatingValidityProofs,
-    /// The task has finished
-    Completed,
-}
-
-impl From<SettleMatchInternalTaskState> for StateWrapper {
-    fn from(value: SettleMatchInternalTaskState) -> Self {
-        Self::SettleMatchInternal(value)
-    }
-}
-
-impl Display for SettleMatchInternalTaskState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-
-impl Error for SettleMatchInternalTaskState {}
-
-/// The error type that the task emits
-#[derive(Clone, Debug, Serialize)]
-pub enum SettleMatchInternalTaskError {
-    /// Error enqueuing a job with another worker
-    EnqueuingJob(String),
-    /// State necessary for execution cannot be found
-    MissingState(String),
-    /// Error re-proving wallet and order validity
-    ProvingValidity(String),
-    /// Error interacting with Arbitrum
-    Arbitrum(String),
-    /// A wallet is already locked
-    WalletLocked(WalletIdentifier),
-    /// An error interacting with the global state
-    State(String),
-}
-
-impl Display for SettleMatchInternalTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for SettleMatchInternalTaskError {}
-
-impl From<StateError> for SettleMatchInternalTaskError {
-    fn from(err: StateError) -> Self {
-        Self::State(err.to_string())
-    }
 }
 
 #[async_trait]
 impl Task for SettleMatchInternalTask {
     type State = SettleMatchInternalTaskState;
     type Error = SettleMatchInternalTaskError;
+    type Descriptor = SettleMatchInternalTaskDescriptor;
+
+    async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
+        let SettleMatchInternalTaskDescriptor {
+            execution_price,
+            order_id1,
+            order_id2,
+            order1_proof,
+            order1_validity_witness,
+            order2_proof,
+            order2_validity_witness,
+            match_result,
+        } = descriptor;
+
+        let mut self_ = Self {
+            execution_price,
+            order_id1,
+            order_id2,
+            order1_proof,
+            order1_validity_witness,
+            order2_proof,
+            order2_validity_witness,
+            match_result,
+            match_bundle: None, // Assuming default initialization
+            arbitrum_client: ctx.arbitrum_client,
+            network_sender: ctx.network_queue,
+            state: ctx.state,
+            proof_queue: ctx.proof_queue,
+            task_state: SettleMatchInternalTaskState::Pending, // Assuming default initialization
+        };
+
+        // Try to lock the wallets
+        // TODO: Remove wallet locks
+        if let Err(e) = self_.setup_task() {
+            self_.cleanup().await?;
+            return Err(e);
+        }
+        Ok(self_)
+    }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
@@ -206,47 +285,6 @@ impl Task for SettleMatchInternalTask {
 // -----------------------
 
 impl SettleMatchInternalTask {
-    /// Constructor
-    #[allow(clippy::too_many_arguments)]
-    pub async fn new(
-        execution_price: FixedPoint,
-        order1: OrderIdentifier,
-        order2: OrderIdentifier,
-        order1_proof: OrderValidityProofBundle,
-        order1_witness: OrderValidityWitnessBundle,
-        order2_proof: OrderValidityProofBundle,
-        order2_witness: OrderValidityWitnessBundle,
-        match_result: MatchResult,
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-    ) -> Result<Self, SettleMatchInternalTaskError> {
-        let mut self_ = Self {
-            execution_price,
-            order_id1: order1,
-            order_id2: order2,
-            order1_proof,
-            order1_validity_witness: order1_witness,
-            order2_proof,
-            order2_validity_witness: order2_witness,
-            match_result,
-            match_bundle: None,
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_state: SettleMatchInternalTaskState::Pending,
-        };
-
-        if let Err(e) = self_.setup_task(&order1, &order2) {
-            self_.cleanup().await?;
-            return Err(e);
-        }
-
-        Ok(self_)
-    }
-
     // --------------
     // | Task Steps |
     // --------------
@@ -257,7 +295,7 @@ impl SettleMatchInternalTask {
 
         // Enqueue a job with the proof generation module
         let job = ProofJob::ValidMatchSettleSingleprover { witness, statement };
-        let proof_recv = enqueue_proof_job(job, &self.proof_manager_work_queue)
+        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
             .map_err(SettleMatchInternalTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
@@ -290,8 +328,8 @@ impl SettleMatchInternalTask {
         // Nullify orders on the newly matched values
         let nullifier1 = self.order1_proof.reblind_proof.statement.original_shares_nullifier;
         let nullifier2 = self.order2_proof.reblind_proof.statement.original_shares_nullifier;
-        self.global_state.nullify_orders(nullifier1)?;
-        self.global_state.nullify_orders(nullifier2)?;
+        self.state.nullify_orders(nullifier1)?;
+        self.state.nullify_orders(nullifier2)?;
 
         // Lookup the wallets that manage each order
         let mut wallet1 = self.find_wallet_for_order(&self.order_id1)?;
@@ -313,8 +351,8 @@ impl SettleMatchInternalTask {
         self.find_opening(&mut wallet2).await?;
 
         // Re-index the updated wallets in the global state
-        self.global_state.update_wallet(wallet1)?.await?;
-        self.global_state.update_wallet(wallet2)?.await?;
+        self.state.update_wallet(wallet1)?.await?;
+        self.state.update_wallet(wallet2)?.await?;
 
         Ok(())
     }
@@ -331,14 +369,14 @@ impl SettleMatchInternalTask {
         // is capable of handling many at once
         let t1 = Self::spawn_update_proofs_task(
             wallet1,
-            self.proof_manager_work_queue.clone(),
-            self.global_state.clone(),
+            self.proof_queue.clone(),
+            self.state.clone(),
             self.network_sender.clone(),
         );
         let t2 = Self::spawn_update_proofs_task(
             wallet2,
-            self.proof_manager_work_queue.clone(),
-            self.global_state.clone(),
+            self.proof_queue.clone(),
+            self.state.clone(),
             self.network_sender.clone(),
         );
 
@@ -359,13 +397,11 @@ impl SettleMatchInternalTask {
     /// Try to lock both wallets, if they cannot be locked then the task cannot
     /// be run and the internal matching engine will re-run next time the
     /// proofs are updated
-    fn setup_task(
-        &mut self,
-        order1: &OrderIdentifier,
-        order2: &OrderIdentifier,
-    ) -> Result<(), SettleMatchInternalTaskError> {
-        let wallet1 = self.find_wallet_for_order(order1)?;
-        let wallet2 = self.find_wallet_for_order(order2)?;
+    fn setup_task(&mut self) -> Result<(), SettleMatchInternalTaskError> {
+        let o1 = &self.order_id1;
+        let o2 = &self.order_id2;
+        let wallet1 = self.find_wallet_for_order(o1)?;
+        let wallet2 = self.find_wallet_for_order(o2)?;
 
         if !wallet1.try_lock_wallet() {
             return Err(SettleMatchInternalTaskError::WalletLocked(wallet1.wallet_id));
@@ -383,11 +419,11 @@ impl SettleMatchInternalTask {
         &self,
         order: &OrderIdentifier,
     ) -> Result<Wallet, SettleMatchInternalTaskError> {
-        let wallet_id = self.global_state.get_wallet_for_order(order)?.ok_or_else(|| {
+        let wallet_id = self.state.get_wallet_for_order(order)?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })?;
 
-        self.global_state.get_wallet(&wallet_id)?.ok_or_else(|| {
+        self.state.get_wallet(&wallet_id)?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })
     }
@@ -480,18 +516,12 @@ impl SettleMatchInternalTask {
     /// Returns a `JoinHandle` to the spawned task
     fn spawn_update_proofs_task(
         wallet: Wallet,
-        proof_manager_work_queue: ProofManagerQueue,
-        global_state: State,
+        proof_queue: ProofManagerQueue,
+        state: State,
         network_sender: NetworkManagerQueue,
     ) -> TokioJoinHandle<Result<(), String>> {
         tokio::spawn(async move {
-            update_wallet_validity_proofs(
-                &wallet,
-                proof_manager_work_queue,
-                global_state,
-                network_sender,
-            )
-            .await
+            update_wallet_validity_proofs(&wallet, proof_queue, state, network_sender).await
         })
     }
 }
