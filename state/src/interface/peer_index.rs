@@ -152,7 +152,13 @@ impl State {
     /// Remove a peer that has been expired
     pub fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<(), StateError> {
         let tx = self.db.new_write_tx()?;
+        let my_cluster = tx.get_cluster_id()?;
         if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
+            // If the peer is in the same cluster, remove it from the raft group
+            if peer_info.cluster_id == my_cluster {
+                self.remove_raft_peer(peer_id)?;
+            }
+
             tx.remove_from_cluster(&peer_id, &peer_info.cluster_id)?;
             tx.remove_peer(&peer_id)?;
         }

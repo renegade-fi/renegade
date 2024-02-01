@@ -24,6 +24,11 @@ pub type Shared<T> = Arc<RwLock<T>>;
 /// async context
 pub type AsyncShared<T> = Arc<TokioRwLock<T>>;
 
+/// Wrap an abstract value in a shared lock
+pub fn new_shared<T>(wrapped: T) -> Shared<T> {
+    Arc::new(RwLock::new(wrapped))
+}
+
 /// Wrap an abstract value in an async shared lock
 pub fn new_async_shared<T>(wrapped: T) -> AsyncShared<T> {
     Arc::new(TokioRwLock::new(wrapped))

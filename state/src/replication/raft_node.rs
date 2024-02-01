@@ -18,7 +18,7 @@ use raft::{
         ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType, HardState,
         Message as RaftMessage, Snapshot,
     },
-    Config as RaftConfig, Error as RaftError, RawNode, StateRole,
+    Config as RaftConfig, Error as RaftError, RawNode, StateRole, Storage, INVALID_ID,
 };
 use rand::{thread_rng, RngCore};
 use slog::Logger;
@@ -197,7 +197,10 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 self.proposal_responses.insert(id, response);
 
                 if let Err(e) = self.process_proposal(id, &transition) {
-                    log::error!("Error processing proposal: {e:?}");
+                    log::error!(
+                        "node-{} error processing proposal: {e:?}, {transition:?}",
+                        self.id()
+                    );
                     self.notify_proposal_sender(&id, Err(e))?;
                 };
             }
@@ -322,12 +325,75 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// Remove a peer from the raft
     fn remove_peer(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
+        // If the cluster has only two voters, we cannot remove a peer through consensus
+        // -- no majority can be established when one of two nodes dies -- so we
+        // must forcibly append a log
+        let voters = self.get_config_state()?.voters;
+        if voters.len() == 2 && voters.contains(&peer_id) {
+            return self.force_remove_peer(request_id, peer_id);
+        }
+
+        // Otherwise remove the peer through consensus
         log::info!("removing raft peer: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::RemoveNode);
 
         self.conf_change(request_id, change)
+    }
+
+    /// Forcibly remove a peer, going around consensus
+    ///
+    /// This is dangerous and should only be done when a quorum certainly cannot
+    /// form otherwise
+    ///
+    /// Borrowed from the entry constructor here:
+    ///    https://github.com/tikv/raft-rs/blob/eb55032e4708807681d0d8e59c04e8d00665ec60/src/raw_node.rs#L378
+    fn force_remove_peer(
+        &mut self,
+        request_id: Uuid,
+        peer_id: u64,
+    ) -> Result<(), ReplicationError> {
+        log::info!("forcibly removing raft peer: {peer_id}");
+
+        // Build a config change to remove the node
+        let context = request_id.to_bytes_le().to_vec();
+        let mut change = ConfChangeSingle::new();
+        change.set_node_id(peer_id);
+        change.set_change_type(ConfChangeType::RemoveNode);
+
+        let mut conf_change = ConfChangeV2::new();
+        conf_change.mut_changes().push(change);
+        let change_bytes =
+            conf_change.write_to_bytes().map_err(err_str!(ReplicationError::SerializeValue))?;
+
+        // Build a raw log entry to place the conf change in
+        let index = self.inner.raft.raft_log.last_index() + 1;
+        let term = self.inner.raft.raft_log.last_term();
+
+        let mut entry = Entry::default();
+        entry.set_entry_type(EntryType::EntryConfChangeV2);
+        entry.data = change_bytes.into();
+        entry.context = context.into();
+        entry.term = term;
+        entry.index = index;
+
+        // Append the entry to the log them commit to it
+        self.append_entries(vec![entry.clone()])?;
+        self.commit_entries(vec![entry])?;
+
+        // Take a snapshot and restore to it to ensure that the internal state machine
+        // reflects our workaround
+        // The snapshot can only be applied as a follower so the node must step down
+        // then campaign again after applying
+        let snap = self.inner.store().snapshot(index, 0 /* to */)?;
+        self.inner.raft.become_follower(term + 1, INVALID_ID /* leader */);
+        if !self.inner.raft.restore(snap) {
+            log::error!("failed to restore snapshot after forced peer removal");
+        }
+
+        self.inner.raft.become_pre_candidate();
+        Ok(())
     }
 
     /// Propose a single configuration change to the cluster
@@ -493,6 +559,11 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         self.inner.raft.state == StateRole::Leader
     }
 
+    /// Get the raft ID of the local node
+    pub fn id(&self) -> u64 {
+        self.inner.raft.id
+    }
+
     /// Get the config state stored in the log
     fn get_config_state(&self) -> Result<ConfState, ReplicationError> {
         let tx = self.db.new_read_tx()?;
@@ -556,7 +627,7 @@ fn parse_proposal_id(entry: &Entry) -> Result<Uuid, ReplicationError> {
 pub(crate) mod test_helpers {
     use std::{
         sync::Arc,
-        thread::{self, JoinHandle},
+        thread::{self, Builder, JoinHandle},
         time::Duration,
     };
 
@@ -566,7 +637,9 @@ pub(crate) mod test_helpers {
 
     use crate::{
         replication::{
-            error::ReplicationError, network::traits::test_helpers::MockNetwork, RaftPeerId,
+            error::ReplicationError,
+            network::traits::test_helpers::{MockNetwork, MockNetworkController},
+            RaftPeerId,
         },
         storage::db::DB,
         test_helpers::mock_db,
@@ -584,12 +657,14 @@ pub(crate) mod test_helpers {
         dbs: Vec<Arc<DB>>,
         /// The proposal senders of the nodes
         proposal_senders: Vec<Sender<Proposal>>,
+        /// The network controller
+        controller: MockNetworkController,
     }
 
     impl MockReplicationCluster {
         /// Create a mock cluster of nodes
         pub fn new(n_nodes: usize) -> Self {
-            let mut nets = MockNetwork::new_n_way_mesh(n_nodes);
+            let (controller, mut nets) = MockNetwork::new_n_way_mesh(n_nodes);
             let dbs = (0..n_nodes).map(|_| Arc::new(mock_db())).collect::<Vec<_>>();
 
             let mut senders = Vec::new();
@@ -634,7 +709,7 @@ pub(crate) mod test_helpers {
                 thread::sleep(Duration::from_millis(50))
             }
 
-            Self { handles, dbs, proposal_senders: senders }
+            Self { handles, dbs, proposal_senders: senders, controller }
         }
 
         /// Get a reference to the `n`th node's DB
@@ -649,6 +724,11 @@ pub(crate) mod test_helpers {
         /// We 1-index here to match the node IDs
         pub fn send_proposal(&self, node_id: usize, proposal: StateTransition) {
             self.proposal_senders[node_id - 1].send(proposal.into()).unwrap();
+        }
+
+        /// Disconnect the given path between two nodes
+        pub fn disconnect(&self, from: RaftPeerId, to: RaftPeerId) {
+            self.controller.disconnect(from, to);
         }
 
         /// Remove a node from the cluster
@@ -749,14 +829,17 @@ pub(crate) mod test_helpers {
         id: RaftPeerId,
         node: ReplicationNode<MockNetwork>,
     ) -> JoinHandle<Result<(), ReplicationError>> {
-        thread::spawn(move || {
-            if let Err(e) = node.run() {
-                println!("node-{id} error: {e:?}");
-                return Err(e);
-            }
+        Builder::new()
+            .name(format!("node-{}", id))
+            .spawn(move || {
+                if let Err(e) = node.run() {
+                    println!("node-{id} error: {e:?}");
+                    return Err(e);
+                }
 
-            Ok(())
-        })
+                Ok(())
+            })
+            .unwrap()
     }
 }
 
@@ -794,7 +877,7 @@ mod test {
     #[test]
     fn test_constructor() {
         let db = Arc::new(mock_db());
-        let (net, _) = MockNetwork::new_duplex_conn();
+        let (_, net, _) = MockNetwork::new_duplex_conn();
 
         let (_, proposal_receiver) = unbounded();
         let node_config = ReplicationNodeConfig {
@@ -914,5 +997,31 @@ mod test {
 
         assert!(res.is_none());
         cluster.assert_no_crashes();
+    }
+
+    /// Tests the forced removal of a peer when the cluster has only two voters
+    #[test]
+    fn test_force_remove_peer() {
+        let cluster = MockReplicationCluster::new(2 /* n_nodes */);
+
+        // Remove a node from the cluster, disconnect its outbound to simulate a crash
+        cluster.disconnect(2 /* from */, 1 /* to */);
+        cluster.send_proposal(1, StateTransition::RemoveRaftPeer { peer_id: 2 });
+        thread::sleep(Duration::from_millis(500)); // allow time for the proposal to be processed
+
+        // Propose a wallet to the remaining node
+        let wallet = mock_empty_wallet();
+        let transition = StateTransition::AddWallet { wallet: wallet.clone() };
+        cluster.send_proposal(1, transition);
+
+        // Wait a bit for the proposal to be processed
+        thread::sleep(Duration::from_millis(100));
+
+        // Check that the wallet has been indexed in the remaining DB
+        let db = cluster.db(1);
+        let expected_wallet: Wallet = wallet;
+        let wallet = find_wallet_in_db(expected_wallet.wallet_id, &db);
+
+        assert_eq!(wallet, expected_wallet);
     }
 }

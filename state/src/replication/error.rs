@@ -42,6 +42,12 @@ impl Display for ReplicationError {
 
 impl Error for ReplicationError {}
 
+impl From<RaftError> for ReplicationError {
+    fn from(value: RaftError) -> Self {
+        Self::Raft(value)
+    }
+}
+
 impl From<ReplicationError> for RaftError {
     fn from(value: ReplicationError) -> Self {
         match value {
