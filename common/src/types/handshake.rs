@@ -3,13 +3,14 @@
 use circuit_types::fixed_point::FixedPoint;
 use constants::Scalar;
 use crossbeam::channel::Sender;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::wallet::OrderIdentifier;
 
 /// The role in an MPC network setup; either Dialer or Listener depending on
 /// which node initiates the connection
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ConnectionRole {
     /// Dials the peer, initiating the connection
     /// The dialer also plays the role of the king in the subsequent MPC
@@ -31,7 +32,7 @@ impl ConnectionRole {
 }
 
 /// The state of a given handshake execution
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HandshakeState {
     /// The request identifier of the handshake, used to uniquely identify a
     /// handshake correspondence between peers
@@ -52,11 +53,12 @@ pub struct HandshakeState {
     /// The current state information of the
     pub state: State,
     /// The cancel channel that the coordinator may use to cancel MPC execution
+    #[serde(skip)]
     pub cancel_channel: Option<Sender<()>>,
 }
 
 /// A state enumeration for the valid states a handshake may take
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum State {
     /// The state entered into when order pair negotiation beings, i.e. the
     /// initial state This state is exited when either:

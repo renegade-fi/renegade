@@ -20,22 +20,17 @@ use circuits::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
     ValidWalletCreateWitness,
 };
-use common::types::{
-    proof_bundles::ValidWalletCreateBundle,
-    wallet::{Wallet, WalletIdentifier},
-};
-use external_api::types::ApiWallet;
+use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use state::error::StateError;
 use state::State;
 
+use crate::driver::StateWrapper;
 use crate::helpers::enqueue_proof_job;
+use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
-use super::{
-    driver::{StateWrapper, Task},
-    helpers::find_merkle_path,
-};
+use super::helpers::find_merkle_path;
 
 /// Error occurs when a wallet is submitted with secret shares that do not
 /// combine to recover the wallet
@@ -43,60 +38,12 @@ const ERR_INVALID_SHARING: &str = "invalid secret shares for wallet";
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 
-/// The task struct defining the long-run async flow for creating a new wallet
-pub struct NewWalletTask {
-    /// The wallet to create
-    pub wallet: Wallet,
-    /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
-    /// first step
-    pub proof_bundle: Option<ValidWalletCreateBundle>,
-    /// An arbitrum client for the task to submit transactions
-    pub arbitrum_client: ArbitrumClient,
-    /// A copy of the relayer-global state
-    pub global_state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
-    /// The state of the task's execution
-    pub task_state: NewWalletTaskState,
-}
-
-/// The error type for the task
-#[derive(Clone, Debug)]
-pub enum NewWalletTaskError {
-    /// A wallet was submitted with an invalid secret shares
-    InvalidShares(String),
-    /// Error generating a proof of `VALID WALLET CREATE`
-    ProofGeneration(String),
-    /// Error interacting with the Arbitrum client
-    Arbitrum(String),
-    /// Error sending a message to another worker
-    SendMessage(String),
-    /// Error setting up the task
-    Setup(String),
-    /// Error interacting with global state
-    State(String),
-}
-
-impl Display for NewWalletTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for NewWalletTaskError {}
-
-impl From<StateError> for NewWalletTaskError {
-    fn from(e: StateError) -> Self {
-        NewWalletTaskError::State(e.to_string())
-    }
-}
-
-// -------------------
-// | Task Definition |
-// -------------------
+// --------------
+// | Task State |
+// --------------
 
 /// Defines the state of the long-running wallet create flow
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewWalletTaskState {
     /// The task is awaiting scheduling
     Pending,
@@ -110,6 +57,16 @@ pub enum NewWalletTaskState {
     FindingMerkleOpening,
     /// Task completed
     Completed,
+}
+
+impl TaskState for NewWalletTaskState {
+    fn commit_point() -> Self {
+        NewWalletTaskState::SubmittingTx
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self, NewWalletTaskState::Completed)
+    }
 }
 
 /// Display implementation that ignores structure fields
@@ -140,10 +97,109 @@ impl From<NewWalletTaskState> for StateWrapper {
     }
 }
 
+// ---------------
+// | Task Errors |
+// ---------------
+
+/// The error type for the task
+#[derive(Clone, Debug)]
+pub enum NewWalletTaskError {
+    /// A wallet was submitted with an invalid secret shares
+    InvalidShares(String),
+    /// Error generating a proof of `VALID WALLET CREATE`
+    ProofGeneration(String),
+    /// Error interacting with the Arbitrum client
+    Arbitrum(String),
+    /// Error sending a message to another worker
+    SendMessage(String),
+    /// Error setting up the task
+    Setup(String),
+    /// Error interacting with global state
+    State(String),
+}
+
+impl TaskError for NewWalletTaskError {
+    fn retryable(&self) -> bool {
+        matches!(
+            self,
+            NewWalletTaskError::Arbitrum(_)
+                | NewWalletTaskError::ProofGeneration(_)
+                | NewWalletTaskError::State(_)
+        )
+    }
+}
+
+impl Display for NewWalletTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+impl Error for NewWalletTaskError {}
+
+impl From<StateError> for NewWalletTaskError {
+    fn from(e: StateError) -> Self {
+        NewWalletTaskError::State(e.to_string())
+    }
+}
+
+// -------------------
+// | Task Definition |
+// -------------------
+
+/// The task descriptor containing only the parameterization of the task
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewWalletTaskDescriptor {
+    /// The wallet to create
+    pub wallet: Wallet,
+}
+
+/// The task itself, containing the state, context, descriptor, etc
+pub struct NewWalletTask {
+    /// The wallet to create
+    pub wallet: Wallet,
+    /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
+    /// first step
+    pub proof_bundle: Option<ValidWalletCreateBundle>,
+    /// An arbitrum client for the task to submit transactions
+    pub arbitrum_client: ArbitrumClient,
+    /// A copy of the relayer-global state
+    pub global_state: State,
+    /// The work queue to add proof management jobs to
+    pub proof_manager_work_queue: ProofManagerQueue,
+    /// The state of the task's execution
+    pub task_state: NewWalletTaskState,
+}
+
+// -----------------------
+// | Task Implementation |
+// -----------------------
+
 #[async_trait]
 impl Task for NewWalletTask {
     type Error = NewWalletTaskError;
     type State = NewWalletTaskState;
+    type Descriptor = NewWalletTaskDescriptor;
+
+    async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
+        // Safety: verify that the wallet's shares recover the wallet correctly
+        let wallet = &descriptor.wallet;
+        let circuit_wallet: SizedWallet = wallet.clone().into();
+        let recovered_wallet =
+            wallet_from_blinded_shares(&wallet.private_shares, &wallet.blinded_public_shares);
+
+        if circuit_wallet != recovered_wallet {
+            return Err(NewWalletTaskError::InvalidShares(ERR_INVALID_SHARING.to_string()));
+        }
+
+        Ok(Self {
+            wallet: descriptor.wallet,
+            proof_bundle: None, // Initialize as None since it's not part of the descriptor
+            arbitrum_client: ctx.arbitrum_client,
+            global_state: ctx.state,
+            proof_manager_work_queue: ctx.proof_queue,
+            task_state: NewWalletTaskState::Pending, // Initialize to the initial state
+        })
+    }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current state of the task
@@ -179,10 +235,6 @@ impl Task for NewWalletTask {
         self.task_state.clone()
     }
 
-    fn completed(&self) -> bool {
-        matches!(self.state(), NewWalletTaskState::Completed)
-    }
-
     fn name(&self) -> String {
         NEW_WALLET_TASK_NAME.to_string()
     }
@@ -193,38 +245,6 @@ impl Task for NewWalletTask {
 // -----------------------
 
 impl NewWalletTask {
-    /// Constructor
-    pub fn new(
-        wallet_id: WalletIdentifier,
-        wallet: ApiWallet,
-        arbitrum_client: ArbitrumClient,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-    ) -> Result<Self, NewWalletTaskError> {
-        // When we cast to a state wallet, the identifier is erased, add
-        // it from the request explicitly
-        let mut wallet: Wallet = wallet.try_into().map_err(NewWalletTaskError::Setup)?;
-        wallet.wallet_id = wallet_id;
-
-        // Safety: verify that the wallet's shares recover the wallet correctly
-        let circuit_wallet: SizedWallet = wallet.clone().into();
-        let recovered_wallet =
-            wallet_from_blinded_shares(&wallet.private_shares, &wallet.blinded_public_shares);
-
-        if circuit_wallet != recovered_wallet {
-            return Err(NewWalletTaskError::InvalidShares(ERR_INVALID_SHARING.to_string()));
-        }
-
-        Ok(Self {
-            wallet,
-            proof_bundle: None,
-            arbitrum_client,
-            global_state,
-            proof_manager_work_queue,
-            task_state: NewWalletTaskState::Pending,
-        })
-    }
-
     // --------------
     // | Task Steps |
     // --------------

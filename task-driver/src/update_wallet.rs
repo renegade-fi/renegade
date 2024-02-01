@@ -18,16 +18,15 @@ use circuits::zk_circuits::valid_wallet_update::{
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use state::error::StateError;
 use state::State;
 
+use crate::driver::StateWrapper;
 use crate::helpers::{enqueue_proof_job, find_merkle_path};
+use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
-use super::{
-    driver::{StateWrapper, Task},
-    helpers::update_wallet_validity_proofs,
-};
+use super::helpers::update_wallet_validity_proofs;
 
 /// The human-readable name of the the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
@@ -36,9 +35,133 @@ const ERR_INVALID_BLINDING: &str = "invalid blinding for new wallet";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 
+// --------------
+// | Task State |
+// --------------
+
+/// Defines the state of the deposit update wallet task
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(clippy::large_enum_variant)]
+pub enum UpdateWalletTaskState {
+    /// The task is awaiting scheduling
+    Pending,
+    /// The task is awaiting a proof of `VALID WALLET UPDATE` from
+    /// the proof management worker
+    Proving,
+    /// The task is submitting the transaction to the contract and awaiting
+    /// transaction finality
+    SubmittingTx,
+    /// The task is finding a new Merkle opening for the wallet
+    FindingOpening,
+    /// The task is updating the validity proofs for all orders in the
+    /// now nullified wallet
+    UpdatingValidityProofs,
+    /// The task has finished
+    Completed,
+}
+
+impl TaskState for UpdateWalletTaskState {
+    fn commit_point() -> Self {
+        Self::SubmittingTx
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self, Self::Completed)
+    }
+}
+
+impl Display for UpdateWalletTaskState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::SubmittingTx { .. } => write!(f, "SubmittingTx"),
+            _ => write!(f, "{self:?}"),
+        }
+    }
+}
+
+impl Serialize for UpdateWalletTaskState {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl From<UpdateWalletTaskState> for StateWrapper {
+    fn from(state: UpdateWalletTaskState) -> Self {
+        StateWrapper::UpdateWallet(state)
+    }
+}
+
+// ---------------
+// | Task Errors |
+// ---------------
+
+/// The error type for the update wallet task
+#[derive(Clone, Debug)]
+pub enum UpdateWalletTaskError {
+    /// A wallet was submitted with an invalid secret shares
+    InvalidShares(String),
+    /// Error generating a proof of `VALID WALLET UPDATE`
+    ProofGeneration(String),
+    /// An error occurred interacting with Arbitrum
+    Arbitrum(String),
+    /// A state element was not found that is necessary for task execution
+    Missing(String),
+    /// An error interacting with the relayer state
+    State(String),
+    /// An error while updating validity proofs for a wallet
+    UpdatingValidityProofs(String),
+    /// Wallet is already locked, cannot update
+    WalletLocked,
+}
+
+impl TaskError for UpdateWalletTaskError {
+    fn retryable(&self) -> bool {
+        matches!(
+            self,
+            UpdateWalletTaskError::ProofGeneration(_)
+                | UpdateWalletTaskError::Arbitrum(_)
+                | UpdateWalletTaskError::State(_)
+                | UpdateWalletTaskError::UpdatingValidityProofs(_)
+        )
+    }
+}
+
+impl Display for UpdateWalletTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+
+impl Error for UpdateWalletTaskError {}
+
+impl From<StateError> for UpdateWalletTaskError {
+    fn from(e: StateError) -> Self {
+        UpdateWalletTaskError::State(e.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
+
+/// The task descriptor, containing only the parameterization of the task
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateWalletTaskDescriptor {
+    /// The timestamp at which the task was initiated, used to timestamp orders
+    pub timestamp_received: u64,
+    /// The external transfer, if one exists
+    pub external_transfer: Option<ExternalTransfer>,
+    /// The old wallet before update
+    pub old_wallet: Wallet,
+    /// The new wallet after update
+    pub new_wallet: Wallet,
+    /// A signature of the `VALID WALLET UPDATE` statement by the wallet's root
+    /// key, the contract uses this to authorize the update
+    pub wallet_update_signature: Vec<u8>,
+}
 
 /// Defines the long running flow for updating a wallet
 pub struct UpdateWalletTask {
@@ -67,88 +190,34 @@ pub struct UpdateWalletTask {
     pub task_state: UpdateWalletTaskState,
 }
 
-/// The error type for the update wallet task
-#[derive(Clone, Debug)]
-pub enum UpdateWalletTaskError {
-    /// A wallet was submitted with an invalid secret shares
-    InvalidShares(String),
-    /// Error generating a proof of `VALID WALLET UPDATE`
-    ProofGeneration(String),
-    /// An error occurred interacting with Arbitrum
-    Arbitrum(String),
-    /// A state element was not found that is necessary for task execution
-    Missing(String),
-    /// An error interacting with the relayer state
-    State(String),
-    /// An error while updating validity proofs for a wallet
-    UpdatingValidityProofs(String),
-    /// Wallet is already locked, cannot update
-    WalletLocked,
-}
-
-impl Display for UpdateWalletTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-
-impl Error for UpdateWalletTaskError {}
-
-impl From<StateError> for UpdateWalletTaskError {
-    fn from(e: StateError) -> Self {
-        UpdateWalletTaskError::State(e.to_string())
-    }
-}
-
-/// Defines the state of the deposit update wallet task
-#[derive(Clone, Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum UpdateWalletTaskState {
-    /// The task is awaiting scheduling
-    Pending,
-    /// The task is awaiting a proof of `VALID WALLET UPDATE` from
-    /// the proof management worker
-    Proving,
-    /// The task is submitting the transaction to the contract and awaiting
-    /// transaction finality
-    SubmittingTx,
-    /// The task is finding a new Merkle opening for the wallet
-    FindingOpening,
-    /// The task is updating the validity proofs for all orders in the
-    /// now nullified wallet
-    UpdatingValidityProofs,
-    /// The task has finished
-    Completed,
-}
-
-impl Display for UpdateWalletTaskState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::SubmittingTx { .. } => write!(f, "SubmittingTx"),
-            _ => write!(f, "{self:?}"),
-        }
-    }
-}
-
-impl Serialize for UpdateWalletTaskState {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.collect_str(self)
-    }
-}
-
-impl From<UpdateWalletTaskState> for StateWrapper {
-    fn from(state: UpdateWalletTaskState) -> Self {
-        StateWrapper::UpdateWallet(state)
-    }
-}
-
 #[async_trait]
 impl Task for UpdateWalletTask {
     type Error = UpdateWalletTaskError;
     type State = UpdateWalletTaskState;
+    type Descriptor = UpdateWalletTaskDescriptor;
+
+    async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
+        if !descriptor.old_wallet.try_lock_wallet() {
+            return Err(UpdateWalletTaskError::WalletLocked);
+        }
+
+        // Safety check, the new wallet's secret shares must recover the new wallet
+        Self::check_wallet_shares(&descriptor.new_wallet)?;
+
+        Ok(Self {
+            timestamp_received: descriptor.timestamp_received,
+            external_transfer: descriptor.external_transfer,
+            old_wallet: descriptor.old_wallet,
+            new_wallet: descriptor.new_wallet,
+            wallet_update_signature: descriptor.wallet_update_signature,
+            proof_bundle: None,
+            arbitrum_client: ctx.arbitrum_client,
+            network_sender: ctx.network_queue,
+            global_state: ctx.state,
+            proof_manager_work_queue: ctx.proof_queue,
+            task_state: UpdateWalletTaskState::Pending,
+        })
+    }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
@@ -229,7 +298,6 @@ impl UpdateWalletTask {
             return Err(UpdateWalletTaskError::WalletLocked);
         }
 
-        // Safety check, the new wallet's secret shares must recover the new wallet
         Self::check_wallet_shares(&new_wallet)?;
 
         // TODO: Check the signature on the wallet update statement
