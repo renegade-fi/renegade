@@ -22,14 +22,14 @@ use common::types::{
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::ProofManagerQueue;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use state::error::StateError;
 use state::State;
 
-use super::{
-    driver::{StateWrapper, Task},
-    helpers::{find_merkle_path, update_wallet_validity_proofs},
-};
+use crate::driver::StateWrapper;
+use crate::traits::{Task, TaskContext, TaskError, TaskState};
+
+use super::helpers::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
@@ -42,9 +42,118 @@ const ERR_VALIDITY_WITNESS_NOT_FOUND: &str = "validity witness not found in glob
 /// The displayable name for the settle match task
 const SETTLE_MATCH_TASK_NAME: &str = "settle-match";
 
+// --------------
+// | Task State |
+// --------------
+
+/// The state of the settle match task
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(clippy::large_enum_variant)]
+pub enum SettleMatchTaskState {
+    /// The task is awaiting scheduling
+    Pending,
+    /// The task is submitting the match transaction
+    SubmittingMatch,
+    /// The task is updating the wallet's state and Merkle proof
+    UpdatingState,
+    /// The task is updating order proofs after the settled walled is confirmed
+    UpdatingValidityProofs,
+    /// The task has finished
+    Completed,
+}
+
+impl TaskState for SettleMatchTaskState {
+    fn commit_point() -> Self {
+        SettleMatchTaskState::SubmittingMatch
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self, SettleMatchTaskState::Completed)
+    }
+}
+
+impl From<SettleMatchTaskState> for StateWrapper {
+    fn from(state: SettleMatchTaskState) -> Self {
+        StateWrapper::SettleMatch(state)
+    }
+}
+
+/// Display implementation that removes variant fields
+impl Display for SettleMatchTaskState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            SettleMatchTaskState::SubmittingMatch { .. } => write!(f, "SubmittingMatch"),
+            _ => write!(f, "{self:?}"),
+        }
+    }
+}
+
+// --------------
+// | Task Error |
+// --------------
+
+/// The error type that this task emits
+#[derive(Clone, Debug, Serialize)]
+pub enum SettleMatchTaskError {
+    /// Error generating a proof
+    ProofGeneration(String),
+    /// Error sending a message to another local worker
+    SendMessage(String),
+    /// Error when state is missing for settlement
+    Missing(String),
+    /// Error interacting with Arbitrum
+    Arbitrum(String),
+    /// Error updating validity proofs for a wallet
+    UpdatingValidityProofs(String),
+    /// Error interacting with global state
+    State(String),
+}
+
+impl TaskError for SettleMatchTaskError {
+    fn retryable(&self) -> bool {
+        matches!(
+            self,
+            SettleMatchTaskError::ProofGeneration(_)
+                | SettleMatchTaskError::Arbitrum(_)
+                | SettleMatchTaskError::State(_)
+                | SettleMatchTaskError::UpdatingValidityProofs(_)
+        )
+    }
+}
+
+impl Display for SettleMatchTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+
+impl Error for SettleMatchTaskError {}
+
+impl From<StateError> for SettleMatchTaskError {
+    fn from(err: StateError) -> Self {
+        SettleMatchTaskError::State(err.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
+
+/// The task descriptor containing only the parameterization of the task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SettleMatchTaskDescriptor {
+    /// The ID of the wallet that the local node matched an order from
+    pub wallet_id: WalletIdentifier,
+    /// The state entry from the handshake manager that parameterizes the
+    /// match process
+    pub handshake_state: HandshakeState,
+    /// The proof that comes from the collaborative match-settle process
+    pub match_bundle: MatchBundle,
+    /// The validity proofs submitted by the first party
+    pub party0_validity_proof: OrderValidityProofBundle,
+    /// The validity proofs submitted by the second party
+    pub party1_validity_proof: OrderValidityProofBundle,
+}
 
 /// Describes the settle task
 pub struct SettleMatchTask {
@@ -66,78 +175,39 @@ pub struct SettleMatchTask {
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
+    pub proof_queue: ProofManagerQueue,
     /// The state of the task
     pub task_state: SettleMatchTaskState,
-}
-
-/// The state of the settle match task
-#[derive(Clone, Debug, Serialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum SettleMatchTaskState {
-    /// The task is awaiting scheduling
-    Pending,
-    /// The task is submitting the match transaction
-    SubmittingMatch,
-    /// The task is updating the wallet's state and Merkle proof
-    UpdatingState,
-    /// The task is updating order proofs after the settled walled is confirmed
-    UpdatingValidityProofs,
-    /// The task has finished
-    Completed,
-}
-
-impl From<SettleMatchTaskState> for StateWrapper {
-    fn from(state: SettleMatchTaskState) -> Self {
-        StateWrapper::SettleMatch(state)
-    }
-}
-
-/// Display implementation that removes variant fields
-impl Display for SettleMatchTaskState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            SettleMatchTaskState::SubmittingMatch { .. } => write!(f, "SubmittingMatch"),
-            _ => write!(f, "{self:?}"),
-        }
-    }
-}
-
-/// The error type that this task emits
-#[derive(Clone, Debug, Serialize)]
-pub enum SettleMatchTaskError {
-    /// Error generating a proof
-    ProofGeneration(String),
-    /// Error sending a message to another local worker
-    SendMessage(String),
-    /// Error when state is missing for settlement
-    Missing(String),
-    /// Error interacting with Arbitrum
-    Arbitrum(String),
-    /// Error updating validity proofs for a wallet
-    UpdatingValidityProofs(String),
-    /// Error interacting with global state
-    State(String),
-}
-
-impl Display for SettleMatchTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-
-impl Error for SettleMatchTaskError {}
-
-impl From<StateError> for SettleMatchTaskError {
-    fn from(err: StateError) -> Self {
-        SettleMatchTaskError::State(err.to_string())
-    }
 }
 
 #[async_trait]
 impl Task for SettleMatchTask {
     type State = SettleMatchTaskState;
     type Error = SettleMatchTaskError;
+    type Descriptor = SettleMatchTaskDescriptor;
+
+    async fn new(descriptor: Self::Descriptor, context: TaskContext) -> Result<Self, Self::Error> {
+        let SettleMatchTaskDescriptor {
+            wallet_id,
+            handshake_state,
+            match_bundle,
+            party0_validity_proof,
+            party1_validity_proof,
+        } = descriptor;
+
+        Ok(Self {
+            wallet_id,
+            handshake_state,
+            match_bundle,
+            party0_validity_proof,
+            party1_validity_proof,
+            arbitrum_client: context.arbitrum_client,
+            network_sender: context.network_queue,
+            global_state: context.state,
+            proof_queue: context.proof_queue,
+            task_state: SettleMatchTaskState::Pending,
+        })
+    }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
@@ -187,36 +257,6 @@ impl Task for SettleMatchTask {
 // -----------------------
 
 impl SettleMatchTask {
-    /// Constructor
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        handshake_state: HandshakeState,
-        match_bundle: MatchBundle,
-        party0_validity_proof: OrderValidityProofBundle,
-        party1_validity_proof: OrderValidityProofBundle,
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-    ) -> Result<Self, SettleMatchTaskError> {
-        let wallet_id = global_state
-            .get_wallet_for_order(&handshake_state.local_order_id)?
-            .ok_or_else(|| SettleMatchTaskError::Missing(ERR_WALLET_NOT_FOUND.to_string()))?;
-
-        Ok(Self {
-            wallet_id,
-            handshake_state,
-            match_bundle,
-            party0_validity_proof,
-            party1_validity_proof,
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_state: SettleMatchTaskState::Pending,
-        })
-    }
-
     // --------------
     // | Task Steps |
     // --------------
@@ -275,7 +315,7 @@ impl SettleMatchTask {
         let wallet = self.global_state.get_wallet(&self.wallet_id)?.unwrap();
         update_wallet_validity_proofs(
             &wallet,
-            self.proof_manager_work_queue.clone(),
+            self.proof_queue.clone(),
             self.global_state.clone(),
             self.network_sender.clone(),
         )
