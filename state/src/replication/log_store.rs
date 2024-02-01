@@ -215,6 +215,7 @@ impl Storage for LogStore {
         // Read the snapshot metadata from the metadata table
         let hard_state = tx.read_hard_state()?;
         md.index = hard_state.commit;
+        md.term = hard_state.term;
 
         let stored_metadata = tx.read_snapshot_metadata()?;
         md.term = match md.index.cmp(&stored_metadata.index) {
