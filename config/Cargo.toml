@@ -22,6 +22,7 @@ rand_core = "0.5"
 reqwest = { verison = "0.11", features = ["blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 toml = "0.5.9"
 
 [dev-dependencies]
