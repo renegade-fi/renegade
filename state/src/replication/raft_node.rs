@@ -13,11 +13,12 @@ use crossbeam::channel::{Receiver as CrossbeamReceiver, TryRecvError};
 use external_api::bus_message::SystemBusMessage;
 use protobuf::{Message, RepeatedField};
 use raft::{
+    eraftpb::ConfState,
     prelude::{
         ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType, HardState,
         Message as RaftMessage, Snapshot,
     },
-    Config as RaftConfig, Error as RaftError, RawNode,
+    Config as RaftConfig, Error as RaftError, RawNode, StateRole,
 };
 use rand::{thread_rng, RngCore};
 use slog::Logger;
@@ -44,6 +45,14 @@ use super::{
 
 /// The interval at which to poll for new inbound messages
 const RAFT_POLL_INTERVAL_MS: u64 = 10; // 10 ms
+/// the interval at which the leader checks whether any learners can be promoted
+/// to voters
+const PROMOTION_INTERVAL_MS: u64 = 1_000; // 1 second
+/// The matched log threshold at which a learner may be promoted to a voter
+///
+/// This is the number of log entries that a learner may be behind a leader and
+/// still considered for promotion
+const PROMOTION_ENTRY_THRESHOLD: u64 = 5;
 
 /// Error message emitted when the proposal queue is disconnected
 const PROPOSAL_QUEUE_DISCONNECTED: &str = "Proposal queue disconnected";
@@ -165,9 +174,11 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     /// every `tick_period_ms` milliseconds
     pub fn run(mut self) -> Result<(), ReplicationError> {
         let tick_interval = Duration::from_millis(self.tick_period_ms);
+        let promotion_interval = Duration::from_millis(PROMOTION_INTERVAL_MS);
         let poll_interval = Duration::from_millis(RAFT_POLL_INTERVAL_MS);
 
         let mut last_tick = Instant::now();
+        let mut last_promotion_check = Instant::now();
 
         loop {
             thread::sleep(poll_interval);
@@ -200,6 +211,12 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 }?;
             }
 
+            // Leader checks if any learners can be promoted to voters
+            if last_promotion_check.elapsed() >= promotion_interval {
+                self.promote_learners()?;
+                last_promotion_check = Instant::now();
+            }
+
             // Tick the raft node after the sleep interval has elapsed
             if last_tick.elapsed() >= tick_interval {
                 self.inner.tick();
@@ -209,6 +226,10 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             }
         }
     }
+
+    // -------------
+    // | Proposals |
+    // -------------
 
     /// Process a state transition proposal
     fn process_proposal(
@@ -232,6 +253,27 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         }
     }
 
+    /// Leader promotes any learners to voters that are sufficiently caught up
+    fn promote_learners(&mut self) -> Result<(), ReplicationError> {
+        if !self.is_leader() {
+            return Ok(());
+        }
+
+        for learner in self.get_learners()? {
+            // Check the progress of the learner
+            let matched_log =
+                self.inner.raft.prs().get(learner).map(|pr| pr.matched).unwrap_or_default();
+
+            // If the learner is sufficiently caught up, promote them to a voter
+            let log_idx = self.inner.raft.raft_log.last_index();
+            if log_idx.saturating_sub(matched_log) <= PROMOTION_ENTRY_THRESHOLD {
+                self.promote_learner(Uuid::new_v4(), learner)?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Add a raft learner to the group
     fn add_learner(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
         // Short-circuit if the peer is already present
@@ -244,6 +286,20 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::AddLearnerNode);
+
+        self.conf_change(request_id, change)
+    }
+
+    /// Promote a learner to a voter
+    fn promote_learner(
+        &mut self,
+        request_id: Uuid,
+        peer_id: RaftPeerId,
+    ) -> Result<(), ReplicationError> {
+        log::info!("promoting raft learner: {peer_id}");
+        let mut change = ConfChangeSingle::new();
+        change.set_node_id(peer_id);
+        change.set_change_type(ConfChangeType::AddNode);
 
         self.conf_change(request_id, change)
     }
@@ -274,16 +330,6 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         self.conf_change(request_id, change)
     }
 
-    /// Check if the peer is already present
-    fn peer_present(&self, peer_id: RaftPeerId) -> Result<bool, ReplicationError> {
-        let tx = self.db.new_read_tx()?;
-        let conf_state = tx.read_conf_state()?;
-        tx.commit()?;
-
-        let res = conf_state.voters.contains(&peer_id) || conf_state.learners.contains(&peer_id);
-        Ok(res)
-    }
-
     /// Propose a single configuration change to the cluster
     fn conf_change(&mut self, id: Uuid, change: ConfChangeSingle) -> Result<(), ReplicationError> {
         let mut conf_change = ConfChangeV2::new();
@@ -292,6 +338,10 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         let ctx = id.to_bytes_le().to_vec();
         self.inner.propose_conf_change(ctx, conf_change).map_err(ReplicationError::Raft)
     }
+
+    // ---------------
+    // | Ready State |
+    // ---------------
 
     /// Process the ready state of the node
     ///
@@ -390,7 +440,6 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 EntryType::EntryConfChangeV2 => {
                     // Apply a config change entry to the state machine
                     let mut config_change = ConfChangeV2::new();
-                    // let change_id = parse_conf_change_id(&config_change)?;
                     config_change
                         .merge_from_bytes(entry.get_data())
                         .map_err(err_str!(ReplicationError::ParseValue))?;
@@ -433,6 +482,37 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     /// Update the hard state from the ready state
     fn update_hard_state(&mut self, hard_state: HardState) -> Result<(), ReplicationError> {
         self.inner.mut_store().apply_hard_state(hard_state)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Whether or not the local node is the leader
+    pub fn is_leader(&self) -> bool {
+        self.inner.raft.state == StateRole::Leader
+    }
+
+    /// Get the config state stored in the log
+    fn get_config_state(&self) -> Result<ConfState, ReplicationError> {
+        let tx = self.db.new_read_tx()?;
+        let conf_state = tx.read_conf_state()?;
+        tx.commit()?;
+
+        Ok(conf_state)
+    }
+
+    /// Check if the peer is already present
+    fn peer_present(&self, peer_id: RaftPeerId) -> Result<bool, ReplicationError> {
+        let conf_state = self.get_config_state()?;
+        let res = conf_state.voters.contains(&peer_id) || conf_state.learners.contains(&peer_id);
+        Ok(res)
+    }
+
+    /// Get the set of learners in the cluster
+    fn get_learners(&self) -> Result<Vec<RaftPeerId>, ReplicationError> {
+        let conf_state = self.get_config_state()?;
+        Ok(conf_state.learners)
     }
 
     /// Notify the proposal sender that the proposal has been applied
@@ -485,7 +565,9 @@ pub(crate) mod test_helpers {
     use system_bus::SystemBus;
 
     use crate::{
-        replication::{error::ReplicationError, network::traits::test_helpers::MockNetwork},
+        replication::{
+            error::ReplicationError, network::traits::test_helpers::MockNetwork, RaftPeerId,
+        },
         storage::db::DB,
         test_helpers::mock_db,
         Proposal, StateTransition,
@@ -538,16 +620,7 @@ pub(crate) mod test_helpers {
                 .into_iter()
                 .chain(followers)
                 .enumerate()
-                .map(|(i, node)| {
-                    thread::spawn(move || {
-                        if let Err(e) = node.run() {
-                            println!("node-{} error: {e:?}", i + 1);
-                            return Err(e);
-                        }
-
-                        Ok(())
-                    })
-                })
+                .map(|(i, node)| spawn_node(i as u64 + 1, node))
                 .collect::<Vec<_>>();
 
             // Give the cluster some time to stabilize after an election
@@ -669,6 +742,21 @@ pub(crate) mod test_helpers {
             raft_config,
         )
         .unwrap()
+    }
+
+    /// Spawn a node in a thread
+    pub fn spawn_node(
+        id: RaftPeerId,
+        node: ReplicationNode<MockNetwork>,
+    ) -> JoinHandle<Result<(), ReplicationError>> {
+        thread::spawn(move || {
+            if let Err(e) = node.run() {
+                println!("node-{id} error: {e:?}");
+                return Err(e);
+            }
+
+            Ok(())
+        })
     }
 }
 
