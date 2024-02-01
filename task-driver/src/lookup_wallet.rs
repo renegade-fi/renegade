@@ -14,20 +14,120 @@ use constants::Scalar;
 use itertools::Itertools;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use renegade_crypto::hash::PoseidonCSPRNG;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use state::{error::StateError, State};
 use tracing::log;
 use uuid::Uuid;
 
-use super::{
-    driver::{StateWrapper, Task},
-    helpers::{find_merkle_path, update_wallet_validity_proofs},
+use crate::{
+    driver::StateWrapper,
+    traits::{Task, TaskContext, TaskError, TaskState},
 };
+
+use super::helpers::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The error thrown when the wallet cannot be found in tx history
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
 /// The task name for the lookup wallet task
 const LOOKUP_WALLET_TASK_NAME: &str = "lookup-wallet";
+
+// --------------
+// | Task State |
+// --------------
+
+/// Represents the state of the task through its async execution
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LookupWalletTaskState {
+    /// The task is awaiting scheduling
+    Pending,
+    /// The task is finding the wallet in contract storage
+    FindingWallet,
+    /// The task is creating validity proofs for the orders in the wallet
+    CreatingValidityProofs,
+    /// The task is completed
+    Completed,
+}
+
+impl TaskState for LookupWalletTaskState {
+    fn commit_point() -> Self {
+        LookupWalletTaskState::CreatingValidityProofs
+    }
+
+    fn completed(&self) -> bool {
+        matches!(self, LookupWalletTaskState::Completed)
+    }
+}
+
+impl Display for LookupWalletTaskState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+
+impl From<LookupWalletTaskState> for StateWrapper {
+    fn from(state: LookupWalletTaskState) -> Self {
+        StateWrapper::LookupWallet(state)
+    }
+}
+
+// ---------------
+// | Task Errors |
+// ---------------
+
+/// The error type thrown by the wallet lookup task
+#[derive(Clone, Debug)]
+pub enum LookupWalletTaskError {
+    /// Wallet was not found in contract storage
+    NotFound(String),
+    /// Error generating a proof of `VALID COMMITMENTS`
+    ProofGeneration(String),
+    /// Error interacting with the arbitrum client
+    Arbitrum(String),
+    /// Error interacting with global state
+    State(String),
+}
+
+impl TaskError for LookupWalletTaskError {
+    fn retryable(&self) -> bool {
+        matches!(
+            self,
+            LookupWalletTaskError::Arbitrum(_)
+                | LookupWalletTaskError::ProofGeneration(_)
+                | LookupWalletTaskError::State(_)
+        )
+    }
+}
+
+impl Display for LookupWalletTaskError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+
+impl Error for LookupWalletTaskError {}
+
+impl From<StateError> for LookupWalletTaskError {
+    fn from(e: StateError) -> Self {
+        LookupWalletTaskError::State(e.to_string())
+    }
+}
+
+// -------------------
+// | Task Definition |
+// -------------------
+
+/// The task descriptor containing only the parameterization of the task
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LookupWalletTaskDescriptor {
+    /// The ID to provision for the wallet
+    pub wallet_id: WalletIdentifier,
+    /// The CSPRNG seed for the blinder stream
+    pub blinder_seed: Scalar,
+    /// The CSPRNG seed for the secret share stream
+    pub secret_share_seed: Scalar,
+    /// The keychain to manage the wallet with
+    pub key_chain: KeyChain,
+}
 
 /// Represents a task to lookup a wallet in contract storage
 pub struct LookupWalletTask {
@@ -53,73 +153,25 @@ pub struct LookupWalletTask {
     pub task_state: LookupWalletTaskState,
 }
 
-/// Represents the state of the task through its async execution
-#[derive(Clone, Debug, Serialize)]
-pub enum LookupWalletTaskState {
-    /// The task is awaiting scheduling
-    Pending,
-    /// The task is finding the wallet in contract storage
-    FindingWallet,
-    /// The task is creating validity proofs for the orders in the wallet
-    CreatingValidityProofs,
-    /// The task is completed
-    Completed,
-}
-
-impl Display for LookupWalletTaskState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-
-impl From<LookupWalletTaskState> for StateWrapper {
-    fn from(state: LookupWalletTaskState) -> Self {
-        StateWrapper::LookupWallet(state)
-    }
-}
-
-/// The error type thrown by the wallet lookup task
-#[derive(Clone, Debug)]
-pub enum LookupWalletTaskError {
-    /// Wallet was not found in contract storage
-    NotFound(String),
-    /// Error generating a proof of `VALID COMMITMENTS`
-    ProofGeneration(String),
-    /// Error interacting with the arbitrum client
-    Arbitrum(String),
-    /// Error interacting with global state
-    State(String),
-}
-
-impl Display for LookupWalletTaskError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
-    }
-}
-
-impl Error for LookupWalletTaskError {}
-
-impl From<StateError> for LookupWalletTaskError {
-    fn from(e: StateError) -> Self {
-        LookupWalletTaskError::State(e.to_string())
-    }
-}
-
 #[async_trait]
 impl Task for LookupWalletTask {
     type State = LookupWalletTaskState;
     type Error = LookupWalletTaskError;
+    type Descriptor = LookupWalletTaskDescriptor;
 
-    fn completed(&self) -> bool {
-        matches!(self.state(), LookupWalletTaskState::Completed)
-    }
-
-    fn name(&self) -> String {
-        LOOKUP_WALLET_TASK_NAME.to_string()
-    }
-
-    fn state(&self) -> Self::State {
-        self.task_state.clone()
+    async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
+        Ok(Self {
+            wallet_id: descriptor.wallet_id,
+            blinder_seed: descriptor.blinder_seed,
+            secret_share_seed: descriptor.secret_share_seed,
+            key_chain: descriptor.key_chain,
+            arbitrum_client: ctx.arbitrum_client,
+            network_sender: ctx.network_queue,
+            global_state: ctx.state,
+            proof_manager_work_queue: ctx.proof_queue,
+            wallet: None,
+            task_state: LookupWalletTaskState::Pending,
+        })
     }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
@@ -146,6 +198,14 @@ impl Task for LookupWalletTask {
 
         Ok(())
     }
+
+    fn name(&self) -> String {
+        LOOKUP_WALLET_TASK_NAME.to_string()
+    }
+
+    fn state(&self) -> Self::State {
+        self.task_state.clone()
+    }
 }
 
 // -----------------------
@@ -153,32 +213,6 @@ impl Task for LookupWalletTask {
 // -----------------------
 
 impl LookupWalletTask {
-    /// Constructor
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        wallet_id: WalletIdentifier,
-        blinder_stream_seed: Scalar,
-        secret_share_stream_seed: Scalar,
-        key_chain: KeyChain,
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-    ) -> Self {
-        Self {
-            wallet_id,
-            blinder_seed: blinder_stream_seed,
-            secret_share_seed: secret_share_stream_seed,
-            key_chain,
-            wallet: None, // replaced in the first task step
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_state: LookupWalletTaskState::Pending,
-        }
-    }
-
     // --------------
     // | Task Steps |
     // --------------

@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 
-use async_trait::async_trait;
 use common::{new_async_shared, types::tasks::TaskIdentifier, AsyncShared};
 use external_api::bus_message::{task_topic_name, SystemBusMessage};
 use serde::Serialize;
@@ -22,7 +21,8 @@ use uuid::Uuid;
 use crate::{
     create_new_wallet::NewWalletTaskState, lookup_wallet::LookupWalletTaskState,
     settle_match::SettleMatchTaskState, settle_match_internal::SettleMatchInternalTaskState,
-    update_merkle_proof::UpdateMerkleProofTaskState, update_wallet::UpdateWalletTaskState,
+    traits::Task, update_merkle_proof::UpdateMerkleProofTaskState,
+    update_wallet::UpdateWalletTaskState,
 };
 
 /// The amount to increase the backoff delay by every retry
@@ -74,67 +74,6 @@ impl TaskDriverConfig {
             n_threads: TASK_DRIVER_N_THREADS,
             system_bus,
         }
-    }
-}
-
-// ------------------
-// | Task and State |
-// ------------------
-
-/// The task trait defines a sequence of largely async flows, each of which is
-/// possibly unreliable and may need to be retried until completion or to some
-/// retry threshold
-#[async_trait]
-pub trait Task: Send {
-    /// The state type of the task, used for task introspection
-    type State: Debug + Display + Send + Serialize + Into<StateWrapper>;
-    /// The error type that the task may give
-    type Error: Send + Debug;
-
-    /// Get the current state of the task
-    fn state(&self) -> Self::State;
-    /// Whether or not the task is completed
-    fn completed(&self) -> bool;
-    /// Get a displayable name for the task
-    fn name(&self) -> String;
-    /// Take a step in the task, steps should represent largely async behavior
-    async fn step(&mut self) -> Result<(), Self::Error>;
-    /// A cleanup step that is run in the event of a task failure
-    async fn cleanup(&mut self) -> Result<(), Self::Error> {
-        Ok(())
-    }
-}
-
-/// Defines a wrapper that allows state objects to be stored generically
-#[derive(Clone, Debug, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "task_type", content = "state")]
-pub enum StateWrapper {
-    /// The state object for the lookup wallet task
-    LookupWallet(LookupWalletTaskState),
-    /// The state object for the new wallet task
-    NewWallet(NewWalletTaskState),
-    /// The state object for the settle match task
-    SettleMatch(SettleMatchTaskState),
-    /// The state object for the settle match internal task
-    SettleMatchInternal(SettleMatchInternalTaskState),
-    /// The state object for the update Merkle proof task
-    UpdateMerkleProof(UpdateMerkleProofTaskState),
-    /// The state object for the update wallet task
-    UpdateWallet(UpdateWalletTaskState),
-}
-
-impl Display for StateWrapper {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let out = match self {
-            StateWrapper::LookupWallet(state) => state.to_string(),
-            StateWrapper::NewWallet(state) => state.to_string(),
-            StateWrapper::SettleMatch(state) => state.to_string(),
-            StateWrapper::SettleMatchInternal(state) => state.to_string(),
-            StateWrapper::UpdateWallet(state) => state.to_string(),
-            StateWrapper::UpdateMerkleProof(state) => state.to_string(),
-        };
-        write!(f, "{out}")
     }
 }
 
@@ -253,5 +192,42 @@ impl TaskDriver {
             log::error!("error cleaning up task: {e:?}");
         }
         task.completed()
+    }
+}
+
+// --------------------
+// | State Management |
+// --------------------
+
+/// Defines a wrapper that allows state objects to be stored generically
+#[derive(Clone, Debug, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(tag = "task_type", content = "state")]
+pub enum StateWrapper {
+    /// The state object for the lookup wallet task
+    LookupWallet(LookupWalletTaskState),
+    /// The state object for the new wallet task
+    NewWallet(NewWalletTaskState),
+    /// The state object for the settle match task
+    SettleMatch(SettleMatchTaskState),
+    /// The state object for the settle match internal task
+    SettleMatchInternal(SettleMatchInternalTaskState),
+    /// The state object for the update Merkle proof task
+    UpdateMerkleProof(UpdateMerkleProofTaskState),
+    /// The state object for the update wallet task
+    UpdateWallet(UpdateWalletTaskState),
+}
+
+impl Display for StateWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let out = match self {
+            StateWrapper::LookupWallet(state) => state.to_string(),
+            StateWrapper::NewWallet(state) => state.to_string(),
+            StateWrapper::SettleMatch(state) => state.to_string(),
+            StateWrapper::SettleMatchInternal(state) => state.to_string(),
+            StateWrapper::UpdateWallet(state) => state.to_string(),
+            StateWrapper::UpdateMerkleProof(state) => state.to_string(),
+        };
+        write!(f, "{out}")
     }
 }

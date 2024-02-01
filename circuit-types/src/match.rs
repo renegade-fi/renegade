@@ -20,7 +20,7 @@ use crate::{
 /// sacrifice one bit of precision to ensure that the difference in prices is
 /// divisible by two
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchResult {
     /// The mint of the order token in the asset pair being matched
     pub quote_mint: BigUint,
