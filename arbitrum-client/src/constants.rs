@@ -1,6 +1,6 @@
 //! Constant values referenced by the Arbitrum client.
 
-use std::{marker::PhantomData, str::FromStr};
+use std::{fmt::Display, marker::PhantomData, str::FromStr};
 
 use ark_ff::{BigInt, Fp};
 use constants::{Scalar, MERKLE_HEIGHT};
@@ -17,6 +17,16 @@ pub enum Chain {
     Testnet,
     /// Devnet chain
     Devnet,
+}
+
+impl Display for Chain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Chain::Mainnet => write!(f, "mainnet"),
+            Chain::Testnet => write!(f, "testnet"),
+            Chain::Devnet => write!(f, "devnet"),
+        }
+    }
 }
 
 impl FromStr for Chain {

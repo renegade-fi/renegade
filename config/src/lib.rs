@@ -1,5 +1,7 @@
 //! Groups configurations used throughout the relayer passed to the CLI
 
+mod token_remaps;
+
 use arbitrum_client::constants::Chain;
 use clap::Parser;
 use common::types::{
@@ -16,6 +18,7 @@ use std::{
     fs,
     net::{IpAddr, SocketAddr},
 };
+use token_remaps::setup_token_remaps;
 use toml::{value::Map, Value};
 use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 
@@ -55,6 +58,11 @@ struct Cli {
     /// The path to the file containing deployments info for the darkpool contract
     #[clap(long, value_parser)]
     pub deployments_file: Option<String>,
+    /// The path to the file containing token remaps for the given chain
+    /// 
+    /// See https://github.com/renegade-fi/token-mappings for more information on the format of this file
+    #[clap(long, value_parser)]
+    pub token_remap_file: Option<String>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -363,6 +371,8 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
     };
     set_contract_from_file(&mut config, cli_args.deployments_file)?;
 
+    // Setup the token remap
+    setup_token_remaps(cli_args.token_remap_file, config.chain_id)?;
     Ok(config)
 }
 
