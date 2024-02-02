@@ -73,7 +73,11 @@ async fn main() -> Result<(), CoordinatorError> {
     // ---------------------
 
     // Parse command line arguments
-    let args = config::parse_command_line_args().expect("error parsing command line args");
+    let args = tokio::task::spawn_blocking(config::parse_command_line_args)
+        .await
+        .expect("error blocking on config parse")
+        .expect("error parsing command line args");
+
     log::info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
         args.version,
