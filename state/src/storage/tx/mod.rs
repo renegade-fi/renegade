@@ -10,13 +10,14 @@ pub mod node_metadata;
 pub mod order_book;
 pub mod peer_index;
 pub mod raft_log;
+pub mod task_queue;
 pub mod wallet_index;
 
 use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
 
 use crate::{
     CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE, ORDER_TO_WALLET_TABLE,
-    PEER_INFO_TABLE, PRIORITIES_TABLE, WALLETS_TABLE,
+    PEER_INFO_TABLE, PRIORITIES_TABLE, TASK_QUEUE_TABLE, WALLETS_TABLE,
 };
 
 use self::raft_log::RAFT_METADATA_TABLE;
@@ -65,6 +66,17 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     ) -> Result<Vec<V>, StorageError> {
         Ok(self.inner().read(table_name, key)?.unwrap_or_default())
     }
+
+    /// Read a queue type from a table
+    ///
+    /// Assumes the queue is represented by a vector    
+    pub fn read_queue<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+    ) -> Result<Vec<V>, StorageError> {
+        self.read_set(table_name, key)
+    }
 }
 
 impl<'db> StateTxn<'db, RW> {
@@ -82,6 +94,7 @@ impl<'db> StateTxn<'db, RW> {
             ORDERS_TABLE,
             ORDER_TO_WALLET_TABLE,
             WALLETS_TABLE,
+            TASK_QUEUE_TABLE,
             NODE_METADATA_TABLE,
             RAFT_METADATA_TABLE,
         ]
@@ -92,6 +105,10 @@ impl<'db> StateTxn<'db, RW> {
 
         Ok(())
     }
+
+    // --------
+    // | Sets |
+    // --------
 
     /// Add a value to a set type
     ///
@@ -133,6 +150,50 @@ impl<'db> StateTxn<'db, RW> {
         self.inner().write(table_name, key, &set)?;
 
         Ok(())
+    }
+
+    // ----------
+    // | Queues |
+    // ----------
+
+    /// Write a queue type to the database
+    pub(crate) fn write_queue<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &Vec<V>,
+    ) -> Result<(), StorageError> {
+        self.inner().write(table_name, key, value)
+    }
+
+    /// Push a value to a queue type
+    ///
+    /// Assumes the underlying queue is represented by a vector
+    pub(crate) fn push_to_queue<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &V,
+    ) -> Result<(), StorageError> {
+        let mut queue = self.read_queue(table_name, key)?;
+        queue.push(value.clone());
+
+        self.write_queue(table_name, key, &queue)
+    }
+
+    /// Pop a value from the front of a queue
+    ///
+    /// Assumes the underlying queue is represented by a vector
+    pub(crate) fn pop_from_queue<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+    ) -> Result<Option<V>, StorageError> {
+        let mut queue = self.read_queue(table_name, key)?;
+        let value = queue.remove(0);
+
+        self.write_queue(table_name, key, &queue)?;
+        Ok(value)
     }
 }
 
