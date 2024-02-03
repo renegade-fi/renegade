@@ -54,6 +54,9 @@ pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
 /// The name of the db table that stores wallet information
 pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
+/// The name of the db table that stores task queues
+pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
+
 // ------------
 // | Proposal |
 // ------------
