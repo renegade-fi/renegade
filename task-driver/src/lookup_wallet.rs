@@ -9,12 +9,15 @@ use std::{
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{traits::BaseType, SizedWalletShare};
-use common::types::wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata};
+use common::types::{
+    task_descriptors::LookupWalletTaskDescriptor,
+    wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata},
+};
 use constants::Scalar;
 use itertools::Itertools;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use renegade_crypto::hash::PoseidonCSPRNG;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::log;
 use uuid::Uuid;
@@ -115,19 +118,6 @@ impl From<StateError> for LookupWalletTaskError {
 // -------------------
 // | Task Definition |
 // -------------------
-
-/// The task descriptor containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LookupWalletTaskDescriptor {
-    /// The ID to provision for the wallet
-    pub wallet_id: WalletIdentifier,
-    /// The CSPRNG seed for the blinder stream
-    pub blinder_seed: Scalar,
-    /// The CSPRNG seed for the secret share stream
-    pub secret_share_seed: Scalar,
-    /// The keychain to manage the wallet with
-    pub key_chain: KeyChain,
-}
 
 /// Represents a task to lookup a wallet in contract storage
 pub struct LookupWalletTask {

@@ -5,6 +5,7 @@ pub mod handshake;
 pub mod merkle;
 pub mod network_order;
 pub mod proof_bundles;
+pub mod task_descriptors;
 pub mod tasks;
 pub mod token;
 pub mod wallet;
