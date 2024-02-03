@@ -3,8 +3,13 @@
 //! See https://github.com/renegade-fi/token-mappings/tree/main for more information
 
 use arbitrum_client::constants::Chain;
-use serde::Deserialize;
+use bimap::BiMap;
+use common::types::token::TOKEN_REMAPS;
+use serde::{Deserialize, Serialize};
 use util::raw_err_str;
+
+/// The base URL for raw token remap files
+const REMAP_BASE_URL: &str = "https://raw.githubusercontent.com/renegade-fi/token-mappings/main/";
 
 // --------------------
 // | Serialized Types |
@@ -13,14 +18,14 @@ use util::raw_err_str;
 /// The token remap type
 ///
 /// Contains a series of token info objects
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct TokenRemap {
     /// The token information in the remap file
     tokens: Vec<TokenInfo>,
 }
 
 /// The token info type
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 struct TokenInfo {
     /// The name of the token
     name: String,
@@ -32,8 +37,12 @@ struct TokenInfo {
     decimals: u8,
 }
 
-/// The base URL for raw token remap files
-const REMAP_BASE_URL: &str = "https://raw.githubusercontent.com/renegade-fi/token-mappings/main/";
+impl TokenRemap {
+    /// Convert the token mapping into a map of token addresses to ticker
+    pub fn to_remap(&self) -> BiMap<String, String> {
+        self.tokens.iter().map(|info| (info.address.clone(), info.ticker.clone())).collect()
+    }
+}
 
 /// Setup token remaps in the global `OnceCell`
 pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<(), String> {
@@ -46,9 +55,8 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     }?;
 
     // Update the static token remap with the given one
-    println!("map: {map:?}");
-
-    Ok(())
+    let remap = map.to_remap();
+    TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}"))
 }
 
 /// Parse a token remap from a JSON file
@@ -62,9 +70,89 @@ fn parse_remap_from_file(file_path: String) -> Result<TokenRemap, String> {
 /// Pull the token remap from the repo
 fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
     let url = format!("{}{}.json", REMAP_BASE_URL, chain);
-    println!("url: {url}");
-    let resp = reqwest::blocking::get(&url)
-        .map_err(raw_err_str!("Failed to fetch remap from repo: {}"))?;
+    let resp =
+        reqwest::blocking::get(url).map_err(raw_err_str!("Failed to fetch remap from repo: {}"))?;
 
     resp.json().map_err(raw_err_str!("Failed to parse remap from Github: {}"))
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs::File;
+
+    use arbitrum_client::constants::Chain;
+    use common::types::token::TOKEN_REMAPS;
+    use tempfile::{tempdir, TempDir};
+
+    use crate::token_remaps::parse_remap_from_file;
+
+    use super::{setup_token_remaps, TokenInfo, TokenRemap};
+
+    /// Get a temporary dir and remap file for testing
+    ///
+    /// Returns the temp dir, file, and file path
+    ///
+    /// The file and dir must be returned so they are not dropped
+    fn get_temp_dir() -> (TempDir, File, String) {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("remap.json").to_str().unwrap().to_string();
+        let file = File::create(&path).unwrap();
+
+        (dir, file, path)
+    }
+
+    /// Get a dummy remap and save it to a file
+    ///
+    /// Returns both the remap and the file path
+    ///
+    /// The dir must be created in the calling scope to ensure it is not dropped
+    fn gen_dummy_remap(file: &File) -> TokenRemap {
+        let remap = TokenRemap {
+            tokens: vec![TokenInfo {
+                name: "Renegade".to_string(),
+                ticker: "RNG".to_string(),
+                address: "0x1234".to_string(),
+                decimals: 18,
+            }],
+        };
+
+        // Write the remap to the file
+        serde_json::to_writer(file, &remap).unwrap();
+        remap
+    }
+
+    /// Tests parsing the token remap from a file
+    #[test]
+    fn test_parse_token_remap() {
+        let (_dir, file, path) = get_temp_dir();
+        let remap = gen_dummy_remap(&file);
+
+        // Parse the remap from the file
+        let parsed = parse_remap_from_file(path).unwrap();
+        assert_eq!(remap, parsed);
+    }
+
+    /// Tests that the token remap is correctly shared across threads
+    #[test]
+    fn test_token_remap_sharing() {
+        let (_dir, file, path) = get_temp_dir();
+        let remap = gen_dummy_remap(&file);
+
+        // Setup the token remap
+        setup_token_remaps(Some(path), Chain::Devnet).unwrap();
+
+        // Check the remap
+        let token = &remap.tokens[0];
+        assert_eq!(TOKEN_REMAPS.get().unwrap().get_by_left(&token.address), Some(&token.ticker));
+
+        // Check the remap in a separate thread
+        let handle = std::thread::spawn(move || {
+            let token = &remap.tokens[0];
+            assert_eq!(
+                TOKEN_REMAPS.get().unwrap().get_by_left(&token.address),
+                Some(&token.ticker)
+            );
+        });
+        handle.join().unwrap();
+    }
 }
