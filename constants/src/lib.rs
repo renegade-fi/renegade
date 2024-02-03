@@ -74,7 +74,7 @@ pub const MAINNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 0;
 pub const DEVNET_DEPLOY_BLOCK: u64 = 0;
 
 /// The block number at which the darkpool was deployed on testnet
-pub const TESTNET_DEPLOY_BLOCK: u64 = 604069;
+pub const TESTNET_DEPLOY_BLOCK: u64 = 0;
 
 // ----------------------
 // | Pubsub Topic Names |
