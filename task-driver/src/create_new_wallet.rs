@@ -20,9 +20,10 @@ use circuits::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
     ValidWalletCreateWitness,
 };
+use common::types::task_descriptors::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use state::error::StateError;
 use state::State;
 
@@ -145,13 +146,6 @@ impl From<StateError> for NewWalletTaskError {
 // -------------------
 // | Task Definition |
 // -------------------
-
-/// The task descriptor containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NewWalletTaskDescriptor {
-    /// The wallet to create
-    pub wallet: Wallet,
-}
 
 /// The task itself, containing the state, context, descriptor, etc
 pub struct NewWalletTask {

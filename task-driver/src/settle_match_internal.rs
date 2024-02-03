@@ -16,6 +16,7 @@ use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
 use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
+use common::types::task_descriptors::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::WalletIdentifier;
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -23,7 +24,7 @@ use common::types::{
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
@@ -127,27 +128,6 @@ impl From<StateError> for SettleMatchInternalTaskError {
 // -------------------
 // | Task Definition |
 // -------------------
-
-/// The descriptor for the task
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SettleMatchInternalTaskDescriptor {
-    /// The price at which the match was executed
-    execution_price: FixedPoint,
-    /// The identifier of the first order
-    order_id1: OrderIdentifier,
-    /// The identifier of the second order
-    order_id2: OrderIdentifier,
-    /// The validity proofs for the first order
-    order1_proof: OrderValidityProofBundle,
-    /// The validity proof witness for the first order
-    order1_validity_witness: OrderValidityWitnessBundle,
-    /// The validity proofs for the second order
-    order2_proof: OrderValidityProofBundle,
-    /// The validity proof witness for the second order
-    order2_validity_witness: OrderValidityWitnessBundle,
-    /// The match result
-    match_result: MatchResult,
-}
 
 /// Describe the settle match internal task
 pub struct SettleMatchInternalTask {
