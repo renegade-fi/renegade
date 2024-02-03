@@ -6,20 +6,71 @@ use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    gossip::WrappedPeerId,
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
+    tasks::TaskIdentifier,
     wallet::{KeyChain, OrderIdentifier, Wallet, WalletIdentifier},
 };
 
-/// The task descriptor containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
+/// A task in the task queue
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QueuedTask {
+    /// The ID of the task
+    pub id: TaskIdentifier,
+    /// The peer assigned to the task
+    pub executor: WrappedPeerId,
+    /// The state of the task
+    pub state: QueuedTaskState,
+    /// The task descriptor
+    pub descriptor: TaskDescriptor,
+}
+
+/// The state of a queued task
+///
+/// TODO: We can add completed and failed states if/when we implement a task
+/// history
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum QueuedTaskState {
+    /// The task is waiting in the queue
+    Queued,
+    /// The task is being run
+    Running,
+}
+
+/// A wrapper around the task descriptors
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum TaskDescriptor {
+    /// The task descriptor for the `NewWallet` task
+    NewWallet(NewWalletTaskDescriptor),
+    /// The task descriptor for the `LookupWallet` task
+    LookupWallet(LookupWalletTaskDescriptor),
+    /// The task descriptor for the `SettleMatchInternal` task
+    SettleMatchInternal(SettleMatchInternalTaskDescriptor),
+    /// The task descriptor for the `SettleMatch` task
+    SettleMatch(SettleMatchTaskDescriptor),
+    /// The task descriptor for the `UpdateMerkleProof` task
+    UpdateMerkleProof(UpdateMerkleProofTaskDescriptor),
+    /// The task descriptor for the `UpdateWallet` task
+    UpdateWallet(UpdateWalletTaskDescriptor),
+}
+
+// ---------------
+// | Descriptors |
+// ---------------
+
+/// The task descriptor containing only the parameterization of the `NewWallet`
+/// task
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NewWalletTaskDescriptor {
     /// The wallet to create
     pub wallet: Wallet,
 }
 
-/// The task descriptor containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
+/// The task descriptor containing only the parameterization of the
+/// `LookupWallet` task
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LookupWalletTaskDescriptor {
     /// The ID to provision for the wallet
     pub wallet_id: WalletIdentifier,
@@ -31,7 +82,8 @@ pub struct LookupWalletTaskDescriptor {
     pub key_chain: KeyChain,
 }
 
-/// The descriptor for the task
+/// The task descriptor containing only the parameterization of the
+/// `SettleMatchInternal` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleMatchInternalTaskDescriptor {
     /// The price at which the match was executed
@@ -52,7 +104,8 @@ pub struct SettleMatchInternalTaskDescriptor {
     pub match_result: MatchResult,
 }
 
-/// The task descriptor containing only the parameterization of the task
+/// The task descriptor containing only the parameterization of the
+/// `SettleMatch` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleMatchTaskDescriptor {
     /// The ID of the wallet that the local node matched an order from
@@ -68,15 +121,17 @@ pub struct SettleMatchTaskDescriptor {
     pub party1_validity_proof: OrderValidityProofBundle,
 }
 
-/// The task descriptor, containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
+/// The task descriptor containing only the parameterization of the
+/// `UpdateMerkleProof` task
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateMerkleProofTaskDescriptor {
     /// The wallet to update
     pub wallet: Wallet,
 }
 
-/// The task descriptor, containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
+/// The task descriptor containing only the parameterization of the
+/// `UpdateWallet` task
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateWalletTaskDescriptor {
     /// The timestamp at which the task was initiated, used to timestamp orders
     pub timestamp_received: u64,
@@ -89,4 +144,29 @@ pub struct UpdateWalletTaskDescriptor {
     /// A signature of the `VALID WALLET UPDATE` statement by the wallet's root
     /// key, the contract uses this to authorize the update
     pub wallet_update_signature: Vec<u8>,
+}
+
+#[cfg(any(test, feature = "mocks"))]
+pub mod mocks {
+    //! Mocks for the task descriptors
+    use crate::types::{
+        gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet_mocks::mock_empty_wallet,
+    };
+
+    use super::{QueuedTask, QueuedTaskState, TaskDescriptor};
+
+    /// Get a dummy queued task
+    pub fn mock_queued_task() -> super::QueuedTask {
+        QueuedTask {
+            id: TaskIdentifier::new_v4(),
+            executor: mock_peer().peer_id,
+            state: QueuedTaskState::Queued,
+            descriptor: mock_task_descriptor(),
+        }
+    }
+
+    /// Get a dummy task descriptor
+    pub fn mock_task_descriptor() -> super::TaskDescriptor {
+        TaskDescriptor::NewWallet(super::NewWalletTaskDescriptor { wallet: mock_empty_wallet() })
+    }
 }

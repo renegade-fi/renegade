@@ -1,0 +1,172 @@
+//! Defines storage primitives for the task queue
+//!
+//! Tasks are indexed in queues identified by the shared resource they occupy.
+//! For now this is only wallets (i.e. wallet_id).
+
+use common::types::{
+    task_descriptors::{QueuedTask, QueuedTaskState},
+    tasks::TaskIdentifier,
+    wallet::WalletIdentifier,
+};
+use libmdbx::{TransactionKind, RW};
+
+use crate::{storage::error::StorageError, TASK_QUEUE_TABLE};
+
+use super::StateTxn;
+
+// -----------
+// | Getters |
+// -----------
+
+impl<'db, T: TransactionKind> StateTxn<'db, T> {
+    /// Get the tasks for a given wallet
+    pub fn get_wallet_tasks(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<Vec<QueuedTask>, StorageError> {
+        self.read_queue(TASK_QUEUE_TABLE, wallet_id)
+    }
+
+    /// Get the task for a given wallet and task id
+    pub fn get_wallet_task_by_id(
+        &self,
+        wallet_id: &WalletIdentifier,
+        task_id: &TaskIdentifier,
+    ) -> Result<Option<QueuedTask>, StorageError> {
+        let tasks = self.get_wallet_tasks(wallet_id)?;
+        Ok(tasks.into_iter().find(|x| &x.id == task_id))
+    }
+}
+
+// -----------
+// | Setters |
+// -----------
+
+impl<'db> StateTxn<'db, RW> {
+    /// Add a task to the queue
+    pub fn add_wallet_task(
+        &self,
+        wallet_id: &WalletIdentifier,
+        task: &QueuedTask,
+    ) -> Result<(), StorageError> {
+        self.push_to_queue(TASK_QUEUE_TABLE, wallet_id, task)
+    }
+
+    /// Pop a task from the queue
+    pub fn pop_wallet_task(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<Option<QueuedTask>, StorageError> {
+        self.pop_from_queue(TASK_QUEUE_TABLE, wallet_id)
+    }
+
+    /// Transition the state of the top task in the queue
+    pub fn transition_wallet_task(
+        &self,
+        wallet_id: &WalletIdentifier,
+        new_state: QueuedTaskState,
+    ) -> Result<(), StorageError> {
+        let mut tasks = self.get_wallet_tasks(wallet_id)?;
+        tasks[0].state = new_state;
+
+        self.write_queue(TASK_QUEUE_TABLE, wallet_id, &tasks)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use common::types::{
+        task_descriptors::{mocks::mock_queued_task, QueuedTaskState},
+        wallet::WalletIdentifier,
+    };
+
+    use crate::{test_helpers::mock_db, TASK_QUEUE_TABLE};
+
+    /// Tests getting the tasks for a wallet
+    #[test]
+    fn test_append_and_get() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_QUEUE_TABLE).unwrap();
+
+        // Get the tasks for a wallet, should be empty
+        let wallet_id = WalletIdentifier::new_v4();
+        let tx = db.new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(tasks.len(), 0);
+
+        // Add a task to the wallet
+        let task = mock_queued_task();
+        let tx = db.new_write_tx().unwrap();
+        tx.add_wallet_task(&wallet_id, &task).unwrap();
+        tx.commit().unwrap();
+
+        // Read the task back
+        let tx = db.new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, task.id);
+
+        // Read the task back by ID
+        let tx = db.new_read_tx().unwrap();
+        let task = tx.get_wallet_task_by_id(&wallet_id, &tasks[0].id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(task.unwrap().id, tasks[0].id);
+    }
+
+    /// Tests popping a task from the queue
+    #[test]
+    fn test_pop() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_QUEUE_TABLE).unwrap();
+
+        // Add a task to the wallet
+        let wallet_id = WalletIdentifier::new_v4();
+        let task = mock_queued_task();
+        let tx = db.new_write_tx().unwrap();
+        tx.add_wallet_task(&wallet_id, &task).unwrap();
+        tx.commit().unwrap();
+
+        // Pop the task from the wallet
+        let tx = db.new_write_tx().unwrap();
+        let popped_task = tx.pop_wallet_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(popped_task.unwrap().id, task.id);
+
+        // Check the queue is empty
+        let tx = db.new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(tasks.len(), 0);
+    }
+
+    /// Tests updating the state of the top task in the queue
+    #[test]
+    fn test_transition() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_QUEUE_TABLE).unwrap();
+
+        // Add a task to the wallet
+        let wallet_id = WalletIdentifier::new_v4();
+        let task = mock_queued_task();
+        let tx = db.new_write_tx().unwrap();
+        tx.add_wallet_task(&wallet_id, &task).unwrap();
+        tx.commit().unwrap();
+
+        // Transition the state of the task
+        let tx = db.new_write_tx().unwrap();
+        tx.transition_wallet_task(&wallet_id, QueuedTaskState::Running).unwrap();
+        tx.commit().unwrap();
+
+        // Read the task back
+        let tx = db.new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].state, QueuedTaskState::Running);
+    }
+}
