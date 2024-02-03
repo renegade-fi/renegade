@@ -660,21 +660,22 @@ impl Token {
 
     /// Returns the set of Exchanges that support this token.
     pub fn supported_exchanges(&self) -> HashSet<Exchange> {
+        // Uniswap is always supported
+        let mut exchanges: HashSet<Exchange> = iter::once(Exchange::UniswapV3).collect();
         if !self.is_named() {
-            return iter::once(Exchange::UniswapV3).collect();
+            return exchanges;
         }
 
-        let mut supported_exchanges = HashSet::<Exchange>::new();
         let ticker = self.get_ticker().unwrap();
+        ALL_EXCHANGES
+            .iter()
+            .filter(|&&exchange| exchange != Exchange::UniswapV3)
+            .filter(|&exchange| EXCHANGE_TICKERS.get(exchange).unwrap().contains_key(ticker))
+            .for_each(|&exchange| {
+                exchanges.insert(exchange);
+            });
 
-        for exchange in ALL_EXCHANGES.iter() {
-            if EXCHANGE_TICKERS.get(exchange).unwrap().get(ticker).is_some() {
-                supported_exchanges.insert(*exchange);
-            }
-        }
-
-        supported_exchanges.insert(Exchange::UniswapV3);
-        supported_exchanges
+        exchanges
     }
 
     /// Returns the ticker, in accordance with what each Exchange expects. This
