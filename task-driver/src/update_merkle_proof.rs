@@ -9,9 +9,9 @@ use std::{
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use common::types::wallet::Wallet;
+use common::types::{task_descriptors::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use state::{error::StateError, State};
 
 use crate::{
@@ -121,13 +121,6 @@ impl From<StateError> for UpdateMerkleProofTaskError {
 // -------------------
 // | Task Definition |
 // -------------------
-
-/// The task descriptor, containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateMerkleProofTaskDescriptor {
-    /// The wallet to update
-    pub wallet: Wallet,
-}
 
 /// Defines the long running flow for updating the Merkle opening for a wallet
 pub struct UpdateMerkleProofTask {

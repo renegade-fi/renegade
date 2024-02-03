@@ -16,13 +16,14 @@ use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::proof_bundles::MatchBundle;
+use common::types::task_descriptors::SettleMatchTaskDescriptor;
 use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::ProofManagerQueue;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use state::error::StateError;
 use state::State;
 
@@ -138,22 +139,6 @@ impl From<StateError> for SettleMatchTaskError {
 // -------------------
 // | Task Definition |
 // -------------------
-
-/// The task descriptor containing only the parameterization of the task
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SettleMatchTaskDescriptor {
-    /// The ID of the wallet that the local node matched an order from
-    pub wallet_id: WalletIdentifier,
-    /// The state entry from the handshake manager that parameterizes the
-    /// match process
-    pub handshake_state: HandshakeState,
-    /// The proof that comes from the collaborative match-settle process
-    pub match_bundle: MatchBundle,
-    /// The validity proofs submitted by the first party
-    pub party0_validity_proof: OrderValidityProofBundle,
-    /// The validity proofs submitted by the second party
-    pub party1_validity_proof: OrderValidityProofBundle,
-}
 
 /// Describes the settle task
 pub struct SettleMatchTask {
