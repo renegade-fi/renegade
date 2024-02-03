@@ -654,7 +654,6 @@ impl HandshakeExecutor {
     /// This involves both converting the address into an Eth mainnet analog
     /// and casting this to a `Token`
     fn token_pair_for_order(&self, order: &Order) -> (Token, Token) {
-        // TODO: chain-specific token mapping
         (Token::from_addr_biguint(&order.base_mint), Token::from_addr_biguint(&order.quote_mint))
     }
 

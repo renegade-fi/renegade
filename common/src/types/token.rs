@@ -20,6 +20,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
+    iter,
+    sync::OnceLock,
 };
 
 use crate::biguint_to_str_addr;
@@ -541,14 +543,11 @@ static ERC20_DATA: &[(
     ),
 ];
 
+/// The token remapping for the given environment, maps from the token address
+/// to the ticker of the token
+pub static TOKEN_REMAPS: OnceLock<BiMap<String, String>> = OnceLock::new();
+
 lazy_static! {
-    static ref ADDR_TICKER_BIMAP: BiMap<String, String> = {
-        let mut addr_ticker_bimap = BiMap::<String, String>::new();
-        for (addr, _, ticker, _, _, _, _) in ERC20_DATA.iter() {
-            addr_ticker_bimap.insert(String::from(*addr), String::from(*ticker));
-        }
-        addr_ticker_bimap
-    };
     static ref ADDR_DECIMALS_MAP: HashMap<String, u8> = {
         let mut addr_decimals_map = HashMap::<String, u8>::new();
         for (addr, decimals, _, _, _, _, _) in ERC20_DATA.iter() {
@@ -558,12 +557,7 @@ lazy_static! {
     };
     static ref EXCHANGE_TICKERS: HashMap<Exchange, HashMap<String, String>> = {
         let mut exchange_tickers = HashMap::<Exchange, HashMap<String, String>>::new();
-        for exchange in [
-            Exchange::Binance,
-            Exchange::Coinbase,
-            Exchange::Kraken,
-            Exchange::Okx,
-        ] {
+        for exchange in [Exchange::Binance, Exchange::Coinbase, Exchange::Kraken, Exchange::Okx] {
             exchange_tickers.insert(exchange, HashMap::<String, String>::new());
         }
         for (_, _, erc20_ticker, binance_ticker, coinbase_ticker, kraken_ticker, okx_ticker) in
@@ -603,56 +597,6 @@ lazy_static! {
         }
         exchange_tickers
     };
-
-    /// Remaps Starknet Goerli ERC20 addresses to their Ethereum mainnet counterparts
-    /// so that a price can be determined
-    ///
-    /// https://github.com/starknet-io/starknet-addresses/blob/master/bridged_tokens/goerli.json
-    ///
-    /// TODO: Update this with arbitrum addresses
-    static ref STARKNET_GOERLI_TOKEN_REMAP: HashMap<String, String> = {
-        vec![
-            // WBTC
-            (
-                "0x12d537dc323c439dc65c976fad242d5610d27cfb5f31689a0a319b8be7f3d56".to_string(),
-                Token::from_ticker("WBTC").get_addr().to_string(),
-            ),
-            // USDC
-            (
-                "0x5a643907b9a4bc6a55e9069c4fd5fd1f5c79a22470690f75556c4736e34426".to_string(),
-                Token::from_ticker("USDC").get_addr().to_string(),
-            ),
-            // USDT
-            (
-                "0x386e8d061177f19b3b485c20e31137e6f6bc497cc635ccdfcab96fadf5add6a".to_string(),
-                Token::from_ticker("USDT").get_addr().to_string(),
-            ),
-            // ETH
-            (
-                "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
-                Token::from_ticker("WETH").get_addr().to_string(),
-            ),
-        ].into_iter().collect()
-    };
-
-    /// Remaps Katana ERC20 addresses to their Ethereum mainnet counterparts
-    /// so that a price can be determined
-    ///
-    /// TODO: This will be removed when we implement our custom bridging solution
-    static ref KATANA_TOKEN_REMAP: HashMap<String, String> = {
-        vec![
-            // USDC
-            (
-                "0x8e3feea13add88dce4439bc1d02a662ab4c4cb6dca4639dccba89b4e594680".to_string(),
-                Token::from_ticker("USDC").get_addr().to_string(),
-            ),
-            // ETH
-            (
-                "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
-                Token::from_ticker("WETH").get_addr().to_string(),
-            ),
-        ].into_iter().collect()
-    };
 }
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20
@@ -675,39 +619,20 @@ impl Token {
         Self { addr: String::from(addr).to_lowercase() }
     }
 
-    /// Given an ERC-20 address on Starknet-Goerli, return a new Token
-    pub fn from_starknet_goerli_addr(addr: &str) -> Self {
-        Self { addr: STARKNET_GOERLI_TOKEN_REMAP.get(addr).unwrap().to_string() }
-    }
-
-    /// Given an ERC-20 address on Katana, return a new Token
-    pub fn from_katana_addr(addr: &str) -> Self {
-        Self { addr: KATANA_TOKEN_REMAP.get(addr).unwrap().to_string() }
-    }
-
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
         Self { addr: biguint_to_str_addr(addr) }
     }
 
-    /// Given an ERC-20 contract address on Starknet-Goerli (represented as a
-    /// `BigUint`) returns a Token
-    pub fn from_starknet_goerli_addr_biguint(addr: &BigUint) -> Self {
-        Self::from_starknet_goerli_addr(&biguint_to_str_addr(addr))
-    }
-
-    /// Given an ERC-20 contract address on Katana (represented as a `BigUint`)
-    /// returns a Token
-    pub fn from_katana_addr_biguint(addr: &BigUint) -> Self {
-        Self::from_katana_addr(&biguint_to_str_addr(addr))
-    }
-
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
-        let addr = ADDR_TICKER_BIMAP
-            .get_by_right(&String::from(ticker))
+        let addr = TOKEN_REMAPS
+            .get()
+            .unwrap()
+            .get_by_right(ticker)
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
+
         Self { addr: addr.to_string() }
     }
 
@@ -720,7 +645,7 @@ impl Token {
     /// Tickers do not have any ERC-20 ticker, as we support long-tail
     /// assets.
     pub fn get_ticker(&self) -> Option<&str> {
-        ADDR_TICKER_BIMAP.get_by_left(&self.addr).map(|ticker| &**ticker)
+        TOKEN_REMAPS.get().unwrap().get_by_left(&self.addr).map(|x| x.as_str())
     }
 
     /// Returns the ERC-20 `decimals` field, if available.
@@ -735,19 +660,20 @@ impl Token {
 
     /// Returns the set of Exchanges that support this token.
     pub fn supported_exchanges(&self) -> HashSet<Exchange> {
-        let mut supported_exchanges = HashSet::<Exchange>::new();
-        supported_exchanges.insert(Exchange::UniswapV3);
         if !self.is_named() {
-            return supported_exchanges;
+            return iter::once(Exchange::UniswapV3).collect();
         }
+
+        let mut supported_exchanges = HashSet::<Exchange>::new();
+        let ticker = self.get_ticker().unwrap();
+
         for exchange in ALL_EXCHANGES.iter() {
-            if *exchange == Exchange::UniswapV3 {
-                continue;
-            }
-            if EXCHANGE_TICKERS.get(exchange).unwrap().get(self.get_ticker().unwrap()).is_some() {
+            if EXCHANGE_TICKERS.get(exchange).unwrap().get(ticker).is_some() {
                 supported_exchanges.insert(*exchange);
             }
         }
+
+        supported_exchanges.insert(Exchange::UniswapV3);
         supported_exchanges
     }
 
@@ -760,6 +686,7 @@ impl Token {
         if !self.is_named() {
             panic!("Tried to get_exchange_ticker({}) for an unnamed Token.", exchange);
         }
+
         EXCHANGE_TICKERS
             .get(&exchange)
             .unwrap()
