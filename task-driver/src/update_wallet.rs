@@ -15,10 +15,11 @@ use circuit_types::{
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
+use common::types::task_descriptors::UpdateWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use state::error::StateError;
 use state::State;
 
@@ -146,22 +147,6 @@ impl From<StateError> for UpdateWalletTaskError {
 // -------------------
 // | Task Definition |
 // -------------------
-
-/// The task descriptor, containing only the parameterization of the task
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateWalletTaskDescriptor {
-    /// The timestamp at which the task was initiated, used to timestamp orders
-    pub timestamp_received: u64,
-    /// The external transfer, if one exists
-    pub external_transfer: Option<ExternalTransfer>,
-    /// The old wallet before update
-    pub old_wallet: Wallet,
-    /// The new wallet after update
-    pub new_wallet: Wallet,
-    /// A signature of the `VALID WALLET UPDATE` statement by the wallet's root
-    /// key, the contract uses this to authorize the update
-    pub wallet_update_signature: Vec<u8>,
-}
 
 /// Defines the long running flow for updating a wallet
 pub struct UpdateWalletTask {
