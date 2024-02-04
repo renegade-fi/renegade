@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
+use job_types::task_driver::TaskDriverQueue;
 use system_bus::SystemBus;
 
 use crate::{storage::db::DB, StateTransition};
@@ -13,6 +14,7 @@ use self::error::StateApplicatorError;
 
 pub mod error;
 pub mod order_book;
+pub mod task_queue;
 pub mod wallet_index;
 
 // -------------
@@ -29,6 +31,8 @@ pub struct StateApplicatorConfig {
     pub allow_local: bool,
     /// The local peer's cluster ID
     pub cluster_id: ClusterId,
+    /// A sender to the task driver's work queue
+    pub task_queue: TaskDriverQueue,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
     /// A handle to the system bus used for internal pubsub
@@ -62,6 +66,9 @@ impl StateApplicator {
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
+            StateTransition::AppendWalletTask { wallet_id, task } => {
+                self.append_wallet_task(wallet_id, task)
+            },
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
@@ -79,9 +86,10 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test_helpers {
-    use std::{str::FromStr, sync::Arc};
+    use std::{mem, str::FromStr, sync::Arc};
 
     use common::types::gossip::ClusterId;
+    use job_types::task_driver::{new_task_driver_queue, TaskDriverQueue};
     use system_bus::SystemBus;
 
     use crate::test_helpers::mock_db;
@@ -90,8 +98,17 @@ mod test_helpers {
 
     /// Create a mock `StateApplicator`
     pub(crate) fn mock_applicator() -> StateApplicator {
+        let (task_queue, recv) = new_task_driver_queue();
+        mem::forget(recv);
+
+        mock_applicator_with_task_queue(task_queue)
+    }
+
+    /// Create a mock `StateApplicator` with the given task queue
+    pub(crate) fn mock_applicator_with_task_queue(task_queue: TaskDriverQueue) -> StateApplicator {
         let config = StateApplicatorConfig {
             allow_local: true,
+            task_queue,
             db: Arc::new(mock_db()),
             system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),

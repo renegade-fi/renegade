@@ -11,6 +11,7 @@ use std::{
 use config::RelayerConfig;
 use crossbeam::channel::{Receiver as CrossbeamReceiver, TryRecvError};
 use external_api::bus_message::SystemBusMessage;
+use job_types::task_driver::TaskDriverQueue;
 use protobuf::{Message, RepeatedField};
 use raft::{
     eraftpb::ConfState,
@@ -73,6 +74,8 @@ pub struct ReplicationNodeConfig<N: RaftNetwork> {
     pub proposal_queue: CrossbeamReceiver<Proposal>,
     /// A reference to the networking layer that backs the raft node
     pub network: N,
+    /// A queue for the task driver, used by the applicator to start tasks
+    pub task_queue: TaskDriverQueue,
     /// A handle on the persistent storage layer underlying the raft node
     pub db: Arc<DB>,
     /// A handle to the system-global bus
@@ -120,6 +123,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         let applicator = StateApplicator::new(StateApplicatorConfig {
             allow_local: config.relayer_config.allow_local,
             cluster_id: config.relayer_config.cluster_id,
+            task_queue: config.task_queue,
             db: config.db.clone(),
             system_bus: config.system_bus,
         })
@@ -626,12 +630,14 @@ fn parse_proposal_id(entry: &Entry) -> Result<Uuid, ReplicationError> {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use std::{
+        mem,
         sync::Arc,
         thread::{self, Builder, JoinHandle},
         time::Duration,
     };
 
     use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender};
+    use job_types::task_driver::new_task_driver_queue;
     use raft::prelude::Config as RaftConfig;
     use system_bus::SystemBus;
 
@@ -810,12 +816,16 @@ pub(crate) mod test_helpers {
         network: MockNetwork,
         raft_config: &RaftConfig,
     ) -> ReplicationNode<MockNetwork> {
+        let (task_queue, recv) = new_task_driver_queue();
+        mem::forget(recv);
+
         ReplicationNode::new_with_config(
             ReplicationNodeConfig {
                 tick_period_ms: 10,
                 relayer_config: Default::default(),
                 proposal_queue,
                 network,
+                task_queue,
                 db,
                 system_bus: SystemBus::new(),
             },
@@ -852,6 +862,7 @@ mod test {
         wallet_mocks::mock_empty_wallet,
     };
     use crossbeam::channel::unbounded;
+    use job_types::task_driver::new_task_driver_queue;
     use rand::{thread_rng, Rng};
 
     use crate::{
@@ -880,11 +891,13 @@ mod test {
         let (_, net, _) = MockNetwork::new_duplex_conn();
 
         let (_, proposal_receiver) = unbounded();
+        let (task_queue, _recv) = new_task_driver_queue();
         let node_config = ReplicationNodeConfig {
             tick_period_ms: 10,
             relayer_config: Default::default(),
             proposal_queue: proposal_receiver,
             network: net,
+            task_queue,
             db: db.clone(),
             system_bus: Default::default(),
         };
