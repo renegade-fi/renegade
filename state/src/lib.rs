@@ -17,7 +17,8 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::{OrderIdentifier, Wallet},
+    task_descriptors::QueuedTask,
+    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
 };
 use replication::{error::ReplicationError, RaftPeerId};
 use serde::{Deserialize, Serialize};
@@ -57,10 +58,6 @@ pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 /// The name of the db table that stores task queues
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
 
-// ------------
-// | Proposal |
-// ------------
-
 /// The `Proposal` type wraps a state transition and the channel on which to
 /// send the result of the proposal's application
 #[derive(Debug)]
@@ -76,6 +73,7 @@ pub struct Proposal {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(missing_docs)]
 pub enum StateTransition {
+    // --- Wallets --- //
     /// Add a wallet to the managed state
     AddWallet { wallet: Wallet },
     /// Update a wallet in the managed state
@@ -86,6 +84,12 @@ pub enum StateTransition {
         proof: OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
     },
+
+    // --- Task Queue --- //
+    /// Add a task to the task queue
+    AppendWalletTask { wallet_id: WalletIdentifier, task: QueuedTask },
+
+    // --- Raft --- //
     /// Add a raft learner to the cluster
     AddRaftLearner { peer_id: RaftPeerId },
     /// Add a raft peer to the local consensus cluster
@@ -109,9 +113,10 @@ impl From<StateTransition> for Proposal {
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
     //! Test helpers for the state crate
-    use std::time::Duration;
+    use std::{mem, time::Duration};
 
     use config::RelayerConfig;
+    use job_types::task_driver::new_task_driver_queue;
     use system_bus::SystemBus;
     use tempfile::tempdir;
 
@@ -153,7 +158,11 @@ pub mod test_helpers {
         let config =
             RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
-        let state = State::new_with_network(&config, nets.remove(0), SystemBus::new()).unwrap();
+        let (task_queue, recv) = new_task_driver_queue();
+        mem::forget(recv);
+
+        let state =
+            State::new_with_network(&config, nets.remove(0), task_queue, SystemBus::new()).unwrap();
 
         // Wait for a leader election before returning
         sleep_ms(500);
