@@ -19,6 +19,15 @@ use super::StateTxn;
 // -----------
 
 impl<'db, T: TransactionKind> StateTxn<'db, T> {
+    /// Check whether the current task queue is empty
+    pub fn is_wallet_queue_empty(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<bool, StorageError> {
+        let tasks = self.get_wallet_tasks(wallet_id)?;
+        Ok(tasks.is_empty())
+    }
+
     /// Get the tasks for a given wallet
     pub fn get_wallet_tasks(
         &self,
