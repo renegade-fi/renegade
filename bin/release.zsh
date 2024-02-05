@@ -1,8 +1,8 @@
 set -e
 
-# Check if the first argument is either "staging" or "production"
-if [[ $1 != "staging" && $1 != "production" ]]; then
-    echo "Error: First argument must be either 'staging' or 'production'."
+# Check if the first argument is either "staging", "testnet", or "mainnet"
+if [[ $1 != "staging" && $1 != "testnet" && $1 != "mainnet" ]]; then
+    echo "Error: First argument must be either 'staging', 'testnet', or 'mainnet'."
     exit 1
 fi
 
