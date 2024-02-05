@@ -4,9 +4,9 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use super::{driver::StateWrapper, helpers::find_merkle_path};
 use crate::helpers::{enqueue_proof_job, update_wallet_validity_proofs};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::{driver::StateWrapper, helpers::find_merkle_path};
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;

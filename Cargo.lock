@@ -235,7 +235,6 @@ dependencies = [
  "serde_json",
  "state",
  "system-bus",
- "task-driver",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite 0.18.0",
@@ -1228,7 +1227,6 @@ dependencies = [
  "lazy_static",
  "renegade-crypto",
  "state",
- "task-driver",
  "tokio",
  "tracing",
 ]
@@ -3324,7 +3322,6 @@ dependencies = [
  "serde",
  "state",
  "system-bus",
- "task-driver",
  "test-helpers",
  "tokio",
  "tracing",

@@ -27,7 +27,7 @@ use crate::driver::StateWrapper;
 use crate::helpers::{enqueue_proof_job, find_merkle_path};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
-use super::helpers::update_wallet_validity_proofs;
+use crate::helpers::update_wallet_validity_proofs;
 
 /// The human-readable name of the the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
@@ -263,45 +263,6 @@ impl Task for UpdateWalletTask {
 // -----------------------
 
 impl UpdateWalletTask {
-    /// Constructor
-    ///
-    /// Assumes that the state updates to the wallet have been applied in
-    /// the caller
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        timestamp_received: u64,
-        external_transfer: Option<ExternalTransfer>,
-        old_wallet: Wallet,
-        new_wallet: Wallet,
-        wallet_update_signature: Vec<u8>,
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-    ) -> Result<Self, UpdateWalletTaskError> {
-        if !old_wallet.try_lock_wallet() {
-            return Err(UpdateWalletTaskError::WalletLocked);
-        }
-
-        Self::check_wallet_shares(&new_wallet)?;
-
-        // TODO: Check the signature on the wallet update statement
-
-        Ok(Self {
-            timestamp_received,
-            external_transfer,
-            old_wallet,
-            new_wallet,
-            wallet_update_signature,
-            proof_bundle: None,
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_state: UpdateWalletTaskState::Pending,
-        })
-    }
-
     // --------------
     // | Task Steps |
     // --------------

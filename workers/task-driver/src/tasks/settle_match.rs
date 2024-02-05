@@ -30,7 +30,7 @@ use state::State;
 use crate::driver::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
-use super::helpers::{find_merkle_path, update_wallet_validity_proofs};
+use crate::helpers::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
