@@ -13,7 +13,6 @@ members = [
 	"renegade-crypto",
 	"state",
 	"system-bus",
-	"task-driver",
 	"test-helpers",
 	"util",
 	"workers/api-server",
@@ -24,6 +23,7 @@ members = [
 	"workers/network-manager",
 	"workers/price-reporter",
 	"workers/proof-manager",
+	"workers/task-driver",
 ]
 
 [profile.bench]

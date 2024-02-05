@@ -27,7 +27,7 @@ use crate::{
     traits::{Task, TaskContext, TaskError, TaskState},
 };
 
-use super::helpers::{find_merkle_path, update_wallet_validity_proofs};
+use crate::helpers::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The error thrown when the wallet cannot be found in tx history
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
