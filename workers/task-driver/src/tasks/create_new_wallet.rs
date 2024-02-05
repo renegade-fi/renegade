@@ -31,7 +31,7 @@ use crate::driver::StateWrapper;
 use crate::helpers::enqueue_proof_job;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
-use super::helpers::find_merkle_path;
+use crate::helpers::find_merkle_path;
 
 /// Error occurs when a wallet is submitted with secret shares that do not
 /// combine to recover the wallet
