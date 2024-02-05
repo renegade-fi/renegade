@@ -38,6 +38,7 @@ use chrono::Local;
 use crossbeam::channel;
 use env_logger::Builder;
 use error::CoordinatorError;
+use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::{
     select,
     sync::{mpsc, watch},
@@ -97,6 +98,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (price_reporter_worker_sender, price_reporter_worker_receiver) =
         mpsc::unbounded_channel::<PriceReporterJob>();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
+    let (task_sender, task_receiver) = channel::unbounded();
 
     // Construct a global state
     let global_state =
@@ -130,14 +132,25 @@ async fn main() -> Result<(), CoordinatorError> {
     .await
     .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
 
-    // Build a task driver that may be used to spawn long-lived asynchronous tasks
-    // that are common among workers
-    let task_driver_config = TaskDriverConfig::default_with_bus(system_bus.clone());
-    let task_driver = TaskDriver::new(task_driver_config);
-
     // ----------------
     // | Worker Setup |
     // ----------------
+
+    // Build a task driver that may be used to spawn long-lived asynchronous tasks
+    // that are common among workers
+    let task_driver_config = TaskDriverConfig::new(
+        task_receiver,
+        arbitrum_client.clone(),
+        network_sender.clone(),
+        proof_generation_worker_sender.clone(),
+        system_bus.clone(),
+        global_state.clone(),
+    );
+    let mut task_driver = TaskDriver::new(task_driver_config).expect("failed to build task driver");
+    task_driver.start().expect("failed to start task driver");
+
+    let (task_driver_failure_sender, task_driver_failure_receiver) = mpsc::channel(());
+    watch_worker::<TaskDriver>(&mut task_driver, &task_driver_failure_sender);
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = watch::channel(());

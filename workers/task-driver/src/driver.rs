@@ -1,0 +1,297 @@
+//! The task driver drives a task forwards and executes partial retries
+//! of certain critical sections of a task
+
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    time::Duration,
+};
+
+use common::{
+    new_async_shared,
+    types::{task_descriptors::TaskDescriptor, tasks::TaskIdentifier},
+    AsyncShared,
+};
+use external_api::bus_message::{task_topic_name, SystemBusMessage};
+use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver};
+use serde::Serialize;
+use system_bus::SystemBus;
+use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
+use tracing::log;
+use uuid::Uuid;
+
+use crate::{
+    error::TaskDriverError,
+    tasks::{
+        create_new_wallet::{NewWalletTask, NewWalletTaskState},
+        lookup_wallet::{LookupWalletTask, LookupWalletTaskState},
+        settle_match::{SettleMatchTask, SettleMatchTaskState},
+        settle_match_internal::{SettleMatchInternalTask, SettleMatchInternalTaskState},
+        update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskState},
+        update_wallet::{UpdateWalletTask, UpdateWalletTaskState},
+    },
+    traits::{Task, TaskContext},
+    worker::TaskDriverConfig,
+};
+
+/// The amount to increase the backoff delay by every retry
+const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
+/// The maximum to increase the backoff to in milliseconds
+const BACKOFF_CEILING_MS: u64 = 30_000; // 30 seconds
+/// The initial backoff time when retrying a task
+const INITIAL_BACKOFF_MS: u64 = 2000; // 2 seconds
+/// The number of threads backing the tokio runtime
+const TASK_DRIVER_N_THREADS: usize = 5;
+/// The name of the threads backing the task driver
+const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
+/// The number of times to retry a step in a task before propagating the error
+const TASK_DRIVER_N_RETRIES: usize = 5;
+
+// ---------------
+// | Task Driver |
+// ---------------
+
+/// A type alias for the task status map
+pub type TaskStatusMap = AsyncShared<HashMap<TaskIdentifier, StateWrapper>>;
+
+/// Drives tasks to completion
+pub struct TaskExecutor {
+    /// The queue on which to receive tasks
+    task_queue: TaskDriverReceiver,
+    /// The set of open tasks
+    open_tasks: TaskStatusMap,
+    /// The runtime to spawn tasks onto
+    runtime: TokioRuntime,
+    /// The runtime config, contains information on how tasks should be run
+    runtime_config: RuntimeArgs,
+    /// The task context passed to each task, used to inject dependencies
+    /// into the task
+    task_context: TaskContext,
+    /// The system bus to publish task updates onto
+    system_bus: SystemBus<SystemBusMessage>,
+}
+
+/// The config of the runtime arguments
+#[derive(Copy, Clone, Debug)]
+pub struct RuntimeArgs {
+    /// The backoff amplification factor
+    ///
+    /// I.e. the multiplicative increase in backoff timeout after a failed step
+    pub backoff_amplification_factor: u32,
+    /// The maximum backoff timeout in milliseconds
+    pub backoff_ceiling_ms: u64,
+    /// The initial backoff timeout in milliseconds
+    pub initial_backoff_ms: u64,
+    /// The number of retries to attempt before propagating an error
+    pub n_retries: usize,
+    /// The number of threads backing the tokio runtime
+    pub n_threads: usize,
+}
+
+impl Default for RuntimeArgs {
+    fn default() -> Self {
+        Self {
+            backoff_amplification_factor: BACKOFF_AMPLIFICATION_FACTOR,
+            backoff_ceiling_ms: BACKOFF_CEILING_MS,
+            initial_backoff_ms: INITIAL_BACKOFF_MS,
+            n_retries: TASK_DRIVER_N_RETRIES,
+            n_threads: TASK_DRIVER_N_THREADS,
+        }
+    }
+}
+
+impl TaskExecutor {
+    /// Constructor
+    pub fn new(config: TaskDriverConfig) -> Self {
+        // Build a runtime
+        let runtime = TokioRuntimeBuilder::new_multi_thread()
+            .enable_all()
+            .worker_threads(TASK_DRIVER_N_THREADS)
+            .thread_name(TASK_DRIVER_THREAD_NAME)
+            .build()
+            .expect("error building task driver runtime");
+
+        let task_context = TaskContext {
+            arbitrum_client: config.arbitrum_client,
+            network_queue: config.network_queue,
+            proof_queue: config.proof_queue,
+            state: config.state,
+        };
+
+        Self {
+            task_queue: config.task_queue,
+            open_tasks: new_async_shared(HashMap::new()),
+            runtime,
+            runtime_config: config.runtime_config,
+            task_context,
+            system_bus: config.system_bus,
+        }
+    }
+
+    /// Construct a copy of the `TaskContext`
+    ///
+    /// This is the set of dependencies that the driver injects into its tasks
+    fn task_context(&self) -> TaskContext {
+        self.task_context.clone()
+    }
+
+    /// The execution loop of the `TaskExecutor`
+    pub fn run(self) -> Result<(), TaskDriverError> {
+        log::info!("starting task executor loop");
+        let queue = &self.task_queue;
+
+        loop {
+            // Pull a job from the queue
+            let job = queue.recv().map_err(|_| TaskDriverError::JobQueueClosed)?;
+            match job {
+                TaskDriverJob::Run(task) => {
+                    let ctx = self.task_context();
+                    let args = self.runtime_config;
+                    let open_tasks = self.open_tasks.clone();
+                    let bus = self.system_bus.clone();
+                    self.runtime.spawn(async move {
+                        if let Err(e) = Self::start_task(task, ctx, args, open_tasks, bus).await {
+                            log::error!("error running task: {e:?}");
+                        }
+                    });
+                },
+            }
+        }
+    }
+
+    /// Spawn a new task in the driver
+    ///
+    /// Returns the success of the task
+    pub async fn start_task(
+        task: TaskDescriptor,
+        ctx: TaskContext,
+        args: RuntimeArgs,
+        open_tasks: TaskStatusMap,
+        bus: SystemBus<SystemBusMessage>,
+    ) -> Result<(), TaskDriverError> {
+        // Construct the task from the descriptor
+        let id = Uuid::new_v4();
+        let res = match task {
+            TaskDescriptor::NewWallet(desc) => {
+                let task = NewWalletTask::new(desc, ctx).await?;
+                Self::run_task_to_completion(id, task, args, open_tasks, bus).await
+            },
+            TaskDescriptor::LookupWallet(desc) => {
+                let task = LookupWalletTask::new(desc, ctx).await?;
+                Self::run_task_to_completion(id, task, args, open_tasks, bus).await
+            },
+            TaskDescriptor::UpdateWallet(desc) => {
+                let task = UpdateWalletTask::new(desc, ctx).await?;
+                Self::run_task_to_completion(id, task, args, open_tasks, bus).await
+            },
+            TaskDescriptor::SettleMatch(desc) => {
+                let task = SettleMatchTask::new(desc, ctx).await?;
+                Self::run_task_to_completion(id, task, args, open_tasks, bus).await
+            },
+            TaskDescriptor::SettleMatchInternal(desc) => {
+                let task = SettleMatchInternalTask::new(desc, ctx).await?;
+                Self::run_task_to_completion(id, task, args, open_tasks, bus).await
+            },
+            TaskDescriptor::UpdateMerkleProof(desc) => {
+                let task = UpdateMerkleProofTask::new(desc, ctx).await?;
+                Self::run_task_to_completion(id, task, args, open_tasks, bus).await
+            },
+        };
+
+        if res {
+            Ok(())
+        } else {
+            Err(TaskDriverError::TaskError("task failed".to_string()))
+        }
+    }
+
+    /// Run a task to completion
+    async fn run_task_to_completion<T: Task>(
+        task_id: Uuid,
+        mut task: T,
+        args: RuntimeArgs,
+        open_tasks: TaskStatusMap,
+        bus: SystemBus<SystemBusMessage>,
+    ) -> bool {
+        let task_name = task.name();
+
+        // Run each step individually and update the state after each step
+        'outer: while !task.completed() {
+            // Take a step
+            let mut retries = args.n_retries;
+            let mut curr_backoff = Duration::from_millis(args.initial_backoff_ms);
+
+            while let Err(e) = task.step().await {
+                log::error!("error executing task step: {e:?}");
+                retries -= 1;
+
+                if retries == 0 {
+                    log::error!("retries exceeded... task failed");
+                    break 'outer;
+                }
+
+                tokio::time::sleep(curr_backoff).await;
+                log::info!("retrying task {task_id:?} from state: {}", task.state());
+                curr_backoff *= args.backoff_amplification_factor;
+                curr_backoff =
+                    Duration::min(curr_backoff, Duration::from_millis(args.backoff_ceiling_ms));
+            }
+
+            // Update the state in the registry
+            let task_state = task.state();
+            log::info!("task {task_name}({task_id:?}) transitioning to state {task_state}");
+
+            {
+                *open_tasks.write().await.get_mut(&task_id).unwrap() = task_state.into()
+            } // open_tasks lock released
+
+            // Publish the state to the system bus for listeners on this task
+            bus.publish(
+                task_topic_name(&task_id),
+                SystemBusMessage::TaskStatusUpdate { task_id, state: task.state().to_string() },
+            );
+        }
+
+        if let Err(e) = task.cleanup().await {
+            log::error!("error cleaning up task: {e:?}");
+        }
+        task.completed()
+    }
+}
+
+// --------------------
+// | State Management |
+// --------------------
+
+/// Defines a wrapper that allows state objects to be stored generically
+#[derive(Clone, Debug, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(tag = "task_type", content = "state")]
+pub enum StateWrapper {
+    /// The state object for the lookup wallet task
+    LookupWallet(LookupWalletTaskState),
+    /// The state object for the new wallet task
+    NewWallet(NewWalletTaskState),
+    /// The state object for the settle match task
+    SettleMatch(SettleMatchTaskState),
+    /// The state object for the settle match internal task
+    SettleMatchInternal(SettleMatchInternalTaskState),
+    /// The state object for the update Merkle proof task
+    UpdateMerkleProof(UpdateMerkleProofTaskState),
+    /// The state object for the update wallet task
+    UpdateWallet(UpdateWalletTaskState),
+}
+
+impl Display for StateWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let out = match self {
+            StateWrapper::LookupWallet(state) => state.to_string(),
+            StateWrapper::NewWallet(state) => state.to_string(),
+            StateWrapper::SettleMatch(state) => state.to_string(),
+            StateWrapper::SettleMatchInternal(state) => state.to_string(),
+            StateWrapper::UpdateWallet(state) => state.to_string(),
+            StateWrapper::UpdateMerkleProof(state) => state.to_string(),
+        };
+        write!(f, "{out}")
+    }
+}

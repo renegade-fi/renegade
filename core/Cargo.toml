@@ -28,7 +28,7 @@ price-reporter = { path = "../workers/price-reporter" }
 proof-manager = { path = "../workers/proof-manager" }
 state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }
-task-driver = { path = "../task-driver" }
+task-driver = { path = "../workers/task-driver" }
 
 # === Misc Dependencies === #
 chrono = "0.4.23"

@@ -33,7 +33,6 @@ gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
 state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
-task-driver = { path = "../../task-driver" }
 
 # === Misc Dependencies === #
 async-trait = "0.1.60"
