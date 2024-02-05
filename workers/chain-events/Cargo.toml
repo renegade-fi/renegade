@@ -19,7 +19,6 @@ renegade-crypto = { path = "../../renegade-crypto" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
 state = { path = "../../state" }
-task-driver = { path = "../../task-driver" }
 
 # === Misc Dependencies === #
 lazy_static = "1.4"
