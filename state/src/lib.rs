@@ -17,7 +17,7 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    task_descriptors::QueuedTask,
+    task_descriptors::{QueuedTask, QueuedTaskState},
     wallet::{OrderIdentifier, Wallet, WalletIdentifier},
 };
 use replication::{error::ReplicationError, RaftPeerId};
@@ -57,6 +57,8 @@ pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
 /// The name of the db table that stores task queues
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
+/// The name of the db table that maps tasks to wallet
+pub(crate) const TASK_TO_WALLET_TABLE: &str = "task-to-wallet";
 
 /// The `Proposal` type wraps a state transition and the channel on which to
 /// send the result of the proposal's application
@@ -90,6 +92,8 @@ pub enum StateTransition {
     AppendWalletTask { wallet_id: WalletIdentifier, task: QueuedTask },
     /// Pop the top task from the task queue
     PopWalletTask { wallet_id: WalletIdentifier },
+    /// Transition the state of the top task in the task queue
+    TransitionWalletTask { wallet_id: WalletIdentifier, state: QueuedTaskState },
 
     // --- Raft --- //
     /// Add a raft learner to the cluster
