@@ -9,9 +9,9 @@ name: Upgrade Relayer Clusters
 
 jobs:
   build-and-push-ecr:
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204-arm
     outputs:
-      image: ${{ fromJson(steps.docker-build-push.outputs.metadata)['image.name'] }}
+      image: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,11 +32,14 @@ jobs:
       - name: Build, tag, and push image to Amazon ECR
         id: docker-build-push
         uses: docker/build-push-action@v5
+        env:
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}
         with:
+          platforms: linux/arm64
           context: .
           file: ./docker/release/Dockerfile
           push: true
-          tags: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}:${{ github.sha }}
+          tags: ${{ env.IMAGE }}:${{ github.sha }},${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
