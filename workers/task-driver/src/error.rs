@@ -3,6 +3,8 @@
 use std::error::Error;
 use std::fmt::Display;
 
+use state::error::StateError;
+
 use crate::tasks::create_new_wallet::NewWalletTaskError;
 use crate::tasks::lookup_wallet::LookupWalletTaskError;
 use crate::tasks::settle_match::SettleMatchTaskError;
@@ -27,6 +29,12 @@ impl Display for TaskDriverError {
     }
 }
 impl Error for TaskDriverError {}
+
+impl From<StateError> for TaskDriverError {
+    fn from(e: StateError) -> Self {
+        TaskDriverError::State(e.to_string())
+    }
+}
 
 impl From<NewWalletTaskError> for TaskDriverError {
     fn from(e: NewWalletTaskError) -> Self {
