@@ -31,11 +31,18 @@ pub struct QueuedTask {
 /// TODO: We can add completed and failed states if/when we implement a task
 /// history
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status")]
 pub enum QueuedTaskState {
     /// The task is waiting in the queue
     Queued,
     /// The task is being run
-    Running,
+    ///
+    /// The state is serialized to a string before being stored to give a better
+    /// API serialization
+    Running {
+        /// The state description of the task
+        state: String,
+    },
 }
 
 /// A wrapper around the task descriptors
