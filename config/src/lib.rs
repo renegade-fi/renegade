@@ -239,7 +239,8 @@ pub struct RelayerConfig {
 impl Default for RelayerConfig {
     fn default() -> Self {
         // Parse a dummy set of command line args and convert this to a config
-        parse_config_from_args(vec![]).expect("default config does not parse")
+        let cli = Cli::parse_from(Vec::<String>::new());
+        parse_config_from_args(cli).expect("default config does not parse")
     }
 }
 
@@ -298,17 +299,19 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
     full_args.extend(config_file_args);
     full_args.extend(command_line_args);
 
-    parse_config_from_args(full_args)
+    let cli = Cli::parse_from(full_args);
+    // Setup the token remap
+    setup_token_remaps(cli.token_remap_file.clone(), cli.chain_id)?;
+
+    let config = parse_config_from_args(cli)?;
+    Ok(config)
 }
 
 /// Parse the config from a set of command line arguments
 ///
 /// Separating out this functionality allows us to easily inject custom args
 /// apart from what is specified on the command line
-fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, String> {
-    // Parse the config
-    let cli_args = Cli::parse_from(full_args);
-
+fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
     // Parse the cluster keypair from CLI args
     // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
     let keypair = if cli_args.cluster_public_key.is_some() && cli_args.cluster_private_key.is_some()
@@ -378,10 +381,8 @@ fn parse_config_from_args(full_args: Vec<String>) -> Result<RelayerConfig, Strin
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
     };
-    set_contract_from_file(&mut config, cli_args.deployments_file)?;
 
-    // Setup the token remap
-    setup_token_remaps(cli_args.token_remap_file, config.chain_id)?;
+    set_contract_from_file(&mut config, cli_args.deployments_file)?;
     Ok(config)
 }
 
