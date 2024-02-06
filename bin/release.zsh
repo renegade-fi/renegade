@@ -23,6 +23,7 @@ aws ecr get-login-password --region $aws_region | \
 # Build the Docker image using buildkit for better caching
 export DOCKER_BUILDKIT=1
 docker build \
+    --platform linux/arm64 \
     -t $image_name:$image_tag \
     -f ./docker/release/Dockerfile \
     .
