@@ -2,17 +2,22 @@
 //! of certain critical sections of a task
 
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     time::Duration,
 };
 
-use common::types::{
-    task_descriptors::{QueuedTask, QueuedTaskState, TaskDescriptor},
-    tasks::TaskIdentifier,
-    wallet::WalletIdentifier,
+use common::{
+    new_shared,
+    types::{
+        task_descriptors::{QueuedTask, QueuedTaskState, TaskDescriptor},
+        tasks::TaskIdentifier,
+        wallet::WalletIdentifier,
+    },
+    Shared,
 };
 use external_api::bus_message::{task_topic_name, SystemBusMessage};
-use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver};
+use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use serde::Serialize;
 use state::State;
 use system_bus::SystemBus;
@@ -47,9 +52,15 @@ const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
 const TASK_DRIVER_N_RETRIES: usize = 5;
 
+/// Error message sent on a notification when a task is not found
+const TASK_NOT_FOUND_ERROR: &str = "task not found";
+
 // ---------------
 // | Task Driver |
 // ---------------
+
+/// The type that indexes task notifications
+type TaskNotificationMap = Shared<HashMap<TaskIdentifier, Vec<TaskNotificationSender>>>;
 
 /// Drives tasks to completion
 pub struct TaskExecutor {
@@ -62,6 +73,8 @@ pub struct TaskExecutor {
     /// The task context passed to each task, used to inject dependencies
     /// into the task
     task_context: TaskContext,
+    /// The map of task notifications to send
+    task_notifications: TaskNotificationMap,
     /// The system bus to publish task updates onto
     system_bus: SystemBus<SystemBusMessage>,
 }
@@ -118,6 +131,7 @@ impl TaskExecutor {
             runtime,
             runtime_config: config.runtime_config,
             task_context,
+            task_notifications: new_shared(HashMap::new()),
             system_bus: config.system_bus,
         }
     }
@@ -127,6 +141,11 @@ impl TaskExecutor {
     /// This is the set of dependencies that the driver injects into its tasks
     fn task_context(&self) -> TaskContext {
         self.task_context.clone()
+    }
+
+    /// Get a reference to the global state
+    fn state(&self) -> &State {
+        &self.task_context.state
     }
 
     /// The execution loop of the `TaskExecutor`
@@ -143,14 +162,43 @@ impl TaskExecutor {
                     let args = self.runtime_config;
                     let bus = self.system_bus.clone();
                     let state = self.task_context.state.clone();
+                    let task_notifications = self.task_notifications.clone();
+
                     self.runtime.spawn(async move {
-                        if let Err(e) = Self::start_task(task, ctx, args, bus, state).await {
+                        if let Err(e) =
+                            Self::start_task(task, ctx, args, bus, state, task_notifications).await
+                        {
                             log::error!("error running task: {e:?}");
                         }
                     });
                 },
+                TaskDriverJob::Notify { task_id, channel } => {
+                    if let Err(e) = self.handle_notification_request(task_id, channel) {
+                        log::error!("error handling notification request: {e:?}");
+                    }
+                },
             }
         }
+    }
+
+    /// Handle a notification request
+    fn handle_notification_request(
+        &self,
+        task_id: TaskIdentifier,
+        channel: TaskNotificationSender,
+    ) -> Result<(), TaskDriverError> {
+        // Check that the task exists
+        if !self.state().contains_task(&task_id)? {
+            log::warn!("got task notification request for non-existent task {task_id:?}");
+            let _ = channel.send(Err(TASK_NOT_FOUND_ERROR.to_string()));
+            return Ok(());
+        }
+
+        // Otherwise, index the channel for the task
+        let mut task_notifications = self.task_notifications.write().unwrap();
+        task_notifications.entry(task_id).or_default().push(channel);
+
+        Ok(())
     }
 
     /// Spawn a new task in the driver
@@ -162,6 +210,7 @@ impl TaskExecutor {
         args: RuntimeArgs,
         bus: SystemBus<SystemBusMessage>,
         state: State,
+        task_notifications: TaskNotificationMap,
     ) -> Result<(), TaskDriverError> {
         // Construct the task from the descriptor
         let id = task.id;
@@ -197,11 +246,16 @@ impl TaskExecutor {
             },
         };
 
-        if res {
-            Ok(())
-        } else {
-            Err(TaskDriverError::TaskError("task failed".to_string()))
+        let return_val =
+            if res { Ok(()) } else { Err(TaskDriverError::TaskError("task failed".to_string())) };
+
+        // Notify any listeners that the task has completed
+        let str_err = return_val.clone().map_err(|e| e.to_string());
+        for sender in task_notifications.write().unwrap().remove(&id).unwrap_or_default() {
+            let _ = sender.send(str_err.clone());
         }
+
+        return_val
     }
 
     /// Run a task to completion
