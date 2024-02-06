@@ -217,7 +217,7 @@ impl HttpServer {
             &Method::GET,
             GET_TASK_STATUS_ROUTE.to_string(),
             false, // auth_required
-            GetTaskStatusHandler::new(config.task_driver.clone()),
+            GetTaskStatusHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id" route
@@ -233,12 +233,7 @@ impl HttpServer {
             &Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
             false, // auth_required
-            CreateWalletHandler::new(
-                config.arbitrum_client.clone(),
-                global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            CreateWalletHandler::new(global_state.clone()),
         );
 
         // The "/wallet/lookup" route
@@ -246,13 +241,7 @@ impl HttpServer {
             &Method::POST,
             FIND_WALLET_ROUTE.to_string(),
             false, // auth_required
-            FindWalletHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                config.global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            FindWalletHandler::new(global_state.clone()),
         );
 
         // Getter for the "/wallet/:id/orders" route
@@ -268,13 +257,7 @@ impl HttpServer {
             &Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
             true, // auth_required
-            CreateOrderHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                config.global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            CreateOrderHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id/orders/:id" route
@@ -290,13 +273,7 @@ impl HttpServer {
             &Method::POST,
             UPDATE_ORDER_ROUTE.to_string(),
             true, // auth_required
-            UpdateOrderHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                config.global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            UpdateOrderHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id/orders/:id/cancel" route
@@ -304,13 +281,7 @@ impl HttpServer {
             &Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
             true, // auth_required
-            CancelOrderHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                config.global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            CancelOrderHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id/balances" route
@@ -334,13 +305,7 @@ impl HttpServer {
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
             true, // auth_required
-            DepositBalanceHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            DepositBalanceHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id/balances/:mint/withdraw" route
@@ -348,13 +313,7 @@ impl HttpServer {
             &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
             true, // auth_required
-            WithdrawBalanceHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            WithdrawBalanceHandler::new(global_state.clone()),
         );
 
         // The GET "/wallet/:id/fees" route
@@ -370,13 +329,7 @@ impl HttpServer {
             &Method::POST,
             FEES_ROUTE.to_string(),
             true, // auth_required
-            AddFeeHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            AddFeeHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id/fees/:index/remove" route
@@ -384,13 +337,7 @@ impl HttpServer {
             &Method::POST,
             REMOVE_FEE_ROUTE.to_string(),
             true, // auth_required
-            RemoveFeeHandler::new(
-                config.arbitrum_client.clone(),
-                config.network_sender.clone(),
-                global_state.clone(),
-                config.proof_generation_work_queue.clone(),
-                config.task_driver.clone(),
-            ),
+            RemoveFeeHandler::new(global_state.clone()),
         );
 
         // The "/order_book/orders" route

@@ -11,7 +11,6 @@ use job_types::{
 use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
-use task_driver::driver::TaskDriver;
 use tokio::{
     runtime::{Builder as TokioBuilder, Runtime},
     task::JoinHandle as TokioJoinHandle,
@@ -55,8 +54,6 @@ pub struct ApiServerConfig {
     pub proof_generation_work_queue: ProofManagerQueue,
     /// The relayer-global state
     pub global_state: State,
-    /// The task driver, used to create and manage long-running async tasks
-    pub task_driver: TaskDriver,
     /// The system pubsub bus that all workers have access to
     /// The ApiServer uses this bus to forward internal events onto open
     /// websocket connections
