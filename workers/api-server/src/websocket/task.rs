@@ -6,8 +6,8 @@
 
 use async_trait::async_trait;
 use external_api::bus_message::{task_topic_name, SystemBusMessage};
+use state::State;
 use system_bus::{SystemBus, TopicReader};
-use task_driver::driver::TaskDriver;
 
 use crate::{
     error::{not_found, ApiServerError},
@@ -27,16 +27,16 @@ const ERR_TASK_MISSING: &str = "task not found";
 /// The handler that manages subscriptions to a task status stream
 #[derive(Clone)]
 pub struct TaskStatusHandler {
-    /// A reference to the task driver that holds statuses
-    task_driver: TaskDriver,
+    /// A reference to the global state
+    state: State,
     /// A reference to the system bus for subscriptions
     system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl TaskStatusHandler {
     /// Constructor
-    pub fn new(task_driver: TaskDriver, system_bus: SystemBus<SystemBusMessage>) -> Self {
-        Self { task_driver, system_bus }
+    pub fn new(state: State, system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self { state, system_bus }
     }
 }
 
@@ -51,7 +51,7 @@ impl WebsocketTopicHandler for TaskStatusHandler {
         let task_id = parse_task_id_from_params(route_params)?;
 
         // Check that the task is valid
-        if !self.task_driver.contains_task(&task_id).await {
+        if !self.state.contains_task(&task_id)? {
             return Err(not_found(ERR_TASK_MISSING.to_string()));
         }
 

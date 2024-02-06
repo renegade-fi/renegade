@@ -59,3 +59,8 @@ pub(crate) fn unauthorized(e: String) -> ApiServerError {
 pub(crate) fn not_found(e: String) -> ApiServerError {
     ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, e)
 }
+
+/// Create an `ApiServerError` with a 500 internal server error code
+pub(crate) fn internal_error(e: String) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, e)
+}

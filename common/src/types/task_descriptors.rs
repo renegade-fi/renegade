@@ -75,6 +75,12 @@ pub struct NewWalletTaskDescriptor {
     pub wallet: Wallet,
 }
 
+impl From<NewWalletTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: NewWalletTaskDescriptor) -> Self {
+        TaskDescriptor::NewWallet(descriptor)
+    }
+}
+
 /// The task descriptor containing only the parameterization of the
 /// `LookupWallet` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -87,6 +93,12 @@ pub struct LookupWalletTaskDescriptor {
     pub secret_share_seed: Scalar,
     /// The keychain to manage the wallet with
     pub key_chain: KeyChain,
+}
+
+impl From<LookupWalletTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: LookupWalletTaskDescriptor) -> Self {
+        TaskDescriptor::LookupWallet(descriptor)
+    }
 }
 
 /// The task descriptor containing only the parameterization of the
@@ -111,6 +123,12 @@ pub struct SettleMatchInternalTaskDescriptor {
     pub match_result: MatchResult,
 }
 
+impl From<SettleMatchInternalTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: SettleMatchInternalTaskDescriptor) -> Self {
+        TaskDescriptor::SettleMatchInternal(descriptor)
+    }
+}
+
 /// The task descriptor containing only the parameterization of the
 /// `SettleMatch` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -128,12 +146,24 @@ pub struct SettleMatchTaskDescriptor {
     pub party1_validity_proof: OrderValidityProofBundle,
 }
 
+impl From<SettleMatchTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: SettleMatchTaskDescriptor) -> Self {
+        TaskDescriptor::SettleMatch(descriptor)
+    }
+}
+
 /// The task descriptor containing only the parameterization of the
 /// `UpdateMerkleProof` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateMerkleProofTaskDescriptor {
     /// The wallet to update
     pub wallet: Wallet,
+}
+
+impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: UpdateMerkleProofTaskDescriptor) -> Self {
+        TaskDescriptor::UpdateMerkleProof(descriptor)
+    }
 }
 
 /// The task descriptor containing only the parameterization of the
@@ -151,6 +181,12 @@ pub struct UpdateWalletTaskDescriptor {
     /// A signature of the `VALID WALLET UPDATE` statement by the wallet's root
     /// key, the contract uses this to authorize the update
     pub wallet_update_signature: Vec<u8>,
+}
+
+impl From<UpdateWalletTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: UpdateWalletTaskDescriptor) -> Self {
+        TaskDescriptor::UpdateWallet(descriptor)
+    }
 }
 
 #[cfg(any(test, feature = "mocks"))]

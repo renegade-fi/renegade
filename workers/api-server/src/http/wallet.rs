@@ -2,14 +2,20 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{
     balance::Balance as StateBalance,
     order::Order,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use common::types::wallet::{KeyChain, Wallet, WalletIdentifier};
+use common::types::{
+    task_descriptors::{
+        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor,
+        UpdateWalletTaskDescriptor,
+    },
+    tasks::TaskIdentifier,
+    wallet::{KeyChain, Wallet, WalletIdentifier},
+};
 use constants::MAX_FEES;
 use external_api::{
     http::wallet::{
@@ -24,17 +30,13 @@ use external_api::{
     EmptyRequestResponse,
 };
 use hyper::{HeaderMap, StatusCode};
-use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
-use task_driver::{
-    create_new_wallet::NewWalletTask, driver::TaskDriver, lookup_wallet::LookupWalletTask,
-    update_wallet::UpdateWalletTask,
-};
+use util::err_str;
 
 use crate::{
-    error::{bad_request, not_found, ApiServerError},
+    error::{bad_request, internal_error, not_found, ApiServerError},
     router::{TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
@@ -92,6 +94,18 @@ fn find_wallet_for_update(
     }
 
     Ok(wallet)
+}
+
+/// Append a task to a task queue and await consensus on this queue update
+async fn append_task_and_await(
+    wallet: &WalletIdentifier,
+    task: TaskDescriptor,
+    state: &State,
+) -> Result<TaskIdentifier, ApiServerError> {
+    let (task_id, waiter) = state.append_wallet_task(wallet, task)?;
+    waiter.await.map_err(err_str!(internal_error))?;
+
+    Ok(task_id)
 }
 
 // ---------------
@@ -185,27 +199,14 @@ impl TypedHandler for GetWalletHandler {
 
 /// Handler for the POST /wallet route
 pub struct CreateWalletHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used to create an manage long-lived
-    /// async workflows
-    task_driver: TaskDriver,
 }
 
 impl CreateWalletHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self { arbitrum_client, global_state, proof_manager_work_queue, task_driver }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -223,52 +224,25 @@ impl TypedHandler for CreateWalletHandler {
         // Create an async task to drive this new wallet into the on-chain state
         // and create proofs of validity
         let wallet_id = req.wallet.id;
-        let task = NewWalletTask::new(
-            wallet_id,
-            req.wallet,
-            self.arbitrum_client.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+        let wallet: Wallet = req.wallet.try_into().map_err(|e: String| bad_request(e))?;
+        let task = NewWalletTaskDescriptor { wallet };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(CreateWalletResponse { wallet_id, task_id })
     }
 }
 
 /// Handler for the POST /wallet route
 pub struct FindWalletHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used to create an manage long-lived
-    /// async workflows
-    task_driver: TaskDriver,
 }
 
 impl FindWalletHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -285,20 +259,18 @@ impl TypedHandler for FindWalletHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Create a task in thew driver to find and prove validity for
         // the wallet
-        let keychain: KeyChain =
+        let key_chain: KeyChain =
             req.key_chain.try_into().map_err(|e: String| bad_request(e.to_string()))?;
+        let task = LookupWalletTaskDescriptor {
+            wallet_id: req.wallet_id,
+            blinder_seed: biguint_to_scalar(&req.blinder_seed),
+            secret_share_seed: biguint_to_scalar(&req.secret_share_seed),
+            key_chain,
+        };
 
-        let task = LookupWalletTask::new(
-            req.wallet_id,
-            biguint_to_scalar(&req.blinder_seed),
-            biguint_to_scalar(&req.secret_share_seed),
-            keychain,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        );
-        let (task_id, _) = self.task_driver.start_task(task).await;
+        // Propose the task and await for it to be enqueued
+        let task_id =
+            append_task_and_await(&req.wallet_id, task.into(), &self.global_state).await?;
 
         Ok(FindWalletResponse { wallet_id: req.wallet_id, task_id })
     }
@@ -389,35 +361,14 @@ impl TypedHandler for GetOrderByIdHandler {
 
 /// Handler for the POST /wallet/:id/orders route
 pub struct CreateOrderHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -446,56 +397,30 @@ impl TypedHandler for CreateOrderHandler {
         new_wallet.add_order(id, new_order).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        // Spawn a task to handle the order creation flow
-        let task = UpdateWalletTask::new(
-            timestamp,
-            None, // external_transfer
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: timestamp,
+            external_transfer: None,
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(CreateOrderResponse { id, task_id })
     }
 }
 
 /// Handler for the POST /wallet/:id/orders/:id/update route
 pub struct UpdateOrderHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl UpdateOrderHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -534,56 +459,30 @@ impl TypedHandler for UpdateOrderHandler {
         *order = new_order;
         new_wallet.reblind_wallet();
 
-        // Spawn a task to handle the order creation flow
-        let task = UpdateWalletTask::new(
-            timestamp,
-            None, // external_transfer
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: timestamp,
+            external_transfer: None,
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(UpdateOrderResponse { task_id })
     }
 }
 
 /// Handler for the POST /wallet/:id/orders/:id/cancel route
 pub struct CancelOrderHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl CancelOrderHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -612,21 +511,16 @@ impl TypedHandler for CancelOrderHandler {
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         new_wallet.reblind_wallet();
 
-        // Spawn a task to handle the order creation flow
-        let task = UpdateWalletTask::new(
-            get_current_timestamp(),
-            None, // external_transfer
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: get_current_timestamp(),
+            external_transfer: None,
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(CancelOrderResponse { task_id, order: (order_id, order).into() })
     }
 }
@@ -718,35 +612,14 @@ impl TypedHandler for GetBalanceByMintHandler {
 
 /// Handler for the POST /wallet/:id/balances/deposit route
 pub struct DepositBalanceHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -775,10 +648,9 @@ impl TypedHandler for DepositBalanceHandler {
             .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        // Begin an update-wallet task
-        let task = UpdateWalletTask::new(
-            get_current_timestamp(),
-            Some(ExternalTransfer {
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: get_current_timestamp(),
+            external_transfer: Some(ExternalTransfer {
                 account_addr: req.from_addr,
                 mint: req.mint,
                 amount: req.amount,
@@ -786,50 +658,25 @@ impl TypedHandler for DepositBalanceHandler {
             }),
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(DepositBalanceResponse { task_id })
     }
 }
 
 /// Handler for the POST /wallet/:id/balances/:mint/withdraw route
 pub struct WithdrawBalanceHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -864,10 +711,9 @@ impl TypedHandler for WithdrawBalanceHandler {
         }
         new_wallet.reblind_wallet();
 
-        // Begin a task
-        let task = UpdateWalletTask::new(
-            get_current_timestamp(),
-            Some(ExternalTransfer {
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: get_current_timestamp(),
+            external_transfer: Some(ExternalTransfer {
                 account_addr: req.destination_addr,
                 mint,
                 amount: req.amount,
@@ -875,15 +721,11 @@ impl TypedHandler for WithdrawBalanceHandler {
             }),
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(WithdrawBalanceResponse { task_id })
     }
 }
@@ -933,35 +775,14 @@ impl TypedHandler for GetFeesHandler {
 
 /// Handler for the POST /wallet/:id/fees route
 pub struct AddFeeHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl AddFeeHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -993,56 +814,30 @@ impl TypedHandler for AddFeeHandler {
         new_wallet.fees.push(req.fee.into());
         new_wallet.reblind_wallet();
 
-        // Create a task to submit this update to the contract
-        let task = UpdateWalletTask::new(
-            get_current_timestamp(),
-            None, // external_transfer
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: get_current_timestamp(),
+            external_transfer: None,
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(AddFeeResponse { task_id })
     }
 }
 
 /// Handler for the POST /wallet/:id/fees/:index/remove route
 pub struct RemoveFeeHandler {
-    /// An arbitrum client
-    arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     global_state: State,
-    /// A sender to the proof manager's work queue, used to enqueue
-    /// proofs of `VALID NEW WALLET` and await their completion
-    proof_manager_work_queue: ProofManagerQueue,
-    /// A copy of the task driver used for long-lived async workflows
-    task_driver: TaskDriver,
 }
 
 impl RemoveFeeHandler {
     /// Constructor
-    pub fn new(
-        arbitrum_client: ArbitrumClient,
-        network_sender: NetworkManagerQueue,
-        global_state: State,
-        proof_manager_work_queue: ProofManagerQueue,
-        task_driver: TaskDriver,
-    ) -> Self {
-        Self {
-            arbitrum_client,
-            network_sender,
-            global_state,
-            proof_manager_work_queue,
-            task_driver,
-        }
+    pub fn new(global_state: State) -> Self {
+        Self { global_state }
     }
 }
 
@@ -1074,20 +869,16 @@ impl TypedHandler for RemoveFeeHandler {
         new_wallet.reblind_wallet();
 
         // Start a task to submit this update to the contract
-        let task = UpdateWalletTask::new(
-            get_current_timestamp(),
-            None, // external_transfer
+        let task = UpdateWalletTaskDescriptor {
+            timestamp_received: get_current_timestamp(),
+            external_transfer: None,
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            self.arbitrum_client.clone(),
-            self.network_sender.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(|e| bad_request(e.to_string()))?;
-        let (task_id, _) = self.task_driver.start_task(task).await;
+            wallet_update_signature: req.statement_sig,
+        };
 
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
         Ok(RemoveFeeResponse { task_id, fee: removed_fee.into() })
     }
 }
