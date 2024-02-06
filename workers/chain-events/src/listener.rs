@@ -7,7 +7,9 @@ use arbitrum_client::{
     client::ArbitrumClient,
     constants::{MERKLE_NODE_CHANGED_EVENT_NAME, NULLIFIER_SPENT_EVENT_NAME},
 };
-use common::types::{wallet::Wallet, CancelChannel};
+use common::types::{
+    task_descriptors::UpdateMerkleProofTaskDescriptor, wallet::Wallet, CancelChannel,
+};
 use ethers::{prelude::StreamExt, types::Filter};
 use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
@@ -16,10 +18,6 @@ use job_types::{
 };
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
-use task_driver::{
-    driver::TaskDriver,
-    update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskError},
-};
 use tracing::log;
 
 use super::error::OnChainEventListenerError;
@@ -55,8 +53,6 @@ pub struct OnChainEventListenerConfig {
     /// The work queue for the network manager, used to send outbound gossip
     /// messages
     pub network_sender: NetworkManagerQueue,
-    /// The task driver, used to create and manage long-running async tasks
-    pub task_driver: TaskDriver,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
 }
@@ -197,24 +193,11 @@ impl OnChainEventListenerExecutor {
         &self,
         wallet: Wallet,
     ) -> Result<(), OnChainEventListenerError> {
-        let task = match UpdateMerkleProofTask::new(
-            wallet,
-            self.arbitrum_client().clone(),
-            self.config.global_state.clone(),
-            self.config.proof_generation_work_queue.clone(),
-            self.config.network_sender.clone(),
-        ) {
-            Ok(task) => task,
-            Err(UpdateMerkleProofTaskError::WalletLocked) => {
-                // The wallet is locked for an update, the update will give the wallet a new
-                // Merkle proof
-                return Ok(());
-            },
-            Err(e) => return Err(OnChainEventListenerError::TaskStartup(e.to_string())),
-        };
+        let id = wallet.wallet_id;
+        let task = UpdateMerkleProofTaskDescriptor { wallet };
+        let (_task_id, waiter) = self.global_state.append_wallet_task(&id, task.into())?;
+        waiter.await?;
 
-        // Spawn the task
-        self.config.task_driver.start_task(task).await;
         Ok(())
     }
 }
