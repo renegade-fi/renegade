@@ -88,6 +88,8 @@ pub enum StateTransition {
     // --- Task Queue --- //
     /// Add a task to the task queue
     AppendWalletTask { wallet_id: WalletIdentifier, task: QueuedTask },
+    /// Pop the top task from the task queue
+    PopWalletTask { wallet_id: WalletIdentifier },
 
     // --- Raft --- //
     /// Add a raft learner to the cluster
