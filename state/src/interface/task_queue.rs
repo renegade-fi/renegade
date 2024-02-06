@@ -33,6 +33,18 @@ impl State {
         Ok(tasks)
     }
 
+    /// Get the ID of the wallet that a task modified
+    pub fn get_task_wallet(
+        &self,
+        task_id: &TaskIdentifier,
+    ) -> Result<Option<WalletIdentifier>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet = tx.get_task_wallet(task_id)?;
+        tx.commit()?;
+
+        Ok(wallet)
+    }
+
     /// Get a task by ID and wallet
     pub fn get_wallet_task_by_id(
         &self,
@@ -76,6 +88,16 @@ impl State {
         // Propose the task to the task queue
         self.send_proposal(StateTransition::PopWalletTask { wallet_id: *wallet_id })
     }
+
+    /// Transition the state of the top task in a wallet's queue
+    pub fn transition_wallet_task(
+        &self,
+        wallet_id: &WalletIdentifier,
+        state: QueuedTaskState,
+    ) -> Result<ProposalWaiter, StateError> {
+        // Propose the task to the task queue
+        self.send_proposal(StateTransition::TransitionWalletTask { wallet_id: *wallet_id, state })
+    }
 }
 
 #[cfg(test)]
@@ -115,7 +137,7 @@ mod test {
         let tasks = state.get_wallet_tasks(&wallet_id).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task_id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running); // Should be started
+        assert!(matches!(tasks[0].state, QueuedTaskState::Running { .. })); // Should be started
 
         assert!(state.get_wallet_task_by_id(&wallet_id, &task_id).unwrap().is_some());
     }
@@ -138,5 +160,31 @@ mod test {
 
         // Check that the task was removed
         assert_eq!(state.get_wallet_task_queue_len(&wallet_id).unwrap(), 0);
+    }
+
+    /// Tests transitioning the state of a task
+    #[tokio::test]
+    async fn test_transition() {
+        let state = mock_state();
+
+        // Propose a task to the queue
+        let wallet_id = WalletIdentifier::new_v4();
+        let task = mock_queued_task().descriptor;
+
+        let (task_id, waiter) = state.append_wallet_task(&wallet_id, task).unwrap();
+        waiter.await.unwrap();
+
+        // Transition the task to a new state
+        let waiter = state
+            .transition_wallet_task(
+                &wallet_id,
+                QueuedTaskState::Running { state: "Test".to_string() },
+            )
+            .unwrap();
+        waiter.await.unwrap();
+
+        // Check that the task was transitioned
+        let task = state.get_wallet_task_by_id(&wallet_id, &task_id).unwrap().unwrap();
+        assert_eq!(task.state, QueuedTaskState::Running { state: "Test".to_string() });
     }
 }

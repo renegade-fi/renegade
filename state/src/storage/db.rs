@@ -15,7 +15,7 @@ use super::{
 };
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 11;
+const NUM_TABLES: usize = 12;
 
 // -----------
 // | Helpers |

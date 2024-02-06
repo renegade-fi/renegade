@@ -17,7 +17,7 @@ use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, Write
 
 use crate::{
     CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE, ORDER_TO_WALLET_TABLE,
-    PEER_INFO_TABLE, PRIORITIES_TABLE, TASK_QUEUE_TABLE, WALLETS_TABLE,
+    PEER_INFO_TABLE, PRIORITIES_TABLE, TASK_QUEUE_TABLE, TASK_TO_WALLET_TABLE, WALLETS_TABLE,
 };
 
 use self::raft_log::RAFT_METADATA_TABLE;
@@ -95,6 +95,7 @@ impl<'db> StateTxn<'db, RW> {
             ORDER_TO_WALLET_TABLE,
             WALLETS_TABLE,
             TASK_QUEUE_TABLE,
+            TASK_TO_WALLET_TABLE,
             NODE_METADATA_TABLE,
             RAFT_METADATA_TABLE,
         ]

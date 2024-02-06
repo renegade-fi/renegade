@@ -12,6 +12,9 @@ use crate::storage::tx::StateTxn;
 
 use super::{error::StateApplicatorError, Result, StateApplicator};
 
+/// The pending state description
+const PENDING_STATE: &str = "Pending";
+
 impl StateApplicator {
     // ---------------------
     // | State Transitions |
@@ -29,7 +32,8 @@ impl StateApplicator {
         // and start it
         if tx.is_wallet_queue_empty(&wallet_id)? {
             // Start the task
-            task.state = QueuedTaskState::Running;
+            let state = PENDING_STATE.to_string();
+            task.state = QueuedTaskState::Running { state };
             self.maybe_start_task(&task, &tx)?;
         }
 
@@ -47,10 +51,22 @@ impl StateApplicator {
         // If the queue is non-empty, start the next task
         let tasks = tx.get_wallet_tasks(&wallet_id)?;
         if let Some(task) = tasks.first() {
-            tx.transition_wallet_task(&wallet_id, QueuedTaskState::Running)?;
+            let state = PENDING_STATE.to_string();
+            tx.transition_wallet_task(&wallet_id, QueuedTaskState::Running { state })?;
             self.maybe_start_task(task, &tx)?;
         }
 
+        Ok(tx.commit()?)
+    }
+
+    /// Transition the state of the top task on the queue
+    pub fn transition_task_state(
+        &self,
+        wallet_id: WalletIdentifier,
+        state: QueuedTaskState,
+    ) -> Result<()> {
+        let tx = self.db().new_write_tx()?;
+        tx.transition_wallet_task(&wallet_id, state)?;
         Ok(tx.commit()?)
     }
 
@@ -85,7 +101,10 @@ mod test {
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
 
-    use crate::{applicator::test_helpers::mock_applicator_with_task_queue, storage::db::DB};
+    use crate::{
+        applicator::{task_queue::PENDING_STATE, test_helpers::mock_applicator_with_task_queue},
+        storage::db::DB,
+    };
 
     // -----------
     // | Helpers |
@@ -134,7 +153,7 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task_id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running); // should be started
+        assert_eq!(tasks[0].state, QueuedTaskState::Running { state: PENDING_STATE.to_string() }); // should be started
 
         // Check the task was started
         assert!(!task_recv.is_empty());
@@ -259,7 +278,7 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task2.id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running); // should be started
+        assert_eq!(tasks[0].state, QueuedTaskState::Running { state: PENDING_STATE.to_string() }); // should be started
 
         // Ensure no task was started
         assert!(task_recv.is_empty());
@@ -296,7 +315,7 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task2.id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running); // should be started
+        assert_eq!(tasks[0].state, QueuedTaskState::Running { state: PENDING_STATE.to_string() }); // should be started
 
         // Ensure the second task was started
         assert!(!task_recv.is_empty());
@@ -304,5 +323,29 @@ mod test {
 
         let TaskDriverJob::Run(queued_task) = task;
         assert_eq!(queued_task.id, task2.id);
+    }
+
+    /// Test transitioning the state of the top task on the queue
+    #[test]
+    fn test_transition_task_state() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        let wallet_id = WalletIdentifier::new_v4();
+
+        // Add a task directly via the db
+        enqueue_dummy_task(&wallet_id, applicator.db());
+
+        // Transition the state of the top task in the queue
+        let new_state = QueuedTaskState::Running { state: "Test".to_string() };
+        applicator.transition_task_state(wallet_id, new_state.clone()).unwrap();
+
+        // Ensure the task state was updated
+        let tx = applicator.db().new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].state, new_state); // should be updated
     }
 }
