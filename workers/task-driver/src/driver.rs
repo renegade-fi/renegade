@@ -35,7 +35,7 @@ use crate::{
         update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskState},
         update_wallet::{UpdateWalletTask, UpdateWalletTaskState},
     },
-    traits::{Task, TaskContext},
+    traits::{Task, TaskContext, TaskError},
     worker::TaskDriverConfig,
 };
 
@@ -219,6 +219,7 @@ impl TaskExecutor {
             .map_err(err_str!(TaskDriverError::State))?
             .expect("task not associated with a wallet");
 
+        let state_clone = state.clone();
         let res = match task.descriptor {
             TaskDescriptor::NewWallet(desc) => {
                 let task = NewWalletTask::new(desc, ctx).await?;
@@ -255,6 +256,8 @@ impl TaskExecutor {
             let _ = sender.send(str_err.clone());
         }
 
+        // Pop the task from the queue so that the next task may run
+        state_clone.pop_wallet_task(&wallet_id)?.await?;
         return_val
     }
 
@@ -279,7 +282,7 @@ impl TaskExecutor {
                 log::error!("error executing task step: {e:?}");
                 retries -= 1;
 
-                if retries == 0 {
+                if retries == 0 || !e.retryable() {
                     log::error!("retries exceeded... task failed");
                     break 'outer;
                 }
