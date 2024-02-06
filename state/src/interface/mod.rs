@@ -7,6 +7,7 @@ pub mod notifications;
 pub mod order_book;
 pub mod peer_index;
 pub mod raft;
+pub mod task_queue;
 pub mod wallet_index;
 
 use std::{
