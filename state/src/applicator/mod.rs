@@ -70,6 +70,9 @@ impl StateApplicator {
                 self.append_wallet_task(wallet_id, task)
             },
             StateTransition::PopWalletTask { wallet_id } => self.pop_wallet_task(wallet_id),
+            StateTransition::TransitionWalletTask { wallet_id, state } => {
+                self.transition_task_state(wallet_id, state)
+            },
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
