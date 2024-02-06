@@ -7426,6 +7426,7 @@ dependencies = [
  "rand 0.8.5",
  "renegade-crypto",
  "serde",
+ "serde_json",
  "state",
  "system-bus",
  "test-helpers",
