@@ -17,6 +17,8 @@ pub enum TaskDriverError {
     JobQueueClosed,
     /// An error running a task
     TaskError(String),
+    /// An error querying global state
+    State(String),
 }
 
 impl Display for TaskDriverError {

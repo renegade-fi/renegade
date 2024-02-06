@@ -33,7 +33,7 @@ impl State {
         Ok(tasks)
     }
 
-    /// Get the ID of the wallet that a task modified
+    /// Get the ID of the wallet that a task modifies
     pub fn get_task_wallet(
         &self,
         task_id: &TaskIdentifier,
@@ -167,7 +167,7 @@ mod test {
     async fn test_transition() {
         let state = mock_state();
 
-        // Propose a task to the queue
+        // Propose a new task to the queue
         let wallet_id = WalletIdentifier::new_v4();
         let task = mock_queued_task().descriptor;
 
