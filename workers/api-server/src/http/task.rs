@@ -7,10 +7,11 @@
 use async_trait::async_trait;
 use external_api::{http::task::GetTaskStatusResponse, EmptyRequestResponse};
 use hyper::HeaderMap;
-use task_driver::driver::TaskDriver;
+use state::State;
+use util::err_str;
 
 use crate::{
-    error::{not_found, ApiServerError},
+    error::{internal_error, not_found, ApiServerError},
     router::{TypedHandler, UrlParams},
 };
 
@@ -32,14 +33,14 @@ const ERR_TASK_NOT_FOUND: &str = "task not found";
 
 /// Handler for the GET /task/:id route
 pub struct GetTaskStatusHandler {
-    /// A reference to the task driver that holds global task info
-    task_driver: TaskDriver,
+    /// A reference to the global state
+    state: State,
 }
 
 impl GetTaskStatusHandler {
     /// Constructor
-    pub fn new(task_driver: TaskDriver) -> Self {
-        Self { task_driver }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -56,7 +57,10 @@ impl TypedHandler for GetTaskStatusHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Lookup the task status in the task driver's state
         let task_id = parse_task_id_from_params(&params)?;
-        if let Some(status) = self.task_driver.get_task_state(&task_id).await {
+        let task_status = self.state.get_task_status(&task_id)?;
+
+        if let Some(status) = task_status {
+            let status = serde_json::to_string(&status).map_err(err_str!(internal_error))?;
             Ok(GetTaskStatusResponse { status: status.to_string() })
         } else {
             Err(not_found(ERR_TASK_NOT_FOUND.to_string()))
