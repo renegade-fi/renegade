@@ -5,6 +5,7 @@ use common::types::{
     tasks::TaskIdentifier,
     wallet::WalletIdentifier,
 };
+use util::res_some;
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
@@ -12,6 +13,15 @@ impl State {
     // -----------
     // | Getters |
     // -----------
+
+    /// Whether or not the task queue contains a specific task
+    pub fn contains_task(&self, task_id: &TaskIdentifier) -> Result<bool, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet_id = self.get_task_wallet(task_id)?;
+        tx.commit()?;
+
+        Ok(wallet_id.is_some())
+    }
 
     /// Get the length of the task queue for a wallet
     pub fn get_wallet_task_queue_len(
@@ -56,6 +66,19 @@ impl State {
         tx.commit()?;
 
         Ok(task)
+    }
+
+    /// Get the status of a task
+    pub fn get_task_status(
+        &self,
+        task_id: &TaskIdentifier,
+    ) -> Result<Option<QueuedTaskState>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet = res_some!(tx.get_task_wallet(task_id)?);
+        let status = tx.get_wallet_task_by_id(&wallet, task_id)?;
+        tx.commit()?;
+
+        Ok(status.map(|x| x.state))
     }
 
     // -----------

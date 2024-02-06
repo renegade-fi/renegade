@@ -154,7 +154,7 @@ impl WebsocketServer {
             .insert(
                 TASK_STATUS_TOPIC,
                 Box::new(TaskStatusHandler::new(
-                    config.task_driver.clone(),
+                    config.global_state.clone(),
                     config.system_bus.clone(),
                 )),
             )
