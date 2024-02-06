@@ -10,7 +10,7 @@ use common::types::{
 };
 use libmdbx::{TransactionKind, RW};
 
-use crate::{storage::error::StorageError, TASK_QUEUE_TABLE};
+use crate::{storage::error::StorageError, TASK_QUEUE_TABLE, TASK_TO_WALLET_TABLE};
 
 use super::StateTxn;
 
@@ -36,6 +36,14 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         self.read_queue(TASK_QUEUE_TABLE, wallet_id)
     }
 
+    /// Get the wallet that a given task is associated with
+    pub fn get_task_wallet(
+        &self,
+        task_id: &TaskIdentifier,
+    ) -> Result<Option<WalletIdentifier>, StorageError> {
+        self.inner().read(TASK_TO_WALLET_TABLE, task_id)
+    }
+
     /// Get the task for a given wallet and task id
     pub fn get_wallet_task_by_id(
         &self,
@@ -58,7 +66,10 @@ impl<'db> StateTxn<'db, RW> {
         wallet_id: &WalletIdentifier,
         task: &QueuedTask,
     ) -> Result<(), StorageError> {
-        self.push_to_queue(TASK_QUEUE_TABLE, wallet_id, task)
+        self.push_to_queue(TASK_QUEUE_TABLE, wallet_id, task)?;
+
+        // Add a mapping from the task to the wallet
+        self.inner().write(TASK_TO_WALLET_TABLE, &task.id, wallet_id)
     }
 
     /// Pop a task from the queue
@@ -66,7 +77,14 @@ impl<'db> StateTxn<'db, RW> {
         &self,
         wallet_id: &WalletIdentifier,
     ) -> Result<Option<QueuedTask>, StorageError> {
-        self.pop_from_queue(TASK_QUEUE_TABLE, wallet_id)
+        let res: Option<QueuedTask> = self.pop_from_queue(TASK_QUEUE_TABLE, wallet_id)?;
+
+        if let Some(ref task) = res {
+            // Remove the mapping from the task to the wallet
+            self.inner().delete(TASK_TO_WALLET_TABLE, &task.id)?;
+        }
+
+        Ok(res)
     }
 
     /// Transition the state of the top task in the queue
@@ -89,7 +107,7 @@ mod test {
         wallet::WalletIdentifier,
     };
 
-    use crate::{test_helpers::mock_db, TASK_QUEUE_TABLE};
+    use crate::{test_helpers::mock_db, TASK_QUEUE_TABLE, TASK_TO_WALLET_TABLE};
 
     /// Tests getting the tasks for a wallet
     #[test]
@@ -168,7 +186,11 @@ mod test {
 
         // Transition the state of the task
         let tx = db.new_write_tx().unwrap();
-        tx.transition_wallet_task(&wallet_id, QueuedTaskState::Running).unwrap();
+        tx.transition_wallet_task(
+            &wallet_id,
+            QueuedTaskState::Running { state: "Running".to_string() },
+        )
+        .unwrap();
         tx.commit().unwrap();
 
         // Read the task back
@@ -176,6 +198,38 @@ mod test {
         let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
         tx.commit().unwrap();
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running);
+        assert!(matches!(tasks[0].state, QueuedTaskState::Running { .. }));
+    }
+
+    /// Test the task to wallet map
+    #[test]
+    fn test_task_to_wallet_map() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_TO_WALLET_TABLE).unwrap();
+
+        // Add a task to the wallet
+        let wallet_id = WalletIdentifier::new_v4();
+        let task = mock_queued_task();
+        let tx = db.new_write_tx().unwrap();
+        tx.add_wallet_task(&wallet_id, &task).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task is associated with the wallet
+        let tx = db.new_read_tx().unwrap();
+        let task_wallet = tx.get_task_wallet(&task.id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(task_wallet, Some(wallet_id));
+
+        // Remove the task from the wallet
+        let tx = db.new_write_tx().unwrap();
+        tx.pop_wallet_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        // Validate that the task is no longer associated with the wallet
+        let tx = db.new_read_tx().unwrap();
+        let task_wallet = tx.get_task_wallet(&task.id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(task_wallet, None);
     }
 }
