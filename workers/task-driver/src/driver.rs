@@ -10,8 +10,8 @@ use std::{
 use common::{
     new_shared,
     types::{
-        task_descriptors::{QueuedTask, QueuedTaskState, TaskDescriptor},
         tasks::TaskIdentifier,
+        tasks::{QueuedTask, QueuedTaskState, TaskDescriptor},
         wallet::WalletIdentifier,
     },
     Shared,

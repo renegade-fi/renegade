@@ -16,7 +16,7 @@ use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::proof_bundles::MatchBundle;
-use common::types::task_descriptors::SettleMatchTaskDescriptor;
+use common::types::tasks::SettleMatchTaskDescriptor;
 use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,

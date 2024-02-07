@@ -17,7 +17,7 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    task_descriptors::{QueuedTask, QueuedTaskState},
+    tasks::{QueuedTask, QueuedTaskState},
     wallet::{OrderIdentifier, Wallet, WalletIdentifier},
 };
 use replication::{error::ReplicationError, RaftPeerId};

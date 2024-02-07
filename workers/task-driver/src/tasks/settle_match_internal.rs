@@ -16,7 +16,7 @@ use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
 use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
-use common::types::task_descriptors::SettleMatchInternalTaskDescriptor;
+use common::types::tasks::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::WalletIdentifier;
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},

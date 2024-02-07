@@ -10,7 +10,7 @@ use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use common::types::{
-    task_descriptors::LookupWalletTaskDescriptor,
+    tasks::LookupWalletTaskDescriptor,
     wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata},
 };
 use constants::Scalar;
