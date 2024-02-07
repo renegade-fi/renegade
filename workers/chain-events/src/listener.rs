@@ -7,9 +7,7 @@ use arbitrum_client::{
     client::ArbitrumClient,
     constants::{MERKLE_NODE_CHANGED_EVENT_NAME, NULLIFIER_SPENT_EVENT_NAME},
 };
-use common::types::{
-    task_descriptors::UpdateMerkleProofTaskDescriptor, wallet::Wallet, CancelChannel,
-};
+use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet, CancelChannel};
 use ethers::{prelude::StreamExt, types::Filter};
 use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},

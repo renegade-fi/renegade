@@ -9,11 +9,11 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::{
-    task_descriptors::{
+    tasks::TaskIdentifier,
+    tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor,
         UpdateWalletTaskDescriptor,
     },
-    tasks::TaskIdentifier,
     wallet::{KeyChain, Wallet, WalletIdentifier},
 };
 use constants::MAX_FEES;
