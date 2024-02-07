@@ -94,6 +94,12 @@ pub enum StateTransition {
     PopWalletTask { wallet_id: WalletIdentifier },
     /// Transition the state of the top task in the task queue
     TransitionWalletTask { wallet_id: WalletIdentifier, state: QueuedTaskState },
+    /// Preempt the task queue on a given wallet
+    ///
+    /// Returns any running tasks to `Queued` state and pauses the queue
+    PreemptTaskQueue { wallet_id: WalletIdentifier },
+    /// Resume a task queue on a given wallet
+    ResumeTaskQueue { wallet_id: WalletIdentifier },
 
     // --- Raft --- //
     /// Add a raft learner to the cluster
