@@ -2,7 +2,6 @@
 
 use std::thread::{Builder, JoinHandle};
 
-use arbitrum_client::client::ArbitrumClient;
 use common::types::CancelChannel;
 use common::worker::Worker;
 use external_api::bus_message::SystemBusMessage;
@@ -10,11 +9,10 @@ use job_types::{
     handshake_manager::{HandshakeManagerQueue, HandshakeManagerReceiver},
     network_manager::NetworkManagerQueue,
     price_reporter::PriceReporterQueue,
-    proof_manager::ProofManagerQueue,
+    task_driver::TaskDriverQueue,
 };
 use state::State;
 use system_bus::SystemBus;
-use task_driver::driver::TaskDriver;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::log;
 
@@ -33,17 +31,13 @@ pub struct HandshakeManagerConfig {
     pub network_channel: NetworkManagerQueue,
     /// The price reporter's job queue
     pub price_reporter_job_queue: PriceReporterQueue,
-    /// An arbitrum client for interacting with the contract
-    pub arbitrum_client: ArbitrumClient,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
     pub job_sender: HandshakeManagerQueue,
     /// The job queue on which to receive handshake requests
     pub job_receiver: Option<HandshakeManagerReceiver>,
-    /// A sender to forward jobs to the proof manager on
-    pub proof_manager_sender: ProofManagerQueue,
-    /// The task driver, used to manage long-running async tasks
-    pub task_driver: TaskDriver,
+    /// The queue used to send tasks to the driver
+    pub task_queue: TaskDriverQueue,
     /// The system bus to which all workers have access
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator may mandate that the
@@ -67,10 +61,8 @@ impl Worker for HandshakeManager {
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_reporter_job_queue.clone(),
-            config.arbitrum_client.clone(),
-            config.proof_manager_sender.clone(),
             config.global_state.clone(),
-            config.task_driver.clone(),
+            config.task_queue.clone(),
             config.system_bus.clone(),
             config.cancel_channel.clone(),
         )?;

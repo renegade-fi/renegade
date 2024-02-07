@@ -6,7 +6,6 @@ pub mod r#match;
 mod price_agreement;
 pub(crate) mod scheduler;
 
-use arbitrum_client::client::ArbitrumClient;
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
     new_async_shared,
@@ -14,7 +13,7 @@ use common::{
         gossip::WrappedPeerId,
         handshake::{ConnectionRole, HandshakeState},
         proof_bundles::{MatchBundle, OrderValidityProofBundle},
-        tasks::TaskIdentifier,
+        tasks::{SettleMatchTaskDescriptor, TaskDescriptor, TaskIdentifier},
         token::Token,
         wallet::OrderIdentifier,
         CancelChannel,
@@ -36,7 +35,7 @@ use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerReceiver},
     network_manager::{NetworkManagerJob, NetworkManagerQueue},
     price_reporter::PriceReporterQueue,
-    proof_manager::ProofManagerQueue,
+    task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue},
 };
 use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
@@ -47,14 +46,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use system_bus::SystemBus;
-use task_driver::{driver::TaskDriver, settle_match::SettleMatchTask};
 use tracing::log;
 use util::err_str;
 use uuid::Uuid;
 
 pub(super) use price_agreement::init_price_streams;
 
-use self::{handshake::ERR_NO_PROOF, scheduler::HandshakeScheduler};
+use self::{
+    handshake::{ERR_NO_PROOF, ERR_NO_WALLET},
+    scheduler::HandshakeScheduler,
+};
 
 use super::{
     error::HandshakeManagerError,
@@ -115,14 +116,10 @@ pub struct HandshakeExecutor {
     pub(crate) network_channel: NetworkManagerQueue,
     /// The pricer reporter's work queue, used for fetching price reports
     pub(crate) price_reporter_job_queue: PriceReporterQueue,
-    /// An Arbitrum client used for interacting with the contract
-    pub(crate) arbitrum_client: ArbitrumClient,
-    /// The channel on which to send proof manager jobs
-    pub(crate) proof_manager_work_queue: ProofManagerQueue,
     /// The global relayer state
     pub(crate) global_state: State,
-    /// The task driver, used to manage long-running async tasks
-    pub(crate) task_driver: TaskDriver,
+    /// The queue used to send tasks to the task driver
+    pub(crate) task_queue: TaskDriverQueue,
     /// The system bus used to publish internal broadcast messages
     pub(crate) system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the coordinator thread may cancel handshake
@@ -137,10 +134,8 @@ impl HandshakeExecutor {
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
         price_reporter_job_queue: PriceReporterQueue,
-        arbitrum_client: ArbitrumClient,
-        proof_manager_work_queue: ProofManagerQueue,
         global_state: State,
-        task_driver: TaskDriver,
+        task_queue: TaskDriverQueue,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
@@ -154,10 +149,8 @@ impl HandshakeExecutor {
             job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
             price_reporter_job_queue,
-            arbitrum_client,
-            proof_manager_work_queue,
             global_state,
-            task_driver,
+            task_queue,
             system_bus,
             cancel,
         })
@@ -309,7 +302,7 @@ impl HandshakeExecutor {
 
                 // Record the match in the cache
                 self.record_completed_match(request_id).await?;
-                self.submit_match(party0_proof, party1_proof, order_state, res).await.map(|_| ())
+                self.submit_match(party0_proof, party1_proof, order_state, res).await
             },
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
@@ -459,21 +452,43 @@ impl HandshakeExecutor {
         party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
         match_bundle: MatchBundle,
-    ) -> Result<TaskIdentifier, HandshakeManagerError> {
-        // Submit the match to the contract
-        let task = SettleMatchTask::new(
+    ) -> Result<(), HandshakeManagerError> {
+        // Enqueue a task to settle the match
+        let wallet_id = self
+            .global_state
+            .get_wallet_for_order(&handshake_state.local_order_id)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
+
+        let task: TaskDescriptor = SettleMatchTaskDescriptor {
+            wallet_id,
             handshake_state,
             match_bundle,
-            party0_proof,
-            party1_proof,
-            self.arbitrum_client.clone(),
-            self.network_channel.clone(),
-            self.global_state.clone(),
-            self.proof_manager_work_queue.clone(),
-        )
-        .map_err(err_str!(HandshakeManagerError::TaskError))?;
+            party0_validity_proof: party0_proof,
+            party1_validity_proof: party1_proof,
+        }
+        .into();
 
-        let (id, _handle) = self.task_driver.start_task(task).await;
-        Ok(id)
+        // Signal the task driver to preempt its queue with the task
+        let task_id = TaskIdentifier::new_v4();
+        let wallet_ids = vec![wallet_id];
+        let job = TaskDriverJob::RunImmediate { task_id, wallet_ids, task };
+        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
+
+        self.await_settlement_task(task_id).await
+    }
+
+    /// Await match settlement given the ID of the settlement task
+    async fn await_settlement_task(
+        &self,
+        task_id: TaskIdentifier,
+    ) -> Result<(), HandshakeManagerError> {
+        // Create a oneshot channel to await the task's completion
+        let (rx, job) = new_task_notification(task_id);
+        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
+
+        // Await task completion
+        rx.await
+            .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
+            .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
     }
 }
