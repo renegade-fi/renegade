@@ -1,16 +1,16 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use circuit_types::fixed_point::FixedPoint;
+use circuit_types::{fixed_point::FixedPoint, order::Order};
 use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor, TaskIdentifier},
     wallet::{OrderIdentifier, Wallet},
 };
-use itertools::Itertools;
+use job_types::task_driver::TaskDriverJob;
 use rand::{seq::SliceRandom, thread_rng};
-use task_driver::settle_match_internal::SettleMatchInternalTask;
 use tracing::log;
-use util::{matching_engine::match_orders, res_some};
+use util::{err_str, matching_engine::match_orders, res_some};
 
 use crate::{
     error::HandshakeManagerError,
@@ -19,8 +19,6 @@ use crate::{
 
 use super::HandshakeExecutor;
 
-/// Error emitted when joining to a task execution fails
-const ERR_TASK_EXECUTION: &str = "settle-match-internal task failed";
 /// Error emitted when proofs of validity cannot be found for an order
 const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
 
@@ -37,11 +35,13 @@ impl HandshakeExecutor {
     ///     1. Determine this code path to be a bottleneck
     ///     2. Have a better state management abstraction that makes
     ///        denormalization easier
-    pub(super) async fn run_internal_matching_engine(
+    pub async fn run_internal_matching_engine(
         &self,
         order: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
         log::info!("Running internal matching engine on order {order}");
+        let mut rng = thread_rng();
+
         // Lookup the order and its wallet
         let (network_order, wallet) = self.fetch_order_and_wallet(&order)?;
         let my_order = wallet
@@ -52,35 +52,25 @@ impl HandshakeExecutor {
             .get_validity_proof_and_witness(&network_order.id)?
             .ok_or_else(|| HandshakeManagerError::State(ERR_MISSING_PROOFS.to_string()))?;
 
-        // Fetch all other orders that are ready for matches
-        let other_orders = self.global_state.get_locally_matchable_orders()?;
-
         // Sample a price to match the order at
-        let (base, quote) = self.token_pair_for_order(&network_order.id)?;
-        let price = self
-            .fetch_price_vector()
-            .await?
-            .find_pair(&base, &quote)
-            .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?
-            .2; // (base, quote, price)
-        let price = FixedPoint::from_f64_round_down(price);
+        let price = self.get_execution_price(&network_order.id).await?;
 
+        // Fetch all other orders that are ready for matches
         // Shuffle the ordering of the other orders for fairness
-        let mut rng = thread_rng();
-        let mut shuffled_indices = (0..other_orders.len()).collect_vec();
-        shuffled_indices.shuffle(&mut rng);
+        let mut other_orders = self.global_state.get_locally_matchable_orders()?;
+        other_orders.shuffle(&mut rng);
 
         // Match against each other order in the local book
-        for order_id in shuffled_indices.into_iter().map(|ind| &other_orders[ind]) {
+        for order_id in other_orders {
             // Same order
-            if network_order.id == *order_id {
+            if network_order.id == order_id {
                 continue;
             }
 
             // Same wallet
             let wallet_id = self
                 .global_state
-                .get_wallet_for_order(order_id)?
+                .get_wallet_for_order(&order_id)?
                 .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
             if wallet_id == wallet.wallet_id {
                 continue;
@@ -88,63 +78,123 @@ impl HandshakeExecutor {
 
             // Lookup the witness used for this order
             let (other_proof, other_witness) =
-                match self.get_validity_proof_and_witness(order_id)? {
+                match self.get_validity_proof_and_witness(&order_id)? {
                     Some(proof) => proof,
                     None => continue,
                 };
 
             // Lookup the other order and match on it
-            let res = match self.global_state.get_managed_order(order_id)? {
-                Some(order) => match_orders(
-                    my_order,
-                    &order,
-                    &my_witness.commitment_witness.balance_send,
-                    &other_witness.commitment_witness.balance_send,
-                    price,
-                ),
+            let order2 = match self.global_state.get_managed_order(&order_id)? {
+                Some(order) => order,
                 None => continue,
             };
 
-            // Settle the match if the two orders cross
-            if let Some(handshake_result) = res {
-                // Spawn a task to settle the locally discovered match
-                log::info!("internal match found for {order_id:?}, settling...");
-                let task = SettleMatchInternalTask::new(
-                    price,
+            // If a match is successful, break from the loop, the settlement task will
+            // re-enqueue a job for the internal engine to run again
+            match self
+                .try_match_and_settle(
+                    my_order.clone(),
+                    order2,
                     network_order.id,
-                    *order_id,
-                    my_proof.clone(),
+                    order_id,
+                    price,
                     my_witness.clone(),
-                    other_proof,
-                    other_witness,
-                    handshake_result,
-                    self.arbitrum_client.clone(),
-                    self.network_channel.clone(),
-                    self.global_state.clone(),
-                    self.proof_manager_work_queue.clone(),
+                    other_witness.clone(),
+                    my_proof.clone(),
+                    other_proof.clone(),
                 )
                 .await
-                .map_err(|_| HandshakeManagerError::TaskError(ERR_TASK_EXECUTION.to_string()))?;
-
-                let (_, join_handle) = self.task_driver.start_task(task).await;
-
-                // If the task errors, log the error and continue
-                if !join_handle
-                    .await
-                    .map_err(|_| HandshakeManagerError::TaskError(ERR_TASK_EXECUTION.to_string()))?
-                {
-                    log::error!("internal match settlement failed for {order_id:?}");
-                    continue;
-                } else {
-                    // The settlement job will have created a job to run the matching engine
-                    // recursively on the now-updated wallet, return instead of continuing
-                    return Ok(());
-                }
+            {
+                Ok(did_match) => {
+                    // Stop matching if a match was found
+                    if did_match {
+                        return Ok(());
+                    }
+                },
+                Err(e) => log::error!(
+                    "internal match settlement failed for {} x {}: {e}",
+                    network_order.id,
+                    order_id,
+                ),
             }
         }
 
         log::info!("No internal matches found for {order:?}");
         Ok(())
+    }
+
+    /// Try a match and settle it if the two orders cross
+    #[allow(clippy::too_many_arguments)]
+    async fn try_match_and_settle(
+        &self,
+        o1: Order,
+        o2: Order,
+        order_id1: OrderIdentifier,
+        order_id2: OrderIdentifier,
+        price: FixedPoint,
+        validity_witness1: OrderValidityWitnessBundle,
+        validity_witness2: OrderValidityWitnessBundle,
+        validity_proof1: OrderValidityProofBundle,
+        validity_proof2: OrderValidityProofBundle,
+    ) -> Result<bool, HandshakeManagerError> {
+        // Match the orders
+        let b1 = &validity_witness1.commitment_witness.balance_send;
+        let b2 = &validity_witness2.commitment_witness.balance_send;
+        let match_result = match match_orders(&o1, &o2, b1, b2, price) {
+            Some(match_) => match_,
+            None => return Ok(false),
+        };
+
+        // Submit the match to the task driver
+        let task: TaskDescriptor = SettleMatchInternalTaskDescriptor {
+            execution_price: price,
+            order_id1,
+            order_id2,
+            order1_validity_witness: validity_witness1,
+            order2_validity_witness: validity_witness2,
+            order1_proof: validity_proof1,
+            order2_proof: validity_proof2,
+            match_result,
+        }
+        .into();
+
+        let wallet_id1 = self
+            .global_state
+            .get_wallet_for_order(&order_id1)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
+        let wallet_id2 = self
+            .global_state
+            .get_wallet_for_order(&order_id2)?
+            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
+        let wallet_ids = vec![wallet_id1, wallet_id2];
+
+        let task_id = TaskIdentifier::new_v4();
+        let job = TaskDriverJob::RunImmediate { task_id, wallet_ids, task };
+        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::TaskError))?;
+
+        // Await settlement, returning true to indicate a match was successfully
+        // processed
+        self.await_settlement_task(task_id).await.map(|_| true)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Fetch the execution price for an order
+    async fn get_execution_price(
+        &self,
+        order: &OrderIdentifier,
+    ) -> Result<FixedPoint, HandshakeManagerError> {
+        let (base, quote) = self.token_pair_for_order(order)?;
+        let price = self
+            .fetch_price_vector()
+            .await?
+            .find_pair(&base, &quote)
+            .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?
+            .2; // (base, quote, price)
+
+        Ok(FixedPoint::from_f64_round_down(price))
     }
 
     /// Get the validity proof and witness for a given order
