@@ -144,6 +144,22 @@ impl State {
         // Propose the task to the task queue
         self.send_proposal(StateTransition::TransitionWalletTask { wallet_id, state })
     }
+
+    /// Pause the task queue for a wallet
+    pub fn pause_wallet_task_queue(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::PreemptTaskQueue { wallet_id: *wallet_id })
+    }
+
+    /// Resume the task queue for a wallet
+    pub fn resume_wallet_task_queue(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::ResumeTaskQueue { wallet_id: *wallet_id })
+    }
 }
 
 #[cfg(test)]

@@ -17,6 +17,7 @@ use common::{
     Shared,
 };
 use external_api::bus_message::{task_topic_name, SystemBusMessage};
+use futures::Future;
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use serde::Serialize;
 use state::State;
@@ -157,7 +158,14 @@ impl TaskExecutor {
             let job = queue.recv().map_err(|_| TaskDriverError::JobQueueClosed)?;
             let res = match job {
                 TaskDriverJob::Run(task) => {
-                    self.spawn_task_on_runtime(task.id, task.descriptor);
+                    let fut = self.create_task_future(task.id, task.descriptor);
+                    self.runtime.spawn(async move {
+                        let res = fut.await;
+                        if let Err(e) = res {
+                            log::error!("error running task: {e:?}");
+                        }
+                    });
+
                     Ok(())
                 },
                 TaskDriverJob::RunImmediate { wallet_id, task_id, task } => {
@@ -210,17 +218,34 @@ impl TaskExecutor {
         }
 
         // Pause the queue for the wallet
-        todo!("implement task queue pausing");
+        self.state().pause_wallet_task_queue(&wallet_id)?;
 
         // Start the task optimistically assuming that the queue is paused
-        self.spawn_task_on_runtime(task_id, task);
+        let fut = self.create_task_future(task_id, task);
+        let state = self.state().clone();
+        self.runtime.spawn(async move {
+            let res = fut.await;
+            if let Err(e) = res {
+                log::error!("error running immediate task: {e:?}");
+            }
 
-        // Unpause the queue for the wallet
-        todo!("implement task queue unpausing");
+            // Unpause the queue for the wallet
+            state
+                .resume_wallet_task_queue(&wallet_id)
+                .expect("error proposing wallet resume")
+                .await
+                .expect("error resuming wallet task queue");
+        });
+
+        Ok(())
     }
 
-    /// Spawn the given task on the runtime
-    fn spawn_task_on_runtime(&self, task_id: TaskIdentifier, descriptor: TaskDescriptor) {
+    /// Get the future for a task execution
+    fn create_task_future(
+        &self,
+        task_id: TaskIdentifier,
+        descriptor: TaskDescriptor,
+    ) -> impl Future<Output = Result<(), TaskDriverError>> {
         // Collect the arguments then spawn
         let ctx = self.task_context();
         let args = self.runtime_config;
@@ -228,15 +253,7 @@ impl TaskExecutor {
         let state = self.task_context.state.clone();
         let task_notifications = self.task_notifications.clone();
 
-        self.runtime.spawn(async move {
-            let res =
-                Self::start_task(task_id, descriptor, ctx, args, bus, state, task_notifications)
-                    .await;
-
-            if let Err(e) = res {
-                log::error!("error running task: {e:?}");
-            }
-        });
+        Self::start_task(task_id, descriptor, ctx, args, bus, state, task_notifications)
     }
 
     /// Spawn a new task in the driver
@@ -252,7 +269,6 @@ impl TaskExecutor {
         task_notifications: TaskNotificationMap,
     ) -> Result<(), TaskDriverError> {
         // Construct the task from the descriptor
-        let state_clone = state.clone();
         let res = match task {
             TaskDescriptor::NewWallet(desc) => {
                 let task = NewWalletTask::new(desc, ctx).await?;
@@ -280,18 +296,13 @@ impl TaskExecutor {
             },
         };
 
-        let return_val =
-            if res { Ok(()) } else { Err(TaskDriverError::TaskError("task failed".to_string())) };
-
         // Notify any listeners that the task has completed
-        let str_err = return_val.clone().map_err(|e| e.to_string());
+        let str_err = res.clone().map_err(|e| e.to_string());
         for sender in task_notifications.write().unwrap().remove(&id).unwrap_or_default() {
             let _ = sender.send(str_err.clone());
         }
 
-        // Pop the task from the queue so that the next task may run
-        state_clone.pop_task(&id)?.await?;
-        return_val
+        res
     }
 
     /// Run a task to completion
@@ -301,7 +312,7 @@ impl TaskExecutor {
         args: RuntimeArgs,
         bus: SystemBus<SystemBusMessage>,
         state: State,
-    ) -> bool {
+    ) -> Result<(), TaskDriverError> {
         let task_name = task.name();
 
         // Run each step individually and update the state after each step
@@ -327,10 +338,11 @@ impl TaskExecutor {
             }
 
             // Update the state in the registry
-            let task_state: StateWrapper = task.state().into();
-            log::info!("task {task_name}({task_id:?}) transitioning to state {task_state}");
-            if let Err(e) = state.transition_wallet_task(&task_id, task_state.into()) {
-                log::warn!("error updating task state: {e:?}");
+            let new_state: StateWrapper = task.state().into();
+            if Self::should_abort(&task_id, new_state, &state).await {
+                log::warn!("task {task_name}({task_id:?}) preempted, aborting...");
+                task.cleanup().await.expect("error cleaning up task");
+                return Err(TaskDriverError::Preempted);
             }
 
             // Publish the state to the system bus for listeners on this task
@@ -340,10 +352,41 @@ impl TaskExecutor {
             );
         }
 
+        // Cleanup the task
         if let Err(e) = task.cleanup().await {
             log::error!("error cleaning up task: {e:?}");
         }
-        task.completed()
+
+        // Remove the task from the queue
+        state.pop_task(&task_id)?.await?;
+
+        if task.completed() {
+            Ok(())
+        } else {
+            Err(TaskDriverError::TaskFailed)
+        }
+    }
+
+    /// Update the state of a task and check for preemption
+    ///
+    /// Returns `true` if the task was preempted
+    async fn should_abort(
+        task_id: &TaskIdentifier,
+        new_state: StateWrapper,
+        global_state: &State,
+    ) -> bool {
+        log::info!("task {task_id:?} transitioning to state {new_state}");
+
+        // If this state commits the task, await consensus on the result of updating the
+        // state, otherwise resume optimistically
+        let is_commit = new_state.is_committing();
+        match global_state.transition_wallet_task(task_id, new_state.into()) {
+            Ok(waiter) => is_commit && waiter.await.is_err(),
+            Err(e) => {
+                log::warn!("error updating task state: {e:?}");
+                true
+            },
+        }
     }
 }
 
@@ -380,6 +423,23 @@ impl StateWrapper {
             StateWrapper::SettleMatchInternal(state) => state.committed(),
             StateWrapper::UpdateWallet(state) => state.committed(),
             StateWrapper::UpdateMerkleProof(state) => state.committed(),
+        }
+    }
+
+    /// Whether or not this state commits the task, i.e. is the first state that
+    /// for which `committed` is true
+    fn is_committing(&self) -> bool {
+        match self {
+            StateWrapper::LookupWallet(state) => state == &LookupWalletTaskState::commit_point(),
+            StateWrapper::NewWallet(state) => state == &NewWalletTaskState::commit_point(),
+            StateWrapper::SettleMatch(state) => state == &SettleMatchTaskState::commit_point(),
+            StateWrapper::SettleMatchInternal(state) => {
+                state == &SettleMatchInternalTaskState::commit_point()
+            },
+            StateWrapper::UpdateWallet(state) => state == &UpdateWalletTaskState::commit_point(),
+            StateWrapper::UpdateMerkleProof(state) => {
+                state == &UpdateMerkleProofTaskState::commit_point()
+            },
         }
     }
 }

@@ -6,6 +6,7 @@ use common::types::{
 };
 use job_types::task_driver::TaskDriverJob;
 use libmdbx::TransactionKind;
+use tracing::log;
 use util::err_str;
 
 use crate::storage::tx::StateTxn;
@@ -14,6 +15,11 @@ use super::{error::StateApplicatorError, Result, StateApplicator};
 
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
+
+/// Construct the running state for a newly started task
+fn new_running_state() -> QueuedTaskState {
+    QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false }
+}
 
 impl StateApplicator {
     // ---------------------
@@ -30,10 +36,9 @@ impl StateApplicator {
 
         // If the task queue is empty for the wallet, transition the task to in progress
         // and start it
-        if tx.is_wallet_queue_empty(&wallet_id)? {
+        if tx.is_wallet_queue_empty(&wallet_id)? && !tx.is_task_queue_paused(&wallet_id)? {
             // Start the task
-            let state = PENDING_STATE.to_string();
-            task.state = QueuedTaskState::Running { state, committed: false };
+            task.state = new_running_state();
             self.maybe_start_task(&task, &tx)?;
         }
 
@@ -44,6 +49,9 @@ impl StateApplicator {
     /// Apply a `PopWalletTask` state transition
     pub fn pop_wallet_task(&self, wallet_id: WalletIdentifier) -> Result<()> {
         let tx = self.db().new_write_tx()?;
+        if tx.is_task_queue_paused(&wallet_id)? {
+            return Err(StateApplicatorError::QueuePaused(wallet_id));
+        }
 
         // Pop the task from the queue
         tx.pop_wallet_task(&wallet_id)?;
@@ -51,11 +59,8 @@ impl StateApplicator {
         // If the queue is non-empty, start the next task
         let tasks = tx.get_wallet_tasks(&wallet_id)?;
         if let Some(task) = tasks.first() {
-            let state = PENDING_STATE.to_string();
-            tx.transition_wallet_task(
-                &wallet_id,
-                QueuedTaskState::Running { state, committed: false },
-            )?;
+            let state = new_running_state();
+            tx.transition_wallet_task(&wallet_id, state)?;
             self.maybe_start_task(task, &tx)?;
         }
 
@@ -69,7 +74,55 @@ impl StateApplicator {
         state: QueuedTaskState,
     ) -> Result<()> {
         let tx = self.db().new_write_tx()?;
+        if tx.is_task_queue_paused(&wallet_id)? {
+            return Err(StateApplicatorError::QueuePaused(wallet_id));
+        }
+
         tx.transition_wallet_task(&wallet_id, state)?;
+        Ok(tx.commit()?)
+    }
+
+    /// Preempt the task queue on a given wallet
+    pub fn preempt_task_queue(&self, wallet_id: WalletIdentifier) -> Result<()> {
+        let tx = self.db().new_write_tx()?;
+
+        // Stop any running tasks if possible
+        let current_running_task = tx.get_current_running_task(&wallet_id)?;
+        if let Some(task) = current_running_task {
+            if task.state.is_committed() {
+                log::error!("cannot preempt committed task: {}", task.id);
+                return Err(StateApplicatorError::Preemption);
+            }
+
+            // Otherwise transition the task to queued
+            let state = QueuedTaskState::Queued;
+            tx.transition_wallet_task(&wallet_id, state)?;
+        }
+
+        // Pause the queue
+        tx.pause_task_queue(&wallet_id)?;
+        Ok(tx.commit()?)
+    }
+
+    /// Resume a task queue on a given wallet
+    pub fn resume_task_queue(&self, wallet_id: WalletIdentifier) -> Result<()> {
+        let tx = self.db().new_write_tx()?;
+
+        // Resume the queue
+        tx.resume_task_queue(&wallet_id)?;
+
+        // Start running the first task if it exists
+        let tasks = tx.get_wallet_tasks(&wallet_id)?;
+        if let Some(task) = tasks.first() {
+            // Mark the task as pending in the db
+            let state = new_running_state();
+            tx.transition_wallet_task(&wallet_id, state)?;
+
+            // This will resume the task as if it is starting anew, regardless of whether
+            // the task was previously running
+            self.maybe_start_task(task, &tx)?;
+        }
+
         Ok(tx.commit()?)
     }
 
@@ -365,5 +418,116 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].state, new_state); // should be updated
+    }
+
+    /// Tests cases in pausing an empty queue
+    #[test]
+    fn test_pause_empty() {
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        let wallet_id = WalletIdentifier::new_v4();
+
+        // Pause the queue
+        applicator.preempt_task_queue(wallet_id).unwrap();
+
+        // Ensure the queue was paused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert!(is_paused);
+
+        // Add a task and ensure it is not started
+        let mut task = mock_queued_task();
+        task.executor = peer_id;
+        let task_id = task.id;
+        applicator.append_wallet_task(wallet_id, task.clone()).unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert!(task_recv.is_empty());
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].state, QueuedTaskState::Queued);
+
+        // Resume the queue and ensure the task is started
+        applicator.resume_task_queue(wallet_id).unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task = tx.get_current_running_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(task.unwrap().id, task_id);
+
+        assert!(!task_recv.is_empty());
+
+        let task = task_recv.recv().unwrap();
+        if let TaskDriverJob::Run(queued_task) = task {
+            assert_eq!(queued_task.id, task_id);
+        } else {
+            panic!("Expected a Run task job");
+        }
+    }
+
+    /// Tests pausing a queue with a running task
+    #[test]
+    fn test_pause_with_running() {
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        let wallet_id = WalletIdentifier::new_v4();
+
+        // Add a task
+        let mut task = mock_queued_task();
+        task.executor = peer_id;
+        let task_id = task.id;
+        applicator.append_wallet_task(wallet_id, task.clone()).unwrap();
+
+        // Start the task
+        let tx = applicator.db().new_write_tx().unwrap();
+        let state = QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false };
+        tx.transition_wallet_task(&wallet_id, state).unwrap();
+        tx.commit().unwrap();
+
+        // Pause the queue
+        applicator.preempt_task_queue(wallet_id).unwrap();
+
+        // Ensure the queue was paused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert!(is_paused);
+
+        // Ensure the task was transitioned to queued
+        let tx = applicator.db().new_read_tx().unwrap();
+        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].state, QueuedTaskState::Queued);
+
+        // Resume the queue and ensure the task is started
+        applicator.resume_task_queue(wallet_id).unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task = tx.get_current_running_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert!(task.is_some());
+        assert_eq!(task.unwrap().id, task_id);
+
+        assert!(!task_recv.is_empty());
+        let job = task_recv.recv().unwrap();
+        if let TaskDriverJob::Run(queued_task) = job {
+            assert_eq!(queued_task.id, task_id);
+        } else {
+            panic!("Expected a Run task job");
+        }
     }
 }
