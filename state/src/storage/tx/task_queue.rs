@@ -14,6 +14,11 @@ use crate::{storage::error::StorageError, TASK_QUEUE_TABLE, TASK_TO_WALLET_TABLE
 
 use super::StateTxn;
 
+/// Create the key for a "task queue paused" entry from a wallet ID
+fn paused_key(wallet_id: &WalletIdentifier) -> String {
+    format!("{wallet_id}-paused")
+}
+
 // -----------
 // | Getters |
 // -----------
@@ -26,6 +31,14 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     ) -> Result<bool, StorageError> {
         let tasks = self.get_wallet_tasks(wallet_id)?;
         Ok(tasks.is_empty())
+    }
+
+    /// Whether or not the task queue is paused for a wallet
+    pub fn is_task_queue_paused(&self, wallet_id: &WalletIdentifier) -> Result<bool, StorageError> {
+        let key = paused_key(wallet_id);
+        let paused = self.inner().read(TASK_QUEUE_TABLE, &key)?;
+
+        Ok(paused.unwrap_or(false))
     }
 
     /// Get the tasks for a given wallet
@@ -108,6 +121,18 @@ impl<'db> StateTxn<'db, RW> {
         tasks[0].state = new_state;
 
         self.write_queue(TASK_QUEUE_TABLE, wallet_id, &tasks)
+    }
+
+    /// Pause the task queue for a wallet
+    pub fn pause_task_queue(&self, wallet_id: &WalletIdentifier) -> Result<(), StorageError> {
+        let key = paused_key(wallet_id);
+        self.inner().write(TASK_QUEUE_TABLE, &key, &true)
+    }
+
+    /// Resume the task queue for a wallet
+    pub fn resume_task_queue(&self, wallet_id: &WalletIdentifier) -> Result<(), StorageError> {
+        let key = paused_key(wallet_id);
+        self.inner().write(TASK_QUEUE_TABLE, &key, &false)
     }
 }
 
@@ -279,5 +304,41 @@ mod test {
         let task_wallet = tx.get_task_wallet(&task.id).unwrap();
         tx.commit().unwrap();
         assert_eq!(task_wallet, None);
+    }
+
+    /// Tests pausing and resuming the task queue
+    #[test]
+    fn test_pause_resume() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_QUEUE_TABLE).unwrap();
+        let wallet_id = WalletIdentifier::new_v4();
+
+        let tx = db.new_read_tx().unwrap();
+        let paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert!(!paused);
+
+        // Pause the task queue
+        let tx = db.new_write_tx().unwrap();
+        tx.pause_task_queue(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task queue is paused
+        let tx = db.new_read_tx().unwrap();
+        let paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert!(paused);
+
+        // Resume the task queue
+        let tx = db.new_write_tx().unwrap();
+        tx.resume_task_queue(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task queue is resumed
+        let tx = db.new_read_tx().unwrap();
+        let paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert!(!paused);
     }
 }

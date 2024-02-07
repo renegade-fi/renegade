@@ -15,12 +15,16 @@ use crate::tasks::update_wallet::UpdateWalletTaskError;
 /// The error type emitted by the task driver
 #[derive(Clone, Debug)]
 pub enum TaskDriverError {
+    /// A task failed to execute
+    TaskFailed,
     /// The job channel for the task driver is closed
     JobQueueClosed,
-    /// An error running a task
-    TaskError(String),
+    /// A task was preempted while running
+    Preempted,
     /// An error querying global state
     State(String),
+    /// An error running a task
+    TaskError(String),
 }
 
 impl Display for TaskDriverError {
