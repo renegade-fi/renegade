@@ -11,7 +11,7 @@ jobs:
   build-and-push-ecr:
     runs-on: buildjet-8vcpu-ubuntu-2204-arm
     outputs:
-      image: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}
+      image: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -96,9 +96,20 @@ jobs:
           image: ${{ needs.build-and-push-ecr.outputs.image }}
 
       - name: Deploy Amazon ECS task definition
+        id: ecs-deploy
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.update-task-def.outputs.task-definition }}
           service: ${{ matrix.cluster }}-service
           cluster: ${{ matrix.cluster }}
           wait-for-service-stability: true
+
+      - name: Check for rollback
+        id: check-rollback
+        run: |
+          CURRENT_TASK_DEF_ARN=$(aws ecs describe-services --cluster ${{ matrix.cluster }} --services ${{ matrix.cluster }}-service --query services[0].deployments[0].taskDefinition | jq -r ".")
+          NEW_TASK_DEF_ARN=${{ steps.ecs-deploy.outputs.task-definition-arn }}
+          if [ "$CURRENT_TASK_DEF_ARN" != "$NEW_TASK_DEF_ARN" ]; then
+            echo "Deployment rolled back."
+            exit 1
+          fi
