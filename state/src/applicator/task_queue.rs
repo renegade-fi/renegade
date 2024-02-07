@@ -33,7 +33,7 @@ impl StateApplicator {
         if tx.is_wallet_queue_empty(&wallet_id)? {
             // Start the task
             let state = PENDING_STATE.to_string();
-            task.state = QueuedTaskState::Running { state };
+            task.state = QueuedTaskState::Running { state, committed: false };
             self.maybe_start_task(&task, &tx)?;
         }
 
@@ -52,7 +52,10 @@ impl StateApplicator {
         let tasks = tx.get_wallet_tasks(&wallet_id)?;
         if let Some(task) = tasks.first() {
             let state = PENDING_STATE.to_string();
-            tx.transition_wallet_task(&wallet_id, QueuedTaskState::Running { state })?;
+            tx.transition_wallet_task(
+                &wallet_id,
+                QueuedTaskState::Running { state, committed: false },
+            )?;
             self.maybe_start_task(task, &tx)?;
         }
 
@@ -153,7 +156,10 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task_id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running { state: PENDING_STATE.to_string() }); // should be started
+        assert_eq!(
+            tasks[0].state,
+            QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false },
+        ); // should be started
 
         // Check the task was started
         assert!(!task_recv.is_empty());
@@ -281,7 +287,10 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task2.id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running { state: PENDING_STATE.to_string() }); // should be started
+        assert_eq!(
+            tasks[0].state,
+            QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false },
+        ); // should be started
 
         // Ensure no task was started
         assert!(task_recv.is_empty());
@@ -318,7 +327,10 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task2.id);
-        assert_eq!(tasks[0].state, QueuedTaskState::Running { state: PENDING_STATE.to_string() }); // should be started
+        assert_eq!(
+            tasks[0].state,
+            QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false },
+        ); // should be started
 
         // Ensure the second task was started
         assert!(!task_recv.is_empty());
@@ -343,7 +355,7 @@ mod test {
         enqueue_dummy_task(&wallet_id, applicator.db());
 
         // Transition the state of the top task in the queue
-        let new_state = QueuedTaskState::Running { state: "Test".to_string() };
+        let new_state = QueuedTaskState::Running { state: "Test".to_string(), committed: false };
         applicator.transition_task_state(wallet_id, new_state.clone()).unwrap();
 
         // Ensure the task state was updated
