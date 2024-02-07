@@ -22,10 +22,10 @@ use helpers::new_mock_task_driver;
 use job_types::{
     network_manager::{NetworkManagerQueue, NetworkManagerReceiver},
     proof_manager::ProofManagerJob,
+    task_driver::TaskDriverQueue,
 };
 use proof_manager::mock::MockProofManager;
 use state::{test_helpers::mock_state, State};
-use task_driver::driver::TaskDriver;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -89,11 +89,11 @@ struct IntegrationTestArgs {
     /// Held here to avoid closing the channel on `Drop`
     _network_receiver: Arc<NetworkManagerReceiver>,
     /// A reference to the global state of the mock proof manager
-    global_state: State,
+    state: State,
     /// The job queue for the mock proof manager
     proof_job_queue: CrossbeamSender<ProofManagerJob>,
-    /// The mock task driver created for these tests
-    driver: TaskDriver,
+    /// The task driver queue used to enqueue tasks
+    task_queue: TaskDriverQueue,
 }
 
 // -----------
@@ -104,9 +104,22 @@ impl From<CliArgs> for IntegrationTestArgs {
     fn from(test_args: CliArgs) -> Self {
         // Create a mock network sender and receiver
         let (network_sender, network_receiver) = unbounded_channel();
+
         // Create a mock proof generation module
         let (proof_job_queue, job_receiver) = unbounded();
         MockProofManager::start(job_receiver);
+
+        // Create a mock arbitrum client and global state
+        let arbitrum_client = setup_arbitrum_client_mock(test_args);
+        let state = setup_global_state_mock();
+
+        // Start a task driver
+        let task_queue = new_mock_task_driver(
+            arbitrum_client.clone(),
+            network_sender.clone(),
+            proof_job_queue.clone(),
+            state.clone(),
+        );
 
         let erc20_addr0 = parse_addr_from_deployments_file(
             &test_args.deployments_path,
@@ -122,12 +135,12 @@ impl From<CliArgs> for IntegrationTestArgs {
         Self {
             erc20_addr0,
             erc20_addr1,
-            arbitrum_client: setup_arbitrum_client_mock(test_args),
+            arbitrum_client,
             network_sender,
             _network_receiver: Arc::new(network_receiver),
             proof_job_queue,
-            global_state: setup_global_state_mock(),
-            driver: new_mock_task_driver(),
+            state,
+            task_queue,
         }
     }
 }
