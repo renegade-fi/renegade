@@ -5,22 +5,34 @@ use circuit_types::{
     native_helpers::create_wallet_shares_from_private, traits::BaseType,
     transfers::ExternalTransfer, SizedWalletShare,
 };
-use common::types::{
-    proof_bundles::mocks::{dummy_valid_wallet_create_bundle, dummy_valid_wallet_update_bundle},
-    wallet::Wallet,
-    wallet_mocks::mock_empty_wallet,
+use common::{
+    types::{
+        proof_bundles::mocks::{
+            dummy_valid_wallet_create_bundle, dummy_valid_wallet_update_bundle,
+        },
+        tasks::{LookupWalletTaskDescriptor, TaskDescriptor},
+        wallet::{Wallet, WalletIdentifier},
+        wallet_mocks::mock_empty_wallet,
+    },
+    worker::Worker,
 };
 use constants::Scalar;
 use ethers::types::Address;
 use external_api::types::ApiWallet;
 use eyre::Result;
+use job_types::{
+    network_manager::NetworkManagerQueue,
+    proof_manager::ProofManagerQueue,
+    task_driver::{new_task_driver_queue, TaskDriverJob, TaskDriverQueue},
+};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
+use state::State;
 use system_bus::SystemBus;
 use task_driver::{
-    driver::{TaskDriver, TaskDriverConfig},
-    lookup_wallet::LookupWalletTask,
+    driver::RuntimeArgs,
+    worker::{TaskDriver, TaskDriverConfig},
 };
 use test_helpers::{assert_eq_result, assert_true_result};
 
@@ -40,22 +52,16 @@ pub fn biguint_from_address(val: Address) -> BigUint {
 pub(crate) async fn lookup_wallet_and_check_result(
     expected_wallet: &Wallet,
     blinder_seed: Scalar,
-    share_seed: Scalar,
+    secret_share_seed: Scalar,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     // Start a lookup task for the new wallet
     let wallet_id = expected_wallet.wallet_id;
-    let state = test_args.global_state;
-    let task = LookupWalletTask::new(
-        wallet_id,
-        blinder_seed,
-        share_seed,
-        expected_wallet.key_chain.clone(),
-        test_args.arbitrum_client,
-        test_args.network_sender,
-        state.clone(),
-        test_args.proof_job_queue,
-    );
+    let state = test_args.state;
+
+    let key_chain = expected_wallet.key_chain.clone();
+    let task = LookupWalletTaskDescriptor { wallet_id, blinder_seed, secret_share_seed, key_chain };
+    await_task(&wallet_id, task.into(), &test_args).await?;
 
     let (_task_id, handle) = test_args.driver.start_task(task).await;
     let success = handle.await?;
@@ -68,6 +74,20 @@ pub(crate) async fn lookup_wallet_and_check_result(
     // Compare the secret shares directly
     assert_eq_result!(state_wallet.blinded_public_shares, expected_wallet.blinded_public_shares)?;
     assert_eq_result!(state_wallet.private_shares, expected_wallet.private_shares)
+}
+
+pub(crate) async fn await_task(
+    wallet_id: &WalletIdentifier,
+    task: TaskDescriptor,
+    test_args: &IntegrationTestArgs,
+) -> Result<()> {
+    // Wait for the task to be queued
+    let (task_id, waiter) = state.append_wallet_task(&wallet_id, task.into())?;
+    waiter.await?;
+
+    let (task_id, handle) = test_args.driver.start_task(task)?;
+    let success = handle.await?;
+    assert_true_result!(success)
 }
 
 // ------------------------
@@ -163,18 +183,38 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
 // ---------
 
 /// Create a new mock `TaskDriver`
-pub fn new_mock_task_driver() -> TaskDriver {
+pub fn new_mock_task_driver(
+    arbitrum_client: ArbitrumClient,
+    network_queue: NetworkManagerQueue,
+    proof_queue: ProofManagerQueue,
+    state: State,
+) -> TaskDriverQueue {
     let bus = SystemBus::new();
-    let config = TaskDriverConfig {
+    // Set a runtime config with fast failure
+    let runtime_config = RuntimeArgs {
         backoff_amplification_factor: 2,
         backoff_ceiling_ms: 1_000, // 1 second
         initial_backoff_ms: 100,   // 100 milliseconds
         n_retries: 2,
         n_threads: 5,
-        system_bus: bus,
     };
 
-    TaskDriver::new(config)
+    let (sender, task_queue) = new_task_driver_queue();
+    let config = TaskDriverConfig {
+        task_queue,
+        runtime_config,
+        system_bus: bus,
+        arbitrum_client,
+        network_queue,
+        proof_queue,
+        state,
+    };
+
+    // Start eht driver
+    let mut driver = TaskDriver::new(config).unwrap();
+    driver.start().unwrap();
+
+    sender
 }
 
 // --------------
