@@ -44,7 +44,21 @@ pub enum QueuedTaskState {
     Running {
         /// The state description of the task
         state: String,
+        /// Whether the task has committed or not
+        committed: bool,
     },
+}
+
+impl QueuedTaskState {
+    /// Whether the task is running
+    pub fn is_running(&self) -> bool {
+        matches!(self, QueuedTaskState::Running { .. })
+    }
+
+    /// Whether the task is committed
+    pub fn is_committed(&self) -> bool {
+        matches!(self, QueuedTaskState::Running { committed: true, .. })
+    }
 }
 
 /// A wrapper around the task descriptors
