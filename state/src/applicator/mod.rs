@@ -73,6 +73,8 @@ impl StateApplicator {
             StateTransition::TransitionWalletTask { wallet_id, state } => {
                 self.transition_task_state(wallet_id, state)
             },
+            StateTransition::PreemptTaskQueue { wallet_id } => self.preempt_task_queue(wallet_id),
+            StateTransition::ResumeTaskQueue { wallet_id } => self.resume_task_queue(wallet_id),
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
