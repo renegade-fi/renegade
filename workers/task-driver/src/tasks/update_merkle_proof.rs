@@ -9,7 +9,7 @@ use std::{
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use common::types::{task_descriptors::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
+use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};

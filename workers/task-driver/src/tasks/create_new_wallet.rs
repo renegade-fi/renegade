@@ -20,7 +20,7 @@ use circuits::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
     ValidWalletCreateWitness,
 };
-use common::types::task_descriptors::NewWalletTaskDescriptor;
+use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;

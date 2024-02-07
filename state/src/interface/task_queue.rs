@@ -1,8 +1,8 @@
 //! The interface for interacting with the task queue
 
 use common::types::{
-    task_descriptors::{QueuedTask, QueuedTaskState, TaskDescriptor},
     tasks::TaskIdentifier,
+    tasks::{QueuedTask, QueuedTaskState, TaskDescriptor},
     wallet::WalletIdentifier,
 };
 use util::res_some;
@@ -126,7 +126,7 @@ impl State {
 #[cfg(test)]
 mod test {
     use common::types::{
-        task_descriptors::{mocks::mock_queued_task, QueuedTaskState},
+        tasks::{mocks::mock_queued_task, QueuedTaskState},
         wallet::WalletIdentifier,
     };
 
