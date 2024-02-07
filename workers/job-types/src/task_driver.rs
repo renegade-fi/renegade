@@ -42,8 +42,8 @@ pub enum TaskDriverJob {
     RunImmediate {
         /// The ID to assign the task
         task_id: TaskIdentifier,
-        /// The wallet that this task modifies
-        wallet_id: WalletIdentifier,
+        /// The wallet(s) that this task modifies
+        wallet_ids: Vec<WalletIdentifier>,
         /// The task to run
         task: TaskDescriptor,
     },
