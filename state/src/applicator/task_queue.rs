@@ -1,7 +1,7 @@
 //! Task queue state transition applicator methods
 
 use common::types::{
-    task_descriptors::{QueuedTask, QueuedTaskState},
+    tasks::{QueuedTask, QueuedTaskState},
     wallet::WalletIdentifier,
 };
 use job_types::task_driver::TaskDriverJob;
@@ -96,7 +96,7 @@ impl StateApplicator {
 mod test {
     use common::types::{
         gossip::{mocks::mock_peer, WrappedPeerId},
-        task_descriptors::{mocks::mock_queued_task, QueuedTaskState},
+        tasks::{mocks::mock_queued_task, QueuedTaskState},
         wallet::WalletIdentifier,
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
@@ -159,8 +159,11 @@ mod test {
         assert!(!task_recv.is_empty());
         let task = task_recv.recv().unwrap();
 
-        let TaskDriverJob::Run(queued_task) = task;
-        assert_eq!(queued_task.id, task_id);
+        if let TaskDriverJob::Run(queued_task) = task {
+            assert_eq!(queued_task.id, task_id);
+        } else {
+            panic!("Expected a Run task job");
+        }
     }
 
     /// Test appending to an empty queue when the local peer is not the executor
@@ -321,8 +324,11 @@ mod test {
         assert!(!task_recv.is_empty());
         let task = task_recv.recv().unwrap();
 
-        let TaskDriverJob::Run(queued_task) = task;
-        assert_eq!(queued_task.id, task2.id);
+        if let TaskDriverJob::Run(queued_task) = task {
+            assert_eq!(queued_task.id, task2.id);
+        } else {
+            panic!("Expected a Run task job");
+        }
     }
 
     /// Test transitioning the state of the top task on the queue

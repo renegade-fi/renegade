@@ -4,8 +4,8 @@
 //! For now this is only wallets (i.e. wallet_id).
 
 use common::types::{
-    task_descriptors::{QueuedTask, QueuedTaskState},
     tasks::TaskIdentifier,
+    tasks::{QueuedTask, QueuedTaskState},
     wallet::WalletIdentifier,
 };
 use libmdbx::{TransactionKind, RW};
@@ -103,7 +103,7 @@ impl<'db> StateTxn<'db, RW> {
 #[cfg(test)]
 mod test {
     use common::types::{
-        task_descriptors::{mocks::mock_queued_task, QueuedTaskState},
+        tasks::{mocks::mock_queued_task, QueuedTaskState},
         wallet::WalletIdentifier,
     };
 
