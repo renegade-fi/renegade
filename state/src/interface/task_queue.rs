@@ -9,6 +9,9 @@ use util::res_some;
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
+/// Error emitted when a wallet cannot be found for a task
+const ERR_NO_WALLET: &str = "Wallet not found for task";
+
 impl State {
     // -----------
     // | Getters |
@@ -81,14 +84,17 @@ impl State {
         Ok(status.map(|x| x.state))
     }
 
-    /// Returns whether the wallet has a task that is currently running and
+    /// Returns the current running task for a wallet if it exists and has
     /// already committed
-    pub fn has_committed_task(&self, wallet_id: &WalletIdentifier) -> Result<bool, StateError> {
+    pub fn current_committed_task(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<Option<TaskIdentifier>, StateError> {
         let tx = self.db.new_read_tx()?;
         let running = tx.get_current_running_task(wallet_id)?;
         tx.commit()?;
 
-        Ok(running.map(|x| x.state.is_committed()).unwrap_or(false))
+        Ok(running.filter(|x| x.state.is_committed()).map(|x| x.id))
     }
 
     // -----------
@@ -114,22 +120,29 @@ impl State {
     }
 
     /// Pop a wallet task from the queue
-    pub fn pop_wallet_task(
-        &self,
-        wallet_id: &WalletIdentifier,
-    ) -> Result<ProposalWaiter, StateError> {
+    pub fn pop_task(&self, task_id: &TaskIdentifier) -> Result<ProposalWaiter, StateError> {
+        // Get the wallet ID for the task
+        let wallet_id = self
+            .get_task_wallet(task_id)?
+            .ok_or_else(|| StateError::Proposal(ERR_NO_WALLET.to_string()))?;
+
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::PopWalletTask { wallet_id: *wallet_id })
+        self.send_proposal(StateTransition::PopWalletTask { wallet_id })
     }
 
     /// Transition the state of the top task in a wallet's queue
     pub fn transition_wallet_task(
         &self,
-        wallet_id: &WalletIdentifier,
+        task_id: &TaskIdentifier,
         state: QueuedTaskState,
     ) -> Result<ProposalWaiter, StateError> {
+        // Get the wallet ID for the task
+        let wallet_id = self
+            .get_task_wallet(task_id)?
+            .ok_or_else(|| StateError::Proposal(ERR_NO_WALLET.to_string()))?;
+
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::TransitionWalletTask { wallet_id: *wallet_id, state })
+        self.send_proposal(StateTransition::TransitionWalletTask { wallet_id, state })
     }
 }
 
@@ -184,11 +197,11 @@ mod test {
         let wallet_id = WalletIdentifier::new_v4();
         let task = mock_queued_task().descriptor;
 
-        let (_task_id, waiter) = state.append_wallet_task(&wallet_id, task).unwrap();
+        let (task_id, waiter) = state.append_wallet_task(&wallet_id, task).unwrap();
         waiter.await.unwrap();
 
         // Pop the task from the queue
-        let waiter = state.pop_wallet_task(&wallet_id).unwrap();
+        let waiter = state.pop_task(&task_id).unwrap();
         waiter.await.unwrap();
 
         // Check that the task was removed
@@ -210,7 +223,7 @@ mod test {
         // Transition the task to a new state
         let waiter = state
             .transition_wallet_task(
-                &wallet_id,
+                &task_id,
                 QueuedTaskState::Running { state: "Test".to_string(), committed: false },
             )
             .unwrap();
@@ -233,30 +246,30 @@ mod test {
         let wallet_id = WalletIdentifier::new_v4();
         let task = mock_queued_task().descriptor;
 
-        let (_task_id, waiter) = state.append_wallet_task(&wallet_id, task).unwrap();
+        let (task_id, waiter) = state.append_wallet_task(&wallet_id, task).unwrap();
         waiter.await.unwrap();
 
         // Check that the wallet has no committed task
-        assert!(!state.has_committed_task(&wallet_id).unwrap());
+        assert!(state.current_committed_task(&wallet_id).unwrap().is_none());
 
         // Transition the task to running and check again
         let waiter = state
             .transition_wallet_task(
-                &wallet_id,
+                &task_id,
                 QueuedTaskState::Running { state: "Running".to_string(), committed: false },
             )
             .unwrap();
         waiter.await.unwrap();
-        assert!(!state.has_committed_task(&wallet_id).unwrap());
+        assert!(state.current_committed_task(&wallet_id).unwrap().is_none());
 
         // Transition the task to committed and check again
         let waiter = state
             .transition_wallet_task(
-                &wallet_id,
+                &task_id,
                 QueuedTaskState::Running { state: "Running".to_string(), committed: true },
             )
             .unwrap();
         waiter.await.unwrap();
-        assert!(state.has_committed_task(&wallet_id).unwrap());
+        assert_eq!(state.current_committed_task(&wallet_id).unwrap(), Some(task_id));
     }
 }
