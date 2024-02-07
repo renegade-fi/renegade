@@ -168,8 +168,8 @@ impl TaskExecutor {
 
                     Ok(())
                 },
-                TaskDriverJob::RunImmediate { wallet_id, task_id, task } => {
-                    self.handle_run_immediate(wallet_id, task_id, task)
+                TaskDriverJob::RunImmediate { wallet_ids, task_id, task } => {
+                    self.handle_run_immediate(wallet_ids, task_id, task)
                 },
                 TaskDriverJob::Notify { task_id, channel } => {
                     self.handle_notification_request(task_id, channel)
@@ -205,22 +205,27 @@ impl TaskExecutor {
     /// Handle a request to run a task immediately
     pub fn handle_run_immediate(
         &self,
-        wallet_id: WalletIdentifier,
+        wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
     ) -> Result<(), TaskDriverError> {
-        // Check if any non-preemptable tasks conflict with this task
-        if let Some(conflicting_task) = self.state().current_committed_task(&wallet_id)? {
-            log::error!(
-                "run immediate conflicts with committed task {conflicting_task:?}, aborting..."
-            );
-            return Ok(());
+        // Check if any non-preemptable tasks conflict with this task before pausing
+        for wallet_id in wallet_ids.iter() {
+            if let Some(conflicting_task) = self.state().current_committed_task(wallet_id)? {
+                log::error!(
+                    "task preemption conflicts with committed task {conflicting_task:?}, aborting..."
+                );
+
+                return Ok(());
+            }
         }
 
-        // Pause the queue for the wallet
-        self.state().pause_wallet_task_queue(&wallet_id)?;
+        // Pause the queues for the affected local wallets
+        for wallet_id in wallet_ids.iter() {
+            self.state().pause_wallet_task_queue(wallet_id)?;
+        }
 
-        // Start the task optimistically assuming that the queue is paused
+        // Start the task optimistically assuming that the queues are paused
         let fut = self.create_task_future(task_id, task);
         let state = self.state().clone();
         self.runtime.spawn(async move {
@@ -229,12 +234,14 @@ impl TaskExecutor {
                 log::error!("error running immediate task: {e:?}");
             }
 
-            // Unpause the queue for the wallet
-            state
-                .resume_wallet_task_queue(&wallet_id)
-                .expect("error proposing wallet resume")
-                .await
-                .expect("error resuming wallet task queue");
+            // Unpause the queues for the affected local wallets
+            for wallet_id in wallet_ids.iter() {
+                state
+                    .resume_wallet_task_queue(wallet_id)
+                    .expect("error proposing wallet resume for {wallet_id}")
+                    .await
+                    .expect("error resuming wallet task queue for {wallet_id}");
+            }
         });
 
         Ok(())

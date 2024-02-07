@@ -32,7 +32,6 @@ use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
 use state::tui::StateTuiApp;
 use state::State;
 use system_bus::SystemBus;
-use task_driver::driver::{TaskDriver, TaskDriverConfig};
 
 use chrono::Local;
 use crossbeam::channel;
@@ -101,8 +100,13 @@ async fn main() -> Result<(), CoordinatorError> {
     let (task_sender, task_receiver) = channel::unbounded();
 
     // Construct a global state
-    let global_state =
-        State::new(network_sender.clone(), raft_receiver, &args, system_bus.clone())?;
+    let global_state = State::new(
+        network_sender.clone(),
+        raft_receiver,
+        &args,
+        task_sender.clone(),
+        system_bus.clone(),
+    )?;
 
     // Configure logging and TUI
     if args.debug {
@@ -149,7 +153,8 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut task_driver = TaskDriver::new(task_driver_config).expect("failed to build task driver");
     task_driver.start().expect("failed to start task driver");
 
-    let (task_driver_failure_sender, task_driver_failure_receiver) = mpsc::channel(());
+    let (task_driver_failure_sender, mut task_driver_failure_receiver) =
+        mpsc::channel(1 /* buffer_size */);
     watch_worker::<TaskDriver>(&mut task_driver, &task_driver_failure_sender);
 
     // Start the network manager
@@ -203,11 +208,9 @@ async fn main() -> Result<(), CoordinatorError> {
         global_state: global_state.clone(),
         network_channel: network_sender.clone(),
         price_reporter_job_queue: price_reporter_worker_sender.clone(),
-        arbitrum_client: arbitrum_client.clone(),
         job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
-        proof_manager_sender: proof_generation_worker_sender.clone(),
-        task_driver: task_driver.clone(),
+        task_queue: task_sender.clone(),
         system_bus: system_bus.clone(),
         cancel_channel: handshake_cancel_receiver,
     })
@@ -244,7 +247,6 @@ async fn main() -> Result<(), CoordinatorError> {
         handshake_manager_job_queue: handshake_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender.clone(),
         network_sender: network_sender.clone(),
-        task_driver: task_driver.clone(),
         cancel_channel: chain_listener_cancel_receiver,
     })
     .expect("failed to build on-chain event listener");
@@ -261,7 +263,6 @@ async fn main() -> Result<(), CoordinatorError> {
         arbitrum_client: arbitrum_client.clone(),
         network_sender: network_sender.clone(),
         global_state: global_state.clone(),
-        task_driver,
         system_bus,
         price_reporter_work_queue: price_reporter_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender,
@@ -289,6 +290,9 @@ async fn main() -> Result<(), CoordinatorError> {
     let recovery_loop = || async {
         loop {
             select! {
+                _ = task_driver_failure_receiver.recv() => {
+                    task_driver = recover_worker(task_driver)?;
+                }
                 _ = network_failure_receiver.recv() => {
                     network_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
