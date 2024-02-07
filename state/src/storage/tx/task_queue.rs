@@ -53,6 +53,17 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         let tasks = self.get_wallet_tasks(wallet_id)?;
         Ok(tasks.into_iter().find(|x| &x.id == task_id))
     }
+
+    /// Get the currently running task for a wallet, or `None` if there is no
+    /// running task
+    pub fn get_current_running_task(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<Option<QueuedTask>, StorageError> {
+        let tasks = self.get_wallet_tasks(wallet_id)?;
+
+        Ok(tasks.first().cloned().filter(|task| task.state.is_running()))
+    }
 }
 
 // -----------
@@ -143,6 +154,43 @@ mod test {
         assert_eq!(task.unwrap().id, tasks[0].id);
     }
 
+    /// Tests getting the current running task
+    #[test]
+    fn test_current_running_task() {
+        let db = mock_db();
+        let wallet_id = WalletIdentifier::new_v4();
+
+        // Test on an empty queue
+        let tx = db.new_read_tx().unwrap();
+        let task = tx.get_current_running_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        assert!(task.is_none());
+
+        // Add a task, not running and test again
+        let task = mock_queued_task();
+        let tx = db.new_write_tx().unwrap();
+        tx.add_wallet_task(&wallet_id, &task).unwrap();
+        tx.commit().unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        let no_task = tx.get_current_running_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert!(no_task.is_none());
+
+        // Transition the task to running and test again
+        let tx = db.new_write_tx().unwrap();
+        let state = QueuedTaskState::Running { state: "Running".to_string(), committed: false };
+        tx.transition_wallet_task(&wallet_id, state).unwrap();
+        tx.commit().unwrap();
+
+        let tx = db.new_read_tx().unwrap();
+        let found_task = tx.get_current_running_task(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert!(found_task.is_some());
+        assert_eq!(found_task.unwrap().id, task.id);
+    }
+
     /// Tests popping a task from the queue
     #[test]
     fn test_pop() {
@@ -188,7 +236,7 @@ mod test {
         let tx = db.new_write_tx().unwrap();
         tx.transition_wallet_task(
             &wallet_id,
-            QueuedTaskState::Running { state: "Running".to_string() },
+            QueuedTaskState::Running { state: "Running".to_string(), committed: false },
         )
         .unwrap();
         tx.commit().unwrap();
