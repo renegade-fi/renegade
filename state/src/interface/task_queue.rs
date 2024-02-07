@@ -81,6 +81,16 @@ impl State {
         Ok(status.map(|x| x.state))
     }
 
+    /// Returns whether the wallet has a task that is currently running and
+    /// already committed
+    pub fn has_committed_task(&self, wallet_id: &WalletIdentifier) -> Result<bool, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let running = tx.get_current_running_task(wallet_id)?;
+        tx.commit()?;
+
+        Ok(running.map(|x| x.state.is_committed()).unwrap_or(false))
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -201,13 +211,52 @@ mod test {
         let waiter = state
             .transition_wallet_task(
                 &wallet_id,
-                QueuedTaskState::Running { state: "Test".to_string() },
+                QueuedTaskState::Running { state: "Test".to_string(), committed: false },
             )
             .unwrap();
         waiter.await.unwrap();
 
         // Check that the task was transitioned
         let task = state.get_wallet_task_by_id(&wallet_id, &task_id).unwrap().unwrap();
-        assert_eq!(task.state, QueuedTaskState::Running { state: "Test".to_string() });
+        assert_eq!(
+            task.state,
+            QueuedTaskState::Running { state: "Test".to_string(), committed: false }
+        );
+    }
+
+    /// Tests the `has_committed_task` method
+    #[tokio::test]
+    async fn test_has_committed_task() {
+        let state = mock_state();
+
+        // Create a wallet and add a task
+        let wallet_id = WalletIdentifier::new_v4();
+        let task = mock_queued_task().descriptor;
+
+        let (_task_id, waiter) = state.append_wallet_task(&wallet_id, task).unwrap();
+        waiter.await.unwrap();
+
+        // Check that the wallet has no committed task
+        assert!(!state.has_committed_task(&wallet_id).unwrap());
+
+        // Transition the task to running and check again
+        let waiter = state
+            .transition_wallet_task(
+                &wallet_id,
+                QueuedTaskState::Running { state: "Running".to_string(), committed: false },
+            )
+            .unwrap();
+        waiter.await.unwrap();
+        assert!(!state.has_committed_task(&wallet_id).unwrap());
+
+        // Transition the task to committed and check again
+        let waiter = state
+            .transition_wallet_task(
+                &wallet_id,
+                QueuedTaskState::Running { state: "Running".to_string(), committed: true },
+            )
+            .unwrap();
+        waiter.await.unwrap();
+        assert!(state.has_committed_task(&wallet_id).unwrap());
     }
 }
