@@ -1,6 +1,9 @@
 //! Job types for the task driver
 
-use common::types::{tasks::QueuedTask, tasks::TaskIdentifier};
+use common::types::{
+    tasks::{QueuedTask, TaskDescriptor, TaskIdentifier},
+    wallet::WalletIdentifier,
+};
 use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
@@ -31,6 +34,19 @@ pub fn new_task_notification(task_id: TaskIdentifier) -> (TaskNotificationReceiv
 pub enum TaskDriverJob {
     /// Run a task
     Run(QueuedTask),
+    /// Run a task immediately, bypassing the task queue
+    ///
+    /// This is used for tasks which need immediate settlement, e.g. matches
+    ///
+    /// Other tasks on a shared wallet will be preempted and the queue paused
+    RunImmediate {
+        /// The ID to assign the task
+        task_id: TaskIdentifier,
+        /// The wallet that this task modifies
+        wallet_id: WalletIdentifier,
+        /// The task to run
+        task: TaskDescriptor,
+    },
     /// Request that the task driver notify a worker when a task is complete
     Notify {
         /// The task id to notify the worker about
