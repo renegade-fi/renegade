@@ -170,6 +170,18 @@ impl State {
         let mut res = Vec::new();
         for id in local_order_ids.into_iter() {
             if let Some(info) = tx.get_order_info(&id)? {
+                // Check that there are no tasks in the queue for the containing wallet
+                // This avoids unnecessary preemptions or possible dropped matches
+                let wallet_id = match tx.get_wallet_for_order(&info.id)? {
+                    None => continue,
+                    Some(wallet) => wallet,
+                };
+
+                if !tx.is_queue_empty(&wallet_id)? || tx.is_queue_paused(&wallet_id)? {
+                    continue;
+                }
+
+                // Check that the order itself is ready for a match
                 if info.ready_for_match() {
                     res.push(id);
                 }
