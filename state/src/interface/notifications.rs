@@ -43,7 +43,7 @@ impl Future for ProposalWaiter {
         for recv in self.recvs.iter_mut() {
             ready!(recv.poll_unpin(cx))
                 .map_err(err_str!(StateError::Proposal))? // RecvError
-                .map_err(err_str!(StateError::Proposal))?; // ReplicationError
+                .map_err(Into::<StateError>::into)?; // ReplicationError
         }
 
         Poll::Ready(Ok(()))

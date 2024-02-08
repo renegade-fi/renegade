@@ -4,9 +4,11 @@ use std::fmt::{Debug, Display};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
+use external_api::bus_message::SystemBusMessage;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::{Deserialize, Serialize};
 use state::State;
+use system_bus::SystemBus;
 
 use crate::driver::StateWrapper;
 
@@ -99,4 +101,6 @@ pub struct TaskContext {
     pub network_queue: NetworkManagerQueue,
     /// A sender to the proof manager's queue
     pub proof_queue: ProofManagerQueue,
+    /// A handle on the system bus
+    pub bus: SystemBus<SystemBusMessage>,
 }

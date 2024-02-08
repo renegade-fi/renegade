@@ -1,16 +1,15 @@
 //! Integration tests for the `LookupWalletTask`
 
+use common::types::{tasks::LookupWalletTaskDescriptor, wallet_mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::Result;
 use rand::{distributions::uniform::SampleRange, thread_rng};
-use task_driver::lookup_wallet::LookupWalletTask;
 use test_helpers::{assert_true_result, integration_test_async};
 use uuid::Uuid;
 
 use crate::{
     helpers::{
-        create_empty_api_wallet, lookup_wallet_and_check_result, mock_wallet_update,
-        new_wallet_in_darkpool,
+        await_task, lookup_wallet_and_check_result, mock_wallet_update, new_wallet_in_darkpool,
     },
     IntegrationTestArgs,
 };
@@ -19,22 +18,15 @@ use crate::{
 /// fail
 #[allow(non_snake_case)]
 async fn test_lookup_wallet__invalid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
-    let wallet = create_empty_api_wallet();
-    let task = LookupWalletTask::new(
-        Uuid::new_v4(),
-        Scalar::zero(), // blinder_stream_seed
-        Scalar::zero(), // secret_share_stream_seed
-        wallet.key_chain.try_into().unwrap(),
-        test_args.arbitrum_client.clone(),
-        test_args.network_sender.clone(),
-        test_args.global_state.clone(),
-        test_args.proof_job_queue.clone(),
-    );
+    let wallet = mock_empty_wallet();
+    let descriptor = LookupWalletTaskDescriptor {
+        wallet_id: Uuid::new_v4(),
+        blinder_seed: Scalar::zero(),
+        secret_share_seed: Scalar::zero(),
+        key_chain: wallet.key_chain,
+    };
 
-    let (_task_id, handle) = test_args.driver.start_task(task).await;
-    let success = handle.await?;
-
-    assert_true_result!(!success)
+    assert_true_result!(await_task(descriptor.into(), &test_args).await.is_err())
 }
 integration_test_async!(test_lookup_wallet__invalid_wallet);
 

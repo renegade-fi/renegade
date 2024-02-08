@@ -2,7 +2,7 @@
 //! of certain critical sections of a task
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     time::Duration,
 };
@@ -16,17 +16,16 @@ use common::{
     },
     Shared,
 };
-use external_api::bus_message::{task_topic_name, SystemBusMessage};
 use futures::Future;
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use serde::Serialize;
 use state::State;
-use system_bus::SystemBus;
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
 use tracing::log;
 
 use crate::{
     error::TaskDriverError,
+    running_task::RunnableTask,
     tasks::{
         create_new_wallet::{NewWalletTask, NewWalletTaskState},
         lookup_wallet::{LookupWalletTask, LookupWalletTaskState},
@@ -35,7 +34,7 @@ use crate::{
         update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskState},
         update_wallet::{UpdateWalletTask, UpdateWalletTaskState},
     },
-    traits::{Task, TaskContext, TaskError, TaskState},
+    traits::{Task, TaskContext, TaskState},
     worker::TaskDriverConfig,
 };
 
@@ -73,10 +72,13 @@ pub struct TaskExecutor {
     /// The task context passed to each task, used to inject dependencies
     /// into the task
     task_context: TaskContext,
+    /// The set of currently running preemptive tasks
+    ///
+    /// These tasks are not stored in the state so we keep references to them
+    /// here so that we can validate notification requests to them
+    preemptive_tasks: Shared<HashSet<TaskIdentifier>>,
     /// The map of task notifications to send
     task_notifications: TaskNotificationMap,
-    /// The system bus to publish task updates onto
-    system_bus: SystemBus<SystemBusMessage>,
 }
 
 /// The config of the runtime arguments
@@ -124,6 +126,7 @@ impl TaskExecutor {
             network_queue: config.network_queue,
             proof_queue: config.proof_queue,
             state: config.state,
+            bus: config.system_bus.clone(),
         };
 
         Self {
@@ -131,10 +134,14 @@ impl TaskExecutor {
             runtime,
             runtime_config: config.runtime_config,
             task_context,
+            preemptive_tasks: new_shared(HashSet::new()),
             task_notifications: new_shared(HashMap::new()),
-            system_bus: config.system_bus,
         }
     }
+
+    // -----------
+    // | Getters |
+    // -----------
 
     /// Construct a copy of the `TaskContext`
     ///
@@ -148,6 +155,24 @@ impl TaskExecutor {
         &self.task_context.state
     }
 
+    /// Whether or not the given value is a valid preemptive task
+    fn is_preemptive_task(&self, task_id: &TaskIdentifier) -> bool {
+        self.preemptive_tasks.read().unwrap().contains(task_id)
+    }
+
+    // -----------
+    // | Setters |
+    // -----------
+
+    /// Add a preemptive task to the set of running tasks
+    fn add_preemptive_task(&self, task_id: TaskIdentifier) {
+        self.preemptive_tasks.write().unwrap().insert(task_id);
+    }
+
+    // ------------------
+    // | Execution Loop |
+    // ------------------
+
     /// The execution loop of the `TaskExecutor`
     pub fn run(self) -> Result<(), TaskDriverError> {
         log::info!("starting task executor loop");
@@ -158,7 +183,11 @@ impl TaskExecutor {
             let job = queue.recv().map_err(|_| TaskDriverError::JobQueueClosed)?;
             let res = match job {
                 TaskDriverJob::Run(task) => {
-                    let fut = self.create_task_future(task.id, task.descriptor);
+                    let fut = self.create_task_future(
+                        false, // immediate
+                        task.id,
+                        task.descriptor,
+                    );
                     self.runtime.spawn(async move {
                         let res = fut.await;
                         if let Err(e) = res {
@@ -189,7 +218,7 @@ impl TaskExecutor {
         channel: TaskNotificationSender,
     ) -> Result<(), TaskDriverError> {
         // Check that the task exists
-        if !self.state().contains_task(&task_id)? {
+        if !self.state().contains_task(&task_id)? && !self.is_preemptive_task(&task_id) {
             log::warn!("got task notification request for non-existent task {task_id:?}");
             let _ = channel.send(Err(TASK_NOT_FOUND_ERROR.to_string()));
             return Ok(());
@@ -226,7 +255,10 @@ impl TaskExecutor {
         }
 
         // Start the task optimistically assuming that the queues are paused
-        let fut = self.create_task_future(task_id, task);
+        self.add_preemptive_task(task_id);
+        let preemptive_tasks = self.preemptive_tasks.clone();
+
+        let fut = self.create_task_future(true /* immediate */, task_id, task);
         let state = self.state().clone();
         self.runtime.spawn(async move {
             let res = fut.await;
@@ -242,85 +274,113 @@ impl TaskExecutor {
                     .await
                     .expect("error resuming wallet task queue for {wallet_id}");
             }
+
+            // Remove from the preemptive tasks list
+            preemptive_tasks.write().unwrap().remove(&task_id);
         });
 
         Ok(())
     }
 
+    // ------------------
+    // | Task Execution |
+    // ------------------
+
     /// Get the future for a task execution
     fn create_task_future(
         &self,
+        immediate: bool,
         task_id: TaskIdentifier,
         descriptor: TaskDescriptor,
     ) -> impl Future<Output = Result<(), TaskDriverError>> {
         // Collect the arguments then spawn
         let ctx = self.task_context();
         let args = self.runtime_config;
-        let bus = self.system_bus.clone();
-        let state = self.task_context.state.clone();
         let task_notifications = self.task_notifications.clone();
 
-        Self::start_task(task_id, descriptor, ctx, args, bus, state, task_notifications)
+        Self::start_task(immediate, task_id, descriptor, ctx, args, task_notifications)
     }
 
     /// Spawn a new task in the driver
     ///
     /// Returns the success of the task
     async fn start_task(
+        immediate: bool,
         id: TaskIdentifier,
         task: TaskDescriptor,
         ctx: TaskContext,
         args: RuntimeArgs,
-        bus: SystemBus<SystemBusMessage>,
-        state: State,
-        task_notifications: TaskNotificationMap,
+        notif: TaskNotificationMap,
     ) -> Result<(), TaskDriverError> {
         // Construct the task from the descriptor
-        let res = match task {
+        match task {
             TaskDescriptor::NewWallet(desc) => {
-                let task = NewWalletTask::new(desc, ctx).await?;
-                Self::run_task_to_completion(id, task, args, bus, state).await
+                Self::start_task_helper::<NewWalletTask>(immediate, id, desc, ctx, args, notif)
+                    .await
             },
             TaskDescriptor::LookupWallet(desc) => {
-                let task = LookupWalletTask::new(desc, ctx).await?;
-                Self::run_task_to_completion(id, task, args, bus, state).await
+                Self::start_task_helper::<LookupWalletTask>(immediate, id, desc, ctx, args, notif)
+                    .await
             },
             TaskDescriptor::UpdateWallet(desc) => {
-                let task = UpdateWalletTask::new(desc, ctx).await?;
-                Self::run_task_to_completion(id, task, args, bus, state).await
+                Self::start_task_helper::<UpdateWalletTask>(immediate, id, desc, ctx, args, notif)
+                    .await
             },
             TaskDescriptor::SettleMatch(desc) => {
-                let task = SettleMatchTask::new(desc, ctx).await?;
-                Self::run_task_to_completion(id, task, args, bus, state).await
+                Self::start_task_helper::<SettleMatchTask>(immediate, id, desc, ctx, args, notif)
+                    .await
             },
             TaskDescriptor::SettleMatchInternal(desc) => {
-                let task = SettleMatchInternalTask::new(desc, ctx).await?;
-                Self::run_task_to_completion(id, task, args, bus, state).await
+                Self::start_task_helper::<SettleMatchInternalTask>(
+                    immediate, id, desc, ctx, args, notif,
+                )
+                .await
             },
             TaskDescriptor::UpdateMerkleProof(desc) => {
-                let task = UpdateMerkleProofTask::new(desc, ctx).await?;
-                Self::run_task_to_completion(id, task, args, bus, state).await
+                Self::start_task_helper::<UpdateMerkleProofTask>(
+                    immediate, id, desc, ctx, args, notif,
+                )
+                .await
             },
-        };
+        }
+    }
+
+    /// A helper for the `start_task` method that has generics specified at call
+    /// time
+    async fn start_task_helper<T: Task>(
+        immediate: bool,
+        id: TaskIdentifier,
+        descriptor: T::Descriptor,
+        ctx: TaskContext,
+        args: RuntimeArgs,
+        notifications: TaskNotificationMap,
+    ) -> Result<(), TaskDriverError> {
+        // Create the task
+        let mut task = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await?;
+
+        // Run the task
+        let res = Self::run_task_to_completion(&mut task, args).await;
+
+        // Cleanup
+        let cleanup_res = task.cleanup().await;
+        let combined_res = res.and(cleanup_res);
 
         // Notify any listeners that the task has completed
-        let str_err = res.clone().map_err(|e| e.to_string());
-        for sender in task_notifications.write().unwrap().remove(&id).unwrap_or_default() {
-            let _ = sender.send(str_err.clone());
+        let str_res = combined_res.clone().map_err(|e| e.to_string());
+        for sender in notifications.write().unwrap().remove(&id).unwrap_or_default() {
+            let _ = sender.send(str_res.clone());
         }
 
-        res
+        combined_res
     }
 
     /// Run a task to completion
     async fn run_task_to_completion<T: Task>(
-        task_id: TaskIdentifier,
-        mut task: T,
+        task: &mut RunnableTask<T>,
         args: RuntimeArgs,
-        bus: SystemBus<SystemBusMessage>,
-        state: State,
     ) -> Result<(), TaskDriverError> {
-        let task_name = task.name();
+        let id = task.id();
+        let backoff_ceiling = Duration::from_millis(args.backoff_ceiling_ms);
 
         // Run each step individually and update the state after each step
         'outer: while !task.completed() {
@@ -328,71 +388,26 @@ impl TaskExecutor {
             let mut retries = args.n_retries;
             let mut curr_backoff = Duration::from_millis(args.initial_backoff_ms);
 
-            while let Err(e) = task.step().await {
-                log::error!("error executing task step: {e:?}");
+            while !task.step().await? {
                 retries -= 1;
-
-                if retries == 0 || !e.retryable() {
+                if retries == 0 {
                     log::error!("retries exceeded... task failed");
                     break 'outer;
                 }
 
+                // Sleep the backoff time and retry
                 tokio::time::sleep(curr_backoff).await;
-                log::info!("retrying task {task_id:?} from state: {}", task.state());
+                log::info!("retrying task {id:?} from state: {}", task.state());
+
                 curr_backoff *= args.backoff_amplification_factor;
-                curr_backoff =
-                    Duration::min(curr_backoff, Duration::from_millis(args.backoff_ceiling_ms));
+                curr_backoff = Duration::min(curr_backoff, backoff_ceiling);
             }
-
-            // Update the state in the registry
-            let new_state: StateWrapper = task.state().into();
-            if Self::should_abort(&task_id, new_state, &state).await {
-                log::warn!("task {task_name}({task_id:?}) preempted, aborting...");
-                task.cleanup().await.expect("error cleaning up task");
-                return Err(TaskDriverError::Preempted);
-            }
-
-            // Publish the state to the system bus for listeners on this task
-            bus.publish(
-                task_topic_name(&task_id),
-                SystemBusMessage::TaskStatusUpdate { task_id, state: task.state().to_string() },
-            );
         }
-
-        // Cleanup the task
-        if let Err(e) = task.cleanup().await {
-            log::error!("error cleaning up task: {e:?}");
-        }
-
-        // Remove the task from the queue
-        state.pop_task(&task_id)?.await?;
 
         if task.completed() {
             Ok(())
         } else {
             Err(TaskDriverError::TaskFailed)
-        }
-    }
-
-    /// Update the state of a task and check for preemption
-    ///
-    /// Returns `true` if the task was preempted
-    async fn should_abort(
-        task_id: &TaskIdentifier,
-        new_state: StateWrapper,
-        global_state: &State,
-    ) -> bool {
-        log::info!("task {task_id:?} transitioning to state {new_state}");
-
-        // If this state commits the task, await consensus on the result of updating the
-        // state, otherwise resume optimistically
-        let is_commit = new_state.is_committing();
-        match global_state.transition_task(task_id, new_state.into()) {
-            Ok(waiter) => is_commit && waiter.await.is_err(),
-            Err(e) => {
-                log::warn!("error updating task state: {e:?}");
-                true
-            },
         }
     }
 }
@@ -422,7 +437,7 @@ pub enum StateWrapper {
 
 impl StateWrapper {
     /// Whether the underlying state is committed or not
-    fn committed(&self) -> bool {
+    pub fn committed(&self) -> bool {
         match self {
             StateWrapper::LookupWallet(state) => state.committed(),
             StateWrapper::NewWallet(state) => state.committed(),
@@ -435,7 +450,7 @@ impl StateWrapper {
 
     /// Whether or not this state commits the task, i.e. is the first state that
     /// for which `committed` is true
-    fn is_committing(&self) -> bool {
+    pub fn is_committing(&self) -> bool {
         match self {
             StateWrapper::LookupWallet(state) => state == &LookupWalletTaskState::commit_point(),
             StateWrapper::NewWallet(state) => state == &NewWalletTaskState::commit_point(),

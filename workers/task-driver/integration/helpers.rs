@@ -10,7 +10,7 @@ use common::{
         proof_bundles::mocks::{
             dummy_valid_wallet_create_bundle, dummy_valid_wallet_update_bundle,
         },
-        tasks::{LookupWalletTaskDescriptor, TaskDescriptor},
+        tasks::{LookupWalletTaskDescriptor, TaskDescriptor, TaskIdentifier},
         wallet::{Wallet, WalletIdentifier},
         wallet_mocks::mock_empty_wallet,
     },
@@ -18,12 +18,11 @@ use common::{
 };
 use constants::Scalar;
 use ethers::types::Address;
-use external_api::types::ApiWallet;
 use eyre::Result;
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
-    task_driver::{new_task_driver_queue, TaskDriverJob, TaskDriverQueue},
+    task_driver::{new_task_notification, TaskDriverJob, TaskDriverReceiver},
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
@@ -34,7 +33,7 @@ use task_driver::{
     driver::RuntimeArgs,
     worker::{TaskDriver, TaskDriverConfig},
 };
-use test_helpers::{assert_eq_result, assert_true_result};
+use test_helpers::assert_eq_result;
 
 use crate::IntegrationTestArgs;
 
@@ -57,15 +56,11 @@ pub(crate) async fn lookup_wallet_and_check_result(
 ) -> Result<()> {
     // Start a lookup task for the new wallet
     let wallet_id = expected_wallet.wallet_id;
-    let state = test_args.state;
+    let state = &test_args.state;
 
     let key_chain = expected_wallet.key_chain.clone();
     let task = LookupWalletTaskDescriptor { wallet_id, blinder_seed, secret_share_seed, key_chain };
-    await_task(&wallet_id, task.into(), &test_args).await?;
-
-    let (_task_id, handle) = test_args.driver.start_task(task).await;
-    let success = handle.await?;
-    assert_true_result!(success)?;
+    await_task(task.into(), &test_args).await?;
 
     // Check the global state for the wallet and verify that it was correctly
     // recovered
@@ -76,18 +71,35 @@ pub(crate) async fn lookup_wallet_and_check_result(
     assert_eq_result!(state_wallet.private_shares, expected_wallet.private_shares)
 }
 
+/// Await the queueing, execution, and completion of a task
 pub(crate) async fn await_task(
-    wallet_id: &WalletIdentifier,
     task: TaskDescriptor,
     test_args: &IntegrationTestArgs,
 ) -> Result<()> {
     // Wait for the task to be queued
-    let (task_id, waiter) = state.append_wallet_task(&wallet_id, task.into())?;
+    let (task_id, waiter) = test_args.state.append_task(task)?;
     waiter.await?;
 
-    let (task_id, handle) = test_args.driver.start_task(task)?;
-    let success = handle.await?;
-    assert_true_result!(success)
+    let (rx, job) = new_task_notification(task_id);
+    test_args.task_queue.send(job).unwrap();
+
+    rx.await.unwrap().map_err(|e| eyre::eyre!(e))
+}
+
+/// Await the execution and completion of a task run immediately
+pub(crate) async fn await_immediate_task(
+    modified_wallets: Vec<WalletIdentifier>,
+    task: TaskDescriptor,
+    test_args: &IntegrationTestArgs,
+) -> Result<()> {
+    let task_id = TaskIdentifier::new_v4();
+    let job = TaskDriverJob::RunImmediate { task_id, wallet_ids: modified_wallets, task };
+    test_args.task_queue.send(job).unwrap();
+
+    let (rx, job) = new_task_notification(task_id);
+    test_args.task_queue.send(job).unwrap();
+
+    rx.await.unwrap().map_err(|e| eyre::eyre!(e))
 }
 
 // ------------------------
@@ -125,7 +137,7 @@ pub(crate) async fn setup_initial_wallet(
     lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args.clone()).await?;
 
     // Read the wallet from the global state so that order IDs match
-    *wallet = test_args.global_state.get_wallet(&wallet.wallet_id)?.unwrap();
+    *wallet = test_args.state.get_wallet(&wallet.wallet_id)?.unwrap();
     Ok(())
 }
 
@@ -184,11 +196,12 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
 
 /// Create a new mock `TaskDriver`
 pub fn new_mock_task_driver(
+    task_queue: TaskDriverReceiver,
     arbitrum_client: ArbitrumClient,
     network_queue: NetworkManagerQueue,
     proof_queue: ProofManagerQueue,
     state: State,
-) -> TaskDriverQueue {
+) {
     let bus = SystemBus::new();
     // Set a runtime config with fast failure
     let runtime_config = RuntimeArgs {
@@ -199,7 +212,6 @@ pub fn new_mock_task_driver(
         n_threads: 5,
     };
 
-    let (sender, task_queue) = new_task_driver_queue();
     let config = TaskDriverConfig {
         task_queue,
         runtime_config,
@@ -210,23 +222,14 @@ pub fn new_mock_task_driver(
         state,
     };
 
-    // Start eht driver
+    // Start the driver
     let mut driver = TaskDriver::new(config).unwrap();
     driver.start().unwrap();
-
-    sender
 }
 
 // --------------
 // | Dummy Data |
 // --------------
-
-/// Create a new, empty wallet
-pub fn create_empty_api_wallet() -> ApiWallet {
-    // Create the wallet secret shares let circuit_wallet = SizedWallet {
-    let state_wallet = mock_empty_wallet();
-    ApiWallet::from(state_wallet)
-}
 
 /// Create a mock wallet and secret share it with a given blinder seed
 pub fn empty_wallet_from_seed(blinder_stream_seed: Scalar, secret_share_seed: Scalar) -> Wallet {

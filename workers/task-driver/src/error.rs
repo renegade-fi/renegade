@@ -5,12 +5,7 @@ use std::fmt::Display;
 
 use state::error::StateError;
 
-use crate::tasks::create_new_wallet::NewWalletTaskError;
-use crate::tasks::lookup_wallet::LookupWalletTaskError;
-use crate::tasks::settle_match::SettleMatchTaskError;
-use crate::tasks::settle_match_internal::SettleMatchInternalTaskError;
-use crate::tasks::update_merkle_proof::UpdateMerkleProofTaskError;
-use crate::tasks::update_wallet::UpdateWalletTaskError;
+use crate::traits::TaskError;
 
 /// The error type emitted by the task driver
 #[derive(Clone, Debug)]
@@ -40,38 +35,8 @@ impl From<StateError> for TaskDriverError {
     }
 }
 
-impl From<NewWalletTaskError> for TaskDriverError {
-    fn from(e: NewWalletTaskError) -> Self {
-        TaskDriverError::TaskError(e.to_string())
-    }
-}
-
-impl From<LookupWalletTaskError> for TaskDriverError {
-    fn from(e: LookupWalletTaskError) -> Self {
-        TaskDriverError::TaskError(e.to_string())
-    }
-}
-
-impl From<SettleMatchInternalTaskError> for TaskDriverError {
-    fn from(e: SettleMatchInternalTaskError) -> Self {
-        TaskDriverError::TaskError(e.to_string())
-    }
-}
-
-impl From<SettleMatchTaskError> for TaskDriverError {
-    fn from(e: SettleMatchTaskError) -> Self {
-        TaskDriverError::TaskError(e.to_string())
-    }
-}
-
-impl From<UpdateWalletTaskError> for TaskDriverError {
-    fn from(e: UpdateWalletTaskError) -> Self {
-        TaskDriverError::TaskError(e.to_string())
-    }
-}
-
-impl From<UpdateMerkleProofTaskError> for TaskDriverError {
-    fn from(e: UpdateMerkleProofTaskError) -> Self {
-        TaskDriverError::TaskError(e.to_string())
+impl<E: TaskError> From<E> for TaskDriverError {
+    fn from(value: E) -> Self {
+        TaskDriverError::TaskError(value.to_string())
     }
 }
