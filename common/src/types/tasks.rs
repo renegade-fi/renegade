@@ -1,8 +1,14 @@
 //! Defines task related types
 
-use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult, transfers::ExternalTransfer};
+use circuit_types::{
+    fixed_point::FixedPoint, keychain::PublicSigningKey, r#match::MatchResult,
+    transfers::ExternalTransfer,
+};
 use constants::Scalar;
+use ethers_rs::keccak256;
+use k256::ecdsa::{Signature, VerifyingKey as K256VerifyingKey};
 use serde::{Deserialize, Serialize};
+use signature::hazmat::PrehashVerifier;
 use uuid::Uuid;
 
 use super::{
@@ -11,6 +17,9 @@ use super::{
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{KeyChain, OrderIdentifier, Wallet, WalletIdentifier},
 };
+
+/// The error message returned when a wallet's shares are invalid
+const INVALID_WALLET_SHARES: &str = "invalid wallet shares";
 
 /// A type alias for the identifier underlying a task
 pub type TaskIdentifier = Uuid;
@@ -112,6 +121,18 @@ pub struct NewWalletTaskDescriptor {
     pub wallet: Wallet,
 }
 
+impl NewWalletTaskDescriptor {
+    /// Constructor
+    pub fn new(wallet: Wallet) -> Result<Self, String> {
+        // Validate that the wallet shares are well formed
+        if !wallet.check_wallet_shares() {
+            return Err(INVALID_WALLET_SHARES.to_string());
+        }
+
+        Ok(NewWalletTaskDescriptor { wallet })
+    }
+}
+
 impl From<NewWalletTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: NewWalletTaskDescriptor) -> Self {
         TaskDescriptor::NewWallet(descriptor)
@@ -130,6 +151,18 @@ pub struct LookupWalletTaskDescriptor {
     pub secret_share_seed: Scalar,
     /// The keychain to manage the wallet with
     pub key_chain: KeyChain,
+}
+
+impl LookupWalletTaskDescriptor {
+    /// Constructor
+    pub fn new(
+        wallet_id: WalletIdentifier,
+        blinder_seed: Scalar,
+        secret_share_seed: Scalar,
+        key_chain: KeyChain,
+    ) -> Result<Self, String> {
+        Ok(LookupWalletTaskDescriptor { wallet_id, blinder_seed, secret_share_seed, key_chain })
+    }
 }
 
 impl From<LookupWalletTaskDescriptor> for TaskDescriptor {
@@ -160,6 +193,32 @@ pub struct SettleMatchInternalTaskDescriptor {
     pub match_result: MatchResult,
 }
 
+impl SettleMatchInternalTaskDescriptor {
+    /// Constructor
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        execution_price: FixedPoint,
+        order_id1: OrderIdentifier,
+        order_id2: OrderIdentifier,
+        order1_proof: OrderValidityProofBundle,
+        order1_validity_witness: OrderValidityWitnessBundle,
+        order2_proof: OrderValidityProofBundle,
+        order2_validity_witness: OrderValidityWitnessBundle,
+        match_result: MatchResult,
+    ) -> Result<Self, String> {
+        Ok(SettleMatchInternalTaskDescriptor {
+            execution_price,
+            order_id1,
+            order_id2,
+            order1_proof,
+            order1_validity_witness,
+            order2_proof,
+            order2_validity_witness,
+            match_result,
+        })
+    }
+}
+
 impl From<SettleMatchInternalTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: SettleMatchInternalTaskDescriptor) -> Self {
         TaskDescriptor::SettleMatchInternal(descriptor)
@@ -183,6 +242,25 @@ pub struct SettleMatchTaskDescriptor {
     pub party1_validity_proof: OrderValidityProofBundle,
 }
 
+impl SettleMatchTaskDescriptor {
+    /// Constructor
+    pub fn new(
+        wallet_id: WalletIdentifier,
+        handshake_state: HandshakeState,
+        match_bundle: MatchBundle,
+        party0_validity_proof: OrderValidityProofBundle,
+        party1_validity_proof: OrderValidityProofBundle,
+    ) -> Result<Self, String> {
+        Ok(SettleMatchTaskDescriptor {
+            wallet_id,
+            handshake_state,
+            match_bundle,
+            party0_validity_proof,
+            party1_validity_proof,
+        })
+    }
+}
+
 impl From<SettleMatchTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: SettleMatchTaskDescriptor) -> Self {
         TaskDescriptor::SettleMatch(descriptor)
@@ -195,6 +273,13 @@ impl From<SettleMatchTaskDescriptor> for TaskDescriptor {
 pub struct UpdateMerkleProofTaskDescriptor {
     /// The wallet to update
     pub wallet: Wallet,
+}
+
+impl UpdateMerkleProofTaskDescriptor {
+    /// Constructor
+    pub fn new(wallet: Wallet) -> Result<Self, String> {
+        Ok(UpdateMerkleProofTaskDescriptor { wallet })
+    }
 }
 
 impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
@@ -220,20 +305,95 @@ pub struct UpdateWalletTaskDescriptor {
     pub wallet_update_signature: Vec<u8>,
 }
 
+impl UpdateWalletTaskDescriptor {
+    /// Constructor
+    pub fn new(
+        timestamp_received: u64,
+        external_transfer: Option<ExternalTransfer>,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+    ) -> Result<Self, String> {
+        // Check that the new wallet is properly reblinded
+        if !new_wallet.check_wallet_shares() {
+            return Err(INVALID_WALLET_SHARES.to_string());
+        }
+
+        // Check the signature on the updated shares commitment
+        let key = &old_wallet.key_chain.public_keys.pk_root;
+        verify_wallet_update_signature(&new_wallet, key, &wallet_update_signature)
+            .map_err(|e| format!("invalid wallet update sig: {e}"))?;
+
+        Ok(UpdateWalletTaskDescriptor {
+            timestamp_received,
+            external_transfer,
+            old_wallet,
+            new_wallet,
+            wallet_update_signature,
+        })
+    }
+}
+
 impl From<UpdateWalletTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: UpdateWalletTaskDescriptor) -> Self {
         TaskDescriptor::UpdateWallet(descriptor)
     }
 }
 
+// -----------
+// | Helpers |
+// -----------
+
+/// Verify a signature of a wallet update
+pub fn verify_wallet_update_signature(
+    wallet: &Wallet,
+    key: &PublicSigningKey,
+    wallet_update_signature: &[u8],
+) -> Result<(), String> {
+    let key: K256VerifyingKey = key.into();
+    let new_wallet_comm = wallet.get_wallet_share_commitment();
+
+    // Serialize the commitment, matches the contract's serialization here:
+    //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
+    let comm_bytes = new_wallet_comm.to_biguint().to_bytes_be();
+    let digest = keccak256(comm_bytes);
+
+    // Verify the signature
+    let sig = Signature::from_slice(wallet_update_signature).map_err(|e| e.to_string())?;
+    key.verify_prehash(&digest, &sig).map_err(|e| e.to_string())
+}
+
+// ---------
+// | Mocks |
+// ---------
+
 #[cfg(any(test, feature = "mocks"))]
 pub mod mocks {
     //! Mocks for the task descriptors
+    use circuit_types::keychain::SecretSigningKey;
+    use ethers_rs::keccak256;
+    use k256::ecdsa::{Signature, SigningKey as K256SigningKey};
+    use signature::hazmat::PrehashSigner;
+
     use crate::types::{
-        gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet_mocks::mock_empty_wallet,
+        gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet::Wallet,
+        wallet_mocks::mock_empty_wallet,
     };
 
     use super::{QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey};
+
+    /// Generate the wallet update signature for a new wallet
+    pub fn gen_wallet_update_sig(wallet: &Wallet, key: &SecretSigningKey) -> Vec<u8> {
+        // Serialize and hash the wallet commitment
+        let new_wallet_comm = wallet.get_wallet_share_commitment();
+        let digest = keccak256(new_wallet_comm.to_biguint().to_bytes_be());
+
+        // Sign the message
+        let signing_key: K256SigningKey = key.try_into().unwrap();
+        let sig: Signature = signing_key.sign_prehash(&digest).unwrap();
+
+        sig.to_bytes().to_vec()
+    }
 
     /// Get a dummy queued task
     pub fn mock_queued_task(queue_key: TaskQueueKey) -> super::QueuedTask {
@@ -253,5 +413,82 @@ pub mod mocks {
         wallet.wallet_id = queue_key;
 
         TaskDescriptor::NewWallet(super::NewWalletTaskDescriptor { wallet })
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(test)]
+mod test {
+    use constants::Scalar;
+
+    use crate::types::wallet_mocks::mock_empty_wallet;
+
+    use super::{
+        mocks::gen_wallet_update_sig, NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
+    };
+
+    /// Tests creating a new wallet task with an invalid secret sharing
+    #[test]
+    #[should_panic(expected = "invalid wallet shares")]
+    fn test_invalid_new_wallet_shares() {
+        let mut wallet = mock_empty_wallet();
+        wallet.blinded_public_shares.orders[0].amount += Scalar::one();
+
+        NewWalletTaskDescriptor::new(wallet).unwrap();
+    }
+
+    /// Tests creating an update wallet task with an invalid shares
+    #[test]
+    #[should_panic(expected = "invalid wallet shares")]
+    fn test_invalid_update_wallet_shares() {
+        let mut wallet = mock_empty_wallet();
+        wallet.blinded_public_shares.orders[0].amount += Scalar::one();
+
+        UpdateWalletTaskDescriptor::new(
+            0,    // timestamp
+            None, // transfer
+            wallet.clone(),
+            wallet,
+            vec![],
+        )
+        .unwrap();
+    }
+
+    /// Tests creating an update wallet task with an invalid signatures
+    #[test]
+    #[should_panic(expected = "invalid wallet update sig")]
+    fn test_invalid_wallet_update_signature() {
+        let wallet = mock_empty_wallet();
+        let sig = vec![0; 64];
+
+        UpdateWalletTaskDescriptor::new(
+            0,    // timestamp
+            None, // transfer
+            wallet.clone(),
+            wallet,
+            sig,
+        )
+        .unwrap();
+    }
+
+    /// Tests creating a valid update wallet task
+    #[test]
+    fn test_valid_update_wallet() {
+        let wallet = mock_empty_wallet();
+
+        let key = wallet.key_chain.secret_keys.sk_root.as_ref().unwrap();
+        let sig = gen_wallet_update_sig(&wallet, key);
+
+        UpdateWalletTaskDescriptor::new(
+            0,    // timestamp
+            None, // transfer
+            wallet.clone(),
+            wallet,
+            sig,
+        )
+        .unwrap();
     }
 }

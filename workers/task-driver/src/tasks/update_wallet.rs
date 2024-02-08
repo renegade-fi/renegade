@@ -182,10 +182,6 @@ impl Task for UpdateWalletTask {
     type Descriptor = UpdateWalletTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        if !descriptor.old_wallet.try_lock_wallet() {
-            return Err(UpdateWalletTaskError::WalletLocked);
-        }
-
         // Safety check, the new wallet's secret shares must recover the new wallet
         Self::check_wallet_shares(&descriptor.new_wallet)?;
 
@@ -236,12 +232,6 @@ impl Task for UpdateWalletTask {
             },
         }
 
-        Ok(())
-    }
-
-    // Unlock the update lock if the task fails
-    async fn cleanup(&mut self) -> Result<(), UpdateWalletTaskError> {
-        self.old_wallet.unlock_wallet();
         Ok(())
     }
 
