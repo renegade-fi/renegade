@@ -1,9 +1,6 @@
 //! Task queue state transition applicator methods
 
-use common::types::{
-    tasks::{QueuedTask, QueuedTaskState},
-    wallet::WalletIdentifier,
-};
+use common::types::tasks::{QueuedTask, QueuedTaskState, TaskQueueKey};
 use job_types::task_driver::TaskDriverJob;
 use libmdbx::TransactionKind;
 use tracing::log;
@@ -26,41 +23,37 @@ impl StateApplicator {
     // | State Transitions |
     // ---------------------
 
-    /// Apply an `AppendWalletTask` state transition
-    pub fn append_wallet_task(
-        &self,
-        wallet_id: WalletIdentifier,
-        mut task: QueuedTask,
-    ) -> Result<()> {
+    /// Apply an `AppendTask` state transition
+    pub fn append_task(&self, mut task: QueuedTask) -> Result<()> {
+        let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
 
-        // If the task queue is empty for the wallet, transition the task to in progress
-        // and start it
-        if tx.is_wallet_queue_empty(&wallet_id)? && !tx.is_task_queue_paused(&wallet_id)? {
+        // If the task queue is empty, transition the task to in progress and start it
+        if tx.is_queue_empty(&queue_key)? && !tx.is_queue_paused(&queue_key)? {
             // Start the task
             task.state = new_running_state();
             self.maybe_start_task(&task, &tx)?;
         }
 
-        tx.add_wallet_task(&wallet_id, &task)?;
+        tx.add_task(&queue_key, &task)?;
         Ok(tx.commit()?)
     }
 
-    /// Apply a `PopWalletTask` state transition
-    pub fn pop_wallet_task(&self, wallet_id: WalletIdentifier) -> Result<()> {
+    /// Apply a `PopTask` state transition
+    pub fn pop_task(&self, key: TaskQueueKey) -> Result<()> {
         let tx = self.db().new_write_tx()?;
-        if tx.is_task_queue_paused(&wallet_id)? {
-            return Err(StateApplicatorError::QueuePaused(wallet_id));
+        if tx.is_queue_paused(&key)? {
+            return Err(StateApplicatorError::QueuePaused(key));
         }
 
         // Pop the task from the queue
-        tx.pop_wallet_task(&wallet_id)?;
+        tx.pop_task(&key)?;
 
         // If the queue is non-empty, start the next task
-        let tasks = tx.get_wallet_tasks(&wallet_id)?;
+        let tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = tasks.first() {
             let state = new_running_state();
-            tx.transition_wallet_task(&wallet_id, state)?;
+            tx.transition_task(&key, state)?;
             self.maybe_start_task(task, &tx)?;
         }
 
@@ -68,26 +61,22 @@ impl StateApplicator {
     }
 
     /// Transition the state of the top task on the queue
-    pub fn transition_task_state(
-        &self,
-        wallet_id: WalletIdentifier,
-        state: QueuedTaskState,
-    ) -> Result<()> {
+    pub fn transition_task_state(&self, key: TaskQueueKey, state: QueuedTaskState) -> Result<()> {
         let tx = self.db().new_write_tx()?;
-        if tx.is_task_queue_paused(&wallet_id)? {
-            return Err(StateApplicatorError::QueuePaused(wallet_id));
+        if tx.is_queue_paused(&key)? {
+            return Err(StateApplicatorError::QueuePaused(key));
         }
 
-        tx.transition_wallet_task(&wallet_id, state)?;
+        tx.transition_task(&key, state)?;
         Ok(tx.commit()?)
     }
 
-    /// Preempt the task queue on a given wallet
-    pub fn preempt_task_queue(&self, wallet_id: WalletIdentifier) -> Result<()> {
+    /// Preempt the given task queue
+    pub fn preempt_task_queue(&self, key: TaskQueueKey) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         // Stop any running tasks if possible
-        let current_running_task = tx.get_current_running_task(&wallet_id)?;
+        let current_running_task = tx.get_current_running_task(&key)?;
         if let Some(task) = current_running_task {
             if task.state.is_committed() {
                 log::error!("cannot preempt committed task: {}", task.id);
@@ -96,27 +85,27 @@ impl StateApplicator {
 
             // Otherwise transition the task to queued
             let state = QueuedTaskState::Queued;
-            tx.transition_wallet_task(&wallet_id, state)?;
+            tx.transition_task(&key, state)?;
         }
 
         // Pause the queue
-        tx.pause_task_queue(&wallet_id)?;
+        tx.pause_task_queue(&key)?;
         Ok(tx.commit()?)
     }
 
-    /// Resume a task queue on a given wallet
-    pub fn resume_task_queue(&self, wallet_id: WalletIdentifier) -> Result<()> {
+    /// Resume a task queue
+    pub fn resume_task_queue(&self, key: TaskQueueKey) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         // Resume the queue
-        tx.resume_task_queue(&wallet_id)?;
+        tx.resume_task_queue(&key)?;
 
         // Start running the first task if it exists
-        let tasks = tx.get_wallet_tasks(&wallet_id)?;
+        let tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = tasks.first() {
             // Mark the task as pending in the db
             let state = new_running_state();
-            tx.transition_wallet_task(&wallet_id, state)?;
+            tx.transition_task(&key, state)?;
 
             // This will resume the task as if it is starting anew, regardless of whether
             // the task was previously running
@@ -152,8 +141,7 @@ impl StateApplicator {
 mod test {
     use common::types::{
         gossip::{mocks::mock_peer, WrappedPeerId},
-        tasks::{mocks::mock_queued_task, QueuedTaskState},
-        wallet::WalletIdentifier,
+        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskQueueKey},
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
 
@@ -173,11 +161,11 @@ mod test {
         tx.commit().unwrap();
     }
 
-    /// Add a dummy task to the given wallet's queue
-    fn enqueue_dummy_task(wallet_id: &WalletIdentifier, db: &DB) {
-        let task = mock_queued_task();
+    /// Add a dummy task to the given queue
+    fn enqueue_dummy_task(key: TaskQueueKey, db: &DB) {
+        let task = mock_queued_task(key);
         let tx = db.new_write_tx().unwrap();
-        tx.add_wallet_task(wallet_id, &task).unwrap();
+        tx.add_task(&key, &task).unwrap();
         tx.commit().unwrap();
     }
 
@@ -195,16 +183,16 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
-        let mut task = mock_queued_task();
+        let task_queue_key = TaskQueueKey::new_v4();
+        let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
 
-        applicator.append_wallet_task(wallet_id, task.clone()).expect("Failed to append task");
+        applicator.append_task(task.clone()).expect("Failed to append task");
 
         // Check the task was added to the queue
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
@@ -235,15 +223,15 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
-        let mut task = mock_queued_task();
+        let task_queue_key = TaskQueueKey::new_v4();
+        let mut task = mock_queued_task(task_queue_key);
         task.executor = WrappedPeerId::random(); // Assign a different executor
 
-        applicator.append_wallet_task(wallet_id, task.clone()).expect("Failed to append task");
+        applicator.append_task(task.clone()).expect("Failed to append task");
 
         // Check the task was not started
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
@@ -260,19 +248,19 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
+        let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(&wallet_id, applicator.db());
+        enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Add another task via the applicator
-        let mut task2 = mock_queued_task();
+        let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_wallet_task(wallet_id, task2.clone()).expect("Failed to append task");
+        applicator.append_task(task2.clone()).expect("Failed to append task");
 
         // Ensure that the second task is in the db's queue, not marked as running
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 2);
@@ -293,14 +281,14 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
-        enqueue_dummy_task(&wallet_id, applicator.db());
+        let task_queue_key = TaskQueueKey::new_v4();
+        enqueue_dummy_task(task_queue_key, applicator.db());
 
-        applicator.pop_wallet_task(wallet_id).expect("Failed to pop task");
+        applicator.pop_task(task_queue_key).expect("Failed to pop task");
 
         // Ensure the task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 0);
@@ -320,22 +308,22 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
+        let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(&wallet_id, applicator.db());
+        enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Add another task via the applicator
-        let mut task2 = mock_queued_task();
+        let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = WrappedPeerId::random(); // Assign a different executor
-        applicator.append_wallet_task(wallet_id, task2.clone()).unwrap();
+        applicator.append_task(task2.clone()).unwrap();
 
         // Pop the first task
-        applicator.pop_wallet_task(wallet_id).unwrap();
+        applicator.pop_task(task_queue_key).unwrap();
 
         // Ensure the first task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
@@ -360,22 +348,22 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
+        let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(&wallet_id, applicator.db());
+        enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Add another task via the applicator
-        let mut task2 = mock_queued_task();
+        let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_wallet_task(wallet_id, task2.clone()).unwrap();
+        applicator.append_task(task2.clone()).unwrap();
 
         // Pop the first task
-        applicator.pop_wallet_task(wallet_id).unwrap();
+        applicator.pop_task(task_queue_key).unwrap();
 
         // Ensure the first task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
@@ -402,18 +390,18 @@ mod test {
         let (task_queue, _task_recv) = new_task_driver_queue();
         let applicator = mock_applicator_with_task_queue(task_queue);
 
-        let wallet_id = WalletIdentifier::new_v4();
+        let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(&wallet_id, applicator.db());
+        enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Transition the state of the top task in the queue
         let new_state = QueuedTaskState::Running { state: "Test".to_string(), committed: false };
-        applicator.transition_task_state(wallet_id, new_state.clone()).unwrap();
+        applicator.transition_task_state(task_queue_key, new_state.clone()).unwrap();
 
         // Ensure the task state was updated
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
@@ -428,26 +416,26 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
+        let task_queue_key = TaskQueueKey::new_v4();
 
         // Pause the queue
-        applicator.preempt_task_queue(wallet_id).unwrap();
+        applicator.preempt_task_queue(task_queue_key).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
-        let is_paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        let is_paused = tx.is_queue_paused(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert!(is_paused);
 
         // Add a task and ensure it is not started
-        let mut task = mock_queued_task();
+        let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_wallet_task(wallet_id, task.clone()).unwrap();
+        applicator.append_task(task.clone()).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert!(task_recv.is_empty());
@@ -455,10 +443,10 @@ mod test {
         assert_eq!(tasks[0].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
-        applicator.resume_task_queue(wallet_id).unwrap();
+        applicator.resume_task_queue(task_queue_key).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
-        let task = tx.get_current_running_task(&wallet_id).unwrap();
+        let task = tx.get_current_running_task(&task_queue_key).unwrap();
         tx.commit().unwrap();
         assert_eq!(task.unwrap().id, task_id);
 
@@ -480,43 +468,43 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let wallet_id = WalletIdentifier::new_v4();
+        let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task
-        let mut task = mock_queued_task();
+        let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_wallet_task(wallet_id, task.clone()).unwrap();
+        applicator.append_task(task.clone()).unwrap();
 
         // Start the task
         let tx = applicator.db().new_write_tx().unwrap();
         let state = QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false };
-        tx.transition_wallet_task(&wallet_id, state).unwrap();
+        tx.transition_task(&task_queue_key, state).unwrap();
         tx.commit().unwrap();
 
         // Pause the queue
-        applicator.preempt_task_queue(wallet_id).unwrap();
+        applicator.preempt_task_queue(task_queue_key).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
-        let is_paused = tx.is_task_queue_paused(&wallet_id).unwrap();
+        let is_paused = tx.is_queue_paused(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert!(is_paused);
 
         // Ensure the task was transitioned to queued
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_wallet_tasks(&wallet_id).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
-        applicator.resume_task_queue(wallet_id).unwrap();
+        applicator.resume_task_queue(task_queue_key).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
-        let task = tx.get_current_running_task(&wallet_id).unwrap();
+        let task = tx.get_current_running_task(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
         assert!(task.is_some());
