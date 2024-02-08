@@ -67,9 +67,9 @@ impl StateApplicator {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
             StateTransition::AppendTask { task } => self.append_task(task),
-            StateTransition::PopTask { key } => self.pop_task(key),
-            StateTransition::TransitionTask { key, state } => {
-                self.transition_task_state(key, state)
+            StateTransition::PopTask { task_id } => self.pop_task(task_id),
+            StateTransition::TransitionTask { task_id, state } => {
+                self.transition_task_state(task_id, state)
             },
             StateTransition::PreemptTaskQueue { key } => self.preempt_task_queue(key),
             StateTransition::ResumeTaskQueue { key } => self.resume_task_queue(key),

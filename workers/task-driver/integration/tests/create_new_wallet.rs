@@ -1,58 +1,40 @@
 //! Integration tests for the `NewWalletTask`
 
+use common::types::{tasks::NewWalletTaskDescriptor, wallet_mocks::mock_empty_wallet};
 use constants::Scalar;
 use eyre::{eyre, Result};
 use rand::thread_rng;
-use task_driver::create_new_wallet::NewWalletTask;
 use test_helpers::integration_test_async;
 
-use crate::{helpers::create_empty_api_wallet, IntegrationTestArgs};
+use crate::{helpers::await_task, IntegrationTestArgs};
 
 // ---------
 // | Tests |
 // ---------
 
 /// Basic functionality test of creating a valid new wallet
-async fn create_new_wallet(test_args: IntegrationTestArgs) -> Result<()> {
-    let wallet = create_empty_api_wallet();
-    let task = NewWalletTask::new(
-        wallet.id,
-        wallet,
-        test_args.arbitrum_client.clone(),
-        test_args.global_state.clone(),
-        test_args.proof_job_queue.clone(),
-    )?;
+async fn create_valid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
+    let wallet = mock_empty_wallet();
+    let descriptor = NewWalletTaskDescriptor { wallet };
 
-    let (_task_id, handle) = test_args.driver.start_task(task).await;
-    let success = handle.await?;
-
-    if success {
-        Ok(())
-    } else {
-        Err(eyre!("task failed"))
-    }
+    await_task(descriptor.into(), &test_args).await
 }
-integration_test_async!(create_new_wallet);
+integration_test_async!(create_valid_wallet);
 
 /// Tests creating a new wallet with invalid secret shares, the task should fail
 /// in the constructor
 #[allow(non_snake_case)]
-async fn create_new_wallet__invalid_shares(test_args: IntegrationTestArgs) -> Result<()> {
-    let mut wallet = create_empty_api_wallet();
-    wallet.blinded_public_shares[0] = Scalar::random(&mut thread_rng()).to_biguint();
+async fn create_invalid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
+    let mut wallet = mock_empty_wallet();
+    wallet.blinded_public_shares.balances[0].amount = Scalar::random(&mut thread_rng());
+    let descriptor = NewWalletTaskDescriptor { wallet };
 
-    let task = NewWalletTask::new(
-        wallet.id,
-        wallet,
-        test_args.arbitrum_client.clone(),
-        test_args.global_state.clone(),
-        test_args.proof_job_queue.clone(),
-    );
-
-    if task.is_ok() {
+    // Run the task, should fail
+    let res = await_task(descriptor.into(), &test_args).await;
+    if res.is_ok() {
         Err(eyre!("task constructor should have failed"))
     } else {
         Ok(())
     }
 }
-integration_test_async!(create_new_wallet__invalid_shares);
+integration_test_async!(create_invalid_wallet);

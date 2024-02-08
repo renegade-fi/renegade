@@ -1,7 +1,7 @@
 //! Integration tests for settling matches, both internal and cross-cluster
 
 use crate::{
-    helpers::{lookup_wallet_and_check_result, setup_initial_wallet},
+    helpers::{await_immediate_task, lookup_wallet_and_check_result, setup_initial_wallet},
     IntegrationTestArgs,
 };
 use circuit_types::{
@@ -20,6 +20,7 @@ use common::types::{
         mocks::dummy_link_proof, MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
         ValidMatchSettleBundle,
     },
+    tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor},
     wallet::Wallet,
     wallet_mocks::mock_empty_wallet,
 };
@@ -29,9 +30,8 @@ use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_u64;
 use state::State;
-use task_driver::{settle_match::SettleMatchTask, settle_match_internal::SettleMatchInternalTask};
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
-use tokio::sync::{mpsc::unbounded_channel, oneshot::channel};
+use tokio::sync::oneshot::channel;
 use util::{hex::biguint_from_hex_string, matching_engine::settle_match_into_wallets};
 use uuid::Uuid;
 
@@ -142,7 +142,7 @@ async fn setup_match_result(
     // Pull the validity proof witnesses for the wallets so that we may update the
     // public and private shares to the reblinded and augmented shares; as would
     // happen before a real match
-    let state = &test_args.global_state;
+    let state = &test_args.state;
     let witness1 = get_first_order_witness(&wallet1, state)?;
     let witness2 = get_first_order_witness(&wallet2, state)?;
 
@@ -251,7 +251,7 @@ async fn verify_settlement(
     match_res: MatchResult,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    let state = &test_args.global_state;
+    let state = &test_args.state;
 
     // 1. Apply the match to the wallet
     wallet.reblind_wallet();
@@ -284,8 +284,7 @@ async fn verify_settlement(
 /// Tests that settling an internal match succeeds and state is properly updated
 async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Create two new wallets with orders that match
-    let state = &test_args.global_state;
-    let client = &test_args.arbitrum_client;
+    let state = &test_args.state;
     let (buy_wallet, buy_blinder_seed, buy_share_seed) =
         setup_buy_side_wallet(test_args.clone()).await?;
     let (sell_wallet, sell_blinder_seed, sell_share_seed) =
@@ -296,26 +295,19 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
 
     // Create the task
-    let (network_sender, _network_recv) = unbounded_channel();
-    let task = SettleMatchInternalTask::new(
-        FixedPoint::from_f64_round_down(EXECUTION_PRICE),
-        buy_wallet.orders.first().unwrap().0,
-        sell_wallet.orders.first().unwrap().0,
-        get_first_order_proofs(&buy_wallet, state)?,
-        get_first_order_witness(&buy_wallet, state)?,
-        get_first_order_proofs(&sell_wallet, state)?,
-        get_first_order_witness(&sell_wallet, state)?,
-        match_res.clone(),
-        client.clone(),
-        network_sender,
-        state.clone(),
-        test_args.proof_job_queue.clone(),
-    )
-    .await?;
+    let task = SettleMatchInternalTaskDescriptor {
+        execution_price: FixedPoint::from_f64_round_down(EXECUTION_PRICE),
+        order_id1: buy_wallet.orders.first().unwrap().0,
+        order_id2: sell_wallet.orders.first().unwrap().0,
+        match_result: match_res.clone(),
+        order1_proof: get_first_order_proofs(&buy_wallet, state)?,
+        order2_proof: get_first_order_proofs(&sell_wallet, state)?,
+        order1_validity_witness: get_first_order_witness(&buy_wallet, state)?,
+        order2_validity_witness: get_first_order_witness(&sell_wallet, state)?,
+    };
 
-    let (_id, handle) = test_args.driver.start_task(task).await;
-    let res = handle.await?;
-    assert_true_result!(res)?;
+    let modified_wallets = vec![buy_wallet.wallet_id, sell_wallet.wallet_id];
+    await_immediate_task(modified_wallets, task.into(), &test_args).await?;
 
     // Verify the match on both wallets
     verify_settlement(
@@ -335,8 +327,7 @@ integration_test_async!(test_settle_internal_match);
 /// Tests settling a match that came from an MPC
 async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Create two new wallets with orders that match
-    let state = &test_args.global_state;
-    let client = &test_args.arbitrum_client;
+    let state = &test_args.state;
     let (buy_wallet, buy_blinder_seed, buy_share_seed) =
         setup_buy_side_wallet(test_args.clone()).await?;
     let (mut sell_wallet, sell_blinder_seed, sell_share_seed) =
@@ -351,21 +342,18 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
         ..mock_handshake_state()
     };
 
-    let (network_sender, _network_recv) = unbounded_channel();
-    let task = SettleMatchTask::new(
+    // Start a task to settle the match
+    let task = SettleMatchTaskDescriptor {
+        wallet_id: buy_wallet.wallet_id,
         handshake_state,
-        match_settle_proof,
-        get_first_order_proofs(&buy_wallet, state)?,
-        get_first_order_proofs(&sell_wallet, state)?,
-        client.clone(),
-        network_sender,
-        state.clone(),
-        test_args.proof_job_queue.clone(),
-    )?;
+        match_bundle: match_settle_proof,
+        party0_validity_proof: get_first_order_proofs(&buy_wallet, state)?,
+        party1_validity_proof: get_first_order_proofs(&sell_wallet, state)?,
+    };
 
-    let (_id, handle) = test_args.driver.start_task(task).await;
-    let res = handle.await?;
-    assert_true_result!(res)?;
+    let modified_wallets = vec![buy_wallet.wallet_id];
+    let res = await_immediate_task(modified_wallets, task.into(), &test_args).await;
+    assert_true_result!(res.is_ok())?;
 
     // Only the first wallet would have been updated in the global state, as the
     // second wallet is assumed to be managed by another cluster

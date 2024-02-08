@@ -37,3 +37,9 @@ impl From<StateError> for String {
         e.to_string()
     }
 }
+
+impl From<ReplicationError> for StateError {
+    fn from(e: ReplicationError) -> Self {
+        StateError::Replication(e)
+    }
+}

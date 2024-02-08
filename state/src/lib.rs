@@ -17,7 +17,7 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    tasks::{QueuedTask, QueuedTaskState, TaskQueueKey},
+    tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::{OrderIdentifier, Wallet},
 };
 use replication::{error::ReplicationError, RaftPeerId};
@@ -91,9 +91,9 @@ pub enum StateTransition {
     /// Add a task to the task queue
     AppendTask { task: QueuedTask },
     /// Pop the top task from the task queue
-    PopTask { key: TaskQueueKey },
+    PopTask { task_id: TaskIdentifier },
     /// Transition the state of the top task in the task queue
-    TransitionTask { key: TaskQueueKey, state: QueuedTaskState },
+    TransitionTask { task_id: TaskIdentifier, state: QueuedTaskState },
     /// Preempt the given task queue
     ///
     /// Returns any running tasks to `Queued` state and pauses the queue
@@ -128,7 +128,7 @@ pub mod test_helpers {
     use std::{mem, time::Duration};
 
     use config::RelayerConfig;
-    use job_types::task_driver::new_task_driver_queue;
+    use job_types::task_driver::{new_task_driver_queue, TaskDriverQueue};
     use system_bus::SystemBus;
     use tempfile::tempdir;
 
@@ -167,12 +167,16 @@ pub mod test_helpers {
 
     /// Create a mock state instance
     pub fn mock_state() -> State {
+        let (task_queue, recv) = new_task_driver_queue();
+        mem::forget(recv);
+        mock_state_with_task_queue(task_queue)
+    }
+
+    /// Create a mock state instance with the given task queue
+    pub fn mock_state_with_task_queue(task_queue: TaskDriverQueue) -> State {
         let config =
             RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
-        let (task_queue, recv) = new_task_driver_queue();
-        mem::forget(recv);
-
         let state =
             State::new_with_network(&config, nets.remove(0), task_queue, SystemBus::new()).unwrap();
 

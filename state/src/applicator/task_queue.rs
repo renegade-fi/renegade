@@ -1,6 +1,6 @@
 //! Task queue state transition applicator methods
 
-use common::types::tasks::{QueuedTask, QueuedTaskState, TaskQueueKey};
+use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use job_types::task_driver::TaskDriverJob;
 use libmdbx::TransactionKind;
 use tracing::log;
@@ -12,6 +12,8 @@ use super::{error::StateApplicatorError, Result, StateApplicator};
 
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
+/// Error emitted when a key cannot be found for a task
+const ERR_NO_KEY: &str = "key not found for task";
 
 /// Construct the running state for a newly started task
 fn new_running_state() -> QueuedTaskState {
@@ -28,20 +30,27 @@ impl StateApplicator {
         let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
 
-        // If the task queue is empty, transition the task to in progress and start it
-        if tx.is_queue_empty(&queue_key)? && !tx.is_queue_paused(&queue_key)? {
+        // Index the task
+        let previously_empty = tx.is_queue_empty(&queue_key)?;
+        tx.add_task(&queue_key, &task)?;
+
+        // If the task queue was empty, transition the task to in progress and start it
+        if previously_empty && !tx.is_queue_paused(&queue_key)? {
             // Start the task
             task.state = new_running_state();
             self.maybe_start_task(&task, &tx)?;
         }
 
-        tx.add_task(&queue_key, &task)?;
         Ok(tx.commit()?)
     }
 
     /// Apply a `PopTask` state transition
-    pub fn pop_task(&self, key: TaskQueueKey) -> Result<()> {
+    pub fn pop_task(&self, task_id: TaskIdentifier) -> Result<()> {
         let tx = self.db().new_write_tx()?;
+        let key = tx
+            .get_queue_key_for_task(&task_id)?
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY.to_string()))?;
+
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::QueuePaused(key));
         }
@@ -61,8 +70,16 @@ impl StateApplicator {
     }
 
     /// Transition the state of the top task on the queue
-    pub fn transition_task_state(&self, key: TaskQueueKey, state: QueuedTaskState) -> Result<()> {
+    pub fn transition_task_state(
+        &self,
+        task_id: TaskIdentifier,
+        state: QueuedTaskState,
+    ) -> Result<()> {
         let tx = self.db().new_write_tx()?;
+        let key = tx
+            .get_queue_key_for_task(&task_id)?
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY.to_string()))?;
+
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::QueuePaused(key));
         }
