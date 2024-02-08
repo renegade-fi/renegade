@@ -11,7 +11,7 @@ mocks = [
     "mpc-plonk",
     "ark-ec",
     "ark-poly",
-    "k256",
+    "k256/expose-field",
     "ecdsa",
 ]
 
@@ -22,11 +22,13 @@ ark-ec = { version = "0.4", optional = true }
 ark-poly = { version = "0.4", optional = true }
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+ethers-rs = { version = "0.2" }
 jf-primitives = { workspace = true, optional = true }
-k256 = { version = "0.13", features = ["expose-field"], optional = true }
+k256 = { version = "0.13", features = ["ecdsa"] }
 mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
 num-bigint = { workspace = true }
+signature = "2.0"
 
 # === Runtime + Networking === #
 crossbeam = { workspace = true }

@@ -19,12 +19,13 @@ use crate::{
 #[allow(non_snake_case)]
 async fn test_lookup_wallet__invalid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     let wallet = mock_empty_wallet();
-    let descriptor = LookupWalletTaskDescriptor {
-        wallet_id: Uuid::new_v4(),
-        blinder_seed: Scalar::zero(),
-        secret_share_seed: Scalar::zero(),
-        key_chain: wallet.key_chain,
-    };
+    let descriptor = LookupWalletTaskDescriptor::new(
+        Uuid::new_v4(),
+        Scalar::zero(),
+        Scalar::zero(),
+        wallet.key_chain,
+    )
+    .unwrap();
 
     assert_true_result!(await_task(descriptor.into(), &test_args).await.is_err())
 }

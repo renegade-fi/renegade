@@ -145,11 +145,6 @@ impl Task for UpdateMerkleProofTask {
     type Descriptor = UpdateMerkleProofTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        // TODO: remove wallet locks
-        if !descriptor.wallet.try_lock_wallet() {
-            return Err(UpdateMerkleProofTaskError::WalletLocked);
-        }
-
         Ok(Self {
             wallet: descriptor.wallet,
             arbitrum_client: ctx.arbitrum_client,
@@ -179,12 +174,6 @@ impl Task for UpdateMerkleProofTask {
             },
         }
 
-        Ok(())
-    }
-
-    // Unlock the update lock if the task fails
-    async fn cleanup(&mut self) -> Result<(), UpdateMerkleProofTaskError> {
-        self.wallet.unlock_wallet();
         Ok(())
     }
 

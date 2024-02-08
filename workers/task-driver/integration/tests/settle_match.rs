@@ -295,16 +295,17 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
 
     // Create the task
-    let task = SettleMatchInternalTaskDescriptor {
-        execution_price: FixedPoint::from_f64_round_down(EXECUTION_PRICE),
-        order_id1: buy_wallet.orders.first().unwrap().0,
-        order_id2: sell_wallet.orders.first().unwrap().0,
-        match_result: match_res.clone(),
-        order1_proof: get_first_order_proofs(&buy_wallet, state)?,
-        order2_proof: get_first_order_proofs(&sell_wallet, state)?,
-        order1_validity_witness: get_first_order_witness(&buy_wallet, state)?,
-        order2_validity_witness: get_first_order_witness(&sell_wallet, state)?,
-    };
+    let task = SettleMatchInternalTaskDescriptor::new(
+        FixedPoint::from_f64_round_down(EXECUTION_PRICE),
+        buy_wallet.orders.first().unwrap().0,
+        sell_wallet.orders.first().unwrap().0,
+        get_first_order_proofs(&buy_wallet, state)?,
+        get_first_order_witness(&buy_wallet, state)?,
+        get_first_order_proofs(&sell_wallet, state)?,
+        get_first_order_witness(&sell_wallet, state)?,
+        match_res.clone(),
+    )
+    .unwrap();
 
     let modified_wallets = vec![buy_wallet.wallet_id, sell_wallet.wallet_id];
     await_immediate_task(modified_wallets, task.into(), &test_args).await?;
@@ -343,13 +344,14 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     };
 
     // Start a task to settle the match
-    let task = SettleMatchTaskDescriptor {
-        wallet_id: buy_wallet.wallet_id,
+    let task = SettleMatchTaskDescriptor::new(
+        buy_wallet.wallet_id,
         handshake_state,
-        match_bundle: match_settle_proof,
-        party0_validity_proof: get_first_order_proofs(&buy_wallet, state)?,
-        party1_validity_proof: get_first_order_proofs(&sell_wallet, state)?,
-    };
+        match_settle_proof,
+        get_first_order_proofs(&buy_wallet, state)?,
+        get_first_order_proofs(&sell_wallet, state)?,
+    )
+    .unwrap();
 
     let modified_wallets = vec![buy_wallet.wallet_id];
     let res = await_immediate_task(modified_wallets, task.into(), &test_args).await;

@@ -179,7 +179,7 @@ impl Task for SettleMatchInternalTask {
             match_result,
         } = descriptor;
 
-        let mut self_ = Self {
+        Ok(Self {
             execution_price,
             order_id1,
             order_id2,
@@ -194,15 +194,7 @@ impl Task for SettleMatchInternalTask {
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             task_state: SettleMatchInternalTaskState::Pending, // Assuming default initialization
-        };
-
-        // Try to lock the wallets
-        // TODO: Remove wallet locks
-        if let Err(e) = self_.setup_task() {
-            self_.cleanup().await?;
-            return Err(e);
-        }
-        Ok(self_)
+        })
     }
 
     async fn step(&mut self) -> Result<(), Self::Error> {
@@ -236,13 +228,6 @@ impl Task for SettleMatchInternalTask {
                 panic!("step called on completed task")
             },
         };
-
-        Ok(())
-    }
-
-    async fn cleanup(&mut self) -> Result<(), Self::Error> {
-        self.find_wallet_for_order(&self.order_id1)?.unlock_wallet();
-        self.find_wallet_for_order(&self.order_id2)?.unlock_wallet();
 
         Ok(())
     }
@@ -373,26 +358,6 @@ impl SettleMatchInternalTask {
     // -----------
     // | Helpers |
     // -----------
-
-    /// Try to lock both wallets, if they cannot be locked then the task cannot
-    /// be run and the internal matching engine will re-run next time the
-    /// proofs are updated
-    fn setup_task(&mut self) -> Result<(), SettleMatchInternalTaskError> {
-        let o1 = &self.order_id1;
-        let o2 = &self.order_id2;
-        let wallet1 = self.find_wallet_for_order(o1)?;
-        let wallet2 = self.find_wallet_for_order(o2)?;
-
-        if !wallet1.try_lock_wallet() {
-            return Err(SettleMatchInternalTaskError::WalletLocked(wallet1.wallet_id));
-        }
-
-        if !wallet2.try_lock_wallet() {
-            return Err(SettleMatchInternalTaskError::WalletLocked(wallet2.wallet_id));
-        }
-
-        Ok(())
-    }
 
     /// Find the wallet for an order in the global state
     fn find_wallet_for_order(

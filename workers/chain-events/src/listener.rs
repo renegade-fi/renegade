@@ -191,7 +191,7 @@ impl OnChainEventListenerExecutor {
         &self,
         wallet: Wallet,
     ) -> Result<(), OnChainEventListenerError> {
-        let task = UpdateMerkleProofTaskDescriptor { wallet };
+        let task = UpdateMerkleProofTaskDescriptor::new(wallet).unwrap();
         let (_task_id, waiter) = self.global_state.append_task(task.into())?;
         waiter.await?;
 
