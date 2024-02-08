@@ -4,7 +4,7 @@ use std::{
     collections::HashSet,
     iter,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -21,7 +21,7 @@ use circuit_types::{
     order::{Order, OrderSide},
     r#match::MatchResult,
     traits::BaseType,
-    wallet::{Nullifier, WalletShare, WalletShareStateCommitment},
+    wallet::{Nullifier, SizedWallet, WalletShare, WalletShareStateCommitment},
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
@@ -30,7 +30,6 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::hash::evaluate_hash_chain;
 use serde::{Deserialize, Serialize};
-use tracing::log;
 use uuid::Uuid;
 
 use crate::keyed_list::KeyedList;
@@ -111,23 +110,6 @@ pub struct Wallet {
     #[serde(skip_serializing, skip_deserializing, default)]
     #[derivative(PartialEq = "ignore")]
     pub merkle_staleness: Arc<AtomicUsize>,
-    /// An update lock, used to protect against concurrent updates to a wallet
-    ///
-    /// `true` implies that the lock is held elsewhere
-    ///
-    /// TODO: Remove this in favor of a more robust update dependency solution
-    /// once the state has been refactored to a raft-based consensus
-    #[derivative(PartialEq = "ignore")]
-    #[serde(skip_serializing, skip_deserializing, default = "default_update_lock")]
-    pub update_locked: Arc<AtomicBool>,
-}
-
-/// A custom default method that serde uses for deserialization; simply creates
-/// a new lock that is initialized unlocked
-///
-/// TODO: Remove this when we remove the field
-fn default_update_lock() -> Arc<AtomicBool> {
-    Arc::new(AtomicBool::default())
 }
 
 impl From<Wallet> for SizedCircuitWallet {
@@ -163,34 +145,18 @@ impl From<Wallet> for SizedCircuitWallet {
     }
 }
 
-// TODO: Remove wallet locking methods
 impl Wallet {
     // -----------
     // | Getters |
     // -----------
 
-    /// Try to lock the wallet for an update
-    ///
-    /// Returns `true` if the update succeeded
-    pub fn try_lock_wallet(&self) -> bool {
-        log::debug!("locking wallet: {}", self.wallet_id,);
+    /// Check that the wallet's shares correctly add to its contents
+    pub fn check_wallet_shares(&self) -> bool {
+        let circuit_wallet: SizedWallet = self.clone().into();
+        let recovered_wallet =
+            wallet_from_blinded_shares(&self.private_shares, &self.blinded_public_shares);
 
-        self.update_locked
-            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-    }
-
-    /// Unlock the wallet
-    pub fn unlock_wallet(&self) -> bool {
-        log::debug!("unlocking wallet: {}", self.wallet_id);
-        self.update_locked
-            .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-    }
-
-    /// Check if the wallet is locked
-    pub fn is_locked(&self) -> bool {
-        self.update_locked.load(Ordering::Relaxed)
+        circuit_wallet == recovered_wallet
     }
 
     /// Computes the commitment to the private shares of the wallet
@@ -446,15 +412,12 @@ pub struct WalletMetadata {
 pub mod mocks {
     use std::{
         iter,
-        sync::{
-            atomic::{AtomicBool, AtomicUsize},
-            Arc,
-        },
+        sync::{atomic::AtomicUsize, Arc},
     };
 
     use circuit_types::{
         fixed_point::FixedPoint,
-        keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey},
+        keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey, SecretSigningKey},
         order::{Order, OrderSide},
         traits::BaseType,
         SizedWalletShare,
@@ -477,6 +440,7 @@ pub mod mocks {
 
         // Sample a valid signing key
         let key = K256SigningKey::random(&mut rng);
+        let sk_root = Some(SecretSigningKey::from(&key));
         let pk_root = PublicSigningKey::from(key.verifying_key());
 
         let sk_match = SecretIdentificationKey::from(Scalar::random(&mut rng));
@@ -489,7 +453,7 @@ pub mod mocks {
             fees: vec![],
             key_chain: KeyChain {
                 public_keys: PublicKeyChain { pk_root, pk_match },
-                secret_keys: PrivateKeyChain { sk_root: None, sk_match },
+                secret_keys: PrivateKeyChain { sk_root, sk_match },
             },
             blinder: Scalar::random(&mut rng),
             private_shares: SizedWalletShare::from_scalars(&mut iter::repeat_with(|| {
@@ -501,7 +465,6 @@ pub mod mocks {
             metadata: WalletMetadata::default(),
             merkle_proof: Some(mock_merkle_path()),
             merkle_staleness: Arc::new(AtomicUsize::default()),
-            update_locked: Arc::new(AtomicBool::default()),
         };
 
         // Reblind the wallet so that the secret shares a valid sharing of the wallet

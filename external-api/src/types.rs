@@ -1,6 +1,6 @@
 //! Defines API type definitions used in request/response messages
 
-use std::{collections::HashMap, convert::TryInto, sync::atomic::Ordering};
+use std::{collections::HashMap, convert::TryInto};
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
 use circuit_types::{
@@ -54,10 +54,6 @@ pub struct ApiWallet {
     pub private_shares: Vec<BigUint>,
     /// The wallet blinder, used to blind wallet secret shares
     pub blinder: BigUint,
-    /// The state of update lock of the wallet, used to protect against
-    /// concurrent updates to the wallet
-    #[serde(default)]
-    pub update_locked: bool,
 }
 
 /// Conversion from a wallet that has been indexed in the global state to the
@@ -89,7 +85,6 @@ impl From<Wallet> for ApiWallet {
             blinded_public_shares,
             private_shares,
             blinder: scalar_to_biguint(&wallet.blinder),
-            update_locked: wallet.update_locked.load(Ordering::Relaxed),
         }
     }
 }
@@ -127,7 +122,6 @@ impl TryFrom<ApiWallet> for Wallet {
             private_shares,
             merkle_proof: None,
             merkle_staleness: Default::default(),
-            update_locked: Default::default(),
         })
     }
 }

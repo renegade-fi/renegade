@@ -6,7 +6,7 @@ use std::ops::Add;
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use k256::{
-    ecdsa::VerifyingKey as K256VerifyingKey,
+    ecdsa::{SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey},
     elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
     AffinePoint, EncodedPoint, FieldElement as K256FieldElement,
 };
@@ -226,9 +226,6 @@ impl From<&K256FieldElement> for NonNativeScalar<K256_FELT_WORDS> {
 // | Keychain Type |
 // -----------------
 
-/// A type alias for a private signing key
-pub type PrivateSigningKey = NonNativeScalar<K256_FELT_WORDS>;
-
 /// A public signing key in uncompressed affine representation
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -296,6 +293,23 @@ impl From<&K256VerifyingKey> for PublicSigningKey {
 /// A type alias for readability
 pub type SecretSigningKey = NonNativeScalar<K256_FELT_WORDS>;
 
+impl TryFrom<&SecretSigningKey> for K256SigningKey {
+    type Error = String;
+
+    fn try_from(value: &SecretSigningKey) -> Result<Self, Self::Error> {
+        let scalar = BigUint::from(value);
+        K256SigningKey::from_slice(&scalar.to_bytes_be())
+            .map_err(|e| format!("error deserializing signing key: {e}"))
+    }
+}
+
+impl From<&K256SigningKey> for SecretSigningKey {
+    fn from(value: &K256SigningKey) -> Self {
+        let bigint = BigUint::from_bytes_be(&value.to_bytes());
+        NonNativeScalar::from(&bigint)
+    }
+}
+
 /// Represents the base type, defining two keys with different access levels
 ///
 /// Note that these keys are of different types, though over the same field
@@ -323,6 +337,8 @@ mod test {
     use num_bigint::BigUint;
     use rand::{thread_rng, RngCore};
 
+    use crate::keychain::SecretSigningKey;
+
     use super::{NonNativeScalar, PublicSigningKey};
 
     /// Tests converting a non-native key to and from a biguint
@@ -347,9 +363,13 @@ mod test {
         let key = SigningKey::random(&mut rng);
         let vkey = key.verifying_key();
 
+        let circuit_key = SecretSigningKey::from(&key);
+        let recovered_key = SigningKey::try_from(&circuit_key).unwrap();
+
         let circuit_key = PublicSigningKey::from(vkey);
         let recovered_vkey = VerifyingKey::from(&circuit_key);
 
+        assert_eq!(key, recovered_key);
         assert_eq!(*vkey, recovered_vkey);
     }
 }

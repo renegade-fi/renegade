@@ -238,7 +238,6 @@ impl LookupWalletTask {
             blinded_public_shares,
             merkle_proof: None, // constructed below
             merkle_staleness: Default::default(),
-            update_locked: Default::default(),
         };
 
         // Find the authentication path for the wallet

@@ -146,16 +146,17 @@ impl HandshakeExecutor {
         };
 
         // Submit the match to the task driver
-        let task: TaskDescriptor = SettleMatchInternalTaskDescriptor {
-            execution_price: price,
+        let task: TaskDescriptor = SettleMatchInternalTaskDescriptor::new(
+            price,
             order_id1,
             order_id2,
-            order1_validity_witness: validity_witness1,
-            order2_validity_witness: validity_witness2,
-            order1_proof: validity_proof1,
-            order2_proof: validity_proof2,
+            validity_proof1,
+            validity_witness1,
+            validity_proof2,
+            validity_witness2,
             match_result,
-        }
+        )
+        .unwrap()
         .into();
 
         let wallet_id1 = self

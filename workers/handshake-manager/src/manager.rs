@@ -459,13 +459,14 @@ impl HandshakeExecutor {
             .get_wallet_for_order(&handshake_state.local_order_id)?
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
 
-        let task: TaskDescriptor = SettleMatchTaskDescriptor {
+        let task: TaskDescriptor = SettleMatchTaskDescriptor::new(
             wallet_id,
             handshake_state,
             match_bundle,
-            party0_validity_proof: party0_proof,
-            party1_validity_proof: party1_proof,
-        }
+            party0_proof,
+            party1_proof,
+        )
+        .unwrap()
         .into();
 
         // Signal the task driver to preempt its queue with the task

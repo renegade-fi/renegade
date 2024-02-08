@@ -29,7 +29,7 @@ use external_api::{
     types::{ApiBalance, ApiFee, ApiOrder},
     EmptyRequestResponse,
 };
-use hyper::{HeaderMap, StatusCode};
+use hyper::HeaderMap;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
@@ -82,18 +82,7 @@ fn find_wallet_for_update(
     state: &State,
 ) -> Result<Wallet, ApiServerError> {
     // Find the wallet in global state and use its keys to authenticate the request
-    let wallet =
-        state.get_wallet(&wallet_id)?.ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
-
-    // Acquire the lock for the wallet
-    if wallet.is_locked() {
-        return Err(ApiServerError::HttpStatusCode(
-            StatusCode::LOCKED,
-            ERR_UPDATE_IN_PROGRESS.to_string(),
-        ));
-    }
-
-    Ok(wallet)
+    state.get_wallet(&wallet_id)?.ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))
 }
 
 /// Append a task to a task queue and await consensus on this queue update
@@ -151,8 +140,6 @@ const ERR_ORDER_NOT_FOUND: &str = "order not found";
 const ERR_FEES_FULL: &str = "wallet's fee list is full";
 /// The error message to display when a fee index is out of range
 const ERR_FEE_OUT_OF_RANGE: &str = "fee index out of range";
-/// Error message displayed when an update is already in progress on a wallet
-const ERR_UPDATE_IN_PROGRESS: &str = "wallet update already in progress";
 /// The error message emitted when a timestamp is too stale
 const ERR_STALE_TIMESTAMP: &str = "timestamp is too stale";
 
@@ -224,7 +211,7 @@ impl TypedHandler for CreateWalletHandler {
         // and create proofs of validity
         let wallet_id = req.wallet.id;
         let wallet: Wallet = req.wallet.try_into().map_err(|e: String| bad_request(e))?;
-        let task = NewWalletTaskDescriptor { wallet };
+        let task = NewWalletTaskDescriptor::new(wallet).map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -260,12 +247,12 @@ impl TypedHandler for FindWalletHandler {
         // the wallet
         let key_chain: KeyChain =
             req.key_chain.try_into().map_err(|e: String| bad_request(e.to_string()))?;
-        let task = LookupWalletTaskDescriptor {
-            wallet_id: req.wallet_id,
-            blinder_seed: biguint_to_scalar(&req.blinder_seed),
-            secret_share_seed: biguint_to_scalar(&req.secret_share_seed),
-            key_chain,
-        };
+
+        let blinder_seed = biguint_to_scalar(&req.blinder_seed);
+        let share_seed = biguint_to_scalar(&req.secret_share_seed);
+        let task =
+            LookupWalletTaskDescriptor::new(req.wallet_id, blinder_seed, share_seed, key_chain)
+                .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -395,13 +382,14 @@ impl TypedHandler for CreateOrderHandler {
         new_wallet.add_order(id, new_order).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: timestamp,
-            external_transfer: None,
+        let task = UpdateWalletTaskDescriptor::new(
+            timestamp,
+            None, // transfer
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -457,13 +445,14 @@ impl TypedHandler for UpdateOrderHandler {
         *order = new_order;
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: timestamp,
-            external_transfer: None,
+        let task = UpdateWalletTaskDescriptor::new(
+            timestamp,
+            None, // transfer
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -509,13 +498,14 @@ impl TypedHandler for CancelOrderHandler {
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: get_current_timestamp(),
-            external_transfer: None,
+        let task = UpdateWalletTaskDescriptor::new(
+            get_current_timestamp(),
+            None, // transfer
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -646,9 +636,9 @@ impl TypedHandler for DepositBalanceHandler {
             .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: get_current_timestamp(),
-            external_transfer: Some(ExternalTransfer {
+        let task = UpdateWalletTaskDescriptor::new(
+            get_current_timestamp(),
+            Some(ExternalTransfer {
                 account_addr: req.from_addr,
                 mint: req.mint,
                 amount: req.amount,
@@ -656,8 +646,9 @@ impl TypedHandler for DepositBalanceHandler {
             }),
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -709,9 +700,9 @@ impl TypedHandler for WithdrawBalanceHandler {
         }
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: get_current_timestamp(),
-            external_transfer: Some(ExternalTransfer {
+        let task = UpdateWalletTaskDescriptor::new(
+            get_current_timestamp(),
+            Some(ExternalTransfer {
                 account_addr: req.destination_addr,
                 mint,
                 amount: req.amount,
@@ -719,8 +710,9 @@ impl TypedHandler for WithdrawBalanceHandler {
             }),
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -812,13 +804,14 @@ impl TypedHandler for AddFeeHandler {
         new_wallet.fees.push(req.fee.into());
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: get_current_timestamp(),
-            external_transfer: None,
+        let task = UpdateWalletTaskDescriptor::new(
+            get_current_timestamp(),
+            None, // transfer
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
@@ -867,13 +860,14 @@ impl TypedHandler for RemoveFeeHandler {
         new_wallet.reblind_wallet();
 
         // Start a task to submit this update to the contract
-        let task = UpdateWalletTaskDescriptor {
-            timestamp_received: get_current_timestamp(),
-            external_transfer: None,
+        let task = UpdateWalletTaskDescriptor::new(
+            get_current_timestamp(),
+            None,
             old_wallet,
             new_wallet,
-            wallet_update_signature: req.statement_sig,
-        };
+            req.statement_sig,
+        )
+        .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
