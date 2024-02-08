@@ -6,9 +6,6 @@ use common::types::tasks::{
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
-/// Error emitted when a key cannot be found for a task
-const ERR_NO_KEY: &str = "Key not found for task";
-
 impl State {
     // -----------
     // | Getters |
@@ -104,29 +101,19 @@ impl State {
     }
 
     /// Pop a task from the queue
-    pub fn pop_task(&self, task_id: &TaskIdentifier) -> Result<ProposalWaiter, StateError> {
-        // Get the queue key for the task
-        let key = self
-            .get_task_queue_key(task_id)?
-            .ok_or_else(|| StateError::Proposal(ERR_NO_KEY.to_string()))?;
-
+    pub fn pop_task(&self, task_id: TaskIdentifier) -> Result<ProposalWaiter, StateError> {
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::PopTask { key })
+        self.send_proposal(StateTransition::PopTask { task_id })
     }
 
     /// Transition the state of the top task in a queue
     pub fn transition_task(
         &self,
-        task_id: &TaskIdentifier,
+        task_id: TaskIdentifier,
         state: QueuedTaskState,
     ) -> Result<ProposalWaiter, StateError> {
-        // Get the key for the task's queue
-        let key = self
-            .get_task_queue_key(task_id)?
-            .ok_or_else(|| StateError::Proposal(ERR_NO_KEY.to_string()))?;
-
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::TransitionTask { key, state })
+        self.send_proposal(StateTransition::TransitionTask { task_id, state })
     }
 
     /// Pause a task queue
@@ -192,7 +179,7 @@ mod test {
         waiter.await.unwrap();
 
         // Pop the task from the queue
-        let waiter = state.pop_task(&task_id).unwrap();
+        let waiter = state.pop_task(task_id).unwrap();
         waiter.await.unwrap();
 
         // Check that the task was removed
@@ -214,7 +201,7 @@ mod test {
         // Transition the task to a new state
         let waiter = state
             .transition_task(
-                &task_id,
+                task_id,
                 QueuedTaskState::Running { state: "Test".to_string(), committed: false },
             )
             .unwrap();
@@ -246,7 +233,7 @@ mod test {
         // Transition the task to running and check again
         let waiter = state
             .transition_task(
-                &task_id,
+                task_id,
                 QueuedTaskState::Running { state: "Running".to_string(), committed: false },
             )
             .unwrap();
@@ -256,7 +243,7 @@ mod test {
         // Transition the task to committed and check again
         let waiter = state
             .transition_task(
-                &task_id,
+                task_id,
                 QueuedTaskState::Running { state: "Running".to_string(), committed: true },
             )
             .unwrap();

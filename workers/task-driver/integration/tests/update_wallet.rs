@@ -7,21 +7,22 @@ use circuit_types::{
     order::{Order, OrderSide},
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
-use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
+use common::types::{
+    tasks::UpdateWalletTaskDescriptor, wallet::Wallet, wallet_mocks::mock_empty_wallet,
+};
 use constants::Scalar;
 use eyre::Result;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use rand::thread_rng;
-use task_driver::update_wallet::UpdateWalletTask;
-use test_helpers::{assert_true_result, integration_test_async};
+use test_helpers::integration_test_async;
 use tracing::log;
 use util::{get_current_time_seconds, hex::biguint_from_hex_string};
 use uuid::Uuid;
 
 use crate::{
     helpers::{
-        attach_merkle_opening, biguint_from_address, lookup_wallet_and_check_result,
+        attach_merkle_opening, await_task, biguint_from_address, lookup_wallet_and_check_result,
         new_wallet_in_darkpool, setup_initial_wallet,
     },
     IntegrationTestArgs,
@@ -66,25 +67,18 @@ pub(crate) async fn execute_wallet_update(
     }
 
     let id = new_wallet.wallet_id;
-    let client = &test_args.arbitrum_client;
-    let task = UpdateWalletTask::new(
-        *DUMMY_TIMESTAMP,
-        transfer,
+    let task = UpdateWalletTaskDescriptor {
         old_wallet,
         new_wallet,
-        vec![], // wallet_update_signature
-        client.clone(),
-        test_args.network_sender.clone(),
-        test_args.global_state.clone(),
-        test_args.proof_job_queue.clone(),
-    )?;
+        external_transfer: transfer,
+        wallet_update_signature: vec![],
+        timestamp_received: *DUMMY_TIMESTAMP,
+    };
 
-    let (_task_id, handle) = test_args.driver.start_task(task).await;
-    let success = handle.await?;
-    assert_true_result!(success)?;
+    await_task(task.into(), &test_args).await?;
 
     // Fetch the updated wallet from state
-    test_args.global_state.get_wallet(&id)?.ok_or_else(|| eyre::eyre!("Wallet not found in state"))
+    test_args.state.get_wallet(&id)?.ok_or_else(|| eyre::eyre!("Wallet not found in state"))
 }
 
 /// Execute a wallet update, then lookup the new wallet from on-chain state and

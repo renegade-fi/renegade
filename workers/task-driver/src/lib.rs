@@ -17,6 +17,7 @@
 pub mod driver;
 pub mod error;
 mod helpers;
+mod running_task;
 pub mod tasks;
 pub mod traits;
 pub mod worker;
