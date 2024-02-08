@@ -20,12 +20,12 @@ use clap::Parser;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use helpers::new_mock_task_driver;
 use job_types::{
-    network_manager::{NetworkManagerQueue, NetworkManagerReceiver},
+    network_manager::NetworkManagerReceiver,
     proof_manager::ProofManagerJob,
-    task_driver::TaskDriverQueue,
+    task_driver::{new_task_driver_queue, TaskDriverQueue},
 };
 use proof_manager::mock::MockProofManager;
-use state::{test_helpers::mock_state, State};
+use state::{test_helpers::mock_state_with_task_queue, State};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -82,8 +82,6 @@ struct IntegrationTestArgs {
     erc20_addr1: String,
     /// The arbitrum client that resolves to a locally running devnet node
     arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A receiver for the network manager's work queue
     ///
     /// Held here to avoid closing the channel on `Drop`
@@ -109,14 +107,18 @@ impl From<CliArgs> for IntegrationTestArgs {
         let (proof_job_queue, job_receiver) = unbounded();
         MockProofManager::start(job_receiver);
 
-        // Create a mock arbitrum client and global state
-        let arbitrum_client = setup_arbitrum_client_mock(test_args);
-        let state = setup_global_state_mock();
+        // Create a mock arbitrum client
+        let arbitrum_client = setup_arbitrum_client_mock(&test_args);
+
+        // Create a mock state instance and a task driver
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let state = setup_global_state_mock(task_queue.clone());
 
         // Start a task driver
-        let task_queue = new_mock_task_driver(
+        new_mock_task_driver(
+            task_recv,
             arbitrum_client.clone(),
-            network_sender.clone(),
+            network_sender,
             proof_job_queue.clone(),
             state.clone(),
         );
@@ -136,7 +138,6 @@ impl From<CliArgs> for IntegrationTestArgs {
             erc20_addr0,
             erc20_addr1,
             arbitrum_client,
-            network_sender,
             _network_receiver: Arc::new(network_receiver),
             proof_job_queue,
             state,
@@ -146,12 +147,12 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 /// Create a global state mock for the `task-driver` integration tests
-fn setup_global_state_mock() -> State {
-    mock_state()
+fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
+    mock_state_with_task_queue(task_queue)
 }
 
 /// Setup a mock `ArbitrumClient` for the integration tests
-fn setup_arbitrum_client_mock(test_args: CliArgs) -> ArbitrumClient {
+fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
     let darkpool_addr =
         parse_addr_from_deployments_file(&test_args.deployments_path, DARKPOOL_PROXY_CONTRACT_KEY)
             .unwrap();
@@ -160,8 +161,8 @@ fn setup_arbitrum_client_mock(test_args: CliArgs) -> ArbitrumClient {
     block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
         chain: Chain::Devnet,
         darkpool_addr,
-        arb_priv_key: test_args.arbitrum_pkey,
-        rpc_url: test_args.devnet_url,
+        arb_priv_key: test_args.arbitrum_pkey.clone(),
+        rpc_url: test_args.devnet_url.clone(),
     }))
     .unwrap()
 }

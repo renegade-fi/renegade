@@ -12,10 +12,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::{
-    native_helpers::{compute_wallet_private_share_commitment, wallet_from_blinded_shares},
-    SizedWallet,
-};
+use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuits::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
     ValidWalletCreateWitness,
@@ -33,9 +30,6 @@ use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 use crate::helpers::find_merkle_path;
 
-/// Error occurs when a wallet is submitted with secret shares that do not
-/// combine to recover the wallet
-const ERR_INVALID_SHARING: &str = "invalid secret shares for wallet";
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 
@@ -175,16 +169,6 @@ impl Task for NewWalletTask {
     type Descriptor = NewWalletTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        // Safety: verify that the wallet's shares recover the wallet correctly
-        let wallet = &descriptor.wallet;
-        let circuit_wallet: SizedWallet = wallet.clone().into();
-        let recovered_wallet =
-            wallet_from_blinded_shares(&wallet.private_shares, &wallet.blinded_public_shares);
-
-        if circuit_wallet != recovered_wallet {
-            return Err(NewWalletTaskError::InvalidShares(ERR_INVALID_SHARING.to_string()));
-        }
-
         Ok(Self {
             wallet: descriptor.wallet,
             proof_bundle: None, // Initialize as None since it's not part of the descriptor
