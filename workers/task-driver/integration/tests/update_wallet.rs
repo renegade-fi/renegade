@@ -8,7 +8,9 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::{
-    tasks::UpdateWalletTaskDescriptor, wallet::Wallet, wallet_mocks::mock_empty_wallet,
+    tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor},
+    wallet::Wallet,
+    wallet_mocks::mock_empty_wallet,
 };
 use constants::Scalar;
 use eyre::Result;
@@ -66,14 +68,14 @@ pub(crate) async fn execute_wallet_update(
         attach_merkle_opening(&mut old_wallet, &test_args.arbitrum_client).await?;
     }
 
+    // Generate a signature for the state transition
+    let key = &old_wallet.key_chain.secret_keys.sk_root.as_ref().unwrap();
+    let sig = gen_wallet_update_sig(&new_wallet, key);
+
     let id = new_wallet.wallet_id;
-    let task = UpdateWalletTaskDescriptor {
-        old_wallet,
-        new_wallet,
-        external_transfer: transfer,
-        wallet_update_signature: vec![],
-        timestamp_received: *DUMMY_TIMESTAMP,
-    };
+    let task =
+        UpdateWalletTaskDescriptor::new(*DUMMY_TIMESTAMP, transfer, old_wallet, new_wallet, sig)
+            .unwrap();
 
     await_task(task.into(), &test_args).await?;
 
