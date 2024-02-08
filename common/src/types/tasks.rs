@@ -14,6 +14,9 @@ use super::{
 
 /// A type alias for the identifier underlying a task
 pub type TaskIdentifier = Uuid;
+/// A type alias for the task queue key type, used to index tasks by shared
+/// resource
+pub type TaskQueueKey = Uuid;
 
 /// A task in the task queue
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,6 +80,24 @@ pub enum TaskDescriptor {
     UpdateMerkleProof(UpdateMerkleProofTaskDescriptor),
     /// The task descriptor for the `UpdateWallet` task
     UpdateWallet(UpdateWalletTaskDescriptor),
+}
+
+impl TaskDescriptor {
+    /// Compute the task queue key for the task
+    pub fn queue_key(&self) -> TaskQueueKey {
+        match self {
+            TaskDescriptor::NewWallet(task) => task.wallet.wallet_id,
+            TaskDescriptor::LookupWallet(task) => task.wallet_id,
+            TaskDescriptor::SettleMatch(_) => {
+                unimplemented!("SettleMatch should preempt queue, no key needed")
+            },
+            TaskDescriptor::SettleMatchInternal(_) => {
+                unimplemented!("SettleMatchInternal should preempt queue, no key needed")
+            },
+            TaskDescriptor::UpdateMerkleProof(task) => task.wallet.wallet_id,
+            TaskDescriptor::UpdateWallet(task) => task.old_wallet.wallet_id,
+        }
+    }
 }
 
 // ---------------
@@ -212,20 +233,25 @@ pub mod mocks {
         gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet_mocks::mock_empty_wallet,
     };
 
-    use super::{QueuedTask, QueuedTaskState, TaskDescriptor};
+    use super::{QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey};
 
     /// Get a dummy queued task
-    pub fn mock_queued_task() -> super::QueuedTask {
+    pub fn mock_queued_task(queue_key: TaskQueueKey) -> super::QueuedTask {
         QueuedTask {
             id: TaskIdentifier::new_v4(),
             executor: mock_peer().peer_id,
             state: QueuedTaskState::Queued,
-            descriptor: mock_task_descriptor(),
+            descriptor: mock_task_descriptor(queue_key),
         }
     }
 
     /// Get a dummy task descriptor
-    pub fn mock_task_descriptor() -> super::TaskDescriptor {
-        TaskDescriptor::NewWallet(super::NewWalletTaskDescriptor { wallet: mock_empty_wallet() })
+    pub fn mock_task_descriptor(queue_key: TaskQueueKey) -> super::TaskDescriptor {
+        // Set the wallet ID to the task queue key so we can generate predictable mock
+        // queues
+        let mut wallet = mock_empty_wallet();
+        wallet.wallet_id = queue_key;
+
+        TaskDescriptor::NewWallet(super::NewWalletTaskDescriptor { wallet })
     }
 }

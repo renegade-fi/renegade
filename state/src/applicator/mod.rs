@@ -66,15 +66,13 @@ impl StateApplicator {
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
-            StateTransition::AppendWalletTask { wallet_id, task } => {
-                self.append_wallet_task(wallet_id, task)
+            StateTransition::AppendTask { task } => self.append_task(task),
+            StateTransition::PopTask { key } => self.pop_task(key),
+            StateTransition::TransitionTask { key, state } => {
+                self.transition_task_state(key, state)
             },
-            StateTransition::PopWalletTask { wallet_id } => self.pop_wallet_task(wallet_id),
-            StateTransition::TransitionWalletTask { wallet_id, state } => {
-                self.transition_task_state(wallet_id, state)
-            },
-            StateTransition::PreemptTaskQueue { wallet_id } => self.preempt_task_queue(wallet_id),
-            StateTransition::ResumeTaskQueue { wallet_id } => self.resume_task_queue(wallet_id),
+            StateTransition::PreemptTaskQueue { key } => self.preempt_task_queue(key),
+            StateTransition::ResumeTaskQueue { key } => self.resume_task_queue(key),
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }

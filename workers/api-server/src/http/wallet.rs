@@ -98,11 +98,10 @@ fn find_wallet_for_update(
 
 /// Append a task to a task queue and await consensus on this queue update
 async fn append_task_and_await(
-    wallet: &WalletIdentifier,
     task: TaskDescriptor,
     state: &State,
 ) -> Result<TaskIdentifier, ApiServerError> {
-    let (task_id, waiter) = state.append_wallet_task(wallet, task)?;
+    let (task_id, waiter) = state.append_task(task)?;
     waiter.await.map_err(err_str!(internal_error))?;
 
     Ok(task_id)
@@ -228,7 +227,7 @@ impl TypedHandler for CreateWalletHandler {
         let task = NewWalletTaskDescriptor { wallet };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(CreateWalletResponse { wallet_id, task_id })
     }
 }
@@ -269,8 +268,7 @@ impl TypedHandler for FindWalletHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id =
-            append_task_and_await(&req.wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
 
         Ok(FindWalletResponse { wallet_id: req.wallet_id, task_id })
     }
@@ -406,7 +404,7 @@ impl TypedHandler for CreateOrderHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(CreateOrderResponse { id, task_id })
     }
 }
@@ -468,7 +466,7 @@ impl TypedHandler for UpdateOrderHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(UpdateOrderResponse { task_id })
     }
 }
@@ -520,7 +518,7 @@ impl TypedHandler for CancelOrderHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(CancelOrderResponse { task_id, order: (order_id, order).into() })
     }
 }
@@ -662,7 +660,7 @@ impl TypedHandler for DepositBalanceHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(DepositBalanceResponse { task_id })
     }
 }
@@ -725,7 +723,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(WithdrawBalanceResponse { task_id })
     }
 }
@@ -823,7 +821,7 @@ impl TypedHandler for AddFeeHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(AddFeeResponse { task_id })
     }
 }
@@ -878,7 +876,7 @@ impl TypedHandler for RemoveFeeHandler {
         };
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(&wallet_id, task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(RemoveFeeResponse { task_id, fee: removed_fee.into() })
     }
 }

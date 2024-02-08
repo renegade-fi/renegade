@@ -222,7 +222,7 @@ impl TaskExecutor {
 
         // Pause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            self.state().pause_wallet_task_queue(wallet_id)?;
+            self.state().pause_task_queue(wallet_id)?;
         }
 
         // Start the task optimistically assuming that the queues are paused
@@ -237,7 +237,7 @@ impl TaskExecutor {
             // Unpause the queues for the affected local wallets
             for wallet_id in wallet_ids.iter() {
                 state
-                    .resume_wallet_task_queue(wallet_id)
+                    .resume_task_queue(wallet_id)
                     .expect("error proposing wallet resume for {wallet_id}")
                     .await
                     .expect("error resuming wallet task queue for {wallet_id}");
@@ -387,7 +387,7 @@ impl TaskExecutor {
         // If this state commits the task, await consensus on the result of updating the
         // state, otherwise resume optimistically
         let is_commit = new_state.is_committing();
-        match global_state.transition_wallet_task(task_id, new_state.into()) {
+        match global_state.transition_task(task_id, new_state.into()) {
             Ok(waiter) => is_commit && waiter.await.is_err(),
             Err(e) => {
                 log::warn!("error updating task state: {e:?}");
