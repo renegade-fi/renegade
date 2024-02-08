@@ -17,8 +17,8 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    tasks::{QueuedTask, QueuedTaskState},
-    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
+    tasks::{QueuedTask, QueuedTaskState, TaskQueueKey},
+    wallet::{OrderIdentifier, Wallet},
 };
 use replication::{error::ReplicationError, RaftPeerId};
 use serde::{Deserialize, Serialize};
@@ -57,8 +57,8 @@ pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
 /// The name of the db table that stores task queues
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
-/// The name of the db table that maps tasks to wallet
-pub(crate) const TASK_TO_WALLET_TABLE: &str = "task-to-wallet";
+/// The name of the db table that maps tasks to their queue key
+pub(crate) const TASK_TO_KEY_TABLE: &str = "task-to-key";
 
 /// The `Proposal` type wraps a state transition and the channel on which to
 /// send the result of the proposal's application
@@ -89,17 +89,17 @@ pub enum StateTransition {
 
     // --- Task Queue --- //
     /// Add a task to the task queue
-    AppendWalletTask { wallet_id: WalletIdentifier, task: QueuedTask },
+    AppendTask { task: QueuedTask },
     /// Pop the top task from the task queue
-    PopWalletTask { wallet_id: WalletIdentifier },
+    PopTask { key: TaskQueueKey },
     /// Transition the state of the top task in the task queue
-    TransitionWalletTask { wallet_id: WalletIdentifier, state: QueuedTaskState },
-    /// Preempt the task queue on a given wallet
+    TransitionTask { key: TaskQueueKey, state: QueuedTaskState },
+    /// Preempt the given task queue
     ///
     /// Returns any running tasks to `Queued` state and pauses the queue
-    PreemptTaskQueue { wallet_id: WalletIdentifier },
-    /// Resume a task queue on a given wallet
-    ResumeTaskQueue { wallet_id: WalletIdentifier },
+    PreemptTaskQueue { key: TaskQueueKey },
+    /// Resume the given task queue
+    ResumeTaskQueue { key: TaskQueueKey },
 
     // --- Raft --- //
     /// Add a raft learner to the cluster
