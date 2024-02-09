@@ -19,6 +19,7 @@ members = [
 	"workers/chain-events",
 	"workers/gossip-server",
 	"workers/handshake-manager",
+	"workers/handshake-manager-tests",
 	"workers/job-types",
 	"workers/network-manager",
 	"workers/price-reporter",
