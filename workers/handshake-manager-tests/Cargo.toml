@@ -1,0 +1,28 @@
+[package]
+name = "handshake-manager-tests"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "handshake-manager-tests"
+path = "src/main.rs"
+
+[dependencies]
+# === Test Harness === #
+clap = { version = "4.0", features = ["derive"] }
+colored = "2"
+eyre = { workspace = true }
+inventory = "0.3"
+
+# === Runtime === #
+tokio = { workspace = true }
+
+# === Workspace Dependencies === #
+job-types = { path = "../job-types" }
+proof-manager = { path = "../proof-manager", features = ["mocks"] }
+test-helpers = { path = "../../test-helpers" }
+util = { path = "../../util" }
+
+# === Misc Dependencies === #
+lazy_static = "1.4"
+tracing = { workspace = true }

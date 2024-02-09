@@ -321,8 +321,8 @@ impl WebsocketServer {
         Ok(SubscriptionResponse {
             subscriptions: client_subscriptions
                 .keys()
+                .filter(|&key| DUMMY_SUBSCRIPTION_TOPIC.to_string().ne(key))
                 .cloned()
-                .filter(|key| DUMMY_SUBSCRIPTION_TOPIC.to_string().ne(key))
                 .collect(),
         })
     }
