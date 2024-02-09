@@ -10,7 +10,7 @@ use circuit_types::{
         compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
         wallet_from_blinded_shares,
     },
-    order::{Order, OrderSide},
+    order::Order,
     r#match::OrderSettlementIndices,
     SizedWallet,
 };
@@ -192,10 +192,8 @@ fn find_balances_and_indices(
     order: &Order,
     wallet: &mut SizedWallet,
 ) -> Result<(OrderSettlementIndices, Balance, Balance), String> {
-    let (send_mint, receive_mint) = match order.side {
-        OrderSide::Buy => (&order.quote_mint, &order.base_mint),
-        OrderSide::Sell => (&order.base_mint, &order.quote_mint),
-    };
+    let send_mint = order.send_mint();
+    let receive_mint = order.receive_mint();
 
     let (send_index, send_balance) =
         find_or_augment_balance(send_mint, wallet, false /* augment */)

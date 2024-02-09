@@ -5,7 +5,7 @@
 use std::ops::Add;
 
 use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use itertools::Itertools;
 use mpc_relation::{traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
@@ -31,8 +31,6 @@ pub type WalletShareStateCommitment = Scalar;
 pub type NoteCommitment = Scalar;
 /// Nullifier type alias for readability
 pub type Nullifier = Scalar;
-/// A type alias for a wallet with default sizing parameters
-pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
 
 // --------------------
 // | Wallet Base Type |

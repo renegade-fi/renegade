@@ -8,6 +8,7 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    order::OrderSide,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
     },
@@ -51,6 +52,28 @@ pub struct MatchResult {
     /// We serialize this as a `bool` to automatically constrain it to be 0 or 1
     /// in a circuit. So `false` means 0 and `true` means 1
     pub min_amount_order_index: bool,
+}
+
+impl MatchResult {
+    /// Get the send mint and amount given a side of the order
+    pub fn send_mint_amount(&self, side: OrderSide) -> (BigUint, u64) {
+        match side {
+            // Buy the base, sell the quote
+            OrderSide::Buy => (self.quote_mint.clone(), self.quote_amount),
+            // Sell the base, buy the quote
+            OrderSide::Sell => (self.base_mint.clone(), self.base_amount),
+        }
+    }
+
+    /// Get the receive mint and amount given a side of the order
+    pub fn receive_mint_amount(&self, side: OrderSide) -> (BigUint, u64) {
+        match side {
+            // Buy the base, sell the quote
+            OrderSide::Buy => (self.base_mint.clone(), self.base_amount),
+            // Sell the base, buy the quote
+            OrderSide::Sell => (self.quote_mint.clone(), self.quote_amount),
+        }
+    }
 }
 
 /// The indices that specify where settlement logic should modify the wallet

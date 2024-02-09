@@ -1,10 +1,6 @@
 //! Helpers for accessing wallet index information in the database
 
-use std::collections::HashMap;
-
-use common::types::wallet::{
-    OrderIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier, WalletMetadata,
-};
+use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
 use libmdbx::{TransactionKind, RW};
 
 use crate::{storage::error::StorageError, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
@@ -39,21 +35,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         let wallets = wallet_cursor.values().collect::<Result<Vec<_>, _>>()?;
 
         Ok(wallets)
-    }
-
-    /// Get wallet metadata for all wallets
-    pub fn get_metadata_map(
-        &self,
-    ) -> Result<HashMap<WalletIdentifier, WalletMetadata>, StorageError> {
-        let wallet_cursor = self.inner().cursor::<WalletIdentifier, Wallet>(WALLETS_TABLE)?;
-
-        let mut res = HashMap::new();
-        for elem in wallet_cursor {
-            let (id, wallet) = elem?;
-            res.insert(id, wallet.metadata);
-        }
-
-        Ok(res)
     }
 }
 

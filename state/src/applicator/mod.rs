@@ -66,7 +66,7 @@ impl StateApplicator {
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
-            StateTransition::AppendTask { task } => self.append_task(task),
+            StateTransition::AppendTask { task } => self.append_task(&task),
             StateTransition::PopTask { task_id } => self.pop_task(task_id),
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)

@@ -26,19 +26,19 @@ impl StateApplicator {
     // ---------------------
 
     /// Apply an `AppendTask` state transition
-    pub fn append_task(&self, mut task: QueuedTask) -> Result<()> {
+    pub fn append_task(&self, task: &QueuedTask) -> Result<()> {
         let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
 
         // Index the task
         let previously_empty = tx.is_queue_empty(&queue_key)?;
-        tx.add_task(&queue_key, &task)?;
+        tx.add_task(&queue_key, task)?;
 
         // If the task queue was empty, transition the task to in progress and start it
         if previously_empty && !tx.is_queue_paused(&queue_key)? {
             // Start the task
-            task.state = new_running_state();
-            self.maybe_start_task(&task, &tx)?;
+            tx.transition_task(&queue_key, new_running_state())?;
+            self.maybe_start_task(task, &tx)?;
         }
 
         Ok(tx.commit()?)
@@ -61,8 +61,7 @@ impl StateApplicator {
         // If the queue is non-empty, start the next task
         let tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = tasks.first() {
-            let state = new_running_state();
-            tx.transition_task(&key, state)?;
+            tx.transition_task(&key, new_running_state())?;
             self.maybe_start_task(task, &tx)?;
         }
 
@@ -158,7 +157,7 @@ impl StateApplicator {
 mod test {
     use common::types::{
         gossip::{mocks::mock_peer, WrappedPeerId},
-        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskQueueKey},
+        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
 
@@ -179,11 +178,13 @@ mod test {
     }
 
     /// Add a dummy task to the given queue
-    fn enqueue_dummy_task(key: TaskQueueKey, db: &DB) {
+    fn enqueue_dummy_task(key: TaskQueueKey, db: &DB) -> TaskIdentifier {
         let task = mock_queued_task(key);
         let tx = db.new_write_tx().unwrap();
         tx.add_task(&key, &task).unwrap();
         tx.commit().unwrap();
+
+        task.id
     }
 
     // ---------
@@ -205,7 +206,7 @@ mod test {
         task.executor = peer_id;
         let task_id = task.id;
 
-        applicator.append_task(task.clone()).expect("Failed to append task");
+        applicator.append_task(&task).expect("Failed to append task");
 
         // Check the task was added to the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -244,7 +245,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = WrappedPeerId::random(); // Assign a different executor
 
-        applicator.append_task(task.clone()).expect("Failed to append task");
+        applicator.append_task(&task).expect("Failed to append task");
 
         // Check the task was not started
         let tx = applicator.db().new_read_tx().unwrap();
@@ -273,7 +274,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_task(task2.clone()).expect("Failed to append task");
+        applicator.append_task(&task2).expect("Failed to append task");
 
         // Ensure that the second task is in the db's queue, not marked as running
         let tx = applicator.db().new_read_tx().unwrap();
@@ -299,9 +300,9 @@ mod test {
         set_local_peer_id(&peer_id, applicator.db());
 
         let task_queue_key = TaskQueueKey::new_v4();
-        enqueue_dummy_task(task_queue_key, applicator.db());
+        let task_id = enqueue_dummy_task(task_queue_key, applicator.db());
 
-        applicator.pop_task(task_queue_key).expect("Failed to pop task");
+        applicator.pop_task(task_id).expect("Failed to pop task");
 
         // Ensure the task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -328,15 +329,15 @@ mod test {
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(task_queue_key, applicator.db());
+        let task_id = enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = WrappedPeerId::random(); // Assign a different executor
-        applicator.append_task(task2.clone()).unwrap();
+        applicator.append_task(&task2).unwrap();
 
         // Pop the first task
-        applicator.pop_task(task_queue_key).unwrap();
+        applicator.pop_task(task_id).unwrap();
 
         // Ensure the first task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -368,15 +369,15 @@ mod test {
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(task_queue_key, applicator.db());
+        let task_id = enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_task(task2.clone()).unwrap();
+        applicator.append_task(&task2).unwrap();
 
         // Pop the first task
-        applicator.pop_task(task_queue_key).unwrap();
+        applicator.pop_task(task_id).unwrap();
 
         // Ensure the first task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -410,11 +411,11 @@ mod test {
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
-        enqueue_dummy_task(task_queue_key, applicator.db());
+        let task_id = enqueue_dummy_task(task_queue_key, applicator.db());
 
         // Transition the state of the top task in the queue
         let new_state = QueuedTaskState::Running { state: "Test".to_string(), committed: false };
-        applicator.transition_task_state(task_queue_key, new_state.clone()).unwrap();
+        applicator.transition_task_state(task_id, new_state.clone()).unwrap();
 
         // Ensure the task state was updated
         let tx = applicator.db().new_read_tx().unwrap();
@@ -449,7 +450,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_task(task.clone()).unwrap();
+        applicator.append_task(&task).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
@@ -491,7 +492,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_task(task.clone()).unwrap();
+        applicator.append_task(&task).unwrap();
 
         // Start the task
         let tx = applicator.db().new_write_tx().unwrap();
