@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use common::types::{
     tasks::LookupWalletTaskDescriptor,
-    wallet::{KeyChain, Wallet, WalletIdentifier, WalletMetadata},
+    wallet::{KeyChain, Wallet, WalletIdentifier},
 };
 use constants::Scalar;
 use itertools::Itertools;
@@ -233,7 +233,6 @@ impl LookupWalletTask {
                 secret_keys: self.key_chain.secret_keys.clone(),
             },
             blinder: recovered_wallet.blinder,
-            metadata: WalletMetadata::default(),
             private_shares,
             blinded_public_shares,
             merkle_proof: None, // constructed below

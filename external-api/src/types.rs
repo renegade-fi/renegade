@@ -15,7 +15,7 @@ use circuit_types::{
 use common::types::{
     gossip::PeerInfo as IndexedPeerInfo,
     network_order::{NetworkOrder, NetworkOrderState},
-    wallet::{KeyChain, OrderIdentifier, PrivateKeyChain, Wallet, WalletMetadata},
+    wallet::{KeyChain, OrderIdentifier, PrivateKeyChain, Wallet},
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -117,7 +117,6 @@ impl TryFrom<ApiWallet> for Wallet {
             fees,
             key_chain: wallet.key_chain.try_into()?,
             blinder: biguint_to_scalar(&wallet.blinder),
-            metadata: WalletMetadata::default(),
             blinded_public_shares,
             private_shares,
             merkle_proof: None,
