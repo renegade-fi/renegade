@@ -3,9 +3,9 @@
 //! We serialize types using the `flexbuffers` format (a schema-less version of
 //! `flatbuffers`): https://flatbuffers.dev/flexbuffers.html
 
-use std::path::Path;
+use std::{ops::Bound, path::Path};
 
-use libmdbx::{Database, WriteMap, RO, RW};
+use libmdbx::{Database, Geometry, WriteMap, RO, RW};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -16,6 +16,8 @@ use super::{
 
 /// The number of tables to open in the database
 const NUM_TABLES: usize = 12;
+/// The total maximum size of the DB in bytes
+const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 
 // -----------
 // | Helpers |
@@ -55,8 +57,14 @@ impl DB {
     /// Constructor
     pub fn new(config: &DbConfig) -> Result<Self, StorageError> {
         let db_path = Path::new(&config.path);
+        let db_geom = Geometry {
+            size: Some((Bound::Unbounded, Bound::Included(MAX_DB_SIZE_BYTES))),
+            ..Default::default()
+        };
+
         let db = Database::new()
             .set_max_tables(NUM_TABLES)
+            .set_geometry(db_geom)
             .open(db_path)
             .map_err(StorageError::OpenDb)?;
 
