@@ -4,7 +4,7 @@ services:
     ports:
       - "8547:8547"
     build:
-      context: ../docker/sequencer
+      context: ../../docker/sequencer
       args:
         - NO_VERIFY=1
     attach: false

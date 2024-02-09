@@ -1,0 +1,52 @@
+services:
+  sequencer:
+    image: sequencer
+    ports:
+      - "8547:8547"
+    build:
+      context: ../../docker/sequencer
+      args:
+        - NO_VERIFY=1
+    attach: false
+    healthcheck:
+      test: curl -sf http://localhost:8547
+      interval: 1s
+      timeout: 5s
+      retries: 10
+
+  peer1:
+    image: handshake-manager-integration-test:latest
+    build:
+      context: ../..
+      dockerfile: workers/handshake-manager/Dockerfile
+    ports:
+      - "8000:8000"
+    command: >
+      cargo test --test integration --features "integration" -- 
+        --my-addr /ip4/127.0.0.1/udp/8000/quic-v1/p2p/12D3KooWSAy34uc3jgrSSkmjmDvu6eNbY9rJ9HUfyujDsv3hkk7V
+        --peer-addr /ip4/127.0.0.1/udp/8001/quic-v1/p2p/12D3KooWRsF1H7RMoJC2ZBFfPi5dCESgz2WFexPmGFbVN48oJYKa
+        --deployments-path /deployments.json
+        --devnet-url http://sequencer:8547
+    tty: true
+    depends_on:
+      sequencer:
+        condition: service_healthy
+
+  peer2:
+    image: handshake-manager-integration-test:latest
+    build:
+      context: ../..
+      dockerfile: workers/handshake-manager/Dockerfile
+    ports:
+      - "8001:8001"
+    command: >
+      cargo test --test integration --features "integration" -- 
+        --my-addr /ip4/127.0.0.1/udp/8001/quic-v1/p2p/12D3KooWRsF1H7RMoJC2ZBFfPi5dCESgz2WFexPmGFbVN48oJYKa
+        --peer-addr /ip4/127.0.0.1/udp/8000/quic-v1/p2p/12D3KooWSAy34uc3jgrSSkmjmDvu6eNbY9rJ9HUfyujDsv3hkk7V
+        --deployments-path /deployments.json
+        --devnet-url http://sequencer:8547
+        --verbosity full
+    tty: true
+    depends_on:
+      sequencer:
+        condition: service_healthy
