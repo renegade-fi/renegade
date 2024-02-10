@@ -1,6 +1,5 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
-use arbitrum_client::client::ArbitrumClient;
 use common::{types::CancelChannel, worker::Worker};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
@@ -44,8 +43,6 @@ pub struct ApiServerConfig {
     pub http_port: u16,
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
-    /// An arbitrum client
-    pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// The worker job queue for the PriceReporter

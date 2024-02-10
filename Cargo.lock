@@ -5189,6 +5189,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "mock-node"
+version = "0.1.0"
+dependencies = [
+ "api-server",
+ "arbitrum-client",
+ "chain-events",
+ "circuit-types",
+ "common",
+ "config",
+ "ed25519-dalek 1.0.1",
+ "external-api",
+ "futures",
+ "gossip-api",
+ "gossip-server",
+ "handshake-manager",
+ "job-types",
+ "libp2p",
+ "network-manager",
+ "price-reporter",
+ "proof-manager",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "state",
+ "system-bus",
+ "task-driver",
+ "test-helpers",
+ "tokio",
+]
+
+[[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
 source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#8fd52e2e84cccfa5ae7e7c929c375459cbd6b352"

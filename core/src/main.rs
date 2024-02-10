@@ -21,20 +21,20 @@ use common::worker::{watch_worker, Worker};
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
-use job_types::network_manager::NetworkManagerJob;
-use job_types::{
-    gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob,
-    price_reporter::PriceReporterJob,
-};
+use job_types::gossip_server::new_gossip_server_queue;
+use job_types::handshake_manager::new_handshake_manager_queue;
+use job_types::network_manager::new_network_manager_queue;
+use job_types::price_reporter::new_price_reporter_queue;
+use job_types::proof_manager::new_proof_manager_queue;
+use job_types::task_driver::new_task_driver_queue;
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use state::tui::StateTuiApp;
 use state::State;
+use state::{replication::network::traits::new_raft_message_queue, tui::StateTuiApp};
 use system_bus::SystemBus;
 
 use chrono::Local;
-use crossbeam::channel;
 use env_logger::Builder;
 use error::CoordinatorError;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
@@ -88,16 +88,14 @@ async fn main() -> Result<(), CoordinatorError> {
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
-    let (network_sender, network_receiver) = mpsc::unbounded_channel::<NetworkManagerJob>();
-    let (raft_sender, raft_receiver) = channel::unbounded();
-    let (gossip_worker_sender, gossip_worker_receiver) =
-        mpsc::unbounded_channel::<GossipServerJob>();
-    let (handshake_worker_sender, handshake_worker_receiver) =
-        mpsc::unbounded_channel::<HandshakeExecutionJob>();
-    let (price_reporter_worker_sender, price_reporter_worker_receiver) =
-        mpsc::unbounded_channel::<PriceReporterJob>();
-    let (proof_generation_worker_sender, proof_generation_worker_receiver) = channel::unbounded();
-    let (task_sender, task_receiver) = channel::unbounded();
+    let (network_sender, network_receiver) = new_network_manager_queue();
+    let (raft_sender, raft_receiver) = new_raft_message_queue();
+    let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
+    let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
+    let (price_reporter_worker_sender, price_reporter_worker_receiver) = new_price_reporter_queue();
+    let (proof_generation_worker_sender, proof_generation_worker_receiver) =
+        new_proof_manager_queue();
+    let (task_sender, task_receiver) = new_task_driver_queue();
 
     // Construct a global state
     let global_state = State::new(
@@ -260,7 +258,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
-        arbitrum_client: arbitrum_client.clone(),
         network_sender: network_sender.clone(),
         global_state: global_state.clone(),
         system_bus,

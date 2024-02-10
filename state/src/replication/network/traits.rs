@@ -2,7 +2,7 @@
 //! sending and receiving raft messages from cluster peers
 
 use crate::replication::error::ReplicationError;
-use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
+use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
 use gossip_api::request_response::raft::RaftMessage;
 use raft::prelude::Message as RawRaftMessage;
 
@@ -10,6 +10,11 @@ use raft::prelude::Message as RawRaftMessage;
 pub type RaftMessageQueue = CrossbeamSender<RaftMessage>;
 /// The receiver end of the raft message queue inbound from the network
 pub type RaftMessageReceiver = CrossbeamReceiver<RaftMessage>;
+
+/// Create a new raft message queue and receiver
+pub fn new_raft_message_queue() -> (RaftMessageQueue, RaftMessageReceiver) {
+    unbounded()
+}
 
 // -----------
 // | Network |

@@ -5,7 +5,8 @@ use common::types::{
 };
 use std::collections::HashMap;
 use tokio::sync::mpsc::{
-    UnboundedReceiver as TokioUnboundedReceiver, UnboundedSender as TokioUnboundedSender,
+    unbounded_channel, UnboundedReceiver as TokioUnboundedReceiver,
+    UnboundedSender as TokioUnboundedSender,
 };
 use tokio::sync::oneshot::Sender as TokioSender;
 
@@ -13,6 +14,11 @@ use tokio::sync::oneshot::Sender as TokioSender;
 pub type PriceReporterQueue = TokioUnboundedSender<PriceReporterJob>;
 /// The queue receiver type for the price reporter
 pub type PriceReporterReceiver = TokioUnboundedReceiver<PriceReporterJob>;
+
+/// Create a new price reporter queue and receiver
+pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver) {
+    unbounded_channel()
+}
 
 /// All possible jobs that the PriceReporter accepts.
 #[derive(Debug)]

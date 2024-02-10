@@ -19,6 +19,10 @@ use std::{
 pub struct DefaultWrapper<D: Default>(D);
 /// A default wrapper for an option
 pub type DefaultOption<D> = DefaultWrapper<Option<D>>;
+/// Create a new default option
+pub fn default_option<D>(item: D) -> DefaultOption<D> {
+    DefaultWrapper::new(Some(item))
+}
 
 impl<D: Default> From<D> for DefaultWrapper<D> {
     fn from(d: D) -> Self {

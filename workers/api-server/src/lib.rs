@@ -12,7 +12,7 @@
 
 mod auth;
 pub mod error;
-mod http;
+pub mod http;
 mod router;
 mod websocket;
 pub mod worker;

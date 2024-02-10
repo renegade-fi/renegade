@@ -1,0 +1,37 @@
+[package]
+name = "mock-node"
+version = "0.1.0"
+edition = "2021"
+description = "A mock relayer for testing"
+
+[dependencies]
+# === Runtime + Networking === #
+futures = { workspace = true }
+libp2p = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
+
+# === Workspace Dependencies === #
+api-server = { path = "../workers/api-server" }
+arbitrum-client = { path = "../arbitrum-client" }
+circuit-types = { path = "../circuit-types" }
+chain-events = { path = "../workers/chain-events" }
+common = { path = "../common" }
+config = { path = "../config" }
+external-api = { path = "../external-api" }
+gossip-api = { path = "../gossip-api" }
+gossip-server = { path = "../workers/gossip-server" }
+handshake-manager = { path = "../workers/handshake-manager" }
+job-types = { path = "../workers/job-types" }
+network-manager = { path = "../workers/network-manager" }
+price-reporter = { path = "../workers/price-reporter" }
+proof-manager = { path = "../workers/proof-manager" }
+state = { path = "../state", features = ["mocks"] }
+system-bus = { path = "../system-bus" }
+task-driver = { path = "../workers/task-driver" }
+test-helpers = { path = "../test-helpers" }
+
+# === Misc Dependencies === #
+ed25519-dalek = { version = "1.0.1", features = ["serde"] }
+reqwest = { version = "0.11", features = ["blocking"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
