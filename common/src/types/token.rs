@@ -33,7 +33,7 @@ use super::exchange::{Exchange, ALL_EXCHANGES};
 /// the Exchange ticker is different from the underlying ERC-20, and Unsupported
 /// means that the asset is not supported on the Exchange.
 #[derive(Clone, Copy, Debug)]
-enum ExchangeTicker {
+pub enum ExchangeTicker {
     /// The Exchange-native ticker is the same as the ERC-20 ticker.
     Same,
     /// The Exchange-native ticker is different from the ERC-20 ticker.
@@ -52,7 +52,7 @@ enum ExchangeTicker {
 /// The raw ERC-20 data to be parsed as heap-allocated global structs. The
 /// layout of ERC20_DATA is (ERC-20 Address, Decimals, ERC-20 Ticker, Binance
 /// Ticker, Coinbase Ticker, Kraken Ticker, Okx Ticker).
-static ERC20_DATA: &[(
+pub static ERC20_DATA: &[(
     &str,
     u8,
     &str,
