@@ -59,7 +59,7 @@ mod task;
 mod wallet;
 
 /// Health check
-const PING_ROUTE: &str = "/v0/ping";
+pub const PING_ROUTE: &str = "/v0/ping";
 
 // ------------------
 // | Error Messages |
