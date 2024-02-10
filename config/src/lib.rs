@@ -52,8 +52,8 @@ struct Cli {
     /// The chain that the relayer settles to
     #[clap(long, value_parser, default_value = "testnet")]
     pub chain_id: Chain,
-    /// The address of the darkpool contract, defaults to the Goerli deployment
-    #[clap(long, value_parser, default_value = "0xf96e457217cfaa498cf917f2da429814c587b064")]
+    /// The address of the darkpool contract, defaults to the internal testnet deployment
+    #[clap(long, value_parser, default_value = "0xe1080224b632a93951a7cfa33eeea9fd81558b5e")]
     pub contract_address: String,
     /// The path to the file containing deployments info for the darkpool contract
     #[clap(long, value_parser)]

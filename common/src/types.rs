@@ -13,10 +13,16 @@ pub mod wallet;
 #[cfg(feature = "mocks")]
 pub use wallet::mocks as wallet_mocks;
 
-use tokio::sync::watch::Receiver as WatchReceiver;
+use tokio::sync::watch::{
+    channel as watch_channel, Receiver as WatchReceiver, Sender as WatchSender,
+};
 
 /// A type alias for an empty channel used to signal cancellation to workers
 pub type CancelChannel = WatchReceiver<()>;
+/// Create a new cancel channel
+pub fn new_cancel_channel() -> (WatchSender<()>, CancelChannel) {
+    watch_channel(())
+}
 
 /// An alias for the price of an asset pair that abstracts away its
 /// representation
