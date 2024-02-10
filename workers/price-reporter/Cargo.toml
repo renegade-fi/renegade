@@ -3,7 +3,8 @@ name = "price-reporter"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+mocks = ["bimap"]
 
 [dependencies]
 # === Cryptography === #
@@ -31,6 +32,7 @@ util = { path = "../../util" }
 
 # === Misc Dependencies === #
 atomic_float = "0.1"
+bimap = { version = "0.6.2", optional = true }
 create2 = "0.0.2"
 hex = "0.3.1"
 itertools = "0.11"

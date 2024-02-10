@@ -13,6 +13,8 @@
 pub mod errors;
 pub mod exchange;
 pub mod manager;
+#[cfg(feature = "mocks")]
+pub mod mock;
 pub mod reporter;
 pub mod worker;
 
