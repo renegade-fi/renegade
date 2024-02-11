@@ -13,7 +13,7 @@ use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
     default_wrapper::{default_option, DefaultOption},
-    types::{new_cancel_channel, CancelChannel},
+    types::{new_cancel_channel, CancelChannel, Price},
     worker::Worker,
 };
 use config::RelayerConfig;
@@ -42,7 +42,11 @@ use job_types::{
 };
 use libp2p::Multiaddr;
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
-use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
+use price_reporter::{
+    manager::PriceReporter,
+    mock::{setup_mock_token_remap, MockPriceReporter},
+    worker::PriceReporterConfig,
+};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
 use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
@@ -74,6 +78,7 @@ fn mock_cancel() -> CancelChannel {
 /// The receiver end of each queue is stored in a `DefaultOption` so that
 /// if/when a worker is spawned for that queue they may take ownership of the
 /// receiver.
+#[derive(Clone)]
 pub struct MockNodeController {
     /// The local addr that the relayer has bound to
     local_addr: Multiaddr,
@@ -383,6 +388,18 @@ impl MockNodeController {
         };
         let mut reporter = PriceReporter::new(conf).expect("Failed to create price reporter");
         reporter.start().expect("Failed to start price reporter");
+
+        self
+    }
+
+    /// Add a mock price reporter to the mock node
+    pub fn with_mock_price_reporter(mut self, price: Price) -> Self {
+        let job_queue = self.price_queue.1.take().unwrap();
+        let reporter = MockPriceReporter::new(price, job_queue);
+        reporter.run();
+
+        // Setup a mock token map
+        setup_mock_token_remap();
 
         self
     }

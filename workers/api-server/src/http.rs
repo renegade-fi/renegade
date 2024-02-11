@@ -415,7 +415,7 @@ impl HttpServer {
 }
 
 /// Handler for the ping route, returns a pong
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PingHandler;
 impl PingHandler {
     /// Create a new handler for "/ping"
