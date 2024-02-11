@@ -23,7 +23,7 @@ gossip-server = { path = "../workers/gossip-server" }
 handshake-manager = { path = "../workers/handshake-manager" }
 job-types = { path = "../workers/job-types" }
 network-manager = { path = "../workers/network-manager" }
-price-reporter = { path = "../workers/price-reporter" }
+price-reporter = { path = "../workers/price-reporter", features = ["mocks"] }
 proof-manager = { path = "../workers/proof-manager" }
 state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }

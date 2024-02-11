@@ -2,6 +2,7 @@
 name = "renegade-relayer"
 version = "0.1.0"
 edition = "2018"
+default-run = "renegade-relayer"
 
 [features]
 debug-tui = []
