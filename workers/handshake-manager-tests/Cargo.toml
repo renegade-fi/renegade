@@ -14,15 +14,19 @@ colored = "2"
 eyre = { workspace = true }
 inventory = "0.3"
 
-# === Runtime === #
+# === Runtime + Networking === #
+libp2p = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
+arbitrum-client = { path = "../../arbitrum-client" }
+config = { path = "../../config" }
 job-types = { path = "../job-types" }
-proof-manager = { path = "../proof-manager", features = ["mocks"] }
+mock-node = { path = "../../mock-node" }
 test-helpers = { path = "../../test-helpers" }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #
+base64 = "0.13"
 lazy_static = "1.4"
 tracing = { workspace = true }

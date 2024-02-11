@@ -129,7 +129,9 @@ impl MockPriceReporter {
 
         let mut state = HashMap::new();
         for exchange in ALL_EXCHANGES.iter() {
-            state.insert(*exchange, ExchangeConnectionState::Nominal(report.clone()));
+            let mut report_clone = report.clone();
+            report_clone.exchange = Some(*exchange);
+            state.insert(*exchange, ExchangeConnectionState::Nominal(report_clone));
         }
 
         if let Err(e) = channel.send(state) {

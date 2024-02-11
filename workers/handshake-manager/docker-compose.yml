@@ -23,8 +23,10 @@ services:
       - "8000:8000"
     command: >
       cargo run -- 
-        --my-addr /ip4/127.0.0.1/udp/8000/quic-v1/p2p/12D3KooWSAy34uc3jgrSSkmjmDvu6eNbY9rJ9HUfyujDsv3hkk7V
-        --peer-addr /ip4/127.0.0.1/udp/8001/quic-v1/p2p/12D3KooWRsF1H7RMoJC2ZBFfPi5dCESgz2WFexPmGFbVN48oJYKa
+        --my-key CAESQILfhGLsZ1CgLHRO5iozioKNXORP8+htmHzVm/PE77OHfqOQXKJivIdJrbwNMnXGZvS6yuzMDdaLb9dE692OPls=
+        --my-port 8000
+        --peer-key CAESQFEmvYSO+0/w0ZTTxQIvEudx7lwPZop8nbQvbkb+66ZQPU5BRHlgJuBSdljUBY4Eb/JAuPL3BM0sL3q8J6JCbek=
+        --peer-port 8001
         --deployments-path /deployments.json
         --devnet-url http://sequencer:8547
     tty: true
@@ -41,8 +43,10 @@ services:
       - "8001:8001"
     command: >
       cargo run --
-        --my-addr /ip4/127.0.0.1/udp/8001/quic-v1/p2p/12D3KooWRsF1H7RMoJC2ZBFfPi5dCESgz2WFexPmGFbVN48oJYKa
-        --peer-addr /ip4/127.0.0.1/udp/8000/quic-v1/p2p/12D3KooWSAy34uc3jgrSSkmjmDvu6eNbY9rJ9HUfyujDsv3hkk7V
+        --my-key CAESQFEmvYSO+0/w0ZTTxQIvEudx7lwPZop8nbQvbkb+66ZQPU5BRHlgJuBSdljUBY4Eb/JAuPL3BM0sL3q8J6JCbek=
+        --my-port 8001
+        --peer-key CAESQILfhGLsZ1CgLHRO5iozioKNXORP8+htmHzVm/PE77OHfqOQXKJivIdJrbwNMnXGZvS6yuzMDdaLb9dE692OPls=
+        --peer-port 8000
         --deployments-path /deployments.json
         --devnet-url http://sequencer:8547
         --verbosity full
