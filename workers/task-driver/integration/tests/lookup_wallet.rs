@@ -4,13 +4,13 @@ use common::types::{tasks::LookupWalletTaskDescriptor, wallet_mocks::mock_empty_
 use constants::Scalar;
 use eyre::Result;
 use rand::{distributions::uniform::SampleRange, thread_rng};
-use test_helpers::{assert_true_result, integration_test_async};
+use test_helpers::{
+    assert_true_result, contract_interaction::new_wallet_in_darkpool, integration_test_async,
+};
 use uuid::Uuid;
 
 use crate::{
-    helpers::{
-        await_task, lookup_wallet_and_check_result, mock_wallet_update, new_wallet_in_darkpool,
-    },
+    helpers::{await_task, lookup_wallet_and_check_result, mock_wallet_update},
     IntegrationTestArgs,
 };
 

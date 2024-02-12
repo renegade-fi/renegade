@@ -21,7 +21,7 @@ pub fn multiaddr_to_socketaddr(addr: &Multiaddr, port: u16) -> Option<SocketAddr
 /// a `SocketAddr`
 pub fn is_dialable_multiaddr(addr: &Multiaddr, allow_local: bool) -> bool {
     match multiaddr_to_socketaddr(addr, 0 /* port */) {
-        None => false,
+        None => allow_local, // we may be addressing via `localhost` DNS
         Some(socketaddr) => is_dialable_addr(&socketaddr, allow_local),
     }
 }

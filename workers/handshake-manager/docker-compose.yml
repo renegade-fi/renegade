@@ -23,6 +23,7 @@ services:
       - "8000:8000"
     command: >
       cargo run -- 
+        --peer-index 0
         --my-key CAESQILfhGLsZ1CgLHRO5iozioKNXORP8+htmHzVm/PE77OHfqOQXKJivIdJrbwNMnXGZvS6yuzMDdaLb9dE692OPls=
         --my-port 8000
         --peer-key CAESQFEmvYSO+0/w0ZTTxQIvEudx7lwPZop8nbQvbkb+66ZQPU5BRHlgJuBSdljUBY4Eb/JAuPL3BM0sL3q8J6JCbek=
@@ -43,6 +44,7 @@ services:
       - "8001:8001"
     command: >
       cargo run --
+        --peer-index 1
         --my-key CAESQFEmvYSO+0/w0ZTTxQIvEudx7lwPZop8nbQvbkb+66ZQPU5BRHlgJuBSdljUBY4Eb/JAuPL3BM0sL3q8J6JCbek=
         --my-port 8001
         --peer-key CAESQILfhGLsZ1CgLHRO5iozioKNXORP8+htmHzVm/PE77OHfqOQXKJivIdJrbwNMnXGZvS6yuzMDdaLb9dE692OPls=

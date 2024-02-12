@@ -24,7 +24,7 @@ handshake-manager = { path = "../workers/handshake-manager" }
 job-types = { path = "../workers/job-types" }
 network-manager = { path = "../workers/network-manager" }
 price-reporter = { path = "../workers/price-reporter", features = ["mocks"] }
-proof-manager = { path = "../workers/proof-manager" }
+proof-manager = { path = "../workers/proof-manager", features = ["mocks"] }
 state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }
 task-driver = { path = "../workers/task-driver" }

@@ -3855,20 +3855,27 @@ name = "handshake-manager-tests"
 version = "0.1.0"
 dependencies = [
  "arbitrum-client",
+ "ark-mpc",
  "base64 0.13.1",
+ "circuit-types",
  "clap 4.4.18",
  "colored",
+ "common",
  "config",
+ "constants",
  "eyre",
  "inventory",
  "job-types",
  "lazy_static",
  "libp2p",
  "mock-node",
+ "num-bigint",
+ "rand 0.8.5",
  "test-helpers",
  "tokio",
  "tracing",
  "util",
+ "uuid 1.7.0",
 ]
 
 [[package]]
@@ -8274,9 +8281,12 @@ dependencies = [
 name = "test-helpers"
 version = "0.1.0"
 dependencies = [
+ "arbitrum-client",
  "ark-ec",
  "ark-mpc",
  "async-trait",
+ "circuit-types",
+ "common",
  "constants",
  "dns-lookup",
  "eyre",

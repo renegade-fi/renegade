@@ -1,10 +1,11 @@
 //! Defines the constraint system types for the set of keys a wallet holds
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::ops::Add;
+use std::{iter, ops::Add};
 
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use itertools::Itertools;
 use k256::{
     ecdsa::{SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey},
     elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
@@ -206,10 +207,17 @@ impl<'de, const SCALAR_WORDS: usize> Deserialize<'de> for NonNativeScalar<SCALAR
 impl From<&NonNativeScalar<K256_FELT_WORDS>> for K256FieldElement {
     fn from(value: &NonNativeScalar<K256_FELT_WORDS>) -> Self {
         let val_bigint = BigUint::from(value);
-        let bytes: [u8; K256_FELT_BYTES] =
-            val_bigint.to_bytes_be()[..K256_FELT_BYTES].try_into().unwrap();
+        let mut bytes = val_bigint
+            .to_bytes_le()
+            .into_iter()
+            .chain(iter::repeat(0))
+            .take(K256_FELT_BYTES)
+            .collect_vec();
+        bytes.reverse();
 
-        K256FieldElement::from_bytes(&bytes.into()).unwrap()
+        let bytes_arr: [u8; K256_FELT_BYTES] = bytes.try_into().unwrap();
+
+        K256FieldElement::from_bytes(&bytes_arr.into()).unwrap()
     }
 }
 
