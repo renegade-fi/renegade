@@ -192,6 +192,8 @@ mod tests {
         static ref BALANCE1: Balance = Balance {
             mint: 2u64.into(),
             amount: 500u64,
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
         };
 
         /// The second dummy order used in a valid match
@@ -208,6 +210,8 @@ mod tests {
         static ref BALANCE2: Balance = Balance {
             mint: 1u64.into(),
             amount: 100u64,
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
         };
     }
 
