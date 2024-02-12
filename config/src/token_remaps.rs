@@ -6,7 +6,7 @@ use arbitrum_client::constants::Chain;
 use bimap::BiMap;
 use common::types::token::TOKEN_REMAPS;
 use serde::{Deserialize, Serialize};
-use tracing::log;
+use tracing::warn;
 use util::raw_err_str;
 
 /// The base URL for raw token remap files
@@ -59,7 +59,7 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     let remap = map.to_remap();
     match TOKEN_REMAPS.get() {
         Some(_) => {
-            log::warn!("Token remap already set, cannot override");
+            warn!("Token remap already set, cannot override");
             Ok(())
         },
         None => TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}")),

@@ -7,7 +7,7 @@ use std::{
 };
 
 use tokio::sync::mpsc::Sender;
-use tracing::log;
+use tracing::error;
 
 /// The Worker trait abstracts over worker functionality with a series of
 /// callbacks that allow a worker to be started, cleaned up, and restarted
@@ -69,7 +69,7 @@ pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &Sender<()>) {
             .spawn(move || {
                 #[allow(unused_must_use)]
                 let err = join_handle.join().unwrap();
-                log::error!("worker {worker_name} exited with error: {err:?}");
+                error!("worker {worker_name} exited with error: {err:?}");
                 channel_clone.blocking_send(()).unwrap();
             })
             .unwrap();

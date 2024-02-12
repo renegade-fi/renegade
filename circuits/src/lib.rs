@@ -42,9 +42,9 @@ pub(crate) const SCALAR_BITS_MINUS_TWO: usize = SCALAR_MAX_BITS - 2;
 macro_rules! print_wire {
     ($x:expr, $cs:ident) => {{
         use circuit_types::traits::CircuitVarType;
-        use tracing::log;
+        use tracing::info;
         let x_eval = $x.eval($cs);
-        log::info!("eval({}): {x_eval:?}", stringify!($x));
+        info!("eval({}): {x_eval:?}", stringify!($x));
     }};
 }
 
@@ -55,11 +55,11 @@ macro_rules! print_mpc_wire {
         use circuit_types::traits::MpcType;
         use futures::executor::block_on;
         use renegade_crypto::fields::scalar_to_biguint;
-        use tracing::log;
+        use tracing::info;
 
         let x_eval = block_on($x.open());
         if $x.fabric().party_id() == 0 {
-            log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+            info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
         }
     }};
 }
@@ -71,11 +71,11 @@ macro_rules! print_multiprover_wire {
         use circuit_types::traits::CircuitVarType;
         use constants::AuthenticatedScalar;
         use futures::executor::block_on;
-        use tracing::log;
+        use tracing::info;
 
         let eval: AuthenticatedScalar = $x.eval_multiprover($cs);
         let x_eval = block_on(eval.open());
-        log::info!("eval({}): {x_eval}", stringify!($x));
+        info!("eval({}): {x_eval}", stringify!($x));
     }};
 }
 
@@ -184,12 +184,16 @@ pub mod test_helpers {
         wallet::WalletShare,
     };
     use constants::{AuthenticatedScalar, Scalar};
-    use env_logger::{Builder, Env, Target};
     use futures::{future::join_all, Future, FutureExt};
     use itertools::Itertools;
     use rand::{thread_rng, Rng, RngCore};
     use renegade_crypto::fields::scalar_to_biguint;
-    use tracing::log::LevelFilter;
+    use tracing_subscriber::{
+        filter::{EnvFilter, LevelFilter},
+        fmt,
+        layer::SubscriberExt,
+        util::SubscriberInitExt,
+    };
     use util::matching_engine::match_orders_with_max_amount;
 
     use crate::zk_circuits::test_helpers::{MAX_BALANCES, MAX_ORDERS};
@@ -216,13 +220,12 @@ pub mod test_helpers {
 
     /// Initialize a logger
     pub fn init_logger() {
-        let env = Env::default().filter_or("MY_CRATE_LOG", "trace");
+        let filter_layer =
+            EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
 
-        let mut builder = Builder::from_env(env);
-        builder.target(Target::Stdout);
-        builder.filter_level(LevelFilter::Info);
+        let fmt_layer = fmt::layer();
 
-        builder.init();
+        tracing_subscriber::registry().with(filter_layer).with(fmt_layer).init();
     }
 
     /// Create a random sequence of field elements

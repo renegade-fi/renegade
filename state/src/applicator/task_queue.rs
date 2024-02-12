@@ -3,7 +3,7 @@
 use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use job_types::task_driver::TaskDriverJob;
 use libmdbx::TransactionKind;
-use tracing::log;
+use tracing::error;
 use util::err_str;
 
 use crate::storage::tx::StateTxn;
@@ -95,7 +95,7 @@ impl StateApplicator {
         let current_running_task = tx.get_current_running_task(&key)?;
         if let Some(task) = current_running_task {
             if task.state.is_committed() {
-                log::error!("cannot preempt committed task: {}", task.id);
+                error!("cannot preempt committed task: {}", task.id);
                 return Err(StateApplicatorError::Preemption);
             }
 

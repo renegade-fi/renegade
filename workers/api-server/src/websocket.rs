@@ -14,7 +14,7 @@ use system_bus::TopicReader;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
 use tokio_tungstenite::{accept_async, WebSocketStream};
-use tracing::log;
+use tracing::error;
 use tungstenite::Message;
 
 use crate::{
@@ -221,7 +221,7 @@ impl WebsocketServer {
                     match message {
                         Some(msg) => {
                             if let Err(e) = msg {
-                                log::error!("error handling websocket connection: {e}");
+                                error!("error handling websocket connection: {e}");
                                 return Err(ApiServerError::WebsocketServerFailure(e.to_string()));
                             }
 

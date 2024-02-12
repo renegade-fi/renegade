@@ -9,7 +9,7 @@ use common::types::{
 };
 use job_types::task_driver::TaskDriverJob;
 use rand::{seq::SliceRandom, thread_rng};
-use tracing::log;
+use tracing::{error, info};
 use util::{err_str, matching_engine::match_orders, res_some};
 
 use crate::{
@@ -39,7 +39,7 @@ impl HandshakeExecutor {
         &self,
         order: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
-        log::info!("Running internal matching engine on order {order}");
+        info!("Running internal matching engine on order {order}");
         let mut rng = thread_rng();
 
         // Lookup the order and its wallet
@@ -111,15 +111,14 @@ impl HandshakeExecutor {
                         return Ok(());
                     }
                 },
-                Err(e) => log::error!(
+                Err(e) => error!(
                     "internal match settlement failed for {} x {}: {e}",
-                    network_order.id,
-                    order_id,
+                    network_order.id, order_id,
                 ),
             }
         }
 
-        log::info!("No internal matches found for {order:?}");
+        info!("No internal matches found for {order:?}");
         Ok(())
     }
 

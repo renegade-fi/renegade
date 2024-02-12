@@ -3,7 +3,7 @@
 use common::worker::Worker;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::log;
+use tracing::error;
 
 use super::{
     error::OnChainEventListenerError,
@@ -53,7 +53,7 @@ impl Worker for OnChainEventListener {
                 let runtime = runtime.unwrap();
                 runtime.block_on(async {
                     if let Err(e) = executor.execute().await {
-                        log::error!("Chain event listener crashed with error: {e}");
+                        error!("Chain event listener crashed with error: {e}");
                         return e;
                     }
 

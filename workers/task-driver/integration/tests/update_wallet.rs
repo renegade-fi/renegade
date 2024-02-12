@@ -21,7 +21,7 @@ use test_helpers::{
     contract_interaction::{attach_merkle_opening, new_wallet_in_darkpool},
     integration_test_async,
 };
-use tracing::log;
+use tracing::info;
 use util::{get_current_time_seconds, hex::biguint_from_hex_string};
 use uuid::Uuid;
 
@@ -96,7 +96,7 @@ async fn execute_wallet_update_and_verify_shares(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     execute_wallet_update(old_wallet, new_wallet.clone(), transfer, test_args.clone()).await?;
-    log::info!("Wallet updated successfully");
+    info!("Wallet updated successfully");
     lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, test_args).await
 }
 

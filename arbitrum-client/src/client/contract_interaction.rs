@@ -10,7 +10,7 @@ use common::types::proof_bundles::{
 use constants::Scalar;
 use contracts_common::types::MatchPayload;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
-use tracing::log::info;
+use tracing::info;
 
 use crate::{
     conversion::{

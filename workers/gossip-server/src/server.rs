@@ -26,7 +26,7 @@ use std::{
     thread::{self, Builder, JoinHandle},
     time::Duration,
 };
-use tracing::log;
+use tracing::{error, info};
 use util::err_str;
 
 use crate::peer_discovery::{
@@ -191,7 +191,7 @@ impl GossipProtocolExecutor {
         mut self,
         job_sender: GossipServerQueue,
     ) -> Result<(), GossipError> {
-        log::info!("Starting executor loop for heartbeat protocol executor...");
+        info!("Starting executor loop for heartbeat protocol executor...");
 
         // Start a timer to enqueue outbound heartbeats
         HeartbeatTimer::new(
@@ -212,14 +212,14 @@ impl GossipProtocolExecutor {
                     let self_clone = self.clone();
                     tokio::spawn(async move {
                         if let Err(e) = self_clone.handle_job(job).await {
-                            log::error!("error handling gossip server job: {e}");
+                            error!("error handling gossip server job: {e}");
                         }}
                     );
                 },
 
                 // Await a cancel signal from the coordinator
                 _ = self.cancel_channel.changed() => {
-                    log::info!("Gossip server cancelled, shutting down...");
+                    info!("Gossip server cancelled, shutting down...");
                     return Err(GossipError::Cancelled("server cancelled".to_string()));
                 }
             }

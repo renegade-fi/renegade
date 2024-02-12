@@ -40,7 +40,7 @@ use job_types::{
 use num_bigint::BigUint;
 use state::State;
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
-use tracing::log;
+use tracing::debug;
 
 // -------------
 // | Constants |
@@ -288,7 +288,7 @@ pub(crate) async fn update_wallet_validity_proofs(
     // No validity proofs needed for an empty wallet, they will be re-proven on
     // the next update that adds a non-empty order
     if !wallet.has_orders_to_match() {
-        log::debug!(
+        debug!(
             "wallet {} has no orders ready for matching, skipping validity proofs",
             wallet.wallet_id
         );

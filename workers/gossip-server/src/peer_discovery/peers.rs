@@ -7,7 +7,7 @@ use gossip_api::request_response::{
 };
 use itertools::Itertools;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use tracing::log;
+use tracing::warn;
 use util::{err_str, get_current_time_seconds};
 
 use crate::{
@@ -89,7 +89,7 @@ impl GossipProtocolExecutor {
 
                     // Check that the cluster auth signature on the peer is valid
                     if peer.verify_cluster_auth_sig().is_err() {
-                        log::warn!("Peer {} info has invalid cluster auth signature", peer.peer_id);
+                        warn!("Peer {} info has invalid cluster auth signature", peer.peer_id);
                         return false;
                     }
 

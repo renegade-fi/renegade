@@ -25,7 +25,7 @@ use rand::{thread_rng, RngCore};
 use slog::Logger;
 use system_bus::SystemBus;
 use tokio::sync::oneshot::Sender as OneshotSender;
-use tracing::log;
+use tracing::{debug, error, info};
 use tracing_slog::TracingSlogDrain;
 use util::err_str;
 use uuid::Uuid;
@@ -201,10 +201,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                 self.proposal_responses.insert(id, response);
 
                 if let Err(e) = self.process_proposal(id, &transition) {
-                    log::error!(
-                        "node-{} error processing proposal: {e:?}, {transition:?}",
-                        self.id()
-                    );
+                    error!("node-{} error processing proposal: {e:?}, {transition:?}", self.id());
                     self.notify_proposal_sender(&id, Err(e))?;
                 };
             }
@@ -289,7 +286,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             return Ok(());
         }
 
-        log::info!("adding raft learner: {peer_id}");
+        info!("adding raft learner: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::AddLearnerNode);
@@ -303,7 +300,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         request_id: Uuid,
         peer_id: RaftPeerId,
     ) -> Result<(), ReplicationError> {
-        log::info!("promoting raft learner: {peer_id}");
+        info!("promoting raft learner: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::AddNode);
@@ -319,7 +316,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             return Ok(());
         }
 
-        log::info!("adding raft voter: {peer_id}");
+        info!("adding raft voter: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::AddNode);
@@ -338,7 +335,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         }
 
         // Otherwise remove the peer through consensus
-        log::info!("removing raft peer: {peer_id}");
+        info!("removing raft peer: {peer_id}");
         let mut change = ConfChangeSingle::new();
         change.set_node_id(peer_id);
         change.set_change_type(ConfChangeType::RemoveNode);
@@ -358,7 +355,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         request_id: Uuid,
         peer_id: u64,
     ) -> Result<(), ReplicationError> {
-        log::info!("forcibly removing raft peer: {peer_id}");
+        info!("forcibly removing raft peer: {peer_id}");
 
         // Build a config change to remove the node
         let context = request_id.to_bytes_le().to_vec();
@@ -393,7 +390,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         let snap = self.inner.store().snapshot(index, 0 /* to */)?;
         self.inner.raft.become_follower(term + 1, INVALID_ID /* leader */);
         if !self.inner.raft.restore(snap) {
-            log::error!("failed to restore snapshot after forced peer removal");
+            error!("failed to restore snapshot after forced peer removal");
         }
 
         self.inner.raft.become_pre_candidate();
@@ -498,10 +495,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                     let transition: StateTransition = serde_json::from_slice(entry_bytes)
                         .map_err(err_str!(ReplicationError::ParseValue))?;
 
-                    log::debug!(
-                        "node {} applying state transition {transition:?}",
-                        self.inner.raft.id
-                    );
+                    debug!("node {} applying state transition {transition:?}", self.inner.raft.id);
 
                     self.applicator
                         .handle_state_transition(transition)

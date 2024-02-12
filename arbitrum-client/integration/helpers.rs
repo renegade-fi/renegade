@@ -10,7 +10,7 @@ use constants::Scalar;
 use eyre::{eyre, Result};
 use rand::thread_rng;
 use std::iter;
-use tracing::log::warn;
+use tracing::warn;
 
 use crate::PreAllocatedState;
 

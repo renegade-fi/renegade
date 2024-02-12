@@ -11,7 +11,7 @@ use common::types::{exchange::Exchange, token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use lazy_static::lazy_static;
 use serde_json::json;
-use tracing::log;
+use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
 
@@ -147,7 +147,7 @@ impl ExchangeConnection for KrakenConnection {
 
                 // Error reading from the websocket
                 Err(e) => {
-                    log::error!("Error reading message from Kraken ws: {}", e);
+                    error!("Error reading message from Kraken ws: {}", e);
                     Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                 },
             }

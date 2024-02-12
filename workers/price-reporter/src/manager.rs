@@ -9,7 +9,7 @@ use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use std::{collections::HashMap, thread::JoinHandle};
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender as TokioSender;
-use tracing::log;
+use tracing::{error, info, warn};
 use util::err_str;
 
 use crate::errors::PriceReporterError;
@@ -68,7 +68,7 @@ impl PriceReporterExecutor {
                 // Dequeue the next job from elsewhere in the local node
                 Some(job) = job_receiver.recv() => {
                     if self.config.disabled {
-                        log::warn!("PriceReporter received job while disabled, ignoring...");
+                        warn!("PriceReporter received job while disabled, ignoring...");
                         continue;
                     }
 
@@ -76,7 +76,7 @@ impl PriceReporterExecutor {
                         let mut self_clone = self.clone();
                         async move {
                             if let Err(e) = self_clone.handle_job(job).await {
-                                log::error!("Error in PriceReporter execution loop: {e}");
+                                error!("Error in PriceReporter execution loop: {e}");
                             }
                         }
                     });
@@ -84,7 +84,7 @@ impl PriceReporterExecutor {
 
                 // Await cancellation by the coordinator
                 _ = cancel_channel.changed() => {
-                    log::info!("PriceReporter cancelled, shutting down...");
+                    info!("PriceReporter cancelled, shutting down...");
                     return Err(PriceReporterError::Cancelled("received cancel signal".to_string()));
                 }
             }

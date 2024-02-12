@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test_helpers = ["dep:env_logger", "dep:ctor", "dep:util"]
+test_helpers = ["dep:tracing-subscriber", "dep:ctor", "dep:util"]
 large_benchmarks = []
 large_tests = []
 stats = ["ark-mpc/stats"]
@@ -70,7 +70,7 @@ util = { path = "../util", optional = true }
 # === Misc Dependencies === #
 bitvec = "1.0"
 ctor = { version = "0.1", optional = true }
-env_logger = { version = "0.9", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 futures = { workspace = true }
 itertools = "0.10"
 lazy_static = "1.4"
@@ -82,13 +82,11 @@ tracing = { version = "0.1", features = ["log"] }
 [dev-dependencies]
 ark-ec = "0.4"
 circuit-types = { path = "../circuit-types", features = ["test-helpers"] }
-chrono = "0.4"
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
 ctor = "0.1"
 dns-lookup = "1.0"
-env_logger = "0.9"
 eyre = { workspace = true }
 inventory = "0.3"
 mpc-plonk = { workspace = true, features = ["test_apis", "std"] }

@@ -21,7 +21,7 @@ use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotification
 use serde::Serialize;
 use state::State;
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
-use tracing::log;
+use tracing::{error, info, warn};
 
 use crate::{
     error::TaskDriverError,
@@ -175,7 +175,7 @@ impl TaskExecutor {
 
     /// The execution loop of the `TaskExecutor`
     pub fn run(self) -> Result<(), TaskDriverError> {
-        log::info!("starting task executor loop");
+        info!("starting task executor loop");
         let queue = &self.task_queue;
 
         loop {
@@ -191,7 +191,7 @@ impl TaskExecutor {
                     self.runtime.spawn(async move {
                         let res = fut.await;
                         if let Err(e) = res {
-                            log::error!("error running task: {e:?}");
+                            error!("error running task: {e:?}");
                         }
                     });
 
@@ -206,7 +206,7 @@ impl TaskExecutor {
             };
 
             if let Err(e) = res {
-                log::error!("error handling task job: {e:?}");
+                error!("error handling task job: {e:?}");
             }
         }
     }
@@ -219,7 +219,7 @@ impl TaskExecutor {
     ) -> Result<(), TaskDriverError> {
         // Check that the task exists
         if !self.state().contains_task(&task_id)? && !self.is_preemptive_task(&task_id) {
-            log::warn!("got task notification request for non-existent task {task_id:?}");
+            warn!("got task notification request for non-existent task {task_id:?}");
             let _ = channel.send(Err(TASK_NOT_FOUND_ERROR.to_string()));
             return Ok(());
         }
@@ -241,7 +241,7 @@ impl TaskExecutor {
         // Check if any non-preemptable tasks conflict with this task before pausing
         for wallet_id in wallet_ids.iter() {
             if let Some(conflicting_task) = self.state().current_committed_task(wallet_id)? {
-                log::error!(
+                error!(
                     "task preemption conflicts with committed task {conflicting_task:?}, aborting..."
                 );
 
@@ -263,7 +263,7 @@ impl TaskExecutor {
         self.runtime.spawn(async move {
             let res = fut.await;
             if let Err(e) = res {
-                log::error!("error running immediate task: {e:?}");
+                error!("error running immediate task: {e:?}");
             }
 
             // Unpause the queues for the affected local wallets
@@ -391,13 +391,13 @@ impl TaskExecutor {
             while !task.step().await? {
                 retries -= 1;
                 if retries == 0 {
-                    log::error!("retries exceeded... task failed");
+                    error!("retries exceeded... task failed");
                     break 'outer;
                 }
 
                 // Sleep the backoff time and retry
                 tokio::time::sleep(curr_backoff).await;
-                log::info!("retrying task {id:?} from state: {}", task.state());
+                info!("retrying task {id:?} from state: {}", task.state());
 
                 curr_backoff *= args.backoff_amplification_factor;
                 curr_backoff = Duration::min(curr_backoff, backoff_ceiling);
