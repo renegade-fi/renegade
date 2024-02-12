@@ -28,7 +28,7 @@ use libp2p::{
     Multiaddr, Swarm,
 };
 use state::{replication::network::traits::RaftMessageQueue, State};
-use tracing::log;
+use tracing::info;
 
 use std::thread::JoinHandle;
 
@@ -226,7 +226,7 @@ impl NetworkManagerExecutor {
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
     pub async fn executor_loop(mut self) -> NetworkManagerError {
-        log::info!("Starting executor loop for network manager...");
+        info!("Starting executor loop for network manager...");
         let mut cancel_channel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
 
@@ -236,7 +236,7 @@ impl NetworkManagerExecutor {
                 Some(job) = job_channel.recv() => {
                     // Forward the message
                     if let Err(err) = self.handle_job(job) {
-                        log::info!("Error sending outbound message: {}", err);
+                        info!("Error sending outbound message: {}", err);
                     }
                 },
 
@@ -247,14 +247,14 @@ impl NetworkManagerExecutor {
                             if let Err(err) = self.handle_inbound_message(
                                 event,
                             ) {
-                                log::info!("error in network manager: {:?}", err);
+                                info!("error in network manager: {:?}", err);
                             }
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
-                            log::info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
+                            info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
-                        x => { log::info!("Unhandled swarm event: {:?}", x) }
+                        x => { info!("Unhandled swarm event: {:?}", x) }
                     }
                 }
 

@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
-use tracing::log;
+use tracing::error;
 use tungstenite::Error as WsError;
 use url::Url;
 
@@ -50,7 +50,7 @@ pub(super) async fn ws_connect(
     let ws_conn = match connect_async(url.clone()).await {
         Ok((conn, _resp)) => conn,
         Err(e) => {
-            log::error!("Cannot connect to the remote URL: {}", url);
+            error!("Cannot connect to the remote URL: {}", url);
             return Err(ExchangeConnectionError::HandshakeFailure(e.to_string()));
         },
     };

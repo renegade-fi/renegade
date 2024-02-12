@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use common::types::{token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use serde_json::json;
-use tracing::log;
+use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
 
@@ -147,7 +147,7 @@ impl ExchangeConnection for OkxConnection {
 
                 // Error reading from the websocket
                 Err(e) => {
-                    log::error!("Error reading message from Okx ws: {}", e);
+                    error!("Error reading message from Okx ws: {}", e);
                     Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                 },
             }

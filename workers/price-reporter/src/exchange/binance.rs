@@ -13,7 +13,7 @@ use common::types::{
 };
 use futures_util::{Sink, Stream, StreamExt};
 use serde_json::Value;
-use tracing::log;
+use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
 
@@ -161,7 +161,7 @@ impl ExchangeConnection for BinanceConnection {
                 Ok(mapped_stream) => mapped_stream.transpose(),
                 // Error on the incoming (filtered) stream
                 Err(e) => {
-                    log::error!("Error reading message from Binance ws: {}", e);
+                    error!("Error reading message from Binance ws: {}", e);
                     Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                 },
             }

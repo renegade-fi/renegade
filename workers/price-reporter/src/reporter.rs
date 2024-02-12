@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 use system_bus::SystemBus;
 use tokio::time::Instant;
 use tokio_stream::{StreamExt, StreamMap};
-use tracing::log;
+use tracing::{error, info, warn};
 use util::get_current_time_seconds;
 
 use crate::exchange::connect_exchange;
@@ -150,7 +150,7 @@ impl Reporter {
             let quote_token = quote_token.clone();
             async move {
                 if let Err(e) = connection_muxer.execution_loop().await {
-                    log::error!("Error in ConnectionMuxer for {base_token}-{quote_token}: {e}");
+                    error!("Error in ConnectionMuxer for {base_token}-{quote_token}: {e}");
                 }
             }
         });
@@ -372,7 +372,7 @@ impl ConnectionMuxer {
                 _ = &mut delay => {
                     for exchange in stream_map.values_mut() {
                         if let Err(e) = exchange.send_keepalive().await {
-                            log::error!("Error sending keepalive to exchange: {e}");
+                            error!("Error sending keepalive to exchange: {e}");
                         }
                     }
 
@@ -409,20 +409,20 @@ impl ConnectionMuxer {
 
                             Err(e) => {
                                 // Restart the connection
-                                log::error!("Error streaming from {exchange}: {e}, restarting connection...");
+                                error!("Error streaming from {exchange}: {e}, restarting connection...");
                                 loop {
                                     match self.retry_connection(exchange).await {
                                         Ok(conn) => {
-                                            log::info!("Successfully reconnected to {exchange}");
+                                            info!("Successfully reconnected to {exchange}");
                                             stream_map.insert(exchange, conn);
                                         }
                                         Err(ExchangeConnectionError::MaxRetries(_)) => {
-                                            log::error!("Max retries ({MAX_CONN_RETRIES}) exceeded, unable to connect to {exchange}... removing from data sources");
+                                            error!("Max retries ({MAX_CONN_RETRIES}) exceeded, unable to connect to {exchange}... removing from data sources");
                                             stream_map.remove(&exchange);
                                             break;
                                         }
                                         _ => {
-                                            log::warn!("Connection retry attempt failed");
+                                            warn!("Connection retry attempt failed");
                                         },
                                     }
                                 }
@@ -483,7 +483,7 @@ impl ConnectionMuxer {
         tokio::time::sleep(Duration::from_secs(CONN_RETRY_DELAY_MS)).await;
 
         // Reconnect
-        log::info!("Retrying connection to {exchange}");
+        info!("Retrying connection to {exchange}");
         connect_exchange(&self.base_token, &self.quote_token, &self.config, exchange).await
     }
 }

@@ -7,7 +7,7 @@ use gossip_api::request_response::{
     GossipRequest,
 };
 use job_types::network_manager::NetworkManagerJob;
-use tracing::log;
+use tracing::info;
 use util::{err_str, get_current_time_seconds};
 
 use crate::{errors::GossipError, server::GossipProtocolExecutor};
@@ -113,7 +113,7 @@ impl GossipProtocolExecutor {
         // Find the peer's info in global state
         let peer_info = self.global_state.get_peer_info(&peer_id)?;
         if peer_info.is_none() {
-            log::info!("could not find info for peer {peer_id:?}");
+            info!("could not find info for peer {peer_id:?}");
             return Ok(());
         }
         let peer_info = peer_info.unwrap();
@@ -133,7 +133,7 @@ impl GossipProtocolExecutor {
         }
 
         // Remove expired peers from global state
-        log::info!("Expiring peer {peer_id}");
+        info!("Expiring peer {peer_id}");
         self.global_state.remove_peer(peer_id)?;
 
         // Add peers to expiry cache for the duration of their invisibility window. This

@@ -13,7 +13,7 @@ use std::{
     str::FromStr,
     task::{Context, Poll},
 };
-use tracing::log;
+use tracing::error;
 use web3::{
     self,
     api::BaseFilter,
@@ -374,7 +374,7 @@ impl ExchangeConnection for UniswapV3Connection {
                     ))),
 
                     Err(e) => {
-                        log::error!("Error parsing Swap event from UniswapV3: {}", e);
+                        error!("Error parsing Swap event from UniswapV3: {}", e);
                         Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                     },
                 }

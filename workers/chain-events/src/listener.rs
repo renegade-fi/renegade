@@ -16,7 +16,7 @@ use job_types::{
 };
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
-use tracing::log;
+use tracing::{error, info, warn};
 
 use super::error::OnChainEventListenerError;
 
@@ -98,7 +98,7 @@ impl OnChainEventListenerExecutor {
             .block_number()
             .await
             .map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
-        log::info!("Starting on-chain event listener from current block {starting_block_number}");
+        info!("Starting on-chain event listener from current block {starting_block_number}");
 
         // Build a filtered stream on events that the chain-events worker listens for
         let filter = Filter::default()
@@ -118,7 +118,7 @@ impl OnChainEventListenerExecutor {
             self.handle_event(event).await?;
         }
 
-        log::error!("on-chain event listener stream ended unexpectedly");
+        error!("on-chain event listener stream ended unexpectedly");
         Ok(())
     }
 
@@ -137,7 +137,7 @@ impl OnChainEventListenerExecutor {
             },
             _ => {
                 // Simply log the error and ignore the event
-                log::warn!("chain listener received unexpected event type: {event}");
+                warn!("chain listener received unexpected event type: {event}");
             },
         }
 

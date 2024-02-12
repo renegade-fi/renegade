@@ -12,7 +12,7 @@ use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::oneshot::Sender as OneshotSender;
-use tracing::log;
+use tracing::{debug, error};
 use util::get_current_time_seconds;
 
 use crate::errors::PriceReporterError;
@@ -62,7 +62,7 @@ impl MockPriceReporter {
             let job = self.job_queue.recv().await;
             if let Some(job) = job {
                 if let Err(e) = self.handle_job(job) {
-                    log::error!("error in mock price reporter: {e:?}");
+                    error!("error in mock price reporter: {e:?}");
                 }
             }
         }
@@ -72,7 +72,7 @@ impl MockPriceReporter {
     fn handle_job(&self, job: PriceReporterJob) -> Result<(), PriceReporterError> {
         match job {
             PriceReporterJob::StartPriceReporter { .. } => {
-                log::debug!("mock price reporter got `StartPriceReporter` job");
+                debug!("mock price reporter got `StartPriceReporter` job");
                 Ok(())
             },
             PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
@@ -103,7 +103,7 @@ impl MockPriceReporter {
         });
 
         if let Err(e) = channel.send(state) {
-            log::error!("error sending price report: {e:?}");
+            error!("error sending price report: {e:?}");
         }
 
         Ok(())
@@ -135,7 +135,7 @@ impl MockPriceReporter {
         }
 
         if let Err(e) = channel.send(state) {
-            log::error!("error sending price report: {e:?}");
+            error!("error sending price report: {e:?}");
         }
 
         Ok(())

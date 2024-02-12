@@ -12,7 +12,7 @@
 
 mod error;
 
-use std::{io::Write, process::exit, thread, time::Duration};
+use std::{process::exit, thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
@@ -34,15 +34,19 @@ use state::State;
 use state::{replication::network::traits::new_raft_message_queue, tui::StateTuiApp};
 use system_bus::SystemBus;
 
-use chrono::Local;
-use env_logger::Builder;
 use error::CoordinatorError;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::{
     select,
     sync::{mpsc, watch},
 };
-use tracing::log::{self, LevelFilter};
+use tracing::info;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{
+    filter::{EnvFilter, LevelFilter},
+    fmt,
+    layer::SubscriberExt,
+};
 
 /// The amount of time to wait between sending teardown signals and terminating
 /// execution
@@ -78,11 +82,9 @@ async fn main() -> Result<(), CoordinatorError> {
         .expect("error blocking on config parse")
         .expect("error parsing command line args");
 
-    log::info!(
+    info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
-        args.version,
-        args.p2p_port,
-        args.cluster_id
+        args.version, args.p2p_port, args.cluster_id
     );
 
     // Build communication primitives
@@ -332,7 +334,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Wait for an error, log the error, and teardown the relayer
     let loop_res: Result<(), CoordinatorError> = recovery_loop().await;
     let err = loop_res.err().unwrap();
-    log::info!("Error in coordinator thread: {:?}", err);
+    info!("Error in coordinator thread: {:?}", err);
 
     // Send cancel signals to all workers
     for cancel_channel in [
@@ -350,27 +352,21 @@ async fn main() -> Result<(), CoordinatorError> {
     }
 
     // Give workers time to teardown execution then terminate
-    log::info!("Tearing down workers...");
+    info!("Tearing down workers...");
     thread::sleep(Duration::from_millis(TERMINATION_TIMEOUT_MS));
-    log::info!("Terminating...");
+    info!("Terminating...");
 
     Err(err)
 }
 
 /// Configures the default log capture which logs to stdout
 fn configure_default_log_capture() {
-    Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{} [{}] - {}",
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .filter(None, LevelFilter::Info)
-        .init();
+    let filter_layer =
+        EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
+
+    let fmt_layer = fmt::layer();
+
+    tracing_subscriber::registry().with(filter_layer).with(fmt_layer).init();
 }
 
 /// Attempt to recover a failed module by cleaning up its resources and

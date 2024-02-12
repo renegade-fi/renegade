@@ -8,7 +8,7 @@ use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use state::State;
-use tracing::log;
+use tracing::debug;
 
 use crate::error::{bad_request, not_found};
 
@@ -186,7 +186,7 @@ impl Router {
         auth_required: bool,
         handler: H,
     ) {
-        log::debug!("Attached handler to route {route} with method {method}");
+        debug!("Attached handler to route {route} with method {method}");
         let full_route = Self::create_full_route(method, route);
 
         self.router

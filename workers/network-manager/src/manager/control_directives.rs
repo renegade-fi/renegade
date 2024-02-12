@@ -13,7 +13,7 @@ use job_types::{
 use libp2p::PeerId;
 use libp2p_core::{Endpoint, Multiaddr};
 use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use tracing::log;
+use tracing::{error, info, warn};
 use util::networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr};
 use uuid::Uuid;
 
@@ -70,7 +70,7 @@ impl NetworkManagerExecutor {
     fn handle_new_addr(&mut self, peer_id: PeerId, addr: Multiaddr) {
         // If we cannot parse the address or it is not dialable, skip indexing
         if !is_dialable_multiaddr(&addr, self.allow_local) {
-            log::info!("skipping local addr {addr:?}");
+            info!("skipping local addr {addr:?}");
             return;
         }
 
@@ -130,7 +130,7 @@ impl NetworkManagerExecutor {
             )
             .await
             {
-                log::error!("error brokering MPC network: {e}");
+                error!("error brokering MPC network: {e}");
             }
         });
 
@@ -168,11 +168,9 @@ impl NetworkManagerExecutor {
                     let mut net = QuicTwoPartyNet::new(party_id, local_addr, peer_addr);
 
                     if let Err(e) = net.connect().await {
-                        log::warn!(
-                            "failed to broker MPC network on address {peer_addr:?}, error: {e}"
-                        )
+                        warn!("failed to broker MPC network on address {peer_addr:?}, error: {e}")
                     } else {
-                        log::info!("successfully connected to peer at addr: {peer_addr:?}");
+                        info!("successfully connected to peer at addr: {peer_addr:?}");
                         // Forward the net to the handshake manager
                         brokered_net = Some(net);
                         break;

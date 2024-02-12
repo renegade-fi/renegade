@@ -21,8 +21,6 @@ constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc === #
-chrono = "0.4"
-env_logger = "0.9"
 eyre = { workspace = true }
 hex = "0.4"
 json = "0.12"

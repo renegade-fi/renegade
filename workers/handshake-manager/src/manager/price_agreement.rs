@@ -7,7 +7,7 @@ use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use lazy_static::lazy_static;
 use tokio::sync::oneshot;
-use tracing::log;
+use tracing::{error, warn};
 
 use super::{HandshakeExecutor, HandshakeManagerError};
 
@@ -150,7 +150,7 @@ impl HandshakeExecutor {
         for response_channel in channels.into_iter() {
             let res = response_channel.await;
             if res.is_err() {
-                log::error!("Error fetching price vector: {res:?}");
+                error!("Error fetching price vector: {res:?}");
                 continue;
             }
             let midpoint_state = res.unwrap();
@@ -176,7 +176,7 @@ impl HandshakeExecutor {
                 },
 
                 err_state => {
-                    log::warn!("Price report invalid during price agreement: {err_state:?}");
+                    warn!("Price report invalid during price agreement: {err_state:?}");
                 },
             }
         }

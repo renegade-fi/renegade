@@ -25,7 +25,7 @@ use circuits::{
 use common::types::{proof_bundles::ProofBundle, CancelChannel};
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
-use tracing::log;
+use tracing::{error, info};
 
 use super::error::ProofManagerError;
 
@@ -70,7 +70,7 @@ impl ProofManager {
                 .has_changed()
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
-                log::info!("Proof manager cancelled, shutting down...");
+                info!("Proof manager cancelled, shutting down...");
                 return Err(ProofManagerError::Cancelled("received cancel signal".to_string()));
             }
 
@@ -81,7 +81,7 @@ impl ProofManager {
 
             thread_pool.spawn(move || {
                 if let Err(e) = Self::handle_proof_job(job) {
-                    log::error!("Error handling proof manager job: {}", e)
+                    error!("Error handling proof manager job: {}", e)
                 }
             });
         }

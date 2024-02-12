@@ -14,7 +14,7 @@ use job_types::{
 use state::State;
 use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::log;
+use tracing::info;
 
 use crate::manager::{
     init_price_streams, scheduler::HandshakeScheduler, HandshakeExecutor,
@@ -89,7 +89,7 @@ impl Worker for HandshakeManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        log::info!("Starting executor loop for handshake protocol executor...");
+        info!("Starting executor loop for handshake protocol executor...");
 
         // Instruct the price reporter to being streaming prices for the default pairs
         init_price_streams(self.config.price_reporter_job_queue.clone())?;

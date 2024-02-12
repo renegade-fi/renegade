@@ -6,7 +6,7 @@ use std::time::Duration;
 use common::types::CancelChannel;
 use job_types::handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue};
 use state::State;
-use tracing::log;
+use tracing::info;
 use util::err_str;
 
 use crate::error::HandshakeManagerError;
@@ -62,7 +62,7 @@ impl HandshakeScheduler {
                 },
 
                 _ = self.cancel.changed() => {
-                    log::info!("Handshake manager cancelled, winding down");
+                    info!("Handshake manager cancelled, winding down");
                     return HandshakeManagerError::Cancelled("received cancel signal".to_string());
                 }
             }

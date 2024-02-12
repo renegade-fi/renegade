@@ -5,7 +5,7 @@ use common::types::tasks::TaskIdentifier;
 use external_api::bus_message::{task_topic_name, SystemBusMessage};
 use state::{error::StateError, State};
 use system_bus::SystemBus;
-use tracing::log;
+use tracing::{error, info};
 
 use crate::{
     driver::StateWrapper,
@@ -83,7 +83,7 @@ impl<T: Task> RunnableTask<T> {
     pub async fn step(&mut self) -> Result<bool, TaskDriverError> {
         // Handle a failed step
         if let Err(e) = self.task.step().await {
-            log::error!("error executing task step: {e}");
+            error!("error executing task step: {e}");
             return if e.retryable() { Ok(false) } else { Err(e.into()) };
         };
 
@@ -98,7 +98,7 @@ impl<T: Task> RunnableTask<T> {
         let task_id = self.task_id;
         let name = self.task.name();
         let new_state = self.state();
-        log::info!("task {name}({task_id:?}) transitioning to state {new_state}");
+        info!("task {name}({task_id:?}) transitioning to state {new_state}");
 
         // Preemptive tasks need not update state in the consensus engine
         if self.preemptive {
@@ -125,7 +125,7 @@ impl<T: Task> RunnableTask<T> {
     pub async fn cleanup(&mut self) -> Result<(), TaskDriverError> {
         // Do not propagate errors from cleanup, continue to cleanup
         if let Err(e) = self.task.cleanup().await {
-            log::error!("error cleaning up task: {e:?}");
+            error!("error cleaning up task: {e:?}");
         }
 
         // Pop the task from the state

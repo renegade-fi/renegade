@@ -34,7 +34,7 @@ use common::types::{
 use constants::SystemCurveGroup;
 use crossbeam::channel::{bounded, Receiver};
 use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
-use tracing::log;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::error::HandshakeManagerError;
@@ -112,7 +112,7 @@ impl HandshakeExecutor {
             .await;
 
         // Await MPC completion
-        log::info!("Match completed!");
+        info!("Match completed!");
         res
     }
 
@@ -127,7 +127,7 @@ impl HandshakeExecutor {
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
         cancel_channel: Receiver<()>,
     ) -> Result<MatchBundle, HandshakeManagerError> {
-        log::info!("Matching order...");
+        info!("Matching order...");
 
         // Build a fabric
         // TODO: Replace the dummy beaver source

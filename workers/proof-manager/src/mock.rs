@@ -24,7 +24,7 @@ use common::types::proof_bundles::{
 };
 use job_types::proof_manager::{ProofJob, ProofManagerReceiver};
 use tokio::{runtime::Handle, sync::oneshot::Sender as TokioSender};
-use tracing::log;
+use tracing::error;
 
 use crate::error::ProofManagerError;
 
@@ -43,7 +43,7 @@ impl MockProofManager {
     pub fn start(job_queue: ProofManagerReceiver) {
         Handle::current().spawn_blocking(move || {
             if let Err(e) = Self::execution_loop(&job_queue) {
-                log::error!("error in mock proof manager: {e}");
+                error!("error in mock proof manager: {e}");
             }
         });
     }

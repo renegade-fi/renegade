@@ -3,7 +3,7 @@
 use job_types::gossip_server::GossipServerJob;
 use libp2p::identify::Event as IdentifyEvent;
 use libp2p_core::multiaddr::Protocol;
-use tracing::log;
+use tracing::{error, info};
 
 use crate::{error::NetworkManagerError, manager::replace_port};
 
@@ -27,7 +27,7 @@ impl NetworkManagerExecutor {
                 local_addr = local_addr.with(Protocol::P2p(self.local_peer_id.0.into()));
 
                 // Update the addr in the global state
-                log::info!("discovered local peer's public IP: {:?}", local_addr);
+                info!("discovered local peer's public IP: {:?}", local_addr);
                 self.global_state.update_local_peer_addr(&local_addr)?;
                 self.discovered_identity = true;
 
@@ -37,7 +37,7 @@ impl NetworkManagerExecutor {
                     if let Err(e) =
                         self.gossip_work_queue.send(GossipServerJob::ExecuteHeartbeat(peer))
                     {
-                        log::error!("error forwarding heartbeat to gossip server: {e}")
+                        error!("error forwarding heartbeat to gossip server: {e}")
                     }
                 }
             }

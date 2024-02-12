@@ -11,7 +11,7 @@ use common::types::{token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use hmac_sha256::HMAC;
 use serde_json::json;
-use tracing::log;
+use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::get_current_time_seconds;
@@ -224,7 +224,7 @@ impl ExchangeConnection for CoinbaseConnection {
                     },
 
                     Err(e) => {
-                        log::error!("Error reading message from Coinbase websocket: {e}");
+                        error!("Error reading message from Coinbase websocket: {e}");
                         Some(Err(ExchangeConnectionError::ConnectionHangup(e.to_string())))
                     },
                 }

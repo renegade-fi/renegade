@@ -20,7 +20,7 @@ use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
     request_response::{orderbook::OrderInfoResponse, GossipResponse},
 };
-use tracing::log;
+use tracing::debug;
 use util::err_str;
 
 use super::{errors::GossipError, server::GossipProtocolExecutor};
@@ -64,7 +64,7 @@ impl GossipProtocolExecutor {
             // consensus
             let is_local = order.cluster == self.global_state.get_cluster_id()?;
             if is_local {
-                log::debug!("skipping local order {order_id}");
+                debug!("skipping local order {order_id}");
                 continue;
             }
 

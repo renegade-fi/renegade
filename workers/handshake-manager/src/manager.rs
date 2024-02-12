@@ -46,7 +46,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use system_bus::SystemBus;
-use tracing::log;
+use tracing::info;
 use util::err_str;
 use uuid::Uuid;
 
@@ -167,14 +167,14 @@ impl HandshakeExecutor {
                     let self_clone = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = self_clone.handle_handshake_job(job).await {
-                            log::info!("error executing handshake: {e}")
+                            info!("error executing handshake: {e}")
                         }
                     });
                 },
 
                 // Await cancellation by the coordinator
                 _ = self.cancel.changed() => {
-                    log::info!("Handshake manager received cancel signal, shutting down...");
+                    info!("Handshake manager received cancel signal, shutting down...");
                     return HandshakeManagerError::Cancelled("received cancel signal".to_string());
                 }
             }

@@ -19,7 +19,7 @@ use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManage
 use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::Serialize;
 use state::{error::StateError, State};
-use tracing::log;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
@@ -343,7 +343,7 @@ impl LookupWalletTask {
 
         let latest_tx = updating_tx
             .ok_or_else(|| LookupWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))?;
-        log::info!("latest updating tx: {:#x}", latest_tx);
+        info!("latest updating tx: {:#x}", latest_tx);
 
         Ok((blinder_index, curr_blinder, curr_blinder_private_share))
     }
