@@ -68,14 +68,14 @@ impl GossipProtocolExecutor {
     pub fn handle_heartbeat(
         &self,
         peer: &WrappedPeerId,
-        message: HeartbeatMessage,
+        message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
         // Record the heartbeat
         self.record_heartbeat(peer)?;
 
         // Merge the peer and order info from the heartbeat into the local state
-        self.request_missing_orders(peer, &message)?;
-        self.request_missing_peers(peer, &message)
+        self.request_missing_orders(peer, message)?;
+        self.request_missing_peers(peer, message)
     }
 
     /// Request any missing orders in the heartbeat message from the given peer

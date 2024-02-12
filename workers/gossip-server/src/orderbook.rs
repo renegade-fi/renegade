@@ -39,9 +39,9 @@ impl GossipProtocolExecutor {
     /// Handles a request for order information from a peer
     pub(crate) fn handle_order_info_request(
         &self,
-        order_ids: Vec<OrderIdentifier>,
+        order_ids: &[OrderIdentifier],
     ) -> Result<GossipResponse, GossipError> {
-        let info = self.global_state.get_orders_batch(&order_ids)?;
+        let info = self.global_state.get_orders_batch(order_ids)?;
         let order_info = info.into_iter().flatten().collect();
 
         let resp = OrderInfoResponse { order_info };
