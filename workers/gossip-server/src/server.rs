@@ -254,11 +254,11 @@ impl GossipProtocolExecutor {
         match req {
             GossipRequest::Bootstrap(req) => self.handle_bootstrap_req(req).await,
             GossipRequest::Heartbeat(req) => {
-                self.handle_heartbeat(&peer, req)?;
+                self.handle_heartbeat(&peer, &req)?;
                 Ok(GossipResponse::Ack)
             },
             GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids),
-            GossipRequest::OrderInfo(req) => self.handle_order_info_request(req.order_ids),
+            GossipRequest::OrderInfo(req) => self.handle_order_info_request(&req.order_ids),
             req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
         }
     }
@@ -270,7 +270,7 @@ impl GossipProtocolExecutor {
         resp: GossipResponse,
     ) -> Result<(), GossipError> {
         match resp {
-            GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, resp),
+            GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, &resp),
             GossipResponse::OrderInfo(resp) => {
                 self.handle_order_info_response(resp.order_info).await
             },

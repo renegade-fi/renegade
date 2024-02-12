@@ -34,7 +34,9 @@ use self::{
         GET_NETWORK_ORDER_BY_ID_ROUTE,
     },
     price_report::{ExchangeHealthStatesHandler, EXCHANGE_HEALTH_ROUTE},
-    task::{GetTaskStatusHandler, GET_TASK_STATUS_ROUTE},
+    task::{
+        GetTaskQueueHandler, GetTaskStatusHandler, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE,
+    },
     wallet::{
         AddFeeHandler, CancelOrderHandler, CreateOrderHandler, CreateWalletHandler,
         DepositBalanceHandler, FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
@@ -218,6 +220,14 @@ impl HttpServer {
             GET_TASK_STATUS_ROUTE.to_string(),
             false, // auth_required
             GetTaskStatusHandler::new(global_state.clone()),
+        );
+
+        // The "/task_queue/:wallet_id" route
+        router.add_route(
+            &Method::GET,
+            GET_TASK_QUEUE_ROUTE.to_string(),
+            true, // auth_required
+            GetTaskQueueHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id" route

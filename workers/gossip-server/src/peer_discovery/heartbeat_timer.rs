@@ -68,6 +68,7 @@ impl HeartbeatTimer {
     /// period constant defined above. That is, we specify the interval in
     /// between heartbeats for a given peer, and space out all heartbeats in
     /// that interval
+    #[allow(clippy::needless_pass_by_value)]
     fn execution_loop(
         intra_cluster: bool,
         job_queue: GossipServerQueue,
