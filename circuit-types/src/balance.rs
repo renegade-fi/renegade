@@ -15,7 +15,7 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    Fabric,
+    Amount, Fabric,
 };
 
 /// Represents the base type of a balance in tuple holding a reference to the
@@ -30,7 +30,11 @@ pub struct Balance {
     )]
     pub mint: BigUint,
     /// The amount of the given token stored in this balance
-    pub amount: u64,
+    pub amount: Amount,
+    /// The amount of this balance owed to the managing relayer cluster
+    pub relayer_fee_balance: Amount,
+    /// The amount of this balance owed to the protocol
+    pub protocol_fee_balance: Amount,
 }
 
 impl Balance {
@@ -41,6 +45,6 @@ impl Balance {
 
     /// Whether or not the balance is zero'd
     pub fn is_zero(&self) -> bool {
-        self.amount == 0
+        self.amount == 0 && self.relayer_fee_balance == 0 && self.protocol_fee_balance == 0
     }
 }

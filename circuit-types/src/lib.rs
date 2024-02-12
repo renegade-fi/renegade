@@ -10,12 +10,12 @@
 
 pub mod balance;
 pub mod errors;
-pub mod fee;
 pub mod fixed_point;
 pub mod keychain;
 pub mod macro_tests;
 pub mod r#match;
 pub mod merkle;
+pub mod note;
 pub mod order;
 pub mod srs;
 pub mod traits;
@@ -57,6 +57,8 @@ pub const SCALAR_ZERO: ScalarField = ScalarField::new(BigInt::new([0, 0, 0, 0]))
 /// The one value in the Scalar field we work over
 pub const SCALAR_ONE: ScalarField = ScalarField::new(BigInt::new([1, 0, 0, 0]));
 
+/// The type used to track an amount
+pub type Amount = u64;
 /// The number of bits allowed in a balance or transaction "amount"
 pub const AMOUNT_BITS: usize = 64;
 /// The number of bits allowed in a price
