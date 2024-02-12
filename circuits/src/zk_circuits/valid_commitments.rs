@@ -20,7 +20,6 @@ use crate::{
 use circuit_macros::circuit_type;
 use circuit_types::{
     balance::{Balance, BalanceVar},
-    fee::{Fee, FeeVar},
     order::{Order, OrderVar},
     r#match::OrderSettlementIndices,
     traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},

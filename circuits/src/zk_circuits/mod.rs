@@ -83,7 +83,6 @@ pub mod test_helpers {
 
     use circuit_types::{
         balance::Balance,
-        fee::Fee,
         fixed_point::FixedPoint,
         keychain::{NonNativeScalar, PublicKeyChain, PublicSigningKey, NUM_KEYS},
         merkle::MerkleOpening,
@@ -115,10 +114,12 @@ pub mod test_helpers {
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
         };
         pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
-            Balance { mint: 1u8.into(), amount: 5 },
+            Balance { mint: 1u8.into(), amount: 5, relayer_fee_balance: 0, protocol_fee_balance: 0 },
             Balance {
                 mint: 2u8.into(),
-                amount: 10
+                amount: 10,
+                relayer_fee_balance: 0,
+                protocol_fee_balance: 0
             }
         ];
         pub static ref INITIAL_ORDERS: [Order; MAX_ORDERS] = [
@@ -141,17 +142,12 @@ pub mod test_helpers {
                 timestamp: TIMESTAMP,
             }
         ];
-        pub static ref INITIAL_FEES: [Fee; MAX_FEES] = [Fee {
-            settle_key: BigUint::from(11u8),
-            gas_addr: BigUint::from(1u8),
-            percentage_fee: FixedPoint::from(0.01),
-            gas_token_amount: 3,
-        }];
         pub static ref INITIAL_WALLET: SizedWallet = Wallet {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
-            fees: INITIAL_FEES.clone(),
             keys: PUBLIC_KEYS.clone(),
+            match_fee: FixedPoint::from_integer(0),
+            managing_cluster: 0u8.into(),
             blinder: Scalar::from(42u64)
         };
     }
