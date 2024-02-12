@@ -61,7 +61,7 @@ impl MockPriceReporter {
         loop {
             let job = self.job_queue.recv().await;
             if let Some(job) = job {
-                if let Err(e) = self.handle_job(job).await {
+                if let Err(e) = self.handle_job(job) {
                     log::error!("error in mock price reporter: {e:?}");
                 }
             }
@@ -69,23 +69,23 @@ impl MockPriceReporter {
     }
 
     /// Handle a job
-    async fn handle_job(&self, job: PriceReporterJob) -> Result<(), PriceReporterError> {
+    fn handle_job(&self, job: PriceReporterJob) -> Result<(), PriceReporterError> {
         match job {
             PriceReporterJob::StartPriceReporter { .. } => {
                 log::debug!("mock price reporter got `StartPriceReporter` job");
                 Ok(())
             },
             PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
-                self.handle_peek_median(base_token, quote_token, channel).await
+                self.handle_peek_median(base_token, quote_token, channel)
             },
             PriceReporterJob::PeekAllExchanges { base_token, quote_token, channel } => {
-                self.handle_peek_all_exchanges(base_token, quote_token, channel).await
+                self.handle_peek_all_exchanges(base_token, quote_token, channel)
             },
         }
     }
 
     /// Handle a peek median job
-    async fn handle_peek_median(
+    fn handle_peek_median(
         &self,
         base_token: Token,
         quote_token: Token,
@@ -110,7 +110,7 @@ impl MockPriceReporter {
     }
 
     /// Handle a peek all exchanges job
-    async fn handle_peek_all_exchanges(
+    fn handle_peek_all_exchanges(
         &self,
         base_token: Token,
         quote_token: Token,

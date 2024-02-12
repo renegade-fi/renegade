@@ -254,7 +254,7 @@ impl NetworkManagerExecutor {
                             log::info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
-                        _ => {  }
+                        x => { log::info!("Unhandled swarm event: {:?}", x) }
                     }
                 }
 

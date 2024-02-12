@@ -47,7 +47,9 @@ use price_reporter::{
     mock::{setup_mock_token_remap, MockPriceReporter},
     worker::PriceReporterConfig,
 };
-use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
+use proof_manager::{
+    mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
+};
 use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use state::{
@@ -157,6 +159,16 @@ impl MockNodeController {
     /// Panics if the state is not initialized
     pub fn state(&self) -> State {
         self.state.clone().expect("State not initialized")
+    }
+
+    /// Get a handle to the arbitrum client
+    pub fn arbitrum_client(&self) -> ArbitrumClient {
+        self.arbitrum_client.clone().expect("Arbitrum client not initialized")
+    }
+
+    /// Get a copy of the system bus
+    pub fn bus(&self) -> SystemBus<SystemBusMessage> {
+        self.bus.clone()
     }
 
     // -----------------
@@ -471,6 +483,14 @@ impl MockNodeController {
 
         let mut manager = ProofManager::new(conf).expect("Failed to create proof manager");
         manager.start().expect("Failed to start proof manager");
+
+        self
+    }
+
+    /// Add a mock proof generation module to the mock node
+    pub fn with_mock_proof_generation(mut self) -> Self {
+        let job_queue = self.proof_queue.1.take().unwrap();
+        MockProofManager::start(job_queue);
 
         self
     }

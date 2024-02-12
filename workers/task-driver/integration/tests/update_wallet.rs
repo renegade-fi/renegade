@@ -17,15 +17,17 @@ use eyre::Result;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use rand::thread_rng;
-use test_helpers::integration_test_async;
+use test_helpers::{
+    contract_interaction::{attach_merkle_opening, new_wallet_in_darkpool},
+    integration_test_async,
+};
 use tracing::log;
 use util::{get_current_time_seconds, hex::biguint_from_hex_string};
 use uuid::Uuid;
 
 use crate::{
     helpers::{
-        attach_merkle_opening, await_task, biguint_from_address, lookup_wallet_and_check_result,
-        new_wallet_in_darkpool, setup_initial_wallet,
+        await_task, biguint_from_address, lookup_wallet_and_check_result, setup_initial_wallet,
     },
     IntegrationTestArgs,
 };

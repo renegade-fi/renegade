@@ -1,20 +1,32 @@
 //! Integration tests for the handshake manager
+
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::needless_pass_by_ref_mut)]
+#![deny(unsafe_code)]
+#![allow(clippy::needless_pass_by_value)]
+
+pub mod helpers;
+pub mod mpc_match;
+
 use arbitrum_client::constants::Chain;
+use ark_mpc::network::PartyId;
 use clap::Parser;
+use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
-use eyre::Result;
-use libp2p::identity::Keypair;
+use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
+use libp2p::{identity::Keypair, Multiaddr};
 use mock_node::MockNodeController;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
-    integration_test, integration_test_main,
+    integration_test_main,
     types::TestVerbosity,
 };
 use tracing::level_filters::LevelFilter;
 use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 
 /// A mock execution price to use in the integration tests
-const MOCK_EXECUTION_PRICE: f64 = 0.154;
+const MOCK_EXECUTION_PRICE: f64 = 1.618;
 
 // -------
 // | CLI |
@@ -24,6 +36,9 @@ const MOCK_EXECUTION_PRICE: f64 = 0.154;
 #[derive(Debug, Clone, Parser)]
 struct CliArgs {
     // --- Network Config --- //
+    /// The ID of the peer in the test, either one or zero
+    #[arg(long)]
+    peer_index: u8,
     /// The local peer's base64 encoded p2p key
     #[arg(long)]
     my_key: String,
@@ -69,6 +84,8 @@ struct CliArgs {
 /// The arguments passed to every integration test
 #[derive(Clone)]
 struct IntegrationTestArgs {
+    /// The id of the local peer
+    party_id: PartyId,
     /// The handshake manager's queue
     mock_node: MockNodeController,
 }
@@ -85,9 +102,10 @@ impl From<CliArgs> for IntegrationTestArgs {
             p2p_key,
             p2p_port: args.my_port,
             chain_id: Chain::Devnet,
-            arbitrum_private_key: args.arbitrum_pkey,
+            arbitrum_private_key: args.arbitrum_pkey.clone(),
             contract_address,
-            rpc_url: Some(args.devnet_url),
+            rpc_url: Some(args.devnet_url.clone()),
+            allow_local: true,
             ..Default::default()
         };
 
@@ -96,11 +114,15 @@ impl From<CliArgs> for IntegrationTestArgs {
             .with_state()
             .with_arbitrum_client()
             .with_mock_price_reporter(MOCK_EXECUTION_PRICE)
+            .with_mock_proof_generation()
             .with_handshake_manager()
             .with_network_manager()
             .with_task_driver();
 
-        Self { mock_node }
+        // Register the peer in the network manager
+        register_peer_addr(&mock_node, &args);
+
+        Self { mock_node, party_id: args.peer_index as u64 }
     }
 }
 
@@ -108,6 +130,21 @@ impl From<CliArgs> for IntegrationTestArgs {
 fn parse_keypair(encoded: &str) -> Keypair {
     let bytes = base64::decode(encoded).unwrap();
     Keypair::from_protobuf_encoding(&bytes).unwrap()
+}
+
+/// Register the peer's address with the network manager
+fn register_peer_addr(node: &MockNodeController, args: &CliArgs) {
+    let peer_key = parse_keypair(&args.peer_key);
+    let peer_id = WrappedPeerId(peer_key.public().to_peer_id());
+
+    // Build a multiaddr for the peer
+    let multiaddr_str = format!("/dns4/localhost/udp/{}/p2p/{}", args.peer_port, peer_id);
+    let address: Multiaddr = multiaddr_str.parse().unwrap();
+
+    // Register with the network manager
+    let job =
+        NetworkManagerJob::Internal(NetworkManagerControlSignal::NewAddr { peer_id, address });
+    node.send_network_job(job).unwrap();
 }
 
 // ----------------
@@ -123,14 +160,3 @@ fn setup_integration_tests(test_args: &CliArgs) {
 }
 
 integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);
-
-/// A dummy test
-fn dummy_test(args: IntegrationTestArgs) -> Result<()> {
-    let state = args.mock_node.state();
-    let local_peer_id = state.get_peer_id().unwrap();
-    println!("local peer id: {local_peer_id:?}");
-
-    Ok(())
-}
-
-integration_test!(dummy_test);

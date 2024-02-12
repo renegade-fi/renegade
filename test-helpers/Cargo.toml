@@ -20,6 +20,9 @@ ark-ec = "0.4"
 num-bigint = { version = "0.4", features = ["rand"] }
 
 # === Workspace Dependencies === # 
+arbitrum-client = { path = "../arbitrum-client" }
+circuit-types = { path = "../circuit-types" }
+common = { path = "../common", features = ["mocks"] }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 
