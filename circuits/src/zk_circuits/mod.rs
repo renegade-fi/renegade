@@ -160,31 +160,22 @@ pub mod test_helpers {
     pub const MAX_BALANCES: usize = 2;
     /// The maximum number of orders allowed in a wallet for tests
     pub const MAX_ORDERS: usize = 2;
-    /// The maximum number of fees allowed in a wallet for tests
-    pub const MAX_FEES: usize = 1;
     /// The initial timestamp used in testing
     pub const TIMESTAMP: u64 = 3; // dummy value
 
-    pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS>;
+    pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS>;
 
     // -----------
     // | Helpers |
     // -----------
 
     /// Construct secret shares of a wallet for testing
-    pub fn create_wallet_shares<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
+    pub fn create_wallet_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Sample a random secret share for the blinder
         let mut rng = thread_rng();

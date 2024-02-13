@@ -46,8 +46,6 @@ pub struct Order {
     /// pay If the order is a sell, this is the minimum price the user is
     /// willing to accept
     pub worst_case_price: FixedPoint,
-    /// A timestamp indicating when the order was placed, set by the user
-    pub timestamp: u64,
 }
 
 impl Order {

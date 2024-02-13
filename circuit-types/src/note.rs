@@ -7,7 +7,7 @@ use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
-use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
+use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 use crate::{

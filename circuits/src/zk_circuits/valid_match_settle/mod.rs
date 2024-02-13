@@ -19,7 +19,7 @@ use circuit_types::{
     wallet::WalletShare,
     Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
-use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     errors::CircuitError,
@@ -34,28 +34,23 @@ use serde::{Deserialize, Serialize};
 use super::{VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1};
 
 /// A circuit with default sizing parameters
-pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>;
 
 /// The circuitry for the valid match
 ///
 /// This statement is only proven within the context of an MPC, so it only
 /// implements the Multiprover circuit trait
 #[derive(Clone, Debug)]
-pub struct ValidMatchSettle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->;
+pub struct ValidMatchSettle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Applies the constraints of the match-settle circuit
     pub fn multiprover_circuit(
-        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -70,8 +65,8 @@ where
     ///
     /// Used to apply constraints to the verifier
     pub fn singleprover_circuit(
-        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Apply the constraints of the match engine
@@ -90,12 +85,9 @@ where
 /// realized in the plaintext by either party
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug)]
-pub struct ValidMatchSettleWitness<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct ValidMatchSettleWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The first party's order
     #[link_groups = "valid_commitments_match_settle0"]
@@ -124,33 +116,30 @@ pub struct ValidMatchSettleWitness<
     pub match_res: MatchResult,
     /// The public shares of the first party before the match is settled
     #[link_groups = "valid_commitments_match_settle0"]
-    pub party0_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub party0_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public shares of the second party before the match is settled
     #[link_groups = "valid_commitments_match_settle1"]
-    pub party1_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub party1_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 
 /// A `VALID MATCH SETTLE` witness with default const generic sizing parameters
-pub type SizedValidMatchSettleWitness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidMatchSettleWitness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
 /// An authenticated `VALID MATCH SETTLE` witness with default const generic
 /// sizing parameters
 pub type SizedAuthenticatedMatchSettleWitness =
-    AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
 
 /// The statement type for `VALID MATCH SETTLE`
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchSettleStatement<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct ValidMatchSettleStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The modified public secret shares of the first party
-    pub party0_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub party0_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The modified public secret shares of the second party
-    pub party1_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub party1_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The indices that settlement should modify in the first party's wallet
     pub party0_indices: OrderSettlementIndices,
     /// The indices that settlement should modify in the second party's wallet
@@ -159,30 +148,29 @@ pub struct ValidMatchSettleStatement<
 
 /// A `VALID MATCH SETTLE` statement with default const generic sizing
 /// parameters
-pub type SizedValidMatchSettleStatement =
-    ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidMatchSettleStatement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 /// An authenticated `VALID MATCH SETTLE` statement with default const generic
 /// sizing parameters
 pub type SizedAuthenticatedMatchSettleStatement =
-    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 
 // ---------------------
 // | Prove Verify Flow |
 // ---------------------
 
 /// Prover implementation of the Valid Match circuit
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> MultiProverCircuit
-    for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> MultiProverCircuit
+    for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    type Witness = AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type Statement = AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Witness = AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
+    type Statement = AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
     type BaseCircuit = Self;
 
     fn apply_constraints_multiprover(
-        witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), PlonkError> {
@@ -191,16 +179,16 @@ where
     }
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
-    for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
+    for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-    type Statement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
+    type Statement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 
     fn name() -> String {
-        format!("Valid Match Settle ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})")
+        format!("Valid Match Settle ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
     /// VALID MATCH SETTLE places the two groups that it shares with VALID
@@ -221,8 +209,8 @@ where
     }
 
     fn apply_constraints(
-        witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        statement: ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
         ValidMatchSettle::singleprover_circuit(&statement, &witness, cs)
@@ -248,20 +236,18 @@ pub mod test_helpers {
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::test_helpers::{
-            create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
+            create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
         },
     };
 
     use super::{ValidMatchSettle, ValidMatchSettleStatement, ValidMatchSettleWitness};
 
     /// A match settle circuit with default sizing parameters
-    pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>;
     /// A witness with default sizing parameters attached
-    pub type SizedValidMatchSettleWitness =
-        ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedValidMatchSettleWitness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
     /// A statement with default sizing parameters attached
-    pub type SizedValidMatchSettleStatement =
-        ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedValidMatchSettleStatement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 
     /// Create a dummy witness to match on
     pub fn dummy_witness_and_statement(
@@ -343,7 +329,7 @@ pub mod test_helpers {
             OrderSide::Sell => (order.base_mint.clone(), match_res.base_amount + 1),
         };
 
-        Balance { mint, amount }
+        Balance::new_from_mint_and_amount(mint, amount)
     }
 
     /// Build a receive balance given an order
@@ -358,7 +344,7 @@ pub mod test_helpers {
             OrderSide::Sell => order.quote_mint.clone(),
         };
 
-        Balance { mint, amount: rng.next_u32() as u64 }
+        Balance::new_from_mint_and_amount(mint, rng.next_u32() as u64)
     }
 }
 
@@ -700,14 +686,7 @@ mod tests {
             &statement
         ));
 
-        // Modify a fee
-        let mut statement = original_statement.clone();
-        statement.party0_modified_shares.fees[0].gas_token_amount += Scalar::one();
-
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
-            &witness.clone(),
-            &statement
-        ));
+        // TODO: Test other modifications from fee redesign
 
         // Modify a key
         let mut statement = original_statement.clone();

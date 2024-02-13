@@ -19,7 +19,7 @@ use circuit_types::{
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
     PlonkCircuit, AMOUNT_BITS,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 use serde::{Deserialize, Serialize};
@@ -37,29 +37,23 @@ use crate::{
 
 /// A type alias for the `ValidWalletUpdate` circuit with default size
 /// parameters attached
-pub type SizedValidWalletUpdate =
-    ValidWalletUpdate<MAX_ORDERS, MAX_BALANCES, MAX_FEES, MERKLE_HEIGHT>;
+pub type SizedValidWalletUpdate = ValidWalletUpdate<MAX_ORDERS, MAX_BALANCES, MERKLE_HEIGHT>;
 
 /// The `VALID WALLET UPDATE` circuit
 pub struct ValidWalletUpdate<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 >;
-impl<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-        const MERKLE_HEIGHT: usize,
-    > ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
+    ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit(
-        statement: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        statement: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // -- State Validity -- //
@@ -125,8 +119,8 @@ where
 
     /// Verify a state transition between two wallets
     fn verify_wallet_transition(
-        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         external_transfer: &ExternalTransferVar,
         update_timestamp: Variable,
         cs: &mut PlonkCircuit,
@@ -147,8 +141,8 @@ where
 
     /// Validates the balance updates in the wallet
     fn validate_balance_updates(
-        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         external_transfer: &ExternalTransferVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -160,8 +154,8 @@ where
 
     /// Validates the application of the external transfer to the balance state
     pub(crate) fn validate_external_transfer(
-        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         external_transfer: &ExternalTransferVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -262,7 +256,7 @@ where
 
     /// Constrains all balance mints to be unique or zero
     fn constrain_unique_balance_mints(
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let one = ScalarField::one();
@@ -295,8 +289,8 @@ where
 
     /// Validates the orders of the new wallet
     fn validate_order_updates(
-        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         new_timestamp: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -312,8 +306,8 @@ where
     /// timestamp should remain constant. Otherwise, the timestamp should be
     /// updated to the current timestamp passed as a public variable
     fn constrain_updated_order_timestamps(
-        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         new_timestamp: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -346,7 +340,7 @@ where
 
     /// Assert that all order pairs in a wallet have unique asset pairs
     fn constrain_unique_order_pairs(
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Validate that all mints pairs are zero or unique
@@ -411,23 +405,22 @@ where
 pub struct ValidWalletUpdateWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 > where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The private secret shares of the existing wallet
-    pub old_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub old_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public secret shares of the existing wallet
-    pub old_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub old_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The opening of the old wallet's shares to the global Merkle root
     pub old_shares_opening: MerkleOpening<MERKLE_HEIGHT>,
     /// The new wallet's private secret shares
-    pub new_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub new_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 /// A `VALID WALLET UPDATE` witness with default const generic sizing parameters
 pub type SizedValidWalletUpdateWitness =
-    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
 // -----------------------------
 // | Statement Type Definition |
@@ -436,19 +429,16 @@ pub type SizedValidWalletUpdateWitness =
 /// The statement type for `VALID WALLET UPDATE`
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletUpdateStatement<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct ValidWalletUpdateStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The nullifier of the old wallet's secret shares
     pub old_shares_nullifier: Nullifier,
     /// A commitment to the new wallet's private secret shares
     pub new_private_shares_commitment: WalletShareStateCommitment,
     /// The public secret shares of the new wallet
-    pub new_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub new_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The global Merkle root that the wallet share proofs open to
     pub merkle_root: MerkleRoot,
     /// The external transfer tuple
@@ -460,32 +450,27 @@ pub struct ValidWalletUpdateStatement<
 }
 /// A `VALID WALLET UPDATE` statement with default const generic sizing
 /// parameters
-pub type SizedValidWalletUpdateStatement =
-    ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidWalletUpdateStatement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>;
 
 // ---------------------
 // | Prove Verify Flow |
 // ---------------------
 
-impl<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-        const MERKLE_HEIGHT: usize,
-    > SingleProverCircuit for ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
+    SingleProverCircuit for ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    type Witness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
-    type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Witness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
+    type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>;
 
     fn name() -> String {
-        format!("Valid Wallet Update ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES}, {MERKLE_HEIGHT})")
+        format!("Valid Wallet Update ({MAX_BALANCES}, {MAX_ORDERS}, {MERKLE_HEIGHT})")
     }
 
     fn apply_constraints(
-        witness_var: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        statement_var: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness_var: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+        statement_var: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
         Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
@@ -508,16 +493,15 @@ pub mod test_helpers {
     };
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS, TIMESTAMP,
+        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_ORDERS, TIMESTAMP,
     };
 
     use super::{ValidWalletUpdateStatement, ValidWalletUpdateWitness};
 
     /// The witness type with default size parameters attached
-    pub type SizedWitness =
-        ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    pub type SizedWitness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
     /// The statement type with default size parameters attached
-    pub type SizedStatement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedStatement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>;
 
     /// The height of the Merkle tree to test on
     pub(super) const MERKLE_HEIGHT: usize = 3;
@@ -532,18 +516,17 @@ pub mod test_helpers {
     pub fn construct_witness_statement<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
         const MERKLE_HEIGHT: usize,
     >(
-        old_wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        new_wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+        new_wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
         external_transfer: ExternalTransfer,
     ) -> (
-        ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+        ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>,
     )
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Construct secret shares of the wallets
         let (old_wallet_private_shares, old_wallet_public_shares) =
@@ -600,9 +583,7 @@ mod test {
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{
-            SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS, TIMESTAMP,
-        },
+        test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, TIMESTAMP},
         valid_wallet_update::test_helpers::NEW_TIMESTAMP,
     };
 
@@ -619,9 +600,9 @@ mod test {
         transfer: ExternalTransfer,
     ) -> bool {
         let (witness, statement) = construct_witness_statement(old_wallet, new_wallet, transfer);
-        check_constraint_satisfaction::<
-            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        >(&witness, &statement)
+        check_constraint_satisfaction::<ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>>(
+            &witness, &statement,
+        )
     }
 
     // -------------------------
@@ -767,7 +748,7 @@ mod test {
         let withdrawn_mint = old_wallet.balances[1].mint.clone();
         let withdrawn_amount = old_wallet.balances[1].amount - 1; // all but one
 
-        new_wallet.balances[1] = Balance { mint: withdrawn_mint.clone(), amount: 1 };
+        new_wallet.balances[1] = Balance::new_from_mint_and_amount(withdrawn_mint.clone(), 1);
 
         // Build a valid transfer
         let transfer = ExternalTransfer {
@@ -790,10 +771,8 @@ mod test {
         let withdrawn_mint = old_wallet.balances[1].mint.clone();
         let withdrawn_amount = old_wallet.balances[1].amount - 1; // all but one
 
-        new_wallet.balances[1] = Balance {
-            mint: withdrawn_mint.clone(),
-            amount: 2, // Added an extra unit of balance
-        };
+        // Add an extra unit of the balance
+        new_wallet.balances[1] = Balance::new_from_mint_and_amount(withdrawn_mint.clone(), 2);
 
         // Build a valid transfer
         let transfer = ExternalTransfer {

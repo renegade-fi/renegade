@@ -3,6 +3,7 @@
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
+use circuit_types::fixed_point::FixedPoint;
 use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::wallet::Wallet;
@@ -12,15 +13,15 @@ use circuits::zk_circuits::valid_wallet_create::{
     ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
+use num_bigint::BigUint;
 
-/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
-/// MAX_FEES)
-const SMALL_PARAM_SET: (usize, usize, usize) = (2, 2, 1);
+/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS)
+const SMALL_PARAM_SET: (usize, usize) = (2, 2);
 /// The parameter set for the large sized circuit
-const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FEES);
+const LARGE_PARAM_SET: (usize, usize) = (MAX_BALANCES, MAX_ORDERS);
 
 // -----------
 // | Helpers |
@@ -28,23 +29,20 @@ const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MAX_FE
 
 /// Create a full sized witness and statement for the `VALID WALLET CREATE`
 /// circuit
-pub fn create_sized_witness_statement<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->() -> (
-    ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+pub fn create_sized_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
+    ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS>,
+    ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS>,
 )
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Create an empty wallet
-    let wallet = Wallet::<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+    let wallet = Wallet::<MAX_BALANCES, MAX_ORDERS> {
         balances: create_default_arr(),
         orders: create_default_arr(),
-        fees: create_default_arr(),
         keys: PUBLIC_KEYS.clone(),
+        match_fee: FixedPoint::from_integer(0),
+        managing_cluster: BigUint::from(0u8),
         blinder: Scalar::zero(),
     };
 
@@ -73,18 +71,13 @@ where
 }
 
 /// Benchmark applying constraints to a circuit with variable sizing arguments
-pub fn bench_apply_constraints_with_sizes<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     c: &mut Criterion,
 ) where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Build a witness and statement
-    let (witness, statement) =
-        create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
+    let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
 
     // Allocate in the constraint system
     let mut cs = PlonkCircuit::new_turbo_plonk();
@@ -93,10 +86,8 @@ pub fn bench_apply_constraints_with_sizes<
 
     // Run the benchmark
     let mut group = c.benchmark_group("valid_wallet_create");
-    let benchmark_id = BenchmarkId::new(
-        "constraint-generation",
-        format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"),
-    );
+    let benchmark_id =
+        BenchmarkId::new("constraint-generation", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
 
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
@@ -111,25 +102,19 @@ pub fn bench_apply_constraints_with_sizes<
 }
 
 /// Benchmark proving a circuit with variable sizing arguments
-pub fn bench_prover_with_sizes<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn bench_prover_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     c: &mut Criterion,
 ) where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Build a witness and statement
-    let (witness, statement) =
-        create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
+    let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
 
     let mut group = c.benchmark_group("valid_wallet_create");
-    let benchmark_id =
-        BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
+    let benchmark_id = BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS}, )"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+            singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>>(
                 witness.clone(),
                 statement.clone(),
             )
@@ -139,20 +124,15 @@ pub fn bench_prover_with_sizes<
 }
 
 /// Benchmark verifying a circuit with variable sizing arguments
-pub fn bench_verifier_with_sizes<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn bench_verifier_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     c: &mut Criterion,
 ) where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // First generate a proof that will be verified multiple times
-    let (witness, statement) =
-        create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>();
+    let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
 
-    let proof = singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+    let proof = singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>>(
         witness,
         statement.clone(),
     )
@@ -160,11 +140,10 @@ pub fn bench_verifier_with_sizes<
 
     // Run the benchmark
     let mut group = c.benchmark_group("valid_wallet_create");
-    let benchmark_id =
-        BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})"));
+    let benchmark_id = BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS, MAX_FEES>>(
+            verify_singleprover_proof::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>>(
                 statement.clone(),
                 &proof,
             )
@@ -181,54 +160,38 @@ pub fn bench_verifier_with_sizes<
 /// circuit on a smaller sized circuit
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__small_circuit(c: &mut Criterion) {
-    bench_apply_constraints_with_sizes::<
-        { SMALL_PARAM_SET.0 },
-        { SMALL_PARAM_SET.1 },
-        { SMALL_PARAM_SET.2 },
-    >(c);
+    bench_apply_constraints_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c);
 }
 
 /// Tests the time taken to prove `VALID WALLET CREATE` on a smaller circuit
 #[allow(non_snake_case)]
 pub fn bench_prover__small_circuit(c: &mut Criterion) {
-    bench_prover_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }, { SMALL_PARAM_SET.2 }>(
-        c,
-    );
+    bench_prover_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c);
 }
 
 /// Tests the time taken to verify `VALID WALLET CREATE` on a smaller circuit
 #[allow(non_snake_case)]
 pub fn bench_verifier__small_circuit(c: &mut Criterion) {
-    bench_verifier_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }, { SMALL_PARAM_SET.2 }>(
-        c,
-    );
+    bench_verifier_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c);
 }
 
 /// Tests the time taken to apply the constraints of `VALID WALLET CREATE`
 /// circuit on a large sized circuit
 #[allow(non_snake_case)]
 pub fn bench_apply_constraints__large_circuit(c: &mut Criterion) {
-    bench_apply_constraints_with_sizes::<
-        { LARGE_PARAM_SET.0 },
-        { LARGE_PARAM_SET.1 },
-        { LARGE_PARAM_SET.2 },
-    >(c);
+    bench_apply_constraints_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c);
 }
 
 /// Tests the time taken to prove `VALID WALLET CREATE` on a large circuit
 #[allow(non_snake_case)]
 pub fn bench_prover__large_circuit(c: &mut Criterion) {
-    bench_prover_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }, { LARGE_PARAM_SET.2 }>(
-        c,
-    );
+    bench_prover_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c);
 }
 
 /// Tests the time taken to verify `VALID WALLET CREATE` on a large circuit
 #[allow(non_snake_case)]
 pub fn bench_verifier__large_circuit(c: &mut Criterion) {
-    bench_verifier_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }, { LARGE_PARAM_SET.2 }>(
-        c,
-    );
+    bench_verifier_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c);
 }
 
 // -------------------
