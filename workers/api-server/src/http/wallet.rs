@@ -210,7 +210,8 @@ impl TypedHandler for CreateWalletHandler {
         // Create an async task to drive this new wallet into the on-chain state
         // and create proofs of validity
         let wallet_id = req.wallet.id;
-        let wallet: Wallet = req.wallet.try_into().map_err(|e: String| bad_request(e))?;
+        let mut wallet: Wallet = req.wallet.try_into().map_err(|e: String| bad_request(e))?;
+        wallet.wallet_id = wallet_id;
         let task = NewWalletTaskDescriptor::new(wallet).map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
