@@ -13,19 +13,15 @@ use super::poseidon::PoseidonHashGadget;
 
 /// A gadget for computing the commitment to a secret share of a wallet
 #[derive(Clone, Debug)]
-pub struct WalletShareCommitGadget<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> {}
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    WalletShareCommitGadget<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+pub struct WalletShareCommitGadget<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {}
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    WalletShareCommitGadget<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Compute the commitment to the private wallet shares
     pub fn compute_private_commitment<C: Circuit<ScalarField>>(
-        private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
         // Serialize the wallet and hash it into the hasher's state
@@ -40,7 +36,7 @@ where
     /// Compute the commitment to the full wallet given a commitment to the
     /// private shares
     pub fn compute_wallet_commitment_from_private<C: Circuit<ScalarField>>(
-        blinded_public_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        blinded_public_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         private_commitment: Variable,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
@@ -56,8 +52,8 @@ where
     /// Compute the full commitment of a wallet's shares given both the public
     /// and private shares
     pub fn compute_wallet_share_commitment<C: Circuit<ScalarField>>(
-        public_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
         // First compute the private half, then absorb in the public

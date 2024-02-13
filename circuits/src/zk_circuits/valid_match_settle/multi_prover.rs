@@ -24,15 +24,14 @@ use crate::zk_gadgets::{
 
 // --- Matching Engine --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The order crossing check, verifies that the matches result is valid
     /// given the orders and balances of the two parties
     pub(crate) fn validate_matching_engine(
-        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -234,16 +233,15 @@ where
 
 // --- Settlement --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Validate settlement of a match result into the wallets of the two
     /// parties
     pub(crate) fn validate_settlement(
-        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -321,8 +319,8 @@ where
         send_amount: Variable,
         received_amount: Variable,
         indices: &OrderSettlementIndicesVar,
-        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -367,8 +365,8 @@ where
     fn validate_order_updates(
         base_amount_swapped: Variable,
         indices: &OrderSettlementIndicesVar,
-        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -402,12 +400,13 @@ where
 
     /// Validate that fees, keys, and blinders remain the same in the pre and
     /// post wallet shares
+    ///
+    /// TODO: Also validate other wallet fields in fee impl
     fn validate_fees_keys_blinder_updates(
-        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        EqGadget::constrain_eq(&pre_update_shares.fees, &post_update_shares.fees, cs)?;
         EqGadget::constrain_eq(&pre_update_shares.keys, &post_update_shares.keys, cs)?;
         EqGadget::constrain_eq(&pre_update_shares.blinder, &post_update_shares.blinder, cs)
     }

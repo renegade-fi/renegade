@@ -12,18 +12,11 @@ use rand::rngs::OsRng;
 pub mod sharing;
 
 /// Construct secret shares of a wallet for testing
-pub fn create_wallet_shares<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
-    wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-) -> (
-    WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-)
+pub fn create_wallet_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Sample a random secret share for the blinder
     let mut rng = OsRng {};

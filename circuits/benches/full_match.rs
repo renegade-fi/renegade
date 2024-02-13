@@ -23,7 +23,7 @@ use circuits::{
         SizedValidMatchSettle, ValidMatchSettle,
     },
 };
-use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use test_helpers::mpc_network::{
     execute_mock_mpc_with_delay, execute_mock_mpc_with_delay_and_hint,
@@ -44,11 +44,10 @@ const LARGE_DELAY_MS: u64 = 100;
 // -----------
 
 /// A witness to `VALID MATCH SETTLE` with default sizing parameters
-type SizedValidMatchSettleWitness =
-    AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+type SizedValidMatchSettleWitness = AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
 /// A statement of `VALID MATCH SETTLE` with default sizing parameters
 type SizedValidMatchSettleStatement =
-    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 
 /// Benchmark a match end-to-end with a given connection latency
 ///

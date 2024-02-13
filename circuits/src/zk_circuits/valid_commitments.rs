@@ -26,7 +26,7 @@ use circuit_types::{
     wallet::{WalletShare, WalletVar},
     PlonkCircuit,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     errors::CircuitError,
@@ -43,23 +43,18 @@ use super::valid_match_settle::ValidMatchSettle;
 // ----------------------
 
 /// The circuit implementation of VALID COMMITMENTS
-pub struct ValidCommitments<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->;
+pub struct ValidCommitments<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 /// `VALID COMMITMENTS` with default state element sizing
-pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidCommitments<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The circuit constraints for VALID COMMITMENTS
     pub fn circuit(
         statement: &ValidCommitmentsStatementVar,
-        witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Reconstruct the base and augmented wallets
@@ -114,21 +109,13 @@ where
         )?;
         cs.enforce_equal(witness.balance_receive.mint, receive_mint)?;
 
-        // Verify that the fee balance is in the wallet
-        // TODO: Implement fees properly
-        Self::contains_balance(&witness.balance_fee, &augmented_wallet, cs)?;
-        cs.enforce_equal(witness.balance_fee.mint, witness.fee.gas_addr)?;
-
         // Verify that the order is at the correct index
         Self::contains_order_at_index(
             statement.indices.order,
             &witness.order,
             &augmented_wallet,
             cs,
-        )?;
-
-        // Verify that the fee is contained in the wallet
-        Self::contains_fee(&witness.fee, &augmented_wallet, cs)
+        )
     }
 
     /// Verify that two wallets are equal except possibly with a balance
@@ -136,8 +123,8 @@ where
     fn verify_wallets_equal_with_augmentation(
         receive_index: Variable,
         received_mint: Variable,
-        base_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        base_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // All balances should be the same except possibly the balance at the receive
@@ -147,6 +134,13 @@ where
         let one_var = cs.one();
         let mut curr_index = zero_var;
 
+        let zero_balance_var = BalanceVar {
+            mint: zero_var,
+            amount: zero_var,
+            protocol_fee_balance: zero_var,
+            relayer_fee_balance: zero_var,
+        };
+
         for (base_balance, augmented_balance) in
             base_wallet.balances.iter().zip(augmented_wallet.balances.iter())
         {
@@ -154,12 +148,16 @@ where
             let balances_eq = EqGadget::eq(base_balance, augmented_balance, cs)?;
 
             // Validate a potential augmentation
-            let prev_balance_zero =
-                EqGadget::eq(base_balance, &BalanceVar { mint: zero_var, amount: zero_var }, cs)?;
+            let prev_balance_zero = EqGadget::eq(base_balance, &zero_balance_var, cs)?;
 
             let augmented_balance = EqGadget::eq(
                 augmented_balance,
-                &BalanceVar { mint: received_mint, amount: zero_var },
+                &BalanceVar {
+                    mint: received_mint,
+                    amount: zero_var,
+                    protocol_fee_balance: zero_var,
+                    relayer_fee_balance: zero_var,
+                },
                 cs,
             )?;
 
@@ -182,10 +180,8 @@ where
             EqGadget::constrain_eq(base_order, augmented_order, cs)?;
         }
 
-        // All fees should be the same
-        for (base_fee, augmented_fee) in base_wallet.fees.iter().zip(augmented_wallet.fees.iter()) {
-            EqGadget::constrain_eq(base_fee, augmented_fee, cs)?;
-        }
+        // All other fields should be the same
+        // TODO: match key and fee
 
         // Keys should be equal
         EqGadget::constrain_eq(&base_wallet.keys, &augmented_wallet.keys, cs)?;
@@ -198,7 +194,7 @@ where
     fn contains_balance_at_index(
         index: Variable,
         target_balance: &BalanceVar,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let mut curr_index = cs.zero();
@@ -221,7 +217,7 @@ where
     fn contains_order_at_index(
         index: Variable,
         target_order: &OrderVar,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let mut curr_index = cs.zero();
@@ -246,7 +242,7 @@ where
     /// this is fine from a security perspective
     fn contains_balance(
         target_balance: &BalanceVar,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let mut balance_found = cs.false_var();
@@ -258,22 +254,6 @@ where
 
         cs.enforce_true(balance_found)
     }
-
-    /// Verify that the wallet contains the given fee at an unspecified index
-    fn contains_fee(
-        target_fee: &FeeVar,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        let mut fee_found = cs.false_var();
-
-        for fee in wallet.fees.iter() {
-            let fees_eq = EqGadget::eq(fee, target_fee, cs)?;
-            fee_found = cs.logic_or(fee_found, fees_eq)?;
-        }
-
-        cs.enforce_true(fee_found)
-    }
 }
 
 // ---------------------------
@@ -283,21 +263,18 @@ where
 /// The witness type for `VALID COMMITMENTS`
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidCommitmentsWitness<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct ValidCommitmentsWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The private secret shares of the wallet that have been reblinded for
     /// match
     #[link_groups = "valid_reblind_commitments"]
-    pub private_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub private_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public secret shares of the wallet that have been reblinded for
     /// match
     #[link_groups = "valid_reblind_commitments"]
-    pub public_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub public_secret_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The order that the prover intends to match against with this proof
     #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
     pub order: Order,
@@ -306,18 +283,14 @@ pub struct ValidCommitmentsWitness<
     pub balance_send: Balance,
     /// The balance that the wallet will receive into when the order is matched
     pub balance_receive: Balance,
-    /// The balance that will cover the relayer's fee when matched
-    pub balance_fee: Balance,
-    /// The fee that the relayer will take upon a successful match
-    pub fee: Fee,
     /// The modified public secret shares, possibly with a zero'd balance added
     /// for the mint that will be received by this party upon a successful
     /// match
     #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
-    pub augmented_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub augmented_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 /// A `VALID COMMITMENTS` witness with default const generic sizing parameters
-pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidCommitmentsWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>;
 
 /// The statement type for `VALID COMMITMENTS`
 #[circuit_type(singleprover_circuit)]
@@ -331,16 +304,16 @@ pub struct ValidCommitmentsStatement {
 // | Prove Verify Flow |
 // ---------------------
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> SingleProverCircuit
-    for ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
+    for ValidCommitments<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidCommitmentsStatement;
-    type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>;
 
     fn name() -> String {
-        format!("Valid Commitments ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES})")
+        format!("Valid Commitments ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
     /// VALID COMMITMENTS has three proof linking groups:
@@ -366,7 +339,7 @@ where
     }
 
     fn apply_constraints(
-        witness_var: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness_var: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         statement_var: ValidCommitmentsStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
@@ -389,28 +362,22 @@ pub mod test_helpers {
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
 
-    use crate::zk_circuits::test_helpers::{
-        create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-    };
+    use crate::zk_circuits::test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS};
 
     use super::{OrderSettlementIndices, ValidCommitmentsStatement, ValidCommitmentsWitness};
 
     /// A type alias for the VALID COMMITMENTS witness with size parameters
     /// attached
-    pub type SizedWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    pub type SizedWitness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>;
 
     /// Construct a valid witness and statement from the given wallet
     ///
     /// Simply chooses a random order to match against from the wallet
-    pub fn create_witness_and_statement<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ValidCommitmentsStatement)
+    pub fn create_witness_and_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement)
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Split the wallet into secret shares
         let (private_share, public_share) = create_wallet_shares(wallet);
@@ -422,22 +389,19 @@ pub mod test_helpers {
     pub fn create_witness_and_statement_with_shares<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
     >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        public_share: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>, ValidCommitmentsStatement)
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+        public_share: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
+        private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
+    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement)
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         let mut rng = thread_rng();
 
         // Choose an order and fee to match on
         let ind_order = 0;
-        let ind_fee = rng.gen_range(0..wallet.fees.len());
         let order = wallet.orders[ind_order].clone();
-        let fee = wallet.fees[ind_fee].clone();
 
         // Restructure the mints from the order direction
         let (received_mint, sent_mint) = if order.side == OrderSide::Buy {
@@ -459,11 +423,6 @@ pub mod test_helpers {
             &mut augmented_wallet.balances,
             false, // augment
         );
-        let (_, balance_fee) = find_balance_or_augment(
-            fee.gas_addr.clone(),
-            &mut augmented_wallet.balances,
-            false, // augment
-        );
 
         // After augmenting, split the augmented wallet into shares, using the same
         // private secret shares as the original (un-augmented) wallet
@@ -477,8 +436,6 @@ pub mod test_helpers {
             order,
             balance_send,
             balance_receive,
-            balance_fee,
-            fee,
         };
 
         let statement = ValidCommitmentsStatement {
@@ -518,7 +475,7 @@ pub mod test_helpers {
                     .find(|(_ind, balance)| balance.mint == BigUint::from(0u8))
                     .expect("wallet must have zero'd balance to augment");
 
-                balances[zerod_index] = Balance { mint, amount: 0 };
+                balances[zerod_index] = Balance::new_from_mint(mint);
                 (zerod_index, balances[zerod_index].clone())
             },
         }
@@ -531,7 +488,6 @@ mod test {
 
     use circuit_types::{
         balance::{Balance, BalanceShare},
-        fee::FeeShare,
         fixed_point::FixedPointShare,
         order::{OrderShare, OrderSide},
         traits::SingleProverCircuit,
@@ -541,7 +497,7 @@ mod test {
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
+        test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
         valid_commitments::{
             test_helpers::{create_witness_and_statement, find_balance_or_augment},
             SizedValidCommitments,
@@ -576,9 +532,7 @@ mod test {
     }
 
     /// A type alias for the VALID COMMITMENTS circuit with size parameters
-    pub type SizedCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-
-    // --------------
+    pub type SizedCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
     // | Test Cases |
     // --------------
 
@@ -657,8 +611,12 @@ mod test {
 
         // Reset the original wallet such that the augmented balance was non-zero
         let augmentation_index = statement.indices.balance_receive;
-        witness.public_secret_shares.balances[augmentation_index] =
-            BalanceShare { amount: Scalar::one(), mint: Scalar::one() };
+        witness.public_secret_shares.balances[augmentation_index] = BalanceShare {
+            amount: Scalar::one(),
+            mint: Scalar::one(),
+            protocol_fee_balance: Scalar::one(),
+            relayer_fee_balance: Scalar::one(),
+        };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
@@ -678,15 +636,10 @@ mod test {
 
     /// Test the case in which a prover attempts to modify a fee in the
     /// augmented wallet
+    ///
+    /// TODO: maybe update this test or remove it
     #[test]
-    fn test_invalid_commitment__augmentation_modifies_fee() {
-        let wallet = UNAUGMENTED_WALLET.clone();
-        let (mut witness, statement) = create_witness_and_statement(&wallet);
-
-        // Modify a fee in the wallet
-        witness.augmented_public_shares.fees[0].gas_token_amount += Scalar::one();
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
-    }
+    fn test_invalid_commitment__augmentation_modifies_fee() {}
 
     /// Test the case in which a prover attempts to modify wallet keys and
     /// blinders in augmentation
@@ -755,8 +708,12 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the send balance from the order
-        witness.augmented_public_shares.balances[statement.indices.balance_send] =
-            BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() };
+        witness.augmented_public_shares.balances[statement.indices.balance_send] = BalanceShare {
+            mint: Scalar::zero(),
+            amount: Scalar::zero(),
+            protocol_fee_balance: Scalar::zero(),
+            relayer_fee_balance: Scalar::zero(),
+        };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -769,7 +726,12 @@ mod test {
 
         // Modify the receive balance from the order
         witness.augmented_public_shares.balances[statement.indices.balance_receive] =
-            BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() };
+            BalanceShare {
+                mint: Scalar::zero(),
+                amount: Scalar::zero(),
+                protocol_fee_balance: Scalar::zero(),
+                relayer_fee_balance: Scalar::zero(),
+            };
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -783,7 +745,12 @@ mod test {
         // Modify the fee balance from the order; clobber all balances because this
         // does not come with an index
         witness.augmented_public_shares.balances.iter_mut().for_each(|balance| {
-            *balance = BalanceShare { mint: Scalar::zero(), amount: Scalar::zero() }
+            *balance = BalanceShare {
+                mint: Scalar::zero(),
+                amount: Scalar::zero(),
+                protocol_fee_balance: Scalar::zero(),
+                relayer_fee_balance: Scalar::zero(),
+            }
         });
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
@@ -809,22 +776,8 @@ mod test {
     }
 
     /// Test the case in which the fee is missing from the wallet
+    ///
+    /// TODO: maybe update this test or remove it
     #[test]
-    fn test_invalid_commitment__fee_missing() {
-        let wallet = INITIAL_WALLET.clone();
-        let (mut witness, statement) = create_witness_and_statement(&wallet);
-
-        // Modify the fees, clobber all of them because the fee does not contain an
-        // index
-        witness.augmented_public_shares.fees.iter_mut().for_each(|fee| {
-            *fee = FeeShare {
-                settle_key: Scalar::zero(),
-                gas_addr: Scalar::zero(),
-                gas_token_amount: Scalar::zero(),
-                percentage_fee: FixedPointShare { repr: Scalar::zero() },
-            }
-        });
-
-        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
-    }
+    fn test_invalid_commitment__fee_missing() {}
 }

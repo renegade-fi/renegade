@@ -254,13 +254,10 @@ pub mod test_helpers {
     }
 
     /// Get a dummy set of wallet shares
-    pub fn dummy_wallet_share<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >() -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    ) -> WalletShare<MAX_BALANCES, MAX_ORDERS>
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         let mut iter = iter::from_fn(|| Some(Scalar::zero()));
         WalletShare::from_scalars(&mut iter)
