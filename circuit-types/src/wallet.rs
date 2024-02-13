@@ -42,9 +42,9 @@ pub type Nullifier = Scalar;
 /// and cryptographic randomness
 #[circuit_type(serde, singleprover_circuit, secret_share, mpc, multiprover_circuit)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
+pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The list of balances in the wallet
     #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
@@ -73,10 +73,10 @@ where
     pub blinder: Scalar,
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize> Default
-    for Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> Default
+    for Wallet<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     fn default() -> Self {
         Self {
@@ -94,17 +94,16 @@ where
     }
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShare<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Blinds the wallet, but does not blind the blinder itself
     ///
     /// This is necessary because the default implementation of `blind` that is
     /// derived by the macro will blind the blinder as well as the shares,
     /// which is undesirable
-    pub fn blind_shares(&self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+    pub fn blind_shares(&self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS> {
         let prev_blinder = self.blinder;
         let mut blinded = self.blind(blinder);
         blinded.blinder = prev_blinder;
@@ -113,10 +112,7 @@ where
     }
 
     /// Unblinds the wallet, but does not unblind the blinder itself
-    pub fn unblind_shares(
-        &self,
-        blinder: Scalar,
-    ) -> WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+    pub fn unblind_shares(&self, blinder: Scalar) -> WalletShare<MAX_BALANCES, MAX_ORDERS> {
         let prev_blinder = self.blinder;
         let mut unblinded = self.unblind(blinder);
         unblinded.blinder = prev_blinder;
@@ -125,10 +121,9 @@ where
     }
 }
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShareVar<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Blinds the wallet, but does not blind the blinder itself
     ///
@@ -139,7 +134,7 @@ where
         self,
         blinder: Variable,
         circuit: &mut PlonkCircuit,
-    ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+    ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS> {
         let prev_blinder = self.blinder;
         let mut blinded = self.blind(blinder, circuit);
         blinded.blinder = prev_blinder;
@@ -152,7 +147,7 @@ where
         self,
         blinder: Variable,
         circuit: &mut PlonkCircuit,
-    ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES> {
+    ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS> {
         let prev_blinder = self.blinder;
         let mut unblinded = self.unblind(blinder, circuit);
         unblinded.blinder = prev_blinder;

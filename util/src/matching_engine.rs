@@ -106,18 +106,14 @@ pub fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) 
 // --------------
 
 /// Apply a match to two wallet secret shares
-pub fn settle_match_into_wallets<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
-    wallet0_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    wallet1_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+pub fn settle_match_into_wallets<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    wallet0_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS>,
+    wallet1_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS>,
     party0_indices: OrderSettlementIndices,
     party1_indices: OrderSettlementIndices,
     match_res: &MatchResult,
 ) where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     let direction = OrderSide::from(match_res.direction);
     apply_match_to_shares(wallet0_share, &party0_indices, match_res, direction);
@@ -127,17 +123,13 @@ pub fn settle_match_into_wallets<
 /// Applies a match to the shares of a wallet
 ///
 /// Returns a new wallet share with the match applied
-pub fn apply_match_to_shares<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
-    shares: &mut WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+pub fn apply_match_to_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    shares: &mut WalletShare<MAX_BALANCES, MAX_ORDERS>,
     indices: &OrderSettlementIndices,
     match_res: &MatchResult,
     side: OrderSide,
 ) where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     let (send_amt, recv_amt) = match side {
         // Buy side; send quote, receive base

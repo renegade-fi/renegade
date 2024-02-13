@@ -25,7 +25,7 @@ use circuits::{
         SizedValidMatchSettle, ValidMatchSettle, ValidMatchSettleStatement, ValidMatchSettleWitness,
     },
 };
-use constants::{Scalar, MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use mpc_relation::traits::Circuit;
@@ -46,8 +46,8 @@ const LARGE_DELAY_MS: u64 = 100;
 // -----------
 /// Get a dummy witness and statement for `VALID MATCH SETTLE`
 fn dummy_witness_statement() -> (
-    ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>,
+    ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
 ) {
     (
         ValidMatchSettleWitness {
@@ -197,12 +197,13 @@ pub fn bench_prover_latency_with_delay(c: &mut Criterion, delay: Duration) {
                         let start = Instant::now();
 
                         // Allocate the inputs in the constraint system
-                        let proof = multiprover_prove::<
-                            ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-                        >(
-                            witness.clone(), statement.clone(), fabric
-                        )
-                        .unwrap();
+                        let proof =
+                            multiprover_prove::<ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>>(
+                                witness.clone(),
+                                statement.clone(),
+                                fabric,
+                            )
+                            .unwrap();
 
                         let _opened_proof = black_box(proof.open_authenticated().await);
                         start.elapsed()
@@ -295,9 +296,10 @@ pub fn bench_verifier_latency(c: &mut Criterion) {
     let mut group = c.benchmark_group("match-mpc");
     group.bench_function(BenchmarkId::new("verifier", ""), |b| {
         b.iter(|| {
-            assert!(verify_singleprover_proof::<
-                ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-            >(statement.clone(), &proof)
+            assert!(verify_singleprover_proof::<ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>>(
+                statement.clone(),
+                &proof
+            )
             .is_err());
         })
     });

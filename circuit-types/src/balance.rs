@@ -47,4 +47,14 @@ impl Balance {
     pub fn is_zero(&self) -> bool {
         self.amount == 0 && self.relayer_fee_balance == 0 && self.protocol_fee_balance == 0
     }
+
+    /// Construct a zero'd balance from a mint
+    pub fn new_from_mint(mint: BigUint) -> Balance {
+        Balance { mint, amount: 0, relayer_fee_balance: 0, protocol_fee_balance: 0 }
+    }
+
+    /// Construct a balance with zero fees from a mint and amount
+    pub fn new_from_mint_and_amount(mint: BigUint, amount: Amount) -> Balance {
+        Balance { mint, amount, relayer_fee_balance: 0, protocol_fee_balance: 0 }
+    }
 }

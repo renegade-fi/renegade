@@ -22,16 +22,15 @@ use super::{ValidMatchSettle, ValidMatchSettleStatementVar, ValidMatchSettleWitn
 
 // --- Matching Engine --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The order crossing check, for a single prover
     ///
     /// Used to apply constraints to the verifier
     pub(crate) fn validate_matching_engine_singleprover(
-        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let zero = ScalarField::zero();
@@ -218,15 +217,14 @@ where
 
 // --- Settlement --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>
-    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The circuit representing `VALID SETTLE`
     pub fn validate_settlement_singleprover(
-        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        statement: &ValidMatchSettleStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Select the balances received by each party
@@ -299,8 +297,8 @@ where
         send_amount: Variable,
         received_amount: Variable,
         indices: &OrderSettlementIndicesVar,
-        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let one = ScalarField::one();
@@ -342,8 +340,8 @@ where
     fn validate_order_updates_singleprover(
         base_amount_swapped: Variable,
         indices: &OrderSettlementIndicesVar,
-        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let one = ScalarField::one();
@@ -375,12 +373,13 @@ where
 
     /// Validate that fees, keys, and blinders remain the same in the pre and
     /// post wallet shares
+    ///
+    /// TODO: Also validate other fields in the fee impl
     fn validate_fees_keys_blinder_updates_singleprover(
-        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        EqGadget::constrain_eq(&pre_update_shares.fees, &post_update_shares.fees, cs)?;
         EqGadget::constrain_eq(&pre_update_shares.keys, &post_update_shares.keys, cs)?;
         EqGadget::constrain_eq(&pre_update_shares.blinder, &post_update_shares.blinder, cs)
     }

@@ -27,7 +27,7 @@ use ark_mpc::MpcFabric;
 use bigdecimal::Num;
 use constants::{
     AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup, MAX_BALANCES,
-    MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT,
+    MAX_ORDERS, MERKLE_HEIGHT,
 };
 use fixed_point::DEFAULT_FP_PRECISION;
 use jf_primitives::pcs::prelude::Commitment;
@@ -92,9 +92,9 @@ pub type MpcPlonkLinkProof = MultiproverLinkingProof<SystemCurve>;
 // --------------------------
 
 /// A wallet with system-wide default generic parameters attached
-pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS>;
 /// A wallet share with system-wide default generic parameters attached
-pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias for the Merkle opening with system-wide default generics
 /// attached
 pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
@@ -214,16 +214,12 @@ pub mod native_helpers {
     };
 
     /// Recover a wallet from blinded secret shares
-    pub fn wallet_from_blinded_shares<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>
+    pub fn wallet_from_blinded_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
+        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
+    ) -> Wallet<MAX_BALANCES, MAX_ORDERS>
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
         let unblinded_public_shares = public_shares.unblind_shares(recovered_blinder);
@@ -231,16 +227,12 @@ pub mod native_helpers {
     }
 
     /// Compute a commitment to the shares of a wallet
-    pub fn compute_wallet_share_commitment<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub fn compute_wallet_share_commitment<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
+        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
     ) -> WalletShareStateCommitment
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Hash the private input, then append the public input and re-hash
         let private_input_commitment = compute_wallet_private_share_commitment(private_shares);
@@ -254,12 +246,11 @@ pub mod native_helpers {
     pub fn compute_wallet_private_share_commitment<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
     >(
-        private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
     ) -> Scalar
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         compute_poseidon_hash(&private_share.to_scalars())
     }
@@ -269,13 +260,12 @@ pub mod native_helpers {
     pub fn compute_wallet_commitment_from_private<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
     >(
-        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         private_share_comm: WalletShareStateCommitment,
     ) -> WalletShareStateCommitment
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         let mut hash_input = vec![private_share_comm];
         hash_input.append(&mut public_shares.to_scalars());
@@ -293,19 +283,12 @@ pub mod native_helpers {
     /// Reblind a wallet given its secret shares
     ///
     /// Returns the reblinded private and public shares
-    pub fn reblind_wallet<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        private_secret_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
+    pub fn reblind_wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+        private_secret_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Sample new wallet blinders from the `blinder` CSPRNG
         // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
@@ -336,20 +319,13 @@ pub mod native_helpers {
     ///
     /// The return type is a tuple containing the private and public shares.
     /// Note that the private shares returned are exactly those passed in
-    pub fn create_wallet_shares_from_private<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-    >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub fn create_wallet_shares_from_private<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+        private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         blinder: Scalar,
-    ) -> (
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Serialize the wallet's private shares and use this as the secret share stream
         let private_shares_ser: Vec<Scalar> = private_shares.clone().to_scalars();
@@ -366,19 +342,15 @@ pub mod native_helpers {
         T,
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
     >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
         blinder: Scalar,
         private_blinder_share: Scalar,
         secret_shares: T,
-    ) -> (
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    )
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
     where
         T: IntoIterator<Item = Scalar>,
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         let share_iter = secret_shares.into_iter();
         let wallet_scalars = wallet.to_scalars();

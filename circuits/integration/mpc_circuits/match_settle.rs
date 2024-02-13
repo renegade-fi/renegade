@@ -15,7 +15,7 @@ use circuits::{
     mpc_circuits::{r#match::compute_match, settle::settle_match},
     test_helpers::{random_indices, random_orders_and_match},
     zk_circuits::{
-        test_helpers::{SizedWallet, MAX_BALANCES, MAX_FEES, MAX_ORDERS},
+        test_helpers::{SizedWallet, MAX_BALANCES, MAX_ORDERS},
         valid_match_settle::{
             AuthenticatedValidMatchSettleStatement, AuthenticatedValidMatchSettleWitness,
             ValidMatchSettle,
@@ -37,10 +37,9 @@ use crate::{types::create_wallet_shares, IntegrationTestArgs};
 
 /// A sized statement type allocated in a fabric
 type SizedValidMatchSettleStatement =
-    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 /// A sized witness type allocated in a fabric
-type SizedValidMatchSettleWitness =
-    AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+type SizedValidMatchSettleWitness = AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
 
 /// Generate two wallets with crossing orders
 ///
@@ -89,14 +88,15 @@ fn add_balances_to_wallet(
 
     let base = order.base_mint.clone();
     let quote = order.quote_mint.clone();
-    let base_bal = Balance { mint: base.clone(), amount: base_amt + 1 };
-    let quote_bal = Balance { mint: quote.clone(), amount: quote_amt + 1 };
+    let base_bal = Balance::new_from_mint_and_amount(base.clone(), base_amt + 1);
+    let quote_bal = Balance::new_from_mint_and_amount(quote.clone(), quote_amt + 1);
 
     // Begin with a random amount of the receive side mint
     let rand_amt = rng.next_u32() as u64;
+    let rand_bal = Balance::new_from_mint_and_amount(quote.clone(), rand_amt);
     let (send, recv) = match order.side {
-        OrderSide::Buy => (quote_bal, Balance { mint: base, amount: rand_amt }),
-        OrderSide::Sell => (base_bal, Balance { mint: quote, amount: rand_amt }),
+        OrderSide::Buy => (quote_bal, rand_bal),
+        OrderSide::Sell => (base_bal, rand_bal),
     };
 
     // Add balances for the order
