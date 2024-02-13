@@ -13,7 +13,7 @@ use circuit_types::{
     PlonkCircuit,
 };
 use constants::{Scalar, ScalarField};
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use itertools::{izip, Itertools};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
@@ -44,25 +44,20 @@ use super::VALID_REBLIND_COMMITMENTS_LINK;
 pub struct ValidReblind<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 >;
 /// A `VALID REBLIND` circuit with default const generic sizing parameters
-pub type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+pub type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
-impl<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-        const MERKLE_HEIGHT: usize,
-    > ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
+    ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Apply the constraints of `VALID REBLIND` to the given constraint system
     pub fn circuit(
         statement: &ValidReblindStatementVar,
-        witness: &ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        witness: &ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // -- State Validity -- //
@@ -148,10 +143,10 @@ where
     /// For the secret share stream, this is the last private share in the
     /// serialized wallet
     fn validate_reblind(
-        old_private_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        old_public_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        reblinded_private_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        reblinded_public_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+        old_private_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        old_public_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        reblinded_private_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        reblinded_public_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let one = ScalarField::one();
@@ -285,31 +280,27 @@ where
 pub struct ValidReblindWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 > where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The private secret shares of the original wallet
-    pub original_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub original_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public secret shares of the original wallet
-    pub original_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub original_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The private secret shares of the reblinded wallet
     #[link_groups = "valid_reblind_commitments"]
-    pub reblinded_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub reblinded_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public secret shares of the reblinded wallet
     #[link_groups = "valid_reblind_commitments"]
-    pub reblinded_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub reblinded_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The Merkle opening from the commitment to the original wallet's shares
     pub original_share_opening: MerkleOpening<MERKLE_HEIGHT>,
     /// The secret match key corresponding to the wallet's public match key
     pub sk_match: SecretIdentificationKey,
 }
 /// A `VALID REBLIND` witness with default const generic sizing parameters
-pub type SizedValidReblindWitness =
-    ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
-
-// -----------------------------
+pub type SizedValidReblindWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 // | Statement Type Definition |
 // -----------------------------
 
@@ -329,34 +320,30 @@ pub struct ValidReblindStatement {
 // | Prove Verify Flow |
 // ---------------------
 
-impl<
-        const MAX_BALANCES: usize,
-        const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
-        const MERKLE_HEIGHT: usize,
-    > SingleProverCircuit for ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
+    SingleProverCircuit for ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    type Witness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    type Witness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
     type Statement = ValidReblindStatement;
 
     fn name() -> String {
-        format!("Valid Reblind ({MAX_BALANCES}, {MAX_ORDERS}, {MAX_FEES}, {MERKLE_HEIGHT})")
+        format!("Valid Reblind ({MAX_BALANCES}, {MAX_ORDERS}, {MERKLE_HEIGHT})")
     }
 
     // VALID REBLIND inherits the group placement from VALID COMMITMENTS for their
     // link group
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
         let commitments_layout =
-            ValidCommitments::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::get_circuit_layout()?;
+            ValidCommitments::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()?;
         let shared_layout = commitments_layout.get_group_layout(VALID_REBLIND_COMMITMENTS_LINK);
 
         Ok(vec![(VALID_REBLIND_COMMITMENTS_LINK.to_string(), Some(shared_layout))])
     }
 
     fn apply_constraints(
-        witness_var: ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
+        witness_var: ValidReblindWitnessVar<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
         statement_var: ValidReblindStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
@@ -380,8 +367,7 @@ pub mod test_helpers {
     };
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-        PRIVATE_KEYS,
+        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_ORDERS, PRIVATE_KEYS,
     };
 
     use super::{ValidReblindStatement, ValidReblindWitness};
@@ -390,23 +376,19 @@ pub mod test_helpers {
     const MERKLE_HEIGHT: usize = 3;
 
     /// A witness type with default size parameters attached
-    pub type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    pub type SizedWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
     /// Construct a witness and statement for `VALID REBLIND` from a given
     /// wallet
     pub fn construct_witness_statement<
         const MAX_BALANCES: usize,
         const MAX_ORDERS: usize,
-        const MAX_FEES: usize,
         const MERKLE_HEIGHT: usize,
     >(
-        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    ) -> (
-        ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>,
-        ValidReblindStatement,
-    )
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+    ) -> (ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>, ValidReblindStatement)
     where
-        [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Build shares of the original wallet, then reblind it
         let (old_wallet_private_shares, old_wallet_public_shares) = create_wallet_shares(wallet);
@@ -460,9 +442,7 @@ mod test {
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{
-            SizedWallet, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_FEES, MAX_ORDERS,
-        },
+        test_helpers::{SizedWallet, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
         valid_reblind::test_helpers::construct_witness_statement,
     };
 
@@ -473,7 +453,7 @@ mod test {
     // -----------
 
     /// A `VALID REBLIND` circuit with test sizing parameters attached
-    pub type SizedReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    pub type SizedReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
     /// Asserts that a set of secret shares is a valid reblinding of a wallet
     ///

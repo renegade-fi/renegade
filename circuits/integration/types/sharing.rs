@@ -4,7 +4,7 @@ use circuit_types::{
     traits::{BaseType, MpcBaseType, MpcType, SecretShareType},
     wallet::Wallet,
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS};
+use constants::{MAX_BALANCES, MAX_ORDERS};
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
@@ -13,7 +13,7 @@ use crate::IntegrationTestArgs;
 use super::create_wallet_shares;
 
 /// A wallet with default generics
-type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS>;
 
 /// Tests sharing a value then opening it
 async fn test_share_then_open(test_args: IntegrationTestArgs) -> Result<()> {

@@ -11,18 +11,18 @@ use crate::mpc_gadgets::comparators::cond_select_vec;
 ///
 /// We settle directly into the public shares both for efficiency and to avoid
 /// the need to share private shares
-pub fn settle_match<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MAX_FEES: usize>(
+pub fn settle_match<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     party0_settle_indices: OrderSettlementIndices,
     party1_settle_indices: OrderSettlementIndices,
-    party0_public_share: &AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    party1_public_share: &AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    party0_public_share: &AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
+    party1_public_share: &AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
     match_res: &AuthenticatedMatchResult,
 ) -> (
-    AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-    AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
+    AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
 )
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     let mut party0_new_shares = party0_public_share.clone();
     let mut party1_new_shares = party1_public_share.clone();

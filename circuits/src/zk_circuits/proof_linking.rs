@@ -10,7 +10,7 @@ use circuit_types::{
     errors::ProverError, traits::SingleProverCircuit, Fabric, MpcPlonkLinkProof,
     MpcProofLinkingHint, PlonkLinkProof, PlonkProof, ProofLinkingHint,
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use mpc_plonk::{
     multiprover::proof_system::MultiproverPlonkKzgSnark, proof_system::PlonkKzgSnark,
     transcript::SolidityTranscript,
@@ -34,7 +34,7 @@ pub fn link_sized_commitments_reblind(
     reblind_link_hint: &ProofLinkingHint,
     commitments_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
-    link_commitments_reblind::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>(
+    link_commitments_reblind::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>(
         reblind_link_hint,
         commitments_link_hint,
     )
@@ -44,20 +44,19 @@ pub fn link_sized_commitments_reblind(
 pub fn link_commitments_reblind<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 >(
     reblind_link_hint: &ProofLinkingHint,
     commitments_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Get the group layout for the reblind <-> commitments link group
     #[rustfmt::skip]
     let layout =
-        get_reblind_commitments_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>()?;
-    let pk = ValidReblind::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>::proving_key();
+        get_reblind_commitments_group_layout::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>()?;
+    let pk = ValidReblind::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
         reblind_link_hint,
@@ -75,7 +74,7 @@ pub fn validate_sized_commitments_reblind_link(
     reblind_proof: &PlonkProof,
     commitments_proof: &PlonkProof,
 ) -> Result<(), ProverError> {
-    validate_commitments_reblind_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>(
+    validate_commitments_reblind_link::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>(
         link_proof,
         reblind_proof,
         commitments_proof,
@@ -87,7 +86,6 @@ pub fn validate_sized_commitments_reblind_link(
 pub fn validate_commitments_reblind_link<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 >(
     link_proof: &PlonkLinkProof,
@@ -95,13 +93,13 @@ pub fn validate_commitments_reblind_link<
     commitments_proof: &PlonkProof,
 ) -> Result<(), ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Get the group layout for the reblind <-> commitments link group
     #[rustfmt::skip]
     let layout =
-        get_reblind_commitments_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>()?;
-    let vk = ValidReblind::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>::verifying_key();
+        get_reblind_commitments_group_layout::<MAX_BALANCES, MAX_ORDERS,  MERKLE_HEIGHT>()?;
+    let vk = ValidReblind::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>::verifying_key();
 
     PlonkKzgSnark::verify_link_proof::<SolidityTranscript>(
         reblind_proof,
@@ -117,14 +115,13 @@ where
 fn get_reblind_commitments_group_layout<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 >() -> Result<GroupLayout, ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     let circuit_layout =
-        ValidReblind::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>::get_circuit_layout()
+        ValidReblind::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>::get_circuit_layout()
             .map_err(ProverError::Plonk)?;
     Ok(circuit_layout.get_group_layout(VALID_REBLIND_COMMITMENTS_LINK))
 }
@@ -140,7 +137,7 @@ pub fn link_sized_commitments_match_settle(
     commitments_link_hint: &ProofLinkingHint,
     match_settle_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError> {
-    link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+    link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS>(
         party_id,
         commitments_link_hint,
         match_settle_link_hint,
@@ -155,7 +152,7 @@ pub fn link_sized_commitments_match_settle_multiprover(
     match_settle_link_hint: &MpcProofLinkingHint,
     fabric: &Fabric,
 ) -> Result<MpcPlonkLinkProof, ProverError> {
-    link_commitments_match_settle_multiprover::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+    link_commitments_match_settle_multiprover::<MAX_BALANCES, MAX_ORDERS>(
         party_id,
         commitments_link_hint,
         match_settle_link_hint,
@@ -165,22 +162,17 @@ pub fn link_sized_commitments_match_settle_multiprover(
 
 /// Link a proof of VALID COMMITMENTS with a proof of MATCH SETTLE in a
 /// singleprover context
-pub fn link_commitments_match_settle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn link_commitments_match_settle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     party_id: PartyId,
     commitments_link_hint: &ProofLinkingHint,
     match_settle_link_hint: &ProofLinkingHint,
 ) -> Result<PlonkLinkProof, ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Get the group layout for the match settle <-> commitments link group
-    let layout =
-        get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(party_id)?;
-    let pk = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::proving_key();
+    let layout = get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS>(party_id)?;
+    let pk = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::proving_key();
 
     PlonkKzgSnark::link_proofs::<SolidityTranscript>(
         commitments_link_hint,
@@ -196,7 +188,6 @@ where
 pub fn link_commitments_match_settle_multiprover<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
 >(
     party_id: PartyId,
     commitments_link_hint: &MpcProofLinkingHint,
@@ -204,11 +195,10 @@ pub fn link_commitments_match_settle_multiprover<
     fabric: &Fabric,
 ) -> Result<MpcPlonkLinkProof, ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Get the group layout for the match settle <-> commitments link group
-    let layout =
-        get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(party_id)?;
+    let layout = get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS>(party_id)?;
     let pk = ValidMatchSettle::proving_key();
 
     MultiproverPlonkKzgSnark::link_proofs(
@@ -229,7 +219,7 @@ pub fn validate_sized_commitments_match_settle_link(
     commitments_proof: &PlonkProof,
     match_settle_proof: &PlonkProof,
 ) -> Result<(), ProverError> {
-    validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+    validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
         party_id,
         link_proof,
         commitments_proof,
@@ -239,23 +229,18 @@ pub fn validate_sized_commitments_match_settle_link(
 
 /// Validate a link between a proof of MATCH SETTLE with a proof of VALID
 /// COMMITMENTS
-pub fn validate_commitments_match_settle_link<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+pub fn validate_commitments_match_settle_link<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     party_id: PartyId,
     link_proof: &PlonkLinkProof,
     commitments_proof: &PlonkProof,
     match_settle_proof: &PlonkProof,
 ) -> Result<(), ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Get the group layout for the match settle <-> commitments link group
-    let layout =
-        get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(party_id)?;
-    let vk = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::verifying_key();
+    let layout = get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS>(party_id)?;
+    let vk = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::verifying_key();
 
     PlonkKzgSnark::verify_link_proof::<SolidityTranscript>(
         commitments_proof,
@@ -268,15 +253,11 @@ where
 }
 
 /// Get the group layout for the match settle <-> commitments link group
-fn get_commitments_match_settle_group_layout<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
->(
+fn get_commitments_match_settle_group_layout<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     party_id: PartyId,
 ) -> Result<GroupLayout, ProverError>
 where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Match the group id by party id
     let group_id = match party_id {
@@ -285,7 +266,7 @@ where
         _ => panic!("invalid party id"),
     };
 
-    let layout = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>::get_circuit_layout()
+    let layout = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()
         .map_err(ProverError::Plonk)?;
     Ok(layout.get_group_layout(group_id))
 }
@@ -310,8 +291,7 @@ mod test {
         zk_circuits::{
             proof_linking::link_commitments_match_settle,
             test_helpers::{
-                create_wallet_shares, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_FEES,
-                MAX_ORDERS,
+                create_wallet_shares, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
             },
             valid_commitments::{
                 test_helpers::create_witness_and_statement_with_shares as commitments_witness_statement,
@@ -336,13 +316,11 @@ mod test {
     /// The Merkle height used for testing
     const MERKLE_HEIGHT: usize = 3;
     /// Valid reblind with testing sizing
-    type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
     /// Valid commitments with testing sizing
-    type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+    type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
     /// Valid match settle with testing sizing
-    type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
-
-    // -----------
+    type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>;
     // | Helpers |
     // -----------
 
@@ -361,11 +339,11 @@ mod test {
             singleprover_prove_with_hint::<SizedValidCommitments>(comm_witness, comm_statement)?;
 
         // Link the proofs and verify the link
-        let proof = link_commitments_reblind::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>(
+        let proof = link_commitments_reblind::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>(
             &reblind_hint,
             &comm_hint,
         )?;
-        validate_commitments_reblind_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>(
+        validate_commitments_reblind_link::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>(
             &proof,
             &reblind_proof,
             &comm_proof,
@@ -418,14 +396,14 @@ mod test {
                 match_settle_statement,
             )?;
 
-        let link_proof = link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+        let link_proof = link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS>(
             party_id,
             &comm_hint,
             &match_settle_hint,
         )?;
 
         // Validate the link proof
-        validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+        validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
             party_id,
             &link_proof,
             &comm_proof,
@@ -469,7 +447,6 @@ mod test {
                 let link_proof = link_commitments_match_settle_multiprover::<
                     MAX_BALANCES,
                     MAX_ORDERS,
-                    MAX_FEES,
                 >(
                     party_id, &comm_hint, &match_settle_hint, &fabric
                 )
@@ -483,7 +460,7 @@ mod test {
         })
         .await;
 
-        validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS, MAX_FEES>(
+        validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
             party_id,
             &link_proof,
             &comm_proof,
@@ -536,8 +513,6 @@ mod test {
             sel!(match_witness.balance1.clone(), match_witness.balance2.clone());
         wallet.balances[indices.balance_receive] =
             sel!(match_witness.balance2.clone(), match_witness.balance1.clone());
-        // TODO: Properly handle fees when implemented
-        wallet.fees[0].gas_addr = wallet.balances[0].mint.clone();
 
         // Modify the VALID MATCH SETTLE witness to use the shares from the test wallet
         let (private_share, public_share) = create_wallet_shares(&wallet);
