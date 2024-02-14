@@ -12,7 +12,7 @@ use crate::{
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
     },
-    Fabric,
+    Amount, Fabric,
 };
 
 /// Represents the match result of a matching MPC in the cleartext
@@ -28,9 +28,9 @@ pub struct MatchResult {
     /// The mint of the base token in the asset pair being matched
     pub base_mint: BigUint,
     /// The amount of the quote token exchanged by this match
-    pub quote_amount: u64,
+    pub quote_amount: Amount,
     /// The amount of the base token exchanged by this match
-    pub base_amount: u64,
+    pub base_amount: Amount,
     /// The direction of the match, `true` implies that party 1 buys the quote
     /// and sells the base, `false` implies that party 1 buys the base and
     /// sells the quote
@@ -45,7 +45,7 @@ pub struct MatchResult {
     /// orders. We include it here to tame some of the non-linearity of the
     /// zk circuit, i.e. we can shortcut some of the computation and
     /// implicitly constrain the match result with this extra value
-    pub max_minus_min_amount: u64,
+    pub max_minus_min_amount: Amount,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the
     /// order that is completely filled by this match
     ///
@@ -56,7 +56,7 @@ pub struct MatchResult {
 
 impl MatchResult {
     /// Get the send mint and amount given a side of the order
-    pub fn send_mint_amount(&self, side: OrderSide) -> (BigUint, u64) {
+    pub fn send_mint_amount(&self, side: OrderSide) -> (BigUint, Amount) {
         match side {
             // Buy the base, sell the quote
             OrderSide::Buy => (self.quote_mint.clone(), self.quote_amount),
@@ -66,7 +66,7 @@ impl MatchResult {
     }
 
     /// Get the receive mint and amount given a side of the order
-    pub fn receive_mint_amount(&self, side: OrderSide) -> (BigUint, u64) {
+    pub fn receive_mint_amount(&self, side: OrderSide) -> (BigUint, Amount) {
         match side {
             // Buy the base, sell the quote
             OrderSide::Buy => (self.base_mint.clone(), self.base_amount),
