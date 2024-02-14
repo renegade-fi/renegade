@@ -38,7 +38,9 @@ use mpc_relation::{
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
-use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
+use renegade_crypto::fields::{
+    biguint_to_scalar, scalar_to_biguint, scalar_to_u128, scalar_to_u64,
+};
 use std::{
     collections::HashMap,
     iter,
@@ -367,6 +369,18 @@ impl BaseType for u64 {
     }
 }
 
+impl BaseType for u128 {
+    const NUM_SCALARS: usize = 1;
+
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![Scalar::from(*self)]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        scalar_to_u128(&i.next().unwrap())
+    }
+}
+
 impl BaseType for usize {
     const NUM_SCALARS: usize = 1;
 
@@ -441,6 +455,10 @@ impl CircuitBaseType for Scalar {
 }
 
 impl CircuitBaseType for u64 {
+    type VarType = Variable;
+}
+
+impl CircuitBaseType for u128 {
     type VarType = Variable;
 }
 
@@ -546,6 +564,10 @@ impl MpcBaseType for Scalar {
 }
 
 impl MpcBaseType for u64 {
+    type AllocatedType = AuthenticatedScalar;
+}
+
+impl MpcBaseType for u128 {
     type AllocatedType = AuthenticatedScalar;
 }
 
@@ -665,6 +687,10 @@ impl SecretShareBaseType for Scalar {
 }
 
 impl SecretShareBaseType for u64 {
+    type ShareType = Scalar;
+}
+
+impl SecretShareBaseType for u128 {
     type ShareType = Scalar;
 }
 

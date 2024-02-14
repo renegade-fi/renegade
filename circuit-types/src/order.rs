@@ -16,7 +16,7 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    AuthenticatedBool, Fabric,
+    Amount, AuthenticatedBool, Fabric,
 };
 
 /// Represents the base type of an open order, including the asset pair, the
@@ -39,7 +39,7 @@ pub struct Order {
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: OrderSide,
     /// The amount of base currency to buy or sell
-    pub amount: u64,
+    pub amount: Amount,
     /// The worse case price the user is willing to accept on this order
     ///
     /// If the order is a buy, this is the maximum price the user is willing to

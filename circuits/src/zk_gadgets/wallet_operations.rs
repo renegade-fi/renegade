@@ -1,11 +1,11 @@
 //! Groups logic for computing wallet commitments and nullifiers inside of a
 //! circuit
 
-use circuit_types::{traits::CircuitVarType, wallet::WalletShareVar};
+use circuit_types::{traits::CircuitVarType, wallet::WalletShareVar, PlonkCircuit, AMOUNT_BITS};
 use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
-use super::poseidon::PoseidonHashGadget;
+use super::{bits::ToBitsGadget, poseidon::PoseidonHashGadget};
 
 // ------------------------
 // | Public State Gadgets |
@@ -77,6 +77,26 @@ impl NullifierGadget {
 
         hasher.batch_absorb(&[share_commitment, wallet_blinder], cs)?;
         hasher.squeeze(cs)
+    }
+}
+
+// ------------------------
+// | Wallet Field Gadgets |
+// ------------------------
+
+/// Constrain a value to be a valid `Amount`, i.e. a non-negative `Scalar`
+/// representable in at most `AMOUNT_BITS` bits
+pub struct AmountGadget;
+impl AmountGadget {
+    /// Constrain an value to be a valid `Amount`
+    pub fn constrain_valid_amount(
+        amount: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Decompose into `AMOUNT_BITS` bits and reconstruct, if the reconstructed value
+        // is the same as the original, then it is a valid `Amount`
+        let reconstructed = ToBitsGadget::<AMOUNT_BITS>::decompose_and_reconstruct(amount, cs)?;
+        cs.enforce_equal(amount, reconstructed)
     }
 }
 

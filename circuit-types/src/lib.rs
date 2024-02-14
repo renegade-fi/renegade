@@ -58,9 +58,9 @@ pub const SCALAR_ZERO: ScalarField = ScalarField::new(BigInt::new([0, 0, 0, 0]))
 pub const SCALAR_ONE: ScalarField = ScalarField::new(BigInt::new([1, 0, 0, 0]));
 
 /// The type used to track an amount
-pub type Amount = u64;
+pub type Amount = u128;
 /// The number of bits allowed in a balance or transaction "amount"
-pub const AMOUNT_BITS: usize = 64;
+pub const AMOUNT_BITS: usize = 128;
 /// The number of bits allowed in a price
 ///
 /// This is the default fixed point precision plus 32 bits for the integral part
