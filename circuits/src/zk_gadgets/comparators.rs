@@ -15,9 +15,9 @@ use constants::{AuthenticatedScalar, Scalar, ScalarField, ScalarResult};
 use itertools::Itertools;
 use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
-use crate::{
-    mpc_gadgets::bits::to_bits_le, zk_gadgets::bits::scalar_to_bits_le, SCALAR_BITS_MINUS_TWO,
-};
+use crate::mpc_gadgets::bits::to_bits_le;
+
+use super::bits::ToBitsGadget;
 
 // ------------------------
 // | Singleprover Gadgets |
@@ -31,7 +31,7 @@ impl EqZeroGadget {
     ///
     /// Relies on the fact that modulo a prime field, all elements (except zero)
     /// have a valid multiplicative inverse
-    pub fn eq_zero(val: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
+    pub fn eq_zero_var(val: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
         // Compute the inverse of the value outside the circuit then allocate it in the
         // circuit
         let val_eval = cs.witness(val).unwrap();
@@ -66,6 +66,18 @@ impl EqZeroGadget {
         // We do not need to enforce that the result is boolean, only 0 or 1 will
         // satisfy the previous two constraints
         Ok(BoolVar::new_unchecked(is_zero_var))
+    }
+
+    /// Computes whether the given input is all zeros
+    ///
+    /// Decomposes the value into its components and checks if each component is
+    /// zero
+    pub fn eq_zero<V: CircuitVarType>(
+        val: &V,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        let val_vars = val.to_vars();
+        EqVecGadget::eq_zero_vec(&val_vars, cs)
     }
 }
 
@@ -115,7 +127,22 @@ impl EqVecGadget {
         let mut component_eq_vals = Vec::new();
         for (a_val, b_val) in a_vals.zip(b_vals) {
             let a_minus_b = cs.sub(a_val, b_val)?;
-            let eq_val = EqZeroGadget::eq_zero(a_minus_b, cs)?;
+            let eq_val = EqZeroGadget::eq_zero_var(a_minus_b, cs)?;
+            component_eq_vals.push(eq_val);
+        }
+
+        cs.logic_and_all(&component_eq_vals)
+    }
+
+    /// Returns 1 is \vec{a} = \vec{0}
+    pub fn eq_zero_vec<V>(a: &[V], cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
+    where
+        V: CircuitVarType,
+    {
+        let vals = a.iter().cloned().flat_map(|a_val| a_val.to_vars());
+        let mut component_eq_vals = Vec::new();
+        for val in vals {
+            let eq_val = EqZeroGadget::eq_zero_var(val, cs)?;
             component_eq_vals.push(eq_val);
         }
 
@@ -163,7 +190,7 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     pub fn greater_than_zero(x: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
         // If we can reconstruct the value without the highest bit, the value is
         // non-negative
-        let bit_reconstructed = Self::bit_decompose_reconstruct(x, cs)?;
+        let bit_reconstructed = ToBitsGadget::<D>::decompose_and_reconstruct(x, cs)?;
         EqGadget::eq(&bit_reconstructed, &x, cs)
     }
 
@@ -174,47 +201,8 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     ) -> Result<(), CircuitError> {
         // If we can reconstruct the value without the highest bit, the value is
         // non-negative
-        let bit_reconstructed = Self::bit_decompose_reconstruct(x, cs)?;
+        let bit_reconstructed = ToBitsGadget::<D>::decompose_and_reconstruct(x, cs)?;
         EqGadget::constrain_eq(&bit_reconstructed, &x, cs)
-    }
-
-    /// A helper function to decompose a scalar into bits and then reconstruct
-    /// it; returns the reconstructed result
-    ///
-    /// This is used by limiting the bit width of the decomposition -- if a
-    /// value can be reconstructed without its highest bit (i.e. highest bit
-    /// is zero) then it is non-negative
-    fn bit_decompose_reconstruct(
-        x: Variable,
-        cs: &mut PlonkCircuit,
-    ) -> Result<Variable, CircuitError> {
-        assert!(
-            D <= SCALAR_BITS_MINUS_TWO,
-            "a positive value may only have {:?} bits",
-            SCALAR_BITS_MINUS_TWO
-        );
-
-        // Bit decompose the input
-        let x_eval = x.eval(cs);
-        let bits = scalar_to_bits_le::<D>(&x_eval)[..D]
-            .iter()
-            .map(|bit| bit.create_witness(cs))
-            .collect_vec();
-
-        // Constrain the bit decomposition to be correct
-        // This implicitly constrains the value to be greater than zero, i.e. if it can
-        // be represented without the highest bit set, then it is greater than
-        // zero. This assumes a two's complement representation
-        let two = ScalarField::from(2u64);
-        let coeffs = (0..D)
-            .scan(ScalarField::one(), |state, _| {
-                let res = *state;
-                *state *= two;
-                Some(res)
-            })
-            .collect_vec();
-
-        cs.lc_sum(&bits, &coeffs)
     }
 }
 
@@ -492,7 +480,6 @@ mod test {
             amount: rng.gen(),
             side: *[OrderSide::Buy, OrderSide::Sell].choose(&mut rng).unwrap(),
             worst_case_price: FixedPoint::from_f32_round_down(rng.gen()),
-            timestamp: rng.gen(),
         }
     }
 
@@ -511,8 +498,8 @@ mod test {
         let a_var = a.create_witness(&mut cs);
         let zero_var = zero.create_witness(&mut cs);
 
-        let eq_zero1 = EqZeroGadget::eq_zero(a_var, &mut cs).unwrap();
-        let eq_zero2 = EqZeroGadget::eq_zero(zero_var, &mut cs).unwrap();
+        let eq_zero1 = EqZeroGadget::eq_zero(&a_var, &mut cs).unwrap();
+        let eq_zero2 = EqZeroGadget::eq_zero(&zero_var, &mut cs).unwrap();
 
         cs.enforce_false(eq_zero1).unwrap();
         cs.enforce_true(eq_zero2).unwrap();

@@ -31,10 +31,71 @@ pub fn scalar_to_bits_le<const N: usize>(a: &Scalar) -> Vec<Scalar> {
 /// Singleprover implementation of the `ToBits` gadget
 pub struct ToBitsGadget<const D: usize> {}
 impl<const D: usize> ToBitsGadget<D> {
+    /// Decompose and reconstruct a value to and from its bitwise representation
+    /// with a fixed bitlength
+    ///
+    /// This is useful as a range check for a power of two, wherein the value
+    /// may only be represented in 2^D bits
+    pub fn decompose_and_reconstruct(
+        a: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
+        let bits = Self::to_bits(a, cs)?;
+        Self::bit_reconstruct(&bits, cs)
+    }
+
     /// Converts a value to its bitwise representation in a single-prover
     /// constraint system
     pub fn to_bits(a: Variable, cs: &mut PlonkCircuit) -> Result<Vec<BoolVar>, CircuitError> {
-        cs.unpack(a, D)
+        // Convert the scalar to bits
+        let a_scalar = a.eval(cs);
+        let bits = scalar_to_bits_le::<D>(&a_scalar);
+
+        // Allocate the bits in the constraint system
+        let bit_vars = bits
+            .iter()
+            .map(Scalar::inner)
+            .map(|bit| cs.create_boolean_variable(bit))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Ensure that the decomposition is correctly done
+        let two = ScalarField::from(2u64);
+        let coeffs = (0..D)
+            .scan(ScalarField::one(), |state, _| {
+                let res = *state;
+                *state *= two;
+                Some(res)
+            })
+            .collect_vec();
+
+        let bits_vars = bit_vars.iter().map(|&b| Variable::from(b)).collect_vec();
+        cs.lc_sum(&bits_vars, &coeffs)?;
+
+        Ok(bit_vars)
+    }
+
+    /// Reconstruct a value from its bitwise representation
+    ///
+    /// Assumes a little-endian representation
+    pub fn bit_reconstruct(
+        bits: &[BoolVar],
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
+        // Constrain the bit decomposition to be correct
+        // This implicitly constrains the value to be greater than zero, i.e. if it can
+        // be represented without the highest bit set, then it is greater than
+        // zero. This assumes a two's complement representation
+        let two = ScalarField::from(2u64);
+        let coeffs = (0..D)
+            .scan(ScalarField::one(), |state, _| {
+                let res = *state;
+                *state *= two;
+                Some(res)
+            })
+            .collect_vec();
+
+        let bits_vars = bits.iter().map(|&b| Variable::from(b)).collect_vec();
+        cs.lc_sum(&bits_vars, &coeffs)
     }
 }
 
@@ -92,11 +153,11 @@ mod bits_test {
     };
     use constants::Scalar;
     use mpc_relation::traits::Circuit;
-    use rand::{thread_rng, RngCore};
+    use rand::{thread_rng, Rng, RngCore};
     use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::zk_gadgets::bits::MultiproverToBitsGadget;
+    use crate::zk_gadgets::{bits::MultiproverToBitsGadget, comparators::NotEqualGadget};
 
     use super::ToBitsGadget;
 
@@ -121,6 +182,35 @@ mod bits_test {
         for (bit, expected) in res.into_iter().zip(bits.into_iter()) {
             cs.enforce_constant(bit.into(), expected.inner()).unwrap();
         }
+
+        // Check that the constraint system is satisfied
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    /// Test decomposing and reconstructing a value
+    #[test]
+    fn test_decompose_reconstruct() {
+        const BIT_LENGTH: usize = 64;
+        let mut rng = thread_rng();
+        let value = rng.next_u64();
+        let big_value: u128 = rng.gen();
+
+        // Create a constraint system
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let small_var = value.create_witness(&mut cs);
+        let big_var = big_value.create_witness(&mut cs);
+
+        // Decompose and reconstruct the successful value
+        let small_res =
+            ToBitsGadget::<BIT_LENGTH>::decompose_and_reconstruct(small_var, &mut cs).unwrap();
+        cs.enforce_equal(small_var, small_res).unwrap();
+
+        // Attempt to decompose and reconstruct a value that is too large
+        let big_res =
+            ToBitsGadget::<BIT_LENGTH>::decompose_and_reconstruct(big_var, &mut cs).unwrap();
+        let ne = NotEqualGadget::not_equal(big_res, big_var, &mut cs).unwrap();
+
+        cs.enforce_true(ne).unwrap();
 
         // Check that the constraint system is satisfied
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());

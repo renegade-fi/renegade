@@ -7,12 +7,15 @@
 
 use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, Variable};
+use mpc_relation::{traits::Circuit, BoolVar, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 
-use crate::traits::{BaseType, CircuitBaseType, CircuitVarType};
+use crate::{
+    traits::{BaseType, CircuitBaseType, CircuitVarType},
+    Amount,
+};
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
@@ -24,7 +27,7 @@ pub struct ExternalTransfer {
     /// The mint (ERC20 address) of the token to transfer
     pub mint: BigUint,
     /// The amount of the token transferred
-    pub amount: BigUint,
+    pub amount: Amount,
     /// The direction of transfer
     pub direction: ExternalTransferDirection,
 }
@@ -55,7 +58,7 @@ impl BaseType for ExternalTransferDirection {
 }
 
 impl CircuitBaseType for ExternalTransferDirection {
-    type VarType = Variable;
+    type VarType = BoolVar;
 }
 
 impl Default for ExternalTransferDirection {
