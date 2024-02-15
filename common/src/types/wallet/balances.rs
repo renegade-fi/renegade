@@ -79,11 +79,9 @@ impl Wallet {
     /// Add a balance to the wallet, replacing the first default balance
     pub fn add_balance(&mut self, balance: Balance) -> Result<(), String> {
         // If the balance exists, increment it
-        if let Some(balance) = self.balances.get_mut(&balance.mint) {
-            balance.amount = balance
-                .amount
-                .checked_add(balance.amount)
-                .ok_or(ERR_BALANCE_OVERFLOW.to_string())?;
+        if let Some(bal) = self.balances.get_mut(&balance.mint) {
+            bal.amount =
+                bal.amount.checked_add(balance.amount).ok_or(ERR_BALANCE_OVERFLOW.to_string())?;
             return Ok(());
         }
 
