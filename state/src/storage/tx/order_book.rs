@@ -109,11 +109,12 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         // Build a cursor over the table
         let cursor = self
             .inner()
-            .cursor::<String, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(ORDERS_TABLE)?;
+            .cursor::<String, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(ORDERS_TABLE)?
+            .with_key_filter(|key| key.starts_with("order:"));
 
         // Destructure the result and handle errors
         let mut res = Vec::new();
-        for elem in cursor.values() {
+        for elem in cursor.into_iter().values() {
             let (order, _) = elem?;
             res.push(order);
         }

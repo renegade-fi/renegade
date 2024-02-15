@@ -31,7 +31,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get all the wallets in the database
     pub fn get_all_wallets(&self) -> Result<Vec<Wallet>, StorageError> {
         // Create a cursor and take only the values
-        let wallet_cursor = self.inner().cursor::<WalletIdentifier, Wallet>(WALLETS_TABLE)?;
+        let wallet_cursor =
+            self.inner().cursor::<WalletIdentifier, Wallet>(WALLETS_TABLE)?.into_iter();
         let wallets = wallet_cursor.values().collect::<Result<Vec<_>, _>>()?;
 
         Ok(wallets)
