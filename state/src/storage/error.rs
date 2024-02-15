@@ -18,6 +18,8 @@ pub enum StorageError {
     Commit(MdbxError),
     /// Error deserializing a value from storage
     Deserialization(FlexbuffersDeserializationError),
+    /// An invalid key was used to access the database
+    InvalidKey(String),
     /// An entry was not found in the database
     NotFound(String),
     /// Failure opening the database

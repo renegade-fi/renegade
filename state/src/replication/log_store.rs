@@ -124,7 +124,7 @@ impl Storage for LogStore {
         let mut entries = Vec::new();
         let mut remaining_space = max_size.into().map(|v| v as u32).unwrap_or(u32::MAX);
 
-        for record in cursor.map(|entry| {
+        for record in cursor.into_iter().map(|entry| {
             entry.map_err(RaftError::from).map(|(key, value)| (key, value.into_inner()))
         }) {
             let (key, entry) = record?;

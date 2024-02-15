@@ -35,7 +35,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get all the peers known to the local node
     pub fn get_all_peer_ids(&self) -> Result<Vec<WrappedPeerId>, StorageError> {
         // Create a cursor and take only the values
-        let peer_cursor = self.inner().cursor::<WrappedPeerId, PeerInfo>(PEER_INFO_TABLE)?;
+        let peer_cursor =
+            self.inner().cursor::<WrappedPeerId, PeerInfo>(PEER_INFO_TABLE)?.into_iter();
         let peers = peer_cursor.keys().collect::<Result<Vec<_>, _>>()?;
 
         Ok(peers)
