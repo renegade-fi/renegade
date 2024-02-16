@@ -16,7 +16,7 @@ use job_types::{
 };
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 
 use super::error::OnChainEventListenerError;
 
@@ -123,6 +123,7 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Handle an event from the contract
+    #[instrument(skip_all, err)]
     async fn handle_event(
         &self,
         event: DarkpoolContractEvents,
