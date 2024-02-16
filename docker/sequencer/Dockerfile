@@ -35,6 +35,9 @@ RUN git clone \
 
 WORKDIR /sources/renegade-contracts
 
+# TODO: Remove this once Arbitrum client is updated
+RUN git checkout 86070446fe87a00c32b8ac50467030ec4ea68ff7
+
 # Build the `scripts` crate to cache it
 RUN cargo build -p scripts
 

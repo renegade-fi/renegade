@@ -4,7 +4,7 @@
 # cache for this stage only, as the end state is the same
 FROM alpine AS sources
 COPY . .
-RUN rm -rf task-driver
+RUN rm -rf workers/task-driver
 
 # Rust build stage
 FROM rust:1.63-slim-buster AS builder
@@ -27,18 +27,18 @@ COPY --from=sources . .
 # dependencies of the integration test. Every path dependency of the target crate is automatically
 # added to the workspace
 COPY ./Cargo.toml ./Cargo.toml
-RUN sed -i '/members = \[/,/\]/c\members = [ "task-driver" ]' Cargo.toml
+RUN sed -i '/members = \[/,/\]/c\members = [ "workers/task-driver" ]' Cargo.toml
 
 # Place a set of dummy sources in the path, build the dummy executable
 # to cache built dependencies, then bulid the full executable
-WORKDIR /build/task-driver
+WORKDIR /build/workers/task-driver
 RUN mkdir src
 RUN touch src/dummy-lib.rs
 
 RUN mkdir integration
 RUN echo 'fn main() { println!("dummy main!") }' >> integration/dummy-main.rs
 
-COPY task-driver/Cargo.toml .
+COPY workers/task-driver/Cargo.toml .
 
 # Modify the Cargo.toml to point to our dummy sources
 RUN sed -i 's/lib.rs/dummy-lib.rs/g' Cargo.toml
@@ -54,8 +54,8 @@ RUN cargo build --quiet --test integration --features "integration"
 RUN sed -i 's/dummy-lib.rs/lib.rs/g' Cargo.toml
 RUN sed -i 's/dummy-main.rs/main.rs/g' Cargo.toml
 
-COPY task-driver/src ./src
-COPY task-driver/integration ./integration
+COPY workers/task-driver/src ./src
+COPY workers/task-driver/integration ./integration
 
 RUN cargo build --quiet --test integration --features "integration"
 

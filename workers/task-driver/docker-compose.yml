@@ -17,8 +17,8 @@ services:
   relayer:
     image: task-driver-integration-test:latest
     build:
-      context: ..
-      dockerfile: task-driver/Dockerfile
+      context: ../..
+      dockerfile: workers/task-driver/Dockerfile
     ports:
       - "8000:8000"
     command: >

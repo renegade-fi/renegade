@@ -21,7 +21,7 @@ use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotification
 use serde::Serialize;
 use state::State;
 use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, instrument, warn, Instrument};
 
 use crate::{
     error::TaskDriverError,
@@ -188,12 +188,16 @@ impl TaskExecutor {
                         task.id,
                         task.descriptor,
                     );
-                    self.runtime.spawn(async move {
-                        let res = fut.await;
-                        if let Err(e) = res {
-                            error!("error running task: {e:?}");
+                    self.runtime.spawn(
+                        async move {
+                            let res = fut.await;
+                            if let Err(e) = res {
+                                // TODO: May be able to remove this log & instrumentation below
+                                error!("error running task: {e:?}");
+                            }
                         }
-                    });
+                        .instrument(info_span!("task", task_id = %task.id)),
+                    );
 
                     Ok(())
                 },
@@ -212,6 +216,7 @@ impl TaskExecutor {
     }
 
     /// Handle a notification request
+    #[instrument(skip_all, err, fields(task_id = %task_id))]
     fn handle_notification_request(
         &self,
         task_id: TaskIdentifier,
@@ -232,6 +237,7 @@ impl TaskExecutor {
     }
 
     /// Handle a request to run a task immediately
+    #[instrument(skip_all, err, fields(task_id = %task_id, wallet_ids = ?wallet_ids))]
     pub fn handle_run_immediate(
         &self,
         wallet_ids: Vec<WalletIdentifier>,
@@ -260,24 +266,27 @@ impl TaskExecutor {
 
         let fut = self.create_task_future(true /* immediate */, task_id, task);
         let state = self.state().clone();
-        self.runtime.spawn(async move {
-            let res = fut.await;
-            if let Err(e) = res {
-                error!("error running immediate task: {e:?}");
-            }
+        self.runtime.spawn(
+            async move {
+                let res = fut.await;
+                if let Err(e) = res {
+                    error!("error running immediate task: {e:?}");
+                }
 
-            // Unpause the queues for the affected local wallets
-            for wallet_id in wallet_ids.iter() {
-                state
-                    .resume_task_queue(wallet_id)
-                    .expect("error proposing wallet resume for {wallet_id}")
-                    .await
-                    .expect("error resuming wallet task queue for {wallet_id}");
-            }
+                // Unpause the queues for the affected local wallets
+                for wallet_id in wallet_ids.iter() {
+                    state
+                        .resume_task_queue(wallet_id)
+                        .expect("error proposing wallet resume for {wallet_id}")
+                        .await
+                        .expect("error resuming wallet task queue for {wallet_id}");
+                }
 
-            // Remove from the preemptive tasks list
-            preemptive_tasks.write().unwrap().remove(&task_id);
-        });
+                // Remove from the preemptive tasks list
+                preemptive_tasks.write().unwrap().remove(&task_id);
+            }
+            .instrument(info_span!("immediate_task", task_id = %task_id)),
+        );
 
         Ok(())
     }
