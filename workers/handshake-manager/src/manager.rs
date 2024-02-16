@@ -46,7 +46,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use system_bus::SystemBus;
-use tracing::info;
+use tracing::{error, info, info_span, Instrument};
 use util::err_str;
 use uuid::Uuid;
 
@@ -167,9 +167,9 @@ impl HandshakeExecutor {
                     let self_clone = self.clone();
                     tokio::task::spawn(async move {
                         if let Err(e) = self_clone.handle_handshake_job(job).await {
-                            info!("error executing handshake: {e}")
+                            error!("error executing handshake: {e}")
                         }
-                    });
+                    }.instrument(info_span!("handle_handshake_job")));
                 },
 
                 // Await cancellation by the coordinator

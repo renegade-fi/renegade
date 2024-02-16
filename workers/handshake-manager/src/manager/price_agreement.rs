@@ -7,7 +7,7 @@ use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use lazy_static::lazy_static;
 use tokio::sync::oneshot;
-use tracing::{error, warn};
+use tracing::{error, instrument, warn};
 
 use super::{HandshakeExecutor, HandshakeManagerError};
 
@@ -113,6 +113,7 @@ lazy_static! {
 /// This will cause the price reporter to connect to exchanges and begin
 /// streaming, ahead of when we need prices
 #[allow(clippy::needless_pass_by_value)]
+#[instrument(skip_all, err)]
 pub fn init_price_streams(
     price_reporter_job_queue: PriceReporterQueue,
 ) -> Result<(), HandshakeManagerError> {
