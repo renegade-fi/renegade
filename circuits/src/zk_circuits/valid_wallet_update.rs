@@ -585,8 +585,7 @@ mod test {
     use mpc_relation::{traits::Circuit, PlonkCircuit};
     use num_bigint::BigUint;
     use rand::{thread_rng, RngCore};
-    use tracing::level_filters::LevelFilter;
-    use util::logging::setup_system_logger;
+    use renegade_crypto::fields::scalar_to_u128;
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
@@ -613,7 +612,7 @@ mod test {
 
     /// Get the scalar representation of the maximum allowable amount
     fn max_amount_scalar() -> Scalar {
-        Scalar::from(2).pow(AMOUNT_BITS as u64) - Scalar::from(1u8)
+        Scalar::from(2u8).pow(AMOUNT_BITS as u64) - Scalar::from(1u8)
     }
 
     // ----------
@@ -825,7 +824,8 @@ mod test {
     fn test_invalid_balance__large_amount() {
         // Transfer in an amount that pushes the balance over the maximum
         let mut old_wallet = INITIAL_WALLET.clone();
-        old_wallet.balances[0].amount = max_amount_scalar() - Scalar::one();
+        let amt = max_amount_scalar() - Scalar::one();
+        old_wallet.balances[0].amount = scalar_to_u128(&amt);
         let new_wallet = old_wallet.clone();
 
         // Construct a statement and witness then modify the order amount of the first
