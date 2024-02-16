@@ -20,7 +20,10 @@ use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
 use crossbeam::channel::{unbounded, Sender as UnboundedSender};
 use external_api::bus_message::SystemBusMessage;
-use job_types::{network_manager::NetworkManagerQueue, task_driver::TaskDriverQueue};
+use job_types::{
+    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
+    task_driver::TaskDriverQueue,
+};
 use system_bus::SystemBus;
 use util::err_str;
 
@@ -72,11 +75,19 @@ impl State {
         raft_inbound: RaftMessageReceiver,
         config: &RelayerConfig,
         task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<Self, StateError> {
         let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
         let network = GossipRaftNetwork::new(network_outbound, raft_inbound, shared_map.clone());
-        Self::new_with_network_and_map(config, network, task_queue, system_bus, shared_map)
+        Self::new_with_network_and_map(
+            config,
+            network,
+            task_queue,
+            handshake_manager_queue,
+            system_bus,
+            shared_map,
+        )
     }
 
     /// Create a new state handle with a network specified
@@ -84,10 +95,18 @@ impl State {
         config: &RelayerConfig,
         network: N,
         task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Result<Self, StateError> {
         let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
-        Self::new_with_network_and_map(config, network, task_queue, system_bus, shared_map)
+        Self::new_with_network_and_map(
+            config,
+            network,
+            task_queue,
+            handshake_manager_queue,
+            system_bus,
+            shared_map,
+        )
     }
 
     /// The base constructor allowing for the variadic constructors above
@@ -95,6 +114,7 @@ impl State {
         config: &RelayerConfig,
         network: N,
         task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         translation_map: SharedPeerIdTranslationMap,
     ) -> Result<Self, StateError> {
@@ -115,6 +135,7 @@ impl State {
             proposal_queue: proposal_recv,
             network,
             task_queue,
+            handshake_manager_queue,
             db: db.clone(),
             system_bus: system_bus.clone(),
         };

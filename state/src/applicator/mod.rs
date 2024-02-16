@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
-use job_types::task_driver::TaskDriverQueue;
+use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
 use system_bus::SystemBus;
 
 use crate::{storage::db::DB, StateTransition};
@@ -33,6 +33,8 @@ pub struct StateApplicatorConfig {
     pub cluster_id: ClusterId,
     /// A sender to the task driver's work queue
     pub task_queue: TaskDriverQueue,
+    /// The handshake manager's work queue
+    pub handshake_manager_queue: HandshakeManagerQueue,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
     /// A handle to the system bus used for internal pubsub
@@ -93,7 +95,10 @@ mod test_helpers {
     use std::{mem, str::FromStr, sync::Arc};
 
     use common::types::gossip::ClusterId;
-    use job_types::task_driver::{new_task_driver_queue, TaskDriverQueue};
+    use job_types::{
+        handshake_manager::new_handshake_manager_queue,
+        task_driver::{new_task_driver_queue, TaskDriverQueue},
+    };
     use system_bus::SystemBus;
 
     use crate::test_helpers::mock_db;
@@ -110,10 +115,14 @@ mod test_helpers {
 
     /// Create a mock `StateApplicator` with the given task queue
     pub(crate) fn mock_applicator_with_task_queue(task_queue: TaskDriverQueue) -> StateApplicator {
+        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        mem::forget(_recv);
+
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
             db: Arc::new(mock_db()),
+            handshake_manager_queue,
             system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),
         };

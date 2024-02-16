@@ -128,7 +128,10 @@ pub mod test_helpers {
     use std::{mem, time::Duration};
 
     use config::RelayerConfig;
-    use job_types::task_driver::{new_task_driver_queue, TaskDriverQueue};
+    use job_types::{
+        handshake_manager::new_handshake_manager_queue,
+        task_driver::{new_task_driver_queue, TaskDriverQueue},
+    };
     use system_bus::SystemBus;
     use tempfile::tempdir;
 
@@ -177,8 +180,15 @@ pub mod test_helpers {
         let config =
             RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
-        let state =
-            State::new_with_network(&config, nets.remove(0), task_queue, SystemBus::new()).unwrap();
+        let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        let state = State::new_with_network(
+            &config,
+            nets.remove(0),
+            task_queue,
+            handshake_manager_queue,
+            SystemBus::new(),
+        )
+        .unwrap();
 
         // Wait for a leader election before returning
         sleep_ms(500);
