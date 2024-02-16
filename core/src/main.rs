@@ -105,6 +105,7 @@ async fn main() -> Result<(), CoordinatorError> {
         raft_receiver,
         &args,
         task_sender.clone(),
+        handshake_worker_sender.clone(),
         system_bus.clone(),
     )?;
 

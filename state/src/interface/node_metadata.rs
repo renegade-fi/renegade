@@ -79,7 +79,9 @@ impl State {
 #[cfg(test)]
 mod test {
     use config::RelayerConfig;
-    use job_types::task_driver::new_task_driver_queue;
+    use job_types::{
+        handshake_manager::new_handshake_manager_queue, task_driver::new_task_driver_queue,
+    };
     use system_bus::SystemBus;
 
     use crate::{replication::network::traits::test_helpers::MockNetwork, State};
@@ -91,8 +93,11 @@ mod test {
         let config = RelayerConfig::default();
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
         let (task_queue, _recv) = new_task_driver_queue();
+        let (handshake_queue, _recv) = new_handshake_manager_queue();
         let bus = SystemBus::new();
-        let state = State::new_with_network(&config, nets.remove(0), task_queue, bus).unwrap();
+        let state =
+            State::new_with_network(&config, nets.remove(0), task_queue, handshake_queue, bus)
+                .unwrap();
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();

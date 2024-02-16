@@ -258,10 +258,18 @@ impl MockNodeController {
         let network_queue = self.network_queue.0.clone();
         let raft_receiver = self.raft_queue.1.take().unwrap();
         let task_sender = self.task_queue.0.clone();
+        let handshake_queue = self.handshake_queue.0.clone();
         let bus = self.bus.clone();
 
-        let state = State::new(network_queue, raft_receiver, &self.config, task_sender, bus)
-            .expect("Failed to create state instance");
+        let state = State::new(
+            network_queue,
+            raft_receiver,
+            &self.config,
+            task_sender,
+            handshake_queue,
+            bus,
+        )
+        .expect("Failed to create state instance");
         self.state = Some(state);
 
         self
