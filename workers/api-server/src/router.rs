@@ -8,7 +8,7 @@ use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use state::State;
-use tracing::debug;
+use tracing::{debug, instrument};
 
 use crate::error::{bad_request, not_found};
 
@@ -195,6 +195,7 @@ impl Router {
     }
 
     /// Route a request to a handler
+    #[instrument(skip_all, fields(method = %method, route = %route))]
     pub async fn handle_req(
         &self,
         method: Method,
