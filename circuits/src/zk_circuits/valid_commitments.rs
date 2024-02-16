@@ -14,7 +14,10 @@ use crate::{
         VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
         VALID_REBLIND_COMMITMENTS_LINK,
     },
-    zk_gadgets::{comparators::EqGadget, select::CondSelectVectorGadget},
+    zk_gadgets::{
+        comparators::{EqGadget, EqVecGadget, EqZeroGadget},
+        select::CondSelectVectorGadget,
+    },
     SingleProverCircuit,
 };
 use circuit_macros::circuit_type;
@@ -91,31 +94,26 @@ where
             cs,
         )?;
 
-        // Verify that the send balance is at the correct index
-        Self::contains_balance_at_index(
+        // Verify that the send balance is valid
+        Self::verify_send_balance(
             statement.indices.balance_send,
+            send_mint,
             &witness.balance_send,
             &augmented_wallet,
             cs,
         )?;
-        cs.enforce_equal(witness.balance_send.mint, send_mint)?;
 
-        // Verify that the receive balance is at the correct index
-        Self::contains_balance_at_index(
+        // Verify that the receive balance is valid
+        Self::verify_receive_balance(
             statement.indices.balance_receive,
+            receive_mint,
             &witness.balance_receive,
             &augmented_wallet,
             cs,
         )?;
-        cs.enforce_equal(witness.balance_receive.mint, receive_mint)?;
 
-        // Verify that the order is at the correct index
-        Self::contains_order_at_index(
-            statement.indices.order,
-            &witness.order,
-            &augmented_wallet,
-            cs,
-        )
+        // Verify that the order is valid and ready to match
+        Self::verify_order(statement.indices.order, &witness.order, &augmented_wallet, cs)
     }
 
     /// Verify that two wallets are equal except possibly with a balance
@@ -131,15 +129,7 @@ where
         // index. We allow This balance to be zero'd in the base wallet, and
         // have the received mint with zero balance in the augmented wallet
         let zero_var = cs.zero();
-        let one_var = cs.one();
         let mut curr_index = zero_var;
-
-        let zero_balance_var = BalanceVar {
-            mint: zero_var,
-            amount: zero_var,
-            protocol_fee_balance: zero_var,
-            relayer_fee_balance: zero_var,
-        };
 
         for (base_balance, augmented_balance) in
             base_wallet.balances.iter().zip(augmented_wallet.balances.iter())
@@ -147,9 +137,20 @@ where
             // Non-augmented case, balances are equal
             let balances_eq = EqGadget::eq(base_balance, augmented_balance, cs)?;
 
-            // Validate a potential augmentation
-            let prev_balance_zero = EqGadget::eq(base_balance, &zero_balance_var, cs)?;
+            // Augmented case, a zero-value balance has replaced a previous balance with all
+            // zero fields except the mint
 
+            // Was the previous balance zero'd
+            let prev_balance_zero = EqVecGadget::eq_zero_vec(
+                &[
+                    base_balance.amount,
+                    base_balance.protocol_fee_balance,
+                    base_balance.relayer_fee_balance,
+                ],
+                cs,
+            )?;
+
+            // Is the new balance at the given index equal to a valid augmentation
             let augmented_balance = EqGadget::eq(
                 augmented_balance,
                 &BalanceVar {
@@ -161,16 +162,17 @@ where
                 cs,
             )?;
 
+            // Augmentation may only happen at the claimed receive balance index
             let augmentation_index_mask = EqGadget::eq(&curr_index, &receive_index, cs)?;
 
-            // Validate that the balance is either unmodified or augmented from (0, 0) to
-            // (receive_mint, 0)
-            let augmented_from_zero =
+            // Validate that the balance is either unmodified or augmented from (<old-mint>,
+            // 0, 0, 0) to (receive_mint, 0, 0, 0)
+            let valid_augmentation =
                 cs.logic_and_all(&[prev_balance_zero, augmented_balance, augmentation_index_mask])?;
-            let valid_balance = cs.logic_or(augmented_from_zero, balances_eq)?;
 
+            let valid_balance = cs.logic_or(valid_augmentation, balances_eq)?;
             cs.enforce_true(valid_balance)?;
-            curr_index = cs.add(curr_index, one_var)?;
+            curr_index = cs.add(curr_index, cs.one())?;
         }
 
         // All orders should be the same
@@ -180,14 +182,78 @@ where
             EqGadget::constrain_eq(base_order, augmented_order, cs)?;
         }
 
-        // All other fields should be the same
-        // TODO: match key and fee
-
         // Keys should be equal
         EqGadget::constrain_eq(&base_wallet.keys, &augmented_wallet.keys, cs)?;
 
-        // Blinders should be equal
+        // Match fee, managing cluster, and blinder should be equal
+        EqGadget::constrain_eq(&base_wallet.match_fee, &augmented_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(
+            &base_wallet.managing_cluster,
+            &augmented_wallet.managing_cluster,
+            cs,
+        )?;
         EqGadget::constrain_eq(&base_wallet.blinder, &augmented_wallet.blinder, cs)
+    }
+
+    // ------------
+    // | Balances |
+    // ------------
+
+    /// Verify the send balance of the witness
+    fn verify_send_balance(
+        ind_send: Variable,
+        send_mint: Variable,
+        send_balance: &BalanceVar,
+        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The wallet must contain the given balance at the claimed index
+        Self::contains_balance_at_index(ind_send, send_balance, augmented_wallet, cs)?;
+
+        // The mint of the send balance must be the same as the mint sold by the order
+        cs.enforce_equal(send_balance.mint, send_mint)?;
+
+        // The balance cannot be zero
+        let amount_zero = EqZeroGadget::eq_zero(&send_balance.amount, cs)?;
+        cs.enforce_false(amount_zero)
+    }
+
+    /// Verify the receive balance of the witness
+    ///
+    /// Note that unlink the send balance, the receive balance may have zero
+    /// amount
+    fn verify_receive_balance(
+        ind_receive: Variable,
+        receive_mint: Variable,
+        receive_balance: &BalanceVar,
+        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The wallet must contain the given balance at the claimed index
+        Self::contains_balance_at_index(ind_receive, receive_balance, augmented_wallet, cs)?;
+
+        // The mint of the receive balance must be the same as the mint bought by the
+        // order
+        cs.enforce_equal(receive_balance.mint, receive_mint)?;
+
+        // The receive balance mint must be unique in the wallet, i.e. an
+        // augmentation may not have added a duplicate balance
+        let mut curr_index = cs.zero();
+        for balance in augmented_wallet.balances.iter() {
+            // Whether the current balance and the receive balance are for the same mint
+            let mint_eq = EqGadget::eq(&balance.mint, &receive_mint, cs)?;
+            let mints_not_eq = cs.logic_neg(mint_eq)?;
+
+            // Whether the current balance is pointing to the receive balance
+            let at_receive_index = EqGadget::eq(&curr_index, &ind_receive, cs)?;
+
+            // Either the mints are not equal or the indices are equal
+            let valid_mint = cs.logic_or(mints_not_eq, at_receive_index)?;
+            cs.enforce_true(valid_mint)?;
+            curr_index = cs.add(curr_index, cs.one())?;
+        }
+
+        Ok(())
     }
 
     /// Verify that the wallet has the given balance at the specified index
@@ -213,6 +279,34 @@ where
         cs.enforce_true(balance_found)
     }
 
+    // ----------
+    // | Orders |
+    // ----------
+
+    /// Verify the order given in the witness is valid for a match
+    ///
+    /// Note: the order side is constrained binary by its allocation as a
+    /// `BoolVar` in the circuit
+    fn verify_order(
+        ind_order: Variable,
+        order: &OrderVar,
+        augmented_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The order must be in the wallet at the claimed index
+        Self::contains_order_at_index(ind_order, order, augmented_wallet, cs)?;
+
+        // Neither the quote nor base mint may be zero
+        let quote_zero = EqZeroGadget::eq_zero(&order.quote_mint, cs)?;
+        let base_zero = EqZeroGadget::eq_zero(&order.base_mint, cs)?;
+        let quote_or_base_zero = cs.logic_or(quote_zero, base_zero)?;
+        cs.enforce_false(quote_or_base_zero)?;
+
+        // The order amount may not be zero
+        let amount_zero = EqZeroGadget::eq_zero(&order.amount, cs)?;
+        cs.enforce_false(amount_zero)
+    }
+
     /// Verify that the wallet has the given order at the specified index
     fn contains_order_at_index(
         index: Variable,
@@ -233,26 +327,6 @@ where
         }
 
         cs.enforce_true(order_found)
-    }
-
-    /// Verify that the wallet contains the given balance at an unspecified
-    /// index
-    ///
-    /// Note that this definition implies a balance can exist more than once,
-    /// this is fine from a security perspective
-    fn contains_balance(
-        target_balance: &BalanceVar,
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        let mut balance_found = cs.false_var();
-        for balance in wallet.balances.iter() {
-            let balances_eq = EqGadget::eq(balance, target_balance, cs)?;
-
-            balance_found = cs.logic_or(balance_found, balances_eq)?;
-        }
-
-        cs.enforce_true(balance_found)
     }
 }
 
@@ -356,11 +430,9 @@ pub mod test_helpers {
     use circuit_types::{
         balance::Balance,
         native_helpers::create_wallet_shares_from_private,
-        order::OrderSide,
         wallet::{Wallet, WalletShare},
     };
     use num_bigint::BigUint;
-    use rand::{thread_rng, Rng};
 
     use crate::zk_circuits::test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS};
 
@@ -397,29 +469,24 @@ pub mod test_helpers {
     where
         [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
-        let mut rng = thread_rng();
-
         // Choose an order and fee to match on
         let ind_order = 0;
         let order = wallet.orders[ind_order].clone();
 
         // Restructure the mints from the order direction
-        let (received_mint, sent_mint) = if order.side == OrderSide::Buy {
-            (order.base_mint.clone(), order.quote_mint.clone())
-        } else {
-            (order.quote_mint.clone(), order.base_mint.clone())
-        };
+        let receive_mint = order.receive_mint().clone();
+        let send_mint = order.send_mint().clone();
 
         let mut augmented_wallet = wallet.clone();
 
         // Find appropriate balances in the wallet
         let (ind_receive, balance_receive) = find_balance_or_augment(
-            received_mint,
+            receive_mint,
             &mut augmented_wallet.balances,
             true, // augment
         );
         let (ind_send, balance_send) = find_balance_or_augment(
-            sent_mint,
+            send_mint,
             &mut augmented_wallet.balances,
             false, // augment
         );
@@ -490,10 +557,12 @@ mod test {
         balance::{Balance, BalanceShare},
         fixed_point::FixedPointShare,
         order::{OrderShare, OrderSide},
-        traits::SingleProverCircuit,
+        traits::{SecretShareType, SingleProverCircuit},
     };
     use constants::Scalar;
     use lazy_static::lazy_static;
+    use num_bigint::BigUint;
+    use rand::{thread_rng, RngCore};
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
@@ -533,6 +602,8 @@ mod test {
 
     /// A type alias for the VALID COMMITMENTS circuit with size parameters
     pub type SizedCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
+
+    // --------------
     // | Test Cases |
     // --------------
 
@@ -587,6 +658,10 @@ mod test {
         assert!(check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
+    // ------------------------
+    // | Invalid Augmentation |
+    // ------------------------
+
     /// Tests the case in which the prover attempts to add a non-zero balance to
     /// the augmented wallet
     #[test]
@@ -597,7 +672,7 @@ mod test {
         // Prover attempt to augment the wallet with a non-zero balance
         let augmented_balance_index = statement.indices.balance_receive;
         witness.augmented_public_shares.balances[augmented_balance_index].amount += Scalar::one();
-        witness.balance_receive.amount += 1u64;
+        witness.balance_receive.amount += 1u128;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -636,10 +711,20 @@ mod test {
 
     /// Test the case in which a prover attempts to modify a fee in the
     /// augmented wallet
-    ///
-    /// TODO: maybe update this test or remove it
     #[test]
-    fn test_invalid_commitment__augmentation_modifies_fee() {}
+    fn test_invalid_commitment__augmentation_modifies_fee_balance() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify a relayer fee balance in the augmented wallet
+        witness.augmented_public_shares.balances[1].relayer_fee_balance += Scalar::one();
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+
+        // Modify a protocol fee balance in the augmented wallet
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+        witness.augmented_public_shares.balances[1].protocol_fee_balance += Scalar::one();
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
 
     /// Test the case in which a prover attempts to modify wallet keys and
     /// blinders in augmentation
@@ -650,6 +735,32 @@ mod test {
 
         // Modify a key in the wallet
         witness.augmented_public_shares.keys.pk_match.key = Scalar::one();
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Test the case in which a prover attempts to modify the match fee in an
+    /// augmentation
+    #[test]
+    fn test_invalid_commitment__augmentation_modifies_match_fee() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the match fee in the wallet
+        let mut rng = thread_rng();
+        witness.augmented_public_shares.match_fee =
+            FixedPointShare { repr: Scalar::random(&mut rng) };
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Test the case in which a prover attempts to modify the managing cluster
+    /// in an augmentation
+    #[test]
+    fn test_invalid_commitment__augmentation_modifies_cluster() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the managing cluster in the wallet
+        witness.augmented_public_shares.managing_cluster += Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
@@ -664,6 +775,10 @@ mod test {
         witness.augmented_public_shares.blinder += Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
+
+    // -------------------
+    // | Invalid Indices |
+    // -------------------
 
     /// Test the case in which the index of the send balance is incorrect
     #[test]
@@ -701,6 +816,10 @@ mod test {
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
+    // --------------------
+    // | Invalid Balances |
+    // --------------------
+
     /// Test the case in which a balance is missing from the wallet
     #[test]
     fn test_invalid_commitment__send_balance_missing() {
@@ -708,12 +827,41 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the send balance from the order
-        witness.augmented_public_shares.balances[statement.indices.balance_send] = BalanceShare {
+        let default_balance_share = BalanceShare {
             mint: Scalar::zero(),
             amount: Scalar::zero(),
             protocol_fee_balance: Scalar::zero(),
             relayer_fee_balance: Scalar::zero(),
         };
+        witness.public_secret_shares.balances[statement.indices.balance_send] =
+            default_balance_share.clone();
+        witness.augmented_public_shares.balances[statement.indices.balance_send] =
+            default_balance_share;
+
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Tests the case in which the send balance has the wrong mint
+    #[test]
+    fn test_invalid_commitment__send_balance_wrong_mint() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the mint of the send balance
+        witness.balance_send.mint = BigUint::from(rng.next_u64());
+
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Tests the case in which the send balance has zero amount
+    #[test]
+    fn test_invalid_commitment__send_balance_zero_amount() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the amount of the send balance
+        witness.balance_send.amount = 0;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -725,33 +873,51 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the receive balance from the order
+        let default_balance_share = BalanceShare {
+            mint: Scalar::zero(),
+            amount: Scalar::zero(),
+            protocol_fee_balance: Scalar::zero(),
+            relayer_fee_balance: Scalar::zero(),
+        };
+        witness.public_secret_shares.balances[statement.indices.balance_receive] =
+            default_balance_share.clone();
         witness.augmented_public_shares.balances[statement.indices.balance_receive] =
-            BalanceShare {
-                mint: Scalar::zero(),
-                amount: Scalar::zero(),
-                protocol_fee_balance: Scalar::zero(),
-                relayer_fee_balance: Scalar::zero(),
-            };
+            default_balance_share;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
-    /// Test the case in which the fee balance is missing from the wallet
+    /// Tests the case in which the receive balance has the wrong mint
     #[test]
-    fn test_invalid_commitment__fee_balance_missing() {
+    fn test_invalid_commitment__receive_balance_wrong_mint() {
+        let mut rng = thread_rng();
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
-        // Modify the fee balance from the order; clobber all balances because this
-        // does not come with an index
-        witness.augmented_public_shares.balances.iter_mut().for_each(|balance| {
-            *balance = BalanceShare {
-                mint: Scalar::zero(),
-                amount: Scalar::zero(),
-                protocol_fee_balance: Scalar::zero(),
-                relayer_fee_balance: Scalar::zero(),
-            }
-        });
+        // Modify the mint of the receive balance
+        witness.balance_receive.mint = BigUint::from(rng.next_u64());
+
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Tests the case in which the augmented receive balance created a
+    /// duplicate mint
+    #[test]
+    fn test_invalid_commitment__receive_balance_duplicate_mint() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        assert!(MAX_BALANCES == 2, "update this test to correctly modify a different balance");
+        let bal_idx = statement.indices.balance_receive;
+        let other_bal_idx = 1 - bal_idx;
+
+        // Modify the receive balance to have been augmented with a duplicate mint
+        let private_balance = witness.private_secret_shares.balances[bal_idx].clone();
+        let public_balance = witness.public_secret_shares.balances[bal_idx].clone();
+
+        witness.private_secret_shares.balances[other_bal_idx] = private_balance.clone();
+        witness.public_secret_shares.balances[other_bal_idx] = public_balance.clone();
+        witness.augmented_public_shares.balances[other_bal_idx] = public_balance;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -762,22 +928,62 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
-        // Modify the order being proved on
-        witness.augmented_public_shares.orders[statement.indices.order] = OrderShare {
+        // Modify both public and private shares to give a correct blinding of a default
+        // order, this ensures that other constraints (e.g. boolean constraints
+        // on order side) are still satisfied, thereby isolating the missing
+        // order constraint
+        let blinder = witness.private_secret_shares.blinder + witness.public_secret_shares.blinder;
+        let private_order = OrderShare {
             quote_mint: Scalar::zero(),
             base_mint: Scalar::zero(),
             side: Scalar::zero(),
             amount: Scalar::zero(),
             worst_case_price: FixedPointShare { repr: Scalar::zero() },
-            timestamp: Scalar::zero(),
         };
+
+        let private_order = private_order.clone();
+        witness.private_secret_shares.orders[statement.indices.order] = private_order.clone();
+
+        let public_order = private_order.blind(blinder);
+        witness.public_secret_shares.orders[statement.indices.order] = public_order.clone();
+        witness.augmented_public_shares.orders[statement.indices.order] = public_order;
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
-    /// Test the case in which the fee is missing from the wallet
-    ///
-    /// TODO: maybe update this test or remove it
+    /// Tests an invalid order with the base mint zero
     #[test]
-    fn test_invalid_commitment__fee_missing() {}
+    fn test_invalid_commitment__order_base_mint_zero() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the amount of the order
+        witness.order.base_mint = BigUint::from(0u8);
+
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Tests an invalid order with the quote mint zero
+    #[test]
+    fn test_invalid_commitment__order_quote_mint_zero() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the quote mint of the order
+        witness.order.quote_mint = BigUint::from(0u8);
+
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Tests an invalid order with the amount zero
+    #[test]
+    fn test_invalid_commitment__order_amount_zero() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the amount of the order
+        witness.order.amount = 0;
+
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
 }
