@@ -192,7 +192,6 @@ impl TaskExecutor {
                         async move {
                             let res = fut.await;
                             if let Err(e) = res {
-                                // TODO: May be able to remove this log & instrumentation below
                                 error!("error running task: {e:?}");
                             }
                         }
@@ -285,7 +284,7 @@ impl TaskExecutor {
                 // Remove from the preemptive tasks list
                 preemptive_tasks.write().unwrap().remove(&task_id);
             }
-            .instrument(info_span!("immediate_task", task_id = %task_id)),
+            .instrument(info_span!("task", task_id = %task_id)),
         );
 
         Ok(())
