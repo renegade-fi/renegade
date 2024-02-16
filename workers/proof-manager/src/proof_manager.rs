@@ -25,7 +25,7 @@ use circuits::{
 use common::types::{proof_bundles::ProofBundle, CancelChannel};
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
-use tracing::{error, info};
+use tracing::{error, info, info_span, instrument};
 
 use super::error::ProofManagerError;
 
@@ -80,6 +80,7 @@ impl ProofManager {
                 .map_err(|err| ProofManagerError::JobQueueClosed(err.to_string()))?;
 
             thread_pool.spawn(move || {
+                let _span = info_span!("handle_proof_job").entered();
                 if let Err(e) = Self::handle_proof_job(job) {
                     error!("Error handling proof manager job: {}", e)
                 }
@@ -121,6 +122,7 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID WALLET CREATE`
+    #[instrument(skip_all, err)]
     fn prove_valid_wallet_create(
         witness: SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
@@ -134,6 +136,7 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID REBLIND`
+    #[instrument(skip_all, err)]
     fn prove_valid_reblind(
         witness: SizedValidReblindWitness,
         statement: ValidReblindStatement,
@@ -147,6 +150,7 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID COMMITMENTS`
+    #[instrument(skip_all, err)]
     fn prove_valid_commitments(
         witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
@@ -160,6 +164,7 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID WALLET UPDATE`
+    #[instrument(skip_all, err)]
     fn prove_valid_wallet_update(
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
@@ -173,6 +178,7 @@ impl ProofManager {
     }
 
     /// Create a proof of `VALID MATCH SETTLE`
+    #[instrument(skip_all, err)]
     fn prove_valid_match_mpc(
         witness: SizedValidMatchSettleWitness,
         statement: SizedValidMatchSettleStatement,
