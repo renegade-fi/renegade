@@ -11,7 +11,7 @@ use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use std::{collections::HashMap, thread::JoinHandle};
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender as TokioSender;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, info_span, Instrument};
 use util::err_str;
 
 use crate::errors::{ExchangeConnectionError, PriceReporterError};
@@ -80,7 +80,7 @@ impl PriceReporterExecutor {
                             if let Err(e) = self_clone.handle_job(job).await {
                                 error!("Error in PriceReporter execution loop: {e}");
                             }
-                        }
+                        }.instrument(info_span!("handle_job"))
                     });
                 },
 

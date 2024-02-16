@@ -365,7 +365,7 @@ fn configure_default_log_capture() {
     let filter_layer =
         EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
 
-    let fmt_layer = fmt::layer();
+    let fmt_layer = fmt::layer().pretty();
 
     tracing_subscriber::registry().with(filter_layer).with(fmt_layer).init();
 }
