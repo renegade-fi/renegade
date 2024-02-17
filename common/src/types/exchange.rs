@@ -89,6 +89,8 @@ pub enum PriceReporterState {
     /// holding off until prices stabilize. Includes the current deviation
     /// as a fraction.
     TooMuchDeviation(PriceReport, f64),
+    /// No reporter state, price pair is unsupported
+    UnsupportedPair(Token, Token),
 }
 
 /// The state of an ExchangeConnection. Note that the ExchangeConnection itself

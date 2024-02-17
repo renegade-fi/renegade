@@ -1,7 +1,9 @@
 //! Defines the PriceReporterExecutor, the handler that is responsible
 //! for executing individual PriceReporterJobs.
 use common::default_wrapper::{DefaultOption, DefaultWrapper};
-use common::types::exchange::{Exchange, ExchangeConnectionState, PriceReporterState};
+use common::types::exchange::{
+    Exchange, ExchangeConnectionState, PriceReporterState, ALL_EXCHANGES,
+};
 use common::types::token::Token;
 use common::types::CancelChannel;
 use common::{new_async_shared, AsyncShared};
@@ -12,7 +14,7 @@ use tokio::sync::oneshot::Sender as TokioSender;
 use tracing::{error, info, warn};
 use util::err_str;
 
-use crate::errors::PriceReporterError;
+use crate::errors::{ExchangeConnectionError, PriceReporterError};
 
 use super::{reporter::Reporter, worker::PriceReporterConfig};
 
@@ -127,8 +129,17 @@ impl PriceReporterExecutor {
         }
 
         // Create the price reporter
-        let reporter = Reporter::new(base_token.clone(), quote_token.clone(), self.config.clone())
-            .map_err(err_str!(PriceReporterError::PriceReporterCreation))?;
+        let reporter =
+            match Reporter::new(base_token.clone(), quote_token.clone(), self.config.clone()) {
+                Ok(reporter) => reporter,
+                Err(ExchangeConnectionError::NoSupportedExchanges(base, quote)) => {
+                    return Err(PriceReporterError::UnsupportedPair(base, quote));
+                },
+                Err(e) => {
+                    return Err(e).map_err(err_str!(PriceReporterError::PriceReporterCreation))
+                },
+            };
+
         locked_reporters.insert((base_token.clone(), quote_token.clone()), reporter);
 
         Ok(())
@@ -141,8 +152,14 @@ impl PriceReporterExecutor {
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
-        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token).await?;
-        channel.send(price_reporter.peek_median()).unwrap();
+        match self.get_price_reporter_or_create(base_token, quote_token).await {
+            Ok(reporter) => channel.send(reporter.peek_median()).unwrap(),
+            Err(PriceReporterError::UnsupportedPair(base, quote)) => {
+                channel.send(PriceReporterState::UnsupportedPair(base, quote)).unwrap()
+            },
+            Err(e) => return Err(e),
+        };
+
         Ok(())
     }
 
@@ -153,8 +170,24 @@ impl PriceReporterExecutor {
         quote_token: Token,
         channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
     ) -> Result<(), PriceReporterError> {
-        let price_reporter = self.get_price_reporter_or_create(base_token, quote_token).await?;
-        channel.send(price_reporter.peek_all_exchanges()).unwrap();
+        let resp = match self.get_price_reporter_or_create(base_token, quote_token).await {
+            Ok(reporter) => reporter.peek_all_exchanges(),
+            Err(PriceReporterError::UnsupportedPair(..)) => {
+                // If the price pair is unsupported, send back an exchange state with all state
+                // set as unsupported
+                ALL_EXCHANGES
+                    .iter()
+                    .map(|&exchange| (exchange, ExchangeConnectionState::Unsupported))
+                    .collect()
+            },
+            Err(e) => return Err(e),
+        };
+
+        // Send the response to the requesting worker
+        if channel.send(resp).is_err() {
+            error!("Error sending all exchanges response");
+        }
+
         Ok(())
     }
 
