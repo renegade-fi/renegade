@@ -195,42 +195,49 @@ impl Router {
     }
 
     /// Route a request to a handler
-    #[instrument(skip_all, fields(method = %method, route = %route))]
+    #[instrument(skip_all, fields(
+        status,
+        method = %method,
+        route = %route,
+    ))]
     pub async fn handle_req(
         &self,
         method: Method,
         route: String,
         mut req: Request<Body>,
     ) -> Response<Body> {
-        // If the request is an options request, handle it directly
-        if method == Method::OPTIONS {
-            return self.handle_options_req(&route);
-        }
-
-        // Get the full routable path
-        let full_route = Self::create_full_route(&method, route.clone());
-
-        // Dispatch to handler
-        if let Ok(matched_path) = self.router.at(&full_route) {
-            let (handler, auth_required) = matched_path.value;
-            let params = matched_path.params;
-
-            // Clone the params to take ownership
-            let mut params_map = HashMap::with_capacity(params.len());
-            for (key, value) in params.iter() {
-                params_map.insert(key.to_string(), value.to_string());
-            }
-
-            if *auth_required {
-                if let Err(e) = self.check_wallet_auth(&params_map, &mut req).await {
-                    return e.into();
-                }
-            }
-
-            handler.as_ref().handle(req, params_map).await
+        let res = if method == Method::OPTIONS {
+            // If the request is an options request, handle it directly
+            self.handle_options_req(&route)
         } else {
-            build_404_response(format!("Route {route} for method {method} not found"))
-        }
+
+            // Get the full routable path
+            let full_route = Self::create_full_route(&method, route.clone());
+
+            // Dispatch to handler
+            if let Ok(matched_path) = self.router.at(&full_route) {
+                let (handler, auth_required) = matched_path.value;
+                let params = matched_path.params;
+
+                // Clone the params to take ownership
+                let mut params_map = HashMap::with_capacity(params.len());
+                for (key, value) in params.iter() {
+                    params_map.insert(key.to_string(), value.to_string());
+                }
+
+                if *auth_required && let Err(e) = self.check_wallet_auth(&params_map, &mut req).await {
+                    e.into()
+                } else {
+                    handler.as_ref().handle(req, params_map).await
+                }
+            } else {
+                build_404_response(format!("Route {route} for method {method} not found"))
+            }
+        };
+
+        tracing::Span::current().record("status", res.status().as_str());
+
+        res
     }
 
     /// Handle an options request

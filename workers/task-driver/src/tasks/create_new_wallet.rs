@@ -23,6 +23,7 @@ use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
+use tracing::instrument;
 
 use crate::driver::StateWrapper;
 use crate::helpers::enqueue_proof_job;
@@ -179,6 +180,8 @@ impl Task for NewWalletTask {
         })
     }
 
+    #[allow(clippy::blocks_in_conditions)]
+    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current state of the task
         match self.state() {

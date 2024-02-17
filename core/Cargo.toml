@@ -35,4 +35,4 @@ task-driver = { path = "../workers/task-driver" }
 clap = { version = "3.2.8", features = ["derive"] }
 lazy_static = "1.4"
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

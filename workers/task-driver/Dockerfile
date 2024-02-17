@@ -2,63 +2,39 @@
 # integration tests. We effectively copy all the sources and then remove the target
 # directory. This means that changes to `task-driver` sources will invalidate the
 # cache for this stage only, as the end state is the same
-FROM alpine AS sources
-COPY . .
-RUN rm -rf workers/task-driver
+FROM --platform=arm64 rust:latest AS chef
 
-# Rust build stage
-FROM rust:1.63-slim-buster AS builder
-
-# Install pkg-config, openssl
-RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev clang 
-
-# Build the rust toolchain before adding any dependencies; this is the slowest
-# step and we would like to cache it before anything else
-COPY ./rust-toolchain ./task-driver/rust-toolchain
-RUN cat task-driver/rust-toolchain | xargs rustup toolchain install
-
-# Create a build dir and add local dependencies
+# Build dir, use cargo chef to cache dependencies
 WORKDIR /build
-COPY --from=sources . .
+COPY ./rust-toolchain ./rust-toolchain
+RUN cat rust-toolchain | xargs rustup toolchain install
 
-# Copy in the workspace Cargo.toml and modify the members field, this allows us to skip
-# transferring all workspace members to the docker image, and instead only transfer the
-# dependencies of the integration test. Every path dependency of the target crate is automatically
-# added to the workspace
-COPY ./Cargo.toml ./Cargo.toml
-RUN sed -i '/members = \[/,/\]/c\members = [ "workers/task-driver" ]' Cargo.toml
+# Install protoc, openssl, and pkg-config
+RUN apt-get update && \
+    apt-get install -y pkg-config && \
+    apt-get install -y protobuf-compiler && \
+    apt-get install -y libssl-dev && \
+    apt-get install -y libclang-dev
 
-# Place a set of dummy sources in the path, build the dummy executable
-# to cache built dependencies, then bulid the full executable
-WORKDIR /build/workers/task-driver
-RUN mkdir src
-RUN touch src/dummy-lib.rs
+# Install chef and generate a recipe
+RUN cargo install cargo-chef
 
-RUN mkdir integration
-RUN echo 'fn main() { println!("dummy main!") }' >> integration/dummy-main.rs
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-COPY workers/task-driver/Cargo.toml .
-
-# Modify the Cargo.toml to point to our dummy sources
-RUN sed -i 's/lib.rs/dummy-lib.rs/g' Cargo.toml
-RUN sed -i 's/main.rs/dummy-main.rs/g' Cargo.toml
-
-# Disable compiler warnings and enable backtraces for panic debugging
+# Disable compiler warnings and enable backtraces for panic
 ENV RUSTFLAGS=-Awarnings
 ENV RUST_BACKTRACE=1
 
+# Build only the dependencies to cache them in this layer
+RUN cargo chef cook --tests --features "integration" --recipe-path recipe.json
+
+# Copy back in the full sources and build the tests
+WORKDIR /build
+COPY . .
+
+WORKDIR /build/workers/task-driver
 RUN cargo build --quiet --test integration --features "integration"
 
-# Edit the Cargo.toml back to the original, build the full executable
-RUN sed -i 's/dummy-lib.rs/lib.rs/g' Cargo.toml
-RUN sed -i 's/dummy-main.rs/main.rs/g' Cargo.toml
-
-COPY workers/task-driver/src ./src
-COPY workers/task-driver/integration ./integration
-
-RUN cargo build --quiet --test integration --features "integration"
-
+# Copy in the deployments file from the sequencer
 COPY --from=sequencer /deployments.json /deployments.json
-
-CMD [ "cargo", "test" ]

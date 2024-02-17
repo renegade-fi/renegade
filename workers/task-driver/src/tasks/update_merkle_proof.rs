@@ -13,6 +13,7 @@ use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};
+use tracing::instrument;
 
 use crate::{
     driver::StateWrapper,
@@ -155,6 +156,8 @@ impl Task for UpdateMerkleProofTask {
         })
     }
 
+    #[allow(clippy::blocks_in_conditions)]
+    #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
         match self.state() {

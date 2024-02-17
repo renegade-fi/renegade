@@ -19,7 +19,7 @@ use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManage
 use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::Serialize;
 use state::{error::StateError, State};
-use tracing::info;
+use tracing::{info, instrument};
 use uuid::Uuid;
 
 use crate::{
@@ -164,6 +164,8 @@ impl Task for LookupWalletTask {
         })
     }
 
+    #[allow(clippy::blocks_in_conditions)]
+    #[instrument(skip_all, err, fields(task = %self.name(), state = %self.state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on task state
         match self.task_state {

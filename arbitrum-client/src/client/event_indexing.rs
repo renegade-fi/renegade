@@ -35,7 +35,10 @@ impl ArbitrumClient {
     /// the given public blinder share
     ///
     /// Returns `None` if the public blinder share has not been used
-    #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        public_blinder_share = %public_blinder_share
+    ))]
     pub async fn get_public_blinder_tx(
         &self,
         public_blinder_share: Scalar,
@@ -50,7 +53,13 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
 
-        Ok(events.last().map(|(_, meta)| meta.transaction_hash))
+        let tx_hash = events.last().map(|(_, meta)| meta.transaction_hash);
+
+        if let Some(tx_hash) = tx_hash {
+            tracing::Span::current().record("tx_hash", format!("{:#x}", tx_hash));
+        }
+
+        Ok(tx_hash)
     }
 
     /// Searches on-chain state for the insertion of the given wallet, then

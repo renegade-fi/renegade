@@ -22,6 +22,7 @@ use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
+use tracing::instrument;
 
 use crate::driver::StateWrapper;
 use crate::helpers::{enqueue_proof_job, find_merkle_path};
@@ -200,6 +201,8 @@ impl Task for UpdateWalletTask {
         })
     }
 
+    #[allow(clippy::blocks_in_conditions)]
+    #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
         match self.state() {
