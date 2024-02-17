@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt::{self, Display};
 
-use common::types::exchange::Exchange;
+use common::types::{exchange::Exchange, token::Token};
 
 /// The core error type used by the ExchangeConnection. All thrown errors are
 /// handled by the PriceReporter, either for restarts or panics upon too many
@@ -19,6 +19,8 @@ pub enum ExchangeConnectionError {
     /// The maximum retry count was exceeded while trying to re-establish
     /// an exchange connection
     MaxRetries(Exchange),
+    /// No exchanges support the given token pair
+    NoSupportedExchanges(Token, Token),
     /// Error sending on the `write` end of the websocket
     SendError(String),
 }
@@ -42,9 +44,8 @@ pub enum PriceReporterError {
     /// Tried to query information from a PriceReporter that does not exist.
     /// Callers should send a StartPriceReporter job first
     PriceReporterNotCreated(String),
-    /// In one of the PriceReporters, one of the ExchangeConnections failed too
-    /// many times in a row.
-    _TooManyFailures(ExchangeConnectionError),
+    /// Unsupported pair for the reporter
+    UnsupportedPair(Token, Token),
 }
 
 impl Error for PriceReporterError {}

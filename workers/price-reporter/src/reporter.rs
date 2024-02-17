@@ -128,8 +128,13 @@ impl Reporter {
         quote_token: Token,
         config: PriceReporterConfig,
     ) -> Result<Self, ExchangeConnectionError> {
+        // Get the supported exchanges for the token pair
         let supported_exchanges =
             Self::compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
+        if supported_exchanges.is_empty() {
+            warn!("No supported exchanges for {base_token}-{quote_token}");
+            return Err(ExchangeConnectionError::NoSupportedExchanges(base_token, quote_token));
+        }
 
         // Create shared memory that the `ConnectionMuxer` will use to communicate with
         // the `Reporter`
