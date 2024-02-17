@@ -162,6 +162,53 @@ async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Resu
 }
 integration_test_async!(test_update_wallet__place_order);
 
+/// Tests placing multiple order in a wallet
+#[allow(non_snake_case)]
+async fn test_update_wallet__place_multiple_orders(test_args: IntegrationTestArgs) -> Result<()> {
+    // Create a new wallet and post it on-chain
+    let mut rng = thread_rng();
+
+    // Create a new wallet with a balance already inside
+    let blinder_seed = Scalar::random(&mut rng);
+    let share_seed = Scalar::random(&mut rng);
+
+    let mut wallet = mock_empty_wallet();
+
+    let send_mint = DUMMY_ORDER.send_mint().clone();
+    wallet.balances.insert(send_mint.clone(), Balance { mint: send_mint, amount: 10 });
+    setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
+
+    // Update the wallet by inserting an order
+    let old_wallet = wallet.clone();
+    wallet.add_order(Uuid::new_v4(), DUMMY_ORDER.clone()).unwrap();
+    wallet.reblind_wallet();
+
+    execute_wallet_update_and_verify_shares(
+        old_wallet,
+        wallet.clone(),
+        None, // transfer
+        blinder_seed,
+        share_seed,
+        test_args.clone(),
+    )
+    .await;
+
+    let old_wallet = wallet.clone();
+    wallet.add_order(Uuid::new_v4(), DUMMY_ORDER.clone()).unwrap();
+    wallet.reblind_wallet();
+
+    execute_wallet_update_and_verify_shares(
+        old_wallet,
+        wallet,
+        None, // transfer
+        blinder_seed,
+        share_seed,
+        test_args,
+    )
+    .await
+}
+integration_test_async!(test_update_wallet__place_multiple_orders);
+
 /// Tests cancelling an order in a wallet
 #[allow(non_snake_case)]
 async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Result<()> {
@@ -192,6 +239,52 @@ async fn test_update_wallet__cancel_order(test_args: IntegrationTestArgs) -> Res
     .await
 }
 integration_test_async!(test_update_wallet__cancel_order);
+
+/// Tests cancelling an order in a wallet and then placing another order
+#[allow(non_snake_case)]
+async fn test_update_wallet__cancel_and_place_order(test_args: IntegrationTestArgs) -> Result<()> {
+    let mut rng = thread_rng();
+
+    // Create a new wallet with a non-empty order and post it on-chain
+    let blinder_seed = Scalar::random(&mut rng);
+    let share_seed = Scalar::random(&mut rng);
+
+    let mut wallet = mock_empty_wallet();
+    let order_id_to_cancel = Uuid::new_v4();
+    wallet.orders.insert(order_id_to_cancel, DUMMY_ORDER.clone());
+    setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
+
+    // Update the wallet by removing an order
+    let old_wallet = wallet.clone();
+    wallet.orders.remove(&order_id_to_cancel);
+    wallet.reblind_wallet();
+
+    execute_wallet_update_and_verify_shares(
+        old_wallet.clone(),
+        wallet.clone(),
+        None, // transfer
+        blinder_seed.clone(),
+        share_seed.clone(),
+        test_args.clone(),
+    )
+    .await?;
+
+    // Now, place another order
+    let new_order_id = Uuid::new_v4();
+    wallet.add_order(new_order_id, DUMMY_ORDER.clone()).unwrap();
+    wallet.reblind_wallet();
+
+    execute_wallet_update_and_verify_shares(
+        old_wallet,
+        wallet,
+        None, // transfer
+        blinder_seed,
+        share_seed,
+        test_args,
+    )
+    .await
+}
+integration_test_async!(test_update_wallet__cancel_and_place_order);
 
 // --------
 // | Fees |
@@ -310,3 +403,119 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     .await
 }
 integration_test_async!(test_update_wallet__deposit_and_withdraw);
+
+/// Tests updating a wallet by depositing into the pool
+#[allow(non_snake_case)]
+async fn test_update_wallet__deposit_and_full_withdraw(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
+    let client = &test_args.arbitrum_client;
+
+    // Create a new wallet and post it on-chain
+    let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
+
+    // Update the wallet by depositing into the pool
+    let old_wallet = wallet.clone();
+
+    let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
+    let amount = 10u64;
+
+    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
+    wallet.reblind_wallet();
+
+    let account_addr = biguint_from_address(client.wallet_address());
+    execute_wallet_update_and_verify_shares(
+        old_wallet,
+        wallet.clone(),
+        Some(ExternalTransfer {
+            mint: mint.clone(),
+            amount: amount.into(),
+            account_addr: account_addr.clone(),
+            direction: ExternalTransferDirection::Deposit,
+        }),
+        blinder_seed,
+        share_seed,
+        test_args.clone(),
+    )
+    .await?;
+
+    // Now, withdraw the same amount
+    let old_wallet = wallet.clone();
+    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount: 0 });
+    wallet.reblind_wallet();
+
+    execute_wallet_update_and_verify_shares(
+        old_wallet,
+        wallet,
+        Some(ExternalTransfer {
+            mint,
+            amount: amount.into(),
+            account_addr,
+            direction: ExternalTransferDirection::Withdrawal,
+        }),
+        blinder_seed,
+        share_seed,
+        test_args,
+    )
+    .await
+}
+integration_test_async!(test_update_wallet__deposit_and_full_withdraw);
+
+/// Tests updating a wallet by depositing 10 tokens and then withdrawing only 5
+#[allow(non_snake_case)]
+async fn test_update_wallet__deposit_and_partial_withdraw(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
+    let client = &test_args.arbitrum_client;
+
+    // Create a new wallet and post it on-chain
+    let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
+
+    // Update the wallet by depositing 10 tokens
+    let old_wallet = wallet.clone();
+    let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
+    let deposit_amount = 10u64;
+    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount: deposit_amount });
+    wallet.reblind_wallet();
+
+    let account_addr = biguint_from_address(client.wallet_address());
+    execute_wallet_update_and_verify_shares(
+        old_wallet.clone(),
+        wallet.clone(),
+        Some(ExternalTransfer {
+            mint: mint.clone(),
+            amount: deposit_amount.into(),
+            account_addr: account_addr.clone(),
+            direction: ExternalTransferDirection::Deposit,
+        }),
+        blinder_seed.clone(),
+        share_seed.clone(),
+        test_args.clone(),
+    )
+    .await?;
+
+    // Now, withdraw only 5 of the deposited tokens
+    let old_wallet = wallet.clone();
+    let withdraw_amount = 5u64;
+    wallet.balances.insert(
+        mint.clone(),
+        Balance { mint: mint.clone(), amount: deposit_amount - withdraw_amount },
+    );
+    wallet.reblind_wallet();
+
+    execute_wallet_update_and_verify_shares(
+        old_wallet,
+        wallet,
+        Some(ExternalTransfer {
+            mint,
+            amount: withdraw_amount.into(),
+            account_addr,
+            direction: ExternalTransferDirection::Withdrawal,
+        }),
+        blinder_seed,
+        share_seed,
+        test_args,
+    )
+    .await
+}
+integration_test_async!(test_update_wallet__deposit_and_partial_withdraw);
