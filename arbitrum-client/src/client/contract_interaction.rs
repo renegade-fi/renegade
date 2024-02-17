@@ -75,7 +75,10 @@ impl ArbitrumClient {
     /// `VALID WALLET CREATE` statement
     ///
     /// Awaits until the transaction is confirmed on-chain
-    #[instrument(skip_all, err, fields(blinder = %valid_wallet_create.statement.public_wallet_shares.blinder))]
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        blinder = %valid_wallet_create.statement.public_wallet_shares.blinder
+    ))]
     pub async fn new_wallet(
         &self,
         valid_wallet_create: &SizedValidWalletCreateBundle,
@@ -94,7 +97,9 @@ impl ArbitrumClient {
         )
         .await?;
 
-        info!("`new_wallet` tx hash: {:#x}", receipt.transaction_hash);
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        tracing::Span::current().record("tx_hash", &tx_hash);
+        info!("`new_wallet` tx hash: {}", tx_hash);
 
         Ok(())
     }
@@ -103,7 +108,10 @@ impl ArbitrumClient {
     /// `VALID WALLET UPDATE` statement
     ///
     /// Awaits until the transaction is confirmed on-chain
-    #[instrument(skip_all, err, fields(blinder = %valid_wallet_update.statement.new_public_shares.blinder))]
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        blinder = %valid_wallet_update.statement.new_public_shares.blinder
+    ))]
     pub async fn update_wallet(
         &self,
         valid_wallet_update: &SizedValidWalletUpdateBundle,
@@ -124,7 +132,9 @@ impl ArbitrumClient {
         ))
         .await?;
 
-        info!("`update_wallet` tx hash: {:#x}", receipt.transaction_hash);
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        tracing::Span::current().record("tx_hash", &tx_hash);
+        info!("`update_wallet` tx hash: {}", tx_hash);
 
         Ok(())
     }
@@ -133,7 +143,11 @@ impl ArbitrumClient {
     /// match payloads and `VALID MATCH SETTLE` statement
     ///
     /// Awaits until the transaction is confirmed on-chain
-    #[instrument(skip_all, err, fields(party0_blinder = %match_bundle.match_proof.statement.party0_modified_shares.blinder, party1_blinder = %match_bundle.match_proof.statement.party1_modified_shares.blinder))]
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        party0_blinder = %match_bundle.match_proof.statement.party0_modified_shares.blinder,
+        party1_blinder = %match_bundle.match_proof.statement.party1_modified_shares.blinder
+    ))]
     pub async fn process_match_settle(
         &self,
         party0_validity_proofs: &OrderValidityProofBundle,
@@ -213,7 +227,9 @@ impl ArbitrumClient {
         ))
         .await?;
 
-        info!("`process_match_settle` tx hash: {:#x}", receipt.transaction_hash);
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        tracing::Span::current().record("tx_hash", &tx_hash);
+        info!("`process_match_settle` tx hash: {}", tx_hash);
 
         Ok(())
     }

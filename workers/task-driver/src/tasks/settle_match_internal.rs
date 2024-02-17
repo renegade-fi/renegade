@@ -28,6 +28,7 @@ use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
+use tracing::instrument;
 use util::matching_engine::settle_match_into_wallets;
 
 // -------------
@@ -197,6 +198,8 @@ impl Task for SettleMatchInternalTask {
         })
     }
 
+    #[allow(clippy::blocks_in_conditions)]
+    #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
         match self.state() {
