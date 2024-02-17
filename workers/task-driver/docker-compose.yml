@@ -22,7 +22,7 @@ services:
     ports:
       - "8000:8000"
     command: >
-      cargo test --test integration --features "integration" -- 
+      cargo test --test integration --features "integration" --
         --deployments-path /deployments.json
         --devnet-url http://sequencer:8547
         --verbosity full
