@@ -10,7 +10,7 @@ use common::types::proof_bundles::{
 use constants::Scalar;
 use contracts_common::types::MatchPayload;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     conversion::{
@@ -31,6 +31,7 @@ impl ArbitrumClient {
     // -----------
 
     /// Get the current Merkle root in the contract
+    #[instrument(skip_all, err)]
     pub async fn get_merkle_root(&self) -> Result<Scalar, ArbitrumClientError> {
         self.darkpool_contract
             .get_root()
@@ -41,6 +42,7 @@ impl ArbitrumClient {
     }
 
     /// Check whether the given Merkle root is a valid historical root
+    #[instrument(skip_all, err, fields(root = %root))]
     pub async fn check_merkle_root_valid(
         &self,
         root: MerkleRoot,
@@ -53,6 +55,7 @@ impl ArbitrumClient {
     }
 
     /// Check whether the given nullifier is used
+    #[instrument(skip_all, err, fields(nullifier = %nullifier))]
     pub async fn check_nullifier_used(
         &self,
         nullifier: Nullifier,
@@ -72,6 +75,7 @@ impl ArbitrumClient {
     /// `VALID WALLET CREATE` statement
     ///
     /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(blinder = %valid_wallet_create.statement.public_wallet_shares.blinder))]
     pub async fn new_wallet(
         &self,
         valid_wallet_create: &SizedValidWalletCreateBundle,
@@ -99,6 +103,7 @@ impl ArbitrumClient {
     /// `VALID WALLET UPDATE` statement
     ///
     /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(blinder = %valid_wallet_update.statement.new_public_shares.blinder))]
     pub async fn update_wallet(
         &self,
         valid_wallet_update: &SizedValidWalletUpdateBundle,
@@ -128,6 +133,7 @@ impl ArbitrumClient {
     /// match payloads and `VALID MATCH SETTLE` statement
     ///
     /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(party0_blinder = %match_bundle.match_proof.statement.party0_modified_shares.blinder, party1_blinder = %match_bundle.match_proof.statement.party1_modified_shares.blinder))]
     pub async fn process_match_settle(
         &self,
         party0_validity_proofs: &OrderValidityProofBundle,

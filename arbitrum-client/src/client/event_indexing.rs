@@ -13,7 +13,7 @@ use ethers::{
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
-use tracing::error;
+use tracing::{error, instrument};
 
 use crate::{
     abi::{
@@ -35,6 +35,7 @@ impl ArbitrumClient {
     /// the given public blinder share
     ///
     /// Returns `None` if the public blinder share has not been used
+    #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
     pub async fn get_public_blinder_tx(
         &self,
         public_blinder_share: Scalar,
@@ -55,6 +56,7 @@ impl ArbitrumClient {
     /// Searches on-chain state for the insertion of the given wallet, then
     /// finds the most recent updates of the path's siblings and creates a
     /// Merkle authentication path
+    #[instrument(skip_all, err, fields(commitment = %commitment))]
     pub async fn find_merkle_authentication_path(
         &self,
         commitment: Scalar,
@@ -95,6 +97,7 @@ impl ArbitrumClient {
     }
 
     /// A helper to find a commitment's index in the Merkle tree
+    #[instrument(skip_all, err, fields(commitment = %commitment))]
     pub async fn find_commitment_in_state(
         &self,
         commitment: Scalar,
@@ -115,6 +118,7 @@ impl ArbitrumClient {
     /// Fetch and parse the public secret shares from the calldata of the
     /// transaction that updated the wallet with the given blinder
     // TODO: Add support for nested calls
+    #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
     pub async fn fetch_public_shares_for_blinder(
         &self,
         public_blinder_share: Scalar,
