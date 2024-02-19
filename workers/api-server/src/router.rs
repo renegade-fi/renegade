@@ -210,7 +210,6 @@ impl Router {
             // If the request is an options request, handle it directly
             self.handle_options_req(&route)
         } else {
-
             // Get the full routable path
             let full_route = Self::create_full_route(&method, route.clone());
 
@@ -225,7 +224,9 @@ impl Router {
                     params_map.insert(key.to_string(), value.to_string());
                 }
 
-                if *auth_required && let Err(e) = self.check_wallet_auth(&params_map, &mut req).await {
+                if *auth_required
+                    && let Err(e) = self.check_wallet_auth(&params_map, &mut req).await
+                {
                     e.into()
                 } else {
                     handler.as_ref().handle(req, params_map).await
