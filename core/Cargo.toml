@@ -42,4 +42,3 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-opentelemetry = "0.22"
 opentelemetry = { version = "0.21", default-features = false, features = ["trace"] }
 opentelemetry-datadog = "0.9"
-datadog-tracing = "0.2"

@@ -2100,27 +2100,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "datadog-tracing"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60235582eec31a8a10a4b9a25e836453f2f2f67d199117e43b65c6d45a5f2930"
-dependencies = [
- "chrono",
- "opentelemetry",
- "opentelemetry-datadog",
- "opentelemetry-http",
- "opentelemetry_sdk",
- "reqwest",
- "serde",
- "serde_json",
- "tracing",
- "tracing-appender",
- "tracing-opentelemetry",
- "tracing-serde",
- "tracing-subscriber 0.3.18",
-]
-
-[[package]]
 name = "der"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5303,7 +5282,6 @@ dependencies = [
  "opentelemetry-http",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
- "reqwest",
  "rmp",
  "thiserror",
  "url",
@@ -5319,7 +5297,6 @@ dependencies = [
  "bytes",
  "http",
  "opentelemetry",
- "reqwest",
 ]
 
 [[package]]
@@ -6474,7 +6451,6 @@ dependencies = [
  "common",
  "config",
  "crossbeam",
- "datadog-tracing",
  "external-api",
  "gossip-api",
  "gossip-server",
@@ -8189,18 +8165,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-appender"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
-dependencies = [
- "crossbeam-channel",
- "thiserror",
- "time",
- "tracing-subscriber 0.3.18",
-]
-
-[[package]]
 name = "tracing-attributes"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8565,6 +8529,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 name = "util"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "circuit-types",
  "constants",
  "eyre",
@@ -8581,9 +8546,12 @@ dependencies = [
  "opentelemetry_sdk",
  "rand 0.8.5",
  "renegade-crypto",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-serde",
  "tracing-subscriber 0.3.18",
 ]
 

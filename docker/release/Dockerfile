@@ -32,11 +32,11 @@ ENV RUSTFLAGS=-Awarnings
 ENV RUST_BACKTRACE=1
 
 # Build only the dependencies to cache them in this layer
-RUN cargo chef cook --release --recipe-path recipe.json
+RUN cargo chef cook --release --features "datadog" --recipe-path recipe.json
 
 # Build the relayer
 COPY . .
-RUN cargo build --release
+RUN cargo build --release --features "datadog"
 
 # Release stage
 FROM --platform=arm64 debian:bookworm-slim
