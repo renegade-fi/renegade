@@ -196,9 +196,9 @@ impl Router {
 
     /// Route a request to a handler
     #[instrument(skip_all, fields(
-        status,
-        method = %method,
-        route = %route,
+        http.status_code,
+        http.method = %method,
+        http.route = %route,
     ))]
     pub async fn handle_req(
         &self,
@@ -236,7 +236,7 @@ impl Router {
             }
         };
 
-        tracing::Span::current().record("status", res.status().as_str());
+        tracing::Span::current().record("http.status_code", res.status().as_str());
 
         res
     }

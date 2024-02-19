@@ -40,7 +40,7 @@ use tokio::{
     select,
     sync::{mpsc, watch},
 };
-use tracing::{error, info, info_span};
+use tracing::info;
 use tracing_subscriber::{
     filter::{EnvFilter, LevelFilter},
     fmt,
@@ -131,13 +131,6 @@ async fn main() -> Result<(), CoordinatorError> {
         #[cfg(feature = "trace-otlp")]
         configure_otlp()?;
     }
-
-    info_span!("test_span").in_scope(|| {
-        info_span!("test_nested_span").in_scope(|| {
-            info!("test_info");
-            error!("test_error");
-        })
-    });
 
     // Construct an arbitrum client that workers will use for submitting txs
     let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
@@ -389,11 +382,13 @@ fn configure_default_log_capture() {
 /// logs to include trace/span IDs in the format expected by DataDog
 #[cfg(feature = "trace-otlp")]
 fn configure_otlp() -> Result<(), CoordinatorError> {
+    use util::logging::DatadogFormatter;
+
     let filter_layer =
         EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
 
     #[cfg(feature = "datadog")]
-    let fmt_layer = fmt::layer().json().event_format(datadog_tracing::formatter::DatadogFormatter);
+    let fmt_layer = fmt::layer().json().event_format(DatadogFormatter);
     #[cfg(not(feature = "datadog"))]
     let fmt_layer = fmt::layer().pretty();
 
