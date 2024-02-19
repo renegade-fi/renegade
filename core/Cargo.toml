@@ -6,6 +6,8 @@ default-run = "renegade-relayer"
 
 [features]
 debug-tui = []
+trace-otlp = []
+datadog = ["trace-otlp"]
 
 [dependencies]
 # === Runtime + Async === #
@@ -30,9 +32,14 @@ proof-manager = { path = "../workers/proof-manager" }
 state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }
 task-driver = { path = "../workers/task-driver" }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }
 lazy_static = "1.4"
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.22"
+opentelemetry = { version = "0.21", default-features = false, features = ["trace"] }
+opentelemetry-datadog = "0.9"
+datadog-tracing = "0.2"
