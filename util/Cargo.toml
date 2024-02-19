@@ -24,8 +24,13 @@ renegade-crypto = { path = "../renegade-crypto" }
 eyre = { workspace = true }
 hex = "0.4"
 json = "0.12"
-tracing = { version = "0.1", features = ["log"] }
+tracing = { workspace = true }
 tracing-subscriber = "0.3"
+tracing-opentelemetry = "0.22"
+opentelemetry_sdk = { version = "0.21", features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = "0.14"
+opentelemetry = { version = "0.21", default-features = false, features = ["trace"] }
+opentelemetry-semantic-conventions = "0.13"
 
 [dev-dependencies]
 lazy_static = "1.4"

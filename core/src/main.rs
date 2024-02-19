@@ -40,13 +40,14 @@ use tokio::{
     select,
     sync::{mpsc, watch},
 };
-use tracing::info;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing::{error, info, info_span};
 use tracing_subscriber::{
     filter::{EnvFilter, LevelFilter},
     fmt,
     layer::SubscriberExt,
+    util::SubscriberInitExt,
 };
+use util::{err_str, logging::configure_otlp_tracer};
 
 /// The amount of time to wait between sending teardown signals and terminating
 /// execution
@@ -124,8 +125,19 @@ async fn main() -> Result<(), CoordinatorError> {
             exit(0);
         });
     } else {
-        configure_default_log_capture()
+        #[cfg(not(feature = "trace-otlp"))]
+        configure_default_log_capture();
+
+        #[cfg(feature = "trace-otlp")]
+        configure_otlp()?;
     }
+
+    info_span!("test_span").in_scope(|| {
+        info_span!("test_nested_span").in_scope(|| {
+            info!("test_info");
+            error!("test_error");
+        })
+    });
 
     // Construct an arbitrum client that workers will use for submitting txs
     let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
@@ -357,10 +369,13 @@ async fn main() -> Result<(), CoordinatorError> {
     thread::sleep(Duration::from_millis(TERMINATION_TIMEOUT_MS));
     info!("Terminating...");
 
+    #[cfg(feature = "trace-otlp")]
+    opentelemetry::global::shutdown_tracer_provider();
     Err(err)
 }
 
 /// Configures the default log capture which logs to stdout
+#[cfg(not(feature = "trace-otlp"))]
 fn configure_default_log_capture() {
     let filter_layer =
         EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
@@ -368,6 +383,28 @@ fn configure_default_log_capture() {
     let fmt_layer = fmt::layer().pretty();
 
     tracing_subscriber::registry().with(filter_layer).with(fmt_layer).init();
+}
+
+/// Configures exporting traces to an OTLP collector, and optionally formats
+/// logs to include trace/span IDs in the format expected by DataDog
+#[cfg(feature = "trace-otlp")]
+fn configure_otlp() -> Result<(), CoordinatorError> {
+    let filter_layer =
+        EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
+
+    #[cfg(feature = "datadog")]
+    let fmt_layer = fmt::layer().json().event_format(datadog_tracing::formatter::DatadogFormatter);
+    #[cfg(not(feature = "datadog"))]
+    let fmt_layer = fmt::layer().pretty();
+
+    let otlp_tracer = configure_otlp_tracer().map_err(err_str!(CoordinatorError::Tracer))?;
+    let otlp_trace_layer = tracing_opentelemetry::layer().with_tracer(otlp_tracer);
+
+    tracing_subscriber::registry().with(filter_layer).with(fmt_layer).with(otlp_trace_layer).init();
+
+    opentelemetry::global::set_text_map_propagator(opentelemetry_datadog::DatadogPropagator::new());
+
+    Ok(())
 }
 
 /// Attempt to recover a failed module by cleaning up its resources and

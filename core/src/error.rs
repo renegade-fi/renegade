@@ -16,6 +16,8 @@ pub enum CoordinatorError {
     CancelSend(String),
     /// An error setting up global state
     State(String),
+    /// An error setting up the OTLP tracer
+    Tracer(String),
 }
 
 impl Error for CoordinatorError {}
