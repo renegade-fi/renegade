@@ -11,7 +11,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     order::Order,
-    r#match::{MatchResult, OrderSettlementIndices},
+    r#match::{FeeTake, MatchResult, OrderSettlementIndices},
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiProverCircuit,
         MultiproverCircuitBaseType, SingleProverCircuit,
@@ -95,6 +95,14 @@ where
     /// The first party's balance
     #[link_groups = "valid_commitments_match_settle0"]
     pub balance1: Balance,
+    /// The first party's receive balance
+    #[link_groups = "valid_commitments_match_settle0"]
+    pub balance_receive1: Balance,
+    /// The first party's managing relayer fee
+    #[link_groups = "valid_commitments_match_settle1"]
+    pub relayer_fee1: FixedPoint,
+    /// The first party's fee obligations as a result of the match
+    pub party0_fees: FeeTake,
     /// The price that the first party agreed to execute at for their asset
     pub price1: FixedPoint,
     /// The maximum amount that the first party may match
@@ -105,6 +113,14 @@ where
     /// The second party's balance
     #[link_groups = "valid_commitments_match_settle1"]
     pub balance2: Balance,
+    /// The second party's receive balance
+    #[link_groups = "valid_commitments_match_settle1"]
+    pub balance_receive2: Balance,
+    /// The second party's managing relayer fee
+    #[link_groups = "valid_commitments_match_settle1"]
+    pub relayer_fee2: FixedPoint,
+    /// The second party's fee obligations as a result of the match
+    pub party1_fees: FeeTake,
     /// The price that the second party agreed to execute at for their asset
     pub price2: FixedPoint,
     /// The maximum amount that the second party may match
@@ -144,6 +160,8 @@ where
     pub party0_indices: OrderSettlementIndices,
     /// The indices that settlement should modify in the second party's wallet
     pub party1_indices: OrderSettlementIndices,
+    /// The protocol fee used in the match
+    pub protocol_fee: FixedPoint,
 }
 
 /// A `VALID MATCH SETTLE` statement with default const generic sizing
@@ -226,12 +244,13 @@ where
 pub mod test_helpers {
     use circuit_types::{
         balance::Balance,
+        fixed_point::PROTOCOL_FEE_FP,
         order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
     };
     use constants::Scalar;
     use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
-    use util::matching_engine::apply_match_to_shares;
+    use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 
     use crate::{
         test_helpers::random_orders_and_match,
@@ -260,12 +279,28 @@ pub mod test_helpers {
         let (_, party0_public_shares) = create_wallet_shares(&wallet1);
         let (_, party1_public_shares) = create_wallet_shares(&wallet2);
 
+        // Compute the fee obligations of both parties
+        let party0_fees = compute_fee_obligation(wallet1.match_fee, o1.side, &match_res);
+        let party1_fees = compute_fee_obligation(wallet2.match_fee, o2.side, &match_res);
+
         // Update the wallets
         let mut party0_modified_shares = party0_public_shares.clone();
-        apply_match_to_shares(&mut party0_modified_shares, &party0_indices, &match_res, o1.side);
+        apply_match_to_shares(
+            &mut party0_modified_shares,
+            &party0_indices,
+            party0_fees,
+            &match_res,
+            o1.side,
+        );
 
         let mut party1_modified_shares = party1_public_shares.clone();
-        apply_match_to_shares(&mut party1_modified_shares, &party1_indices, &match_res, o2.side);
+        apply_match_to_shares(
+            &mut party1_modified_shares,
+            &party1_indices,
+            party1_fees,
+            &match_res,
+            o2.side,
+        );
 
         let amount1 = Scalar::from(o1.amount);
         let amount2 = Scalar::from(o2.amount);
@@ -274,11 +309,17 @@ pub mod test_helpers {
             ValidMatchSettleWitness {
                 order1: o1,
                 balance1: wallet1.balances[party0_indices.balance_send].clone(),
+                balance_receive1: wallet1.balances[party0_indices.balance_receive].clone(),
+                relayer_fee1: wallet1.match_fee,
                 price1: price,
+                party0_fees,
                 amount1,
                 order2: o2,
                 balance2: wallet2.balances[party1_indices.balance_send].clone(),
+                balance_receive2: wallet2.balances[party1_indices.balance_receive].clone(),
+                relayer_fee2: wallet2.match_fee,
                 price2: price,
+                party1_fees,
                 amount2,
                 match_res,
                 party0_public_shares,
@@ -289,6 +330,7 @@ pub mod test_helpers {
                 party1_indices,
                 party0_modified_shares,
                 party1_modified_shares,
+                protocol_fee: *PROTOCOL_FEE_FP,
             },
         )
     }
@@ -344,7 +386,7 @@ pub mod test_helpers {
             OrderSide::Sell => order.quote_mint.clone(),
         };
 
-        Balance::new_from_mint_and_amount(mint, rng.next_u32() as u64)
+        Balance::new_from_mint_and_amount(mint, rng.next_u32() as u128)
     }
 }
 
@@ -352,10 +394,11 @@ pub mod test_helpers {
 mod tests {
     #![allow(non_snake_case)]
     use ark_mpc::PARTY0;
-    use circuit_types::{fixed_point::FixedPoint, order::OrderSide, traits::MpcBaseType};
+    use circuit_types::{fixed_point::FixedPoint, traits::MpcBaseType, AMOUNT_BITS};
 
     use constants::Scalar;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::Rng;
+    use renegade_crypto::fields::scalar_to_u128;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
@@ -367,6 +410,19 @@ mod tests {
             },
         },
     };
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Gets a scalar representing the maximum amount of a balance
+    fn max_amount_scalar() -> Scalar {
+        Scalar::from(2u8).pow(AMOUNT_BITS as u64) - Scalar::one()
+    }
+
+    // -----------------------
+    // | Valid Witness Tests |
+    // -----------------------
 
     /// Tests proving a valid match with a valid witness
     #[tokio::test]
@@ -445,6 +501,17 @@ mod tests {
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
+    /// Test the case in which the match direction is incorrectly set by the
+    /// prover
+    #[test]
+    fn test_valid_match__incorrect_direction() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Invert the match direction
+        witness.match_res.direction = !witness.match_res.direction;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
     /// Test the case in which parties attempt to match on different prices
     #[test]
     fn test_valid_match__different_prices() {
@@ -456,14 +523,37 @@ mod tests {
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
-    /// Test the case in which the balance provided to the matching engine is
-    /// not for the correct asset
+    /// Test the case in which a prover advertises an amount outside the valid
+    /// amount range
     #[test]
-    fn test_valid_match__invalid_balance_mint() {
+    fn test_valid_match__invalid_amount() {
         let (mut witness, statement) = dummy_witness_and_statement();
 
-        // Corrupt the mint
-        rand_branch!(witness.balance1.mint += 1u8, witness.balance2.mint += 1u8);
+        // Set the amount to be greater than the maximum
+        rand_branch!(
+            witness.amount1 = max_amount_scalar() + Scalar::one(),
+            witness.amount2 = max_amount_scalar() + Scalar::one()
+        );
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
+    /// Tests the case in which the base amount is incorrect
+    #[test]
+    fn test_valid_match__incorrect_base_amount() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Modify the base amount
+        witness.match_res.base_amount = witness.match_res.base_amount - 1;
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
+    /// Tests the case in which the quote amount is incorrect
+    #[test]
+    fn test_valid_match__incorrect_quote_amount() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Modify the quote amount
+        witness.match_res.quote_amount = witness.match_res.quote_amount - 1;
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
@@ -493,17 +583,6 @@ mod tests {
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
-    /// Test the case in which the `max_minus_min` field is incorrectly computed
-    #[test]
-    fn test_valid_match__incorrect_max_minus_min() {
-        let mut rng = thread_rng();
-        let (mut witness, statement) = dummy_witness_and_statement();
-
-        // Change the max minus min amount
-        witness.match_res.max_minus_min_amount = rng.next_u64();
-        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
-    }
-
     /// Test the case in which the `min_amount_order_index` field is incorrectly
     /// computed
     #[test]
@@ -523,12 +602,13 @@ mod tests {
         let execution_price =
             (witness.match_res.quote_amount as f64) / (witness.match_res.base_amount as f64);
 
-        // Execution price exceeds the buy side maximum price
+        // Move the worst case price of the buy side order down
         let new_price = FixedPoint::from_f64_round_down(execution_price - 1.);
-        match witness.order1.side {
-            OrderSide::Buy => witness.price1 = new_price,
-            OrderSide::Sell => witness.price2 = new_price,
-        };
+        if witness.order1.side.is_buy() {
+            witness.order1.worst_case_price = new_price;
+        } else {
+            witness.order2.worst_case_price = new_price;
+        }
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
@@ -541,12 +621,13 @@ mod tests {
         let execution_price =
             (witness.match_res.quote_amount as f64) / (witness.match_res.base_amount as f64);
 
-        // Execution price exceeds the buy side maximum price
+        // Move the worst case price of the sell side order up
         let new_price = FixedPoint::from_f64_round_down(execution_price + 1.);
-        match witness.order1.side {
-            OrderSide::Sell => witness.price1 = new_price,
-            OrderSide::Buy => witness.price2 = new_price,
-        };
+        if witness.order1.side.is_sell() {
+            witness.order1.worst_case_price = new_price;
+        } else {
+            witness.order2.worst_case_price = new_price;
+        }
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
@@ -554,6 +635,49 @@ mod tests {
     // --------------------
     // | Settlement Tests |
     // --------------------
+
+    /// Tests the case in which a settlement would push the balance over the
+    /// valid range
+    #[test]
+    fn test_invalid_settle__balance_overflow() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Set the balance to be the maximum
+        let initial_bal = scalar_to_u128(&max_amount_scalar());
+        rand_branch!(
+            witness.balance_receive1.amount = initial_bal,
+            witness.balance_receive2.amount = initial_bal
+        );
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
+    /// Tests the case in which a settlement overflows the relayer fee balance
+    #[test]
+    fn test_invalid_settle__relayer_fee_overflow() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Set the relayer fee balance to be the maximum
+        let initial_bal = scalar_to_u128(&max_amount_scalar());
+        rand_branch!(
+            witness.balance_receive1.relayer_fee_balance = initial_bal,
+            witness.balance_receive2.relayer_fee_balance = initial_bal
+        );
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
+    /// Tests the case in which a settlement overflows the protocol fee balance
+    #[test]
+    fn test_invalid_settle__protocol_fee_overflow() {
+        let (mut witness, statement) = dummy_witness_and_statement();
+
+        // Set the protocol fee balance to be the maximum
+        let initial_bal = scalar_to_u128(&max_amount_scalar());
+        rand_branch!(
+            witness.balance_receive1.protocol_fee_balance = initial_bal,
+            witness.balance_receive2.protocol_fee_balance = initial_bal
+        );
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
 
     /// Tests the case in which an incorrect balance index is given
     #[test]
@@ -645,6 +769,40 @@ mod tests {
         ));
     }
 
+    /// Tests the case in which the receive balance relayer fee is incorrectly
+    /// updated
+    #[test]
+    fn test_invalid_settle__invalid_receive_relayer_fee() {
+        let (witness, mut statement) = dummy_witness_and_statement();
+
+        // Modify the receive balance relayer fee of party 0
+        rand_branch!(
+            statement.party0_modified_shares.balances[statement.party0_indices.balance_receive]
+                .relayer_fee_balance += Scalar::one(),
+            statement.party1_modified_shares.balances[statement.party1_indices.balance_receive]
+                .relayer_fee_balance += Scalar::one()
+        );
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
+    /// Tests the case in which the receive balance protocol fee is incorrectly
+    /// updated
+    #[test]
+    fn test_invalid_settle__invalid_receive_protocol_fee() {
+        let (witness, mut statement) = dummy_witness_and_statement();
+
+        // Modify the receive balance protocol fee of party 0
+        rand_branch!(
+            statement.party0_modified_shares.balances[statement.party0_indices.balance_receive]
+                .protocol_fee_balance += Scalar::one(),
+            statement.party1_modified_shares.balances[statement.party1_indices.balance_receive]
+                .protocol_fee_balance += Scalar::one()
+        );
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
+    }
+
     /// Tests the case in which the order amount is incorrectly modified
     #[test]
     fn test_invalid_settle__invalid_order_update() {
@@ -686,7 +844,23 @@ mod tests {
             &statement
         ));
 
-        // TODO: Test other modifications from fee redesign
+        // Modify the match fee
+        let mut statement = original_statement.clone();
+        statement.party0_modified_shares.match_fee.repr += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
+        // Modify the managing cluster
+        let mut statement = original_statement.clone();
+        statement.party0_modified_shares.managing_cluster += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
 
         // Modify a key
         let mut statement = original_statement.clone();

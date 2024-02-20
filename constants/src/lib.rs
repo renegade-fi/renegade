@@ -29,6 +29,9 @@ pub const MERKLE_HEIGHT: usize = 32;
 /// The number of historical roots the contract stores as being valid
 pub const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 
+/// The fee that the protocol takes on each trade
+pub const PROTOCOL_FEE: f64 = 0.0006; // 6 bps
+
 // ------------------------------------
 // | System Specific Type Definitions |
 // ------------------------------------
