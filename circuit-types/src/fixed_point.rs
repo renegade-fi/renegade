@@ -7,7 +7,7 @@ use std::ops::{Add, Mul, Neg, Sub};
 use ark_ff::{BigInteger, Field, PrimeField};
 use bigdecimal::{BigDecimal, ToPrimitive};
 use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use constants::{AuthenticatedScalar, Scalar, ScalarField, PROTOCOL_FEE};
 use lazy_static::lazy_static;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use num_bigint::BigUint;
@@ -39,6 +39,9 @@ lazy_static! {
     /// Compute the constant 2^-M (mod p), so that we may conveniently reduce after
     /// multiplications
     pub static ref TWO_TO_NEG_M: ScalarField = TWO_TO_M_SCALAR.inverse().unwrap();
+
+    /// A fixed point representation of the global protocol fee
+    pub static ref PROTOCOL_FEE_FP: FixedPoint = FixedPoint::from_f64_round_down(PROTOCOL_FEE);
 }
 
 // -----------
@@ -302,6 +305,13 @@ impl FixedPointVar {
     pub fn sub_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
         let repr = cs.add_with_coeffs(self.repr, rhs, &SCALAR_ONE, &TWO_TO_M_SCALAR.neg()).unwrap();
 
+        Self { repr }
+    }
+
+    /// Subtract a fixed point variable from an integer
+    pub fn sub_from_integer<C: Circuit<ScalarField>>(&self, rhs: Variable, cs: &mut C) -> Self {
+        let neg_one = SCALAR_ONE.neg();
+        let repr = cs.add_with_coeffs(self.repr, rhs, &neg_one, &TWO_TO_M_SCALAR).unwrap();
         Self { repr }
     }
 

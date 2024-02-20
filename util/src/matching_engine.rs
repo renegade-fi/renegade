@@ -2,13 +2,14 @@
 
 use circuit_types::{
     balance::Balance,
-    fixed_point::FixedPoint,
+    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
     order::{Order, OrderSide},
-    r#match::{MatchResult, OrderSettlementIndices},
+    r#match::{FeeTake, MatchResult, OrderSettlementIndices},
     wallet::WalletShare,
+    Amount,
 };
 use constants::Scalar;
-use renegade_crypto::fields::scalar_to_u64;
+use renegade_crypto::fields::scalar_to_u128;
 
 // ------------
 // | Matching |
@@ -46,8 +47,8 @@ pub fn match_orders(
 pub fn match_orders_with_max_amount(
     o1: &Order,
     o2: &Order,
-    max1: u64,
-    max2: u64,
+    max1: Amount,
+    max2: Amount,
     price: FixedPoint,
 ) -> Option<MatchResult> {
     // Same asset pair
@@ -62,7 +63,7 @@ pub fn match_orders_with_max_amount(
     // update shares to remove an order without revealing the volume of the
     // order. So zero'd orders may exist in the book until the user removes them
     valid_match = valid_match && !o1.is_zero() && !o2.is_zero();
-    let min_base_amount = u64::min(max1, max2);
+    let min_base_amount = Amount::min(max1, max2);
     valid_match = valid_match && min_base_amount > 0;
 
     if !valid_match {
@@ -71,8 +72,7 @@ pub fn match_orders_with_max_amount(
 
     // Compute the auxiliary data for the match
     let quote_amount = price * Scalar::from(min_base_amount);
-    let quote_amount = scalar_to_u64(&quote_amount.floor());
-    let max_minus_min_amount = u64::max(max1, max2) - min_base_amount;
+    let quote_amount = scalar_to_u128(&quote_amount.floor());
 
     Some(MatchResult {
         base_mint: o1.base_mint.clone(),
@@ -80,24 +80,23 @@ pub fn match_orders_with_max_amount(
         base_amount: min_base_amount,
         quote_amount,
         direction: matches!(o1.side, OrderSide::Sell),
-        max_minus_min_amount,
         min_amount_order_index: max1 > max2,
     })
 }
 
 /// Compute the maximum matchable amount for an order and balance
-fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u64 {
+fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u128 {
     match order.side {
         // Buy the base, the max amount is possibly limited by the quote
         // balance
         OrderSide::Buy => {
             let price_f64 = price.to_f64();
-            let balance_limit = (balance.amount as f64 / price_f64).floor() as u64;
-            u64::min(order.amount, balance_limit)
+            let balance_limit = (balance.amount as f64 / price_f64).floor() as u128;
+            u128::min(order.amount, balance_limit)
         },
         // Buy the quote, sell the base, the maximum amount is directly limited
         // by the balance
-        OrderSide::Sell => u64::min(order.amount, balance.amount),
+        OrderSide::Sell => u128::min(order.amount, balance.amount),
     }
 }
 
@@ -109,6 +108,8 @@ fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u
 pub fn settle_match_into_wallets<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     wallet0_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS>,
     wallet1_share: &mut WalletShare<MAX_BALANCES, MAX_ORDERS>,
+    party0_fees: FeeTake,
+    party1_fees: FeeTake,
     party0_indices: OrderSettlementIndices,
     party1_indices: OrderSettlementIndices,
     match_res: &MatchResult,
@@ -116,8 +117,14 @@ pub fn settle_match_into_wallets<const MAX_BALANCES: usize, const MAX_ORDERS: us
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     let direction = OrderSide::from(match_res.direction);
-    apply_match_to_shares(wallet0_share, &party0_indices, match_res, direction);
-    apply_match_to_shares(wallet1_share, &party1_indices, match_res, direction.opposite());
+    apply_match_to_shares(wallet0_share, &party0_indices, party0_fees, match_res, direction);
+    apply_match_to_shares(
+        wallet1_share,
+        &party1_indices,
+        party1_fees,
+        match_res,
+        direction.opposite(),
+    );
 }
 
 /// Applies a match to the shares of a wallet
@@ -126,30 +133,56 @@ pub fn settle_match_into_wallets<const MAX_BALANCES: usize, const MAX_ORDERS: us
 pub fn apply_match_to_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     shares: &mut WalletShare<MAX_BALANCES, MAX_ORDERS>,
     indices: &OrderSettlementIndices,
+    fees: FeeTake,
     match_res: &MatchResult,
     side: OrderSide,
 ) where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    let (send_amt, recv_amt) = match side {
-        // Buy side; send quote, receive base
-        OrderSide::Buy => (match_res.quote_amount, match_res.base_amount),
-        // Sell side; send base, receive quote
-        OrderSide::Sell => (match_res.base_amount, match_res.quote_amount),
-    };
+    let (_, send_amt) = match_res.send_mint_amount(side);
+    let (_, recv_amt) = match_res.receive_mint_amount(side);
 
-    shares.balances[indices.balance_send].amount -= Scalar::from(send_amt);
-    shares.balances[indices.balance_receive].amount += Scalar::from(recv_amt);
+    // Update the matched order
     shares.orders[indices.order].amount -= Scalar::from(match_res.base_amount);
+    // Update the send balance
+    shares.balances[indices.balance_send].amount -= Scalar::from(send_amt);
+
+    // Update the receive balance including fees
+    let trader_net = recv_amt - fees.total();
+    shares.balances[indices.balance_receive].amount += Scalar::from(trader_net);
+    shares.balances[indices.balance_receive].relayer_fee_balance += Scalar::from(fees.relayer_fee);
+    shares.balances[indices.balance_receive].protocol_fee_balance +=
+        Scalar::from(fees.protocol_fee);
+}
+
+/// Compute the fee obligations for a match
+pub fn compute_fee_obligation(
+    relayer_fee: FixedPoint,
+    side: OrderSide,
+    match_res: &MatchResult,
+) -> FeeTake {
+    let (_mint, receive_amount) = match_res.receive_mint_amount(side);
+    let receive_amount = Scalar::from(receive_amount);
+
+    let relayer_take = (relayer_fee * receive_amount).floor();
+    let protocol_take = (*PROTOCOL_FEE_FP * receive_amount).floor();
+
+    FeeTake {
+        relayer_fee: scalar_to_u128(&relayer_take),
+        protocol_fee: scalar_to_u128(&protocol_take),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::iter;
 
+    use crate::matching_engine::compute_fee_obligation;
+
     use super::{apply_match_to_shares, match_orders};
     use circuit_types::{
         balance::Balance,
+        fixed_point::FixedPoint,
         order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
         traits::BaseType,
@@ -177,13 +210,12 @@ mod tests {
             side: OrderSide::Buy,
             amount: 50,
             worst_case_price: BUY_SIDE_WORST_CASE_PRICE.into(),
-            timestamp: 0,
         };
 
         /// The first dummy balance used in a valid match
         static ref BALANCE1: Balance = Balance {
             mint: 2u64.into(),
-            amount: 500u64,
+            amount: 500u128,
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
         };
@@ -195,13 +227,12 @@ mod tests {
             side: OrderSide::Sell,
             amount: 100,
             worst_case_price: SELL_SIDE_WORST_CASE_PRICE.into(),
-            timestamp: 0,
         };
 
         /// The second dummy balance used in a valid match
         static ref BALANCE2: Balance = Balance {
             mint: 1u64.into(),
-            amount: 100u64,
+            amount: 100u128,
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
         };
@@ -221,7 +252,6 @@ mod tests {
             base_amount: rng.gen(),
             quote_amount: rng.gen(),
             direction: rng.gen(),
-            max_minus_min_amount: rng.gen(),
             min_amount_order_index: rng.gen(),
         }
     }
@@ -251,6 +281,16 @@ mod tests {
         }
     }
 
+    /// Generate a random relayer fee
+    ///
+    /// Generates in the range of 1 bp to 100 bp
+    fn random_relayer_fee() -> FixedPoint {
+        let mut rng = thread_rng();
+        let fee: f64 = rng.gen_range(0.0001..0.01);
+
+        FixedPoint::from_f64_round_down(fee)
+    }
+
     // ---------------
     // | Match Tests |
     // ---------------
@@ -275,7 +315,6 @@ mod tests {
             350 // midpoint_price * base_amount
         );
         assert_eq!(res.direction as u8, 0);
-        assert_eq!(res.max_minus_min_amount, 50);
         assert_eq!(res.min_amount_order_index as u8, 0);
     }
 
@@ -290,7 +329,7 @@ mod tests {
         let midpoint_price = 7.;
 
         // Can only buy 10 units of the base
-        balance1.amount = (midpoint_price * 10.) as u64;
+        balance1.amount = (midpoint_price * 10.) as u128;
 
         let res =
             match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
@@ -300,7 +339,6 @@ mod tests {
         assert_eq!(res.base_amount, 10);
         assert_eq!(res.quote_amount, 70 /* midpoint_price * base_amount */);
         assert_eq!(res.direction as u8, 0);
-        assert_eq!(res.max_minus_min_amount, 90);
         assert_eq!(res.min_amount_order_index as u8, 0);
     }
 
@@ -315,7 +353,7 @@ mod tests {
         let midpoint_price = 7.;
 
         // Can only sell 10 units of the base
-        balance2.amount = 10u64;
+        balance2.amount = 10u128;
 
         let res =
             match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
@@ -325,7 +363,6 @@ mod tests {
         assert_eq!(res.base_amount, 10);
         assert_eq!(res.quote_amount, 70 /* midpoint_price * base_amount */);
         assert_eq!(res.direction as u8, 0);
-        assert_eq!(res.max_minus_min_amount, 40);
         assert_eq!(res.min_amount_order_index as u8, 1);
     }
 
@@ -429,37 +466,88 @@ mod tests {
 
     /// Tests settling a match into two wallet shares
     #[test]
-    fn test_settle_match() {
-        // Buy side
+    #[allow(non_snake_case)]
+    fn test_settle_match__buy_side() {
+        let side = OrderSide::Buy;
         let match_res = random_match_result();
         let indices = random_settlement_indices();
         let original_shares = random_wallet_share();
 
+        let relayer_fee = random_relayer_fee();
+        let fees = compute_fee_obligation(relayer_fee, side, &match_res);
+
         let mut new_shares = original_shares.clone();
-        apply_match_to_shares(&mut new_shares, &indices, &match_res, OrderSide::Buy);
+        apply_match_to_shares(&mut new_shares, &indices, fees, &match_res, side);
 
         let expected_order_amt = original_shares.orders[indices.order as usize].amount
             - Scalar::from(match_res.base_amount);
         let expected_quote_amt = original_shares.balances[indices.balance_send as usize].amount
             - Scalar::from(match_res.quote_amount);
+
+        let net_recv = match_res.base_amount - fees.total();
         let expected_base_amt = original_shares.balances[indices.balance_receive as usize].amount
-            + Scalar::from(match_res.base_amount);
+            + Scalar::from(net_recv);
+        let expected_base_relayer_fee = original_shares.balances[indices.balance_receive as usize]
+            .relayer_fee_balance
+            + Scalar::from(fees.relayer_fee);
+        let expected_base_protocol_fee = original_shares.balances[indices.balance_receive as usize]
+            .protocol_fee_balance
+            + Scalar::from(fees.protocol_fee);
+
         assert_eq!(new_shares.balances[indices.balance_send as usize].amount, expected_quote_amt);
         assert_eq!(new_shares.balances[indices.balance_receive as usize].amount, expected_base_amt);
+        assert_eq!(
+            new_shares.balances[indices.balance_receive as usize].relayer_fee_balance,
+            expected_base_relayer_fee
+        );
+        assert_eq!(
+            new_shares.balances[indices.balance_receive as usize].protocol_fee_balance,
+            expected_base_protocol_fee
+        );
         assert_eq!(new_shares.orders[indices.order as usize].amount, expected_order_amt);
+    }
 
-        // Sell side
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_settle_match__sell_side() {
+        let side = OrderSide::Sell;
+        let match_res = random_match_result();
+        let indices = random_settlement_indices();
+        let original_shares = random_wallet_share();
+
+        let relayer_fee = random_relayer_fee();
+        let fees = compute_fee_obligation(relayer_fee, side, &match_res);
+
         let mut new_shares = original_shares.clone();
-        apply_match_to_shares(&mut new_shares, &indices, &match_res, OrderSide::Sell);
+        apply_match_to_shares(&mut new_shares, &indices, fees, &match_res, side);
 
-        let expected_quote_amt = original_shares.balances[indices.balance_receive as usize].amount
-            + Scalar::from(match_res.quote_amount);
+        let expected_order_amt = original_shares.orders[indices.order as usize].amount
+            - Scalar::from(match_res.base_amount);
         let expected_base_amt = original_shares.balances[indices.balance_send as usize].amount
             - Scalar::from(match_res.base_amount);
+
+        let net_recv = match_res.quote_amount - fees.total();
+        let expected_quote_amt = original_shares.balances[indices.balance_receive as usize].amount
+            + Scalar::from(net_recv);
+        let expected_base_relayer_fee = original_shares.balances[indices.balance_receive as usize]
+            .relayer_fee_balance
+            + Scalar::from(fees.relayer_fee);
+        let expected_base_protocol_fee = original_shares.balances[indices.balance_receive as usize]
+            .protocol_fee_balance
+            + Scalar::from(fees.protocol_fee);
+
         assert_eq!(new_shares.balances[indices.balance_send as usize].amount, expected_base_amt);
         assert_eq!(
             new_shares.balances[indices.balance_receive as usize].amount,
             expected_quote_amt
+        );
+        assert_eq!(
+            new_shares.balances[indices.balance_receive as usize].relayer_fee_balance,
+            expected_base_relayer_fee
+        );
+        assert_eq!(
+            new_shares.balances[indices.balance_receive as usize].protocol_fee_balance,
+            expected_base_protocol_fee
         );
         assert_eq!(new_shares.orders[indices.order as usize].amount, expected_order_amt);
     }

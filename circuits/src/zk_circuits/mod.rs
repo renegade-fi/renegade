@@ -130,7 +130,6 @@ pub mod test_helpers {
                 amount: 1,
                 // No price limit by default
                 worst_case_price: FixedPoint::from_integer(100000),
-                timestamp: TIMESTAMP,
             },
             Order {
                 quote_mint: 1u8.into(),
@@ -139,14 +138,13 @@ pub mod test_helpers {
                 amount: 10,
                 // No price limit by default
                 worst_case_price: FixedPoint::from_integer(0),
-                timestamp: TIMESTAMP,
             }
         ];
         pub static ref INITIAL_WALLET: SizedWallet = Wallet {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
             keys: PUBLIC_KEYS.clone(),
-            match_fee: FixedPoint::from_integer(0),
+            match_fee: FixedPoint::from_f64_round_down(0.002), // 20 bps
             managing_cluster: 0u8.into(),
             blinder: Scalar::from(42u64)
         };
@@ -160,8 +158,6 @@ pub mod test_helpers {
     pub const MAX_BALANCES: usize = 2;
     /// The maximum number of orders allowed in a wallet for tests
     pub const MAX_ORDERS: usize = 2;
-    /// The initial timestamp used in testing
-    pub const TIMESTAMP: u64 = 3; // dummy value
 
     pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS>;
     pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS>;

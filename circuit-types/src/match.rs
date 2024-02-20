@@ -17,9 +17,6 @@ use crate::{
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
-/// TODO: When we convert these values to fixed point rationals, we will need to
-/// sacrifice one bit of precision to ensure that the difference in prices is
-/// divisible by two
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchResult {
@@ -36,18 +33,11 @@ pub struct MatchResult {
     /// sells the quote
     pub direction: bool,
 
-    /// The following are supporting variables, derivable from the above, but
-    /// useful for shrinking the size of the zero knowledge circuit. As
-    /// well, they are computed during the course of the MPC, so it incurs
-    /// no extra cost to include them in the witness
-
-    /// The minimum amount of the two orders minus the maximum amount of the two
-    /// orders. We include it here to tame some of the non-linearity of the
-    /// zk circuit, i.e. we can shortcut some of the computation and
-    /// implicitly constrain the match result with this extra value
-    pub max_minus_min_amount: Amount,
     /// The index of the order (0 or 1) that has the minimum amount, i.e. the
     /// order that is completely filled by this match
+    ///
+    /// This is computed in the MPC and included in the witness as a hint to
+    /// accelerate the collaborative proof constraint generation
     ///
     /// We serialize this as a `bool` to automatically constrain it to be 0 or 1
     /// in a circuit. So `false` means 0 and `true` means 1
@@ -73,6 +63,23 @@ impl MatchResult {
             // Sell the base, buy the quote
             OrderSide::Sell => (self.quote_mint.clone(), self.quote_amount),
         }
+    }
+}
+
+/// The fee takes from a match
+#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeeTake {
+    /// The fee the relayer takes
+    pub relayer_fee: Amount,
+    /// The fee the protocol takes
+    pub protocol_fee: Amount,
+}
+
+impl FeeTake {
+    /// Get the total fee
+    pub fn total(&self) -> Amount {
+        self.relayer_fee + self.protocol_fee
     }
 }
 
