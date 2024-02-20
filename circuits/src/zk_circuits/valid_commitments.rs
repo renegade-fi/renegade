@@ -23,6 +23,7 @@ use crate::{
 use circuit_macros::circuit_type;
 use circuit_types::{
     balance::{Balance, BalanceVar},
+    fixed_point::FixedPoint,
     order::{Order, OrderVar},
     r#match::OrderSettlementIndices,
     traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
@@ -82,6 +83,10 @@ where
         )?;
         let receive_mint = receive_send_mint.remove(0);
         let send_mint = receive_send_mint.remove(0);
+
+        // The advertised relayer take rate in the witness should equal the authorized
+        // take rate in the wallet
+        EqGadget::constrain_eq(&witness.relayer_fee, &base_wallet.match_fee, cs)?;
 
         // Verify that the wallets are the same other than a possibly augmented balance
         // of zero for the received mint of the order. This augmented balance
@@ -356,7 +361,11 @@ where
     #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
     pub balance_send: Balance,
     /// The balance that the wallet will receive into when the order is matched
+    #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
     pub balance_receive: Balance,
+    /// The relayer's take rate for managing this order
+    #[link_groups = "valid_commitments_match_settle0, valid_commitments_match_settle1"]
+    pub relayer_fee: FixedPoint,
     /// The modified public secret shares, possibly with a zero'd balance added
     /// for the mint that will be received by this party upon a successful
     /// match
@@ -501,6 +510,7 @@ pub mod test_helpers {
             public_secret_shares: public_share.clone(),
             augmented_public_shares,
             order,
+            relayer_fee: wallet.match_fee,
             balance_send,
             balance_receive,
         };
@@ -749,6 +759,18 @@ mod test {
         let mut rng = thread_rng();
         witness.augmented_public_shares.match_fee =
             FixedPointShare { repr: Scalar::random(&mut rng) };
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+    }
+
+    /// Tests the case in which the prover provides an incorrect relayer fee in
+    /// the witness
+    #[test]
+    fn test_invalid_commitments__wrong_relayer_fee() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Modify the relayer fee in the witness
+        witness.relayer_fee = witness.relayer_fee + Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
