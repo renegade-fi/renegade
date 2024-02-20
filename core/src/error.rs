@@ -17,6 +17,7 @@ pub enum CoordinatorError {
     /// An error setting up global state
     State(String),
     /// An error setting up the OTLP tracer
+    #[cfg(feature = "trace-otlp")]
     Tracer(String),
 }
 

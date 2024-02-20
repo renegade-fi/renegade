@@ -47,7 +47,6 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
-use util::{err_str, logging::configure_otlp_tracer};
 
 /// The amount of time to wait between sending teardown signals and terminating
 /// execution
@@ -382,7 +381,9 @@ fn configure_default_log_capture() {
 /// logs to include trace/span IDs in the format expected by DataDog
 #[cfg(feature = "trace-otlp")]
 fn configure_otlp() -> Result<(), CoordinatorError> {
-    use util::logging::DatadogFormatter;
+    #[cfg(feature = "datadog")]
+    use util::logging::formatter::DatadogFormatter;
+    use util::logging::otlp_tracer::configure_otlp_tracer;
 
     let filter_layer =
         EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
@@ -392,11 +393,12 @@ fn configure_otlp() -> Result<(), CoordinatorError> {
     #[cfg(not(feature = "datadog"))]
     let fmt_layer = fmt::layer().pretty();
 
-    let otlp_tracer = configure_otlp_tracer().map_err(err_str!(CoordinatorError::Tracer))?;
+    let otlp_tracer = configure_otlp_tracer().map_err(util::err_str!(CoordinatorError::Tracer))?;
     let otlp_trace_layer = tracing_opentelemetry::layer().with_tracer(otlp_tracer);
 
     tracing_subscriber::registry().with(filter_layer).with(fmt_layer).with(otlp_trace_layer).init();
 
+    #[cfg(feature = "datadog")]
     opentelemetry::global::set_text_map_propagator(opentelemetry_datadog::DatadogPropagator::new());
 
     Ok(())
