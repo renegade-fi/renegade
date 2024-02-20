@@ -6,8 +6,9 @@ default-run = "renegade-relayer"
 
 [features]
 debug-tui = []
-trace-otlp = []
-datadog = ["trace-otlp"]
+trace-otlp = ["util/trace-otlp", "tracing-opentelemetry", "opentelemetry"]
+metrics = []
+datadog = ["util/datadog", "tracing-subscriber/json", "dep:opentelemetry-datadog", "trace-otlp", "metrics"]
 
 [dependencies]
 # === Runtime + Async === #
@@ -38,7 +39,7 @@ util = { path = "../util" }
 clap = { version = "3.2.8", features = ["derive"] }
 lazy_static = "1.4"
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.22"
-opentelemetry = { version = "0.21", default-features = false, features = ["trace"] }
-opentelemetry-datadog = "0.9"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-opentelemetry = { version = "0.22", optional = true }
+opentelemetry = { version = "0.21", default-features = false, features = ["trace"], optional = true }
+opentelemetry-datadog = { version = "0.9", optional = true }
