@@ -42,17 +42,17 @@ where
 
         // --- Order Crossing Constraints --- //
         // Check that both orders are for the matched asset pair
+        cs.enforce_equal(witness.order0.quote_mint, witness.match_res.quote_mint)?;
+        cs.enforce_equal(witness.order0.base_mint, witness.match_res.base_mint)?;
         cs.enforce_equal(witness.order1.quote_mint, witness.match_res.quote_mint)?;
         cs.enforce_equal(witness.order1.base_mint, witness.match_res.base_mint)?;
-        cs.enforce_equal(witness.order2.quote_mint, witness.match_res.quote_mint)?;
-        cs.enforce_equal(witness.order2.base_mint, witness.match_res.base_mint)?;
 
         // Check that the prices supplied by the parties are equal, these should be
         // agreed upon outside of the circuit
-        EqGadget::constrain_eq(&witness.price1, &witness.price2, cs)?;
+        EqGadget::constrain_eq(&witness.price0, &witness.price1, cs)?;
         // Validate that the price is valid, i.e. representable in a small enough number
         // of bits to avoid overflow
-        PriceGadget::constrain_valid_price(witness.price1, cs)?;
+        PriceGadget::constrain_valid_price(witness.price0, cs)?;
 
         // The orders must be on opposite sides of the market
         // i.e. one must be a buy order and the other a sell order
@@ -61,21 +61,21 @@ where
         // Note that the orders are constrained binary by their allocation as a
         // `BoolVar`
         cs.lc_gate(
-            &[witness.order1.side.into(), witness.order2.side.into(), zero_var, zero_var, one_var],
+            &[witness.order0.side.into(), witness.order1.side.into(), zero_var, zero_var, one_var],
             &[one, one, zero, zero],
         )?;
 
         // Check that the direction of the match is the same as the first party's
         // direction
-        cs.enforce_equal(witness.match_res.direction.into(), witness.order1.side.into())?;
+        cs.enforce_equal(witness.match_res.direction.into(), witness.order0.side.into())?;
 
         // --- Match Volume Constraints --- //
         // Constrain that the pledged amount of each party is a valid amount
+        AmountGadget::constrain_valid_amount(witness.amount0, cs)?;
         AmountGadget::constrain_valid_amount(witness.amount1, cs)?;
-        AmountGadget::constrain_valid_amount(witness.amount2, cs)?;
 
-        let max_minus_min1 = cs.sub(witness.amount1, witness.amount2)?;
-        let max_minus_min2 = cs.sub(witness.amount2, witness.amount1)?;
+        let max_minus_min1 = cs.sub(witness.amount0, witness.amount1)?;
+        let max_minus_min2 = cs.sub(witness.amount1, witness.amount0)?;
         let max_minus_min_amount = CondSelectGadget::select(
             &max_minus_min1,
             &max_minus_min2,
@@ -97,8 +97,8 @@ where
         // Order amounts are specified in the base asset, so the swapped base amount
         // should be the minimum of the two order amounts
         let min_amount = CondSelectGadget::select(
-            &witness.amount2,
             &witness.amount1,
+            &witness.amount0,
             witness.match_res.min_amount_order_index,
             cs,
         )?;
@@ -120,22 +120,22 @@ where
         // balance and no greater than the amount specified in the order
         Self::validate_volume_constraints_single_prover(
             &witness.match_res,
-            &witness.balance1,
-            &witness.order1,
+            &witness.balance0,
+            &witness.order0,
             cs,
         )?;
 
         Self::validate_volume_constraints_single_prover(
             &witness.match_res,
-            &witness.balance2,
-            &witness.order2,
+            &witness.balance1,
+            &witness.order1,
             cs,
         )?;
 
         // --- Price Protection --- //
         // Check that the execution price is within the user-defined limits
-        Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs)?;
-        Self::verify_price_protection_single_prover(&witness.price2, &witness.order2, cs)
+        Self::verify_price_protection_single_prover(&witness.price0, &witness.order0, cs)?;
+        Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs)
     }
 
     /// Check that a balance covers the advertised amount at a given price, and
@@ -224,7 +224,7 @@ where
         // Validate the first party's fee take
         Self::validate_fee_take_singleprover(
             party0_received_amount,
-            witness.relayer_fee1,
+            witness.relayer_fee0,
             statement.protocol_fee,
             &witness.party0_fees,
             cs,
@@ -234,7 +234,7 @@ where
         Self::validate_balance_updates_singleprover(
             party1_received_amount,
             party0_received_amount,
-            &witness.balance_receive1,
+            &witness.balance_receive0,
             &witness.party0_fees,
             &statement.party0_indices,
             &witness.party0_public_shares,
@@ -259,7 +259,7 @@ where
         // Validate the second party's fee take
         Self::validate_fee_take_singleprover(
             party1_received_amount,
-            witness.relayer_fee2,
+            witness.relayer_fee1,
             statement.protocol_fee,
             &witness.party1_fees,
             cs,
@@ -269,7 +269,7 @@ where
         Self::validate_balance_updates_singleprover(
             party0_received_amount,
             party1_received_amount,
-            &witness.balance_receive2,
+            &witness.balance_receive1,
             &witness.party1_fees,
             &statement.party1_indices,
             &witness.party1_public_shares,
@@ -343,7 +343,7 @@ where
         )?;
 
         // Check that no overflow occurs in the receive balance
-        Self::validate_no_receive_overflow(trader_take, receive_balance, fees, cs)?;
+        Self::validate_no_receive_overflow_singleprover(trader_take, receive_balance, fees, cs)?;
 
         // Check that the balances are updated correctly
         let mut curr_index = cs.zero();
@@ -387,7 +387,7 @@ where
     }
 
     /// Validate that the receive balance amounts after update do not overflow
-    fn validate_no_receive_overflow(
+    fn validate_no_receive_overflow_singleprover(
         trader_take: Variable,
         receive_balance: &BalanceVar,
         fees: &FeeTakeVar,
