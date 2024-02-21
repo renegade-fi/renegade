@@ -91,40 +91,40 @@ where
 {
     /// The first party's order
     #[link_groups = "valid_commitments_match_settle0"]
-    pub order1: Order,
+    pub order0: Order,
     /// The first party's balance
     #[link_groups = "valid_commitments_match_settle0"]
-    pub balance1: Balance,
+    pub balance0: Balance,
     /// The first party's receive balance
     #[link_groups = "valid_commitments_match_settle0"]
-    pub balance_receive1: Balance,
+    pub balance_receive0: Balance,
     /// The first party's managing relayer fee
-    #[link_groups = "valid_commitments_match_settle1"]
-    pub relayer_fee1: FixedPoint,
+    #[link_groups = "valid_commitments_match_settle0"]
+    pub relayer_fee0: FixedPoint,
     /// The first party's fee obligations as a result of the match
     pub party0_fees: FeeTake,
     /// The price that the first party agreed to execute at for their asset
-    pub price1: FixedPoint,
+    pub price0: FixedPoint,
     /// The maximum amount that the first party may match
-    pub amount1: Scalar,
+    pub amount0: Scalar,
     /// The second party's order
     #[link_groups = "valid_commitments_match_settle1"]
-    pub order2: Order,
+    pub order1: Order,
     /// The second party's balance
     #[link_groups = "valid_commitments_match_settle1"]
-    pub balance2: Balance,
+    pub balance1: Balance,
     /// The second party's receive balance
     #[link_groups = "valid_commitments_match_settle1"]
-    pub balance_receive2: Balance,
+    pub balance_receive1: Balance,
     /// The second party's managing relayer fee
     #[link_groups = "valid_commitments_match_settle1"]
-    pub relayer_fee2: FixedPoint,
+    pub relayer_fee1: FixedPoint,
     /// The second party's fee obligations as a result of the match
     pub party1_fees: FeeTake,
     /// The price that the second party agreed to execute at for their asset
-    pub price2: FixedPoint,
+    pub price1: FixedPoint,
     /// The maximum amount that the second party may match
-    pub amount2: Scalar,
+    pub amount1: Scalar,
     /// The result of running a match MPC on the given orders
     ///
     /// We do not open this value before proving so that we can avoid leaking
@@ -302,25 +302,25 @@ pub mod test_helpers {
             o2.side,
         );
 
-        let amount1 = Scalar::from(o1.amount);
-        let amount2 = Scalar::from(o2.amount);
+        let amount0 = Scalar::from(o1.amount);
+        let amount1 = Scalar::from(o2.amount);
 
         (
             ValidMatchSettleWitness {
-                order1: o1,
-                balance1: wallet1.balances[party0_indices.balance_send].clone(),
-                balance_receive1: wallet1.balances[party0_indices.balance_receive].clone(),
-                relayer_fee1: wallet1.match_fee,
-                price1: price,
+                order0: o1,
+                balance0: wallet1.balances[party0_indices.balance_send].clone(),
+                balance_receive0: wallet1.balances[party0_indices.balance_receive].clone(),
+                relayer_fee0: wallet1.match_fee,
+                price0: price,
                 party0_fees,
-                amount1,
-                order2: o2,
-                balance2: wallet2.balances[party1_indices.balance_send].clone(),
-                balance_receive2: wallet2.balances[party1_indices.balance_receive].clone(),
-                relayer_fee2: wallet2.match_fee,
-                price2: price,
+                amount0,
+                order1: o2,
+                balance1: wallet2.balances[party1_indices.balance_send].clone(),
+                balance_receive1: wallet2.balances[party1_indices.balance_receive].clone(),
+                relayer_fee1: wallet2.match_fee,
+                price1: price,
                 party1_fees,
-                amount2,
+                amount1,
                 match_res,
                 party0_public_shares,
                 party1_public_shares,
@@ -477,14 +477,14 @@ mod tests {
 
         // One party switches the quote mint of their order
         let mut witness = original_witness.clone();
-        rand_branch!(witness.order1.quote_mint += 1u8, witness.order2.quote_mint += 1u8);
+        rand_branch!(witness.order0.quote_mint += 1u8, witness.order1.quote_mint += 1u8);
 
         // Validate that the constraints are not satisfied
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
 
         // Now test with base mint switched
         let mut witness = original_witness;
-        rand_branch!(witness.order1.base_mint += 1u8, witness.order2.base_mint += 1u8);
+        rand_branch!(witness.order0.base_mint += 1u8, witness.order1.base_mint += 1u8);
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
@@ -495,8 +495,8 @@ mod tests {
 
         // Swap the sides of one of the orders
         rand_branch!(
-            witness.order1.side = witness.order1.side.opposite(),
-            witness.order2.side = witness.order2.side.opposite()
+            witness.order0.side = witness.order0.side.opposite(),
+            witness.order1.side = witness.order1.side.opposite()
         );
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
@@ -519,7 +519,7 @@ mod tests {
 
         // Change the price of one of the orders
         let one = Scalar::one();
-        rand_branch!(witness.price1 = witness.price1 + one, witness.price2 = witness.price2 + one);
+        rand_branch!(witness.price0 = witness.price0 + one, witness.price1 = witness.price1 + one);
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
@@ -531,8 +531,8 @@ mod tests {
 
         // Set the amount to be greater than the maximum
         rand_branch!(
-            witness.amount1 = max_amount_scalar() + Scalar::one(),
-            witness.amount2 = max_amount_scalar() + Scalar::one()
+            witness.amount0 = max_amount_scalar() + Scalar::one(),
+            witness.amount1 = max_amount_scalar() + Scalar::one()
         );
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
@@ -564,7 +564,7 @@ mod tests {
         let (mut witness, statement) = dummy_witness_and_statement();
 
         // Reduce the balance to be less than the amount matched
-        rand_branch!(witness.balance1.amount = 1, witness.balance2.amount = 1);
+        rand_branch!(witness.balance0.amount = 1, witness.balance1.amount = 1);
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
@@ -576,8 +576,8 @@ mod tests {
 
         // Place one party's order amount below the min amount
         rand_branch!(
-            witness.order1.amount = witness.match_res.base_amount - 1,
-            witness.order2.amount = witness.match_res.base_amount - 1
+            witness.order0.amount = witness.match_res.base_amount - 1,
+            witness.order1.amount = witness.match_res.base_amount - 1
         );
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
@@ -604,10 +604,10 @@ mod tests {
 
         // Move the worst case price of the buy side order down
         let new_price = FixedPoint::from_f64_round_down(execution_price - 1.);
-        if witness.order1.side.is_buy() {
-            witness.order1.worst_case_price = new_price;
+        if witness.order0.side.is_buy() {
+            witness.order0.worst_case_price = new_price;
         } else {
-            witness.order2.worst_case_price = new_price;
+            witness.order1.worst_case_price = new_price;
         }
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
@@ -623,10 +623,10 @@ mod tests {
 
         // Move the worst case price of the sell side order up
         let new_price = FixedPoint::from_f64_round_down(execution_price + 1.);
-        if witness.order1.side.is_sell() {
-            witness.order1.worst_case_price = new_price;
+        if witness.order0.side.is_sell() {
+            witness.order0.worst_case_price = new_price;
         } else {
-            witness.order2.worst_case_price = new_price;
+            witness.order1.worst_case_price = new_price;
         }
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
@@ -645,8 +645,8 @@ mod tests {
         // Set the balance to be the maximum
         let initial_bal = scalar_to_u128(&max_amount_scalar());
         rand_branch!(
-            witness.balance_receive1.amount = initial_bal,
-            witness.balance_receive2.amount = initial_bal
+            witness.balance_receive0.amount = initial_bal,
+            witness.balance_receive1.amount = initial_bal
         );
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
@@ -659,8 +659,8 @@ mod tests {
         // Set the relayer fee balance to be the maximum
         let initial_bal = scalar_to_u128(&max_amount_scalar());
         rand_branch!(
-            witness.balance_receive1.relayer_fee_balance = initial_bal,
-            witness.balance_receive2.relayer_fee_balance = initial_bal
+            witness.balance_receive0.relayer_fee_balance = initial_bal,
+            witness.balance_receive1.relayer_fee_balance = initial_bal
         );
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
@@ -673,8 +673,8 @@ mod tests {
         // Set the protocol fee balance to be the maximum
         let initial_bal = scalar_to_u128(&max_amount_scalar());
         rand_branch!(
-            witness.balance_receive1.protocol_fee_balance = initial_bal,
-            witness.balance_receive2.protocol_fee_balance = initial_bal
+            witness.balance_receive0.protocol_fee_balance = initial_bal,
+            witness.balance_receive1.protocol_fee_balance = initial_bal
         );
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
