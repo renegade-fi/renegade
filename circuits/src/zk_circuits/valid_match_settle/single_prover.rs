@@ -343,7 +343,7 @@ where
         )?;
 
         // Check that no overflow occurs in the receive balance
-        Self::validate_no_receive_overflow(trader_take, receive_balance, fees, cs)?;
+        Self::validate_no_receive_overflow_singleprover(trader_take, receive_balance, fees, cs)?;
 
         // Check that the balances are updated correctly
         let mut curr_index = cs.zero();
@@ -387,7 +387,7 @@ where
     }
 
     /// Validate that the receive balance amounts after update do not overflow
-    fn validate_no_receive_overflow(
+    fn validate_no_receive_overflow_singleprover(
         trader_take: Variable,
         receive_balance: &BalanceVar,
         fees: &FeeTakeVar,
