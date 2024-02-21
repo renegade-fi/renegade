@@ -38,9 +38,8 @@ use uuid::Uuid;
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
 /// The amounts that each order is for
-const ORDER_AMOUNT: u64 = 5;
-
-// -----------
+const BUY_ORDER_AMOUNT: u64 = 10;
+const SELL_ORDER_AMOUNT: u64 = 1;
 // | Helpers |
 // -----------
 
@@ -51,11 +50,16 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
         OrderSide::Sell => 9,
     };
 
+    let order_amount = match side {
+        OrderSide::Buy => BUY_ORDER_AMOUNT,
+        OrderSide::Sell => SELL_ORDER_AMOUNT,
+    };
+
     Order {
         quote_mint: biguint_from_hex_string(&test_args.erc20_addr0).unwrap(),
         base_mint: biguint_from_hex_string(&test_args.erc20_addr1).unwrap(),
         side,
-        amount: ORDER_AMOUNT,
+        amount: order_amount,
         worst_case_price: FixedPoint::from_integer(worst_cast_price),
         timestamp: 10,
     }
@@ -125,7 +129,7 @@ async fn setup_match_result(
     test_args: &IntegrationTestArgs,
 ) -> Result<(MatchResult, MatchBundle)> {
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
-    let base_amount = ORDER_AMOUNT;
+    let base_amount = std::cmp::min(BUY_ORDER_AMOUNT, SELL_ORDER_AMOUNT);
     let quote_amount = price * Scalar::from(base_amount);
     let direction = wallet1.orders.first().unwrap().1.side.is_sell();
 

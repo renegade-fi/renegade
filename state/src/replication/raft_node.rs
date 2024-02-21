@@ -180,6 +180,8 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     /// The main loop of the raft consensus engine, we tick the state machine
     /// every `tick_period_ms` milliseconds
     pub fn run(mut self) -> Result<(), ReplicationError> {
+        // println!("sleeping for 5 secs for warmup");
+        // std::thread::sleep(Duration::from_secs(5));
         let tick_interval = Duration::from_millis(self.tick_period_ms);
         let promotion_interval = Duration::from_millis(PROMOTION_INTERVAL_MS);
         let poll_interval = Duration::from_millis(RAFT_POLL_INTERVAL_MS);
