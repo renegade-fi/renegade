@@ -9,6 +9,40 @@ use renegade_crypto::hash::{
     CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, RATE, R_F, R_P, WIDTH as SPONGE_WIDTH,
 };
 
+// -----------------
+// | CSPRNG Gadget |
+// -----------------
+
+/// A gadget for sampling a Poseidon sponge as a CSPRNG
+pub struct PoseidonCSPRNGGadget;
+impl PoseidonCSPRNGGadget {
+    /// Samples values from a chained Poseidon hash CSPRNG, seeded with the
+    /// given input
+    pub fn sample<C: Circuit<ScalarField>>(
+        mut seed: Variable,
+        num_vals: usize,
+        cs: &mut C,
+    ) -> Result<Vec<Variable>, CircuitError> {
+        let mut values = Vec::with_capacity(num_vals);
+
+        // Chained hash of the seed value
+        let mut hasher = PoseidonHashGadget::new(cs.zero());
+        for _ in 0..num_vals {
+            // Absorb the seed and then squeeze the next element
+            hasher.absorb(seed, cs)?;
+            seed = hasher.squeeze(cs)?;
+
+            values.push(seed);
+
+            // Reset the hasher state; we want the CSPRNG chain to be stateless, this
+            // includes the internal state of the Poseidon sponge
+            hasher.reset_state(cs);
+        }
+
+        Ok(values)
+    }
+}
+
 // -----------------------
 // | Singleprover Gadget |
 // -----------------------

@@ -855,7 +855,7 @@ mod tests {
 
         // Modify the managing cluster
         let mut statement = original_statement.clone();
-        statement.party0_modified_shares.managing_cluster += Scalar::one();
+        statement.party0_modified_shares.managing_cluster.x += Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
             &witness.clone(),

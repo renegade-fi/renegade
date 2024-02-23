@@ -2,6 +2,7 @@
 //! circuit
 
 use circuit_types::{
+    balance::BalanceVar,
     fixed_point::FixedPointVar,
     merkle::MerkleOpeningVar,
     traits::{CircuitVarType, SecretShareVarType},
@@ -14,7 +15,7 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use super::{
     bits::{MultiproverToBitsGadget, ToBitsGadget},
     merkle::PoseidonMerkleHashGadget,
-    poseidon::PoseidonHashGadget,
+    poseidon::{PoseidonCSPRNGGadget, PoseidonHashGadget},
 };
 
 /// Gadget for operating on wallets and wallet shares
@@ -31,13 +32,13 @@ where
     /// nullifier of the wallet from its shares
     ///
     /// Returns the reconstructed wallet for convenience in the caller
-    pub fn validate_wallet_transition<const MERKLE_HEIGHT: usize>(
+    pub fn validate_wallet_transition<const MERKLE_HEIGHT: usize, C: Circuit<ScalarField>>(
         blinded_public_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         private_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         merkle_opening: &MerkleOpeningVar<MERKLE_HEIGHT>,
         merkle_root: Variable,
         expected_nullifier: Variable,
-        cs: &mut PlonkCircuit,
+        cs: &mut C,
     ) -> Result<(), CircuitError> {
         // Compute a commitment to the wallet
         let wallet_comm =
@@ -60,10 +61,10 @@ where
     }
 
     /// Reconstruct a wallet from its secret shares
-    pub fn wallet_from_shares(
+    pub fn wallet_from_shares<C: Circuit<ScalarField>>(
         blinded_public_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
         private_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
-        cs: &mut PlonkCircuit,
+        cs: &mut C,
     ) -> Result<WalletVar<MAX_BALANCES, MAX_ORDERS>, CircuitError> {
         // Recover the blinder of the wallet
         let blinder = cs.add(blinded_public_share.blinder, private_share.blinder)?;
@@ -134,6 +135,44 @@ where
 
         hasher.batch_absorb(&[share_commitment, wallet_blinder], cs)?;
         hasher.squeeze(cs)
+    }
+
+    // -----------
+    // | Reblind |
+    // -----------
+
+    /// Sample a new set of private shares and blinder from the CSPRNG
+    ///
+    /// Returns the new private shares and blinder
+    pub fn reblind<C: Circuit<ScalarField>>(
+        private_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut C,
+    ) -> Result<(WalletShareVar<MAX_BALANCES, MAX_ORDERS>, Variable), CircuitError> {
+        // Sample a new blinder and private share for the blinder
+        let blinder = private_shares.blinder;
+        let mut blinder_samples = PoseidonCSPRNGGadget::sample(blinder, 2 /* num_vals */, cs)?;
+        let new_blinder = blinder_samples.remove(0);
+        let new_blinder_private_share = blinder_samples.remove(0);
+
+        // Sample secret shares for individual wallet elements, we sample for n - 1
+        // shares because the wallet serialization includes the wallet blinder,
+        // which was resampled separately in the previous step
+        //
+        // As well, we seed the CSPRNG with the second to last share in the old wallet,
+        // again because the wallet blinder comes from a separate stream of
+        // randomness
+        let shares_ser = private_shares.to_vars();
+        let n_samples = shares_ser.len() - 1;
+        let mut share_samples =
+            PoseidonCSPRNGGadget::sample(shares_ser[n_samples - 1], n_samples, cs)?;
+
+        // Add a dummy value to the end of the shares, recover the wallet share type,
+        // then overwrite with blinder
+        share_samples.push(cs.zero());
+        let mut new_shares = WalletShareVar::from_vars(&mut share_samples.into_iter(), cs);
+        new_shares.blinder = new_blinder_private_share;
+
+        Ok((new_shares, new_blinder))
     }
 }
 

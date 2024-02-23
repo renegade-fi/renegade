@@ -782,7 +782,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the managing cluster in the wallet
-        witness.augmented_public_shares.managing_cluster += Scalar::one();
+        witness.augmented_public_shares.managing_cluster.x += Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 
