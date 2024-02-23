@@ -20,7 +20,7 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
-use crate::zk_gadgets::wallet_operations::WalletShareCommitGadget;
+use crate::zk_gadgets::wallet_operations::WalletGadget;
 
 /// A type alias for an instantiation of this circuit with default generics
 pub type SizedValidWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>;
@@ -47,7 +47,7 @@ where
         // Validate the commitment given in the statement is a valid commitment to the
         // private secret shares
         let commitment =
-            WalletShareCommitGadget::compute_private_commitment(&witness.private_wallet_share, cs)?;
+            WalletGadget::compute_private_commitment(&witness.private_wallet_share, cs)?;
         cs.enforce_equal(commitment, statement.private_shares_commitment)?;
 
         // Unblind the public shares then reconstruct the wallet
@@ -97,6 +97,8 @@ where
 }
 /// A type alias that attached system-wide default generics to the witness type
 pub type SizedValidWalletCreateWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS>;
+
+// -----------------------------
 // | Statement Type Definition |
 // -----------------------------
 
@@ -115,6 +117,8 @@ where
 /// A type alias that attaches system-wide default generics to the statement
 /// type
 pub type SizedValidWalletCreateStatement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS>;
+
+// ---------------------
 // | Prove/Verify Flow |
 // ---------------------
 

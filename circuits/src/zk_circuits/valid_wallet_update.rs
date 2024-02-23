@@ -3,16 +3,12 @@
 //! This circuit proves that a user-generated update to a wallet is valid, and
 //! that the state nullification/creation is computed correctly
 
-// ----------------------
-// | Circuit Definition |
-// ----------------------
-
 use ark_ff::{One, Zero};
 use circuit_macros::circuit_type;
 use circuit_types::{
     keychain::PublicSigningKey,
     merkle::{MerkleOpening, MerkleRoot},
-    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
+    traits::{BaseType, CircuitBaseType, CircuitVarType},
     transfers::{ExternalTransfer, ExternalTransferVar},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
     PlonkCircuit,
@@ -24,12 +20,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     zk_gadgets::{
-        comparators::{EqGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget},
-        merkle::PoseidonMerkleHashGadget,
-        wallet_operations::{AmountGadget, NullifierGadget, WalletShareCommitGadget},
+        comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
+        wallet_operations::{AmountGadget, WalletGadget},
     },
     SingleProverCircuit,
 };
+
+// ----------------------
+// | Circuit Definition |
+// ----------------------
 
 /// A type alias for the `ValidWalletUpdate` circuit with default size
 /// parameters attached
@@ -48,46 +47,33 @@ where
 {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit(
-        statement: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS>,
-        witness: ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+        statement: &ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidWalletUpdateWitnessVar<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // -- State Validity -- //
 
-        // Verify the opening of the old wallet's secret shares
-        let old_shares_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
+        // Recover the wallet then verify merkle opening and nullifier
+        WalletGadget::validate_wallet_transition(
+            &witness.old_wallet_public_shares,
+            &witness.old_wallet_private_shares,
+            &witness.old_shares_opening,
+            statement.merkle_root,
+            statement.old_shares_nullifier,
+            cs,
+        )?;
+
+        // Validate the commitment to the new wallet private shares
+        let new_wallet_private_commitment =
+            WalletGadget::compute_private_commitment(&witness.new_wallet_private_shares, cs)?;
+        cs.enforce_equal(new_wallet_private_commitment, statement.new_private_shares_commitment)?;
+
+        // Recover the old wallet from shares
+        let old_wallet = WalletGadget::wallet_from_shares(
             &witness.old_wallet_public_shares,
             &witness.old_wallet_private_shares,
             cs,
         )?;
-        let computed_root = PoseidonMerkleHashGadget::compute_root_prehashed(
-            old_shares_comm,
-            &witness.old_shares_opening,
-            cs,
-        )?;
-        cs.enforce_equal(statement.merkle_root, computed_root)?;
-
-        // Reconstruct the wallet from secret shares
-        let recovered_blinder = cs.add(
-            witness.old_wallet_private_shares.blinder,
-            witness.old_wallet_public_shares.blinder,
-        )?;
-        let unblinded_public_shares =
-            witness.old_wallet_public_shares.unblind_shares(recovered_blinder, cs);
-
-        let old_wallet = witness.old_wallet_private_shares.add_shares(&unblinded_public_shares, cs);
-
-        // Verify that the nullifier of the shares is correctly computed
-        let old_shares_nullifier =
-            NullifierGadget::wallet_shares_nullifier(old_shares_comm, old_wallet.blinder, cs)?;
-        cs.enforce_equal(old_shares_nullifier, statement.old_shares_nullifier)?;
-
-        // Validate the commitment to the new wallet private shares
-        let new_wallet_private_commitment = WalletShareCommitGadget::compute_private_commitment(
-            &witness.new_wallet_private_shares,
-            cs,
-        )?;
-        cs.enforce_equal(new_wallet_private_commitment, statement.new_private_shares_commitment)?;
 
         // -- Authorization -- //
 
@@ -97,13 +83,11 @@ where
         // -- State transition validity -- //
 
         // Reconstruct the new wallet from shares
-        let recovered_blinder =
-            cs.add(witness.new_wallet_private_shares.blinder, statement.new_public_shares.blinder)?;
-
-        let unblinded_public_shares =
-            statement.new_public_shares.unblind_shares(recovered_blinder, cs);
-        let new_wallet = unblinded_public_shares.add_shares(&witness.new_wallet_private_shares, cs);
-
+        let new_wallet = WalletGadget::wallet_from_shares(
+            &statement.new_public_shares,
+            &witness.new_wallet_private_shares,
+            cs,
+        )?;
         Self::verify_wallet_transition(&old_wallet, &new_wallet, &statement.external_transfer, cs)
     }
 
@@ -476,7 +460,7 @@ where
         statement_var: ValidWalletUpdateStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
+        Self::circuit(&statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 

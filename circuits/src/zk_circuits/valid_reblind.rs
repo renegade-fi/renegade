@@ -8,7 +8,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     keychain::SecretIdentificationKey,
     merkle::{MerkleOpening, MerkleRoot},
-    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
+    traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar},
     PlonkCircuit,
 };
@@ -26,11 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     zk_circuits::valid_commitments::ValidCommitments,
-    zk_gadgets::{
-        merkle::PoseidonMerkleHashGadget,
-        poseidon::PoseidonHashGadget,
-        wallet_operations::{NullifierGadget, WalletShareCommitGadget},
-    },
+    zk_gadgets::{poseidon::PoseidonHashGadget, wallet_operations::WalletGadget},
     SingleProverCircuit,
 };
 
@@ -62,35 +58,19 @@ where
     ) -> Result<(), CircuitError> {
         // -- State Validity -- //
 
-        // Verify the opening of the old wallet's private secret shares to the Merkle
-        // root
-        let old_shares_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
+        // Verify merkle opening and nullifier
+        WalletGadget::validate_wallet_transition(
             &witness.original_wallet_public_shares,
             &witness.original_wallet_private_shares,
-            cs,
-        )?;
-        PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
-            old_shares_comm,
             &witness.original_share_opening,
             statement.merkle_root,
+            statement.original_shares_nullifier,
             cs,
         )?;
-
-        // Verify the nullifier of the old wallet's shares is correctly computed
-        let recovered_old_blinder = cs.add(
-            witness.original_wallet_private_shares.blinder,
-            witness.original_wallet_public_shares.blinder,
-        )?;
-        let old_shares_nullifier =
-            NullifierGadget::wallet_shares_nullifier(old_shares_comm, recovered_old_blinder, cs)?;
-        cs.enforce_equal(old_shares_nullifier, statement.original_shares_nullifier)?;
 
         // Verify the commitment to the new wallet's private shares
         let reblinded_private_shares_commitment =
-            WalletShareCommitGadget::compute_private_commitment(
-                &witness.reblinded_wallet_private_shares,
-                cs,
-            )?;
+            WalletGadget::compute_private_commitment(&witness.reblinded_wallet_private_shares, cs)?;
         cs.enforce_equal(
             statement.reblinded_private_share_commitment,
             reblinded_private_shares_commitment,
@@ -98,18 +78,18 @@ where
 
         // -- Authorization -- //
 
-        // Recover the old wallet
-        let pk_match_unblinded =
-            witness.original_wallet_public_shares.keys.pk_match.unblind(recovered_old_blinder, cs);
-        let recovered_public_key = witness
-            .original_wallet_private_shares
-            .keys
-            .pk_match
-            .add_shares(&pk_match_unblinded, cs);
+        // We don't need to recover the old wallet, but it's simple to do so and doesn't
+        // currently push us over the next power of two constraint boundary
+        // TODO: If we need to optimize, we can remove this
+        let old_wallet = WalletGadget::wallet_from_shares(
+            &witness.original_wallet_public_shares,
+            &witness.original_wallet_private_shares,
+            cs,
+        )?;
 
         // Check that the hash of `sk_match` is the wallet's `pk_match`
         let mut hasher = PoseidonHashGadget::new(cs.zero());
-        hasher.hash(&witness.sk_match.to_vars(), recovered_public_key.key, cs)?;
+        hasher.hash(&witness.sk_match.to_vars(), old_wallet.keys.pk_match.key, cs)?;
 
         // -- Reblind Operation -- //
 
@@ -301,6 +281,8 @@ pub struct ValidReblindWitness<
 }
 /// A `VALID REBLIND` witness with default const generic sizing parameters
 pub type SizedValidReblindWitness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
+
+// -----------------------------
 // | Statement Type Definition |
 // -----------------------------
 
@@ -577,8 +559,14 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, mut statement) = construct_witness_statement(&wallet);
 
-        // Prover attempt to increase the balance of one of the wallet's mints
-        witness.reblinded_wallet_private_shares.balances[0].amount += Scalar::one();
+        // Prover attempt to change a private share
+        let mut rng = thread_rng();
+        let mut private_shares = witness.reblinded_wallet_private_shares.to_scalars();
+        let random_index = rng.gen_range(0..private_shares.len());
+        private_shares[random_index] += Scalar::one();
+
+        witness.reblinded_wallet_private_shares =
+            SizedWalletShare::from_scalars(&mut private_shares.into_iter());
         statement.reblinded_private_share_commitment =
             compute_wallet_private_share_commitment(&witness.reblinded_wallet_private_shares);
 
@@ -593,8 +581,14 @@ mod test {
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, mut statement) = construct_witness_statement(&wallet);
 
-        // Prover attempt to increase the balance of one of the wallet's mints
-        witness.reblinded_wallet_public_shares.balances[0].amount += Scalar::one();
+        // Prover attempts to change a public share
+        let mut rng = thread_rng();
+        let mut public_shares = witness.reblinded_wallet_public_shares.to_scalars();
+        let random_index = rng.gen_range(0..public_shares.len());
+        public_shares[random_index] += Scalar::one();
+
+        witness.reblinded_wallet_public_shares =
+            SizedWalletShare::from_scalars(&mut public_shares.into_iter());
         statement.reblinded_private_share_commitment =
             compute_wallet_private_share_commitment(&witness.reblinded_wallet_private_shares);
 

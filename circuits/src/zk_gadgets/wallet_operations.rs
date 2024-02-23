@@ -1,24 +1,82 @@
 //! Groups logic for computing wallet commitments and nullifiers inside of a
 //! circuit
 
-use circuit_types::{traits::CircuitVarType, wallet::WalletShareVar, PlonkCircuit, AMOUNT_BITS};
+use circuit_types::{
+    fixed_point::FixedPointVar,
+    merkle::MerkleOpeningVar,
+    traits::{CircuitVarType, SecretShareVarType},
+    wallet::{WalletShareVar, WalletVar},
+    Fabric, MpcPlonkCircuit, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
+};
 use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
-use super::{bits::ToBitsGadget, poseidon::PoseidonHashGadget};
+use super::{
+    bits::{MultiproverToBitsGadget, ToBitsGadget},
+    merkle::PoseidonMerkleHashGadget,
+    poseidon::PoseidonHashGadget,
+};
 
-// ------------------------
-// | Public State Gadgets |
-// ------------------------
-
-/// A gadget for computing the commitment to a secret share of a wallet
-#[derive(Clone, Debug)]
-pub struct WalletShareCommitGadget<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {}
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-    WalletShareCommitGadget<MAX_BALANCES, MAX_ORDERS>
+/// Gadget for operating on wallets and wallet shares
+pub struct WalletGadget<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletGadget<MAX_BALANCES, MAX_ORDERS>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
+    // ----------------
+    // | State Update |
+    // ----------------
+
+    /// Validates the inclusion of the wallet in the state tree and the
+    /// nullifier of the wallet from its shares
+    ///
+    /// Returns the reconstructed wallet for convenience in the caller
+    pub fn validate_wallet_transition<const MERKLE_HEIGHT: usize>(
+        blinded_public_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        private_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        merkle_opening: &MerkleOpeningVar<MERKLE_HEIGHT>,
+        merkle_root: Variable,
+        expected_nullifier: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Compute a commitment to the wallet
+        let wallet_comm =
+            Self::compute_wallet_share_commitment(blinded_public_share, private_share, cs)?;
+
+        // Verify the opening of the wallet commitment to the root
+        PoseidonMerkleHashGadget::compute_and_constrain_root_prehashed(
+            wallet_comm,
+            merkle_opening,
+            merkle_root,
+            cs,
+        )?;
+
+        // Compute the nullifier of the wallet
+        let recovered_blinder = cs.add(blinded_public_share.blinder, private_share.blinder)?;
+        let nullifier = Self::wallet_shares_nullifier(wallet_comm, recovered_blinder, cs)?;
+        cs.enforce_equal(nullifier, expected_nullifier)?;
+
+        Ok(())
+    }
+
+    /// Reconstruct a wallet from its secret shares
+    pub fn wallet_from_shares(
+        blinded_public_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        private_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<WalletVar<MAX_BALANCES, MAX_ORDERS>, CircuitError> {
+        // Recover the blinder of the wallet
+        let blinder = cs.add(blinded_public_share.blinder, private_share.blinder)?;
+        let unblinded_public_shares = blinded_public_share.clone().unblind_shares(blinder, cs);
+
+        // Add the public and private shares to get the full wallet
+        Ok(private_share.add_shares(&unblinded_public_shares, cs))
+    }
+
+    // ---------------
+    // | Commitments |
+    // ---------------
+
     /// Compute the commitment to the private wallet shares
     pub fn compute_private_commitment<C: Circuit<ScalarField>>(
         private_wallet_share: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
@@ -60,12 +118,11 @@ where
         let private_comm = Self::compute_private_commitment(private_wallet_share, cs)?;
         Self::compute_wallet_commitment_from_private(public_wallet_share, private_comm, cs)
     }
-}
 
-/// A gadget for computing the nullifier of secret share to a wallet
-#[derive(Clone, Debug)]
-pub struct NullifierGadget {}
-impl NullifierGadget {
+    // --------------
+    // | Nullifiers |
+    // --------------
+
     /// Compute the nullifier of a set of secret shares given their commitment
     pub fn wallet_shares_nullifier<C: Circuit<ScalarField>>(
         share_commitment: Variable,
@@ -93,10 +150,58 @@ impl AmountGadget {
         amount: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Decompose into `AMOUNT_BITS` bits and reconstruct, if the reconstructed value
-        // is the same as the original, then it is a valid `Amount`
-        let reconstructed = ToBitsGadget::<AMOUNT_BITS>::decompose_and_reconstruct(amount, cs)?;
-        cs.enforce_equal(amount, reconstructed)
+        // Decompose into `AMOUNT_BITS` bits, this checks that the reconstruction is
+        // correct, so this will also force the value to be within the range [0,
+        // 2^AMOUNT_BITS-1]
+        ToBitsGadget::<AMOUNT_BITS>::to_bits(amount, cs).map(|_| ())
+    }
+}
+
+/// Constrain a value to be a valid `Amount` in a multiprover context
+pub struct MultiproverAmountGadget;
+impl MultiproverAmountGadget {
+    /// Constrain an value to be a valid `Amount`
+    pub fn constrain_valid_amount(
+        amount: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Decompose into `AMOUNT_BITS` bits, this checks that the reconstruction is
+        // correct, so this will also force the value to be within the range [0,
+        // 2^AMOUNT_BITS-1]
+        MultiproverToBitsGadget::<AMOUNT_BITS>::to_bits(amount, fabric, cs).map(|_| ())
+    }
+}
+
+/// Constrain a `FixedPoint` value to be a valid price, i.e. with a non-negative
+/// `Scalar` repr representable in at most `PRICE_BITS` bits
+pub struct PriceGadget;
+impl PriceGadget {
+    /// Constrain a value to be a valid `FixedPoint` price
+    pub fn constrain_valid_price(
+        price: FixedPointVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Decompose into `PRICE_BITS` bits, this checks that the reconstruction is
+        // correct, so this will also force the value to be within the range [0,
+        // 2^PRICE_BITS-1]
+        ToBitsGadget::<PRICE_BITS>::to_bits(price.repr, cs).map(|_| ())
+    }
+}
+
+/// Constrain a `FixedPoint` value to be a valid price in a multiprover context
+pub struct MultiproverPriceGadget;
+impl MultiproverPriceGadget {
+    /// Constrain a value to be a valid `FixedPoint` price
+    pub fn constrain_valid_price(
+        price: FixedPointVar,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Decompose into `PRICE_BITS` bits, this checks that the reconstruction is
+        // correct, so this will also force the value to be within the range [0,
+        // 2^PRICE_BITS-1]
+        MultiproverToBitsGadget::<PRICE_BITS>::to_bits(price.repr, fabric, cs).map(|_| ())
     }
 }
 
@@ -112,13 +217,11 @@ mod test {
         traits::{BaseType, CircuitBaseType},
         PlonkCircuit, SizedWalletShare,
     };
-    use constants::Scalar;
+    use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
     use mpc_relation::traits::Circuit;
     use rand::thread_rng;
 
-    use crate::zk_gadgets::wallet_operations::WalletShareCommitGadget;
-
-    use super::NullifierGadget;
+    use crate::zk_gadgets::wallet_operations::WalletGadget;
 
     /// Generate random wallet shares
     fn random_wallet_shares() -> (SizedWalletShare, SizedWalletShare) {
@@ -145,8 +248,7 @@ mod test {
         let expected_var = expected_private.create_public_var(&mut cs);
 
         let priv_comm =
-            WalletShareCommitGadget::compute_private_commitment(&private_share_var, &mut cs)
-                .unwrap();
+            WalletGadget::compute_private_commitment(&private_share_var, &mut cs).unwrap();
 
         cs.enforce_equal(priv_comm, expected_var).unwrap();
 
@@ -154,7 +256,7 @@ mod test {
         let expected_pub = compute_wallet_commitment_from_private(&public_shares, expected_private);
         let expected_var = expected_pub.create_public_var(&mut cs);
 
-        let pub_comm = WalletShareCommitGadget::compute_wallet_commitment_from_private(
+        let pub_comm = WalletGadget::compute_wallet_commitment_from_private(
             &public_share_var,
             priv_comm,
             &mut cs,
@@ -167,7 +269,7 @@ mod test {
         let expected_full = compute_wallet_share_commitment(&public_shares, &private_shares);
         let expected_var = expected_full.create_public_var(&mut cs);
 
-        let full_comm = WalletShareCommitGadget::compute_wallet_share_commitment(
+        let full_comm = WalletGadget::compute_wallet_share_commitment(
             &public_share_var,
             &private_share_var,
             &mut cs,
@@ -201,8 +303,12 @@ mod test {
 
         let expected_var = expected.create_public_var(&mut cs);
 
-        let nullifier =
-            NullifierGadget::wallet_shares_nullifier(comm_var, blinder_var, &mut cs).unwrap();
+        let nullifier = WalletGadget::<MAX_BALANCES, MAX_ORDERS>::wallet_shares_nullifier(
+            comm_var,
+            blinder_var,
+            &mut cs,
+        )
+        .unwrap();
 
         cs.enforce_equal(nullifier, expected_var).unwrap();
 
