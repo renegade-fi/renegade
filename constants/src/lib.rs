@@ -42,8 +42,21 @@ pub type SystemCurve = ark_bn254::Bn254;
 /// The curve group that our proof system operates over
 pub type SystemCurveGroup = ark_bn254::G1Projective;
 
-/// The scalar field the curve is defined over
+/// The curve that may be embedded in the `SystemCurve`, i.e. a curve defined over a
+/// base field the same size as the `SystemCurve`'s scalar field
+pub type EmbeddedCurveGroup = ark_ed_on_bn254::EdwardsProjective;
+
+/// The config of the embedded curve
+pub type EmbeddedCurveConfig = ark_ed_on_bn254::EdwardsConfig;
+
+/// The affine form of the embedded curve group
+pub type EmbeddedCurveGroupAffine = ark_ed_on_bn254::EdwardsAffine;
+
+/// The scalar field representing the curve group order
 pub type ScalarField = <ark_bn254::G1Projective as Group>::ScalarField;
+
+/// The scalar field of hte embedded curve
+pub type EmbeddedScalarField = ark_ed_on_bn254::Fr;
 
 /// The scalar type that the MPC is defined over    
 #[cfg(feature = "mpc-types")]

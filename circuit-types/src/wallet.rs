@@ -8,18 +8,17 @@ use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use itertools::Itertools;
 use mpc_relation::{traits::Circuit, Variable};
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_string,
     fixed_point::FixedPoint,
+    keychain::EncryptionKey,
     scalar_from_hex_string, scalar_to_hex_string,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    Fabric, PlonkCircuit,
+    Fabric,
 };
 
 use super::{
@@ -63,11 +62,7 @@ where
     ///
     /// Authorizes fees to be settled out of the wallet by the holder of the
     /// corresponding private key
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
-    pub managing_cluster: BigUint,
+    pub managing_cluster: EncryptionKey,
     /// key The wallet randomness used to blind secret shares
     #[serde(serialize_with = "scalar_to_hex_string", deserialize_with = "scalar_from_hex_string")]
     pub blinder: Scalar,
@@ -88,7 +83,7 @@ where
             orders: (0..MAX_ORDERS).map(|_| Order::default()).collect_vec().try_into().unwrap(),
             keys: PublicKeyChain::default(),
             match_fee: FixedPoint::from_integer(0),
-            managing_cluster: BigUint::from(0u8),
+            managing_cluster: EncryptionKey::default(),
             blinder: Scalar::zero(),
         }
     }
@@ -130,10 +125,10 @@ where
     /// This is necessary because the default implementation of `blind` that is
     /// derived by the macro will blind the blinder as well as the shares,
     /// which is undesirable
-    pub fn blind_shares(
+    pub fn blind_shares<C: Circuit<ScalarField>>(
         self,
         blinder: Variable,
-        circuit: &mut PlonkCircuit,
+        circuit: &mut C,
     ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS> {
         let prev_blinder = self.blinder;
         let mut blinded = self.blind(blinder, circuit);
@@ -143,10 +138,10 @@ where
     }
 
     /// Unblinds the wallet, but does not unblind the blinder itself
-    pub fn unblind_shares(
+    pub fn unblind_shares<C: Circuit<ScalarField>>(
         self,
         blinder: Variable,
-        circuit: &mut PlonkCircuit,
+        circuit: &mut C,
     ) -> WalletShareVar<MAX_BALANCES, MAX_ORDERS> {
         let prev_blinder = self.blinder;
         let mut unblinded = self.unblind(blinder, circuit);

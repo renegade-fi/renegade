@@ -111,6 +111,11 @@ impl OrderSide {
         }
     }
 
+    /// Return whether the order is a buy side order
+    pub fn is_buy(&self) -> bool {
+        !self.is_sell()
+    }
+
     /// Return the opposite direction to self
     pub fn opposite(&self) -> OrderSide {
         match self {
