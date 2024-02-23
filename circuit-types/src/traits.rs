@@ -18,7 +18,7 @@
 
 use ark_mpc::{algebra::AuthenticatedScalarResult, network::PartyId};
 use async_trait::async_trait;
-use constants::{AuthenticatedScalar, Scalar, ScalarField, SystemCurve};
+use constants::{AuthenticatedScalar, EmbeddedScalarField, Scalar, ScalarField, SystemCurve};
 use futures::future::join_all;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -39,7 +39,8 @@ use mpc_relation::{
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{
-    biguint_to_scalar, scalar_to_biguint, scalar_to_u128, scalar_to_u64,
+    biguint_to_scalar, jubjub_to_scalar, scalar_to_biguint, scalar_to_jubjub, scalar_to_u128,
+    scalar_to_u64,
 };
 use std::{
     collections::HashMap,
@@ -303,7 +304,7 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
     type Base: CircuitVarType;
 
     /// Apply an additive blinder to each element of the secret shares
-    fn blind(self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
+    fn blind<C: Circuit<ScalarField>>(self, blinder: Variable, circuit: &mut C) -> Self {
         let res_vars =
             self.to_vars().into_iter().map(|v| circuit.add(v, blinder).unwrap()).collect_vec();
 
@@ -311,7 +312,7 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
     }
 
     /// Remove an additive blind from each element of the secret shares
-    fn unblind(&self, blinder: Variable, circuit: &mut PlonkCircuit) -> Self {
+    fn unblind<C: Circuit<ScalarField>>(&self, blinder: Variable, circuit: &mut C) -> Self {
         let res_vars =
             self.to_vars().into_iter().map(|v| circuit.sub(v, blinder).unwrap()).collect_vec();
 
@@ -324,9 +325,10 @@ pub trait SecretShareVarType: Sized + CircuitVarType {
     /// implement traits on generics types (e.g. `[T]` where `T:
     /// SecretShareType`). Requiring an additional trait bound on `T` would
     /// prevent this.
-    fn add_shares<R>(&self, rhs: &R, circuit: &mut PlonkCircuit) -> Self::Base
+    fn add_shares<R, C>(&self, rhs: &R, circuit: &mut C) -> Self::Base
     where
         R: SecretShareVarType,
+        C: Circuit<ScalarField>,
     {
         let res_vars = self
             .to_vars()
@@ -354,6 +356,18 @@ impl BaseType for Scalar {
 
     fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
         i.next().unwrap()
+    }
+}
+
+impl BaseType for EmbeddedScalarField {
+    const NUM_SCALARS: usize = 1;
+
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![jubjub_to_scalar(*self)]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        scalar_to_jubjub(&i.next().unwrap())
     }
 }
 
@@ -451,6 +465,10 @@ impl<const N: usize, T: BaseType> BaseType for [T; N] {
 // --- Singleprover Circuit Trait Impls --- //
 
 impl CircuitBaseType for Scalar {
+    type VarType = Variable;
+}
+
+impl CircuitBaseType for EmbeddedScalarField {
     type VarType = Variable;
 }
 
@@ -560,6 +578,10 @@ impl<const N: usize, T: CircuitVarType> CircuitVarType for [T; N] {
 // --- MPC Circuit Trait Impls --- //
 
 impl MpcBaseType for Scalar {
+    type AllocatedType = AuthenticatedScalar;
+}
+
+impl MpcBaseType for EmbeddedScalarField {
     type AllocatedType = AuthenticatedScalar;
 }
 
@@ -683,6 +705,10 @@ impl<const L: usize, T: MultiproverCircuitBaseType> MultiproverCircuitBaseType f
 // --- Secret Share Impls --- //
 
 impl SecretShareBaseType for Scalar {
+    type ShareType = Scalar;
+}
+
+impl SecretShareBaseType for EmbeddedScalarField {
     type ShareType = Scalar;
 }
 
