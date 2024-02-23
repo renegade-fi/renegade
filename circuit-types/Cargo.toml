@@ -13,7 +13,7 @@ ark-ff = "0.4"
 ark-ec = "0.4"
 ark-mpc = { workspace = true }
 ark-serialize = "0.4"
-jf-primitives = { workspace = true }
+jf-primitives = { workspace = true, features = ["std", "parallel"] }
 k256 = { version = "0.13", features = ["expose-field"] }
 mpc-plonk = { workspace = true }
 mpc-relation = { workspace = true }

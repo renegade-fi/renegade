@@ -14,7 +14,7 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField};
 use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
-use itertools::{izip, Itertools};
+use itertools::izip;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
     errors::CircuitError,
@@ -26,7 +26,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     zk_circuits::valid_commitments::ValidCommitments,
-    zk_gadgets::{poseidon::PoseidonHashGadget, wallet_operations::WalletGadget},
+    zk_gadgets::{
+        comparators::EqGadget, poseidon::PoseidonHashGadget, wallet_operations::WalletGadget,
+    },
     SingleProverCircuit,
 };
 
@@ -131,74 +133,38 @@ where
     ) -> Result<(), CircuitError> {
         let one = ScalarField::one();
 
-        // Recover the old wallet's blinder
-        let old_blinder = cs.add(old_private_shares.blinder, old_public_shares.blinder)?;
-
-        let reblinded_private_blinder_share = reblinded_private_shares.blinder;
-        let reblinded_public_blinder_share = reblinded_public_shares.blinder;
-
-        // Serialize the shares
-        let old_private_shares_ser = old_private_shares.to_vars();
-        let old_public_shares_ser = old_public_shares.to_vars();
-        let reblinded_private_shares_ser = reblinded_private_shares.to_vars();
-        let reblinded_public_shares_ser = reblinded_public_shares.to_vars();
-
-        // -- CSPRNG Samples -- //
-
-        // Sample the wallet blinder and its public share from the blinder CSPRNG
-        let mut blinder_samples =
-            Self::sample_csprng(old_private_shares.blinder, 2 /* num_vals */, cs)?;
-        let new_blinder = blinder_samples.remove(0);
-        let new_blinder_private_share = blinder_samples.remove(0);
-
-        // Sample secret shares for individual wallet elements, we sample for n - 1
-        // shares because the wallet serialization includes the wallet blinder,
-        // which was resampled separately in the previous step
-        //
-        // As well, we seed the CSPRNG with the second to last share in the old wallet,
-        // again because the wallet blinder comes from a separate stream of
-        // randomness
-        let serialized_length = old_private_shares_ser.len();
-        let share_samples = Self::sample_csprng(
-            old_private_shares_ser[serialized_length - 2],
-            serialized_length - 1,
-            cs,
-        )?;
-
         // -- Private Shares -- //
-
-        // Enforce that all the private shares of the reblinded wallet are exactly the
-        // sampled secret shares
-        cs.enforce_equal(reblinded_private_blinder_share, new_blinder_private_share)?;
-        for (private_share, sampled_blinder) in reblinded_private_shares_ser
-            .iter()
-            .take(serialized_length - 1)
-            .zip_eq(share_samples.iter().cloned())
-        {
-            cs.enforce_equal(*private_share, sampled_blinder)?;
-        }
+        let (private_share_samples, new_blinder) = WalletGadget::reblind(old_private_shares, cs)?;
+        EqGadget::constrain_eq(reblinded_private_shares, &private_share_samples, cs)?;
 
         // -- Public Shares -- //
 
         // Constrain that the public blinder share is equal to $r - r_1$
-
+        let reblinded_public_blinder_share = reblinded_public_shares.blinder;
         cs.lc_gate(
             &[
                 reblinded_public_blinder_share,
                 new_blinder,
-                new_blinder_private_share,
+                private_share_samples.blinder,
                 cs.zero(),
                 cs.zero(), // output
             ],
             &[one, -one, one, one],
         )?;
 
+        // Serialize the shares
+        let old_blinder = cs.add(old_private_shares.blinder, old_public_shares.blinder)?;
+        let old_private_shares_ser = old_private_shares.to_vars();
+        let old_public_shares_ser = old_public_shares.to_vars();
+        let reblinded_public_shares_ser = reblinded_public_shares.to_vars();
+        let reblinded_private_shares_ser = private_share_samples.to_vars();
+
         // Enforce that each public share is the correct reblinding
-        for (public_share, old_private_share, old_public_share, new_private_share) in izip!(
-            reblinded_public_shares_ser.iter(),
+        for (old_private_share, old_public_share, new_private_share, public_share) in izip!(
             old_private_shares_ser.iter(),
             old_public_shares_ser.iter(),
-            share_samples.iter(),
+            reblinded_private_shares_ser.iter(),
+            reblinded_public_shares_ser.iter(),
         ) {
             // Adding the two old shares gives the blinded share w[i] + r_old,
             // we then subtract the old blinder, and add the new one
@@ -221,32 +187,6 @@ where
         }
 
         Ok(())
-    }
-
-    /// Samples values from a chained Poseidon hash CSPRNG, seeded with the
-    /// given input
-    fn sample_csprng(
-        mut seed: Variable,
-        num_vals: usize,
-        cs: &mut PlonkCircuit,
-    ) -> Result<Vec<Variable>, CircuitError> {
-        let mut values = Vec::with_capacity(num_vals);
-
-        // Chained hash of the seed value
-        let mut hasher = PoseidonHashGadget::new(cs.zero());
-        for _ in 0..num_vals {
-            // Absorb the seed and then squeeze the next element
-            hasher.absorb(seed, cs)?;
-            seed = hasher.squeeze(cs)?;
-
-            values.push(seed);
-
-            // Reset the hasher state; we want the CSPRNG chain to be stateless, this
-            // includes the internal state of the Poseidon sponge
-            hasher.reset_state(cs);
-        }
-
-        Ok(values)
     }
 }
 
