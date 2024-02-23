@@ -6,7 +6,7 @@ use std::ops::Neg;
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use bigdecimal::BigDecimal;
-use constants::{Scalar, SystemCurveGroup};
+use constants::{EmbeddedScalarField, Scalar, SystemCurveGroup};
 use ethers_core::types::U256;
 use num_bigint::{BigInt, BigUint, Sign};
 
@@ -41,6 +41,11 @@ pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
     a.to_biguint()
 }
 
+/// Convert a scalar to a BabyJubJub scalar
+pub fn scalar_to_jubjub(a: &Scalar) -> EmbeddedScalarField {
+    biguint_to_jubjub(&scalar_to_biguint(a))
+}
+
 /// Convert a scalar to a U256
 pub fn scalar_to_u256(a: &Scalar) -> U256 {
     // ethers will handle padding
@@ -61,6 +66,16 @@ pub fn scalar_to_u64(a: &Scalar) -> u64 {
     // Take the last 8 bytes (64 bits)
     let bytes: [u8; 8] = bytes[len - 8..len].try_into().unwrap();
     u64::from_be_bytes(bytes)
+}
+
+/// Reduces the scalar to a u128, truncating anything above 2^128 - 1
+pub fn scalar_to_u128(a: &Scalar) -> u128 {
+    let bytes = a.to_bytes_be();
+    let len = bytes.len();
+
+    // Take the last 16 bytes (128 bits)
+    let bytes: [u8; 16] = bytes[len - 16..len].try_into().unwrap();
+    u128::from_be_bytes(bytes)
 }
 
 /// Reduces the scalar to a usize, truncating anything above usize::MAX
@@ -88,6 +103,11 @@ pub fn biguint_to_scalar(a: &BigUint) -> Scalar {
     Scalar::from(a.clone())
 }
 
+/// Convert a BigUint to a BabyJubJub scalar
+pub fn biguint_to_jubjub(a: &BigUint) -> EmbeddedScalarField {
+    EmbeddedScalarField::from(a.clone())
+}
+
 /// Convert a BigUint to a U256
 pub fn biguint_to_u256(a: &BigUint) -> U256 {
     // ethers will handle padding
@@ -103,6 +123,20 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     }
 
     res
+}
+
+// ---------------------------------------
+// | Conversions from BabyJubJub Scalars |
+// ---------------------------------------
+
+/// Convert a BabyJubJub scalar to a BigUint
+pub fn jubjub_to_biguint(a: EmbeddedScalarField) -> BigUint {
+    a.into()
+}
+
+/// Convert a BabyJubJub scalar to a Scalar
+pub fn jubjub_to_scalar(a: EmbeddedScalarField) -> Scalar {
+    biguint_to_scalar(&jubjub_to_biguint(a))
 }
 
 // -------------------------
