@@ -1468,7 +1468,6 @@ dependencies = [
  "futures",
  "inventory",
  "itertools 0.10.5",
- "jf-primitives",
  "lazy_static",
  "mpc-plonk",
  "mpc-relation",
