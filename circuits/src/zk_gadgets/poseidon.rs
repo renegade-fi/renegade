@@ -26,7 +26,7 @@ impl PoseidonCSPRNGGadget {
         let mut values = Vec::with_capacity(num_vals);
 
         // Chained hash of the seed value
-        let mut hasher = PoseidonHashGadget::new(cs.zero());
+        let mut hasher = PoseidonHashGadget::new(cs.zero() /* zero_var */);
         for _ in 0..num_vals {
             // Absorb the seed and then squeeze the next element
             hasher.absorb(seed, cs)?;
