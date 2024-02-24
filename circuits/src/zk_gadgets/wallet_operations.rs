@@ -2,7 +2,6 @@
 //! circuit
 
 use circuit_types::{
-    balance::BalanceVar,
     fixed_point::FixedPointVar,
     merkle::MerkleOpeningVar,
     traits::{CircuitVarType, SecretShareVarType},
