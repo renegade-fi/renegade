@@ -5,7 +5,8 @@ use std::iter;
 use circuit_macros::circuit_type;
 use circuit_types::{
     balance::BalanceVar,
-    keychain::{DecryptionKey, PublicSigningKey},
+    elgamal::DecryptionKey,
+    keychain::PublicSigningKey,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar, WalletVar},
@@ -421,7 +422,7 @@ pub mod test_helpers {
     //! Helper methods for testing the `VALID RELAYER FEE SETTLEMENT` circuit
 
     use circuit_types::{
-        keychain::DecryptionKey,
+        elgamal::DecryptionKey,
         native_helpers::{
             compute_wallet_private_share_commitment, compute_wallet_share_commitment,
             compute_wallet_share_nullifier, reblind_wallet,
@@ -537,17 +538,16 @@ pub mod test_helpers {
 mod test {
     #![allow(non_snake_case)]
 
-    use std::os::unix::thread;
-
     use ark_mpc::algebra::Scalar;
     use circuit_types::{
         balance::Balance,
-        keychain::{DecryptionKey, PublicKeyChain, PublicSigningKey},
+        elgamal::DecryptionKey,
+        keychain::PublicSigningKey,
         native_helpers::{
             compute_wallet_private_share_commitment, compute_wallet_share_commitment,
-            compute_wallet_share_nullifier, reblind_wallet, wallet_from_blinded_shares,
+            compute_wallet_share_nullifier,
         },
-        traits::{BaseType, CircuitBaseType},
+        traits::BaseType,
         wallet::{Wallet, WalletShare},
         AMOUNT_BITS,
     };
@@ -555,14 +555,10 @@ mod test {
     use rand::{thread_rng, Rng};
     use renegade_crypto::fields::scalar_to_u128;
 
-    use crate::{
-        mpc_circuits::settle::settle_match,
-        zk_circuits::{
-            check_constraint_satisfaction,
-            test_helpers::{create_multi_opening, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
-            valid_relayer_fee_settlement::test_helpers::create_witness_statement,
-            valid_wallet_create::SizedValidWalletCreateStatement,
-        },
+    use crate::zk_circuits::{
+        check_constraint_satisfaction,
+        test_helpers::{create_multi_opening, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+        valid_relayer_fee_settlement::test_helpers::create_witness_statement,
     };
 
     use super::{
@@ -730,8 +726,7 @@ mod test {
     fn test_invalid_settlement__order_modified() {
         let mut rng = thread_rng();
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (mut statement, mut witness) =
-            create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Modify the sender's orders
         let idx = rng.gen_range(0..MAX_ORDERS);
@@ -770,8 +765,7 @@ mod test {
     #[test]
     fn test_invalid_settlement__non_send_balance_modified() {
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (mut statement, mut witness) =
-            create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Modify a non-send balance
         assert_eq!(MAX_BALANCES, 2, "update this test");
@@ -787,8 +781,7 @@ mod test {
     fn test_invalid_settlement__send_balance_modified() {
         let mut rng = thread_rng();
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (mut statement, mut witness) =
-            create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Modify the send balance
         let idx = witness.sender_balance_index;
@@ -802,8 +795,7 @@ mod test {
     #[test]
     fn test_invalid_settlement__non_zero_relayer_fee_balance() {
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (mut statement, mut witness) =
-            create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Set the relayer fee balance to a non-zero value
         let idx = witness.sender_balance_index;
@@ -821,8 +813,7 @@ mod test {
     fn test_invalid_settlement__recipient_order_modified() {
         let mut rng = thread_rng();
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (mut statement, mut witness) =
-            create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Modify the recipient's orders
         let idx = rng.gen_range(0..MAX_ORDERS);
@@ -862,7 +853,7 @@ mod test {
     fn test_invalid_settlement__non_receive_balance_modified() {
         let mut rng = thread_rng();
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (original_statement, mut witness) =
+        let (original_statement, witness) =
             create_witness_statement(&sender_wallet, &recipient_wallet);
 
         assert_eq!(MAX_BALANCES, 2, "update this test");
@@ -915,10 +906,8 @@ mod test {
     /// updated
     #[test]
     fn test_invalid_settlement__receive_balance_updated_incorrectly() {
-        let mut rng = thread_rng();
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (mut statement, mut witness) =
-            create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Set the amount of the receive balance to a different value
         let idx = witness.recipient_balance_index;
@@ -951,7 +940,7 @@ mod test {
     fn test_invalid_settlement__protocol_relayer_fee_modified() {
         let mut rng = thread_rng();
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
-        let (original_statement, mut witness) =
+        let (original_statement, witness) =
             create_witness_statement(&sender_wallet, &recipient_wallet);
 
         // Modify the relayer fee balance
