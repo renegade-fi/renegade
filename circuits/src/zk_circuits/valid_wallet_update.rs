@@ -559,7 +559,7 @@ mod test {
 
     use circuit_types::{
         balance::Balance,
-        keychain::DecryptionKey,
+        elgamal::DecryptionKey,
         native_helpers::compute_wallet_private_share_commitment,
         order::Order,
         traits::CircuitBaseType,

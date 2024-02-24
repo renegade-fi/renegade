@@ -7,11 +7,11 @@ use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
-use renegade_crypto::hash::compute_poseidon_hash;
+use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    keychain::EncryptionKey,
+    elgamal::EncryptionKey,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     Amount,
 };
@@ -41,5 +41,10 @@ impl Note {
     pub fn commitment(&self) -> Scalar {
         let vals = self.to_scalars();
         compute_poseidon_hash(&vals)
+    }
+
+    /// Get the elements of the note that are encrypted when the note is created
+    pub fn plaintext_elements(&self) -> [Scalar; NOTE_CIPHERTEXT_SIZE] {
+        [biguint_to_scalar(&self.mint), Scalar::from(self.amount), self.blinder]
     }
 }
