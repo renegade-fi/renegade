@@ -11,8 +11,8 @@ use mpc_relation::{traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    elgamal::EncryptionKey,
     fixed_point::FixedPoint,
-    keychain::EncryptionKey,
     scalar_from_hex_string, scalar_to_hex_string,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
