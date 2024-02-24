@@ -5,7 +5,9 @@
 pub mod proof_linking;
 pub mod valid_commitments;
 pub mod valid_match_settle;
+pub mod valid_offline_fee_settlement;
 pub mod valid_reblind;
+pub mod valid_relayer_fee_settlement;
 pub mod valid_wallet_create;
 pub mod valid_wallet_update;
 
@@ -83,6 +85,7 @@ pub mod test_helpers {
 
     use circuit_types::{
         balance::Balance,
+        elgamal::{DecryptionKey, EncryptionKey},
         fixed_point::FixedPoint,
         keychain::{NonNativeScalar, PublicKeyChain, PublicSigningKey, NUM_KEYS},
         merkle::MerkleOpening,
@@ -145,9 +148,17 @@ pub mod test_helpers {
             orders: INITIAL_ORDERS.clone(),
             keys: PUBLIC_KEYS.clone(),
             match_fee: FixedPoint::from_f64_round_down(0.002), // 20 bps
-            managing_cluster: 0u8.into(),
+            managing_cluster: DecryptionKey::random_pair(&mut thread_rng()).1,
             blinder: Scalar::from(42u64)
         };
+
+        /// The protocol encryption key used for testing
+        pub static ref PROTOCOL_KEY: EncryptionKey = {
+            let mut rng = thread_rng();
+            let (_, enc) = DecryptionKey::random_pair(&mut rng);
+            enc
+        };
+
     }
 
     // -------------

@@ -9,6 +9,7 @@
 #![feature(future_join)]
 
 pub mod balance;
+pub mod elgamal;
 pub mod errors;
 pub mod fixed_point;
 pub mod keychain;
@@ -204,14 +205,23 @@ where
 /// Groups helpers that operate on native types; which correspond to circuitry
 /// defined in this library
 pub mod native_helpers {
-    use constants::Scalar;
+    use ark_ff::UniformRand;
+    use constants::{EmbeddedScalarField, Scalar};
     use itertools::Itertools;
+    use jf_primitives::elgamal::EncKey;
+    use rand::thread_rng;
     use renegade_crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
 
     use crate::{
+        elgamal::{ElGamalCiphertext, EncryptionKey},
+        note::{Note, NOTE_CIPHERTEXT_SIZE},
         traits::BaseType,
         wallet::{Nullifier, Wallet, WalletShare, WalletShareStateCommitment},
     };
+
+    // -----------------
+    // | Wallet Shares |
+    // -----------------
 
     /// Recover a wallet from blinded secret shares
     pub fn wallet_from_blinded_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
@@ -369,5 +379,44 @@ pub mod native_helpers {
         let blinded_public_shares = public_shares.blind_shares(blinder);
 
         (private_shares, blinded_public_shares)
+    }
+
+    // -------------------
+    // | Note Operations |
+    // -------------------
+
+    /// Encrypt a note under the given key, returning both the ciphertext and
+    /// the randomness
+    pub fn encrypt_note(
+        note: &Note,
+        key: &EncryptionKey,
+    ) -> (ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, EmbeddedScalarField) {
+        let plaintext = note.plaintext_elements();
+        elgamal_encrypt::<NOTE_CIPHERTEXT_SIZE>(&plaintext, key)
+    }
+
+    /// Compute a commitment to a note
+    pub fn note_commitment(note: &Note) -> Scalar {
+        compute_poseidon_hash(&note.to_scalars())
+    }
+
+    // -------------------------
+    // | Cryptographic Helpers |
+    // -------------------------
+
+    /// Encrypt a plaintext buffer under the given key, returning both the
+    /// ciphertext and the randomness used to encrypt
+    pub fn elgamal_encrypt<const N: usize>(
+        plaintext: &[Scalar],
+        key: &EncryptionKey,
+    ) -> (ElGamalCiphertext<N>, EmbeddedScalarField) {
+        let mut rng = thread_rng();
+        let randomness = EmbeddedScalarField::rand(&mut rng);
+
+        let jf_key = EncKey::from(*key);
+        let jf_plaintext = plaintext.iter().map(Scalar::inner).collect_vec();
+        let cipher = jf_key.deterministic_encrypt(randomness, &jf_plaintext);
+
+        (cipher.into(), randomness)
     }
 }
