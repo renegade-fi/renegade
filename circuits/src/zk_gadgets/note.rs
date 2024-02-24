@@ -1,17 +1,16 @@
 //! Helpers for operations on notes
 
 use circuit_types::{
-    keychain::EncryptionKeyVar,
+    elgamal::{ElGamalCiphertextVar, EncryptionKeyVar},
     note::{NoteVar, NOTE_CIPHERTEXT_SIZE},
     traits::CircuitVarType,
     PlonkCircuit,
 };
-use jf_primitives::circuit::elgamal::ElGamalEncryptionGadget;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use crate::zk_gadgets::elgamal::ElGamalGadget;
 
-use super::{elgamal::ElGamalCiphertextVar, poseidon::PoseidonHashGadget};
+use super::poseidon::PoseidonHashGadget;
 
 /// A gadget for verifying operations on notes
 pub struct NoteGadget;
