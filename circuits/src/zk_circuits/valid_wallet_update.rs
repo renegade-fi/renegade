@@ -559,6 +559,7 @@ mod test {
 
     use circuit_types::{
         balance::Balance,
+        keychain::DecryptionKey,
         native_helpers::compute_wallet_private_share_commitment,
         order::Order,
         traits::CircuitBaseType,
@@ -1274,7 +1275,8 @@ mod test {
         let old_wallet = INITIAL_WALLET.clone();
         let mut new_wallet = INITIAL_WALLET.clone();
 
-        new_wallet.managing_cluster = BigUint::from(rng.next_u64());
+        let (_, new_key) = DecryptionKey::random_pair(&mut rng);
+        new_wallet.managing_cluster = new_key;
 
         assert!(!constraints_satisfied_on_wallets(
             &old_wallet,
