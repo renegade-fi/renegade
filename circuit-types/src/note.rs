@@ -11,23 +11,29 @@ use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    keychain::PublicIdentificationKey,
+    keychain::EncryptionKey,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     Amount,
 };
+
+/// The size of the note ciphertext when encrypted
+///
+/// We do not add the recipient to the cipher as this is the key encrypted
+/// under, so the size is the number of scalars excluding the recipient
+pub const NOTE_CIPHERTEXT_SIZE: usize = Note::NUM_SCALARS - EncryptionKey::NUM_SCALARS;
 
 /// A note allocated into the protocol state by one user transferring to another
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     /// The mint of the note
-    mint: BigUint,
+    pub mint: BigUint,
     /// The amount of the note
-    amount: Amount,
+    pub amount: Amount,
     /// The receiver's identification key
-    receiver: PublicIdentificationKey,
+    pub receiver: EncryptionKey,
     /// The blinder of the note
-    blinder: Scalar,
+    pub blinder: Scalar,
 }
 
 impl Note {
