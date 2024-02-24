@@ -5,7 +5,7 @@ use std::iter;
 
 use circuit_types::{
     balance::BalanceVar,
-    keychain::{EncryptionKey, EncryptionKeyVar},
+    elgamal::{ElGamalCiphertext, ElGamalCiphertextVar, EncryptionKey, EncryptionKeyVar},
     merkle::{MerkleOpening, MerkleRoot},
     note::{Note, NoteVar, NOTE_CIPHERTEXT_SIZE},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
@@ -19,10 +19,7 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 use circuit_macros::circuit_type;
 
 use crate::zk_gadgets::{
-    comparators::EqGadget,
-    elgamal::{ElGamalCiphertext, ElGamalCiphertextVar},
-    note::NoteGadget,
-    select::CondSelectGadget,
+    comparators::EqGadget, note::NoteGadget, select::CondSelectGadget,
     wallet_operations::WalletGadget,
 };
 
@@ -352,5 +349,158 @@ where
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
         Self::circuit(&statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
+    }
+}
+
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
+    use circuit_types::{
+        native_helpers::{
+            compute_wallet_share_commitment, compute_wallet_share_nullifier, encrypt_note,
+            note_commitment, reblind_wallet,
+        },
+        note::Note,
+        wallet::Wallet,
+        Amount,
+    };
+    use constants::Scalar;
+    use rand::{thread_rng, Rng, RngCore};
+
+    use crate::zk_circuits::test_helpers::{
+        create_multi_opening, create_wallet_shares, PROTOCOL_KEY,
+    };
+
+    use super::{ValidOfflineFeeSettlementStatement, ValidOfflineFeeSettlementWitness};
+
+    /// Create a witness and statement for the `VALID OFFLINE FEE SETTLEMENT`
+    /// circuit
+    pub fn create_witness_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+        const MERKLE_HEIGHT: usize,
+    >(
+        wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
+    ) -> (
+        ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
+        ValidOfflineFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let mut rng = thread_rng();
+        let mut wallet = wallet.clone();
+        let mut updated_wallet = wallet.clone();
+
+        // Choose a balance to settle the fee from
+        let is_protocol = rng.gen_bool(0.5);
+        let send_index = rng.gen_range(0..MAX_BALANCES);
+
+        let send_bal = &mut wallet.balances[send_index];
+        let updated_bal = &mut updated_wallet.balances[send_index];
+        let send_mint = send_bal.mint.clone();
+        let send_amt = Amount::from(rng.next_u64());
+
+        // Modify the balances and select the key to encrypt under
+        let key = if is_protocol {
+            send_bal.protocol_fee_balance = send_amt;
+            updated_bal.protocol_fee_balance = Amount::from(0u8);
+            *PROTOCOL_KEY
+        } else {
+            send_bal.relayer_fee_balance = send_amt;
+            updated_bal.relayer_fee_balance = Amount::from(0u8);
+            wallet.managing_cluster
+        };
+
+        // Create secret shares for the wallets
+        let (original_wallet_private_shares, original_wallet_public_shares) =
+            create_wallet_shares(&wallet);
+
+        let (updated_wallet_private_shares, updated_wallet_public_shares) =
+            reblind_wallet(&original_wallet_private_shares, &updated_wallet);
+
+        // Create an opening for the original wallet
+        let commitment = compute_wallet_share_commitment(
+            &original_wallet_public_shares,
+            &original_wallet_private_shares,
+        );
+        let (root, opening) = create_multi_opening(&[commitment]);
+        let nullifier = compute_wallet_share_nullifier(commitment, wallet.blinder);
+
+        // Create the note
+        let note = Note {
+            mint: send_mint,
+            amount: send_amt,
+            receiver: wallet.managing_cluster,
+            blinder: Scalar::random(&mut rng),
+        };
+        let (cipher, randomness) = encrypt_note(&note, &key);
+        let note_commitment = note_commitment(&note);
+
+        let witness = ValidOfflineFeeSettlementWitness {
+            original_wallet_private_shares,
+            original_wallet_public_shares,
+            updated_wallet_private_shares,
+            merkle_opening: opening[0].clone(),
+            note,
+            encryption_randomness: randomness,
+            send_index,
+        };
+
+        let statement = ValidOfflineFeeSettlementStatement {
+            merkle_root: root,
+            nullifier,
+            updated_wallet_commitment: commitment,
+            updated_wallet_public_shares,
+            note_ciphertext: cipher,
+            note_commitment,
+            protocol_key: *PROTOCOL_KEY,
+            is_protocol_fee: is_protocol,
+        };
+
+        (statement, witness)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::zk_circuits::{
+        check_constraint_satisfaction,
+        test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+    };
+
+    use super::{
+        test_helpers::create_witness_statement, ValidOfflineFeeSettlement,
+        ValidOfflineFeeSettlementStatement, ValidOfflineFeeSettlementWitness,
+    };
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// The Merkle height used for testing
+    const MERKLE_HEIGHT: usize = 5;
+
+    /// Check whether constraints are satisfied on the given witness and
+    /// statement
+    fn check_constraints_satisfied(
+        statement: &ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidOfflineFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+    ) -> bool {
+        check_constraint_satisfaction::<
+            ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+        >(witness, statement)
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Test a valid witness and statement pair
+    #[test]
+    fn test_valid_witness() {
+        let wallet = INITIAL_WALLET.clone();
+        let (statement, witness) = create_witness_statement(&wallet);
+
+        assert!(check_constraints_satisfied(&statement, &witness));
     }
 }
