@@ -19,7 +19,9 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 use circuit_macros::circuit_type;
 
 use crate::zk_gadgets::{
-    comparators::EqGadget, note::NoteGadget, select::CondSelectGadget,
+    comparators::{EqGadget, EqZeroGadget},
+    note::NoteGadget,
+    select::CondSelectGadget,
     wallet_operations::WalletGadget,
 };
 
@@ -130,6 +132,8 @@ where
     ) -> Result<(), CircuitError> {
         // The note's mint should match the send balance
         EqGadget::constrain_eq(&note.mint, &send_bal.mint, cs)?;
+        let note_mint_zero = EqZeroGadget::eq_zero(&note.mint, cs)?;
+        cs.enforce_false(note_mint_zero)?;
 
         // The amount should either be the full relayer balance or the full protocol
         // balance
@@ -356,8 +360,8 @@ where
 pub mod test_helpers {
     use circuit_types::{
         native_helpers::{
-            compute_wallet_share_commitment, compute_wallet_share_nullifier, encrypt_note,
-            note_commitment, reblind_wallet,
+            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
+            compute_wallet_share_nullifier, encrypt_note, note_commitment, reblind_wallet,
         },
         note::Note,
         wallet::Wallet,
@@ -426,11 +430,14 @@ pub mod test_helpers {
         let (root, opening) = create_multi_opening(&[commitment]);
         let nullifier = compute_wallet_share_nullifier(commitment, wallet.blinder);
 
+        let new_wallet_commitment =
+            compute_wallet_private_share_commitment(&updated_wallet_private_shares);
+
         // Create the note
         let note = Note {
             mint: send_mint,
             amount: send_amt,
-            receiver: wallet.managing_cluster,
+            receiver: key,
             blinder: Scalar::random(&mut rng),
         };
         let (cipher, randomness) = encrypt_note(&note, &key);
@@ -449,7 +456,7 @@ pub mod test_helpers {
         let statement = ValidOfflineFeeSettlementStatement {
             merkle_root: root,
             nullifier,
-            updated_wallet_commitment: commitment,
+            updated_wallet_commitment: new_wallet_commitment,
             updated_wallet_public_shares,
             note_ciphertext: cipher,
             note_commitment,
@@ -463,6 +470,18 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use circuit_types::{
+        elgamal::{DecryptionKey, ElGamalCiphertext},
+        native_helpers::{compute_wallet_private_share_commitment, encrypt_note, note_commitment},
+        note::{Note, NOTE_CIPHERTEXT_SIZE},
+        traits::BaseType,
+        wallet::WalletShare,
+        Amount,
+    };
+    use constants::{EmbeddedScalarField, Scalar};
+    use rand::{thread_rng, Rng, RngCore};
+    use renegade_crypto::fields::scalar_to_biguint;
+
     use crate::zk_circuits::{
         check_constraint_satisfaction,
         test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
@@ -491,9 +510,20 @@ mod test {
         >(witness, statement)
     }
 
-    // ---------
-    // | Tests |
-    // ---------
+    /// Re-encrypt and re-commit to a note that has been modified
+    ///
+    /// Returns the new ciphertext, encryption randomness, and commitment
+    fn reencrypt_recommit_note(
+        note: &Note,
+    ) -> (ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, EmbeddedScalarField, Scalar) {
+        let (cipher, new_rand) = encrypt_note(note, &note.receiver);
+        let new_commitment = note_commitment(note);
+        (cipher, new_rand, new_commitment)
+    }
+
+    // -----------------------
+    // | Valid Witness Tests |
+    // -----------------------
 
     /// Test a valid witness and statement pair
     #[test]
@@ -502,5 +532,275 @@ mod test {
         let (statement, witness) = create_witness_statement(&wallet);
 
         assert!(check_constraints_satisfied(&statement, &witness));
+    }
+
+    // ----------------------
+    // | Invalid Note Tests |
+    // ----------------------
+
+    /// Test the case in which the note ciphertext is incorrect
+    #[test]
+    fn test_invalid_note_ciphertext() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, witness) = create_witness_statement(&wallet);
+
+        // Modify the note ciphertext
+        let idx = rng.gen_range(0..statement.note_ciphertext.ciphertext.len() - 1);
+        statement.note_ciphertext.ciphertext[idx] += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the note commitment is incorrect
+    #[test]
+    fn test_invalid_note_commitment() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, witness) = create_witness_statement(&wallet);
+
+        // Modify the note commitment
+        statement.note_commitment = Scalar::random(&mut rng);
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the note has an invalid mint
+    #[test]
+    fn test_invalid_note_mint() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+
+        let (mut statement, mut witness) = create_witness_statement(&wallet);
+        witness.note.mint = scalar_to_biguint(&Scalar::random(&mut rng));
+
+        // Re-encrypt the modified note
+        let (cipher, randomness, commitment) = reencrypt_recommit_note(&witness.note);
+        statement.note_ciphertext = cipher;
+        statement.note_commitment = commitment;
+        witness.encryption_randomness = randomness;
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the note has an invalid amount
+    #[test]
+    fn test_invalid_note_amount() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+
+        let (mut statement, mut witness) = create_witness_statement(&wallet);
+        witness.note.amount = Amount::from(rng.next_u64());
+
+        // Re-encrypt the modified note
+        let (cipher, randomness, commitment) = reencrypt_recommit_note(&witness.note);
+        statement.note_ciphertext = cipher;
+        statement.note_commitment = commitment;
+        witness.encryption_randomness = randomness;
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the note recipient is invalid
+    #[test]
+    fn test_invalid_note_recipient() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, mut witness) = create_witness_statement(&wallet);
+
+        let (_, enc) = DecryptionKey::random_pair(&mut rng);
+        witness.note.receiver = enc;
+
+        // Re-encrypt the modified note
+        // The note encryption should remain the same to isolate the correct constraint
+        let (_, _, commitment) = reencrypt_recommit_note(&witness.note);
+        statement.note_commitment = commitment;
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    // -------------------------
+    // | Invalid Reblind Tests |
+    // -------------------------
+
+    /// Test the case in which a private share of the reblinded wallet is
+    /// modified
+    #[test]
+    fn test_modified_shares() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, mut witness) = create_witness_statement(&wallet);
+
+        let idx = rng.gen_range(0..WalletShare::<MAX_BALANCES, MAX_ORDERS>::NUM_SCALARS);
+        let modification = Scalar::random(&mut rng);
+
+        // Modify the private shares
+        let mut private_shares = witness.updated_wallet_private_shares.to_scalars();
+        private_shares[idx] += modification;
+        witness.updated_wallet_private_shares =
+            WalletShare::from_scalars(&mut private_shares.into_iter());
+        statement.updated_wallet_commitment =
+            compute_wallet_private_share_commitment(&witness.updated_wallet_private_shares);
+
+        // Make an analogous modification to the public shares so that the wallet
+        // remains unchanged
+        let mut public_shares = statement.updated_wallet_public_shares.to_scalars();
+        public_shares[idx] -= modification;
+        statement.updated_wallet_public_shares =
+            WalletShare::from_scalars(&mut public_shares.into_iter());
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Tests the case in which the public blinder share is incorrectly modified
+    #[test]
+    fn test_invalid_public_blinder() {
+        let mut rng = thread_rng();
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, witness) = create_witness_statement(&wallet);
+
+        let modification = Scalar::random(&mut rng);
+        statement.updated_wallet_public_shares.blinder += modification;
+
+        // Reblind the public shares under the new implied blinder
+        let new_blinder = witness.updated_wallet_private_shares.blinder
+            + statement.updated_wallet_public_shares.blinder;
+        let old_blinder = new_blinder - modification;
+
+        let public_shares = statement.updated_wallet_public_shares;
+        let unblinded = public_shares.unblind_shares(old_blinder);
+        let reblinded = unblinded.blind_shares(new_blinder);
+        statement.updated_wallet_public_shares = reblinded;
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    // ----------------------------------
+    // | Invalid State Transition Tests |
+    // ----------------------------------
+
+    /// Test the case in which an order is modified in the sender's wallet
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__order_modified() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, witness) = create_witness_statement(&wallet);
+
+        // Modify the order
+        let idx = thread_rng().gen_range(0..MAX_ORDERS);
+        statement.updated_wallet_public_shares.orders[idx].amount += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the cases in which the keys, match fee, or managing cluster are
+    /// modified in the update
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__spurious_modifications() {
+        let wallet = INITIAL_WALLET.clone();
+        let (original_statement, witness) = create_witness_statement(&wallet);
+
+        // Modify the keys
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.keys.pk_match.key += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the match fee
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.match_fee.repr += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the managing cluster
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.managing_cluster.y += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which a balance other than the send balance is modified
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__balance_modified() {
+        let wallet = INITIAL_WALLET.clone();
+        let (original_statement, witness) = create_witness_statement(&wallet);
+
+        assert_eq!(MAX_BALANCES, 2, "update this test to index a unique balance properly");
+        let idx = MAX_BALANCES - 1 - witness.send_index;
+
+        // Modify the balance mint
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.balances[idx].mint += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the balance amount
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.balances[idx].amount += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the relayer fee balance
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.balances[idx].relayer_fee_balance += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the protocol fee balance
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.balances[idx].protocol_fee_balance += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the send balance is modified in an invalid way
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__send_balance_modified() {
+        let wallet = INITIAL_WALLET.clone();
+        let (original_statement, witness) = create_witness_statement(&wallet);
+        let idx = witness.send_index;
+
+        // Modify the mint
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.balances[idx].mint += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the amount
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.balances[idx].amount += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the balance that was not sent from
+        let mut statement = original_statement.clone();
+        let bal = &mut statement.updated_wallet_public_shares.balances[idx];
+        if statement.is_protocol_fee {
+            bal.relayer_fee_balance += Scalar::one();
+        } else {
+            bal.protocol_fee_balance += Scalar::one();
+        }
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the send balance is not zero'd
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_update__send_balance_not_zeroed() {
+        let wallet = INITIAL_WALLET.clone();
+        let (mut statement, witness) = create_witness_statement(&wallet);
+
+        let bal = &mut statement.updated_wallet_public_shares.balances[witness.send_index];
+        if statement.is_protocol_fee {
+            bal.protocol_fee_balance += Scalar::one();
+        } else {
+            bal.relayer_fee_balance += Scalar::one();
+        }
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
     }
 }
