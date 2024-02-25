@@ -111,7 +111,7 @@ pub fn bench_prover_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usiz
     let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
 
     let mut group = c.benchmark_group("valid_wallet_create");
-    let benchmark_id = BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS}, )"));
+    let benchmark_id = BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             singleprover_prove::<ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>>(

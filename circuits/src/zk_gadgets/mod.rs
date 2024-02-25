@@ -9,8 +9,10 @@
 pub mod arithmetic;
 pub mod bits;
 pub mod comparators;
+pub mod elgamal;
 pub mod fixed_point;
 pub mod merkle;
+pub mod note;
 pub mod poseidon;
 pub mod select;
 pub mod wallet_operations;

@@ -10,6 +10,7 @@ pub mod valid_reblind;
 pub mod valid_relayer_fee_settlement;
 pub mod valid_wallet_create;
 pub mod valid_wallet_update;
+pub mod valid_fee_redemption;
 
 use circuit_types::{
     traits::{

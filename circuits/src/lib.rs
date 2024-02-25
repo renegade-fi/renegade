@@ -42,9 +42,8 @@ pub(crate) const SCALAR_BITS_MINUS_TWO: usize = SCALAR_MAX_BITS - 2;
 macro_rules! print_wire {
     ($x:expr, $cs:ident) => {{
         use circuit_types::traits::CircuitVarType;
-        use tracing::log;
         let x_eval = $x.eval($cs);
-        log::info!("eval({}): {x_eval:?}", stringify!($x));
+        println!("eval({}): {x_eval}", stringify!($x));
     }};
 }
 
@@ -55,11 +54,10 @@ macro_rules! print_mpc_wire {
         use circuit_types::traits::MpcType;
         use futures::executor::block_on;
         use renegade_crypto::fields::scalar_to_biguint;
-        use tracing::log;
 
         let x_eval = block_on($x.open());
         if $x.fabric().party_id() == 0 {
-            log::info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+            println!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
         }
     }};
 }
@@ -71,11 +69,10 @@ macro_rules! print_multiprover_wire {
         use circuit_types::traits::CircuitVarType;
         use constants::AuthenticatedScalar;
         use futures::executor::block_on;
-        use tracing::log;
 
         let eval: AuthenticatedScalar = $x.eval_multiprover($cs);
         let x_eval = block_on(eval.open());
-        log::info!("eval({}): {x_eval}", stringify!($x));
+        println!("eval({}): {x_eval}", stringify!($x));
     }};
 }
 
@@ -160,6 +157,7 @@ pub async fn multiprover_prove_and_verify<C: MultiProverCircuit>(
         .open_authenticated()
         .await
         .map_err(ProverError::Plonk)?;
+    tracing::log::info!("done proving");
 
     let statement = statement.open().await.map_err(ProverError::Mpc)?;
     C::verify(statement, &proof).map_err(ProverError::Verification)
@@ -280,7 +278,7 @@ pub mod test_helpers {
         let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
 
         let price = FixedPoint::from_f64_round_down(rng.gen_range(0.0..100.0));
-        let base_amount = rng.next_u32() as u64;
+        let base_amount = rng.next_u32() as u128;
 
         // Buy side
         let o1 = Order {
@@ -289,7 +287,6 @@ pub mod test_helpers {
             side: OrderSide::Buy,
             amount: rng.gen_range(1..base_amount),
             worst_case_price: price + Scalar::from(2u8),
-            timestamp: 0,
         };
 
         // Sell side
@@ -299,7 +296,6 @@ pub mod test_helpers {
             side: OrderSide::Sell,
             amount: rng.gen_range(1..base_amount),
             worst_case_price: price - Scalar::from(2u8),
-            timestamp: 0,
         };
 
         // Randomly permute the orders
