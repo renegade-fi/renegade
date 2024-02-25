@@ -10,7 +10,7 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use crate::zk_gadgets::elgamal::ElGamalGadget;
 
-use super::poseidon::PoseidonHashGadget;
+use super::{comparators::EqGadget, poseidon::PoseidonHashGadget};
 
 /// A gadget for verifying operations on notes
 pub struct NoteGadget;
@@ -39,9 +39,41 @@ impl NoteGadget {
         expected_commitment: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
+        let comm = Self::compute_note_commitment(note, cs)?;
+        EqGadget::constrain_eq(&comm, &expected_commitment, cs)
+    }
+
+    /// Verify the nullifier of a note
+    pub fn verify_note_nullifier(
+        note_comm: Variable,
+        note_blinder: Variable,
+        expected_nullifier: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let nullifier = Self::compute_note_nullifier(note_comm, note_blinder, cs)?;
+        EqGadget::constrain_eq(&nullifier, &expected_nullifier, cs)
+    }
+
+    /// Compute the commitment to a note
+    pub fn compute_note_commitment(
+        note: &NoteVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
         let mut hasher = PoseidonHashGadget::new(cs.zero() /* zero_var */);
         hasher.batch_absorb(&note.to_vars(), cs)?;
 
-        hasher.constrained_squeeze(expected_commitment, cs)
+        hasher.squeeze(cs)
+    }
+
+    /// Compute the nullifier of a note
+    pub fn compute_note_nullifier(
+        note_comm: Variable,
+        note_blinder: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
+        let mut hasher = PoseidonHashGadget::new(cs.zero() /* zero_var */);
+        hasher.batch_absorb(&[note_comm, note_blinder], cs)?;
+
+        hasher.squeeze(cs)
     }
 }

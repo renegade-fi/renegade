@@ -40,38 +40,35 @@ impl<const D: usize> ToBitsGadget<D> {
         a: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError> {
-        let bits = Self::to_bits(a, cs)?;
+        let bits = Self::to_bits_unconstrained(a, cs)?;
         Self::bit_reconstruct(&bits, cs)
     }
 
     /// Converts a value to its bitwise representation in a single-prover
     /// constraint system
     pub fn to_bits(a: Variable, cs: &mut PlonkCircuit) -> Result<Vec<BoolVar>, CircuitError> {
+        let bits = Self::to_bits_unconstrained(a, cs)?;
+        let reconstructed = Self::bit_reconstruct(&bits, cs);
+        cs.enforce_equal(reconstructed?, a)?;
+
+        Ok(bits)
+    }
+
+    /// Converts a value to its bitwise representation without constraining the
+    /// value to be correct
+    fn to_bits_unconstrained(
+        a: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Vec<BoolVar>, CircuitError> {
         // Convert the scalar to bits
         let a_scalar = a.eval(cs);
         let bits = scalar_to_bits_le::<D>(&a_scalar);
 
         // Allocate the bits in the constraint system
-        let bit_vars = bits
-            .iter()
+        bits.iter()
             .map(Scalar::inner)
             .map(|bit| cs.create_boolean_variable(bit))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Ensure that the decomposition is correctly done
-        let two = ScalarField::from(2u64);
-        let coeffs = (0..D)
-            .scan(ScalarField::one(), |state, _| {
-                let res = *state;
-                *state *= two;
-                Some(res)
-            })
-            .collect_vec();
-
-        let bits_vars = bit_vars.iter().map(|&b| Variable::from(b)).collect_vec();
-        cs.lc_sum(&bits_vars, &coeffs)?;
-
-        Ok(bit_vars)
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// Reconstruct a value from its bitwise representation

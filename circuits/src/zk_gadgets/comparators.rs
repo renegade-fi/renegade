@@ -15,9 +15,7 @@ use constants::{AuthenticatedScalar, Scalar, ScalarField, ScalarResult};
 use itertools::Itertools;
 use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
-use crate::mpc_gadgets::bits::to_bits_le;
-
-use super::bits::ToBitsGadget;
+use super::bits::{MultiproverToBitsGadget, ToBitsGadget};
 
 // ------------------------
 // | Singleprover Gadgets |
@@ -183,26 +181,31 @@ impl NotEqualGadget {
 }
 
 /// A gadget that enforces a value of a given bitlength is positive
+///
+/// The sizing parameter `D` represents the maximum bitlength of positive
+/// scalars under the caller's representation
 #[derive(Clone, Debug)]
 pub struct GreaterThanEqZeroGadget<const D: usize> {}
 impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// Evaluate the condition x >= 0; returns 1 if true, otherwise 0
-    pub fn greater_than_zero(x: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError> {
-        // If we can reconstruct the value without the highest bit, the value is
-        // non-negative
-        let bit_reconstructed = ToBitsGadget::<D>::decompose_and_reconstruct(x, cs)?;
-        EqGadget::eq(&bit_reconstructed, &x, cs)
+    pub fn greater_than_eq_zero(
+        x: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
+        // Decompose and reconstruct the value in the given bitlength, if we can do so
+        // then the value is greater than zero
+        let reconstructed = ToBitsGadget::<D>::decompose_and_reconstruct(x, cs)?;
+        EqGadget::eq(&reconstructed, &x, cs)
     }
 
     /// Constrain the value to be greater than zero
-    pub fn constrain_greater_than_zero(
+    pub fn constrain_greater_than_eq_zero(
         x: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // If we can reconstruct the value without the highest bit, the value is
-        // non-negative
-        let bit_reconstructed = ToBitsGadget::<D>::decompose_and_reconstruct(x, cs)?;
-        EqGadget::constrain_eq(&bit_reconstructed, &x, cs)
+        // If we can reconstruct the value in the given bitlength, then the value is
+        // greater than zero
+        ToBitsGadget::<D>::to_bits(x, cs).map(|_| ())
     }
 }
 
@@ -218,7 +221,7 @@ impl<const D: usize> GreaterThanEqGadget<D> {
         cs: &mut PlonkCircuit,
     ) -> Result<BoolVar, CircuitError> {
         let a_minus_b = cs.sub(a, b)?;
-        GreaterThanEqZeroGadget::<D>::greater_than_zero(a_minus_b, cs)
+        GreaterThanEqZeroGadget::<D>::greater_than_eq_zero(a_minus_b, cs)
     }
 
     /// Constrains the values to satisfy a >= b
@@ -228,7 +231,7 @@ impl<const D: usize> GreaterThanEqGadget<D> {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let a_minus_b = cs.sub(a, b)?;
-        GreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a_minus_b, cs)
+        GreaterThanEqZeroGadget::<D>::constrain_greater_than_eq_zero(a_minus_b, cs)
     }
 }
 
@@ -377,47 +380,12 @@ impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
     /// Constrains the input value to be greater than or equal to zero
     /// implicitly by bit-decomposing the value and re-composing it
     /// thereafter
-    pub fn constrain_greater_than_zero(
+    pub fn constrain_greater_than_eq_zero(
         x: Variable,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        let reconstructed_res = Self::bit_decompose_reconstruct(x, fabric, cs)?;
-        cs.enforce_equal(reconstructed_res, x)
-    }
-
-    /// A helper function to compute the bit decomposition of an allocated
-    /// scalar and then reconstruct from the bit decomposition.
-    ///
-    /// This is useful because we can bit decompose with all but the highest
-    /// bit. If the reconstructed result is equal to the input; the highest
-    /// bit is not set and the value is non-negative
-    fn bit_decompose_reconstruct(
-        x: Variable,
-        fabric: &Fabric,
-        cs: &mut MpcPlonkCircuit,
-    ) -> Result<Variable, CircuitError> {
-        // Evaluate the assignment of the value in the underlying constraint system
-        let value_assignment = x.eval_multiprover(cs);
-        let bits = to_bits_le::<D>(&value_assignment, fabric)
-            .into_iter()
-            .map(|bit| bit.create_shared_witness(cs))
-            .collect_vec();
-
-        // Constrain the bit decomposition to be correct
-        // This implicitly constrains the value to be greater than zero, i.e. if it can
-        // be represented without the highest bit set, then it is greater than
-        // zero. This assumes a two's complement representation
-        let two = ScalarField::from(2u64);
-        let coeffs = (0..D)
-            .scan(ScalarField::one(), |state, _| {
-                let res = *state;
-                *state *= two;
-                Some(res)
-            })
-            .collect_vec();
-
-        cs.lc_sum(&bits, &coeffs)
+        MultiproverToBitsGadget::<D>::to_bits(x, fabric, cs).map(|_| ())
     }
 }
 
@@ -434,7 +402,7 @@ impl<const D: usize> MultiproverGreaterThanEqGadget<D> {
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
         let a_geq_b = cs.sub(a, b)?;
-        MultiproverGreaterThanEqZeroGadget::<D>::constrain_greater_than_zero(a_geq_b, fabric, cs)
+        MultiproverGreaterThanEqZeroGadget::<D>::constrain_greater_than_eq_zero(a_geq_b, fabric, cs)
     }
 }
 
@@ -579,9 +547,9 @@ mod test {
         let a_neg = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
         let b_var = b.create_witness(&mut cs);
 
-        let geq_zero1 = GreaterThanEqZeroGadget::<BITS>::greater_than_zero(a_var, &mut cs).unwrap(); // a > 0
-        let geq_zero2 = GreaterThanEqZeroGadget::<BITS>::greater_than_zero(a_neg, &mut cs).unwrap(); // -a > 0
-        GreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(a_var, &mut cs).unwrap();
+        let geq_zero1 = GreaterThanEqZeroGadget::<BITS>::greater_than_eq_zero(a_var, &mut cs).unwrap(); // a > 0
+        let geq_zero2 = GreaterThanEqZeroGadget::<BITS>::greater_than_eq_zero(a_neg, &mut cs).unwrap(); // -a > 0
+        GreaterThanEqZeroGadget::<BITS>::constrain_greater_than_eq_zero(a_var, &mut cs).unwrap();
 
         let geq1 = GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, b_var, &mut cs).unwrap(); // a >= b
         let geq2 = GreaterThanEqGadget::<BITS>::greater_than_eq(b_var, a_var, &mut cs).unwrap(); // b >= a 
@@ -624,7 +592,7 @@ mod test {
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
             let a_var = shared_a.create_shared_witness(&mut cs);
 
-            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(
+            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_eq_zero(
                 a_var, &fabric, &mut cs,
             )
             .unwrap();
@@ -635,7 +603,7 @@ mod test {
             let a_var = shared_a.create_shared_witness(&mut cs);
             let neg_a = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
 
-            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_zero(
+            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_eq_zero(
                 neg_a, &fabric, &mut cs,
             )
             .unwrap();

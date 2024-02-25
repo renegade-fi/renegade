@@ -256,7 +256,10 @@ where
             // - Be the same as in the old wallet
             // - Overwrite a zero'd balance
             let mints_equal = EqGadget::eq(&old_bal.mint, &new_bal.mint, cs)?;
-            let was_zero = EqVecGadget::eq_zero_vec(&[old_bal.clone()], cs)?;
+            let was_zero = EqVecGadget::eq_zero_vec(
+                &[old_bal.amount, old_bal.relayer_fee_balance, old_bal.protocol_fee_balance],
+                cs,
+            )?;
             let mints_equal_or_zero = cs.logic_or(mints_equal, was_zero)?;
             cs.enforce_true(mints_equal_or_zero)?;
 
@@ -619,7 +622,26 @@ mod test {
             *bal = Balance::default();
         }
 
-        let (statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
+        let (mut statement, mut witness) =
+            create_witness_statement(&sender_wallet, &recipient_wallet);
+
+        // Update the receive balance to be of a different mint in the original wallet,
+        // and replaced in the new wallet
+        let idx = witness.recipient_balance_index;
+        witness.recipient_private_shares.balances[idx].mint += Scalar::one();
+
+        // Update the state validity fields
+        let new_comm = compute_wallet_share_commitment(
+            &witness.recipient_public_shares,
+            &witness.recipient_private_shares,
+        );
+        let (root, openings) = create_multi_opening(&[new_comm]);
+        let nullifier = compute_wallet_share_nullifier(new_comm, recipient_wallet.blinder);
+
+        statement.recipient_root = root;
+        statement.recipient_nullifier = nullifier;
+        witness.recipient_opening = openings[0].clone();
+
         assert!(check_constraints_satisfied(&statement, &witness));
     }
 
