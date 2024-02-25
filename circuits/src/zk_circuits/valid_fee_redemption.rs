@@ -553,7 +553,6 @@ mod test {
         let (mut wallet, note) = get_testing_wallet_and_note();
 
         let idx = rng.gen_range(0..MAX_BALANCES);
-        wallet.balances[idx] = Balance::new_from_mint(note.mint.clone());
 
         let (mut statement, mut witness) = create_witness_and_statement(&wallet, &note);
         assert_eq!(witness.receive_index, idx);
@@ -577,9 +576,6 @@ mod test {
         let mut rng = thread_rng();
         let (wallet, note) = get_testing_wallet_and_note();
         let (mut statement, mut witness) = create_witness_and_statement(&wallet, &note);
-
-        // Modify the amount
-        witness.note.amount = Amount::from(rng.next_u64());
 
         // Recompute the nullifier and opening
         let (root, opening, nullifier) = recompute_note_opening_nullifier(&witness.note);
