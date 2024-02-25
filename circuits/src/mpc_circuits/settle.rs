@@ -7,7 +7,8 @@ use circuit_types::{
 
 use crate::mpc_gadgets::comparators::cond_select_vec;
 
-/// Settles a match into two wallets and returns the updated wallet shares
+/// Settles a match into two wallets and returns the updated wallet shares and
+/// fee takes for each party
 ///
 /// We settle directly into the public shares both for efficiency and to avoid
 /// the need to share private shares
@@ -65,6 +66,7 @@ mod test {
 
     use ark_mpc::{PARTY0, PARTY1};
     use circuit_types::{
+        fixed_point::FixedPoint,
         order::OrderSide,
         r#match::{MatchResult, OrderSettlementIndices},
         traits::{BaseType, MpcBaseType, MpcType},
@@ -74,7 +76,7 @@ mod test {
     use rand::{thread_rng, Rng};
     use renegade_crypto::fields::scalar_to_biguint;
     use test_helpers::mpc_network::execute_mock_mpc;
-    use util::matching_engine::apply_match_to_shares;
+    use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 
     use crate::{mpc_circuits::settle::settle_match, test_helpers::random_indices};
 
@@ -100,6 +102,7 @@ mod test {
     /// Get a dummy set of inputs for a settlement circuit
     fn generate_test_params() -> SettlementTest {
         let mut rng = thread_rng();
+        let relayer_fee = FixedPoint::from_f64_round_down(rng.gen_range(0.0001..0.01));
         let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
         let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
 
@@ -109,7 +112,6 @@ mod test {
             quote_amount: rng.gen(),
             base_amount: rng.gen(),
             direction: rng.gen_bool(0.5),
-            max_minus_min_amount: 0,       // Unused
             min_amount_order_index: false, // Unused
         };
 
@@ -117,13 +119,27 @@ mod test {
         let party0_indices = random_indices();
         let party0_side = OrderSide::from(match_res.direction as u64);
         let mut party0_post_shares = party0_pre_shares.clone();
-        apply_match_to_shares(&mut party0_post_shares, &party0_indices, &match_res, party0_side);
+        let party0_fees = compute_fee_obligation(relayer_fee, party0_side, &match_res);
+        apply_match_to_shares(
+            &mut party0_post_shares,
+            &party0_indices,
+            party0_fees,
+            &match_res,
+            party0_side,
+        );
 
         let party1_pre_shares = random_shares();
         let party1_indices = random_indices();
         let party1_side = party0_side.opposite();
         let mut party1_post_shares = party1_pre_shares.clone();
-        apply_match_to_shares(&mut party1_post_shares, &party1_indices, &match_res, party1_side);
+        let party1_fees = compute_fee_obligation(relayer_fee, party1_side, &match_res);
+        apply_match_to_shares(
+            &mut party1_post_shares,
+            &party1_indices,
+            party1_fees,
+            &match_res,
+            party1_side,
+        );
 
         SettlementTest {
             match_res,

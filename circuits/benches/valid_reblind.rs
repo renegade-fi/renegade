@@ -20,6 +20,7 @@ use circuits::{
 };
 use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use mpc_relation::proof_linking::LinkableCircuit;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
 /// MERKLE_HEIGHT)
@@ -67,6 +68,13 @@ pub fn bench_apply_constraints_with_sizes<
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>();
         let mut cs = PlonkCircuit::new_turbo_plonk();
 
+        // Add proof linking groups to the circuit
+        let layout =
+            ValidReblind::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>::get_circuit_layout().unwrap();
+        for (id, layout) in layout.group_layouts.into_iter() {
+            cs.create_link_group(id, Some(layout));
+        }
+
         let witness_var = witness.create_witness(&mut cs);
         let statement_var = statement.create_public_var(&mut cs);
 
@@ -89,7 +97,7 @@ pub fn bench_prover_with_sizes<
 {
     let mut group = c.benchmark_group("valid_reblind");
     let benchmark_id =
-        BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS},  {MERKLE_HEIGHT})"));
+        BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MERKLE_HEIGHT})"));
 
     group.bench_function(benchmark_id, |b| {
         // Build a witness and statement
@@ -118,7 +126,7 @@ pub fn bench_verifier_with_sizes<
 {
     let mut group = c.benchmark_group("valid_reblind");
     let benchmark_id =
-        BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS},  {MERKLE_HEIGHT})"));
+        BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MERKLE_HEIGHT})"));
 
     group.bench_function(benchmark_id, |b| {
         // First generate a proof that will be verified multiple times
