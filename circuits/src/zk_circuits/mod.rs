@@ -4,6 +4,7 @@
 
 pub mod proof_linking;
 pub mod valid_commitments;
+pub mod valid_fee_redemption;
 pub mod valid_match_settle;
 pub mod valid_offline_fee_settlement;
 pub mod valid_reblind;
