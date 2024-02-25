@@ -20,6 +20,7 @@ use circuits::{
 };
 use constants::{MAX_BALANCES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use mpc_relation::proof_linking::LinkableCircuit;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS)
 const SMALL_PARAM_SET: (usize, usize) = (2, 2);
@@ -56,6 +57,12 @@ pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_O
         // Build a witness and statement
         let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
         let mut cs = PlonkCircuit::new_turbo_plonk();
+
+        // Add proof linking groups to the circuit
+        let layout = ValidCommitments::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout().unwrap();
+        for (id, layout) in layout.group_layouts.into_iter() {
+            cs.create_link_group(id, Some(layout));
+        }
 
         let witness_var = witness.create_witness(&mut cs);
         let statement_var = statement.create_public_var(&mut cs);

@@ -4,7 +4,7 @@ use circuit_types::{
     fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
     r#match::AuthenticatedMatchResult, Fabric, AMOUNT_BITS,
 };
-use constants::{AuthenticatedScalar, Scalar};
+use constants::AuthenticatedScalar;
 
 use crate::mpc_gadgets::{comparators::min, fixed_point::FixedPointMpcGadget};
 
@@ -32,9 +32,6 @@ pub fn compute_match(
     // match
     let (min_index, min_base_amount) = min::<AMOUNT_BITS>(amount1, amount2, fabric);
 
-    // The maximum of the two amounts minus the minimum of the two amounts
-    let max_minus_min_amount = amount1 + amount2 - Scalar::from(2u64) * &min_base_amount;
-
     // The amount of quote token exchanged
     // Round down to the nearest integer value
     let quote_exchanged_fp = min_base_amount.clone() * price;
@@ -47,7 +44,6 @@ pub fn compute_match(
         quote_amount: quote_exchanged,
         base_amount: min_base_amount,
         direction: party0_order.side.clone(),
-        max_minus_min_amount,
         min_amount_order_index: min_index.into(),
     }
 }

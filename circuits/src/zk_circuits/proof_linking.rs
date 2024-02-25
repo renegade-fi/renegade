@@ -284,7 +284,7 @@ mod test {
     use constants::Scalar;
     use mpc_plonk::multiprover::proof_system::MpcLinkingHint;
     use rand::{distributions::uniform::SampleRange, thread_rng};
-    use util::matching_engine::settle_match_into_wallets;
+    use util::matching_engine::{compute_fee_obligation, settle_match_into_wallets};
 
     use crate::{
         multiprover_prove_with_hint, singleprover_prove_with_hint,
@@ -508,11 +508,11 @@ mod test {
         // Modify the wallet to work with the randomized match then create new wallet
         // shares
         wallet.orders[indices.order] =
-            sel!(match_witness.order1.clone(), match_witness.order2.clone());
+            sel!(match_witness.order0.clone(), match_witness.order1.clone());
         wallet.balances[indices.balance_send] =
-            sel!(match_witness.balance1.clone(), match_witness.balance2.clone());
+            sel!(match_witness.balance0.clone(), match_witness.balance1.clone());
         wallet.balances[indices.balance_receive] =
-            sel!(match_witness.balance2.clone(), match_witness.balance1.clone());
+            sel!(match_witness.balance_receive0.clone(), match_witness.balance_receive1.clone());
 
         // Modify the VALID MATCH SETTLE witness to use the shares from the test wallet
         let (private_share, public_share) = create_wallet_shares(&wallet);
@@ -522,10 +522,24 @@ mod test {
         // Settle the randomized match into the test wallet's shares
         let mut new_public_shares0 = public_share.clone();
         let mut new_public_shares1 = public_share.clone();
+
+        let party0_fees = compute_fee_obligation(
+            wallet.match_fee,
+            match_witness.order0.side,
+            &match_witness.match_res,
+        );
+        let party1_fees = compute_fee_obligation(
+            wallet.match_fee,
+            match_witness.order1.side,
+            &match_witness.match_res,
+        );
+
         settle_match_into_wallets(
             &mut new_public_shares0,
             &mut new_public_shares1,
             // Use the same indices, only the selected wallet shares need to be correctly settled
+            party0_fees,
+            party1_fees,
             *indices,
             *indices,
             &match_witness.match_res,
@@ -694,7 +708,7 @@ mod test {
             build_commitments_match_settle_data(PARTY1);
 
         // Malicious prover tries to increase their balance by 1
-        match_settle_witness.balance2.amount += 1;
+        match_settle_witness.balance0.amount += 1;
 
         test_commitments_match_settle_singleprover(
             PARTY0,
@@ -720,8 +734,8 @@ mod test {
             build_commitments_match_settle_data(PARTY0);
 
         // Malicious prover tries to modify the buy side worst case price
-        let price = &mut match_settle_witness.order1.worst_case_price;
-        if match_settle_witness.order1.side == OrderSide::Buy {
+        let price = &mut match_settle_witness.order0.worst_case_price;
+        if match_settle_witness.order0.side == OrderSide::Buy {
             *price = *price + Scalar::one();
         } else {
             *price = *price - Scalar::one();

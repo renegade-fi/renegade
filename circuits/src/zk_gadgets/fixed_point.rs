@@ -77,7 +77,7 @@ impl FixedPointGadget {
             &[one_var, lhs_minus_rhs, zero_var, zero_var],
             &[(*TWO_TO_M_SCALAR - ScalarField::one()), -one, one, one],
         )?;
-        GreaterThanEqZeroGadget::<{ DEFAULT_FP_PRECISION + 1 }>::constrain_greater_than_zero(
+        GreaterThanEqZeroGadget::<{ DEFAULT_FP_PRECISION + 1 }>::constrain_greater_than_eq_zero(
             diff, cs,
         )
     }
@@ -126,9 +126,7 @@ impl MultiproverFixedPointGadget {
             &[(*TWO_TO_M_SCALAR - ScalarField::one()), -one, one, one],
         )?;
 
-        MultiproverGreaterThanEqZeroGadget::<{DEFAULT_FP_PRECISION + 1}>::constrain_greater_than_zero(
-            diff, fabric, cs,
-        )
+        MultiproverGreaterThanEqZeroGadget::<{DEFAULT_FP_PRECISION + 1}>::constrain_greater_than_eq_zero(diff, fabric, cs)
     }
 }
 
