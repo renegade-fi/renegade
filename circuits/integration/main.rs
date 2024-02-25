@@ -5,7 +5,7 @@
 #![feature(generic_const_exprs)]
 #![feature(inherent_associated_types)]
 
-mod mpc_circuits;
+// mod mpc_circuits;
 mod types;
 
 use circuit_types::Fabric;
