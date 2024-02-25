@@ -400,6 +400,11 @@ pub mod native_helpers {
         compute_poseidon_hash(&note.to_scalars())
     }
 
+    /// Compute the nullifier for a note
+    pub fn note_nullifier(note_comm: Scalar, note_blinder: Scalar) -> Scalar {
+        compute_poseidon_hash(&[note_comm, note_blinder])
+    }
+
     // -------------------------
     // | Cryptographic Helpers |
     // -------------------------

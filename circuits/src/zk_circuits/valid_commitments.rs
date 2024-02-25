@@ -925,6 +925,7 @@ mod test {
     /// Tests the case in which the augmented receive balance created a
     /// duplicate mint
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_invalid_commitment__receive_balance_duplicate_mint() {
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, statement) = create_witness_and_statement(&wallet);
