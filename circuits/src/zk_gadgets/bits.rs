@@ -78,10 +78,6 @@ impl<const D: usize> ToBitsGadget<D> {
         bits: &[BoolVar],
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError> {
-        // Constrain the bit decomposition to be correct
-        // This implicitly constrains the value to be greater than zero, i.e. if it can
-        // be represented without the highest bit set, then it is greater than
-        // zero. This assumes a two's complement representation
         let two = ScalarField::from(2u64);
         let coeffs = (0..D)
             .scan(ScalarField::one(), |state, _| {
