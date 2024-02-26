@@ -4,6 +4,7 @@
 use circuit_types::{
     fixed_point::FixedPointVar,
     merkle::MerkleOpeningVar,
+    order::OrderVar,
     traits::{CircuitVarType, SecretShareVarType},
     wallet::{WalletShareVar, WalletVar},
     Fabric, MpcPlonkCircuit, PlonkCircuit, AMOUNT_BITS, FEE_BITS, PRICE_BITS,
@@ -15,6 +16,7 @@ use super::{
     bits::{MultiproverToBitsGadget, ToBitsGadget},
     merkle::PoseidonMerkleHashGadget,
     poseidon::{PoseidonCSPRNGGadget, PoseidonHashGadget},
+    select::CondSelectGadget,
 };
 
 /// Gadget for operating on wallets and wallet shares
@@ -153,9 +155,9 @@ where
         let new_blinder = blinder_samples.remove(0);
         let new_blinder_private_share = blinder_samples.remove(0);
 
-        // Sample secret shares for individual wallet elements, we sample for n - 1
-        // shares because the wallet serialization includes the wallet blinder,
-        // which was resampled separately in the previous step
+        // Sample private secret shares for individual wallet elements, we sample for n
+        // - 1 shares because the wallet serialization includes the wallet
+        // blinder, which was resampled separately in the previous step
         //
         // As well, we seed the CSPRNG with the second to last share in the old wallet,
         // again because the wallet blinder comes from a separate stream of
@@ -165,8 +167,9 @@ where
         let mut share_samples =
             PoseidonCSPRNGGadget::sample(shares_ser[n_samples - 1], n_samples, cs)?;
 
-        // Add a dummy value to the end of the shares, recover the wallet share type,
-        // then overwrite with blinder
+        // Add a dummy value to the end of the shares (in place of the private blinder
+        // share), recover the wallet share type, then overwrite with the actual blinder
+        // share
         share_samples.push(cs.zero());
         let mut new_shares = WalletShareVar::from_vars(&mut share_samples.into_iter(), cs);
         new_shares.blinder = new_blinder_private_share;
@@ -178,6 +181,23 @@ where
 // ------------------------
 // | Wallet Field Gadgets |
 // ------------------------
+
+/// A gadget for computing on orders
+pub struct OrderGadget;
+impl OrderGadget {
+    /// Get the mint bought by the given order
+    pub fn get_buy_mint(order: &OrderVar, cs: &mut PlonkCircuit) -> Result<Variable, CircuitError> {
+        CondSelectGadget::select(&order.quote_mint, &order.base_mint, order.side, cs)
+    }
+
+    /// Get the mint sold by the given order
+    pub fn get_sell_mint(
+        order: &OrderVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<Variable, CircuitError> {
+        CondSelectGadget::select(&order.base_mint, &order.quote_mint, order.side, cs)
+    }
+}
 
 /// Constrain a value to be a valid `Amount`, i.e. a non-negative `Scalar`
 /// representable in at most `AMOUNT_BITS` bits
