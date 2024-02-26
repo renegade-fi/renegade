@@ -6,7 +6,7 @@ use circuit_types::{
     merkle::MerkleOpeningVar,
     traits::{CircuitVarType, SecretShareVarType},
     wallet::{WalletShareVar, WalletVar},
-    Fabric, MpcPlonkCircuit, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
+    Fabric, MpcPlonkCircuit, PlonkCircuit, AMOUNT_BITS, FEE_BITS, PRICE_BITS,
 };
 use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
@@ -211,6 +211,23 @@ impl MultiproverAmountGadget {
     }
 }
 
+/// Constrain a fee to be in the range of valid take rates
+///
+/// This is [0, 2^FEE_BITS-1]
+pub struct FeeGadget;
+impl FeeGadget {
+    /// Constrain a value to be a valid fee
+    pub fn constrain_valid_fee(
+        fee: FixedPointVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Decompose into `FEE_BITS` bits, this checks that the reconstruction is
+        // correct, so this will also force the value to be within the range [0,
+        // 2^FEE_BITS-1]
+        ToBitsGadget::<FEE_BITS>::to_bits(fee.repr, cs).map(|_| ())
+    }
+}
+
 /// Constrain a `FixedPoint` value to be a valid price, i.e. with a non-negative
 /// `Scalar` repr representable in at most `PRICE_BITS` bits
 pub struct PriceGadget;
@@ -248,18 +265,27 @@ mod test {
     use std::iter;
 
     use circuit_types::{
+        fixed_point::FixedPoint,
         native_helpers::{
             compute_wallet_commitment_from_private, compute_wallet_private_share_commitment,
             compute_wallet_share_commitment, compute_wallet_share_nullifier,
         },
         traits::{BaseType, CircuitBaseType},
-        PlonkCircuit, SizedWalletShare,
+        PlonkCircuit, SizedWalletShare, AMOUNT_BITS, FEE_BITS, PRICE_BITS,
     };
     use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
+    use itertools::Itertools;
     use mpc_relation::traits::Circuit;
-    use rand::thread_rng;
+    use rand::{thread_rng, Rng};
+    use std::ops::Neg;
 
-    use crate::zk_gadgets::wallet_operations::WalletGadget;
+    use crate::zk_gadgets::wallet_operations::{FeeGadget, PriceGadget, WalletGadget};
+
+    use super::AmountGadget;
+
+    // -----------
+    // | Helpers |
+    // -----------
 
     /// Generate random wallet shares
     fn random_wallet_shares() -> (SizedWalletShare, SizedWalletShare) {
@@ -271,6 +297,37 @@ mod test {
             SizedWalletShare::from_scalars(&mut share_iter),
         )
     }
+
+    /// Generate a scalar representation of 2^N
+    fn scalar_2_pow_n(n: usize) -> Scalar {
+        Scalar::from(2u8).pow(n as u64)
+    }
+
+    /// Generate a random scalar under the specified bit amount
+    fn random_bitlength_scalar(bit_length: usize) -> Scalar {
+        let mut rng = thread_rng();
+
+        let bits = (0..bit_length).map(|_| rng.gen_bool(0.5)).collect_vec();
+        let mut res = Scalar::zero();
+
+        for bit in bits.into_iter() {
+            res = res * Scalar::from(2u8);
+            if bit {
+                res += Scalar::one();
+            }
+        }
+
+        res
+    }
+
+    /// Check whether the constraints of a constraint system are satisfied
+    fn check_satisfaction(cs: &PlonkCircuit) -> bool {
+        cs.check_circuit_satisfiability(&[]).is_ok()
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
 
     /// Tests the wallet commitment share gadget
     #[test]
@@ -352,5 +409,117 @@ mod test {
 
         // Verify that all constraints are satisfied
         assert!(cs.check_circuit_satisfiability(&[expected.inner()]).is_ok())
+    }
+
+    /// Tests the amount gadget
+    #[test]
+    fn test_amount_gadget() {
+        // Test a valid amount
+        let amount = random_bitlength_scalar(AMOUNT_BITS);
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let amt_var = amount.create_witness(&mut cs);
+        AmountGadget::constrain_valid_amount(amt_var, &mut cs).unwrap();
+
+        assert!(check_satisfaction(&cs));
+
+        // Test zero
+        let amount = Scalar::zero();
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let amt_var = amount.create_witness(&mut cs);
+        AmountGadget::constrain_valid_amount(amt_var, &mut cs).unwrap();
+
+        assert!(check_satisfaction(&cs));
+
+        // Test negative one
+        let amount = Scalar::one().neg();
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let amt_var = amount.create_witness(&mut cs);
+        AmountGadget::constrain_valid_amount(amt_var, &mut cs).unwrap();
+
+        assert!(!check_satisfaction(&cs));
+
+        // Test 2^AMOUNT_BITS
+        let amount = scalar_2_pow_n(AMOUNT_BITS);
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let amt_var = amount.create_witness(&mut cs);
+        AmountGadget::constrain_valid_amount(amt_var, &mut cs).unwrap();
+
+        assert!(!check_satisfaction(&cs));
+    }
+
+    /// Test the price gadget
+    #[test]
+    fn test_price_gadget() {
+        // Test a valid price
+        let price_repr = random_bitlength_scalar(PRICE_BITS);
+        let price = FixedPoint { repr: price_repr };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let price_var = price.create_witness(&mut cs);
+        PriceGadget::constrain_valid_price(price_var, &mut cs).unwrap();
+
+        assert!(check_satisfaction(&cs));
+
+        // Test zero
+        let price = FixedPoint { repr: Scalar::zero() };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let price_var = price.create_witness(&mut cs);
+        PriceGadget::constrain_valid_price(price_var, &mut cs).unwrap();
+
+        assert!(check_satisfaction(&cs));
+
+        // Test negative one
+        let price = FixedPoint { repr: Scalar::one().neg() };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let price_var = price.create_witness(&mut cs);
+        PriceGadget::constrain_valid_price(price_var, &mut cs).unwrap();
+
+        assert!(!check_satisfaction(&cs));
+
+        // Test 2^PRICE_BITS
+        let price_repr = scalar_2_pow_n(PRICE_BITS);
+        let price = FixedPoint { repr: price_repr };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let price_var = price.create_witness(&mut cs);
+        PriceGadget::constrain_valid_price(price_var, &mut cs).unwrap();
+
+        assert!(!check_satisfaction(&cs));
+    }
+
+    /// Test the fee gadget
+    #[test]
+    fn test_fee_gadget() {
+        // Test a valid fee
+        let fee_repr = random_bitlength_scalar(FEE_BITS);
+        let fee = FixedPoint { repr: fee_repr };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fee_var = fee.create_witness(&mut cs);
+        FeeGadget::constrain_valid_fee(fee_var, &mut cs).unwrap();
+
+        assert!(check_satisfaction(&cs));
+
+        // Test zero
+        let fee = FixedPoint { repr: Scalar::zero() };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fee_var = fee.create_witness(&mut cs);
+        FeeGadget::constrain_valid_fee(fee_var, &mut cs).unwrap();
+
+        assert!(check_satisfaction(&cs));
+
+        // Test negative one
+        let fee = FixedPoint { repr: Scalar::one().neg() };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fee_var = fee.create_witness(&mut cs);
+        FeeGadget::constrain_valid_fee(fee_var, &mut cs).unwrap();
+
+        assert!(!check_satisfaction(&cs));
+
+        // Test 2^FEE_BITS
+        let fee_repr = scalar_2_pow_n(FEE_BITS);
+        let fee = FixedPoint { repr: fee_repr };
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fee_var = fee.create_witness(&mut cs);
+        FeeGadget::constrain_valid_fee(fee_var, &mut cs).unwrap();
+
+        assert!(!check_satisfaction(&cs));
     }
 }
