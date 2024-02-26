@@ -62,10 +62,17 @@ pub const SCALAR_ONE: ScalarField = ScalarField::new(BigInt::new([1, 0, 0, 0]));
 pub type Amount = u128;
 /// The number of bits allowed in a balance or transaction "amount"
 pub const AMOUNT_BITS: usize = 100;
-/// The number of bits allowed in a price
+/// The number of bits allowed in a price's representation, this included the
+/// fixed point precision
 ///
 /// This is the default fixed point precision plus 32 bits for the integral part
 pub const PRICE_BITS: usize = DEFAULT_FP_PRECISION + 64;
+/// The number of bits allowed in a fee rate representation, including the fixed
+/// point precision
+///
+/// Fees are naturally less than one, so we use the default fixed point
+/// precision
+pub const FEE_BITS: usize = DEFAULT_FP_PRECISION;
 
 /// An MPC fabric with curve generic attached
 pub type Fabric = MpcFabric<SystemCurveGroup>;
