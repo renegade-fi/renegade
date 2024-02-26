@@ -22,7 +22,7 @@ use crate::zk_gadgets::{
     comparators::{EqGadget, EqZeroGadget},
     note::NoteGadget,
     select::CondSelectGadget,
-    wallet_operations::WalletGadget,
+    wallet_operations::{AmountGadget, WalletGadget},
 };
 
 // ----------------------
@@ -84,16 +84,6 @@ where
             cs,
         )?;
 
-        // Verify that the note correctly spends the balance
-        let send_bal = Self::get_balance_at_idx(witness.send_index, &old_wallet, cs)?;
-        Self::verify_note_construction(
-            &witness.note,
-            statement.is_protocol_fee,
-            &send_bal,
-            &key,
-            cs,
-        )?;
-
         // Verify the note encryption and its commitment
         Self::verify_note_encryption_commitment(
             &witness.note,
@@ -101,6 +91,16 @@ where
             witness.encryption_randomness,
             &statement.note_ciphertext,
             statement.note_commitment,
+            cs,
+        )?;
+
+        // Verify that the note correctly spends the balance
+        let send_bal = Self::get_balance_at_idx(witness.send_index, &old_wallet, cs)?;
+        Self::verify_note_construction(
+            &witness.note,
+            statement.is_protocol_fee,
+            &send_bal,
+            &key,
             cs,
         )?;
 
@@ -144,6 +144,7 @@ where
             cs,
         )?;
         EqGadget::constrain_eq(&note.amount, &expected_amount, cs)?;
+        AmountGadget::constrain_valid_amount(note.amount, cs)?;
 
         // The note's recipient should match the key we encrypted under
         EqGadget::constrain_eq(&note.receiver, enc_key, cs)
