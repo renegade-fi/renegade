@@ -17,7 +17,7 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use crate::zk_gadgets::{
-    comparators::{EqGadget, EqVecGadget, EqZeroGadget},
+    comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
     elgamal::ElGamalGadget,
     select::CondSelectGadget,
     wallet_operations::{AmountGadget, WalletGadget},
@@ -136,7 +136,7 @@ where
             cs,
         )?;
 
-        // The send balance cannot be zero
+        // The send balance cannot have zero mint
         let send_bal =
             Self::get_balance_at_index(witness.sender_balance_index, &old_sender_wallet, cs)?;
         let zero_mint = EqZeroGadget::eq_zero(&send_bal.mint, cs)?;
@@ -186,7 +186,7 @@ where
         new_wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // All order should remain the same
+        // All orders should remain the same
         EqGadget::constrain_eq(&old_wallet.orders, &new_wallet.orders, cs)?;
 
         // The keys, match fee and managing cluster key should remain the same
@@ -209,8 +209,8 @@ where
             let expected_relayer_fee_balance =
                 CondSelectGadget::select(&zero_var, &old_bal.relayer_fee_balance, is_send_idx, cs)?;
 
-            // Check the balance, the mint, amount, and protocol balance should remain the
-            // same, regardless of whether this balances pays the fee
+            // Check the balance; the mint, amount, and protocol balance should remain the
+            // same for all balances. Only the relayer fee balance may change
             let mut expected_bal = old_bal.clone();
             expected_bal.relayer_fee_balance = expected_relayer_fee_balance;
 
@@ -254,13 +254,13 @@ where
             // Constrain the mint of the updated balance
             // If the balance receives the fee, the mint may either:
             // - Be the same as in the old wallet
-            // - Overwrite a zero'd balance
+            // - Overwrite an empty balance
             let mints_equal = EqGadget::eq(&old_bal.mint, &new_bal.mint, cs)?;
-            let was_zero = EqVecGadget::eq_zero_vec(
+            let original_balance_empty = EqVecGadget::eq_zero_vec(
                 &[old_bal.amount, old_bal.relayer_fee_balance, old_bal.protocol_fee_balance],
                 cs,
             )?;
-            let mints_equal_or_zero = cs.logic_or(mints_equal, was_zero)?;
+            let mints_equal_or_zero = cs.logic_or(mints_equal, original_balance_empty)?;
             cs.enforce_true(mints_equal_or_zero)?;
 
             // The new balance mint must be the sender balance mint if this balance receives
@@ -275,7 +275,16 @@ where
                 CondSelectGadget::select(&new_amount, &old_bal.amount, is_receive_idx, cs)?;
             EqGadget::constrain_eq(&new_bal.amount, &expected_amount, cs)?;
 
-            // Check that the recipient's balance amount is still a valid amount
+            // If the current index is not the receive index, the mint must not equal the
+            // transferred mint, this maintains the unique balance mint
+            // invariant
+            let not_equals_transfer_mint =
+                NotEqualGadget::not_equal(new_bal.mint, sender_balance.mint, cs)?;
+            let uniqueness_check = cs.logic_or(is_receive_idx, not_equals_transfer_mint)?;
+            cs.enforce_true(uniqueness_check)?;
+
+            // Check that the recipient's balance amount is still a valid amount (i.e. no
+            // overflow)
             AmountGadget::constrain_valid_amount(new_bal.amount, cs)?;
 
             // The relayer and protocol fee balances of the recipient must remain the same
@@ -556,7 +565,7 @@ mod test {
     };
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
-    use renegade_crypto::fields::scalar_to_u128;
+    use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u128};
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
@@ -586,6 +595,17 @@ mod test {
         let mut rng = thread_rng();
         let mut sender_wallet = INITIAL_WALLET.clone();
         let mut recipient_wallet = INITIAL_WALLET.clone();
+
+        // Randomize the mints on the sender and recipient wallets so that the witness
+        // creation doesn't duplicate mints
+        for bal in sender_wallet.balances.iter_mut() {
+            bal.mint = scalar_to_biguint(&Scalar::random(&mut rng));
+        }
+
+        for bal in recipient_wallet.balances.iter_mut() {
+            bal.mint = scalar_to_biguint(&Scalar::random(&mut rng));
+        }
+
         sender_wallet.blinder = Scalar::random(&mut rng);
         recipient_wallet.blinder = Scalar::random(&mut rng);
 
@@ -1009,6 +1029,27 @@ mod test {
         statement.recipient_nullifier = new_nullifier;
         witness.recipient_opening = opening[0].clone();
 
+        assert!(!check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Test the case in which the recipient's mint is duplicated in the
+    /// settlement
+    #[test]
+    fn test_invalid_settlement__recipient_mint_duplicated() {
+        let mut rng = thread_rng();
+        let mint = scalar_to_biguint(&Scalar::random(&mut rng));
+
+        // Make all balances the same mint in the sender wallet and receiver wallet
+        let (mut sender_wallet, mut recipient_wallet) = get_initial_wallets();
+        for bal in recipient_wallet.balances.iter_mut() {
+            bal.mint = mint.clone();
+        }
+
+        for bal in sender_wallet.balances.iter_mut() {
+            bal.mint = mint.clone();
+        }
+
+        let (statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
         assert!(!check_constraints_satisfied(&statement, &witness));
     }
 }
