@@ -187,7 +187,7 @@ pub fn to_contract_valid_match_settle_statement(
             balance_receive: statement.party1_indices.balance_receive as u64,
             order: statement.party1_indices.order as u64,
         },
-        protocol_fee: ScalarField::from(1u8),
+        protocol_fee: statement.protocol_fee.repr.inner(),
     }
 }
 
