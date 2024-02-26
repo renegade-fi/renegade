@@ -10,7 +10,7 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType, SingleProverCircuit},
+    traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{WalletShare, WalletVar},
     PlonkCircuit,
 };
@@ -20,7 +20,7 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
-use crate::zk_gadgets::wallet_operations::WalletGadget;
+use crate::zk_gadgets::wallet_operations::{FeeGadget, WalletGadget};
 
 /// A type alias for an instantiation of this circuit with default generics
 pub type SizedValidWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>;
@@ -40,7 +40,7 @@ where
     /// Applies constraints to the constraint system specifying the statement of
     /// VALID WALLET CREATE
     fn circuit(
-        statement: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        statement: &ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS>,
         witness: &ValidWalletCreateWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -51,11 +51,14 @@ where
         cs.enforce_equal(commitment, statement.private_shares_commitment)?;
 
         // Unblind the public shares then reconstruct the wallet
-        let blinder =
-            cs.add(witness.private_wallet_share.blinder, statement.public_wallet_shares.blinder)?;
+        let wallet = WalletGadget::wallet_from_shares(
+            &statement.public_wallet_shares,
+            &witness.private_wallet_share,
+            cs,
+        )?;
 
-        let unblinded_public_shares = statement.public_wallet_shares.unblind_shares(blinder, cs);
-        let wallet = witness.private_wallet_share.add_shares(&unblinded_public_shares, cs);
+        // Verify that the match fee is a valid fee take
+        FeeGadget::constrain_valid_fee(wallet.match_fee, cs)?;
 
         // Verify that the orders and balances are zero'd
         Self::verify_zero_wallet(wallet, cs)
@@ -139,7 +142,7 @@ where
         statement_var: ValidWalletCreateStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::circuit(statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
+        Self::circuit(&statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -207,6 +210,7 @@ pub mod test_helpers {
 
 #[cfg(test)]
 pub mod tests {
+    use circuit_types::{fixed_point::FixedPoint, FEE_BITS};
     use constants::Scalar;
 
     use crate::{
@@ -265,6 +269,17 @@ pub mod tests {
     fn test_nonzero_balance() {
         let mut wallet = create_empty_wallet();
         wallet.balances[0] = INITIAL_BALANCES[0].clone();
+
+        let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
+    }
+
+    /// Test the case in which the match fee is invalid
+    #[test]
+    fn test_invalid_match_fee() {
+        let mut wallet = create_empty_wallet();
+        let fee_repr = Scalar::from(2u8).pow(FEE_BITS as u64); // max fee plus one
+        wallet.match_fee = FixedPoint { repr: fee_repr };
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
