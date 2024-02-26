@@ -16,7 +16,7 @@ use crate::{
     },
     zk_gadgets::{
         comparators::{EqGadget, EqVecGadget, EqZeroGadget},
-        select::CondSelectVectorGadget,
+        wallet_operations::{OrderGadget, WalletGadget},
     },
     SingleProverCircuit,
 };
@@ -26,7 +26,7 @@ use circuit_types::{
     fixed_point::FixedPoint,
     order::{Order, OrderVar},
     r#match::OrderSettlementIndices,
-    traits::{BaseType, CircuitBaseType, CircuitVarType, SecretShareVarType},
+    traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::{WalletShare, WalletVar},
     PlonkCircuit,
 };
@@ -58,31 +58,24 @@ where
     /// The circuit constraints for VALID COMMITMENTS
     pub fn circuit(
         statement: &ValidCommitmentsStatementVar,
-        witness: ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidCommitmentsWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Reconstruct the base and augmented wallets
-        let recovered_blinder =
-            cs.add(witness.private_secret_shares.blinder, witness.public_secret_shares.blinder)?;
-
-        let unblinded_public_shares =
-            witness.public_secret_shares.unblind_shares(recovered_blinder, cs);
-        let unblinded_augmented_shares =
-            witness.augmented_public_shares.unblind_shares(recovered_blinder, cs);
-
-        let base_wallet = witness.private_secret_shares.add_shares(&unblinded_public_shares, cs);
-        let augmented_wallet =
-            witness.private_secret_shares.add_shares(&unblinded_augmented_shares, cs);
-
-        // The mint that the wallet will receive if the order is matched
-        let mut receive_send_mint = CondSelectVectorGadget::select(
-            &[witness.order.quote_mint, witness.order.base_mint],
-            &[witness.order.base_mint, witness.order.quote_mint],
-            witness.order.side,
+        let base_wallet = WalletGadget::wallet_from_shares(
+            &witness.public_secret_shares,
+            &witness.private_secret_shares,
             cs,
         )?;
-        let receive_mint = receive_send_mint.remove(0);
-        let send_mint = receive_send_mint.remove(0);
+        let augmented_wallet = WalletGadget::wallet_from_shares(
+            &witness.augmented_public_shares,
+            &witness.private_secret_shares,
+            cs,
+        )?;
+
+        // The mint that the wallet will receive if the order is matched
+        let receive_mint = OrderGadget::get_buy_mint(&witness.order, cs)?;
+        let send_mint = OrderGadget::get_sell_mint(&witness.order, cs)?;
 
         // The advertised relayer take rate in the witness should equal the authorized
         // take rate in the wallet
@@ -131,9 +124,10 @@ where
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // All balances should be the same except possibly the balance at the receive
-        // index. We allow This balance to be zero'd in the base wallet, and
+        // index. We allow this balance to be zero'd in the base wallet, and
         // have the received mint with zero balance in the augmented wallet
         let zero_var = cs.zero();
+        let one_var = cs.one();
         let mut curr_index = zero_var;
 
         for (base_balance, augmented_balance) in
@@ -156,7 +150,7 @@ where
             )?;
 
             // Is the new balance at the given index equal to a valid augmentation
-            let augmented_balance = EqGadget::eq(
+            let is_augmented = EqGadget::eq(
                 augmented_balance,
                 &BalanceVar {
                     mint: received_mint,
@@ -173,19 +167,15 @@ where
             // Validate that the balance is either unmodified or augmented from (<old-mint>,
             // 0, 0, 0) to (receive_mint, 0, 0, 0)
             let valid_augmentation =
-                cs.logic_and_all(&[prev_balance_zero, augmented_balance, augmentation_index_mask])?;
+                cs.logic_and_all(&[prev_balance_zero, is_augmented, augmentation_index_mask])?;
 
             let valid_balance = cs.logic_or(valid_augmentation, balances_eq)?;
             cs.enforce_true(valid_balance)?;
-            curr_index = cs.add(curr_index, cs.one())?;
+            curr_index = cs.add(curr_index, one_var)?;
         }
 
         // All orders should be the same
-        for (base_order, augmented_order) in
-            base_wallet.orders.iter().zip(augmented_wallet.orders.iter())
-        {
-            EqGadget::constrain_eq(base_order, augmented_order, cs)?;
-        }
+        EqGadget::constrain_eq(&base_wallet.orders, &augmented_wallet.orders, cs)?;
 
         // Keys should be equal
         EqGadget::constrain_eq(&base_wallet.keys, &augmented_wallet.keys, cs)?;
@@ -218,7 +208,7 @@ where
         // The mint of the send balance must be the same as the mint sold by the order
         cs.enforce_equal(send_balance.mint, send_mint)?;
 
-        // The balance cannot be zero
+        // The balance amount cannot be zero
         let amount_zero = EqZeroGadget::eq_zero(&send_balance.amount, cs)?;
         cs.enforce_false(amount_zero)
     }
@@ -426,7 +416,7 @@ where
         statement_var: ValidCommitmentsStatementVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::circuit(&statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
+        Self::circuit(&statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
