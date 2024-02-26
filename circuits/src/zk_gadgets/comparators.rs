@@ -49,8 +49,8 @@ impl EqZeroGadget {
         // circuit is well constrained
         //
         // If the value is non-zero (and inv is correctly assigned), then the right hand
-        // side will be zero. The only check left is that inv is not set to
-        // zero, allowing a non-zero `val` to satisfy the constraints with `is_zero = 1`
+        // side will be zero. The only check left is that inv is not set maliciously,
+        // allowing a non-zero `val` to satisfy the constraints with `is_zero = 1`
         // This is implicitly handled in the second constraint by ensuring that the
         // input times the output is zero, which for non-zero input is only true
         // if the output is zero
