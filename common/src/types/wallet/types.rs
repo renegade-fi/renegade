@@ -1,23 +1,20 @@
 //! Defines wallet types useful throughout the workspace
 
-use std::{
-    iter,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
+    elgamal::EncryptionKey,
+    fixed_point::FixedPoint,
     keychain::{PublicKeyChain, SecretIdentificationKey, SecretSigningKey},
     order::Order,
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
-use constants::{Scalar, MAX_FEES};
+use constants::Scalar;
 use derivative::Derivative;
-use itertools::Itertools;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -70,12 +67,14 @@ pub struct Wallet {
     pub orders: KeyedList<OrderIdentifier, Order>,
     /// A mapping of mint to Balance information
     pub balances: KeyedList<BigUint, Balance>,
-    /// A list of the fees in this wallet
-    pub fees: Vec<Fee>,
     /// The keys that the relayer has access to for this wallet
     pub key_chain: KeyChain,
     /// The wallet blinder, used to blind secret shares the wallet holds
     pub blinder: Scalar,
+    /// The match fee that the owner has authorized the relayer to take
+    pub match_fee: FixedPoint,
+    /// The key of the cluster that the wallet has delegated management to
+    pub managing_cluster: EncryptionKey,
     /// The private secret shares of the wallet
     pub private_shares: SizedWalletShare,
     /// The public secret shares of the wallet
@@ -96,26 +95,15 @@ impl From<Wallet> for SizedCircuitWallet {
         SizedCircuitWallet {
             balances: wallet.get_balances_list(),
             orders: wallet.get_orders_list(),
-            fees: wallet.get_fees_list(),
             keys: wallet.key_chain.public_keys,
+            match_fee: wallet.match_fee,
+            managing_cluster: wallet.managing_cluster,
             blinder: wallet.blinder,
         }
     }
 }
 
 impl Wallet {
-    /// Get a list of fees in order in their circuit representation
-    pub fn get_fees_list(&self) -> [Fee; MAX_FEES] {
-        self.fees
-            .clone()
-            .into_iter()
-            .chain(iter::repeat(Fee::default()))
-            .take(MAX_FEES)
-            .collect_vec()
-            .try_into()
-            .unwrap()
-    }
-
     /// Invalidate the Merkle opening of a wallet after an update
     pub(crate) fn invalidate_merkle_opening(&mut self) {
         self.merkle_proof = None;
@@ -126,6 +114,5 @@ impl Wallet {
     pub fn remove_default_elements(&mut self) {
         self.balances.retain(|_mint, balance| !balance.is_default());
         self.orders.retain(|_id, order| !order.is_default());
-        self.fees.retain(|fee| !fee.is_default());
     }
 }

@@ -5,7 +5,6 @@ use std::{collections::HashMap, convert::TryInto};
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
     fixed_point::FixedPoint,
     keychain::{PublicIdentificationKey, PublicKeyChain, SecretIdentificationKey},
     order::{Order, OrderSide},
@@ -114,7 +113,6 @@ impl TryFrom<ApiWallet> for Wallet {
             wallet_id: Uuid::new_v4(),
             orders,
             balances,
-            fees,
             key_chain: wallet.key_chain.try_into()?,
             blinder: biguint_to_scalar(&wallet.blinder),
             blinded_public_shares,
@@ -181,7 +179,6 @@ impl From<ApiOrder> for Order {
             side: order.side,
             worst_case_price: order.worst_case_price,
             amount: order.amount.try_into().unwrap(),
-            timestamp: order.timestamp,
         }
     }
 }

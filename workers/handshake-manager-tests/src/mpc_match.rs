@@ -82,7 +82,7 @@ fn get_balance(order: &Order) -> Balance {
         OrderSide::Sell => order.amount,
     };
 
-    Balance { mint, amount }
+    Balance::new_from_mint_and_amount(mint, amount)
 }
 
 /// Get the fee for a wallet

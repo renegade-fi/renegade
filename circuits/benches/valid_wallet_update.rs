@@ -48,7 +48,7 @@ where
     let mut modified_wallet = original_wallet.clone();
     modified_wallet.orders[0] = Order::default();
 
-    construct_witness_statement(&original_wallet, &modified_wallet, ExternalTransfer::default())
+    construct_witness_statement(&original_wallet, &modified_wallet, 0 /* transfer_idx */, ExternalTransfer::default())
 }
 
 /// Benchmark constraint generation for the circuit

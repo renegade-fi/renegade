@@ -10,7 +10,7 @@ use circuits::zk_circuits::{
     valid_wallet_create::{SizedValidWalletCreateStatement, ValidWalletCreateStatement},
     valid_wallet_update::{SizedValidWalletUpdateStatement, ValidWalletUpdateStatement},
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use serde::{Deserialize, Serialize};
 
 // -----------------
@@ -19,23 +19,19 @@ use serde::{Deserialize, Serialize};
 
 /// The response type for a request to generate a proof of `VALID WALLET CREATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidWalletCreateBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct GenericValidWalletCreateBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to create the proof
-    pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
 }
 
 /// A type alias that specifies default generics for
 /// `GenericValidWalletCreateBundle`
-pub type SizedValidWalletCreateBundle =
-    GenericValidWalletCreateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidWalletCreateBundle = GenericValidWalletCreateBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap allocates a wallet create bundle
 pub type ValidWalletCreateBundle = Arc<SizedValidWalletCreateBundle>;
 
@@ -44,13 +40,12 @@ pub type ValidWalletCreateBundle = Arc<SizedValidWalletCreateBundle>;
 pub struct GenericValidWalletUpdateBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 > where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prove `VALID WALLET UPDATE`
-    pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
 }
@@ -58,7 +53,7 @@ pub struct GenericValidWalletUpdateBundle<
 /// A type alias that specifies the default generics for
 /// `GenericValidWalletUpdateBundle`
 pub type SizedValidWalletUpdateBundle =
-    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 /// A type alias that heap-allocates a wallet update bundle
 pub type ValidWalletUpdateBundle = Arc<SizedValidWalletUpdateBundle>;
 
@@ -67,10 +62,9 @@ pub type ValidWalletUpdateBundle = Arc<SizedValidWalletUpdateBundle>;
 pub struct GenericValidReblindBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 > where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prover `VALID REBLIND`
     pub statement: ValidReblindStatement,
@@ -80,18 +74,15 @@ pub struct GenericValidReblindBundle<
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
 pub type SizedValidReblindBundle =
-    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 /// A type alias that heap-allocates a reblind bundle
 pub type ValidReblindBundle = Arc<SizedValidReblindBundle>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidCommitmentsBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct GenericValidCommitmentsBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prove `VALID COMMITMENTS`
     pub statement: ValidCommitmentsStatement,
@@ -101,30 +92,26 @@ pub struct GenericValidCommitmentsBundle<
 
 /// A type alias that specifies the default generics for
 /// `GenericValidCommitmentsBundle`
-pub type SizedValidCommitmentsBundle =
-    GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap-allocates a commitments bundle
 pub type ValidCommitmentsBundle = Arc<SizedValidCommitmentsBundle>;
 
 /// A bundle of the statement, witness commitment, and proof of `VALID MATCH
 /// SETTLE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericMatchSettleBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct GenericMatchSettleBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prove `VALID MATCH SETTLE`
-    pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
 }
 
 /// A type alias that specifies the default generics for
 /// `GenericMatchSettleBundle`
-pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap-allocates a `ValidMatchMpcBundle`
 pub type ValidMatchSettleBundle = Arc<SizedValidMatchSettleBundle>;
 

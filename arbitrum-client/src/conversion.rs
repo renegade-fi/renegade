@@ -21,7 +21,8 @@ use constants::{Scalar, ScalarField};
 use contracts_common::types::{
     ExternalTransfer as ContractExternalTransfer, LinkingProof as ContractLinkingProof,
     MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
-    Proof as ContractProof, PublicSigningKey as ContractPublicSigningKey,
+    OrderSettlementIndices as ContractIndices, Proof as ContractProof,
+    PublicSigningKey as ContractPublicSigningKey,
     ValidCommitmentsStatement as ContractValidCommitmentsStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
     ValidReblindStatement as ContractValidReblindStatement,
@@ -82,7 +83,7 @@ fn to_contract_external_transfer(
     let mint: U160 =
         external_transfer.mint.clone().try_into().map_err(|_| ConversionError::InvalidUint)?;
     let amount: U256 =
-        external_transfer.amount.clone().try_into().map_err(|_| ConversionError::InvalidUint)?;
+        external_transfer.amount.try_into().map_err(|_| ConversionError::InvalidUint)?;
 
     Ok(ContractExternalTransfer {
         account_addr: Address::from(account_addr),
@@ -137,7 +138,6 @@ pub fn to_contract_valid_wallet_update_statement(
         merkle_root: statement.merkle_root.inner(),
         external_transfer,
         old_pk_root,
-        timestamp: statement.timestamp,
     })
 }
 
@@ -158,9 +158,11 @@ pub fn to_contract_valid_commitments_statement(
     statement: ValidCommitmentsStatement,
 ) -> ContractValidCommitmentsStatement {
     ContractValidCommitmentsStatement {
-        balance_send_index: statement.indices.balance_send as u64,
-        balance_receive_index: statement.indices.balance_receive as u64,
-        order_index: statement.indices.order as u64,
+        indices: ContractIndices {
+            balance_send: statement.indices.balance_send as u64,
+            balance_receive: statement.indices.balance_receive as u64,
+            order: statement.indices.order as u64,
+        },
     }
 }
 
@@ -175,12 +177,17 @@ pub fn to_contract_valid_match_settle_statement(
     ContractValidMatchSettleStatement {
         party0_modified_shares,
         party1_modified_shares,
-        party0_send_balance_index: statement.party0_indices.balance_send as u64,
-        party0_receive_balance_index: statement.party0_indices.balance_receive as u64,
-        party0_order_index: statement.party0_indices.order as u64,
-        party1_send_balance_index: statement.party1_indices.balance_send as u64,
-        party1_receive_balance_index: statement.party1_indices.balance_receive as u64,
-        party1_order_index: statement.party1_indices.order as u64,
+        party0_indices: ContractIndices {
+            balance_send: statement.party0_indices.balance_send as u64,
+            balance_receive: statement.party0_indices.balance_receive as u64,
+            order: statement.party0_indices.order as u64,
+        },
+        party1_indices: ContractIndices {
+            balance_send: statement.party1_indices.balance_send as u64,
+            balance_receive: statement.party1_indices.balance_receive as u64,
+            order: statement.party1_indices.order as u64,
+        },
+        protocol_fee: ScalarField::from(1u8),
     }
 }
 

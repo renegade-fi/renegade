@@ -6,6 +6,7 @@ use std::{
 };
 
 use circuit_types::{
+    elgamal::DecryptionKey,
     fixed_point::FixedPoint,
     keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey, SecretSigningKey},
     order::{Order, OrderSide},
@@ -36,16 +37,19 @@ pub fn mock_empty_wallet() -> Wallet {
     let sk_match = SecretIdentificationKey::from(Scalar::random(&mut rng));
     let pk_match = sk_match.get_public_key();
 
+    let (_, managing_cluster_key) = DecryptionKey::random_pair(&mut rng);
+
     let mut wallet = Wallet {
         wallet_id: Uuid::new_v4(),
         orders: KeyedList::default(),
         balances: KeyedList::default(),
-        fees: vec![],
         key_chain: KeyChain {
             public_keys: PublicKeyChain { pk_root, pk_match },
             secret_keys: PrivateKeyChain { sk_root, sk_match },
         },
         blinder: Scalar::random(&mut rng),
+        match_fee: FixedPoint::from_integer(0),
+        managing_cluster: managing_cluster_key,
         private_shares: SizedWalletShare::from_scalars(&mut iter::repeat_with(|| {
             Scalar::random(&mut rng)
         })),
@@ -66,11 +70,10 @@ pub fn mock_order() -> Order {
     let mut rng = thread_rng();
     let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
     let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
-    let amount = 10u64;
+    let amount = 10u128;
     let worst_case_price = FixedPoint::from_integer(100);
-    let timestamp = 0u64;
 
-    Order { quote_mint, base_mint, amount, worst_case_price, timestamp, side: OrderSide::Buy }
+    Order { quote_mint, base_mint, amount, worst_case_price, side: OrderSide::Buy }
 }
 
 /// Create a mock Merkle path for a wallet
