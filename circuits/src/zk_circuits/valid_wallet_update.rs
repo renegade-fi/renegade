@@ -336,16 +336,15 @@ where
 
             // --- Fee Violations --- //
 
-            // If the transfer is a withdrawal, the fees must be zero for the balance
-            let old_fees_are_zero = EqVecGadget::eq_zero_vec(
+            // To withdraw a balance, all fees in the wallet must be zero
+            let fees_paid = EqVecGadget::eq_zero_vec(
                 &[old_balance.relayer_fee_balance, old_balance.protocol_fee_balance],
                 cs,
             )?;
-            let withdrawal_applied_to_balance = cs.logic_and(transfer_applies, is_withdrawal)?;
-            let withdrawal_not_applied = cs.logic_neg(withdrawal_applied_to_balance)?;
 
-            // Either no withdrawal was applied or the fees were zero pre-update
-            let valid_fee_update = cs.logic_or(withdrawal_not_applied, old_fees_are_zero)?;
+            // Either no withdrawal (deposit/default) was applied or the fees were zero
+            // pre-update
+            let valid_fee_update = cs.logic_or(is_deposit, fees_paid)?;
             cs.enforce_true(valid_fee_update)?;
 
             // --- Mint Updates --- //
@@ -1133,13 +1132,16 @@ mod test {
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
     }
 
-    /// Try withdrawing from a balance with non-zero protocol fee -- this is
+    /// Try withdrawing when the wallet has a non-zero protocol fee -- this is
     /// invalid
     #[test]
     fn test_invalid_withdrawal__non_zero_protocol_fee() {
         // Setup a wallet with outstanding fees
+        let mut rng = thread_rng();
+        let fee_idx = rng.gen_range(0..MAX_BALANCES);
+
         let mut old_wallet = INITIAL_WALLET.clone();
-        old_wallet.balances[0].protocol_fee_balance = 1;
+        old_wallet.balances[fee_idx].protocol_fee_balance = 1;
 
         // Withdraw from the balance
         let mut new_wallet = old_wallet.clone();
@@ -1161,8 +1163,11 @@ mod test {
     #[test]
     fn test_invalid_withdrawal__non_zero_relayer_fee() {
         // Setup a wallet with outstanding fees
+        let mut rng = thread_rng();
+        let fee_idx = rng.gen_range(0..MAX_BALANCES);
+
         let mut old_wallet = INITIAL_WALLET.clone();
-        old_wallet.balances[0].relayer_fee_balance = 1;
+        old_wallet.balances[fee_idx].relayer_fee_balance = 1;
 
         // Withdraw from the wallet
         let mut new_wallet = old_wallet.clone();
