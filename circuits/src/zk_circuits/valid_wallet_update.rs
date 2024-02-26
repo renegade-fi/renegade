@@ -161,6 +161,11 @@ where
             // non-zero so constraining these two booleans to equal
             // one another is equivalent to the "if" statement above
             cs.enforce_equal(either_mint_zero.into(), order_zero.into())?;
+
+            // The mints cannot equal one another, unless they represent the zero order
+            let mints_not_equal = NotEqualGadget::not_equal(order.base_mint, order.quote_mint, cs)?;
+            let mint_not_equal_or_zero = cs.logic_or(mints_not_equal, order_zero)?;
+            cs.enforce_true(mint_not_equal_or_zero)?;
         }
 
         Ok(())

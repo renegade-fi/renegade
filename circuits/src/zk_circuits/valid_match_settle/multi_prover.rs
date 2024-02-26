@@ -7,7 +7,7 @@ use circuit_types::{
     order::OrderVar,
     r#match::{FeeTakeVar, MatchResultVar, OrderSettlementIndicesVar},
     wallet::WalletShareVar,
-    Fabric, MpcPlonkCircuit, AMOUNT_BITS, PRICE_BITS,
+    Fabric, MpcPlonkCircuit, AMOUNT_BITS,
 };
 use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
@@ -194,12 +194,12 @@ where
             cs,
         )?;
 
-        MultiproverGreaterThanEqGadget::<PRICE_BITS>::constrain_greater_than_eq(
-            gte_terms.remove(0).repr,
-            gte_terms.remove(0).repr,
-            fabric,
-            cs,
-        )
+        // Constrain the difference to be representable in the maximum number of bits
+        // that a price may take
+        let lhs = gte_terms.remove(0);
+        let rhs = gte_terms.remove(0);
+        let price_improvement = lhs.sub(&rhs, cs);
+        MultiproverPriceGadget::constrain_valid_price(price_improvement, fabric, cs)
     }
 }
 
@@ -364,11 +364,8 @@ where
         Self::validate_no_receive_overflow(trader_take, receive_balance, fees, fabric, cs)?;
 
         let mut curr_index = cs.zero();
-        for (pre_update_balance, post_update_balance) in pre_update_shares
-            .balances
-            .clone()
-            .into_iter()
-            .zip(post_update_shares.balances.clone().into_iter())
+        for (pre_update_balance, post_update_balance) in
+            pre_update_shares.balances.iter().zip(post_update_shares.balances.iter())
         {
             // Mask the send term
             let send_term_index_mask =
@@ -396,7 +393,7 @@ where
             expected_balance_shares.relayer_fee_balance = expected_balance_relayer_fee;
             expected_balance_shares.protocol_fee_balance = expected_balance_protocol_fee;
 
-            EqGadget::constrain_eq(&expected_balance_shares, &post_update_balance, cs)?;
+            EqGadget::constrain_eq(&expected_balance_shares, post_update_balance, cs)?;
 
             // Increment the index
             curr_index = cs.add(curr_index, cs.one())?;
@@ -439,11 +436,8 @@ where
         let one = ScalarField::one();
 
         let mut curr_index = cs.zero();
-        for (pre_update_order, post_update_order) in pre_update_shares
-            .orders
-            .clone()
-            .into_iter()
-            .zip(post_update_shares.orders.clone().into_iter())
+        for (pre_update_order, post_update_order) in
+            pre_update_shares.orders.iter().zip(post_update_shares.orders.iter())
         {
             // Mask with the index
             let index_mask =
@@ -455,7 +449,7 @@ where
             let mut expected_order_shares = pre_update_order.clone();
             expected_order_shares.amount = expected_volume;
 
-            EqGadget::constrain_eq(&expected_order_shares, &post_update_order, cs)?;
+            EqGadget::constrain_eq(&expected_order_shares, post_update_order, cs)?;
 
             // Increment the index
             curr_index = cs.add(curr_index, cs.one())?;
