@@ -16,7 +16,7 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::errors::CircuitError;
 use mpc_relation::{traits::Circuit, Variable};
 
-use crate::zk_gadgets::comparators::{EqGadget, EqVecGadget};
+use crate::zk_gadgets::comparators::{EqGadget, EqVecGadget, EqZeroGadget};
 use crate::zk_gadgets::elgamal::ElGamalGadget;
 use crate::zk_gadgets::merkle::PoseidonMerkleHashGadget;
 use crate::zk_gadgets::note::NoteGadget;
@@ -76,6 +76,13 @@ where
             statement.note_nullifier,
             cs,
         )?;
+
+        // The note cannot have zero mint
+        let note_zero_mint = EqZeroGadget::eq_zero(&witness.note.mint, cs)?;
+        cs.enforce_false(note_zero_mint)?;
+
+        // The note amount must be valid
+        AmountGadget::constrain_valid_amount(witness.note.amount, cs)?;
 
         // --- Authorization --- //
         let old_wallet = WalletGadget::wallet_from_shares(
@@ -158,6 +165,12 @@ where
 
             let valid_old_mint = cs.logic_or(is_not_receive_idx, valid_mint_replacement)?;
             cs.enforce_true(valid_old_mint)?;
+
+            // Only the balance at the receive index should have mint equal to the note mint
+            // This preserves the unique mint invariant in the balances
+            let does_not_match_note_mint = cs.logic_neg(matches_note_mint)?;
+            let uniqueness_check = cs.logic_or(is_receive_idx, does_not_match_note_mint)?;
+            cs.enforce_true(uniqueness_check)?;
 
             // Verify the amount field update
             let amount_delta =
@@ -764,6 +777,19 @@ mod test {
         statement.wallet_root = root;
         statement.wallet_nullifier = nullifier;
 
+        assert!(!check_constraints_satisfied(&witness, &statement));
+    }
+
+    /// Test the case in which settling the note creates a duplicate balance
+    #[test]
+    fn test_duplicate_balance() {
+        // Start off with duplicates
+        let (mut wallet, note) = get_testing_wallet_and_note();
+        for balance in wallet.balances.iter_mut() {
+            balance.mint = note.mint.clone();
+        }
+
+        let (statement, witness) = create_witness_and_statement(&wallet, &note);
         assert!(!check_constraints_satisfied(&witness, &statement));
     }
 }
