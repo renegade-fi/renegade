@@ -26,7 +26,7 @@ use external_api::{
         GetWalletResponse, RemoveFeeRequest, RemoveFeeResponse, UpdateOrderRequest,
         UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
     },
-    types::{ApiBalance, ApiFee, ApiOrder, ApiWallet},
+    types::{ApiBalance, ApiFee, ApiOrder},
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
@@ -380,14 +380,8 @@ impl TypedHandler for CreateOrderHandler {
         // Check that the timestamp is not too old, then add to the wallet
         let timestamp = new_order.timestamp;
         check_timestamp_staleness(timestamp)?;
-        println!("Orders before placing order: {:?}", new_wallet.orders);
         new_wallet.add_order(id, new_order).map_err(bad_request)?;
-        println!("Orders after placing order: {:?}", new_wallet.orders);
         new_wallet.reblind_wallet();
-        let wallet: ApiWallet = new_wallet.clone().into();
-        let wallet_json =
-            serde_json::to_string(&wallet).map_err(|e| internal_error(e.to_string()))?;
-        println!("Wallet after placing order: {}", wallet_json);
 
         let task = UpdateWalletTaskDescriptor::new(
             timestamp,
@@ -637,14 +631,11 @@ impl TypedHandler for DepositBalanceHandler {
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
-        println!("Balances before deposit: {:?}", new_wallet.clone().balances);
         let amount = req.amount.to_u64().unwrap();
         new_wallet
             .add_balance(StateBalance { mint: req.mint.clone(), amount })
             .map_err(bad_request)?;
-        println!("Balances after deposit: {:?}", new_wallet.clone().balances);
         new_wallet.reblind_wallet();
-        println!("Wallet after deposit: {:?}", new_wallet.clone());
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
@@ -701,7 +692,6 @@ impl TypedHandler for WithdrawBalanceHandler {
         let withdrawal_amount = req.amount.to_u64().unwrap();
 
         let mut new_wallet = old_wallet.clone();
-        println!("Balances before withdrawal: {:?}", new_wallet.clone().balances);
         if let Some(balance) = new_wallet.balances.get_mut(&mint)
             && balance.amount >= withdrawal_amount
         {
@@ -709,9 +699,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         } else {
             return Err(bad_request(ERR_INSUFFICIENT_BALANCE.to_string()));
         }
-        println!("Balances after withdrawal: {:?}", new_wallet.clone().balances);
         new_wallet.reblind_wallet();
-        println!("Wallet after withdrawal: {:?}", new_wallet.clone());
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),

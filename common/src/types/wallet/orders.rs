@@ -80,4 +80,12 @@ impl Wallet {
 
         Ok(())
     }
+
+    /// Remove an order from the wallet, replacing it with a default order
+    pub fn remove_order(&mut self, id: &OrderIdentifier) -> Option<Order> {
+        let order = self.get_order_mut(id)?;
+        *order = Order::default();
+
+        Some(order.clone())
+    }
 }

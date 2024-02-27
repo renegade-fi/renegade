@@ -26,9 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     zk_gadgets::{
-        comparators::{
-            EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget,
-        },
+        comparators::{EqGadget, EqZeroGadget, GreaterThanEqZeroGadget, NotEqualGadget},
         merkle::PoseidonMerkleHashGadget,
         wallet_operations::{NullifierGadget, WalletShareCommitGadget},
     },
@@ -300,9 +298,6 @@ where
         new_timestamp: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Ensure that all order's asset pairs are unique
-        Self::constrain_unique_order_pairs(new_wallet, cs)?;
-
         // Ensure that the timestamps for all orders are properly set
         Self::constrain_updated_order_timestamps(old_wallet, new_wallet, new_timestamp, cs)
     }
@@ -339,32 +334,6 @@ where
             let valid_order =
                 cs.logic_or_all(&[not_equal_and_updated, equal_and_not_updated, order_is_zero])?;
             cs.enforce_true(valid_order)?;
-        }
-
-        Ok(())
-    }
-
-    /// Assert that all order pairs in a wallet have unique asset pairs
-    fn constrain_unique_order_pairs(
-        wallet: &WalletVar<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        // Validate that all mints pairs are zero or unique
-        for i in 0..wallet.orders.len() {
-            let order_zero = Self::order_is_zero(&wallet.orders[i], cs)?;
-
-            for j in (i + 1)..wallet.orders.len() {
-                // Check if the ith order is unique
-                let mints_equal = EqVecGadget::eq_vec(
-                    &[wallet.orders[i].quote_mint, wallet.orders[i].base_mint],
-                    &[wallet.orders[j].quote_mint, wallet.orders[j].base_mint],
-                    cs,
-                )?;
-
-                let mints_not_equal = cs.logic_neg(mints_equal)?;
-                let valid_mints = cs.logic_or(order_zero, mints_not_equal)?;
-                cs.enforce_true(valid_mints)?;
-            }
         }
 
         Ok(())
@@ -684,28 +653,6 @@ mod test {
         let old_wallet = INITIAL_WALLET.clone();
         let mut new_wallet = INITIAL_WALLET.clone();
         new_wallet.orders[0].timestamp = NEW_TIMESTAMP;
-
-        assert!(!constraints_satisfied_on_wallets(
-            &old_wallet,
-            &new_wallet,
-            ExternalTransfer::default()
-        ));
-    }
-
-    /// Tests that orders with duplicate asset pairs will fail
-    #[test]
-    fn test_place_order__duplicate_mint() {
-        // No update to the orders, but the timestamp is incorrect
-        let mut old_wallet = INITIAL_WALLET.clone();
-        let mut new_wallet = INITIAL_WALLET.clone();
-
-        // Create the wallet's second order as a duplicate of the first
-        new_wallet.orders[1] = new_wallet.orders[0].clone();
-        new_wallet.orders[1].amount += 10;
-        new_wallet.orders[1].timestamp = NEW_TIMESTAMP;
-
-        // Remove the order from the original wallet to simulate order placement
-        old_wallet.orders[1] = Order::default();
 
         assert!(!constraints_satisfied_on_wallets(
             &old_wallet,

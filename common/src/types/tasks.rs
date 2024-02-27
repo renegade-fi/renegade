@@ -320,9 +320,9 @@ impl UpdateWalletTaskDescriptor {
         }
 
         // Check the signature on the updated shares commitment
-        // let key = &old_wallet.key_chain.public_keys.pk_root;
-        // verify_wallet_update_signature(&new_wallet, key, &wallet_update_signature)
-        //     .map_err(|e| format!("invalid wallet update sig: {e}"))?;
+        let key = &old_wallet.key_chain.public_keys.pk_root;
+        verify_wallet_update_signature(&new_wallet, key, &wallet_update_signature)
+            .map_err(|e| format!("invalid wallet update sig: {e}"))?;
 
         Ok(UpdateWalletTaskDescriptor {
             timestamp_received,

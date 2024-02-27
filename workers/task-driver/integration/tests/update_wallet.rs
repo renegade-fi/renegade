@@ -191,8 +191,9 @@ async fn test_update_wallet__place_multiple_orders(test_args: IntegrationTestArg
         share_seed,
         test_args.clone(),
     )
-    .await;
+    .await?;
 
+    // Insert another order
     let old_wallet = wallet.clone();
     wallet.add_order(Uuid::new_v4(), DUMMY_ORDER.clone()).unwrap();
     wallet.reblind_wallet();
@@ -256,15 +257,15 @@ async fn test_update_wallet__cancel_and_place_order(test_args: IntegrationTestAr
 
     // Update the wallet by removing an order
     let old_wallet = wallet.clone();
-    wallet.orders.remove(&order_id_to_cancel);
+    wallet.remove_order(&order_id_to_cancel);
     wallet.reblind_wallet();
 
     execute_wallet_update_and_verify_shares(
         old_wallet.clone(),
         wallet.clone(),
         None, // transfer
-        blinder_seed.clone(),
-        share_seed.clone(),
+        blinder_seed,
+        share_seed,
         test_args.clone(),
     )
     .await?;
@@ -419,7 +420,6 @@ async fn test_update_wallet__deposit_and_full_withdraw(
 
     let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
     let amount = 10u64;
-
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
     wallet.reblind_wallet();
 
@@ -441,7 +441,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
 
     // Now, withdraw the same amount
     let old_wallet = wallet.clone();
-    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount: 0 });
+    wallet.remove_balance(&mint);
     wallet.reblind_wallet();
 
     execute_wallet_update_and_verify_shares(
@@ -488,15 +488,15 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
             account_addr: account_addr.clone(),
             direction: ExternalTransferDirection::Deposit,
         }),
-        blinder_seed.clone(),
-        share_seed.clone(),
+        blinder_seed,
+        share_seed,
         test_args.clone(),
     )
     .await?;
 
-    // Now, withdraw only 5 of the deposited tokens
+    // Now, withdraw only half of the deposited tokens
     let old_wallet = wallet.clone();
-    let withdraw_amount = 5u64;
+    let withdraw_amount = deposit_amount / 2;
     wallet.balances.insert(
         mint.clone(),
         Balance { mint: mint.clone(), amount: deposit_amount - withdraw_amount },
