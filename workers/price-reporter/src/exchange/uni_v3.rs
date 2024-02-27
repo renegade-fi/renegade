@@ -8,14 +8,12 @@ use futures_util::Stream;
 use lazy_static::lazy_static;
 use std::{
     cmp::Ordering,
-    convert::TryInto,
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},
 };
 use tracing::error;
 use web3::{
-    self,
     api::BaseFilter,
     ethabi::{self, Event},
     signing::keccak256,

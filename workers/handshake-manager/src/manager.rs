@@ -41,7 +41,6 @@ use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
 use state::State;
 use std::{
-    convert::TryInto,
     thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},
 };
