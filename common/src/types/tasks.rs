@@ -5,10 +5,11 @@ use circuit_types::{
     transfers::ExternalTransfer,
 };
 use constants::Scalar;
-use ethers_rs::keccak256;
-use k256::ecdsa::{Signature, VerifyingKey as K256VerifyingKey};
+use ethers::core::utils::keccak256;
+use ethers::utils::public_key_to_address;
+use ethers::{core::types::Signature, types::RecoveryMessage};
+use k256::ecdsa::VerifyingKey as K256VerifyingKey;
 use serde::{Deserialize, Serialize};
-use signature::hazmat::PrehashVerifier;
 use uuid::Uuid;
 
 use super::{
@@ -357,10 +358,12 @@ pub fn verify_wallet_update_signature(
     //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
     let comm_bytes = new_wallet_comm.to_biguint().to_bytes_be();
     let digest = keccak256(comm_bytes);
+    let recovery_hash = RecoveryMessage::Hash(digest.into());
 
     // Verify the signature
-    let sig = Signature::from_slice(wallet_update_signature).map_err(|e| e.to_string())?;
-    key.verify_prehash(&digest, &sig).map_err(|e| e.to_string())
+    let addr = public_key_to_address(&key);
+    let sig = Signature::try_from(wallet_update_signature).map_err(|e| e.to_string())?;
+    sig.verify(recovery_hash, addr).map_err(|e| e.to_string())
 }
 
 // ---------
@@ -371,9 +374,9 @@ pub fn verify_wallet_update_signature(
 pub mod mocks {
     //! Mocks for the task descriptors
     use circuit_types::keychain::SecretSigningKey;
-    use ethers_rs::keccak256;
-    use k256::ecdsa::{Signature, SigningKey as K256SigningKey};
-    use signature::hazmat::PrehashSigner;
+    use ethers::core::utils::keccak256;
+    use ethers::signers::Wallet as EthersWallet;
+    use k256::ecdsa::SigningKey as K256SigningKey;
 
     use crate::types::{
         gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet::Wallet,
@@ -390,9 +393,10 @@ pub mod mocks {
 
         // Sign the message
         let signing_key: K256SigningKey = key.try_into().unwrap();
-        let sig: Signature = signing_key.sign_prehash(&digest).unwrap();
+        let wallet = EthersWallet::from(signing_key);
+        let sig = wallet.sign_hash(digest.into()).unwrap();
 
-        sig.to_bytes().to_vec()
+        sig.to_vec()
     }
 
     /// Get a dummy queued task
