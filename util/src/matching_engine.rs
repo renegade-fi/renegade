@@ -86,7 +86,7 @@ pub fn match_orders_with_max_amount(
 }
 
 /// Compute the maximum matchable amount for an order and balance
-fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u64 {
+pub fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u64 {
     match order.side {
         // Buy the base, the max amount is possibly limited by the quote
         // balance

@@ -28,18 +28,23 @@ use constants::Scalar;
 use eyre::{eyre, Result};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rand::thread_rng;
-use renegade_crypto::fields::scalar_to_u64;
 use state::State;
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::oneshot::channel;
-use util::{hex::biguint_from_hex_string, matching_engine::settle_match_into_wallets};
+use util::{
+    hex::biguint_from_hex_string,
+    matching_engine::{compute_max_amount, match_orders, settle_match_into_wallets},
+};
 use uuid::Uuid;
 
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
 /// The amounts that each order is for
 const BUY_ORDER_AMOUNT: u64 = 10;
+/// The amount of the sell order
 const SELL_ORDER_AMOUNT: u64 = 1;
+
+// -----------
 // | Helpers |
 // -----------
 
@@ -129,19 +134,12 @@ async fn setup_match_result(
     test_args: &IntegrationTestArgs,
 ) -> Result<(MatchResult, MatchBundle)> {
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
-    let base_amount = std::cmp::min(BUY_ORDER_AMOUNT, SELL_ORDER_AMOUNT);
-    let quote_amount = price * Scalar::from(base_amount);
-    let direction = wallet1.orders.first().unwrap().1.side.is_sell();
 
-    let match_ = MatchResult {
-        quote_mint: biguint_from_hex_string(&test_args.erc20_addr0).unwrap(),
-        base_mint: biguint_from_hex_string(&test_args.erc20_addr1).unwrap(),
-        quote_amount: scalar_to_u64(&quote_amount.floor()),
-        base_amount,
-        direction,
-        max_minus_min_amount: 0,
-        min_amount_order_index: false,
-    };
+    let o1 = wallet1.orders.first().unwrap().1.clone();
+    let o2 = wallet2.orders.first().unwrap().1.clone();
+    let b1 = wallet1.balances.first().unwrap().1.clone();
+    let b2 = wallet2.balances.first().unwrap().1.clone();
+    let match_ = match_orders(&o1, &o2, &b1, &b2, price).unwrap();
 
     // Pull the validity proof witnesses for the wallets so that we may update the
     // public and private shares to the reblinded and augmented shares; as would
@@ -183,15 +181,16 @@ async fn dummy_match_bundle(
     match_res: MatchResult,
     test_args: &IntegrationTestArgs,
 ) -> Result<MatchBundle> {
+    let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
+
     let order1 = wallet1.orders.first().unwrap().1.clone();
     let balance1 = wallet1.balances.first().unwrap().1.clone();
-    let amount1 = Scalar::from(order1.amount);
+    let amount1 = compute_max_amount(&price, &order1, &balance1);
     let party0_public_shares = wallet1.blinded_public_shares.clone();
 
     let order2 = wallet2.orders.first().unwrap().1.clone();
     let balance2 = wallet2.balances.first().unwrap().1.clone();
-    let amount2 = Scalar::from(order2.amount);
-    let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
+    let amount2 = compute_max_amount(&price, &order2, &balance2);
     let party1_public_shares = wallet2.blinded_public_shares.clone();
 
     let party0_indices = OrderSettlementIndices { order: 0, balance_send: 0, balance_receive: 1 };
@@ -217,8 +216,8 @@ async fn dummy_match_bundle(
                 balance2,
                 price1: price,
                 price2: price,
-                amount1,
-                amount2,
+                amount1: amount1.into(),
+                amount2: amount2.into(),
                 match_res,
                 party0_public_shares,
                 party1_public_shares,

@@ -102,4 +102,14 @@ impl Wallet {
 
         Ok(())
     }
+
+    /// Remove a balance from the wallet, replacing it with a default balance
+    pub fn remove_balance(&mut self, mint: &BigUint) -> Option<Balance> {
+        // Replace the balance with a default balance to preserve the balance order for
+        // wallet update proofs
+        let bal = self.get_balance_mut(mint)?;
+        *bal = Balance::default();
+
+        Some(bal.clone())
+    }
 }

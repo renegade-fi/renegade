@@ -22,6 +22,7 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, Wallet},
 };
+use constants::Scalar;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
@@ -29,7 +30,7 @@ use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
 use tracing::instrument;
-use util::matching_engine::settle_match_into_wallets;
+use util::matching_engine::{compute_max_amount, settle_match_into_wallets};
 
 // -------------
 // | Constants |
@@ -401,18 +402,28 @@ impl SettleMatchInternalTask {
             &self.match_result,
         );
 
+        // Compute the maximum amount that can be settled for each party
+        let price = self.execution_price;
+        let order1 = commitment_witness1.order.clone();
+        let balance1 = commitment_witness1.balance_send.clone();
+        let amount1: Scalar = compute_max_amount(&price, &order1, &balance1).into();
+
+        let order2 = commitment_witness2.order.clone();
+        let balance2 = commitment_witness2.balance_send.clone();
+        let amount2: Scalar = compute_max_amount(&price, &order2, &balance2).into();
+
         // Build a witness and statement
         let witness = SizedValidMatchSettleWitness {
-            order1: commitment_witness1.order.clone(),
-            balance1: commitment_witness1.balance_send.clone(),
-            amount1: self.match_result.base_amount.into(),
-            price1: self.execution_price,
+            order1,
+            balance1,
+            amount1,
+            price1: price,
             party0_public_shares,
 
-            order2: commitment_witness2.order.clone(),
-            balance2: commitment_witness2.balance_send.clone(),
-            amount2: self.match_result.base_amount.into(),
-            price2: self.execution_price,
+            order2,
+            balance2,
+            amount2,
+            price2: price,
             party1_public_shares,
 
             match_res: self.match_result.clone(),
