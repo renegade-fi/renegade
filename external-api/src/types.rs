@@ -1,6 +1,6 @@
 //! Defines API type definitions used in request/response messages
 
-use std::{collections::HashMap, convert::TryInto};
+use std::collections::HashMap;
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
 use circuit_types::{

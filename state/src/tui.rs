@@ -8,9 +8,7 @@ use crossterm::{
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use std::{
-    cell::RefCell,
-    thread::JoinHandle,
-    time::{SystemTime, UNIX_EPOCH},
+    cell::RefCell, fmt::{self, Display}, thread::JoinHandle, time::{SystemTime, UNIX_EPOCH}
 };
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
 use tracing::log::LevelFilter;
@@ -92,9 +90,9 @@ impl AppTab {
     }
 }
 
-impl ToString for AppTab {
-    fn to_string(&self) -> String {
-        Self::tab_names()[*self as usize].to_owned()
+impl Display for AppTab {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Self::tab_names()[*self as usize])
     }
 }
 

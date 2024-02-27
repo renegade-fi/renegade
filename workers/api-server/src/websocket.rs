@@ -1,6 +1,6 @@
 //! Groups logic for managing websocket connections
 
-use std::{convert::TryFrom, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 use constants::{HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC};
 use external_api::{
