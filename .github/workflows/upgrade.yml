@@ -9,7 +9,7 @@ name: Upgrade Relayer Clusters
 
 jobs:
   build-and-push-ecr:
-    runs-on: buildjet-8vcpu-ubuntu-2204-arm
+    runs-on: buildjet-16vcpu-ubuntu-2204-arm
     outputs:
       image: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}:${{ github.sha }}
     steps:
@@ -54,7 +54,7 @@ jobs:
           python-version: '3.x'
 
       - id: gen-cluster-names
-        run: |
+        run: >-
           if [[ "${{ github.ref_name }}" == "staging" ]]; then
             NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_STAGING }}
             NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_STAGING }}
@@ -70,12 +70,10 @@ jobs:
             NUM_SINGLENODE_CLUSTERS=0
           fi
 
-          names=$(python -c "\
-            import json;\
-            cluster_names = [ \"${{ github.ref_name }}-cluster\" + str(i) for i in range($NUM_CLUSTERS)];\
-            cluster_names.extend([ \"${{ github.ref_name }}-sn-cluster\" + str(i) for i in range($NUM_SINGLENODE_CLUSTERS)]);\
-            print(json.dumps(cluster_names))\
-          ")
+          names=$(python -c "import json;
+          cluster_names = [ \"${{ github.ref_name }}-cluster\" + str(i) for i in range($NUM_CLUSTERS)];
+          cluster_names.extend([ \"${{ github.ref_name }}-sn-cluster\" + str(i) for i in range($NUM_SINGLENODE_CLUSTERS)]);
+          print(json.dumps(cluster_names))")
 
           echo "cluster_names={ \"cluster\": $names }" >> $GITHUB_OUTPUT
 
