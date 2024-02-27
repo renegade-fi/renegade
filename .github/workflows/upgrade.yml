@@ -57,15 +57,26 @@ jobs:
         run: |
           if [[ "${{ github.ref_name }}" == "staging" ]]; then
             NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_STAGING }}
+            NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_STAGING }}
           elif [[ "${{ github.ref_name }}" == "testnet" ]]; then
             NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_TESTNET }}
+            NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_TESTNET }}
           elif [[ "${{ github.ref_name }}" == "mainnet" ]]; then
             NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_MAINNET }}
+            NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_MAINNET }}
           else
             echo "Unsupported branch. Defaulting to 1 cluster."
             NUM_CLUSTERS=1
+            NUM_SINGLENODE_CLUSTERS=0
           fi
-          names=$(python -c "import json; print(json.dumps([ \"${{ github.ref_name }}-cluster\" + str(i) for i in range($NUM_CLUSTERS)]))")
+
+          names=$(python -c "\
+            import json;\
+            cluster_names = [ \"${{ github.ref_name }}-cluster\" + str(i) for i in range($NUM_CLUSTERS)];\
+            cluster_names.extend([ \"${{ github.ref_name }}-sn-cluster\" + str(i) for i in range($NUM_SINGLENODE_CLUSTERS)]);\
+            print(json.dumps(cluster_names))\
+          ")
+
           echo "cluster_names={ \"cluster\": $names }" >> $GITHUB_OUTPUT
 
   upgrade-relayer-clusters:
