@@ -2,7 +2,7 @@
 
 use std::{error::Error, fmt::Display};
 
-use common::types::wallet::WalletIdentifier;
+use common::types::{tasks::TaskQueueKey, wallet::WalletIdentifier};
 
 use crate::storage::error::StorageError;
 
@@ -15,6 +15,8 @@ pub enum StateApplicatorError {
     MissingEntry(String),
     /// An error interacting with storage
     Storage(StorageError),
+    /// A task queue is empty when it should not be
+    TaskQueueEmpty(TaskQueueKey),
     /// An error parsing a message separately from proto errors
     Parse(String),
     /// An error trying to preempt a committed task

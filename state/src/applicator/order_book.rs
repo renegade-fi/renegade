@@ -11,9 +11,7 @@ use common::types::{
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
-use job_types::handshake_manager::HandshakeExecutionJob;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use crate::applicator::error::StateApplicatorError;
 
@@ -82,17 +80,6 @@ impl StateApplicator {
             .get_order_info(&order_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING.to_string()))?;
         tx.commit()?;
-
-        // Send a job to the handshake manager to run the internal matching engine on
-        // the order
-        if order_info.ready_for_match() {
-            // TODO: We should only have one node execute the internal matching engine,
-            // though this is okay for the moment
-            let job = HandshakeExecutionJob::InternalMatchingEngine { order: order_info.id };
-            if self.config.handshake_manager_queue.send(job).is_err() {
-                error!("Failed to send internal matching engine job to handshake manager");
-            }
-        }
 
         self.system_bus().publish(
             ORDER_STATE_CHANGE_TOPIC.to_string(),
