@@ -16,7 +16,7 @@ use super::{
     gossip::WrappedPeerId,
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
-    transfer::TransferAuxData,
+    transfer_aux_data::TransferAuxData,
     wallet::{KeyChain, OrderIdentifier, Wallet, WalletIdentifier},
 };
 
