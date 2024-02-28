@@ -2,10 +2,13 @@
 //! darkpool contract
 
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
-use common::types::proof_bundles::{
-    GenericMatchSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-    MatchBundle, OrderValidityProofBundle, SizedValidWalletCreateBundle,
-    SizedValidWalletUpdateBundle,
+use common::types::{
+    proof_bundles::{
+        GenericMatchSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
+        MatchBundle, OrderValidityProofBundle, SizedValidWalletCreateBundle,
+        SizedValidWalletUpdateBundle,
+    },
+    transfer::TransferAuxData,
 };
 use constants::Scalar;
 use contracts_common::types::MatchPayload;
@@ -15,9 +18,9 @@ use tracing::{info, instrument};
 use crate::{
     conversion::{
         build_match_linking_proofs, build_match_proofs, to_contract_proof,
-        to_contract_valid_commitments_statement, to_contract_valid_match_settle_statement,
-        to_contract_valid_reblind_statement, to_contract_valid_wallet_create_statement,
-        to_contract_valid_wallet_update_statement,
+        to_contract_transfer_aux_data, to_contract_valid_commitments_statement,
+        to_contract_valid_match_settle_statement, to_contract_valid_reblind_statement,
+        to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
     },
     errors::ArbitrumClientError,
     helpers::{send_tx, serialize_calldata},
@@ -115,7 +118,8 @@ impl ArbitrumClient {
     pub async fn update_wallet(
         &self,
         valid_wallet_update: &SizedValidWalletUpdateBundle,
-        statement_signature: Vec<u8>,
+        wallet_commitment_signature: Vec<u8>,
+        transfer_aux_data: Option<TransferAuxData>,
     ) -> Result<(), ArbitrumClientError> {
         let GenericValidWalletUpdateBundle { statement, proof } = valid_wallet_update;
 
@@ -125,10 +129,14 @@ impl ArbitrumClient {
         let contract_statement = to_contract_valid_wallet_update_statement(statement)?;
         let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
+        let contract_transfer_aux_data = to_contract_transfer_aux_data(&transfer_aux_data);
+        let transfer_aux_data_calldata = serialize_calldata(&contract_transfer_aux_data)?;
+
         let receipt = send_tx(self.darkpool_contract.update_wallet(
             proof_calldata,
             valid_wallet_update_statement_calldata,
-            statement_signature.into(),
+            wallet_commitment_signature.into(),
+            transfer_aux_data_calldata,
         ))
         .await?;
 
