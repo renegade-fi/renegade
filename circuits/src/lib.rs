@@ -58,10 +58,12 @@ macro_rules! print_mpc_wire {
         let x_eval = block_on($x.open());
         if $x.fabric().party_id() == 0 {
             info!("eval({}): {:?}", stringify!($x), scalar_to_biguint(&x_eval));
+        }
     }};
 }
 
 /// A debug macro used for printing wires in an MPC-ZK circuit during execution
+#[allow(unused)]
 macro_rules! print_multiprover_wire {
     ($x:expr, $cs:ident) => {{
         use circuit_types::traits::CircuitVarType;

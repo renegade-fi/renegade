@@ -331,7 +331,7 @@ mod test {
         let mut res = Scalar::zero();
 
         for bit in bits.into_iter() {
-            res = res * Scalar::from(2u8);
+            res *= Scalar::from(2u8);
             if bit {
                 res += Scalar::one();
             }

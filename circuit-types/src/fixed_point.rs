@@ -347,6 +347,14 @@ impl From<AuthenticatedScalar> for AuthenticatedFixedPoint {
     }
 }
 
+impl Mul<&AuthenticatedScalar> for FixedPoint {
+    type Output = AuthenticatedFixedPoint;
+
+    fn mul(self, rhs: &AuthenticatedScalar) -> Self::Output {
+        AuthenticatedFixedPoint { repr: self.repr * rhs }
+    }
+}
+
 impl Mul<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
