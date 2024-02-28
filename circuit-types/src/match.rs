@@ -83,6 +83,13 @@ impl FeeTake {
     }
 }
 
+impl AuthenticatedFeeTake {
+    /// Get the total fee
+    pub fn total(&self) -> AuthenticatedScalar {
+        &self.relayer_fee + &self.protocol_fee
+    }
+}
+
 /// The indices that specify where settlement logic should modify the wallet
 /// shares
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]

@@ -55,6 +55,5 @@ mod test {
 
         assert_eq!(res1, expected1);
         assert_eq!(res2, expected2);
-        panic!("test")
     }
 }
