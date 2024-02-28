@@ -1,7 +1,10 @@
 //! Task queue state transition applicator methods
 
-use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
-use job_types::task_driver::TaskDriverJob;
+use common::types::{
+    tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
+    wallet::WalletIdentifier,
+};
+use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
 use libmdbx::TransactionKind;
 use tracing::error;
 use util::err_str;
@@ -14,6 +17,8 @@ use super::{error::StateApplicatorError, Result, StateApplicator};
 const PENDING_STATE: &str = "Pending";
 /// Error emitted when a key cannot be found for a task
 const ERR_NO_KEY: &str = "key not found for task";
+/// Error emitted when a wallet cannot be found in state
+const ERR_NO_WALLET: &str = "wallet not found in state";
 
 /// Construct the running state for a newly started task
 fn new_running_state() -> QueuedTaskState {
@@ -56,13 +61,21 @@ impl StateApplicator {
         }
 
         // Pop the task from the queue
-        tx.pop_task(&key)?;
+        let task = tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
 
         // If the queue is non-empty, start the next task
         let tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = tasks.first() {
             tx.transition_task(&key, new_running_state())?;
             self.maybe_start_task(task, &tx)?;
+        }
+
+        // If the queue is empty and the task was a wallet task, run the matching engine
+        // on all orders that are ready
+        // TODO: We should only have one node execute the internal matching engine,
+        // though this is okay for the moment
+        if tasks.is_empty() && task.descriptor.is_wallet_task() {
+            self.run_matching_engine_on_wallet(key, &tx)?;
         }
 
         Ok(tx.commit()?)
@@ -147,6 +160,34 @@ impl StateApplicator {
                 .task_queue
                 .send(TaskDriverJob::Run(task.clone()))
                 .map_err(err_str!(StateApplicatorError::EnqueueTask))?;
+        }
+
+        Ok(())
+    }
+
+    /// Run the internal matching engine on all of a wallet's orders that are
+    /// ready for matching
+    fn run_matching_engine_on_wallet<T: TransactionKind>(
+        &self,
+        wallet_id: WalletIdentifier,
+        tx: &StateTxn<'_, T>,
+    ) -> Result<()> {
+        let wallet = tx
+            .get_wallet(&wallet_id)?
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_WALLET.to_string()))?;
+
+        for order_id in wallet.orders.keys() {
+            let order = match tx.get_order_info(order_id)? {
+                Some(order) => order,
+                None => continue,
+            };
+
+            if order.ready_for_match() {
+                let job = HandshakeExecutionJob::InternalMatchingEngine { order: order.id };
+                if self.config.handshake_manager_queue.send(job).is_err() {
+                    error!("error enqueueing internal matching engine job for order {order_id}");
+                }
+            }
         }
 
         Ok(())

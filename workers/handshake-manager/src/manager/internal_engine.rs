@@ -5,7 +5,7 @@ use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor, TaskIdentifier},
-    wallet::{OrderIdentifier, Wallet},
+    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
 };
 use job_types::task_driver::TaskDriverJob;
 use rand::{seq::SliceRandom, thread_rng};
@@ -68,11 +68,11 @@ impl HandshakeExecutor {
             }
 
             // Same wallet
-            let wallet_id = self
+            let other_wallet_id = self
                 .global_state
                 .get_wallet_for_order(&order_id)?
                 .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
-            if wallet_id == wallet.wallet_id {
+            if other_wallet_id == wallet.wallet_id {
                 continue;
             }
 
@@ -97,6 +97,8 @@ impl HandshakeExecutor {
                     order2,
                     network_order.id,
                     order_id,
+                    wallet.wallet_id,
+                    other_wallet_id,
                     price,
                     my_witness.clone(),
                     other_witness.clone(),
@@ -130,6 +132,8 @@ impl HandshakeExecutor {
         o2: Order,
         order_id1: OrderIdentifier,
         order_id2: OrderIdentifier,
+        wallet_id1: WalletIdentifier,
+        wallet_id2: WalletIdentifier,
         price: FixedPoint,
         validity_witness1: OrderValidityWitnessBundle,
         validity_witness2: OrderValidityWitnessBundle,
@@ -148,7 +152,9 @@ impl HandshakeExecutor {
         let task: TaskDescriptor = SettleMatchInternalTaskDescriptor::new(
             price,
             order_id1,
+            wallet_id1,
             order_id2,
+            wallet_id2,
             validity_proof1,
             validity_witness1,
             validity_proof2,
@@ -158,14 +164,6 @@ impl HandshakeExecutor {
         .unwrap()
         .into();
 
-        let wallet_id1 = self
-            .global_state
-            .get_wallet_for_order(&order_id1)?
-            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
-        let wallet_id2 = self
-            .global_state
-            .get_wallet_for_order(&order_id2)?
-            .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
         let wallet_ids = vec![wallet_id1, wallet_id2];
 
         let task_id = TaskIdentifier::new_v4();

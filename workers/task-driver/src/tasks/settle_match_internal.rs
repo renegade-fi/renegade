@@ -137,8 +137,12 @@ pub struct SettleMatchInternalTask {
     execution_price: FixedPoint,
     /// The identifier of the first order
     order_id1: OrderIdentifier,
+    /// The identifier of the first order's wallet
+    wallet_id1: WalletIdentifier,
     /// The identifier of the second order
     order_id2: OrderIdentifier,
+    /// The identifier of the second order's wallet
+    wallet_id2: WalletIdentifier,
     /// The validity proofs for the first order
     order1_proof: OrderValidityProofBundle,
     /// The validity proof witness for the first order
@@ -173,7 +177,9 @@ impl Task for SettleMatchInternalTask {
         let SettleMatchInternalTaskDescriptor {
             execution_price,
             order_id1,
+            wallet_id1,
             order_id2,
+            wallet_id2,
             order1_proof,
             order1_validity_witness,
             order2_proof,
@@ -184,7 +190,9 @@ impl Task for SettleMatchInternalTask {
         Ok(Self {
             execution_price,
             order_id1,
+            wallet_id1,
             order_id2,
+            wallet_id2,
             order1_proof,
             order1_validity_witness,
             order2_proof,
@@ -301,8 +309,8 @@ impl SettleMatchInternalTask {
         self.state.nullify_orders(nullifier2)?;
 
         // Lookup the wallets that manage each order
-        let mut wallet1 = self.find_wallet_for_order(&self.order_id1)?;
-        let mut wallet2 = self.find_wallet_for_order(&self.order_id2)?;
+        let mut wallet1 = self.find_wallet(&self.wallet_id1)?;
+        let mut wallet2 = self.find_wallet(&self.wallet_id2)?;
 
         // Apply the match to each of the wallets
         wallet1
@@ -329,8 +337,8 @@ impl SettleMatchInternalTask {
     /// Update validity proofs for the wallet
     async fn update_proofs(&self) -> Result<(), SettleMatchInternalTaskError> {
         // Lookup wallets to update proofs for
-        let wallet1 = self.find_wallet_for_order(&self.order_id1)?;
-        let wallet2 = self.find_wallet_for_order(&self.order_id2)?;
+        let wallet1 = self.find_wallet(&self.wallet_id1)?;
+        let wallet2 = self.find_wallet(&self.wallet_id2)?;
 
         // We spawn the proof updates in tasks so that they may run concurrently, we do
         // not want to wait for the first wallet's proofs to finish before
@@ -364,15 +372,11 @@ impl SettleMatchInternalTask {
     // -----------
 
     /// Find the wallet for an order in the global state
-    fn find_wallet_for_order(
+    fn find_wallet(
         &self,
-        order: &OrderIdentifier,
+        wallet_id: &WalletIdentifier,
     ) -> Result<Wallet, SettleMatchInternalTaskError> {
-        let wallet_id = self.state.get_wallet_for_order(order)?.ok_or_else(|| {
-            SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
-        })?;
-
-        self.state.get_wallet(&wallet_id)?.ok_or_else(|| {
+        self.state.get_wallet(wallet_id)?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })
     }

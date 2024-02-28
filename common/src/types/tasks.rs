@@ -108,6 +108,20 @@ impl TaskDescriptor {
             TaskDescriptor::UpdateWallet(task) => task.old_wallet.wallet_id,
         }
     }
+
+    /// Returns whether the task is a wallet task
+    ///
+    /// Currently all tasks are wallet tasks
+    pub fn is_wallet_task(&self) -> bool {
+        match self {
+            TaskDescriptor::NewWallet(_)
+            | TaskDescriptor::LookupWallet(_)
+            | TaskDescriptor::UpdateWallet(_)
+            | TaskDescriptor::SettleMatch(_)
+            | TaskDescriptor::SettleMatchInternal(_)
+            | TaskDescriptor::UpdateMerkleProof(_) => true,
+        }
+    }
 }
 
 // ---------------
@@ -180,8 +194,12 @@ pub struct SettleMatchInternalTaskDescriptor {
     pub execution_price: FixedPoint,
     /// The identifier of the first order
     pub order_id1: OrderIdentifier,
+    /// The identifier of the first order's wallet
+    pub wallet_id1: WalletIdentifier,
     /// The identifier of the second order
     pub order_id2: OrderIdentifier,
+    /// The identifier of the second order's wallet
+    pub wallet_id2: WalletIdentifier,
     /// The validity proofs for the first order
     pub order1_proof: OrderValidityProofBundle,
     /// The validity proof witness for the first order
@@ -200,7 +218,9 @@ impl SettleMatchInternalTaskDescriptor {
     pub fn new(
         execution_price: FixedPoint,
         order_id1: OrderIdentifier,
+        wallet_id1: WalletIdentifier,
         order_id2: OrderIdentifier,
+        wallet_id2: WalletIdentifier,
         order1_proof: OrderValidityProofBundle,
         order1_validity_witness: OrderValidityWitnessBundle,
         order2_proof: OrderValidityProofBundle,
@@ -210,7 +230,9 @@ impl SettleMatchInternalTaskDescriptor {
         Ok(SettleMatchInternalTaskDescriptor {
             execution_price,
             order_id1,
+            wallet_id1,
             order_id2,
+            wallet_id2,
             order1_proof,
             order1_validity_witness,
             order2_proof,
