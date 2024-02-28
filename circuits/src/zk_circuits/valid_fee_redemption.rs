@@ -466,7 +466,7 @@ mod test {
         statement: &ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>,
     ) -> bool {
         check_constraint_satisfaction::<ValidFeeRedemption<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>>(
-            &witness, &statement,
+            witness, statement,
         )
     }
 
@@ -494,7 +494,7 @@ mod test {
     fn recompute_note_opening_nullifier(
         note: &Note,
     ) -> (MerkleRoot, MerkleOpening<MERKLE_HEIGHT>, Nullifier) {
-        let note_comm = note_commitment(&note);
+        let note_comm = note_commitment(note);
         let (root, opening) = create_multi_opening(&[note_comm]);
         let nullifier = note_nullifier(note_comm, note.blinder);
 
@@ -688,6 +688,7 @@ mod test {
 
     /// Test the case in which a non-receive balance is modified
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_non_receive_balance_update() {
         let (wallet, note) = get_testing_wallet_and_note();
         let (original_statement, witness) = create_witness_and_statement(&wallet, &note);
