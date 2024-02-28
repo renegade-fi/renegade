@@ -37,4 +37,8 @@ WORKDIR /build/arbitrum-client
 RUN cargo build --quiet --test integration --features "integration"
 
 # Copy in the deployments file from the sequencer
+<<<<<<< HEAD
 COPY --from=sequencer /deployments.json /deployments.json
+=======
+COPY --from=sequencer /deployments.json /deployments.json
+>>>>>>> 8b6e28a1 (docker: sequencer: deploy new darkpool core & transfer executor contracts)

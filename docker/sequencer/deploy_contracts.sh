@@ -46,8 +46,6 @@ if [[ -n $NO_VERIFY ]]; then
     no_verify_flag="--no-verify"
 else
     # Deploy verification keys
-    # TODO: Ensure that the same SRS is used for the verification keys
-    # and the integration tests
     cargo run \
         --package scripts -- \
         --priv-key $DEVNET_PKEY \
@@ -59,7 +57,8 @@ else
     no_verify_flag=""
 fi
 
-# Deploy Merkle contract
+# Deploy Merkle contract, setting the "--no-verify" flag
+# conditionally depending on whether the corresponding env var is set
 cargo run \
     --package scripts -- \
     --priv-key $DEVNET_PKEY \
@@ -69,16 +68,36 @@ cargo run \
     --contract merkle \
     $no_verify_flag
 
-# Deploy darkpool contract, setting the "--no-verify" flag
-# conditionally depending on whether the corresponding env var is set
+# Deploy transfer executor contract
 cargo run \
     --package scripts -- \
     --priv-key $DEVNET_PKEY \
     --rpc-url $DEVNET_RPC_URL \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
-    --contract darkpool-test-contract \
+    --contract transfer-executor \
     $no_verify_flag
+
+# Deploy the Permit2 contract.
+# This must be deployed before the ERC20s so they can approve it
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-permit2
+
+# Deploy the dummy ERC20 contracts
+# The funding amount here is 1 million of a token with 18 decimal places
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-erc20s \
+    --account-skeys $DEVNET_PKEY \
+    --tickers DUMMY1 DUMMY2 \
+    --funding-amount 1000000000000000000000000
 
 # If the $NO_VERIFY env var is unset, deploy the verifier.
 # We do this after deploying the other contracts because it uses
@@ -95,6 +114,26 @@ if [[ -z $NO_VERIFY ]]; then
         --contract verifier
 fi
 
+# Deploy the darkpool core contract, setting the "--no-verify" flag
+# conditionally depending on whether the corresponding env var is set
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-stylus \
+    --contract darkpool-core \
+    $no_verify_flag
+
+# Deploy darkpool test contract
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-stylus \
+    --contract darkpool-test-contract
+
 # Deploy the proxy contract
 cargo run \
     --package scripts -- \
@@ -104,15 +143,3 @@ cargo run \
     deploy-proxy \
     --owner $DEVNET_ACCOUNT_ADDRESS \
     --fee 1
-
-# Deploy the dummy ERC20 contracts
-# The funding amount here is 1 million of a token with 18 decimal places
-cargo run \
-    --package scripts -- \
-    --priv-key $DEVNET_PKEY \
-    --rpc-url $DEVNET_RPC_URL \
-    --deployments-path $DEPLOYMENTS_PATH \
-    deploy-erc20s \
-    --account-skeys $DEVNET_PKEY \
-    --tickers DUMMY1 DUMMY2 \
-    --funding-amount 1000000000000000000000000
