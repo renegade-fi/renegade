@@ -31,6 +31,7 @@ RUN cargo install wasm-opt --locked
 ADD https://api.github.com/repos/renegade-fi/renegade-contracts/git/refs/heads/main /renegade-contracts-version.json
 WORKDIR /sources
 RUN git clone \
+    -b andrew/gen-random-protocol-key \
     https://github.com/renegade-fi/renegade-contracts.git
 
 WORKDIR /sources/renegade-contracts
@@ -41,17 +42,17 @@ RUN git checkout 86070446fe87a00c32b8ac50467030ec4ea68ff7
 # Build the `scripts` crate to cache it
 RUN cargo build -p scripts
 
-# Build the darkpool contract with the same flags as the deploy scripts
-# to cache the dependencies.
+# Build the darkpool-core contract with the same flags as the first
+# contracts in the deploy scripts to cache as many dependencies as possible.
 # The actual deploy script will rebuild & deploy this contract, along with
 # the others.
-RUN RUSTFLAGS="-C opt-level=3" \
+RUN RUSTFLAGS="-Clink-arg=-zstack-size=131072 -Zlocation-detail=none -C opt-level=3" \
     cargo \
     +nightly \
     build \
     -r \
     -p contracts-stylus \
-    --features darkpool \
+    --features darkpool-core \
     --target wasm32-unknown-unknown \
     -Z build-std=std,panic_abort \
     -Z build-std-features=panic_immediate_abort
