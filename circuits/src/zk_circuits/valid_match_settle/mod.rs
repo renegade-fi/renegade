@@ -543,7 +543,7 @@ mod tests {
         let (mut witness, statement) = dummy_witness_and_statement();
 
         // Modify the base amount
-        witness.match_res.base_amount = witness.match_res.base_amount - 1;
+        witness.match_res.base_amount -= 1;
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 
@@ -553,7 +553,7 @@ mod tests {
         let (mut witness, statement) = dummy_witness_and_statement();
 
         // Modify the quote amount
-        witness.match_res.quote_amount = witness.match_res.quote_amount - 1;
+        witness.match_res.quote_amount -= 1;
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(&witness, &statement));
     }
 

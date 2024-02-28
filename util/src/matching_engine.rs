@@ -6,7 +6,7 @@ use circuit_types::{
     order::{Order, OrderSide},
     r#match::{FeeTake, MatchResult, OrderSettlementIndices},
     wallet::WalletShare,
-    Amount, Amount,
+    Amount,
 };
 use constants::Scalar;
 use renegade_crypto::fields::scalar_to_u128;
