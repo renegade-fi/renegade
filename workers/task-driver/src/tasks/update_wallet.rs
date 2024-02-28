@@ -15,8 +15,8 @@ use circuit_types::{
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
-use common::types::tasks::UpdateWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
+use common::types::{tasks::UpdateWalletTaskDescriptor, transfer::TransferAuxData};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
@@ -155,6 +155,8 @@ pub struct UpdateWalletTask {
     pub timestamp_received: u64,
     /// The external transfer, if one exists
     pub external_transfer: Option<ExternalTransfer>,
+    /// The auxiliary data for the external transfer, if one exists
+    pub transfer_aux_data: Option<TransferAuxData>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -189,6 +191,7 @@ impl Task for UpdateWalletTask {
         Ok(Self {
             timestamp_received: descriptor.timestamp_received,
             external_transfer: descriptor.external_transfer,
+            transfer_aux_data: descriptor.transfer_aux_data,
             old_wallet: descriptor.old_wallet,
             new_wallet: descriptor.new_wallet,
             wallet_update_signature: descriptor.wallet_update_signature,
@@ -282,7 +285,11 @@ impl UpdateWalletTask {
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
-            .update_wallet(&proof, self.wallet_update_signature.clone())
+            .update_wallet(
+                &proof,
+                self.wallet_update_signature.clone(),
+                self.transfer_aux_data.clone(),
+            )
             .await
             .map_err(|e| e.to_string())
             .map_err(UpdateWalletTaskError::Arbitrum)

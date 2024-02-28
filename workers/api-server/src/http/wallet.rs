@@ -386,6 +386,7 @@ impl TypedHandler for CreateOrderHandler {
         let task = UpdateWalletTaskDescriptor::new(
             timestamp,
             None, // transfer
+            None, // transfer_aux_data
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -449,6 +450,7 @@ impl TypedHandler for UpdateOrderHandler {
         let task = UpdateWalletTaskDescriptor::new(
             timestamp,
             None, // transfer
+            None, // transfer_aux_data
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -502,6 +504,7 @@ impl TypedHandler for CancelOrderHandler {
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
             None, // transfer
+            None, // transfer_aux_data
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -637,6 +640,8 @@ impl TypedHandler for DepositBalanceHandler {
             .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
+        // TODO: Construct transfer aux data
+
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
             Some(ExternalTransfer {
@@ -700,6 +705,8 @@ impl TypedHandler for WithdrawBalanceHandler {
             return Err(bad_request(ERR_INSUFFICIENT_BALANCE.to_string()));
         }
         new_wallet.reblind_wallet();
+
+        // TODO: Construct transfe aux data
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
@@ -808,6 +815,7 @@ impl TypedHandler for AddFeeHandler {
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
             None, // transfer
+            None, // transfer_aux_data
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -863,7 +871,8 @@ impl TypedHandler for RemoveFeeHandler {
         // Start a task to submit this update to the contract
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
-            None,
+            None, // transfer
+            None, // transfer_aux_data
             old_wallet,
             new_wallet,
             req.statement_sig,
