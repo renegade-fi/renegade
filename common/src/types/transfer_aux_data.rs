@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Auxiliary data for validating a deposit, namely a [Permit2 permitTransferFrom](https://docs.uniswap.org/contracts/permit2/reference/signature-transfer#single-permittransferfrom)
 /// signature, and the signed fields that cannot be extracted from the external
 /// transfer.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DepositAuxData {
     /// The nonce used in the permit
     pub permit_nonce: BigUint,
@@ -19,14 +19,18 @@ pub struct DepositAuxData {
 
 /// Auxiliary data for validating a withdrawal, namely a signature
 /// over the external transfer.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WithdrawalAuxData {
     /// The signature over the external transfer
     pub external_transfer_signature: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+/// Auxiliary data for validating a transfer, which can be either a deposit or a
+/// withdrawal
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransferAuxData {
+    /// Auxiliary data for validating a deposit
     Deposit(DepositAuxData),
+    /// Auxiliary data for validating a withdrawal
     Withdrawal(WithdrawalAuxData),
 }

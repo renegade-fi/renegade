@@ -37,6 +37,7 @@ circuit-types = { path = "../circuit-types" }
 circuits = { path = "../circuits" }
 common = { path = "../common" }
 renegade-crypto = { path = "../renegade-crypto" }
+util = { path = "../util" }
 
 # === Serde === #
 serde = { workspace = true }

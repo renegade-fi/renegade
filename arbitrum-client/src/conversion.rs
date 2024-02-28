@@ -1,7 +1,9 @@
 //! Utilities for converting between circuit types such as statements and
 //! proofs, and their analogues as expected by the smart contracts.
 
-use alloy_primitives::Address;
+use std::str::FromStr;
+
+use alloy_primitives::{Address, U256 as AlloyU256};
 use ark_bn254::g1::Config as G1Config;
 use ark_ec::short_weierstrass::Affine;
 use circuit_types::{
@@ -16,20 +18,24 @@ use circuits::zk_circuits::{
     valid_wallet_create::SizedValidWalletCreateStatement,
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
-use common::types::{proof_bundles::{MatchBundle, OrderValidityProofBundle}, transfer::TransferAuxData};
+use common::types::{
+    proof_bundles::{MatchBundle, OrderValidityProofBundle},
+    transfer_aux_data::TransferAuxData,
+};
 use constants::{Scalar, ScalarField};
 use contracts_common::types::{
     ExternalTransfer as ContractExternalTransfer, LinkingProof as ContractLinkingProof,
     MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
     Proof as ContractProof, PublicSigningKey as ContractPublicSigningKey,
+    TransferAuxData as ContractTransferAuxData,
     ValidCommitmentsStatement as ContractValidCommitmentsStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
     ValidReblindStatement as ContractValidReblindStatement,
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
     ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
-    TransferAuxData as ContractTransferAuxData,
 };
 use ruint::aliases::{U160, U256};
+use util::hex::biguint_to_hex_string;
 
 use crate::errors::ConversionError;
 
@@ -143,21 +149,40 @@ pub fn to_contract_valid_wallet_update_statement(
 }
 
 /// Convert a [`TransferAuxData`] to its corresponding smart contract type
-pub fn to_contract_transfer_aux_data(data: &TransferAuxData) -> ContractTransferAuxData {
-    match data {
-            TransferAuxData::Deposit(deposit) => ContractsTransferAuxData {
-                permit_nonce: Some(biguint_to_u256(&deposit.permit_nonce)),
-                permit_deadline: Some(biguint_to_u256(&deposit.permit_deadline)),
-                permit_signature: Some(deposit.permit_signature),
+pub fn to_contract_transfer_aux_data(
+    data: &Option<TransferAuxData>,
+) -> Result<ContractTransferAuxData, ConversionError> {
+    let res = if let Some(data) = data {
+        match data {
+            TransferAuxData::Deposit(deposit) => ContractTransferAuxData {
+                permit_nonce: Some(
+                    AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_nonce))
+                        .map_err(|_| ConversionError::InvalidUint)?,
+                ),
+                permit_deadline: Some(
+                    AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_deadline))
+                        .map_err(|_| ConversionError::InvalidUint)?,
+                ),
+                permit_signature: Some(deposit.permit_signature.clone()),
                 transfer_signature: None,
             },
-            TransferAuxData::Withdrawal(withdrawal) => ContractsTransferAuxData {
+            TransferAuxData::Withdrawal(withdrawal) => ContractTransferAuxData {
                 permit_nonce: None,
                 permit_deadline: None,
                 permit_signature: None,
-                transfer_signature: Some(withdrawal.external_transfer_signature),
+                transfer_signature: Some(withdrawal.external_transfer_signature.clone()),
             },
         }
+    } else {
+        ContractTransferAuxData {
+            permit_nonce: None,
+            permit_deadline: None,
+            permit_signature: None,
+            transfer_signature: None,
+        }
+    };
+
+    Ok(res)
 }
 
 /// Convert a [`ValidReblindStatement`] to its corresponding smart contract type
