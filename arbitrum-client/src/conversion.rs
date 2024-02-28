@@ -16,7 +16,7 @@ use circuits::zk_circuits::{
     valid_wallet_create::SizedValidWalletCreateStatement,
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
-use common::types::proof_bundles::{MatchBundle, OrderValidityProofBundle};
+use common::types::{proof_bundles::{MatchBundle, OrderValidityProofBundle}, transfer::TransferAuxData};
 use constants::{Scalar, ScalarField};
 use contracts_common::types::{
     ExternalTransfer as ContractExternalTransfer, LinkingProof as ContractLinkingProof,
@@ -27,6 +27,7 @@ use contracts_common::types::{
     ValidReblindStatement as ContractValidReblindStatement,
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
     ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
+    TransferAuxData as ContractTransferAuxData,
 };
 use ruint::aliases::{U160, U256};
 
@@ -139,6 +140,24 @@ pub fn to_contract_valid_wallet_update_statement(
         old_pk_root,
         timestamp: statement.timestamp,
     })
+}
+
+/// Convert a [`TransferAuxData`] to its corresponding smart contract type
+pub fn to_contract_transfer_aux_data(data: &TransferAuxData) -> ContractTransferAuxData {
+    match data {
+            TransferAuxData::Deposit(deposit) => ContractsTransferAuxData {
+                permit_nonce: Some(biguint_to_u256(&deposit.permit_nonce)),
+                permit_deadline: Some(biguint_to_u256(&deposit.permit_deadline)),
+                permit_signature: Some(deposit.permit_signature),
+                transfer_signature: None,
+            },
+            TransferAuxData::Withdrawal(withdrawal) => ContractsTransferAuxData {
+                permit_nonce: None,
+                permit_deadline: None,
+                permit_signature: None,
+                transfer_signature: Some(withdrawal.external_transfer_signature),
+            },
+        }
 }
 
 /// Convert a [`ValidReblindStatement`] to its corresponding smart contract type
