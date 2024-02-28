@@ -168,13 +168,21 @@ pub struct DepositBalanceRequest {
     pub mint: BigUint,
     /// The amount of the token to deposit
     pub amount: BigUint,
-    /// A signature of the circuit statement used in the proof of
+    /// A signature of the wallet commitment used in the proof of
     /// VALID WALLET UPDATE by `sk_root`. This allows the contract
     /// to guarantee that the wallet updates are properly authorized
     ///
     /// TODO: For now this is just a blob, we will add this feature in
     /// a follow up
-    pub statement_sig: Vec<u8>,
+    pub wallet_commitment_sig: Vec<u8>,
+    /// The nonce used in the associated Permit2 permit
+    pub permit_nonce: BigUint,
+    /// The deadline used in the associated Permit2 permit
+    pub permit_deadline: BigUint,
+    /// The signature over the associated Permit2 permit, allowing
+    /// the contract to guarantee that the deposit is sourced from
+    /// the correct account
+    pub permit_signature: Vec<u8>,
 }
 
 /// The response type to a request to deposit into the darkpool
@@ -196,13 +204,17 @@ pub struct WithdrawBalanceRequest {
     pub destination_addr: BigUint,
     /// The amount of the token to withdraw
     pub amount: BigUint,
-    /// A signature of the circuit statement used in the proof of
+    /// A signature of the wallet commitment used in the proof of
     /// VALID WALLET UPDATE by `sk_root`. This allows the contract
     /// to guarantee that the wallet updates are properly authorized
     ///
     /// TODO: For now this is just a blob, we will add this feature in
     /// a follow up
-    pub statement_sig: Vec<u8>,
+    pub wallet_commitment_sig: Vec<u8>,
+    /// A signature over the external transfer, allowing the contract
+    /// to guarantee that the withdrawal is directed at the correct
+    /// recipient
+    pub external_transfer_sig: Vec<u8>,
 }
 
 /// The response type to a request to withdraw a balance

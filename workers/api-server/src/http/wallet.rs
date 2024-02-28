@@ -9,11 +9,11 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::{
-    tasks::TaskIdentifier,
     tasks::{
-        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor,
+        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
         UpdateWalletTaskDescriptor,
     },
+    transfer_aux_data::{DepositAuxData, TransferAuxData, WithdrawalAuxData},
     wallet::{KeyChain, Wallet, WalletIdentifier},
 };
 use constants::MAX_FEES;
@@ -640,8 +640,6 @@ impl TypedHandler for DepositBalanceHandler {
             .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        // TODO: Construct transfer aux data
-
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
             Some(ExternalTransfer {
@@ -650,9 +648,14 @@ impl TypedHandler for DepositBalanceHandler {
                 amount: req.amount,
                 direction: ExternalTransferDirection::Deposit,
             }),
+            Some(TransferAuxData::Deposit(DepositAuxData {
+                permit_nonce: req.permit_nonce,
+                permit_deadline: req.permit_deadline,
+                permit_signature: req.permit_signature,
+            })),
             old_wallet,
             new_wallet,
-            req.statement_sig,
+            req.wallet_commitment_sig,
         )
         .map_err(bad_request)?;
 
@@ -706,8 +709,6 @@ impl TypedHandler for WithdrawBalanceHandler {
         }
         new_wallet.reblind_wallet();
 
-        // TODO: Construct transfe aux data
-
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
             Some(ExternalTransfer {
@@ -716,9 +717,12 @@ impl TypedHandler for WithdrawBalanceHandler {
                 amount: req.amount,
                 direction: ExternalTransferDirection::Withdrawal,
             }),
+            Some(TransferAuxData::Withdrawal(WithdrawalAuxData {
+                external_transfer_signature: req.external_transfer_sig,
+            })),
             old_wallet,
             new_wallet,
-            req.statement_sig,
+            req.wallet_commitment_sig,
         )
         .map_err(bad_request)?;
 
