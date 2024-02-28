@@ -16,7 +16,7 @@ use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
-use common::types::{tasks::UpdateWalletTaskDescriptor, transfer::TransferAuxData};
+use common::types::{tasks::UpdateWalletTaskDescriptor, transfer_aux_data::TransferAuxData};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
