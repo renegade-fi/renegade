@@ -6,8 +6,15 @@
 
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
+    valid_fee_redemption::{SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness},
     valid_match_settle::{SizedValidMatchSettleStatement, SizedValidMatchSettleWitness},
+    valid_offline_fee_settlement::{
+        SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness,
+    },
     valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
+    valid_relayer_fee_settlement::{
+        SizedValidRelayerFeeSettlementStatement, SizedValidRelayerFeeSettlementWitness,
+    },
     valid_wallet_create::{SizedValidWalletCreateStatement, SizedValidWalletCreateWitness},
     valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
 };
@@ -88,5 +95,32 @@ pub enum ProofJob {
         /// The statement (public variables) to use in the proof of `VALID
         /// MATCH SETTLE`
         statement: SizedValidMatchSettleStatement,
+    },
+    /// A request to create a proof of `VALID RELAYER FEE SETTLEMENT` in a
+    /// single prover context
+    ValidRelayerFeeSettlement {
+        /// The witness to the proof of `VALID RELAYER FEE SETTLEMENT`
+        witness: SizedValidRelayerFeeSettlementWitness,
+        /// The statement (public variables) to use in the proof of `VALID
+        /// RELAYER FEE SETTLEMENT`
+        statement: SizedValidRelayerFeeSettlementStatement,
+    },
+    /// A request to create a proof of `VALID OFFLINE FEE SETTLEMENT` in a
+    /// single prover context
+    ValidOfflineFeeSettlement {
+        /// The witness to the proof of `VALID OFFLINE FEE SETTLEMENT`
+        witness: SizedValidOfflineFeeSettlementWitness,
+        /// The statement (public variables) to use in the proof of `VALID
+        /// OFFLINE FEE SETTLEMENT`
+        statement: SizedValidOfflineFeeSettlementStatement,
+    },
+    /// A request to create a proof of `VALID FEE REDEMPTION` in a
+    /// single prover context
+    ValidFeeRedemption {
+        /// The witness to the proof of `VALID FEE REDEMPTION`
+        witness: SizedValidFeeRedemptionWitness,
+        /// The statement (public variables) to use in the proof of `VALID
+        /// FEE REDEMPTION`
+        statement: SizedValidFeeRedemptionStatement,
     },
 }
