@@ -15,6 +15,7 @@ use circuit_types::{
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::{
     comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
@@ -31,6 +32,13 @@ use crate::zk_gadgets::{
 /// parameters attached
 pub type SizedValidRelayerFeeSettlement =
     ValidRelayerFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
+/// A type alias for the `ValidRelayerFeeSettlementStatement` with default
+/// sizing
+pub type SizedValidRelayerFeeSettlementStatement =
+    ValidRelayerFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias for the `ValidRelayerFeeSettlementWitness` with default sizing
+pub type SizedValidRelayerFeeSettlementWitness =
+    ValidRelayerFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
 /// The `VALID RELAYER FEE SETTLEMENT` circuit
 pub struct ValidRelayerFeeSettlement<
@@ -371,7 +379,7 @@ pub struct ValidRelayerFeeSettlementWitness<
 
 /// The statement type for `VALID RELAYER FEE SETTLEMENT` circuit
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidRelayerFeeSettlementStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
