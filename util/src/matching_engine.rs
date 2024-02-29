@@ -70,7 +70,7 @@ pub fn match_orders_with_max_amount(
         return None;
     }
 
-    // Compute the auxiliary data for the match
+    // Compute the auth data for the match
     let quote_amount = price * Scalar::from(min_base_amount);
     let quote_amount = scalar_to_u128(&quote_amount.floor());
 

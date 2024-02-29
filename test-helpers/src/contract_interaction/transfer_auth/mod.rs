@@ -1,4 +1,4 @@
-//! Test helpers for constructing auxiliary data for external transfers
+//! Test helpers for constructing auth data for external transfers
 //! Much of this is ported over from https://github.com/renegade-fi/renegade-contracts/blob/main/integration/src/utils.rs
 
 use alloy_primitives::{keccak256, Address, B256, U256};
@@ -9,7 +9,7 @@ use alloy_sol_types::{
 };
 use arbitrum_client::{conversion::to_contract_external_transfer, helpers::serialize_calldata};
 use circuit_types::transfers::ExternalTransfer;
-use common::types::transfer_aux_data::{DepositAuxData, TransferAuxData, WithdrawalAuxData};
+use common::types::transfer_auth::{DepositAuth, TransferAuth, WithdrawalAuth};
 use ethers::{signers::Wallet, types::H256};
 use eyre::Result;
 use k256::ecdsa::SigningKey;
@@ -23,15 +23,15 @@ mod abi;
 /// The name of the domain separator for Permit2 typed data
 const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
 
-/// Generates the auxiliary data fpr the given external transfer,
+/// Generates the auth data fpr the given external transfer,
 /// including the Permit2 data & a signature over the transfer
-pub fn gen_transfer_aux_data(
+pub fn gen_transfer_auth(
     wallet: Wallet<SigningKey>,
     transfer: &ExternalTransfer,
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
-) -> Result<TransferAuxData> {
+) -> Result<TransferAuth> {
     let transfer = to_contract_external_transfer(transfer)?;
 
     let res = if transfer.is_withdrawal {
@@ -39,9 +39,7 @@ pub fn gen_transfer_aux_data(
         let transfer_hash = H256::from_slice(keccak256(&transfer_bytes).as_slice());
         let transfer_signature = wallet.sign_hash(transfer_hash)?.to_vec();
 
-        TransferAuxData::Withdrawal(WithdrawalAuxData {
-            external_transfer_signature: transfer_signature,
-        })
+        TransferAuth::Withdrawal(WithdrawalAuth { external_transfer_signature: transfer_signature })
     } else {
         let (permit_nonce, permit_deadline, permit_signature) = gen_permit_payload(
             wallet,
@@ -55,7 +53,7 @@ pub fn gen_transfer_aux_data(
         let permit_nonce = u256_to_biguint(permit_nonce);
         let permit_deadline = u256_to_biguint(permit_deadline);
 
-        TransferAuxData::Deposit(DepositAuxData { permit_nonce, permit_deadline, permit_signature })
+        TransferAuth::Deposit(DepositAuth { permit_nonce, permit_deadline, permit_signature })
     };
 
     Ok(res)
