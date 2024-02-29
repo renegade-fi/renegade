@@ -12,7 +12,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     order::Order,
-    r#match::MatchResult,
+    r#match::{FeeTake, MatchResult},
     traits::{MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType},
     MpcPlonkCircuit,
 };
@@ -51,14 +51,20 @@ fn dummy_witness_statement() -> (
 ) {
     (
         ValidMatchSettleWitness {
+            order0: Order::default(),
+            balance0: Balance::default(),
+            balance_receive0: Balance::default(),
+            party0_fees: FeeTake::default(),
+            relayer_fee0: FixedPoint::default(),
+            amount0: Scalar::zero(),
+            price0: FixedPoint { repr: Scalar::zero() },
             order1: Order::default(),
             balance1: Balance::default(),
+            balance_receive1: Balance::default(),
+            party1_fees: FeeTake::default(),
+            relayer_fee1: FixedPoint::default(),
             amount1: Scalar::zero(),
             price1: FixedPoint { repr: Scalar::zero() },
-            order2: Order::default(),
-            balance2: Balance::default(),
-            amount2: Scalar::zero(),
-            price2: FixedPoint { repr: Scalar::zero() },
             match_res: MatchResult::default(),
             party0_public_shares: dummy_wallet_share(),
             party1_public_shares: dummy_wallet_share(),
@@ -68,6 +74,7 @@ fn dummy_witness_statement() -> (
             party1_modified_shares: dummy_wallet_share(),
             party0_indices: random_indices(),
             party1_indices: random_indices(),
+            protocol_fee: FixedPoint::default(),
         },
     )
 }
