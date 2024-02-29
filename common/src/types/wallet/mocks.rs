@@ -6,12 +6,7 @@ use std::{
 };
 
 use circuit_types::{
-    elgamal::DecryptionKey,
-    fixed_point::FixedPoint,
-    keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey, SecretSigningKey},
-    order::{Order, OrderSide},
-    traits::BaseType,
-    Amount, SizedWalletShare,
+    elgamal::DecryptionKey, fixed_point::FixedPoint, keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey, SecretSigningKey}, order::{Order, OrderSide}, traits::BaseType, Amount, SizedWalletShare
 };
 use constants::{Scalar, MERKLE_HEIGHT};
 use k256::ecdsa::SigningKey as K256SigningKey;
