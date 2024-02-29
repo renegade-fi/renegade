@@ -26,14 +26,13 @@ const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
 /// Generates the auxiliary data fpr the given external transfer,
 /// including the Permit2 data & a signature over the transfer
 pub fn gen_transfer_aux_data(
-    signing_key: SigningKey,
+    wallet: Wallet<SigningKey>,
     transfer: &ExternalTransfer,
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
 ) -> Result<TransferAuxData> {
     let transfer = to_contract_external_transfer(transfer)?;
-    let wallet = Wallet::from(signing_key);
 
     let res = if transfer.is_withdrawal {
         let transfer_bytes = serialize_calldata(&transfer)?;
