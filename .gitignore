@@ -15,4 +15,3 @@
 .vscode
 *.sw[a-p]
 secrets.env
-/.gitattributes

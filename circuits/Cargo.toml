@@ -45,6 +45,11 @@ name = "full_match"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "valid_relayer_fee_settlement"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Crytography + Arithmetic === #
 ark-crypto-primitives = { version = "0.4", features = [
@@ -54,10 +59,10 @@ ark-crypto-primitives = { version = "0.4", features = [
 ] }
 ark-ec = "0.4"
 ark-ff = "0.4"
-ark-mpc = { workspace = true, features = ["stats"] }
+ark-mpc = { workspace = true }
 bigdecimal = "0.3"
 jf-primitives = { workspace = true, features = ["parallel", "std"] }
-mpc-plonk = { workspace = true, features = ["std", "stats"] }
+mpc-plonk = { workspace = true, features = ["std"] }
 mpc-relation = { workspace = true, features = ["std"] }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
@@ -72,7 +77,9 @@ util = { path = "../util", optional = true }
 # === Misc Dependencies === #
 bitvec = "1.0"
 ctor = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+], optional = true }
 futures = { workspace = true }
 itertools = "0.10"
 lazy_static = "1.4"
