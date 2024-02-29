@@ -7,14 +7,18 @@ use alloy_primitives::{Address, U256 as AlloyU256};
 use ark_bn254::g1::Config as G1Config;
 use ark_ec::short_weierstrass::Affine;
 use circuit_types::{
+    elgamal::{ElGamalCiphertext, EncryptionKey},
     keychain::PublicSigningKey,
+    note::NOTE_CIPHERTEXT_SIZE,
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
     PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
 };
 use circuits::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,
-    valid_match_settle::SizedValidMatchSettleStatement, valid_reblind::ValidReblindStatement,
+    valid_match_settle::SizedValidMatchSettleStatement,
+    valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement,
+    valid_reblind::ValidReblindStatement,
     valid_relayer_fee_settlement::SizedValidRelayerFeeSettlementStatement,
     valid_wallet_create::SizedValidWalletCreateStatement,
     valid_wallet_update::SizedValidWalletUpdateStatement,
@@ -25,12 +29,15 @@ use common::types::{
 };
 use constants::{Scalar, ScalarField};
 use contracts_common::types::{
-    ExternalTransfer as ContractExternalTransfer, LinkingProof as ContractLinkingProof,
-    MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
+    BabyJubJubPoint as ContractBabyJubJubPoint, ExternalTransfer as ContractExternalTransfer,
+    LinkingProof as ContractLinkingProof, MatchLinkingProofs as ContractMatchLinkingProofs,
+    MatchProofs as ContractMatchProofs, NoteCiphertext as ContractNoteCiphertext,
     OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
+    PublicEncryptionKey as ContractPublicEncryptionKey,
     PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
     ValidCommitmentsStatement as ContractValidCommitmentsStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+    ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
     ValidReblindStatement as ContractValidReblindStatement,
     ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
@@ -281,6 +288,55 @@ pub fn to_contract_valid_relayer_fee_settlement_statement(
             .collect(),
         recipient_pk_root: to_contract_public_signing_key(&statement.recipient_pk_root)?,
     })
+}
+
+/// Converts a [`ElGamalCiphertext`] (from prover-side code) to a
+/// [`ContractNoteCiphertext`]
+pub fn to_contract_note_ciphertext(
+    note_ciphertext: &ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>,
+) -> ContractNoteCiphertext {
+    ContractNoteCiphertext(
+        ContractBabyJubJubPoint {
+            x: note_ciphertext.ephemeral_key.x.inner(),
+            y: note_ciphertext.ephemeral_key.y.inner(),
+        },
+        note_ciphertext.ciphertext[0].inner(),
+        note_ciphertext.ciphertext[1].inner(),
+        note_ciphertext.ciphertext[2].inner(),
+    )
+}
+
+/// Converts an [`EncryptionKey`] (from prover-side code) to a
+/// [`ContractPublicEncryptionKey`]
+pub fn to_contract_public_encryption_key(
+    public_encryption_key: &EncryptionKey,
+) -> ContractPublicEncryptionKey {
+    ContractPublicEncryptionKey {
+        x: public_encryption_key.x.inner(),
+        y: public_encryption_key.y.inner(),
+    }
+}
+
+/// Converts a [`SizedValidOfflineFeeSettlementStatement`] (from prover-side
+/// code) to a [`ContractValidOfflineFeeSettlementStatement`]
+pub fn to_contract_valid_offline_fee_settlement_statement(
+    statement: &SizedValidOfflineFeeSettlementStatement,
+) -> ContractValidOfflineFeeSettlementStatement {
+    ContractValidOfflineFeeSettlementStatement {
+        merkle_root: statement.merkle_root.inner(),
+        nullifier: statement.nullifier.inner(),
+        updated_wallet_commitment: statement.updated_wallet_commitment.inner(),
+        updated_wallet_public_shares: statement
+            .updated_wallet_public_shares
+            .to_scalars()
+            .iter()
+            .map(|s| s.inner())
+            .collect(),
+        note_ciphertext: to_contract_note_ciphertext(&statement.note_ciphertext),
+        note_commitment: statement.note_commitment.inner(),
+        protocol_key: to_contract_public_encryption_key(&statement.protocol_key),
+        is_protocol_fee: statement.is_protocol_fee,
+    }
 }
 
 // ------------------------
