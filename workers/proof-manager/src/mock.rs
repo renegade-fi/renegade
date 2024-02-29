@@ -7,10 +7,21 @@ use circuits::zk_circuits::{
     valid_commitments::{
         SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
     },
+    valid_fee_redemption::{
+        SizedValidFeeRedemption, SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
+    },
     valid_match_settle::{
         SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
     },
+    valid_offline_fee_settlement::{
+        SizedValidOfflineFeeSettlement, SizedValidOfflineFeeSettlementStatement,
+        SizedValidOfflineFeeSettlementWitness,
+    },
     valid_reblind::{SizedValidReblind, SizedValidReblindWitness, ValidReblindStatement},
+    valid_relayer_fee_settlement::{
+        SizedValidRelayerFeeSettlement, SizedValidRelayerFeeSettlementStatement,
+        SizedValidRelayerFeeSettlementWitness,
+    },
     valid_wallet_create::{
         SizedValidWalletCreate, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
     },
@@ -81,6 +92,15 @@ impl MockProofManager {
             ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
                 Self::valid_match_settle(witness, statement)
             },
+            ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
+                Self::valid_relayer_fee_settlement(witness, statement)
+            },
+            ProofJob::ValidOfflineFeeSettlement { witness, statement } => {
+                Self::valid_offline_fee_settlement(witness, statement)
+            },
+            ProofJob::ValidFeeRedemption { witness, statement } => {
+                Self::valid_fee_redemption(witness, statement)
+            },
         }?;
 
         response_channel.send(bundle).expect(ERR_RESPONSE_CHANNEL_CLOSED);
@@ -145,6 +165,42 @@ impl MockProofManager {
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
         Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
+    }
+
+    /// Generate a dummy proof of `VALID RELAYER FEE SETTLEMENT`
+    fn valid_relayer_fee_settlement(
+        witness: SizedValidRelayerFeeSettlementWitness,
+        statement: SizedValidRelayerFeeSettlementStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        Self::check_constraints::<SizedValidRelayerFeeSettlement>(&witness, &statement)?;
+
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof, link_hint))
+    }
+
+    /// Generate a dummy proof of `VALID OFFLINE FEE SETTLEMENT`
+    fn valid_offline_fee_settlement(
+        witness: SizedValidOfflineFeeSettlementWitness,
+        statement: SizedValidOfflineFeeSettlementStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        Self::check_constraints::<SizedValidOfflineFeeSettlement>(&witness, &statement)?;
+
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof, link_hint))
+    }
+
+    /// Generate a dummy proof of `VALID FEE REDEMPTION`
+    fn valid_fee_redemption(
+        witness: SizedValidFeeRedemptionWitness,
+        statement: SizedValidFeeRedemptionStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        Self::check_constraints::<SizedValidFeeRedemption>(&witness, &statement)?;
+
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_fee_redemption(statement, proof, link_hint))
     }
 
     /// Check constraint satisfaction for a witness and statement
