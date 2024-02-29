@@ -13,7 +13,7 @@ use super::{
     gossip::WrappedPeerId,
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
-    transfer_aux_data::ExternalTransferWithAuxData,
+    transfer_auth::ExternalTransferWithAuth,
     wallet::{KeyChain, OrderIdentifier, Wallet, WalletIdentifier},
 };
 
@@ -315,8 +315,8 @@ impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
 pub struct UpdateWalletTaskDescriptor {
     /// The timestamp at which the task was initiated, used to timestamp orders
     pub timestamp_received: u64,
-    /// The external transfer & auxiliary data, if one exists
-    pub external_transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
+    /// The external transfer & auth data, if one exists
+    pub external_transfer_with_auth: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -330,7 +330,7 @@ impl UpdateWalletTaskDescriptor {
     /// Constructor
     pub fn new(
         timestamp_received: u64,
-        external_transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
+        external_transfer_with_aux_data: Option<ExternalTransferWithAuth>,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
@@ -347,7 +347,7 @@ impl UpdateWalletTaskDescriptor {
 
         Ok(UpdateWalletTaskDescriptor {
             timestamp_received,
-            external_transfer_with_aux_data,
+            external_transfer_with_auth: external_transfer_with_aux_data,
             old_wallet,
             new_wallet,
             wallet_update_signature,

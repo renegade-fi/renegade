@@ -13,7 +13,7 @@ use common::types::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
         UpdateWalletTaskDescriptor,
     },
-    transfer_aux_data::{DepositAuxData, ExternalTransferWithAuxData, WithdrawalAuxData},
+    transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{KeyChain, Wallet, WalletIdentifier},
 };
 use constants::MAX_FEES;
@@ -637,10 +637,10 @@ impl TypedHandler for DepositBalanceHandler {
             .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        let deposit_with_aux_data = ExternalTransferWithAuxData::deposit(
+        let deposit_with_aux_data = ExternalTransferWithAuth::deposit(
             req.from_addr,
             req.mint,
-            req.amount,
+            DepositAuth
             DepositAuxData {
                 permit_nonce: req.permit_nonce,
                 permit_deadline: req.permit_deadline,
@@ -707,11 +707,11 @@ impl TypedHandler for WithdrawBalanceHandler {
         }
         new_wallet.reblind_wallet();
 
-        let withdrawal_with_aux_data = ExternalTransferWithAuxData::withdrawal(
+        let withdrawal_with_aux_data = ExternalTransferWithAuth::withdrawal(
             req.destination_addr,
             mint,
             req.amount,
-            WithdrawalAuxData { external_transfer_signature: req.external_transfer_sig },
+            WithdrawalAuth { external_transfer_signature: req.external_transfer_sig },
         );
 
         let task = UpdateWalletTaskDescriptor::new(

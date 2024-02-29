@@ -7,7 +7,7 @@ pub mod network_order;
 pub mod proof_bundles;
 pub mod tasks;
 pub mod token;
-pub mod transfer_aux_data;
+pub mod transfer_auth;
 pub mod wallet;
 
 // Re-export the mock types
