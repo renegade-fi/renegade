@@ -5,12 +5,19 @@ use std::sync::Arc;
 use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint};
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
+    valid_fee_redemption::{SizedValidFeeRedemptionStatement, ValidFeeRedemptionStatement},
     valid_match_settle::{SizedValidMatchSettleStatement, ValidMatchSettleStatement},
+    valid_offline_fee_settlement::{
+        SizedValidOfflineFeeSettlementStatement, ValidOfflineFeeSettlementStatement,
+    },
     valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
+    valid_relayer_fee_settlement::{
+        SizedValidRelayerFeeSettlementStatement, ValidRelayerFeeSettlementStatement,
+    },
     valid_wallet_create::{SizedValidWalletCreateStatement, ValidWalletCreateStatement},
     valid_wallet_update::{SizedValidWalletUpdateStatement, ValidWalletUpdateStatement},
 };
-use constants::{MAX_BALANCES, MAX_FEES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use serde::{Deserialize, Serialize};
 
 // -----------------
@@ -19,23 +26,19 @@ use serde::{Deserialize, Serialize};
 
 /// The response type for a request to generate a proof of `VALID WALLET CREATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidWalletCreateBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct GenericValidWalletCreateBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to create the proof
-    pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
 }
 
 /// A type alias that specifies default generics for
 /// `GenericValidWalletCreateBundle`
-pub type SizedValidWalletCreateBundle =
-    GenericValidWalletCreateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidWalletCreateBundle = GenericValidWalletCreateBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap allocates a wallet create bundle
 pub type ValidWalletCreateBundle = Arc<SizedValidWalletCreateBundle>;
 
@@ -44,13 +47,12 @@ pub type ValidWalletCreateBundle = Arc<SizedValidWalletCreateBundle>;
 pub struct GenericValidWalletUpdateBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 > where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prove `VALID WALLET UPDATE`
-    pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
 }
@@ -58,7 +60,7 @@ pub struct GenericValidWalletUpdateBundle<
 /// A type alias that specifies the default generics for
 /// `GenericValidWalletUpdateBundle`
 pub type SizedValidWalletUpdateBundle =
-    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    GenericValidWalletUpdateBundle<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 /// A type alias that heap-allocates a wallet update bundle
 pub type ValidWalletUpdateBundle = Arc<SizedValidWalletUpdateBundle>;
 
@@ -67,10 +69,9 @@ pub type ValidWalletUpdateBundle = Arc<SizedValidWalletUpdateBundle>;
 pub struct GenericValidReblindBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
     const MERKLE_HEIGHT: usize,
 > where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prover `VALID REBLIND`
     pub statement: ValidReblindStatement,
@@ -80,18 +81,15 @@ pub struct GenericValidReblindBundle<
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
 pub type SizedValidReblindBundle =
-    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES, MERKLE_HEIGHT>;
+    GenericValidReblindBundle<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 /// A type alias that heap-allocates a reblind bundle
 pub type ValidReblindBundle = Arc<SizedValidReblindBundle>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidCommitmentsBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct GenericValidCommitmentsBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prove `VALID COMMITMENTS`
     pub statement: ValidCommitmentsStatement,
@@ -101,32 +99,86 @@ pub struct GenericValidCommitmentsBundle<
 
 /// A type alias that specifies the default generics for
 /// `GenericValidCommitmentsBundle`
-pub type SizedValidCommitmentsBundle =
-    GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidCommitmentsBundle = GenericValidCommitmentsBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap-allocates a commitments bundle
 pub type ValidCommitmentsBundle = Arc<SizedValidCommitmentsBundle>;
 
-/// A bundle of the statement, witness commitment, and proof of `VALID MATCH
+/// A bundle of the statement and proof of `VALID MATCH
 /// SETTLE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericMatchSettleBundle<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
-    const MAX_FEES: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS + MAX_FEES]: Sized,
+pub struct GenericMatchSettleBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The statement (public variables) used to prove `VALID MATCH SETTLE`
-    pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS, MAX_FEES>,
+    pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
 }
 
 /// A type alias that specifies the default generics for
 /// `GenericMatchSettleBundle`
-pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS, MAX_FEES>;
+pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap-allocates a `ValidMatchMpcBundle`
 pub type ValidMatchSettleBundle = Arc<SizedValidMatchSettleBundle>;
+
+/// A bundle of the statement and proof of `VALID RELAYER FEE SETTLEMENT`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericRelayerFeeSettlementBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    /// The statement (public variables) used to prove `VALID RELAYER FEE
+    /// SETTLEMENT`
+    pub statement: ValidRelayerFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
+    /// The proof itself
+    pub proof: PlonkProof,
+}
+
+/// A type alias that specifies the default generics for
+/// `GenericRelayerFeeSettlementBundle`
+pub type SizedRelayerFeeSettlementBundle =
+    GenericRelayerFeeSettlementBundle<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias that heap-allocates a `RelayerFeeSettleBundle`
+pub type RelayerFeeSettlementBundle = Arc<SizedRelayerFeeSettlementBundle>;
+
+/// A bundle of the statement and proof of `VALID OFFLINE FEE SETTLEMENT`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericOfflineFeeSettlementBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    /// The statement (public variables) used to prove `VALID OFFLINE FEE
+    /// SETTLEMENT`
+    pub statement: ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
+    /// The proof itself
+    pub proof: PlonkProof,
+}
+
+/// A type alias that specifies the default generics for
+/// `GenericOfflineFeeSettlementBundle`
+pub type SizedOfflineFeeSettlementBundle =
+    GenericOfflineFeeSettlementBundle<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias that heap-allocates a `OfflineFeeSettleBundle`
+pub type OfflineFeeSettlementBundle = Arc<SizedOfflineFeeSettlementBundle>;
+
+/// A bundle of the statement and proof of `VALID FEE REDEMPTION`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericFeeRedemptionBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    /// The statement (public variables) used to prove `VALID FEE REDEMPTION`
+    pub statement: ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>,
+    /// The proof itself
+    pub proof: PlonkProof,
+}
+
+/// A type alias that specifies the default generics for
+/// `GenericFeeRedemptionBundle`
+pub type SizedFeeRedemptionBundle = GenericFeeRedemptionBundle<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias that heap-allocates a `FeeRedemptionBundle`
+pub type FeeRedemptionBundle = Arc<SizedFeeRedemptionBundle>;
 
 /// The proof bundle returned by the proof generation module
 #[derive(Clone, Debug)]
@@ -212,22 +264,71 @@ impl ProofBundle {
             link_hint,
         }
     }
+
+    /// Create a new proof bundle from a `VALID RELAYER FEE SETTLEMENT` proof
+    pub fn new_valid_relayer_fee_settlement(
+        statement: SizedValidRelayerFeeSettlementStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidRelayerFeeSettlement(Arc::new(
+                GenericRelayerFeeSettlementBundle { statement, proof },
+            )),
+            link_hint,
+        }
+    }
+
+    /// Create a new proof bundle from a `VALID OFFLINE FEE SETTLEMENT` proof
+    pub fn new_valid_offline_fee_settlement(
+        statement: SizedValidOfflineFeeSettlementStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidOfflineFeeSettlement(Arc::new(
+                GenericOfflineFeeSettlementBundle { statement, proof },
+            )),
+            link_hint,
+        }
+    }
+
+    /// Create a new proof bundle from a `VALID FEE REDEMPTION` proof
+    pub fn new_valid_fee_redemption(
+        statement: SizedValidFeeRedemptionStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidFeeRedemption(Arc::new(GenericFeeRedemptionBundle {
+                statement,
+                proof,
+            })),
+            link_hint,
+        }
+    }
 }
 
 /// The bundle type returned by the proof generation module
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
 pub enum R1CSProofBundle {
-    /// A witness commitment, statement, and proof of `VALID WALLET CREATE`
+    /// A statement and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
-    /// A witness commitment, statement, and proof of `VALID REBLIND`
+    /// A statement and proof of `VALID REBLIND`
     ValidReblind(ValidReblindBundle),
-    /// A witness commitment, statement, and proof of `VALID COMMITMENTS`
+    /// A statement and proof of `VALID COMMITMENTS`
     ValidCommitments(ValidCommitmentsBundle),
-    /// A witness commitment, statement, and proof of `VALID WALLET UPDATE`
+    /// A statement and proof of `VALID WALLET UPDATE`
     ValidWalletUpdate(ValidWalletUpdateBundle),
-    /// A witness commitment and proof of `VALID MATCH SETTLE`
+    /// A statement and proof of `VALID MATCH SETTLE`
     ValidMatchSettle(ValidMatchSettleBundle),
+    /// A statement and proof of `VALID RELAYER FEE SETTLEMENT`
+    ValidRelayerFeeSettlement(RelayerFeeSettlementBundle),
+    /// A statement and proof of `VALID OFFLINE FEE SETTLEMENT`
+    ValidOfflineFeeSettlement(OfflineFeeSettlementBundle),
+    /// A statement and proof of `VALID FEE REDEMPTION`
+    ValidFeeRedemption(FeeRedemptionBundle),
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect
@@ -277,6 +378,36 @@ impl From<R1CSProofBundle> for ValidMatchSettleBundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMatchMpc: {:?}", bundle)
+        }
+    }
+}
+
+impl From<R1CSProofBundle> for RelayerFeeSettlementBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidRelayerFeeSettlement(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidRelayerFeeSettlement: {:?}", bundle);
+        }
+    }
+}
+
+impl From<R1CSProofBundle> for OfflineFeeSettlementBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidOfflineFeeSettlement(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidOfflineFeeSettlement: {:?}", bundle);
+        }
+    }
+}
+
+impl From<R1CSProofBundle> for FeeRedemptionBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidFeeRedemption(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidFeeRedemption: {:?}", bundle);
         }
     }
 }
@@ -476,8 +607,11 @@ pub mod mocks {
     use circuit_types::{traits::BaseType, PlonkLinkProof, PlonkProof, ProofLinkingHint};
     use circuits::zk_circuits::{
         valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
+        valid_fee_redemption::ValidFeeRedemptionStatement,
         valid_match_settle::ValidMatchSettleStatement,
+        valid_offline_fee_settlement::ValidOfflineFeeSettlementStatement,
         valid_reblind::{SizedValidReblindWitness, ValidReblindStatement},
+        valid_relayer_fee_settlement::ValidRelayerFeeSettlementStatement,
         valid_wallet_create::ValidWalletCreateStatement,
         valid_wallet_update::ValidWalletUpdateStatement,
     };
@@ -487,9 +621,10 @@ pub mod mocks {
     use mpc_relation::constants::GATE_WIDTH;
 
     use super::{
-        OrderValidityProofBundle, OrderValidityWitnessBundle, SizedValidCommitmentsBundle,
-        SizedValidMatchSettleBundle, SizedValidReblindBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
+        OrderValidityProofBundle, OrderValidityWitnessBundle, SizedFeeRedemptionBundle,
+        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedValidCommitmentsBundle, SizedValidMatchSettleBundle, SizedValidReblindBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
     };
 
     /// Create a dummy proof bundle for `VALID WALLET CREATE`
@@ -515,6 +650,26 @@ pub mod mocks {
     pub fn dummy_valid_commitments_bundle() -> SizedValidCommitmentsBundle {
         let statement = ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::one()));
         SizedValidCommitmentsBundle { statement, proof: dummy_proof() }
+    }
+
+    /// Create a dummy proof bundle for `VALID RELAYER FEE SETTLEMENT`
+    pub fn dummy_relayer_fee_settlement_bundle() -> SizedRelayerFeeSettlementBundle {
+        let statement =
+            ValidRelayerFeeSettlementStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        SizedRelayerFeeSettlementBundle { statement, proof: dummy_proof() }
+    }
+
+    /// Create a dummy proof bundle for `VALID OFFLINE FEE SETTLEMENT`
+    pub fn dummy_offline_fee_settlement_bundle() -> SizedOfflineFeeSettlementBundle {
+        let statement =
+            ValidOfflineFeeSettlementStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        SizedOfflineFeeSettlementBundle { statement, proof: dummy_proof() }
+    }
+
+    /// Create a dummy proof bundle for `VALID FEE REDEMPTION`
+    pub fn dummy_valid_fee_redemption_bundle() -> SizedFeeRedemptionBundle {
+        let statement = ValidFeeRedemptionStatement::from_scalars(&mut iter::repeat(Scalar::one()));
+        SizedFeeRedemptionBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy validity proof bundle

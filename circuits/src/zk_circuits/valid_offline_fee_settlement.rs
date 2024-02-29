@@ -12,11 +12,14 @@ use circuit_types::{
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar, WalletVar},
     PlonkCircuit,
 };
-use constants::{EmbeddedScalarField, Scalar, ScalarField};
+use constants::{
+    EmbeddedScalarField, Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
+};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
 use circuit_macros::circuit_type;
+use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::{
     comparators::{EqGadget, EqZeroGadget},
@@ -28,6 +31,18 @@ use crate::zk_gadgets::{
 // ----------------------
 // | Circuit Definition |
 // ----------------------
+
+/// A type alias for the `ValidOfflineFeeSettlement` circuit with default
+/// sizing
+pub type SizedValidOfflineFeeSettlement =
+    ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
+/// A type alias for the `ValidOfflineFeeSettlementStatement` with default
+/// sizing
+pub type SizedValidOfflineFeeSettlementStatement =
+    ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias for the `ValidOfflineFeeSettlementWitness` with default
+pub type SizedValidOfflineFeeSettlementWitness =
+    ValidOfflineFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
 /// The `VALID OFFLINE FEE SETTLEMENT` circuit
 pub struct ValidOfflineFeeSettlement<
@@ -309,7 +324,7 @@ pub struct ValidOfflineFeeSettlementWitness<
 
 /// The statement type for the `VALID OFFLINE FEE SETTLEMENT` circuit
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidOfflineFeeSettlementStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,

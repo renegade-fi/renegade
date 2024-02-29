@@ -30,8 +30,8 @@ mod test {
     #[test]
     fn test_add_balance_append() {
         let mut wallet = mock_empty_wallet();
-        let balance1 = Balance { mint: BigUint::from(1u8), amount: 10 };
-        let balance2 = Balance { mint: BigUint::from(2u8), amount: 10 };
+        let balance1 = Balance::new_from_mint_and_amount(BigUint::from(1u8), 10);
+        let balance2 = Balance::new_from_mint_and_amount(BigUint::from(2u8), 10);
         wallet.add_balance(balance1.clone()).unwrap();
         wallet.add_balance(balance2.clone()).unwrap();
 
@@ -43,8 +43,8 @@ mod test {
     #[test]
     fn test_add_balance_existing() {
         let mut wallet = mock_empty_wallet();
-        let balance1 = Balance { mint: BigUint::from(1u8), amount: 10 };
-        let balance2 = Balance { mint: BigUint::from(1u8), amount: 10 };
+        let balance1 = Balance::new_from_mint_and_amount(BigUint::from(1u8), 10);
+        let balance2 = Balance::new_from_mint_and_amount(BigUint::from(1u8), 10);
         wallet.add_balance(balance1.clone()).unwrap();
         wallet.add_balance(balance2.clone()).unwrap();
 
@@ -60,7 +60,7 @@ mod test {
 
         // Fill the wallet
         for i in 0..MAX_BALANCES {
-            let balance = Balance { mint: BigUint::from(i), amount: 10 };
+            let balance = Balance::new_from_mint_and_amount(BigUint::from(i), 10);
             wallet.add_balance(balance).unwrap();
         }
 
@@ -70,7 +70,7 @@ mod test {
         wallet.balances.get_index_mut(idx).unwrap().amount = 0;
 
         // Add a new balance
-        let balance = Balance { mint: BigUint::from(42u8), amount: 10 };
+        let balance = Balance::new_from_mint_and_amount(BigUint::from(42u8), 10);
         wallet.add_balance(balance.clone()).unwrap();
 
         // Check that the balance overrode the correct idx
@@ -85,12 +85,12 @@ mod test {
 
         // Fill the wallet
         for i in 0..MAX_BALANCES {
-            let balance = Balance { mint: BigUint::from(i), amount: 10 };
+            let balance = Balance::new_from_mint_and_amount(BigUint::from(i), 10);
             wallet.add_balance(balance).unwrap();
         }
 
         // Attempt to add another balance
-        let balance = Balance { mint: BigUint::from(42u8), amount: 10 };
+        let balance = Balance::new_from_mint_and_amount(BigUint::from(42u8), 10);
         wallet.add_balance(balance).unwrap();
     }
 
