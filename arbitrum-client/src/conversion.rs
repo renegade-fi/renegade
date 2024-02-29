@@ -78,7 +78,7 @@ pub fn to_contract_link_proof(
 }
 
 /// Convert an [`ExternalTransfer`] to its corresponding smart contract type
-fn to_contract_external_transfer(
+pub fn to_contract_external_transfer(
     external_transfer: &ExternalTransfer,
 ) -> Result<ContractExternalTransfer, ConversionError> {
     let account_addr: U160 = external_transfer
