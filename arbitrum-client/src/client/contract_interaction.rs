@@ -4,10 +4,10 @@
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
 use common::types::{
     proof_bundles::{
-        GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
+        GenericFeeRedemptionBundle, GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
         GenericRelayerFeeSettlementBundle, GenericValidWalletCreateBundle,
         GenericValidWalletUpdateBundle, MatchBundle, OrderValidityProofBundle,
-        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
         SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
@@ -21,7 +21,7 @@ use crate::{
     conversion::{
         build_match_linking_proofs, build_match_proofs, to_contract_proof,
         to_contract_transfer_aux_data, to_contract_valid_commitments_statement,
-        to_contract_valid_match_settle_statement,
+        to_contract_valid_fee_redemption_statement, to_contract_valid_match_settle_statement,
         to_contract_valid_offline_fee_settlement_statement, to_contract_valid_reblind_statement,
         to_contract_valid_relayer_fee_settlement_statement,
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
@@ -315,6 +315,41 @@ impl ArbitrumClient {
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         tracing::Span::current().record("tx_hash", &tx_hash);
         info!("`settle_offline_fee` tx hash: {}", tx_hash);
+
+        Ok(())
+    }
+
+    /// Call the `redeem_fee` contract method with the given
+    /// `VALID FEE REDEMPTION` statement
+    ///
+    /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        blinder = %valid_fee_redemption.statement.new_wallet_public_shares.blinder
+    ))]
+    pub async fn redeem_fee(
+        &self,
+        valid_fee_redemption: &SizedFeeRedemptionBundle,
+        recipient_wallet_commitment_signature: Vec<u8>,
+    ) -> Result<(), ArbitrumClientError> {
+        let GenericFeeRedemptionBundle { statement, proof } = valid_fee_redemption;
+
+        let contract_proof = to_contract_proof(proof)?;
+        let proof_calldata = serialize_calldata(&contract_proof)?;
+
+        let contract_statement = to_contract_valid_fee_redemption_statement(statement)?;
+        let valid_fee_redemption_statement_calldata = serialize_calldata(&contract_statement)?;
+
+        let receipt = send_tx(self.darkpool_contract.redeem_fee(
+            proof_calldata,
+            valid_fee_redemption_statement_calldata,
+            recipient_wallet_commitment_signature.into(),
+        ))
+        .await?;
+
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        tracing::Span::current().record("tx_hash", &tx_hash);
+        info!("`redeem_fee` tx hash: {}", tx_hash);
 
         Ok(())
     }
