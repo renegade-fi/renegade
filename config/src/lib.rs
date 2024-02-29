@@ -41,7 +41,7 @@ struct Cli {
     // ---------------
     // | Config File |
     // ---------------
-    /// An auxiliary config file to read from
+    /// An auth config file to read from
     #[clap(long, value_parser)]
     pub config_file: Option<String>,
 

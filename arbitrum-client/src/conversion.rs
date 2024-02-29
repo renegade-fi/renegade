@@ -20,7 +20,7 @@ use circuits::zk_circuits::{
 };
 use common::types::{
     proof_bundles::{MatchBundle, OrderValidityProofBundle},
-    transfer_aux_data::TransferAuxData,
+    transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
 use contracts_common::types::{
@@ -148,12 +148,12 @@ pub fn to_contract_valid_wallet_update_statement(
     })
 }
 
-/// Convert a [`TransferAuxData`] to its corresponding smart contract type
+/// Convert a [`TransferAuth`] to its corresponding smart contract type
 pub fn to_contract_transfer_aux_data(
-    data: TransferAuxData,
+    data: TransferAuth,
 ) -> Result<ContractTransferAuxData, ConversionError> {
     Ok(match data {
-        TransferAuxData::Deposit(deposit) => ContractTransferAuxData {
+        TransferAuth::Deposit(deposit) => ContractTransferAuxData {
             permit_nonce: Some(
                 AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_nonce))
                     .map_err(|_| ConversionError::InvalidUint)?,
@@ -165,7 +165,7 @@ pub fn to_contract_transfer_aux_data(
             permit_signature: Some(deposit.permit_signature.clone()),
             transfer_signature: None,
         },
-        TransferAuxData::Withdrawal(withdrawal) => ContractTransferAuxData {
+        TransferAuth::Withdrawal(withdrawal) => ContractTransferAuxData {
             permit_nonce: None,
             permit_deadline: None,
             permit_signature: None,

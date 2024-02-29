@@ -143,7 +143,10 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
     proof.statement.new_private_shares_commitment = share_comm;
     proof.statement.new_public_shares = wallet.blinded_public_shares.clone();
 
-    client.update_wallet(&proof, vec![] /* statement_sig */).await.map_err(Into::into)
+    client
+        .update_wallet(&proof, vec![] /* statement_sig */, None /* transfer_auth */)
+        .await
+        .map_err(Into::into)
 }
 
 // ---------
