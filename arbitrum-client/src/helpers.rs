@@ -5,6 +5,7 @@ use circuit_types::{traits::BaseType, SizedWalletShare};
 use constants::Scalar;
 use contracts_common::types::{
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+    ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
     ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
     ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
@@ -17,7 +18,10 @@ use ethers::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    abi::{newWalletCall, processMatchSettleCall, settleOnlineRelayerFeeCall, updateWalletCall},
+    abi::{
+        newWalletCall, processMatchSettleCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
+        updateWalletCall,
+    },
     client::SignerHttpProvider,
     errors::ArbitrumClientError,
 };
@@ -144,5 +148,21 @@ pub fn parse_shares_from_settle_online_relayer_fee(
     };
 
     let mut shares = selected_shares.into_iter().map(Scalar::new);
+    Ok(SizedWalletShare::from_scalars(&mut shares))
+}
+
+/// Parses wallet shares from the calldata of a `settleOfflineFee` call
+pub fn parse_shares_from_settle_offline_fee(
+    calldata: &[u8],
+) -> Result<SizedWalletShare, ArbitrumClientError> {
+    let call = settleOfflineFeeCall::decode(calldata, true /* validate */)
+        .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
+
+    let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
+        &call.valid_offline_fee_settlement_statement.into(),
+    )?;
+
+    let mut shares = statement.updated_wallet_public_shares.into_iter().map(Scalar::new);
+
     Ok(SizedWalletShare::from_scalars(&mut shares))
 }

@@ -4,10 +4,11 @@
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
 use common::types::{
     proof_bundles::{
-        GenericMatchSettleBundle, GenericRelayerFeeSettlementBundle,
-        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, MatchBundle,
-        OrderValidityProofBundle, SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
+        GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
+        GenericRelayerFeeSettlementBundle, GenericValidWalletCreateBundle,
+        GenericValidWalletUpdateBundle, MatchBundle, OrderValidityProofBundle,
+        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -20,7 +21,8 @@ use crate::{
     conversion::{
         build_match_linking_proofs, build_match_proofs, to_contract_proof,
         to_contract_transfer_aux_data, to_contract_valid_commitments_statement,
-        to_contract_valid_match_settle_statement, to_contract_valid_reblind_statement,
+        to_contract_valid_match_settle_statement,
+        to_contract_valid_offline_fee_settlement_statement, to_contract_valid_reblind_statement,
         to_contract_valid_relayer_fee_settlement_statement,
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
     },
@@ -278,6 +280,41 @@ impl ArbitrumClient {
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         tracing::Span::current().record("tx_hash", &tx_hash);
         info!("`settle_online_relayer_fee` tx hash: {}", tx_hash);
+
+        Ok(())
+    }
+
+    /// Call the `settle_offline_fee` contract method with the given
+    /// `VALID OFFLINE FEE SETTLEMENT` statement
+    ///
+    /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        blinder = %valid_offline_fee_settlement.statement.updated_wallet_public_shares.blinder
+    ))]
+    pub async fn settle_offline_fee(
+        &self,
+        valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
+    ) -> Result<(), ArbitrumClientError> {
+        let GenericOfflineFeeSettlementBundle { statement, proof } = valid_offline_fee_settlement;
+
+        let contract_proof = to_contract_proof(proof)?;
+        let proof_calldata = serialize_calldata(&contract_proof)?;
+
+        let contract_statement = to_contract_valid_offline_fee_settlement_statement(statement);
+        let valid_offline_fee_settlement_statement_calldata =
+            serialize_calldata(&contract_statement)?;
+
+        let receipt =
+            send_tx(self.darkpool_contract.settle_offline_fee(
+                proof_calldata,
+                valid_offline_fee_settlement_statement_calldata,
+            ))
+            .await?;
+
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        tracing::Span::current().record("tx_hash", &tx_hash);
+        info!("`settle_offline_fee` tx hash: {}", tx_hash);
 
         Ok(())
     }
