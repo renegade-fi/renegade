@@ -8,8 +8,11 @@ use alloy_sol_types::{
     Eip712Domain, SolStruct, SolType,
 };
 use arbitrum_client::{conversion::to_contract_external_transfer, helpers::serialize_calldata};
-use circuit_types::transfers::ExternalTransfer;
-use common::types::transfer_auth::{DepositAuth, TransferAuth, WithdrawalAuth};
+use circuit_types::{
+    transfers::{ExternalTransfer, ExternalTransferDirection},
+    Amount,
+};
+use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
 use ethers::{signers::Wallet, types::H256};
 use eyre::Result;
 use k256::ecdsa::SigningKey;
@@ -23,23 +26,41 @@ mod abi;
 /// The name of the domain separator for Permit2 typed data
 const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
 
-/// Generates the auth data fpr the given external transfer,
-/// including the Permit2 data & a signature over the transfer
-pub fn gen_transfer_auth(
-    wallet: Wallet<SigningKey>,
-    transfer: &ExternalTransfer,
+/// Generates an external transfer augmented with auth data
+#[allow(clippy::too_many_arguments)]
+pub fn gen_transfer_with_auth(
+    wallet: &Wallet<SigningKey>,
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
-) -> Result<TransferAuth> {
-    let transfer = to_contract_external_transfer(transfer)?;
+    account_addr: BigUint,
+    mint: BigUint,
+    amount: Amount,
+    is_withdrawal: bool,
+) -> Result<ExternalTransferWithAuth> {
+    let direction = if is_withdrawal {
+        ExternalTransferDirection::Withdrawal
+    } else {
+        ExternalTransferDirection::Deposit
+    };
+    let transfer = to_contract_external_transfer(&ExternalTransfer {
+        account_addr: account_addr.clone(),
+        mint: mint.clone(),
+        amount,
+        direction,
+    })?;
 
-    let res = if transfer.is_withdrawal {
+    let external_transfer_with_auth = if transfer.is_withdrawal {
         let transfer_bytes = serialize_calldata(&transfer)?;
         let transfer_hash = H256::from_slice(keccak256(&transfer_bytes).as_slice());
         let transfer_signature = wallet.sign_hash(transfer_hash)?.to_vec();
 
-        TransferAuth::Withdrawal(WithdrawalAuth { external_transfer_signature: transfer_signature })
+        ExternalTransferWithAuth::withdrawal(
+            account_addr,
+            mint,
+            amount,
+            WithdrawalAuth { external_transfer_signature: transfer_signature },
+        )
     } else {
         let (permit_nonce, permit_deadline, permit_signature) = gen_permit_payload(
             wallet,
@@ -53,15 +74,20 @@ pub fn gen_transfer_auth(
         let permit_nonce = u256_to_biguint(permit_nonce);
         let permit_deadline = u256_to_biguint(permit_deadline);
 
-        TransferAuth::Deposit(DepositAuth { permit_nonce, permit_deadline, permit_signature })
+        ExternalTransferWithAuth::deposit(
+            account_addr,
+            mint,
+            amount,
+            DepositAuth { permit_nonce, permit_deadline, permit_signature },
+        )
     };
 
-    Ok(res)
+    Ok(external_transfer_with_auth)
 }
 
 /// Generates a permit payload for the given token and amount
 fn gen_permit_payload(
-    wallet: Wallet<SigningKey>,
+    wallet: &Wallet<SigningKey>,
     token: Address,
     amount: U256,
     permit2_address: Address,

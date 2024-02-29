@@ -1,17 +1,19 @@
 //! Helpers for `task-driver` integration tests
 
+use alloy_primitives::Address as AlloyAddress;
 use arbitrum_client::client::ArbitrumClient;
-use circuit_types::transfers::ExternalTransfer;
+use circuit_types::{transfers::ExternalTransfer, Amount};
 use common::{
     types::{
         proof_bundles::mocks::dummy_valid_wallet_update_bundle,
         tasks::{LookupWalletTaskDescriptor, TaskDescriptor, TaskIdentifier},
+        transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
         wallet::{Wallet, WalletIdentifier},
     },
     worker::Worker,
 };
 use constants::Scalar;
-use ethers::types::Address;
+use ethers::{core::k256::ecdsa::SigningKey, signers::Wallet as EthersWallet, types::Address};
 use eyre::Result;
 use job_types::{
     network_manager::NetworkManagerQueue,
@@ -28,7 +30,9 @@ use task_driver::{
 };
 use test_helpers::{
     assert_eq_result,
-    contract_interaction::{allocate_wallet_in_darkpool, setup_wallet_shares},
+    contract_interaction::{
+        allocate_wallet_in_darkpool, setup_wallet_shares, transfer_auth::gen_transfer_with_auth,
+    },
 };
 
 use crate::IntegrationTestArgs;

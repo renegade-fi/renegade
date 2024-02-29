@@ -330,7 +330,7 @@ impl UpdateWalletTaskDescriptor {
     /// Constructor
     pub fn new(
         timestamp_received: u64,
-        external_transfer_with_aux_data: Option<ExternalTransferWithAuth>,
+        external_transfer_with_auth: Option<ExternalTransferWithAuth>,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
@@ -347,7 +347,7 @@ impl UpdateWalletTaskDescriptor {
 
         Ok(UpdateWalletTaskDescriptor {
             timestamp_received,
-            external_transfer_with_auth: external_transfer_with_aux_data,
+            external_transfer_with_auth,
             old_wallet,
             new_wallet,
             wallet_update_signature,
@@ -472,7 +472,7 @@ mod test {
 
         UpdateWalletTaskDescriptor::new(
             0,    // timestamp
-            None, // external_transfer_with_aux_data
+            None, // transfer
             wallet.clone(),
             wallet,
             vec![],
@@ -489,7 +489,7 @@ mod test {
 
         UpdateWalletTaskDescriptor::new(
             0,    // timestamp
-            None, // external_transfer_with_aux_data
+            None, // transfer
             wallet.clone(),
             wallet,
             sig,
@@ -507,7 +507,7 @@ mod test {
 
         UpdateWalletTaskDescriptor::new(
             0,    // timestamp
-            None, // external_transfer_with_aux_data
+            None, // transfer
             wallet.clone(),
             wallet,
             sig,
