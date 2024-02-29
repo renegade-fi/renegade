@@ -12,6 +12,8 @@ use eyre::Result;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
 
+pub mod transfer_auth;
+
 // ---------------------
 // | Wallet Allocation |
 // ---------------------

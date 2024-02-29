@@ -15,9 +15,9 @@ use circuit_types::{
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
-use common::types::transfer_aux_data::ExternalTransferWithAuxData;
+use common::types::transfer_auth::ExternalTransferWithAuth;
 use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
-use common::types::{tasks::UpdateWalletTaskDescriptor, transfer_aux_data::TransferAuxData};
+use common::types::{tasks::UpdateWalletTaskDescriptor, transfer_auth::TransferAuth};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
@@ -154,8 +154,8 @@ impl From<StateError> for UpdateWalletTaskError {
 pub struct UpdateWalletTask {
     /// The timestamp at which the task was initiated, used to timestamp orders
     pub timestamp_received: u64,
-    /// The external transfer & auxiliary data, if one exists
-    pub external_transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
+    /// The external transfer & auth data, if one exists
+    pub external_transfer_with_auth: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -189,7 +189,7 @@ impl Task for UpdateWalletTask {
 
         Ok(Self {
             timestamp_received: descriptor.timestamp_received,
-            external_transfer_with_aux_data: descriptor.external_transfer_with_aux_data,
+            external_transfer_with_auth: descriptor.external_transfer_with_auth,
             old_wallet: descriptor.old_wallet,
             new_wallet: descriptor.new_wallet,
             wallet_update_signature: descriptor.wallet_update_signature,
@@ -282,12 +282,10 @@ impl UpdateWalletTask {
     /// finality
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
+        let transfer_auth =
+            self.external_transfer_with_auth.as_ref().map(|t| t.transfer_auth.clone());
         self.arbitrum_client
-            .update_wallet(
-                &proof,
-                self.wallet_update_signature.clone(),
-                self.transfer_aux_data.clone(),
-            )
+            .update_wallet(&proof, self.wallet_update_signature.clone(), transfer_auth)
             .await
             .map_err(|e| e.to_string())
             .map_err(UpdateWalletTaskError::Arbitrum)

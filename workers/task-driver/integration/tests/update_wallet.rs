@@ -12,7 +12,7 @@ use circuit_types::{
 };
 use common::types::{
     tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor},
-    transfer_aux_data::{ExternalTransferWithAuxData, TransferAuxData},
+    transfer_auth::{ExternalTransferWithAuth, TransferAuth},
     wallet::Wallet,
     wallet_mocks::mock_empty_wallet,
 };
@@ -22,9 +22,10 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use rand::thread_rng;
 use test_helpers::{
-    contract_interaction::{attach_merkle_opening, new_wallet_in_darkpool},
+    contract_interaction::{
+        attach_merkle_opening, new_wallet_in_darkpool, transfer_auth::gen_transfer_auth,
+    },
     integration_test_async,
-    transfer_aux_data::gen_transfer_aux_data,
 };
 use tracing::info;
 use util::{get_current_time_seconds, hex::biguint_from_hex_string};
@@ -67,7 +68,7 @@ lazy_static! {
 pub(crate) async fn execute_wallet_update(
     mut old_wallet: Wallet,
     new_wallet: Wallet,
-    transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
+    transfer_with_aux_data: Option<ExternalTransferWithAuth>,
     test_args: IntegrationTestArgs,
 ) -> Result<Wallet> {
     // Make sure the Merkle proof is present
@@ -100,7 +101,7 @@ pub(crate) async fn execute_wallet_update(
 async fn execute_wallet_update_and_verify_shares(
     old_wallet: Wallet,
     new_wallet: Wallet,
-    transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
+    transfer_with_aux_data: Option<ExternalTransferWithAuth>,
     blinder_seed: Scalar,
     share_seed: Scalar,
     test_args: IntegrationTestArgs,
@@ -386,7 +387,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
     wallet.reblind_wallet();
 
-    let deposit_aux_data = gen_transfer_aux_data(
+    let deposit_aux_data = gen_transfer_auth(
         client.darkpool_contract.client().signer(),
         &deposit,
         permit2_address,
@@ -394,7 +395,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
         chain_id,
     )?;
 
-    let deposit_with_aux_data = ExternalTransferWithAuxData::deposit(
+    let deposit_with_aux_data = ExternalTransferWithAuth::deposit(
         account_addr.clone(),
         mint.clone(),
         amount.into(),
@@ -417,7 +418,7 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     wallet.balances.remove(&mint);
     wallet.reblind_wallet();
 
-    let withdrawal_aux_data = gen_transfer_aux_data(
+    let withdrawal_aux_data = gen_transfer_auth(
         client.darkpool_contract.client().signer(),
         &withdrawal,
         permit2_address,
@@ -425,12 +426,8 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
         chain_id,
     )?;
 
-    let withdrawal_with_aux_data = ExternalTransferWithAuxData::withdraw(
-        account_addr,
-        mint,
-        amount.into(),
-        withdrawal_aux_data,
-    );
+    let withdrawal_with_aux_data =
+        ExternalTransferWithAuth::withdraw(account_addr, mint, amount.into(), withdrawal_aux_data);
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
@@ -465,7 +462,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
     wallet.reblind_wallet();
 
-    let deposit_aux_data = gen_transfer_aux_data(
+    let deposit_aux_data = gen_transfer_auth(
         client.darkpool_contract.client().signer(),
         &deposit,
         permit2_address,
@@ -473,7 +470,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
         chain_id,
     )?;
 
-    let deposit_with_aux_data = ExternalTransferWithAuxData::deposit(
+    let deposit_with_aux_data = ExternalTransferWithAuth::deposit(
         account_addr.clone(),
         mint.clone(),
         amount.into(),
@@ -496,7 +493,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
     wallet.remove_balance(&mint);
     wallet.reblind_wallet();
 
-    let withdrawal_aux_data = gen_transfer_aux_data(
+    let withdrawal_aux_data = gen_transfer_auth(
         client.darkpool_contract.client().signer(),
         &withdrawal,
         permit2_address,
@@ -504,12 +501,8 @@ async fn test_update_wallet__deposit_and_full_withdraw(
         chain_id,
     )?;
 
-    let withdrawal_with_aux_data = ExternalTransferWithAuxData::withdraw(
-        account_addr,
-        mint,
-        amount.into(),
-        withdrawal_aux_data,
-    );
+    let withdrawal_with_aux_data =
+        ExternalTransferWithAuth::withdraw(account_addr, mint, amount.into(), withdrawal_aux_data);
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
@@ -543,7 +536,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount: deposit_amount });
     wallet.reblind_wallet();
 
-    let deposit_aux_data = gen_transfer_aux_data(
+    let deposit_aux_data = gen_transfer_auth(
         client.darkpool_contract.client().signer(),
         &deposit,
         permit2_address,
@@ -551,7 +544,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
         chain_id,
     )?;
 
-    let deposit_with_aux_data = ExternalTransferWithAuxData::deposit(
+    let deposit_with_aux_data = ExternalTransferWithAuth::deposit(
         account_addr.clone(),
         mint.clone(),
         deposit_amount.into(),
@@ -578,7 +571,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     );
     wallet.reblind_wallet();
 
-    let withdrawal_aux_data = gen_transfer_aux_data(
+    let withdrawal_aux_data = gen_transfer_auth(
         client.darkpool_contract.client().signer(),
         &withdrawal,
         permit2_address,
@@ -586,7 +579,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
         chain_id,
     )?;
 
-    let withdrawal_with_aux_data = ExternalTransferWithAuxData::withdraw(
+    let withdrawal_with_aux_data = ExternalTransferWithAuth::withdraw(
         account_addr,
         mint,
         withdraw_amount.into(),
