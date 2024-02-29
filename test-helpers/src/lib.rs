@@ -8,5 +8,5 @@ pub mod assertions;
 pub mod contract_interaction;
 pub mod macros;
 pub mod mpc_network;
-pub mod types;
 pub mod transfer_aux_data;
+pub mod types;

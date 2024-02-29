@@ -12,6 +12,8 @@ pub const DARKPOOL_PROXY_CONTRACT_KEY: &str = "darkpool_proxy_contract";
 pub const DUMMY_ERC20_0_CONTRACT_KEY: &str = "DUMMY1";
 /// The second dummy erc20 contract key in a `deployments.json` file
 pub const DUMMY_ERC20_1_CONTRACT_KEY: &str = "DUMMY2";
+/// The permit2 contract key in a `deployments.json` file
+pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
 
 /// Parse the address of the deployed contract from the `deployments.json` file
 pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {
