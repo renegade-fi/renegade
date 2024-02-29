@@ -4,8 +4,8 @@ use circuit_types::transfers::ExternalTransfer;
 use common::types::proof_bundles::{
     mocks::{
         dummy_link_proof, dummy_offline_fee_settlement_bundle, dummy_relayer_fee_settlement_bundle,
-        dummy_valid_match_settle_bundle, dummy_valid_wallet_update_bundle,
-        dummy_validity_proof_bundle,
+        dummy_valid_fee_redemption_bundle, dummy_valid_match_settle_bundle,
+        dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle,
     },
     MatchBundle,
 };
@@ -163,3 +163,28 @@ async fn test_settle_offline_fee(test_args: IntegrationTestArgs) -> Result<()> {
     assert_eq_result!(new_shares, recovered_shares)
 }
 integration_test_async!(test_settle_offline_fee);
+
+/// Test redeeming a fee and then recovering the wallet shares
+async fn test_redeem_fee(test_args: IntegrationTestArgs) -> Result<()> {
+    let client = &test_args.client;
+
+    // Generate a dummy proof bundle for the fee redemption
+    let mut valid_fee_redemption_bundle = dummy_valid_fee_redemption_bundle();
+    let new_shares = random_wallet_shares();
+    valid_fee_redemption_bundle.statement.new_wallet_public_shares = new_shares.clone();
+
+    // Redeem the fee
+    client
+        .redeem_fee(
+            &valid_fee_redemption_bundle,
+            vec![], // recipient_wallet_commitment_signature
+        )
+        .await?;
+
+    let recovered_shares = client.fetch_public_shares_for_blinder(new_shares.blinder).await?;
+
+    // Check that the recovered public shares are the same as the original
+    // ones
+    assert_eq_result!(new_shares, recovered_shares)
+}
+integration_test_async!(test_redeem_fee);
