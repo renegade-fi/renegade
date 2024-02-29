@@ -11,10 +11,11 @@ use circuit_types::{
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
 };
-use constants::{Scalar, ScalarField};
+use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::errors::CircuitError;
 use mpc_relation::{traits::Circuit, Variable};
+use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::comparators::{EqGadget, EqVecGadget, EqZeroGadget};
 use crate::zk_gadgets::elgamal::ElGamalGadget;
@@ -26,6 +27,14 @@ use crate::zk_gadgets::wallet_operations::{AmountGadget, WalletGadget};
 // ----------------------
 // | Circuit Definition |
 // ----------------------
+
+/// A type alias for `ValidFeeRedemption` with default sizing
+pub type SizedValidFeeRedemption = ValidFeeRedemption<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
+/// A type alias for `ValidFeeRedemptionStatement` with default sizing
+pub type SizedValidFeeRedemptionStatement = ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias for `ValidFeeRedemptionWitness` with default sizing
+pub type SizedValidFeeRedemptionWitness =
+    ValidFeeRedemptionWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
 /// The `VALID FEE REDEMPTION` circuit
 pub struct ValidFeeRedemption<
@@ -235,7 +244,7 @@ pub struct ValidFeeRedemptionWitness<
 
 /// The statement type for the `VALID FEE REDEMPTION` circuit
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidFeeRedemptionStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
