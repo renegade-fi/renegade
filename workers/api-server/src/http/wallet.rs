@@ -385,7 +385,7 @@ impl TypedHandler for CreateOrderHandler {
 
         let task = UpdateWalletTaskDescriptor::new(
             timestamp,
-            None, // external_transfer_with_aux_data
+            None, // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -448,7 +448,7 @@ impl TypedHandler for UpdateOrderHandler {
 
         let task = UpdateWalletTaskDescriptor::new(
             timestamp,
-            None, // external_transfer_with_aux_data
+            None, // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -501,7 +501,7 @@ impl TypedHandler for CancelOrderHandler {
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
-            None, // external_transfer_with_aux_data
+            None, // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -637,11 +637,11 @@ impl TypedHandler for DepositBalanceHandler {
             .map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        let deposit_with_aux_data = ExternalTransferWithAuth::deposit(
+        let deposit_with_auth = ExternalTransferWithAuth::deposit(
             req.from_addr,
             req.mint,
-            DepositAuth
-            DepositAuxData {
+            amount.into(),
+            DepositAuth {
                 permit_nonce: req.permit_nonce,
                 permit_deadline: req.permit_deadline,
                 permit_signature: req.permit_signature,
@@ -650,7 +650,7 @@ impl TypedHandler for DepositBalanceHandler {
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
-            Some(deposit_with_aux_data),
+            Some(deposit_with_auth),
             old_wallet,
             new_wallet,
             req.wallet_commitment_sig,
@@ -707,16 +707,16 @@ impl TypedHandler for WithdrawBalanceHandler {
         }
         new_wallet.reblind_wallet();
 
-        let withdrawal_with_aux_data = ExternalTransferWithAuth::withdrawal(
+        let withdrawal_with_auth = ExternalTransferWithAuth::withdrawal(
             req.destination_addr,
             mint,
-            req.amount,
+            withdrawal_amount.into(),
             WithdrawalAuth { external_transfer_signature: req.external_transfer_sig },
         );
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
-            Some(withdrawal_with_aux_data),
+            Some(withdrawal_with_auth),
             old_wallet,
             new_wallet,
             req.wallet_commitment_sig,
@@ -815,7 +815,7 @@ impl TypedHandler for AddFeeHandler {
 
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
-            None, // external_transfer_with_aux_data
+            None, // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -871,7 +871,7 @@ impl TypedHandler for RemoveFeeHandler {
         // Start a task to submit this update to the contract
         let task = UpdateWalletTaskDescriptor::new(
             get_current_timestamp(),
-            None, // external_transfer_with_aux_data
+            None, // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,

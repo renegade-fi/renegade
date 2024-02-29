@@ -55,7 +55,7 @@ impl ExternalTransferWithAuth {
         account_addr: BigUint,
         mint: BigUint,
         amount: Amount,
-        aux_data: DepositAuth,
+        deposit_auth: DepositAuth,
     ) -> Self {
         Self {
             external_transfer: ExternalTransfer {
@@ -64,7 +64,7 @@ impl ExternalTransferWithAuth {
                 amount,
                 direction: ExternalTransferDirection::Deposit,
             },
-            transfer_auth: TransferAuth::Deposit(aux_data),
+            transfer_auth: TransferAuth::Deposit(deposit_auth),
         }
     }
 
@@ -73,7 +73,7 @@ impl ExternalTransferWithAuth {
         account_addr: BigUint,
         mint: BigUint,
         amount: Amount,
-        aux_data: WithdrawalAuth,
+        withdrawal_auth: WithdrawalAuth,
     ) -> Self {
         Self {
             external_transfer: ExternalTransfer {
@@ -82,7 +82,7 @@ impl ExternalTransferWithAuth {
                 amount,
                 direction: ExternalTransferDirection::Withdrawal,
             },
-            transfer_auth: TransferAuth::Withdrawal(aux_data),
+            transfer_auth: TransferAuth::Withdrawal(withdrawal_auth),
         }
     }
 }
