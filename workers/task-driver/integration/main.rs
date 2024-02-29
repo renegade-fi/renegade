@@ -35,7 +35,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use util::{
     arbitrum::{
         parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
-        DUMMY_ERC20_1_CONTRACT_KEY,
+        DUMMY_ERC20_1_CONTRACT_KEY, PERMIT2_CONTRACT_KEY,
     },
     logging::LevelFilter,
     runtime::block_on_result,
@@ -80,6 +80,8 @@ struct IntegrationTestArgs {
     erc20_addr0: String,
     /// The address of the second pre-deployed ERC20 for testing
     erc20_addr1: String,
+    /// The address of the Permit2 contract
+    permit2_addr: String,
     /// The arbitrum client that resolves to a locally running devnet node
     arbitrum_client: ArbitrumClient,
     /// A receiver for the network manager's work queue
@@ -133,10 +135,14 @@ impl From<CliArgs> for IntegrationTestArgs {
             DUMMY_ERC20_1_CONTRACT_KEY,
         )
         .unwrap();
+        let permit2_addr =
+            parse_addr_from_deployments_file(&test_args.deployments_path, PERMIT2_CONTRACT_KEY)
+                .unwrap();
 
         Self {
             erc20_addr0,
             erc20_addr1,
+            permit2_addr,
             arbitrum_client,
             _network_receiver: Arc::new(network_receiver),
             proof_job_queue,

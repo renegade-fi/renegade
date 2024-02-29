@@ -46,7 +46,7 @@ async fn test_update_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     client
         .update_wallet(
             &valid_wallet_update_bundle,
-            vec![], // statement_signature
+            vec![], // wallet_commitment_signature
             None,   // transfer_aux_data
         )
         .await?;
