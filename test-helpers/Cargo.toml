@@ -18,6 +18,12 @@ reqwest = "0.11.13"
 ark-mpc = { workspace = true }
 ark-ec = "0.4"
 num-bigint = { version = "0.4", features = ["rand"] }
+k256 = { version = "0.13" }
+
+# === Ethereum Utils === #
+alloy-primitives = "0.3.1"
+alloy-sol-types = "0.3.1"
+ethers = "2"
 
 # === Workspace Dependencies === # 
 arbitrum-client = { path = "../arbitrum-client" }
