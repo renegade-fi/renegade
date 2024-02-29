@@ -10,10 +10,22 @@ use circuits::{
         valid_commitments::{
             SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
         },
+        valid_fee_redemption::{
+            SizedValidFeeRedemption, SizedValidFeeRedemptionStatement,
+            SizedValidFeeRedemptionWitness,
+        },
         valid_match_settle::{
             SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
         },
+        valid_offline_fee_settlement::{
+            SizedValidOfflineFeeSettlement, SizedValidOfflineFeeSettlementStatement,
+            SizedValidOfflineFeeSettlementWitness,
+        },
         valid_reblind::{SizedValidReblind, SizedValidReblindWitness, ValidReblindStatement},
+        valid_relayer_fee_settlement::{
+            SizedValidRelayerFeeSettlement, SizedValidRelayerFeeSettlementStatement,
+            SizedValidRelayerFeeSettlementWitness,
+        },
         valid_wallet_create::{
             SizedValidWalletCreate, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
         },
@@ -114,6 +126,21 @@ impl ProofManager {
                 // Prove `VALID MATCH MPC`
                 Self::prove_valid_match_mpc(witness, statement)
             },
+
+            ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
+                // Prove `VALID RELAYER FEE SETTLEMENT`
+                Self::prove_valid_relayer_fee_settlement(witness, statement)
+            },
+
+            ProofJob::ValidOfflineFeeSettlement { witness, statement } => {
+                // Prove `VALID OFFLINE FEE SETTLEMENT`
+                Self::prove_valid_offline_fee_settlement(witness, statement)
+            },
+
+            ProofJob::ValidFeeRedemption { witness, statement } => {
+                // Prove `VALID FEE REDEMPTION`
+                Self::prove_valid_fee_redemption(witness, statement)
+            },
         }?;
 
         job.response_channel
@@ -189,5 +216,51 @@ impl ProofManager {
                 .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
+    }
+
+    /// Create a proof of `VALID RELAYER FEE SETTLEMENT`
+    #[instrument(skip_all, err)]
+    fn prove_valid_relayer_fee_settlement(
+        witness: SizedValidRelayerFeeSettlementWitness,
+        statement: SizedValidRelayerFeeSettlementStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID RELAYER FEE SETTLEMENT`
+        let (proof, link_hint) = singleprover_prove_with_hint::<SizedValidRelayerFeeSettlement>(
+            witness,
+            statement.clone(),
+        )
+        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof, link_hint))
+    }
+
+    /// Create a proof of `VALID OFFLINE FEE SETTLEMENT`
+    #[instrument(skip_all, err)]
+    fn prove_valid_offline_fee_settlement(
+        witness: SizedValidOfflineFeeSettlementWitness,
+        statement: SizedValidOfflineFeeSettlementStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID OFFLINE FEE SETTLEMENT`
+        let (proof, link_hint) = singleprover_prove_with_hint::<SizedValidOfflineFeeSettlement>(
+            witness,
+            statement.clone(),
+        )
+        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof, link_hint))
+    }
+
+    /// Create a proof of `VALID FEE REDEMPTION`
+    #[instrument(skip_all, err)]
+    fn prove_valid_fee_redemption(
+        witness: SizedValidFeeRedemptionWitness,
+        statement: SizedValidFeeRedemptionStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID FEE REDEMPTION`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidFeeRedemption>(witness, statement.clone())
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ProofBundle::new_valid_fee_redemption(statement, proof, link_hint))
     }
 }
