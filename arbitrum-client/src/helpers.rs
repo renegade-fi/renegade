@@ -92,28 +92,25 @@ pub fn parse_shares_from_process_match_settle(
         &call.valid_match_settle_statement.into(),
     )?;
 
+    let party_0_shares = valid_match_settle_statement.party0_modified_shares;
     // The blinder is expected to be the last public wallet share
-    let party_0_public_blinder_share =
-        valid_match_settle_statement.party0_modified_shares.last().unwrap();
+    let party_0_blinder_share = party_0_shares.last().unwrap();
 
+    let party_1_shares = valid_match_settle_statement.party1_modified_shares;
     // The blinder is expected to be the last public wallet share
-    let party_1_public_blinder_share =
-        valid_match_settle_statement.party1_modified_shares.last().unwrap();
+    let party_1_blinder_share = party_1_shares.last().unwrap();
 
     let target_share = public_blinder_share.inner();
-    if party_0_public_blinder_share == &target_share {
-        let mut shares =
-            valid_match_settle_statement.party0_modified_shares.into_iter().map(Scalar::new);
-
-        Ok(SizedWalletShare::from_scalars(&mut shares))
-    } else if party_1_public_blinder_share == &target_share {
-        let mut shares =
-            valid_match_settle_statement.party1_modified_shares.into_iter().map(Scalar::new);
-
-        Ok(SizedWalletShare::from_scalars(&mut shares))
+    let selected_shares = if party_0_blinder_share == &target_share {
+        party_0_shares
+    } else if party_1_blinder_share == &target_share {
+        party_1_shares
     } else {
-        Err(ArbitrumClientError::BlinderNotFound)
-    }
+        return Err(ArbitrumClientError::BlinderNotFound);
+    };
+
+    let mut shares = selected_shares.into_iter().map(Scalar::new);
+    Ok(SizedWalletShare::from_scalars(&mut shares))
 }
 
 /// Parses wallet shares from the calldata of a `settleOnlineRelayerFee` call
@@ -129,30 +126,23 @@ pub fn parse_shares_from_settle_online_relayer_fee(
             &call.valid_relayer_fee_settlement_statement.into(),
         )?;
 
+    let sender_shares = valid_relayer_fee_settlement_statement.sender_updated_public_shares;
     // The blinder is expected to be the last public wallet share
-    let sender_public_blinder_share =
-        valid_relayer_fee_settlement_statement.sender_updated_public_shares.last().unwrap();
+    let sender_blinder_share = sender_shares.last().unwrap();
 
+    let recipient_shares = valid_relayer_fee_settlement_statement.recipient_updated_public_shares;
     // The blinder is expected to be the last public wallet share
-    let recipient_public_blinder_share =
-        valid_relayer_fee_settlement_statement.recipient_updated_public_shares.last().unwrap();
+    let recipient_blinder_share = recipient_shares.last().unwrap();
 
     let target_share = public_blinder_share.inner();
-    if sender_public_blinder_share == &target_share {
-        let mut shares = valid_relayer_fee_settlement_statement
-            .sender_updated_public_shares
-            .into_iter()
-            .map(Scalar::new);
-
-        Ok(SizedWalletShare::from_scalars(&mut shares))
-    } else if recipient_public_blinder_share == &target_share {
-        let mut shares = valid_relayer_fee_settlement_statement
-            .recipient_updated_public_shares
-            .into_iter()
-            .map(Scalar::new);
-
-        Ok(SizedWalletShare::from_scalars(&mut shares))
+    let selected_shares = if sender_blinder_share == &target_share {
+        sender_shares
+    } else if recipient_blinder_share == &target_share {
+        recipient_shares
     } else {
-        Err(ArbitrumClientError::BlinderNotFound)
-    }
+        return Err(ArbitrumClientError::BlinderNotFound);
+    };
+
+    let mut shares = selected_shares.into_iter().map(Scalar::new);
+    Ok(SizedWalletShare::from_scalars(&mut shares))
 }
