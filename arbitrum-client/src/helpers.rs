@@ -5,6 +5,7 @@ use circuit_types::{traits::BaseType, SizedWalletShare};
 use constants::Scalar;
 use contracts_common::types::{
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+    ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
     ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
 };
@@ -16,7 +17,7 @@ use ethers::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    abi::{newWalletCall, processMatchSettleCall, updateWalletCall},
+    abi::{newWalletCall, processMatchSettleCall, settleOnlineRelayerFeeCall, updateWalletCall},
     client::SignerHttpProvider,
     errors::ArbitrumClientError,
 };
@@ -108,6 +109,47 @@ pub fn parse_shares_from_process_match_settle(
     } else if party_1_public_blinder_share == &target_share {
         let mut shares =
             valid_match_settle_statement.party1_modified_shares.into_iter().map(Scalar::new);
+
+        Ok(SizedWalletShare::from_scalars(&mut shares))
+    } else {
+        Err(ArbitrumClientError::BlinderNotFound)
+    }
+}
+
+/// Parses wallet shares from the calldata of a `settleOnlineRelayerFee` call
+pub fn parse_shares_from_settle_online_relayer_fee(
+    calldata: &[u8],
+    public_blinder_share: Scalar,
+) -> Result<SizedWalletShare, ArbitrumClientError> {
+    let call = settleOnlineRelayerFeeCall::decode(calldata, true /* validate */)
+        .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
+
+    let valid_relayer_fee_settlement_statement =
+        deserialize_calldata::<ContractValidRelayerFeeSettlementStatement>(
+            &call.valid_relayer_fee_settlement_statement.into(),
+        )?;
+
+    // The blinder is expected to be the last public wallet share
+    let sender_public_blinder_share =
+        valid_relayer_fee_settlement_statement.sender_updated_public_shares.last().unwrap();
+
+    // The blinder is expected to be the last public wallet share
+    let recipient_public_blinder_share =
+        valid_relayer_fee_settlement_statement.recipient_updated_public_shares.last().unwrap();
+
+    let target_share = public_blinder_share.inner();
+    if sender_public_blinder_share == &target_share {
+        let mut shares = valid_relayer_fee_settlement_statement
+            .sender_updated_public_shares
+            .into_iter()
+            .map(Scalar::new);
+
+        Ok(SizedWalletShare::from_scalars(&mut shares))
+    } else if recipient_public_blinder_share == &target_share {
+        let mut shares = valid_relayer_fee_settlement_statement
+            .recipient_updated_public_shares
+            .into_iter()
+            .map(Scalar::new);
 
         Ok(SizedWalletShare::from_scalars(&mut shares))
     } else {
