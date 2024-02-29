@@ -17,14 +17,12 @@ use tracing::{error, instrument};
 
 use crate::{
     abi::{
-        newWalletCall, processMatchSettleCall, settleOnlineRelayerFeeCall, updateWalletCall,
-        NodeChangedFilter, WalletUpdatedFilter,
+        newWalletCall, processMatchSettleCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall, updateWalletCall, NodeChangedFilter, WalletUpdatedFilter
     },
     constants::{DEFAULT_AUTHENTICATION_PATH, SELECTOR_LEN},
     errors::ArbitrumClientError,
     helpers::{
-        parse_shares_from_new_wallet, parse_shares_from_process_match_settle,
-        parse_shares_from_settle_online_relayer_fee, parse_shares_from_update_wallet,
+        parse_shares_from_new_wallet, parse_shares_from_process_match_settle, parse_shares_from_settle_offline_fee, parse_shares_from_settle_online_relayer_fee, parse_shares_from_update_wallet
     },
 };
 
@@ -155,6 +153,9 @@ impl ArbitrumClient {
             },
             <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
                 parse_shares_from_settle_online_relayer_fee(&calldata, public_blinder_share)
+            },
+            <settleOfflineFeeCall as SolCall>::SELECTOR => {
+                parse_shares_from_settle_offline_fee(&calldata)
             },
             sel => {
                 error!("invalid selector when parsing public shares: {sel:?}");
