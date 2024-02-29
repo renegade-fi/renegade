@@ -150,39 +150,28 @@ pub fn to_contract_valid_wallet_update_statement(
 
 /// Convert a [`TransferAuxData`] to its corresponding smart contract type
 pub fn to_contract_transfer_aux_data(
-    data: &Option<TransferAuxData>,
+    data: TransferAuxData,
 ) -> Result<ContractTransferAuxData, ConversionError> {
-    let res = if let Some(data) = data {
-        match data {
-            TransferAuxData::Deposit(deposit) => ContractTransferAuxData {
-                permit_nonce: Some(
-                    AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_nonce))
-                        .map_err(|_| ConversionError::InvalidUint)?,
-                ),
-                permit_deadline: Some(
-                    AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_deadline))
-                        .map_err(|_| ConversionError::InvalidUint)?,
-                ),
-                permit_signature: Some(deposit.permit_signature.clone()),
-                transfer_signature: None,
-            },
-            TransferAuxData::Withdrawal(withdrawal) => ContractTransferAuxData {
-                permit_nonce: None,
-                permit_deadline: None,
-                permit_signature: None,
-                transfer_signature: Some(withdrawal.external_transfer_signature.clone()),
-            },
-        }
-    } else {
-        ContractTransferAuxData {
+    Ok(match data {
+        TransferAuxData::Deposit(deposit) => ContractTransferAuxData {
+            permit_nonce: Some(
+                AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_nonce))
+                    .map_err(|_| ConversionError::InvalidUint)?,
+            ),
+            permit_deadline: Some(
+                AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_deadline))
+                    .map_err(|_| ConversionError::InvalidUint)?,
+            ),
+            permit_signature: Some(deposit.permit_signature.clone()),
+            transfer_signature: None,
+        },
+        TransferAuxData::Withdrawal(withdrawal) => ContractTransferAuxData {
             permit_nonce: None,
             permit_deadline: None,
             permit_signature: None,
-            transfer_signature: None,
-        }
-    };
-
-    Ok(res)
+            transfer_signature: Some(withdrawal.external_transfer_signature.clone()),
+        },
+    })
 }
 
 /// Convert a [`ValidReblindStatement`] to its corresponding smart contract type

@@ -129,7 +129,8 @@ impl ArbitrumClient {
         let contract_statement = to_contract_valid_wallet_update_statement(statement)?;
         let valid_wallet_update_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let contract_transfer_aux_data = to_contract_transfer_aux_data(&transfer_aux_data)?;
+        let contract_transfer_aux_data =
+            transfer_aux_data.map(to_contract_transfer_aux_data).transpose()?.unwrap_or_default();
         let transfer_aux_data_calldata = serialize_calldata(&contract_transfer_aux_data)?;
 
         let receipt = send_tx(self.darkpool_contract.update_wallet(
