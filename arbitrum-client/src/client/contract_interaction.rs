@@ -4,8 +4,9 @@
 use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
 use common::types::{
     proof_bundles::{
-        GenericMatchSettleBundle, GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
-        MatchBundle, OrderValidityProofBundle, SizedValidWalletCreateBundle,
+        GenericMatchSettleBundle, GenericRelayerFeeSettlementBundle,
+        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle, MatchBundle,
+        OrderValidityProofBundle, SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
         SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
@@ -20,6 +21,7 @@ use crate::{
         build_match_linking_proofs, build_match_proofs, to_contract_proof,
         to_contract_transfer_aux_data, to_contract_valid_commitments_statement,
         to_contract_valid_match_settle_statement, to_contract_valid_reblind_statement,
+        to_contract_valid_relayer_fee_settlement_statement,
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
     },
     errors::ArbitrumClientError,
@@ -239,6 +241,43 @@ impl ArbitrumClient {
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         tracing::Span::current().record("tx_hash", &tx_hash);
         info!("`process_match_settle` tx hash: {}", tx_hash);
+
+        Ok(())
+    }
+
+    /// Call the `settle_online_relayer_fee` contract method with the given
+    /// `VALID RELAYER FEE SETTLEMENT` statement
+    ///
+    /// Awaits until the transaction is confirmed on-chain
+    #[instrument(skip_all, err, fields(
+        tx_hash,
+        sender_blinder = %valid_relayer_fee_settlement.statement.sender_updated_public_shares.blinder,
+        recipient_blinder = %valid_relayer_fee_settlement.statement.recipient_updated_public_shares.blinder,
+    ))]
+    pub async fn settle_online_relayer_fee(
+        &self,
+        valid_relayer_fee_settlement: &SizedRelayerFeeSettlementBundle,
+        relayer_wallet_commitment_signature: Vec<u8>,
+    ) -> Result<(), ArbitrumClientError> {
+        let GenericRelayerFeeSettlementBundle { statement, proof } = valid_relayer_fee_settlement;
+
+        let contract_proof = to_contract_proof(proof)?;
+        let proof_calldata = serialize_calldata(&contract_proof)?;
+
+        let contract_statement = to_contract_valid_relayer_fee_settlement_statement(statement)?;
+        let valid_relayer_fee_settlement_statement_calldata =
+            serialize_calldata(&contract_statement)?;
+
+        let receipt = send_tx(self.darkpool_contract.settle_online_relayer_fee(
+            proof_calldata,
+            valid_relayer_fee_settlement_statement_calldata,
+            relayer_wallet_commitment_signature.into(),
+        ))
+        .await?;
+
+        let tx_hash = format!("{:#x}", receipt.transaction_hash);
+        tracing::Span::current().record("tx_hash", &tx_hash);
+        info!("`settle_online_relayer_fee` tx hash: {}", tx_hash);
 
         Ok(())
     }
