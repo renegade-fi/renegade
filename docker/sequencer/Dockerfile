@@ -31,13 +31,9 @@ RUN cargo install wasm-opt --locked
 ADD https://api.github.com/repos/renegade-fi/renegade-contracts/git/refs/heads/main /renegade-contracts-version.json
 WORKDIR /sources
 RUN git clone \
-    -b andrew/gen-random-protocol-key \
     https://github.com/renegade-fi/renegade-contracts.git
 
 WORKDIR /sources/renegade-contracts
-
-# TODO: Remove this once Arbitrum client is updated
-RUN git checkout 86070446fe87a00c32b8ac50467030ec4ea68ff7
 
 # Build the `scripts` crate to cache it
 RUN cargo build -p scripts

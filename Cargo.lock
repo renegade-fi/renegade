@@ -1539,7 +1539,7 @@ dependencies = [
  "ecdsa",
  "ed25519-dalek 1.0.1",
  "ethers",
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
  "itertools 0.10.5",
  "jf-primitives",
  "k256",
@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "contracts-common"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts.git#feba22caa30e8d0835c059619be1ca34040aeb2f"
+source = "git+https://github.com/renegade-fi/renegade-contracts.git#9a9b03e48db903d3fbd94e4ff06cba7d76dbd1b8"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -3215,7 +3215,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http",
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
  "slab",
  "tokio",
  "tokio-util 0.7.10",
@@ -3723,9 +3723,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.2.3"
+version = "2.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "233cf39063f058ea2caae4091bf4a3ef70a653afbc026f5c4a4135d114e3c177"
+checksum = "967d6dd42f16dbf0eb8040cb9e477933562684d3918f7d253f2ff9087fb3e7a3"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.3",
@@ -5379,7 +5379,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1d3afd2628e69da2be385eb6f2fd57c8ac7977ceeff6dc166ff1657b0e386a9"
 dependencies = [
  "fixedbitset",
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
 ]
 
 [[package]]
@@ -6778,7 +6778,7 @@ dependencies = [
  "chrono",
  "hex 0.4.3",
  "indexmap 1.9.3",
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
  "serde",
  "serde_derive",
  "serde_json",
@@ -7775,7 +7775,7 @@ version = "0.20.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f427fce4d84c72b5b732388bf4a9f4531b53f74e2887e3ecb2481f68f66d81"
 dependencies = [
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
  "toml_datetime",
  "winnow 0.5.40",
 ]
@@ -7786,7 +7786,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
  "toml_datetime",
  "winnow 0.5.40",
 ]
@@ -7797,7 +7797,7 @@ version = "0.22.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c1b5fd4128cc8d3e0cb74d4ed9a9cc7c7284becd4df68f5f940e1ad123606f6"
 dependencies = [
- "indexmap 2.2.3",
+ "indexmap 2.2.4",
  "serde",
  "serde_spanned",
  "toml_datetime",
