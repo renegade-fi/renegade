@@ -16,6 +16,7 @@ use circuit_types::{
 };
 use circuits::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,
+    valid_fee_redemption::SizedValidFeeRedemptionStatement,
     valid_match_settle::SizedValidMatchSettleStatement,
     valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement,
     valid_reblind::ValidReblindStatement,
@@ -36,6 +37,7 @@ use contracts_common::types::{
     PublicEncryptionKey as ContractPublicEncryptionKey,
     PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
     ValidCommitmentsStatement as ContractValidCommitmentsStatement,
+    ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
     ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
     ValidReblindStatement as ContractValidReblindStatement,
@@ -337,6 +339,27 @@ pub fn to_contract_valid_offline_fee_settlement_statement(
         protocol_key: to_contract_public_encryption_key(&statement.protocol_key),
         is_protocol_fee: statement.is_protocol_fee,
     }
+}
+
+/// Converts a [`SizedValidFeeRedemptionStatement`] (from prover-side code) to a
+/// [`ContractValidFeeRedemptionStatement`]
+pub fn to_contract_valid_fee_redemption_statement(
+    statement: &SizedValidFeeRedemptionStatement,
+) -> Result<ContractValidFeeRedemptionStatement, ConversionError> {
+    Ok(ContractValidFeeRedemptionStatement {
+        wallet_root: statement.wallet_root.inner(),
+        note_root: statement.note_root.inner(),
+        nullifier: statement.wallet_nullifier.inner(),
+        note_nullifier: statement.note_nullifier.inner(),
+        new_wallet_commitment: statement.new_wallet_commitment.inner(),
+        new_wallet_public_shares: statement
+            .new_wallet_public_shares
+            .to_scalars()
+            .iter()
+            .map(|s| s.inner())
+            .collect(),
+        old_pk_root: to_contract_public_signing_key(&statement.recipient_root_key)?,
+    })
 }
 
 // ------------------------
