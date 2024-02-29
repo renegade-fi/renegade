@@ -1,13 +1,7 @@
 //! Groups wallet API handlers and definitions
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use async_trait::async_trait;
-use circuit_types::{
-    balance::Balance as StateBalance,
-    order::Order,
-    transfers::{ExternalTransfer, ExternalTransferDirection},
-};
+use circuit_types::{balance::Balance, order::Order};
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
@@ -16,17 +10,15 @@ use common::types::{
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{KeyChain, Wallet, WalletIdentifier},
 };
-use constants::MAX_FEES;
 use external_api::{
     http::wallet::{
-        AddFeeRequest, AddFeeResponse, CancelOrderRequest, CancelOrderResponse, CreateOrderRequest,
-        CreateOrderResponse, CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest,
-        DepositBalanceResponse, FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse,
-        GetBalancesResponse, GetFeesResponse, GetOrderByIdResponse, GetOrdersResponse,
-        GetWalletResponse, RemoveFeeRequest, RemoveFeeResponse, UpdateOrderRequest,
+        CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
+        CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
+        FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
+        GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse, UpdateOrderRequest,
         UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
     },
-    types::{ApiBalance, ApiFee, ApiOrder},
+    types::ApiOrder,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
@@ -40,39 +32,11 @@ use crate::{
     router::{TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
-use super::{
-    parse_index_from_params, parse_mint_from_params, parse_order_id_from_params,
-    parse_wallet_id_from_params,
-};
-
-/// The maximum staleness of a timestamp on an order between a request and when
-/// it is processed by the API server
-const MAX_TIMESTAMP_STALENESS_MS: u64 = 5_000; // 5 seconds
+use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
 
 // -----------
 // | Helpers |
 // -----------
-
-/// Get the current timestamp in milliseconds since the epoch
-pub(super) fn get_current_timestamp() -> u64 {
-    let now = SystemTime::now();
-    now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
-}
-
-/// Check that a timestamp given by an API request is within the last
-/// `MAX_TIMESTAMP_STALENESS_MS` ms
-///
-/// Assumes the given timestamp is in milliseconds since the epoch
-fn check_timestamp_staleness(timestamp: u64) -> Result<(), ApiServerError> {
-    let now = get_current_timestamp();
-    if now > timestamp && now - timestamp < MAX_TIMESTAMP_STALENESS_MS {
-        Ok(())
-    } else {
-        Err(bad_request(format!(
-            "{ERR_STALE_TIMESTAMP} (current time = {now}, timestamp = {timestamp})"
-        )))
-    }
-}
 
 /// Find the wallet for the given id in the global state
 ///
@@ -122,10 +86,6 @@ pub(super) const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balanc
 pub(super) const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
 /// Withdraws an ERC-20 token from the darkpool
 pub(super) const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
-/// Returns the fees within a given wallet
-pub(super) const FEES_ROUTE: &str = "/v0/wallet/:wallet_id/fees";
-/// Removes a fee from the given wallet
-pub(super) const REMOVE_FEE_ROUTE: &str = "/v0/wallet/:wallet_id/fees/:index/remove";
 
 // ------------------
 // | Error Messages |
@@ -136,12 +96,6 @@ pub(super) const REMOVE_FEE_ROUTE: &str = "/v0/wallet/:wallet_id/fees/:index/rem
 const ERR_INSUFFICIENT_BALANCE: &str = "insufficient balance";
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
-/// The error message to display when a fee list is full
-const ERR_FEES_FULL: &str = "wallet's fee list is full";
-/// The error message to display when a fee index is out of range
-const ERR_FEE_OUT_OF_RANGE: &str = "fee index out of range";
-/// The error message emitted when a timestamp is too stale
-const ERR_STALE_TIMESTAMP: &str = "timestamp is too stale";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -177,7 +131,7 @@ impl TypedHandler for GetWalletHandler {
             .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
-        // Filter out empty orders, balances, and fees
+        // Filter out empty orders, balances
         wallet.remove_default_elements();
         Ok(GetWalletResponse { wallet: wallet.into() })
     }
@@ -378,13 +332,10 @@ impl TypedHandler for CreateOrderHandler {
         let new_order: Order = req.order.into();
 
         // Check that the timestamp is not too old, then add to the wallet
-        let timestamp = new_order.timestamp;
-        check_timestamp_staleness(timestamp)?;
         new_wallet.add_order(id, new_order).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new(
-            timestamp,
             None, // transfer
             old_wallet,
             new_wallet,
@@ -432,8 +383,6 @@ impl TypedHandler for UpdateOrderHandler {
         let mut new_wallet = old_wallet.clone();
 
         let new_order: Order = req.order.into();
-        let timestamp = new_order.timestamp;
-        check_timestamp_staleness(timestamp)?;
 
         // We edit the value of the underlying map in-place (as opposed to `pop` and
         // `insert`) to maintain ordering of the orders. This is important for
@@ -447,7 +396,6 @@ impl TypedHandler for UpdateOrderHandler {
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new(
-            timestamp,
             None, // transfer
             old_wallet,
             new_wallet,
@@ -500,7 +448,6 @@ impl TypedHandler for CancelOrderHandler {
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new(
-            get_current_timestamp(),
             None, // transfer
             old_wallet,
             new_wallet,
@@ -547,7 +494,7 @@ impl TypedHandler for GetBalancesHandler {
         if let Some(mut wallet) = self.global_state.get_wallet(&wallet_id)? {
             // Filter out the default balances used to pad the wallet to the circuit size
             wallet.remove_default_elements();
-            let balances = wallet.balances.into_values().map(ApiBalance::from).collect();
+            let balances = wallet.get_balances_list().to_vec();
 
             Ok(GetBalancesResponse { balances })
         } else {
@@ -585,13 +532,8 @@ impl TypedHandler for GetBalanceByMintHandler {
         let mint = parse_mint_from_params(&params)?;
 
         if let Some(wallet) = self.global_state.get_wallet(&wallet_id)? {
-            let balance = wallet
-                .balances
-                .get(&mint)
-                .cloned()
-                .map(|balance| balance.into())
-                .unwrap_or_else(|| ApiBalance { mint, amount: 0u8.into() });
-
+            let balance =
+                wallet.get_balance(&mint).cloned().unwrap_or_else(|| Balance::new_from_mint(mint));
             Ok(GetBalanceByMintResponse { balance })
         } else {
             Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
@@ -631,16 +573,16 @@ impl TypedHandler for DepositBalanceHandler {
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
-        let amount = req.amount.to_u64().unwrap();
-        new_wallet
-            .add_balance(StateBalance { mint: req.mint.clone(), amount })
-            .map_err(bad_request)?;
+        let amount = req.amount.to_u128().unwrap();
+        let bal = Balance::new_from_mint_and_amount(req.mint.clone(), amount);
+
+        new_wallet.add_balance(bal).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
         let deposit_with_auth = ExternalTransferWithAuth::deposit(
             req.from_addr,
             req.mint,
-            amount.into(),
+            amount,
             DepositAuth {
                 permit_nonce: req.permit_nonce,
                 permit_deadline: req.permit_deadline,
@@ -649,7 +591,6 @@ impl TypedHandler for DepositBalanceHandler {
         );
 
         let task = UpdateWalletTaskDescriptor::new(
-            get_current_timestamp(),
             Some(deposit_with_auth),
             old_wallet,
             new_wallet,
@@ -695,7 +636,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
 
         // Apply the withdrawal to the wallet
-        let withdrawal_amount = req.amount.to_u64().unwrap();
+        let withdrawal_amount = req.amount.to_u128().unwrap();
 
         let mut new_wallet = old_wallet.clone();
         if let Some(balance) = new_wallet.balances.get_mut(&mint)
@@ -710,12 +651,11 @@ impl TypedHandler for WithdrawBalanceHandler {
         let withdrawal_with_auth = ExternalTransferWithAuth::withdrawal(
             req.destination_addr,
             mint,
-            withdrawal_amount.into(),
+            withdrawal_amount,
             WithdrawalAuth { external_transfer_signature: req.external_transfer_sig },
         );
 
         let task = UpdateWalletTaskDescriptor::new(
-            get_current_timestamp(),
             Some(withdrawal_with_auth),
             old_wallet,
             new_wallet,
@@ -726,160 +666,5 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.global_state).await?;
         Ok(WithdrawBalanceResponse { task_id })
-    }
-}
-
-// ----------------------
-// | Fee Route Handlers |
-// ----------------------
-
-/// Handler for the GET /wallet/:id/fees route
-#[derive(Clone)]
-pub struct GetFeesHandler {
-    /// A copy of the relayer-global state
-    global_state: State,
-}
-
-impl GetFeesHandler {
-    /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
-    }
-}
-
-#[async_trait]
-impl TypedHandler for GetFeesHandler {
-    type Request = EmptyRequestResponse;
-    type Response = GetFeesResponse;
-
-    async fn handle_typed(
-        &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
-        params: UrlParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        let wallet_id = parse_wallet_id_from_params(&params)?;
-
-        if let Some(mut wallet) = self.global_state.get_wallet(&wallet_id)? {
-            // Filter out all the default fees used to pad the wallet to the circuit size
-            wallet.remove_default_elements();
-            let fees = wallet.fees.into_iter().map(ApiFee::from).collect();
-
-            Ok(GetFeesResponse { fees })
-        } else {
-            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
-        }
-    }
-}
-
-/// Handler for the POST /wallet/:id/fees route
-pub struct AddFeeHandler {
-    /// A copy of the relayer-global state
-    global_state: State,
-}
-
-impl AddFeeHandler {
-    /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
-    }
-}
-
-#[async_trait]
-impl TypedHandler for AddFeeHandler {
-    type Request = AddFeeRequest;
-    type Response = AddFeeResponse;
-
-    async fn handle_typed(
-        &self,
-        _headers: HeaderMap,
-        req: Self::Request,
-        params: UrlParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        // Parse the wallet from the URL params
-        let wallet_id = parse_wallet_id_from_params(&params)?;
-
-        // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
-
-        // Ensure that the fees list is not full
-        let num_fees = old_wallet.fees.iter().filter(|fee| !fee.is_default()).count();
-        if num_fees >= MAX_FEES {
-            return Err(bad_request(ERR_FEES_FULL.to_string()));
-        }
-
-        // Add the fee to the new wallet
-        let mut new_wallet = old_wallet.clone();
-        new_wallet.fees.push(req.fee.into());
-        new_wallet.reblind_wallet();
-
-        let task = UpdateWalletTaskDescriptor::new(
-            get_current_timestamp(),
-            None, // transfer
-            old_wallet,
-            new_wallet,
-            req.statement_sig,
-        )
-        .map_err(bad_request)?;
-
-        // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
-        Ok(AddFeeResponse { task_id })
-    }
-}
-
-/// Handler for the POST /wallet/:id/fees/:index/remove route
-pub struct RemoveFeeHandler {
-    /// A copy of the relayer-global state
-    global_state: State,
-}
-
-impl RemoveFeeHandler {
-    /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
-    }
-}
-
-#[async_trait]
-impl TypedHandler for RemoveFeeHandler {
-    type Request = RemoveFeeRequest;
-    type Response = RemoveFeeResponse;
-
-    async fn handle_typed(
-        &self,
-        _headers: HeaderMap,
-        req: Self::Request,
-        params: UrlParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        // Parse the wallet id and fee index from the URL params
-        let wallet_id = parse_wallet_id_from_params(&params)?;
-        let fee_index = parse_index_from_params(&params)?;
-
-        // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
-
-        if fee_index >= old_wallet.fees.len() {
-            return Err(not_found(ERR_FEE_OUT_OF_RANGE.to_string()));
-        }
-
-        // Remove the fee from the old wallet
-        let mut new_wallet = old_wallet.clone();
-        let removed_fee = new_wallet.fees.remove(fee_index);
-        new_wallet.reblind_wallet();
-
-        // Start a task to submit this update to the contract
-        let task = UpdateWalletTaskDescriptor::new(
-            get_current_timestamp(),
-            None, // transfer
-            old_wallet,
-            new_wallet,
-            req.statement_sig,
-        )
-        .map_err(bad_request)?;
-
-        // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
-        Ok(RemoveFeeResponse { task_id, fee: removed_fee.into() })
     }
 }
