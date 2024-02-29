@@ -94,7 +94,7 @@ async fn create_witness_and_statement(
 
     // Compute the match and settle it
     let match_res = compute_match(&order1, &amount1, &amount2, &price, fabric);
-    let (party0_modified_shares, party1_modified_shares) =
+    let (party0_fees, party1_fees, party0_modified_shares, party1_modified_shares) =
         settle_match(ind1, ind2, &party0_pre_shares, &party1_pre_shares, &match_res);
 
     (
