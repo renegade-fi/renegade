@@ -1,22 +1,20 @@
-//! Tests the process of proving and verifying a `VALID RELAYER FEE SETTLEMENT`
+//! Tests the process of proving and verifying a `VALID OFFLINE FEE SETTLEMENT`
 //! circuit
 #![allow(incomplete_features)]
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuit_types::{balance::Balance, wallet::Wallet, PlonkCircuit};
+use circuit_types::PlonkCircuit;
 use circuits::test_helpers::wallet_with_random_balances;
-use circuits::zk_circuits::valid_relayer_fee_settlement::ValidRelayerFeeSettlement;
-use circuits::zk_circuits::valid_relayer_fee_settlement::{
-    test_helpers::create_witness_statement, ValidRelayerFeeSettlementStatement,
-    ValidRelayerFeeSettlementWitness,
+use circuits::zk_circuits::valid_offline_fee_settlement::ValidOfflineFeeSettlement;
+use circuits::zk_circuits::valid_offline_fee_settlement::{
+    test_helpers::create_witness_statement, ValidOfflineFeeSettlementStatement,
+    ValidOfflineFeeSettlementWitness,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::{Scalar, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use rand::thread_rng;
-use renegade_crypto::fields::scalar_to_biguint;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
 /// MERKLE_HEIGHT)
@@ -28,22 +26,21 @@ const LARGE_PARAM_SET: (usize, usize, usize) = (MAX_BALANCES, MAX_ORDERS, MERKLE
 // | Helpers |
 // -----------
 
-/// Create a sized witness and statement for the `VALID RELAYER FEE SETTLEMENT`
+/// Create a sized witness and statement for the `VALID OFFLINE FEE SETTLEMENT`
 /// circuit
 pub fn create_sized_witness_statement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
 >() -> (
-    ValidRelayerFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
-    ValidRelayerFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+    ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
+    ValidOfflineFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
 )
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     let sender_wallet = wallet_with_random_balances();
-    let recipient_wallet = wallet_with_random_balances();
-    create_witness_statement(&sender_wallet, &recipient_wallet)
+    create_witness_statement(&sender_wallet)
 }
 
 /// Benchmark constraint generation for the circuit
@@ -56,7 +53,7 @@ pub fn bench_apply_constraints_with_sizes<
 ) where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    let mut group = c.benchmark_group("valid_relayer_fee_settlement");
+    let mut group = c.benchmark_group("valid_offline_fee_settlement");
     let benchmark_id = BenchmarkId::new(
         "constraint-generation",
         format!("({}, {}, {})", MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT),
@@ -72,7 +69,7 @@ pub fn bench_apply_constraints_with_sizes<
         let statement_var = statement.create_public_var(&mut cs);
 
         b.iter(|| {
-            ValidRelayerFeeSettlement::apply_constraints(
+            ValidOfflineFeeSettlement::apply_constraints(
                 witness_var.clone(),
                 statement_var.clone(),
                 &mut cs,
@@ -92,7 +89,7 @@ pub fn bench_prover_with_sizes<
 ) where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    let mut group = c.benchmark_group("valid_relayer_fee_settlement");
+    let mut group = c.benchmark_group("valid_offline_fee_settlement");
     let benchmark_id = BenchmarkId::new(
         "prover",
         format!("({}, {}, {})", MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT),
@@ -104,7 +101,7 @@ pub fn bench_prover_with_sizes<
             create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>();
 
         b.iter(|| {
-            singleprover_prove::<ValidRelayerFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>>(
+            singleprover_prove::<ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>>(
                 witness.clone(),
                 statement.clone(),
             )
@@ -128,18 +125,18 @@ pub fn bench_verifier_with_sizes<
         create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>();
 
     let proof = singleprover_prove::<
-        ValidRelayerFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+        ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
     >(witness, statement.clone())
     .unwrap();
 
     // Run the benchmark
-    let mut group = c.benchmark_group("valid_relayer_fee_settlement");
+    let mut group = c.benchmark_group("valid_offline_fee_settlement");
     let benchmark_id =
         BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS}, {MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
             verify_singleprover_proof::<
-                ValidRelayerFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+                ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
             >(statement.clone(), &proof)
             .unwrap();
         });
@@ -204,7 +201,7 @@ pub fn bench_verifier__large_circuit(c: &mut Criterion) {
 
 #[cfg(feature = "large_benchmarks")]
 criterion_group!(
-    name = valid_relayer_fee_settlement;
+    name = valid_offline_fee_settlement;
     config = Criterion::default().sample_size(10);
     targets =
         bench_apply_constraints__small_circuit,
@@ -217,7 +214,7 @@ criterion_group!(
 
 #[cfg(not(feature = "large_benchmarks"))]
 criterion_group!(
-    name = valid_relayer_fee_settlement;
+    name = valid_offline_fee_settlement;
     config = Criterion::default().sample_size(10);
     targets =
         bench_apply_constraints__small_circuit,
@@ -225,4 +222,4 @@ criterion_group!(
         bench_verifier__small_circuit,
 );
 
-criterion_main!(valid_relayer_fee_settlement);
+criterion_main!(valid_offline_fee_settlement);

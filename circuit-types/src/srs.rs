@@ -2,7 +2,7 @@
 //!
 //! The SRS was pulled from:
 //!     https://github.com/iden3/snarkjs?tab=readme-ov-file#7-prepare-phase-2
-//! For a max-constraints of 2^16
+//! For a max-constraints of 2^17
 //!
 //! The SRS can be verified with `snarkjs powersoftau verify srs.ptau`
 //! Which runs the algorithm in https://eprint.iacr.org/2017/1050.pdf
@@ -34,7 +34,7 @@ lazy_static! {
 }
 
 /// The maximum power of two that the SRS supports
-const MAX_SRS_POWER: usize = 16;
+const MAX_SRS_POWER: usize = 17;
 /// The maximum degree that the SRS supports
 pub const MAX_SRS_DEGREE: usize = (1 << MAX_SRS_POWER) + 2;
 
