@@ -175,11 +175,12 @@ pub mod test_helpers {
 
     use ark_mpc::error::MpcError;
     use circuit_types::{
+        balance::Balance,
         fixed_point::FixedPoint,
         order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
         traits::BaseType,
-        wallet::WalletShare,
+        wallet::{Wallet, WalletShare},
     };
     use constants::{AuthenticatedScalar, Scalar};
     use futures::{future::join_all, Future, FutureExt};
@@ -259,6 +260,23 @@ pub mod test_helpers {
     {
         let mut iter = iter::from_fn(|| Some(Scalar::zero()));
         WalletShare::from_scalars(&mut iter)
+    }
+
+    /// Create a wallet with random zero'd balances
+    pub fn wallet_with_random_balances<const MAX_BALANCES: usize, const MAX_FEES: usize>(
+    ) -> Wallet<MAX_BALANCES, MAX_FEES>
+    where
+        [(); MAX_BALANCES + MAX_FEES]: Sized,
+    {
+        let mut rng = thread_rng();
+        let mut wallet = Wallet::<MAX_BALANCES, MAX_FEES>::default();
+
+        for bal in wallet.balances.iter_mut() {
+            let mint = scalar_to_biguint(&Scalar::random(&mut rng));
+            *bal = Balance::new_from_mint(mint);
+        }
+
+        wallet
     }
 
     /// Open a batch of values and join into a single future
