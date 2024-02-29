@@ -38,12 +38,11 @@ use self::{
         GetTaskQueueHandler, GetTaskStatusHandler, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE,
     },
     wallet::{
-        AddFeeHandler, CancelOrderHandler, CreateOrderHandler, CreateWalletHandler,
-        DepositBalanceHandler, FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler,
-        GetFeesHandler, GetOrderByIdHandler, GetOrdersHandler, GetWalletHandler, RemoveFeeHandler,
-        UpdateOrderHandler, WithdrawBalanceHandler, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
-        DEPOSIT_BALANCE_ROUTE, FEES_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
-        GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, REMOVE_FEE_ROUTE,
+        CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
+        FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetOrderByIdHandler,
+        GetOrdersHandler, GetWalletHandler, UpdateOrderHandler, WithdrawBalanceHandler,
+        CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE,
+        GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
         UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
     },
 };
@@ -79,8 +78,6 @@ const ERR_CLUSTER_ID_PARSE: &str = "could not parse cluster id";
 const ERR_PEER_ID_PARSE: &str = "could not parse peer id";
 /// Error message displayed when parsing a task ID from URL fails
 const ERR_TASK_ID_PARSE: &str = "could not parse task id";
-/// Error message displayed when parsing an index form URL fails
-const ERR_INDEX_PARSE: &str = "could not parse index";
 
 // ----------------
 // | URL Captures |
@@ -98,8 +95,6 @@ const CLUSTER_ID_URL_PARAM: &str = "cluster_id";
 const PEER_ID_URL_PARAM: &str = "peer_id";
 /// The :task_id param in a URL
 const TASK_ID_URL_PARAM: &str = "task_id";
-/// The :index param in a URL
-const INDEX_URL_PARAM: &str = "index";
 
 /// A helper to parse out a mint from a URL param
 pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
@@ -163,15 +158,6 @@ pub(super) fn parse_task_id_from_params(
         .ok_or_else(|| bad_request(ERR_TASK_ID_PARSE.to_string()))?
         .parse()
         .map_err(|_| bad_request(ERR_TASK_ID_PARSE.to_string()))
-}
-
-/// A helper to parse out an index from a URL param
-pub(super) fn parse_index_from_params(params: &UrlParams) -> Result<usize, ApiServerError> {
-    params
-        .get(INDEX_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_INDEX_PARSE.to_string()))?
-        .parse()
-        .map_err(|_| bad_request(ERR_INDEX_PARSE.to_string()))
 }
 
 /// A wrapper around the router and task management operations that
@@ -324,30 +310,6 @@ impl HttpServer {
             WITHDRAW_BALANCE_ROUTE.to_string(),
             true, // auth_required
             WithdrawBalanceHandler::new(global_state.clone()),
-        );
-
-        // The GET "/wallet/:id/fees" route
-        router.add_route(
-            &Method::GET,
-            FEES_ROUTE.to_string(),
-            true, // auth_required
-            GetFeesHandler::new(global_state.clone()),
-        );
-
-        // The POST "/wallet/:id/fees" route
-        router.add_route(
-            &Method::POST,
-            FEES_ROUTE.to_string(),
-            true, // auth_required
-            AddFeeHandler::new(global_state.clone()),
-        );
-
-        // The "/wallet/:id/fees/:index/remove" route
-        router.add_route(
-            &Method::POST,
-            REMOVE_FEE_ROUTE.to_string(),
-            true, // auth_required
-            RemoveFeeHandler::new(global_state.clone()),
         );
 
         // The "/order_book/orders" route

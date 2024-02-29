@@ -1,5 +1,6 @@
 //! Groups API type definitions for wallet API operations
 
+use circuit_types::balance::Balance;
 use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,7 @@ use uuid::Uuid;
 
 use crate::{
     deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string,
-    types::{ApiBalance, ApiFee, ApiKeychain, ApiOrder, ApiWallet},
+    types::{ApiKeychain, ApiOrder, ApiWallet},
 };
 
 // --------------------
@@ -141,14 +142,14 @@ pub struct CancelOrderResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBalancesResponse {
     /// The balances in the given wallet
-    pub balances: Vec<ApiBalance>,
+    pub balances: Vec<Balance>,
 }
 
 /// The response type to get a single balance by mint
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetBalanceByMintResponse {
     /// The requested balance
-    pub balance: ApiBalance,
+    pub balance: Balance,
 }
 
 /// The request type to deposit a balance into the darkpool
@@ -249,57 +250,4 @@ pub struct InternalTransferRequest {
 pub struct InternalTransferResponse {
     /// The ID of the task that was allocated on behalf of this request
     pub task_id: TaskIdentifier,
-}
-
-// -------------------------
-// | Wallet Fees API Types |
-// -------------------------
-
-/// The response type to get a wallet's fees
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetFeesResponse {
-    /// The fees in a given wallet
-    pub fees: Vec<ApiFee>,
-}
-
-/// The request type to add a fee to a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AddFeeRequest {
-    /// The fee to add to the wallet
-    pub fee: ApiFee,
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    ///
-    /// TODO: For now this is just a blob, we will add this feature in
-    /// a follow up
-    pub statement_sig: Vec<u8>,
-}
-
-/// The response type to a request to add a fee to a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AddFeeResponse {
-    /// The ID of the task allocated on behalf of this request
-    pub task_id: TaskIdentifier,
-}
-
-/// The request type to remove a fee from a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoveFeeRequest {
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    ///
-    /// TODO: For now this is just a blob, we will add this feature in
-    /// a follow up
-    pub statement_sig: Vec<u8>,
-}
-
-/// The response type for a request to remove a fee from a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RemoveFeeResponse {
-    /// The ID of the task allocated for this request
-    pub task_id: TaskIdentifier,
-    /// The fee that was removed
-    pub fee: ApiFee,
 }
