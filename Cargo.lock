@@ -7832,6 +7832,8 @@ dependencies = [
 name = "test-helpers"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
  "arbitrum-client",
  "ark-ec",
  "ark-mpc",
@@ -7840,9 +7842,11 @@ dependencies = [
  "common",
  "constants",
  "dns-lookup",
+ "ethers",
  "eyre",
  "futures",
  "itertools 0.10.5",
+ "k256",
  "num-bigint",
  "rand 0.8.5",
  "renegade-crypto",
