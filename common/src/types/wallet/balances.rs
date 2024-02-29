@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use circuit_types::{balance::Balance, fee::Fee, order::Order};
+use circuit_types::{balance::Balance, order::Order};
 use constants::MAX_BALANCES;
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -33,7 +33,7 @@ impl Wallet {
     /// zero'd balance if one does not exist
     pub fn get_balance_mut_or_default(&mut self, mint: &BigUint) -> &mut Balance {
         if !self.balances.contains_key(mint) {
-            let bal = Balance { mint: mint.clone(), amount: 0 };
+            let bal = Balance::new_from_mint(mint.clone());
             self.add_balance(bal).unwrap();
         }
 
@@ -52,24 +52,13 @@ impl Wallet {
             .unwrap()
     }
 
-    /// Get the balance, fee, and fee_balance for an order by specifying the
-    /// order directly
-    ///
-    /// We allow orders to be matched when undercapitalized; i.e. the respective
-    /// balance does not cover the full volume of the order.
-    pub fn get_balance_and_fee_for_order(&self, order: &Order) -> Option<(Balance, Fee, Balance)> {
+    /// Get the balance that covers the side sold by the given order
+    pub fn get_balance_for_order(&self, order: &Order) -> Option<Balance> {
         // Find a balance and fee to associate with this order
         let order_mint = order.send_mint();
-        let balance = self.get_balance(order_mint)?;
+        let balance = self.get_balance(order_mint)?.clone();
 
-        // Choose the first non-default fee for simplicity
-        let fee = self.fees.iter().find(|fee| !fee.is_default())?;
-        let fee_balance = self.get_balance(&fee.gas_addr)?;
-        if fee_balance.amount < fee.gas_token_amount {
-            return None;
-        }
-
-        Some((balance.clone(), fee.clone(), fee_balance.clone()))
+        Some(balance)
     }
 
     // -----------

@@ -94,8 +94,6 @@ impl Wallet {
         let order_ids = self.orders.keys().cloned();
         self.orders = order_ids.zip(wallet.orders).collect();
 
-        self.fees = wallet.fees.to_vec();
-
         // Update the wallet shares
         self.private_shares = private_shares.clone();
         self.blinded_public_shares = blinded_public_shares.clone();
