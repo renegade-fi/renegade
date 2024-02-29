@@ -79,43 +79,62 @@ async fn run_match_with_delay(delay: Duration) -> Duration {
 async fn create_witness_and_statement(
     fabric: &Fabric,
 ) -> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
-    let order1 = Order::default().allocate(PARTY0, fabric);
-    let balance1 = Balance::default().allocate(PARTY0, fabric);
-    let amount1 = Scalar::one().allocate(PARTY0, fabric);
-    let ind1 = random_indices().share_public(PARTY0, fabric).await;
+    let order0 = Order::default().allocate(PARTY0, fabric);
+    let balance0 = Balance::default().allocate(PARTY0, fabric);
+    let balance_receive0 = Balance::default().allocate(PARTY0, fabric);
+    let amount0 = Scalar::one().allocate(PARTY0, fabric);
+    let relayer_fee0 = FixedPoint::default().allocate(PARTY0, fabric);
+    let ind0 = random_indices().share_public(PARTY0, fabric).await;
     let party0_pre_shares = dummy_wallet_share().allocate(PARTY0, fabric);
 
-    let order2 = Order::default().allocate(PARTY1, fabric);
-    let balance2 = Balance::default().allocate(PARTY1, fabric);
-    let amount2 = Scalar::one().allocate(PARTY1, fabric);
-    let ind2 = random_indices().share_public(PARTY0, fabric).await;
+    let order1 = Order::default().allocate(PARTY1, fabric);
+    let balance1 = Balance::default().allocate(PARTY1, fabric);
+    let balance_receive1 = Balance::default().allocate(PARTY1, fabric);
+    let amount1 = Scalar::one().allocate(PARTY1, fabric);
+    let relayer_fee1 = FixedPoint::default().allocate(PARTY1, fabric);
+    let ind1 = random_indices().share_public(PARTY1, fabric).await;
     let party1_pre_shares = dummy_wallet_share().allocate(PARTY1, fabric);
     let price = FixedPoint::from_integer(1).allocate(PARTY0, fabric);
 
     // Compute the match and settle it
-    let match_res = compute_match(&order1, &amount1, &amount2, &price, fabric);
-    let (party0_fees, party1_fees, party0_modified_shares, party1_modified_shares) =
-        settle_match(ind1, ind2, &party0_pre_shares, &party1_pre_shares, &match_res);
+    let match_res = compute_match(&order0, &amount0, &amount1, &price, fabric);
+    let (party0_fees, party1_fees, party0_modified_shares, party1_modified_shares) = settle_match(
+        &relayer_fee0,
+        &relayer_fee1,
+        ind0,
+        ind1,
+        &party0_pre_shares,
+        &party1_pre_shares,
+        &match_res,
+        fabric,
+    );
 
     (
         SizedValidMatchSettleWitness {
+            order0,
+            balance0,
+            balance_receive0,
+            party0_fees,
+            relayer_fee0,
+            amount0,
+            price0: price.clone(),
             order1,
             balance1,
+            balance_receive1,
+            relayer_fee1,
+            party1_fees,
             amount1,
-            price1: price.clone(),
-            order2,
-            balance2,
-            amount2,
-            price2: price,
+            price1: price,
             party0_public_shares: party0_pre_shares,
             party1_public_shares: party1_pre_shares,
             match_res,
         },
         SizedValidMatchSettleStatement {
-            party0_indices: ind1.allocate(PARTY0, fabric),
-            party1_indices: ind2.allocate(PARTY0, fabric),
+            party0_indices: ind0.allocate(PARTY0, fabric),
+            party1_indices: ind1.allocate(PARTY0, fabric),
             party0_modified_shares,
             party1_modified_shares,
+            protocol_fee: FixedPoint::default().allocate(PARTY0, fabric),
         },
     )
 }

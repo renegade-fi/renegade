@@ -3,6 +3,7 @@
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
+use circuit_types::elgamal::DecryptionKey;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
@@ -16,7 +17,7 @@ use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
-use num_bigint::BigUint;
+use rand::thread_rng;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS)
 const SMALL_PARAM_SET: (usize, usize) = (2, 2);
@@ -37,12 +38,14 @@ where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     // Create an empty wallet
+    let mut rng = thread_rng();
+    let (_, enc) = DecryptionKey::random_pair(&mut rng);
     let wallet = Wallet::<MAX_BALANCES, MAX_ORDERS> {
         balances: create_default_arr(),
         orders: create_default_arr(),
         keys: PUBLIC_KEYS.clone(),
         match_fee: FixedPoint::from_integer(0),
-        managing_cluster: BigUint::from(0u8),
+        managing_cluster: enc,
         blinder: Scalar::zero(),
     };
 
