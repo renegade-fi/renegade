@@ -1,9 +1,6 @@
 //! Defines task related types
 
-use circuit_types::{
-    fixed_point::FixedPoint, keychain::PublicSigningKey, r#match::MatchResult,
-    transfers::ExternalTransfer,
-};
+use circuit_types::{fixed_point::FixedPoint, keychain::PublicSigningKey, r#match::MatchResult};
 use constants::Scalar;
 use ethers::core::types::Signature;
 use ethers::core::utils::keccak256;
@@ -16,7 +13,7 @@ use super::{
     gossip::WrappedPeerId,
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
-    transfer_aux_data::TransferAuxData,
+    transfer_aux_data::ExternalTransferWithAuxData,
     wallet::{KeyChain, OrderIdentifier, Wallet, WalletIdentifier},
 };
 
@@ -318,10 +315,8 @@ impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
 pub struct UpdateWalletTaskDescriptor {
     /// The timestamp at which the task was initiated, used to timestamp orders
     pub timestamp_received: u64,
-    /// The external transfer, if one exists
-    pub external_transfer: Option<ExternalTransfer>,
-    /// The auxiliary data for the external transfer, if one exists
-    pub transfer_aux_data: Option<TransferAuxData>,
+    /// The external transfer & auxiliary data, if one exists
+    pub external_transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -335,8 +330,7 @@ impl UpdateWalletTaskDescriptor {
     /// Constructor
     pub fn new(
         timestamp_received: u64,
-        external_transfer: Option<ExternalTransfer>,
-        transfer_aux_data: Option<TransferAuxData>,
+        external_transfer_with_aux_data: Option<ExternalTransferWithAuxData>,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
@@ -353,8 +347,7 @@ impl UpdateWalletTaskDescriptor {
 
         Ok(UpdateWalletTaskDescriptor {
             timestamp_received,
-            external_transfer,
-            transfer_aux_data,
+            external_transfer_with_aux_data,
             old_wallet,
             new_wallet,
             wallet_update_signature,
@@ -479,8 +472,7 @@ mod test {
 
         UpdateWalletTaskDescriptor::new(
             0,    // timestamp
-            None, // transfer
-            None, // transfer_aux_data
+            None, // external_transfer_with_aux_data
             wallet.clone(),
             wallet,
             vec![],
@@ -497,8 +489,7 @@ mod test {
 
         UpdateWalletTaskDescriptor::new(
             0,    // timestamp
-            None, // transfer
-            None, // transfer_aux_data
+            None, // external_transfer_with_aux_data
             wallet.clone(),
             wallet,
             sig,
@@ -516,8 +507,7 @@ mod test {
 
         UpdateWalletTaskDescriptor::new(
             0,    // timestamp
-            None, // transfer
-            None, // transfer_aux_data
+            None, // external_transfer_with_aux_data
             wallet.clone(),
             wallet,
             sig,
