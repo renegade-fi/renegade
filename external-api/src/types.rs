@@ -5,12 +5,11 @@ use std::collections::HashMap;
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
     fixed_point::FixedPoint,
     keychain::{PublicIdentificationKey, PublicKeyChain, SecretIdentificationKey},
     order::{Order, OrderSide},
     traits::BaseType,
-    SizedWalletShare,
+    Amount, SizedWalletShare,
 };
 use common::types::{
     gossip::PeerInfo as IndexedPeerInfo,
@@ -22,9 +21,9 @@ use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{Deserialize, Serialize};
 use util::hex::{
-    nonnative_scalar_from_hex_string, nonnative_scalar_to_hex_string,
-    public_sign_key_from_hex_string, public_sign_key_to_hex_string, scalar_from_hex_string,
-    scalar_to_hex_string,
+    jubjub_from_hex_string, jubjub_to_hex_string, nonnative_scalar_from_hex_string,
+    nonnative_scalar_to_hex_string, public_sign_key_from_hex_string, public_sign_key_to_hex_string,
+    scalar_from_hex_string, scalar_to_hex_string,
 };
 use uuid::Uuid;
 
@@ -32,7 +31,7 @@ use uuid::Uuid;
 // | Wallet API Types |
 // --------------------
 
-/// The wallet type, holds all balances, orders, fees, and randomness
+/// The wallet type, holds all balances, orders, metadata, and randomness
 /// for a trader
 ///
 /// Also the unit of commitment in the state tree
@@ -43,11 +42,17 @@ pub struct ApiWallet {
     /// The orders maintained by this wallet
     pub orders: Vec<ApiOrder>,
     /// The balances maintained by the wallet to cover orders
-    pub balances: Vec<ApiBalance>,
-    /// The fees to cover match costs
-    pub fees: Vec<ApiFee>,
+    pub balances: Vec<Balance>,
     /// The keys that authenticate wallet access
     pub key_chain: ApiKeychain,
+    /// The managing cluster's public key
+    ///
+    /// The public encryption key of the cluster that may collect relayer fees
+    /// on this wallet
+    pub managing_cluster: String,
+    /// The take rate at which the managing cluster may collect relayer fees on
+    /// a match
+    pub match_fee: FixedPoint,
     /// The public secret shares of the wallet
     pub blinded_public_shares: Vec<BigUint>,
     /// The private secret shares of the wallet
@@ -60,15 +65,14 @@ pub struct ApiWallet {
 /// API type
 impl From<Wallet> for ApiWallet {
     fn from(mut wallet: Wallet) -> Self {
-        // Remove all default orders, balances, and fees from the wallet
+        // Remove all default orders and balances from the wallet
         // These are used to pad the wallet to the size of the circuit, and are
         // not relevant to the client
         wallet.remove_default_elements();
 
         // Build API types from the indexed wallet
         let orders = wallet.orders.into_iter().map(|order| order.into()).collect_vec();
-        let balances = wallet.balances.into_values().map(|balance| balance.into()).collect_vec();
-        let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect_vec();
+        let balances = wallet.balances.into_values().collect_vec();
 
         // Serialize the shares then convert all values to BigUint
         let blinded_public_shares =
@@ -80,8 +84,9 @@ impl From<Wallet> for ApiWallet {
             id: wallet.wallet_id,
             orders,
             balances,
-            fees,
             key_chain: wallet.key_chain.into(),
+            managing_cluster: jubjub_to_hex_string(&wallet.managing_cluster),
+            match_fee: wallet.match_fee,
             blinded_public_shares,
             private_shares,
             blinder: scalar_to_biguint(&wallet.blinder),
@@ -95,12 +100,8 @@ impl TryFrom<ApiWallet> for Wallet {
     fn try_from(wallet: ApiWallet) -> Result<Self, Self::Error> {
         let orders =
             wallet.orders.into_iter().map(|order| (Uuid::new_v4(), order.into())).collect();
-        let balances = wallet
-            .balances
-            .into_iter()
-            .map(|balance| (balance.mint.clone(), balance.into()))
-            .collect();
-        let fees = wallet.fees.into_iter().map(|fee| fee.into()).collect();
+        let balances =
+            wallet.balances.into_iter().map(|balance| (balance.mint.clone(), balance)).collect();
 
         // Deserialize the shares to scalar then re-structure into WalletSecretShare
         let blinded_public_shares = SizedWalletShare::from_scalars(
@@ -110,12 +111,15 @@ impl TryFrom<ApiWallet> for Wallet {
             &mut wallet.private_shares.iter().map(biguint_to_scalar),
         );
 
+        let managing_cluster = jubjub_from_hex_string(&wallet.managing_cluster)?;
+
         Ok(Wallet {
             wallet_id: Uuid::new_v4(),
             orders,
             balances,
-            fees,
             key_chain: wallet.key_chain.try_into()?,
+            match_fee: wallet.match_fee,
+            managing_cluster,
             blinder: biguint_to_scalar(&wallet.blinder),
             blinded_public_shares,
             private_shares,
@@ -153,9 +157,7 @@ pub struct ApiOrder {
     /// this is a minimum price
     pub worst_case_price: FixedPoint,
     /// The order size
-    pub amount: BigUint,
-    /// The timestamp this order was placed at
-    pub timestamp: u64,
+    pub amount: Amount,
 }
 
 impl From<(OrderIdentifier, Order)> for ApiOrder {
@@ -167,8 +169,7 @@ impl From<(OrderIdentifier, Order)> for ApiOrder {
             side: order.side,
             type_: ApiOrderType::Midpoint,
             worst_case_price: order.worst_case_price,
-            amount: BigUint::from(order.amount),
-            timestamp: order.timestamp,
+            amount: order.amount,
         }
     }
 }
@@ -180,8 +181,7 @@ impl From<ApiOrder> for Order {
             base_mint: order.base_mint,
             side: order.side,
             worst_case_price: order.worst_case_price,
-            amount: order.amount.try_into().unwrap(),
-            timestamp: order.timestamp,
+            amount: order.amount,
         }
     }
 }
@@ -194,74 +194,6 @@ pub enum ApiOrderType {
     Midpoint = 0,
     /// A limit order with specified price attached
     Limit,
-}
-
-/// A balance that a wallet holds of some asset
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct ApiBalance {
-    /// The ERC-20 address of the token
-    #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
-        deserialize_with = "deserialize_biguint_from_hex_string"
-    )]
-    pub mint: BigUint,
-    /// The amount held in the balance
-    pub amount: BigUint,
-}
-
-impl From<Balance> for ApiBalance {
-    fn from(balance: Balance) -> Self {
-        ApiBalance { mint: balance.mint, amount: BigUint::from(balance.amount) }
-    }
-}
-
-impl From<ApiBalance> for Balance {
-    fn from(balance: ApiBalance) -> Self {
-        Balance { mint: balance.mint, amount: balance.amount.try_into().unwrap() }
-    }
-}
-
-/// A fee, payable to the relayer that matches orders on behalf of a wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApiFee {
-    /// The public settle key of the fee recipient
-    #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
-        deserialize_with = "deserialize_biguint_from_hex_string"
-    )]
-    pub recipient_key: BigUint,
-    /// The ERC-20 address of the token to pay for gas in
-    #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
-        deserialize_with = "deserialize_biguint_from_hex_string"
-    )]
-    pub gas_addr: BigUint,
-    /// The amount of the gas token to pay out covering transaction fees
-    pub gas_amount: BigUint,
-    /// The fee that the executing relayer may take off the sold asset
-    pub percentage_fee: FixedPoint,
-}
-
-impl From<Fee> for ApiFee {
-    fn from(fee: Fee) -> Self {
-        ApiFee {
-            recipient_key: fee.settle_key,
-            gas_addr: fee.gas_addr,
-            gas_amount: BigUint::from(fee.gas_token_amount),
-            percentage_fee: fee.percentage_fee,
-        }
-    }
-}
-
-impl From<ApiFee> for Fee {
-    fn from(fee: ApiFee) -> Self {
-        Fee {
-            settle_key: fee.recipient_key,
-            gas_addr: fee.gas_addr,
-            gas_token_amount: fee.gas_amount.try_into().unwrap(),
-            percentage_fee: fee.percentage_fee,
-        }
-    }
 }
 
 // ------------------------
