@@ -153,6 +153,27 @@ struct Cli {
     /// should manage
     #[clap(short, long, value_parser)]
     pub wallet_file: Option<String>,
+
+    // -------------
+    // | Telemetry |
+    // -------------
+
+    /// Whether or not to enable OTLP tracing
+    #[clap(long = "otlp", value_parser)]
+    pub otlp_enabled: bool,
+
+    /// The deployment environment w/ which
+    /// to tag OTLP traces
+    #[clap(long, value_parser)]
+    pub otlp_env: Option<String>,
+
+    /// The OTLP collector endpoint to send traces to
+    #[clap(long, value_parser, default_value = "http://localhost:4317")]
+    pub otlp_collector_url: String,
+
+    /// Whether or not to enable Datadog-formatted logs
+    #[clap(long = "datadog", value_parser)]
+    pub datadog_enabled: bool,
 }
 
 // ----------
@@ -234,6 +255,19 @@ pub struct RelayerConfig {
     pub arbitrum_private_key: String,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
+
+    // -------------
+    // | Telemetry |
+    // -------------
+    /// Whether or not to enable OTLP tracing
+    pub otlp_enabled: bool,
+    /// The deployment environment w/ which to tag OTLP traces
+    pub otlp_env: Option<String>,
+    /// The OTLP collector endpoint to send traces to
+    pub otlp_collector_url: String,
+
+    /// Whether or not to enable Datadog-formatted logs
+    pub datadog_enabled: bool,
 }
 
 impl Default for RelayerConfig {
@@ -274,6 +308,10 @@ impl Clone for RelayerConfig {
             arbitrum_private_key: self.arbitrum_private_key.clone(),
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
+            otlp_enabled: self.otlp_enabled,
+            otlp_env: self.otlp_env.clone(),
+            otlp_collector_url: self.otlp_collector_url.clone(),
+            datadog_enabled: self.datadog_enabled,
         }
     }
 }
@@ -380,6 +418,10 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         arbitrum_private_key: cli_args.arbitrum_private_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
+        otlp_enabled: cli_args.otlp_enabled,
+        otlp_env: cli_args.otlp_env,
+        otlp_collector_url: cli_args.otlp_collector_url,
+        datadog_enabled: cli_args.datadog_enabled,
     };
 
     set_contract_from_file(&mut config, cli_args.deployments_file)?;

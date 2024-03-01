@@ -119,7 +119,13 @@ async fn main() -> Result<(), CoordinatorError> {
             exit(0);
         });
     } else {
-        configure_telemetry().map_err(err_str!(CoordinatorError::Telemetry))?;
+        configure_telemetry(
+            args.datadog_enabled,
+            args.otlp_enabled,
+            args.otlp_env,
+            args.otlp_collector_url,
+        )
+        .map_err(err_str!(CoordinatorError::Telemetry))?;
     }
 
     // Construct an arbitrum client that workers will use for submitting txs
@@ -352,8 +358,9 @@ async fn main() -> Result<(), CoordinatorError> {
     thread::sleep(Duration::from_millis(TERMINATION_TIMEOUT_MS));
     info!("Terminating...");
 
-    #[cfg(feature = "trace-otlp")]
-    opentelemetry::global::shutdown_tracer_provider();
+    if args.otlp_enabled {
+        opentelemetry::global::shutdown_tracer_provider();
+    }
     Err(err)
 }
 

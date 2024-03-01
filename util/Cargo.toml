@@ -3,10 +3,6 @@ name = "util"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-trace-otlp = []
-datadog = ["trace-otlp"]
-
 [dependencies]
 # === Arithmetic === #
 num-bigint = "0.4"
