@@ -25,14 +25,14 @@ const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 
 /// Serialize a value to a `flexbuffers` byte vector
 pub(crate) fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, StorageError> {
-    flexbuffers::to_vec(value).map_err(StorageError::Serialization)
+    bincode::serialize(value).map_err(StorageError::Serialization)
 }
 
 /// Deserialize a value from a `flexbuffers` byte vector
 pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
     value_bytes: &[u8],
 ) -> Result<V, StorageError> {
-    flexbuffers::from_slice(value_bytes).map_err(StorageError::Deserialization)
+    bincode::deserialize(value_bytes).map_err(StorageError::Deserialization)
 }
 
 // ------------

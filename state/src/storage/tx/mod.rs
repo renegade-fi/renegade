@@ -13,6 +13,8 @@ pub mod raft_log;
 pub mod task_queue;
 pub mod wallet_index;
 
+use std::collections::VecDeque;
+
 use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
 
 use crate::{
@@ -74,8 +76,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         &self,
         table_name: &str,
         key: &K,
-    ) -> Result<Vec<V>, StorageError> {
-        self.read_set(table_name, key)
+    ) -> Result<VecDeque<V>, StorageError> {
+        Ok(self.inner().read(table_name, key)?.unwrap_or_default())
     }
 }
 
@@ -162,7 +164,7 @@ impl<'db> StateTxn<'db, RW> {
         &self,
         table_name: &str,
         key: &K,
-        value: &Vec<V>,
+        value: &VecDeque<V>,
     ) -> Result<(), StorageError> {
         self.inner().write(table_name, key, value)
     }
@@ -177,7 +179,7 @@ impl<'db> StateTxn<'db, RW> {
         value: &V,
     ) -> Result<(), StorageError> {
         let mut queue = self.read_queue(table_name, key)?;
-        queue.push(value.clone());
+        queue.push_back(value.clone());
 
         self.write_queue(table_name, key, &queue)
     }
@@ -190,10 +192,12 @@ impl<'db> StateTxn<'db, RW> {
         table_name: &str,
         key: &K,
     ) -> Result<Option<V>, StorageError> {
-        let mut queue = self.read_queue(table_name, key)?;
-        let value = queue.remove(0);
+        let mut queue: VecDeque<V> = self.read_queue(table_name, key)?;
+        let value = queue.pop_front();
+        if value.is_some() {
+            self.write_queue(table_name, key, &queue)?;
+        }
 
-        self.write_queue(table_name, key, &queue)?;
         Ok(value)
     }
 }

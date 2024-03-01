@@ -44,7 +44,6 @@ pub struct QueuedTask {
 /// TODO: We can add completed and failed states if/when we implement a task
 /// history
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "status")]
 pub enum QueuedTaskState {
     /// The task is waiting in the queue
     Queued,
