@@ -9,9 +9,6 @@
 //! to the `dd.span_id` field, which is where Datadog looks for these by default
 //! (although the path to the trace ID can be overridden in Datadog).
 
-#![allow(missing_docs)]
-#![allow(clippy::missing_docs_in_private_items)]
-
 use std::io;
 
 use chrono::Utc;
@@ -26,17 +23,29 @@ use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
 use tracing_subscriber::registry::{LookupSpan, SpanRef};
 
+/// A trace or span ID in the format expected by Datadog
 #[derive(Serialize)]
 struct DatadogId(u64);
 
+/// Metadata about the trace that a span is a part of
 struct TraceInfo {
+    /// The ID of the trace
     trace_id: DatadogId,
+    /// The ID of the span
     span_id: DatadogId,
 }
 
+/// The number of bytes in a `u64`,
+/// used to select the high 64 bits of a trace ID
+const BYTES_U64: usize = 8;
+/// The number of bytes in a `u128`,
+/// used to select the high 64 bits of a trace ID
+const BYTES_U128: usize = 16;
+
 impl From<TraceId> for DatadogId {
     fn from(value: TraceId) -> Self {
-        let bytes = &value.to_bytes()[std::mem::size_of::<u64>()..std::mem::size_of::<u128>()];
+        // Select the high 64 bytes of the trace ID
+        let bytes = &value.to_bytes()[BYTES_U64..BYTES_U128];
         Self(u64::from_be_bytes(bytes.try_into().unwrap_or_default()))
     }
 }
@@ -47,23 +56,32 @@ impl From<SpanId> for DatadogId {
     }
 }
 
+/// Look up the trace ID and span ID for the given span
 fn lookup_trace_info<S>(span_ref: &SpanRef<S>) -> Option<TraceInfo>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
+    // Get the trace ID and span ID from the current span context managed by the
+    // `tracing-opentelemetry` layer
     span_ref.extensions().get::<OtelData>().map(|o| {
-        let trace_id = if o.parent_cx.has_active_span() {
-            o.parent_cx.span().span_context().trace_id()
+        let (trace_id, span_id) = if o.parent_cx.has_active_span() {
+            (
+                o.parent_cx.span().span_context().trace_id().into(),
+                o.parent_cx.span().span_context().span_id().into(),
+            )
         } else {
-            o.builder.trace_id.unwrap_or(TraceId::INVALID)
+            (
+                o.builder.trace_id.unwrap_or(TraceId::INVALID).into(),
+                o.builder.span_id.unwrap_or(SpanId::INVALID).into(),
+            )
         };
-        TraceInfo {
-            trace_id: trace_id.into(),
-            span_id: o.builder.span_id.unwrap_or(SpanId::INVALID).into(),
-        }
+
+        TraceInfo { trace_id, span_id }
     })
 }
 
+/// The event formatter that adds the Datadog-compatible
+/// trace span IDs to the event
 // mostly stolen from here: https://github.com/tokio-rs/tracing/issues/1531
 pub struct DatadogFormatter;
 
@@ -84,7 +102,7 @@ where
         let meta = event.metadata();
 
         let mut visit = || {
-            let mut serializer = serde_json::Serializer::new(WriteAdaptor::new(&mut writer));
+            let mut serializer = serde_json::Serializer::new(WriteAdapter::new(&mut writer));
             let mut serializer = serializer.serialize_map(None)?;
             serializer.serialize_entry("timestamp", &Utc::now().to_rfc3339())?;
             serializer.serialize_entry("level", &meta.level().as_serde())?;
@@ -118,17 +136,20 @@ where
     }
 }
 
-struct WriteAdaptor<'a> {
+/// An adapter to allow a `std::fmt::Write` to be used as an `io::Write`
+struct WriteAdapter<'a> {
+    /// The `std::fmt::Write` to write to
     fmt_write: &'a mut dyn std::fmt::Write,
 }
 
-impl<'a> WriteAdaptor<'a> {
+impl<'a> WriteAdapter<'a> {
+    /// Create a new `WriteAdapter` that writes to the given `std::fmt::Write`
     fn new(fmt_write: &'a mut dyn std::fmt::Write) -> Self {
         Self { fmt_write }
     }
 }
 
-impl<'a> io::Write for WriteAdaptor<'a> {
+impl<'a> io::Write for WriteAdapter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
             std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
