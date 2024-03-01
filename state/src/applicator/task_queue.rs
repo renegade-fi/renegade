@@ -199,6 +199,7 @@ mod test {
     use common::types::{
         gossip::{mocks::mock_peer, WrappedPeerId},
         tasks::{mocks::mock_queued_task, QueuedTaskState, TaskIdentifier, TaskQueueKey},
+        wallet_mocks::mock_empty_wallet,
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
 
@@ -340,14 +341,20 @@ mod test {
         let peer_id = mock_peer().peer_id;
         set_local_peer_id(&peer_id, applicator.db());
 
-        let task_queue_key = TaskQueueKey::new_v4();
-        let task_id = enqueue_dummy_task(task_queue_key, applicator.db());
+        // Add a wallet; when the queue empties it will trigger the matching engine,
+        // which requires the wallet to be present
+        let wallet_id = TaskQueueKey::new_v4();
+        let mut wallet = mock_empty_wallet();
+        wallet.wallet_id = wallet_id;
+        applicator.add_wallet(&wallet).unwrap();
+
+        let task_id = enqueue_dummy_task(wallet_id, applicator.db());
 
         applicator.pop_task(task_id).expect("Failed to pop task");
 
         // Ensure the task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
-        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
+        let tasks = tx.get_queued_tasks(&wallet_id).unwrap();
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 0);
