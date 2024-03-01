@@ -24,6 +24,11 @@ impl Wallet {
         self.balances.get(mint)
     }
 
+    /// Get the index a given balance is at
+    pub fn get_balance_index(&self, mint: &BigUint) -> Option<usize> {
+        self.balances.index_of(mint)
+    }
+
     /// Get a mutable reference to the balance for a given mint
     pub fn get_balance_mut(&mut self, mint: &BigUint) -> Option<&mut Balance> {
         self.balances.get_mut(mint)

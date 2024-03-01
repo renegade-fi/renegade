@@ -10,6 +10,7 @@ use crate::{driver::StateWrapper, helpers::find_merkle_path};
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;
+use circuit_types::fixed_point::PROTOCOL_FEE_FP;
 use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
@@ -30,7 +31,9 @@ use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
 use tracing::instrument;
-use util::matching_engine::{compute_max_amount, settle_match_into_wallets};
+use util::matching_engine::{
+    compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
+};
 
 // -------------
 // | Constants |
@@ -385,49 +388,67 @@ impl SettleMatchInternalTask {
     fn get_witness_statement(
         &self,
     ) -> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
-        let commitment_statement1 = &self.order1_proof.commitment_proof.statement;
-        let commitment_statement2 = &self.order2_proof.commitment_proof.statement;
-        let commitment_witness1 = &self.order1_validity_witness.commitment_witness;
-        let commitment_witness2 = &self.order2_validity_witness.commitment_witness;
+        let commitment_statement0 = &self.order1_proof.commitment_proof.statement;
+        let commitment_statement1 = &self.order2_proof.commitment_proof.statement;
+        let commitment_witness0 = &self.order1_validity_witness.commitment_witness;
+        let commitment_witness1 = &self.order2_validity_witness.commitment_witness;
+
+        let price = self.execution_price;
+        let order0 = commitment_witness0.order.clone();
+        let balance0 = commitment_witness0.balance_send.clone();
+        let balance_receive0 = commitment_witness0.balance_receive.clone();
+        let relayer_fee0 = commitment_witness0.relayer_fee;
+
+        let order1 = commitment_witness1.order.clone();
+        let balance1 = commitment_witness1.balance_send.clone();
+        let balance_receive1 = commitment_witness1.balance_receive.clone();
+        let relayer_fee1 = commitment_witness1.relayer_fee;
+
+        // Compute the fees owed by each party in the match
+        let party0_fees = compute_fee_obligation(relayer_fee0, order0.side, &self.match_result);
+        let party1_fees = compute_fee_obligation(relayer_fee1, order1.side, &self.match_result);
 
         // Apply the match to the secret shares of the match parties
-        let party0_indices = commitment_statement1.indices;
-        let party0_public_shares = commitment_witness1.augmented_public_shares.clone();
-        let party1_indices = commitment_statement2.indices;
-        let party1_public_shares = commitment_witness2.augmented_public_shares.clone();
+        let party0_indices = commitment_statement0.indices;
+        let party0_public_shares = commitment_witness0.augmented_public_shares.clone();
+        let party1_indices = commitment_statement1.indices;
+        let party1_public_shares = commitment_witness1.augmented_public_shares.clone();
 
         let mut party0_modified_shares = party0_public_shares.clone();
         let mut party1_modified_shares = party1_public_shares.clone();
+
         settle_match_into_wallets(
             &mut party0_modified_shares,
             &mut party1_modified_shares,
+            party0_fees,
+            party1_fees,
             party0_indices,
             party1_indices,
             &self.match_result,
         );
 
         // Compute the maximum amount that can be settled for each party
-        let price = self.execution_price;
-        let order1 = commitment_witness1.order.clone();
-        let balance1 = commitment_witness1.balance_send.clone();
+        let amount0: Scalar = compute_max_amount(&price, &order0, &balance0).into();
         let amount1: Scalar = compute_max_amount(&price, &order1, &balance1).into();
-
-        let order2 = commitment_witness2.order.clone();
-        let balance2 = commitment_witness2.balance_send.clone();
-        let amount2: Scalar = compute_max_amount(&price, &order2, &balance2).into();
 
         // Build a witness and statement
         let witness = SizedValidMatchSettleWitness {
-            order1,
-            balance1,
-            amount1,
-            price1: price,
+            order0,
+            balance0,
+            balance_receive0,
+            amount0,
+            relayer_fee0,
+            party0_fees,
+            price0: price,
             party0_public_shares,
 
-            order2,
-            balance2,
-            amount2,
-            price2: price,
+            order1,
+            balance1,
+            balance_receive1,
+            amount1,
+            relayer_fee1,
+            party1_fees,
+            price1: price,
             party1_public_shares,
 
             match_res: self.match_result.clone(),
@@ -438,6 +459,7 @@ impl SettleMatchInternalTask {
             party0_modified_shares,
             party1_indices,
             party1_modified_shares,
+            protocol_fee: *PROTOCOL_FEE_FP,
         };
 
         (witness, statement)
