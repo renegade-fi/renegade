@@ -8,10 +8,7 @@ use alloy_sol_types::{
     Eip712Domain, SolStruct, SolType,
 };
 use arbitrum_client::{conversion::to_contract_external_transfer, helpers::serialize_calldata};
-use circuit_types::{
-    transfers::{ExternalTransfer, ExternalTransferDirection},
-    Amount,
-};
+use circuit_types::transfers::{ExternalTransfer, ExternalTransferDirection};
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
 use ethers::{signers::Wallet, types::H256};
 use eyre::Result;
@@ -33,56 +30,60 @@ pub fn gen_transfer_with_auth(
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
-    account_addr: BigUint,
-    mint: BigUint,
-    amount: Amount,
-    is_withdrawal: bool,
+    transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth> {
-    let direction = if is_withdrawal {
-        ExternalTransferDirection::Withdrawal
-    } else {
-        ExternalTransferDirection::Deposit
-    };
-    let transfer = to_contract_external_transfer(&ExternalTransfer {
-        account_addr: account_addr.clone(),
-        mint: mint.clone(),
-        amount,
-        direction,
-    })?;
+    match transfer.direction {
+        ExternalTransferDirection::Deposit => {
+            gen_deposit_with_auth(wallet, transfer, permit2_address, darkpool_address, chain_id)
+        },
+        ExternalTransferDirection::Withdrawal => gen_withdrawal_with_auth(wallet, transfer),
+    }
+}
 
-    let external_transfer_with_auth = if transfer.is_withdrawal {
-        let transfer_bytes = serialize_calldata(&transfer)?;
-        let transfer_hash = H256::from_slice(keccak256(&transfer_bytes).as_slice());
-        let transfer_signature = wallet.sign_hash(transfer_hash)?.to_vec();
+/// Generate a withdrawal payload with proper auth data
+fn gen_withdrawal_with_auth(
+    wallet: &Wallet<SigningKey>,
+    transfer: ExternalTransfer,
+) -> Result<ExternalTransferWithAuth> {
+    let transfer_bytes = serialize_calldata(&transfer)?;
+    let transfer_hash = H256::from_slice(keccak256(&transfer_bytes).as_slice());
+    let transfer_signature = wallet.sign_hash(transfer_hash)?.to_vec();
 
-        ExternalTransferWithAuth::withdrawal(
-            account_addr,
-            mint,
-            amount,
-            WithdrawalAuth { external_transfer_signature: transfer_signature },
-        )
-    } else {
-        let (permit_nonce, permit_deadline, permit_signature) = gen_permit_payload(
-            wallet,
-            transfer.mint,
-            transfer.amount,
-            permit2_address,
-            darkpool_address,
-            chain_id,
-        )?;
+    Ok(ExternalTransferWithAuth::withdrawal(
+        transfer.account_addr,
+        transfer.mint,
+        transfer.amount,
+        WithdrawalAuth { external_transfer_signature: transfer_signature },
+    ))
+}
 
-        let permit_nonce = u256_to_biguint(permit_nonce);
-        let permit_deadline = u256_to_biguint(permit_deadline);
+/// Generate a deposit payload with proper auth data
+fn gen_deposit_with_auth(
+    wallet: &Wallet<SigningKey>,
+    transfer: ExternalTransfer,
+    permit2_address: Address,
+    darkpool_address: Address,
+    chain_id: u64,
+) -> Result<ExternalTransferWithAuth> {
+    let contract_transfer = to_contract_external_transfer(&transfer)?;
+    let (permit_nonce, permit_deadline, permit_signature) = gen_permit_payload(
+        wallet,
+        contract_transfer.mint,
+        contract_transfer.amount,
+        permit2_address,
+        darkpool_address,
+        chain_id,
+    )?;
 
-        ExternalTransferWithAuth::deposit(
-            account_addr,
-            mint,
-            amount,
-            DepositAuth { permit_nonce, permit_deadline, permit_signature },
-        )
-    };
+    let permit_nonce = u256_to_biguint(permit_nonce);
+    let permit_deadline = u256_to_biguint(permit_deadline);
 
-    Ok(external_transfer_with_auth)
+    Ok(ExternalTransferWithAuth::deposit(
+        transfer.account_addr,
+        transfer.mint,
+        transfer.amount,
+        DepositAuth { permit_nonce, permit_deadline, permit_signature },
+    ))
 }
 
 /// Generates a permit payload for the given token and amount

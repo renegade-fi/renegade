@@ -24,5 +24,5 @@ pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> 
     parsed_json[DEPLOYMENTS_KEY][contract_key]
         .as_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| eyre!("Could not parse darkpool address from deployments file"))
+        .ok_or_else(|| eyre!("Could not parse {contract_key} address from deployments file"))
 }
