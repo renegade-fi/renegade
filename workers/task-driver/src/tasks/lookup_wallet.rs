@@ -229,11 +229,12 @@ impl LookupWalletTask {
                 .cloned()
                 .map(|b| (b.mint.clone(), b))
                 .collect(),
-            fees: recovered_wallet.fees.to_vec(),
             key_chain: KeyChain {
                 public_keys: recovered_wallet.keys,
                 secret_keys: self.key_chain.secret_keys.clone(),
             },
+            match_fee: recovered_wallet.match_fee,
+            managing_cluster: recovered_wallet.managing_cluster,
             blinder: recovered_wallet.blinder,
             private_shares,
             blinded_public_shares,
