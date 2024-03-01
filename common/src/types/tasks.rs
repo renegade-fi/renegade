@@ -313,10 +313,8 @@ impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
 /// `UpdateWallet` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateWalletTaskDescriptor {
-    /// The timestamp at which the task was initiated, used to timestamp orders
-    pub timestamp_received: u64,
     /// The external transfer & auth data, if one exists
-    pub external_transfer_with_auth: Option<ExternalTransferWithAuth>,
+    pub transfer: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -329,8 +327,7 @@ pub struct UpdateWalletTaskDescriptor {
 impl UpdateWalletTaskDescriptor {
     /// Constructor
     pub fn new(
-        timestamp_received: u64,
-        external_transfer_with_auth: Option<ExternalTransferWithAuth>,
+        transfer_with_auth: Option<ExternalTransferWithAuth>,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
@@ -346,8 +343,7 @@ impl UpdateWalletTaskDescriptor {
             .map_err(|e| format!("invalid wallet update sig: {e}"))?;
 
         Ok(UpdateWalletTaskDescriptor {
-            timestamp_received,
-            external_transfer_with_auth,
+            transfer: transfer_with_auth,
             old_wallet,
             new_wallet,
             wallet_update_signature,
@@ -471,7 +467,6 @@ mod test {
         wallet.blinded_public_shares.orders[0].amount += Scalar::one();
 
         UpdateWalletTaskDescriptor::new(
-            0,    // timestamp
             None, // transfer
             wallet.clone(),
             wallet,
@@ -488,7 +483,6 @@ mod test {
         let sig = vec![0; 64];
 
         UpdateWalletTaskDescriptor::new(
-            0,    // timestamp
             None, // transfer
             wallet.clone(),
             wallet,
@@ -506,7 +500,6 @@ mod test {
         let sig = gen_wallet_update_sig(&wallet, key);
 
         UpdateWalletTaskDescriptor::new(
-            0,    // timestamp
             None, // transfer
             wallet.clone(),
             wallet,

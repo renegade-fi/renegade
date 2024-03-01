@@ -9,9 +9,8 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::{
-    native_helpers::wallet_from_blinded_shares, transfers::ExternalTransfer, SizedWallet,
-};
+use circuit_types::transfers::ExternalTransferDirection;
+use circuit_types::{native_helpers::wallet_from_blinded_shares, SizedWallet};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
@@ -152,10 +151,8 @@ impl From<StateError> for UpdateWalletTaskError {
 
 /// Defines the long running flow for updating a wallet
 pub struct UpdateWalletTask {
-    /// The timestamp at which the task was initiated, used to timestamp orders
-    pub timestamp_received: u64,
     /// The external transfer & auth data, if one exists
-    pub external_transfer_with_auth: Option<ExternalTransferWithAuth>,
+    pub transfer: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
     pub old_wallet: Wallet,
     /// The new wallet after update
@@ -188,8 +185,7 @@ impl Task for UpdateWalletTask {
         Self::check_wallet_shares(&descriptor.new_wallet)?;
 
         Ok(Self {
-            timestamp_received: descriptor.timestamp_received,
-            external_transfer_with_auth: descriptor.external_transfer_with_auth,
+            transfer: descriptor.transfer,
             old_wallet: descriptor.old_wallet,
             new_wallet: descriptor.new_wallet,
             wallet_update_signature: descriptor.wallet_update_signature,
@@ -282,8 +278,7 @@ impl UpdateWalletTask {
     /// finality
     async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
-        let transfer_auth =
-            self.external_transfer_with_auth.as_ref().map(|t| t.transfer_auth.clone());
+        let transfer_auth = self.transfer.as_ref().map(|t| t.transfer_auth.clone());
         self.arbitrum_client
             .update_wallet(&proof, self.wallet_update_signature.clone(), transfer_auth)
             .await
@@ -361,14 +356,15 @@ impl UpdateWalletTask {
         let new_wallet = &self.new_wallet;
         let new_private_share_commitment = self.new_wallet.get_private_share_commitment();
 
+        let transfer_index = self.get_transfer_idx();
+        let transfer = self.transfer.clone().map(|t| t.external_transfer).unwrap_or_default();
         let statement = SizedValidWalletUpdateStatement {
             old_shares_nullifier: old_wallet.get_wallet_nullifier(),
             new_private_shares_commitment: new_private_share_commitment,
             new_public_shares: new_wallet.blinded_public_shares.clone(),
             merkle_root,
-            external_transfer: self.external_transfer.clone().unwrap_or_default(),
+            external_transfer: transfer,
             old_pk_root: old_wallet.key_chain.public_keys.pk_root.clone(),
-            timestamp: self.timestamp_received,
         };
 
         let witness = SizedValidWalletUpdateWitness {
@@ -376,8 +372,24 @@ impl UpdateWalletTask {
             old_wallet_public_shares: old_wallet.blinded_public_shares.clone(),
             old_shares_opening: merkle_opening.into(),
             new_wallet_private_shares: new_wallet.private_shares.clone(),
+            transfer_index,
         };
 
         Ok((witness, statement))
+    }
+
+    /// Get the index that the transfer is applied to
+    fn get_transfer_idx(&self) -> usize {
+        if let Some(transfer) = self.transfer.as_ref().map(|t| &t.external_transfer) {
+            let mint = &transfer.mint;
+            let idx = match transfer.direction {
+                ExternalTransferDirection::Deposit => self.old_wallet.get_balance_index(mint),
+                ExternalTransferDirection::Withdrawal => self.new_wallet.get_balance_index(mint),
+            };
+
+            idx.expect("transfer mint {mint:x} not found")
+        } else {
+            0
+        }
     }
 }
