@@ -2,7 +2,9 @@
 //!
 //! The SRS was pulled from:
 //!     https://github.com/iden3/snarkjs?tab=readme-ov-file#7-prepare-phase-2
-//! For a max-constraints of 2^17
+//! For a max-constraints of 2^17, then split into ~50MB files by running:
+//!     `split -d -b 50M <SRS FILE> srs`
+//! So that the files can be hosted in this repo without Git LFS
 //!
 //! The SRS can be verified with `snarkjs powersoftau verify srs.ptau`
 //! Which runs the algorithm in https://eprint.iacr.org/2017/1050.pdf
@@ -28,8 +30,14 @@ use renegade_crypto::fields::get_base_field_modulus;
 lazy_static! {
     /// The system SRS included from the `.ptau` file
     pub static ref SYSTEM_SRS: UnivariateUniversalParams<SystemCurve> = {
-        let bytes = include_bytes!("../../srs/srs.ptau");
-        parse_ptau_file(bytes).unwrap()
+        let bytes_0 = include_bytes!("../../srs/srs00");
+        let bytes_1 = include_bytes!("../../srs/srs01");
+        let bytes_2 = include_bytes!("../../srs/srs02");
+        let mut bytes = vec![];
+        bytes.extend_from_slice(bytes_0);
+        bytes.extend_from_slice(bytes_1);
+        bytes.extend_from_slice(bytes_2);
+        parse_ptau_file(&bytes).unwrap()
     };
 }
 
