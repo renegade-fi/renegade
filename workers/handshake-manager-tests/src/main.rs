@@ -155,7 +155,7 @@ fn register_peer_addr(node: &MockNodeController, args: &CliArgs) {
 fn setup_integration_tests(test_args: &CliArgs) {
     // Configure the logging
     if matches!(test_args.verbosity, TestVerbosity::Full) {
-        util::logging::setup_system_logger(LevelFilter::INFO);
+        util::telemetry::setup_system_logger(LevelFilter::INFO);
     }
 }
 

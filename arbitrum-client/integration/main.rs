@@ -29,8 +29,8 @@ use test_helpers::{
 };
 use util::{
     arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
-    logging::LevelFilter,
     runtime::block_on_result,
+    telemetry::LevelFilter,
 };
 
 /// The arguments used to run the integration tests
@@ -125,7 +125,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 fn setup_integration_tests(test_args: &CliArgs) {
     // Configure logging
     if matches!(test_args.verbosity, TestVerbosity::Full) {
-        util::logging::setup_system_logger(LevelFilter::INFO);
+        util::telemetry::setup_system_logger(LevelFilter::INFO);
     }
 }
 

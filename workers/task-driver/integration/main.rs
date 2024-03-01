@@ -37,8 +37,8 @@ use util::{
         parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
         DUMMY_ERC20_1_CONTRACT_KEY,
     },
-    logging::LevelFilter,
     runtime::block_on_result,
+    telemetry::LevelFilter,
 };
 
 // -------
@@ -175,7 +175,7 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
 fn setup_integration_tests(test_args: &CliArgs) {
     // Configure logging
     if matches!(test_args.verbosity, TestVerbosity::Full) {
-        util::logging::setup_system_logger(LevelFilter::INFO);
+        util::telemetry::setup_system_logger(LevelFilter::INFO);
     }
 }
 

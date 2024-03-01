@@ -11,7 +11,7 @@ mod types;
 use circuit_types::Fabric;
 use clap::Parser;
 use test_helpers::{integration_test_main, mpc_network::setup_mpc_fabric, types::TestVerbosity};
-use util::logging::LevelFilter;
+use util::telemetry::LevelFilter;
 
 /// The arguments used for running circuits integration tests
 #[derive(Debug, Clone, Parser)]
@@ -55,7 +55,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 /// Setup logging for integration tests
 fn setup_integration_tests(test_args: &CliArgs) {
     if matches!(test_args.verbosity, TestVerbosity::Full) {
-        util::logging::setup_system_logger(LevelFilter::INFO);
+        util::telemetry::setup_system_logger(LevelFilter::INFO);
     }
 }
 

@@ -4,21 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-trace-otlp = [
-    "dep:opentelemetry",
-    "dep:opentelemetry_sdk",
-    "dep:opentelemetry-otlp",
-    "dep:opentelemetry-semantic-conventions",
-]
-datadog = [
-    "trace-otlp",
-    "dep:chrono",
-    "dep:serde",
-    "dep:serde_json",
-    "dep:tracing",
-    "dep:tracing-serde",
-    "dep:tracing-opentelemetry"
-]
+trace-otlp = []
+datadog = ["trace-otlp"]
 
 [dependencies]
 # === Arithmetic === #
@@ -41,17 +28,18 @@ renegade-crypto = { path = "../renegade-crypto" }
 eyre = { workspace = true }
 hex = "0.4"
 json = "0.12"
-chrono = { version = "0.4", optional = true }
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-tracing = { workspace = true, optional = true }
-tracing-serde = { version = "0.1", optional = true }
-tracing-subscriber = "0.3"
-tracing-opentelemetry = { version = "0.22", optional = true }
-opentelemetry_sdk = { version = "0.21", features = ["trace", "rt-tokio"], optional = true }
-opentelemetry-otlp = { version = "0.14", optional = true }
-opentelemetry = { version = "0.21", default-features = false, features = ["trace"], optional = true }
-opentelemetry-semantic-conventions = { version = "0.13", optional = true }
+chrono = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-serde = "0.1"
+tracing-subscriber = { vesion = "0.3", features = ["env-filter", "json"]}
+tracing-opentelemetry = "0.22"
+opentelemetry_sdk = { version = "0.21", features = ["trace", "rt-tokio"] }
+opentelemetry-otlp = "0.14"
+opentelemetry = { version = "0.21", default-features = false, features = ["trace"]}
+opentelemetry-semantic-conventions = "0.13"
+opentelemetry-datadog = "0.9"
 
 [dev-dependencies]
 lazy_static = "1.4"
