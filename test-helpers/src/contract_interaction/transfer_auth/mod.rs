@@ -45,7 +45,8 @@ fn gen_withdrawal_with_auth(
     wallet: &Wallet<SigningKey>,
     transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth> {
-    let transfer_bytes = serialize_calldata(&transfer)?;
+    let contract_transfer = to_contract_external_transfer(&transfer)?;
+    let transfer_bytes = serialize_calldata(&contract_transfer)?;
     let transfer_hash = H256::from_slice(keccak256(&transfer_bytes).as_slice());
     let transfer_signature = wallet.sign_hash(transfer_hash)?.to_vec();
 

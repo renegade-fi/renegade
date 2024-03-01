@@ -3,6 +3,8 @@
 //! Tasks are indexed in queues identified by the shared resource they occupy.
 //! For now this is only wallets (i.e. wallet_id).
 
+use std::collections::VecDeque;
+
 use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use libmdbx::{TransactionKind, RW};
 use util::res_some;
@@ -10,6 +12,9 @@ use util::res_some;
 use crate::{storage::error::StorageError, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE};
 
 use super::StateTxn;
+
+/// The error message emitted when a task queue is empty
+const ERR_NO_TASKS: &str = "No tasks in the queue";
 
 /// Create the key for a "task queue paused" entry from a queue key
 fn paused_key(key: &TaskQueueKey) -> String {
@@ -37,7 +42,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 
     /// Get the tasks for a given queue
     pub fn get_queued_tasks(&self, key: &TaskQueueKey) -> Result<Vec<QueuedTask>, StorageError> {
-        self.read_queue(TASK_QUEUE_TABLE, key)
+        self.read_task_deque(key).map(|x| x.into())
     }
 
     /// Get the task queue that a given task is associated with
@@ -66,6 +71,11 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         let tasks = self.get_queued_tasks(key)?;
 
         Ok(tasks.first().cloned().filter(|task| task.state.is_running()))
+    }
+
+    /// Internal helper to read the queued tasks as a `VecDeque`
+    fn read_task_deque(&self, key: &TaskQueueKey) -> Result<VecDeque<QueuedTask>, StorageError> {
+        self.read_queue(TASK_QUEUE_TABLE, key)
     }
 }
 
@@ -100,9 +110,12 @@ impl<'db> StateTxn<'db, RW> {
         key: &TaskQueueKey,
         new_state: QueuedTaskState,
     ) -> Result<(), StorageError> {
-        let mut tasks = self.get_queued_tasks(key)?;
-        tasks[0].state = new_state;
+        let mut tasks = self.read_task_deque(key)?;
+        if tasks.is_empty() {
+            return Err(StorageError::NotFound(ERR_NO_TASKS.to_string()));
+        }
 
+        tasks.get_mut(0).unwrap().state = new_state;
         self.write_queue(TASK_QUEUE_TABLE, key, &tasks)
     }
 

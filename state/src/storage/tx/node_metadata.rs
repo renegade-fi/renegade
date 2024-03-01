@@ -1,10 +1,10 @@
 //! Storage access methods for the local node's metadata
 
 use common::types::gossip::{ClusterId, WrappedPeerId};
-use flexbuffers::{DeserializationError, SerializationError};
 use libmdbx::{TransactionKind, RW};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
+use util::err_str;
 
 use crate::{storage::error::StorageError, NODE_METADATA_TABLE};
 
@@ -63,8 +63,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
             .read(NODE_METADATA_TABLE, &NODE_KEYPAIR_KEY.to_string())?
             .ok_or_else(|| err_not_found(NODE_KEYPAIR_KEY))?;
 
-        Keypair::from_protobuf_encoding(&key_bytes)
-            .map_err(|e| StorageError::Deserialization(DeserializationError::Serde(e.to_string())))
+        Keypair::from_protobuf_encoding(&key_bytes).map_err(err_str!(StorageError::Other))
     }
 
     /// Get the local node's addr
@@ -92,9 +91,7 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Set the local node's libp2p keypair
     pub fn set_node_keypair(&self, keypair: &Keypair) -> Result<(), StorageError> {
-        let key_bytes = keypair
-            .to_protobuf_encoding()
-            .map_err(|e| StorageError::Serialization(SerializationError::Serde(e.to_string())))?;
+        let key_bytes = keypair.to_protobuf_encoding().map_err(err_str!(StorageError::Other))?;
         self.inner().write(NODE_METADATA_TABLE, &NODE_KEYPAIR_KEY.to_string(), &key_bytes)
     }
 

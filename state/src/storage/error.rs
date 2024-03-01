@@ -2,10 +2,7 @@
 
 use std::{error::Error, fmt::Display};
 
-use flexbuffers::{
-    DeserializationError as FlexbuffersDeserializationError,
-    SerializationError as FlexbuffersSerializationError,
-};
+use bincode::Error as BincodeError;
 use libmdbx::Error as MdbxError;
 use raft::{Error as RaftError, StorageError as RaftStorageError};
 
@@ -17,7 +14,7 @@ pub enum StorageError {
     /// Error committing a transaction
     Commit(MdbxError),
     /// Error deserializing a value from storage
-    Deserialization(FlexbuffersDeserializationError),
+    Deserialization(BincodeError),
     /// An invalid key was used to access the database
     InvalidKey(String),
     /// An entry was not found in the database
@@ -26,8 +23,10 @@ pub enum StorageError {
     OpenDb(MdbxError),
     /// Failure opening a table in the database
     OpenTable(MdbxError),
+    /// An uncategorized error
+    Other(String),
     /// Error serializing a value for storage
-    Serialization(FlexbuffersSerializationError),
+    Serialization(BincodeError),
     /// Error syncing the database
     Sync(MdbxError),
     /// Error while performing a transaction operation
