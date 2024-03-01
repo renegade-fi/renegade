@@ -129,7 +129,10 @@ impl State {
 
 #[cfg(test)]
 mod test {
-    use common::types::tasks::{mocks::mock_queued_task, QueuedTaskState, TaskQueueKey};
+    use common::types::{
+        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskQueueKey},
+        wallet_mocks::mock_empty_wallet,
+    };
 
     use crate::test_helpers::mock_state;
 
@@ -171,10 +174,13 @@ mod test {
     async fn test_pop() {
         let state = mock_state();
 
-        // Propose a task to the queue
-        let key = TaskQueueKey::new_v4();
-        let task = mock_queued_task(key).descriptor;
+        // Add a wallet that the task may reference
+        let wallet = mock_empty_wallet();
+        let wallet_id = wallet.wallet_id;
+        state.new_wallet(wallet).unwrap().await.unwrap();
 
+        // Propose a task to the queue
+        let task = mock_queued_task(wallet_id).descriptor;
         let (task_id, waiter) = state.append_task(task).unwrap();
         waiter.await.unwrap();
 
@@ -183,7 +189,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was removed
-        assert_eq!(state.get_task_queue_len(&key).unwrap(), 0);
+        assert_eq!(state.get_task_queue_len(&wallet_id).unwrap(), 0);
     }
 
     /// Tests transitioning the state of a task
