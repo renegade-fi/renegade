@@ -5,7 +5,7 @@
 #![feature(generic_const_exprs)]
 
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuit_types::{balance::Balance, wallet::Wallet, PlonkCircuit};
+use circuit_types::PlonkCircuit;
 use circuits::test_helpers::wallet_with_random_balances;
 use circuits::zk_circuits::valid_relayer_fee_settlement::ValidRelayerFeeSettlement;
 use circuits::zk_circuits::valid_relayer_fee_settlement::{
@@ -13,10 +13,8 @@ use circuits::zk_circuits::valid_relayer_fee_settlement::{
     ValidRelayerFeeSettlementWitness,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::{Scalar, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use rand::thread_rng;
-use renegade_crypto::fields::scalar_to_biguint;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
 /// MERKLE_HEIGHT)

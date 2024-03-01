@@ -5,7 +5,6 @@ use std::sync::Arc;
 use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
     native_helpers::{
         compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
         wallet_from_blinded_shares,
@@ -52,8 +51,6 @@ const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";
 const ERR_BALANCE_NOT_FOUND: &str = "cannot find balance for order";
 /// Error message emitted when a wallet is given missing an authentication path
 const ERR_MISSING_AUTHENTICATION_PATH: &str = "wallet missing authentication path";
-/// Error message emitted when a fee cannot be found for the wallet
-const ERR_FEE_NOT_FOUND: &str = "fee not found in wallet";
 /// Error message emitted when an order cannot be found in a wallet
 const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
 /// Error message emitted when proving VALID COMMITMENTS fails
@@ -138,7 +135,6 @@ pub(crate) fn construct_order_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
     proof_manager_work_queue: &ProofManagerQueue,
-    fees_disabled: bool,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Build an augmented wallet
     let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
@@ -150,9 +146,6 @@ pub(crate) fn construct_order_commitment_proof(
     // respective sides of the match
     let (indices, balance_send, balance_receive) =
         find_balances_and_indices(&order, &mut augmented_wallet)?;
-
-    // Choose a fee to pay to the relayer
-    let (fee, fee_balance) = choose_fee(&mut augmented_wallet, fees_disabled)?;
 
     // Create new augmented public secret shares
     let reblinded_private_blinder = valid_reblind_witness.reblinded_wallet_private_shares.blinder;
@@ -172,9 +165,8 @@ pub(crate) fn construct_order_commitment_proof(
         augmented_public_shares,
         order,
         balance_send,
+        relayer_fee: augmented_wallet.match_fee,
         balance_receive,
-        balance_fee: fee_balance,
-        fee,
     };
 
     // Dispatch a job to the proof manager to prove `VALID COMMITMENTS`
@@ -243,7 +235,7 @@ fn find_or_augment_balance(
                 .find(|(_ind, balance)| balance.mint.eq(&BigUint::from(0u8)))
                 .map(|(ind, _balance)| ind)?;
 
-            wallet.balances[empty_balance_ind] = Balance { mint: mint.clone(), amount: 0 };
+            wallet.balances[empty_balance_ind] = Balance::new_from_mint(mint.clone());
             Some((empty_balance_ind, wallet.balances[empty_balance_ind].clone()))
         },
     }
@@ -252,28 +244,6 @@ fn find_or_augment_balance(
 /// Find an order in the wallet, returns the index at which the order was found
 fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
     wallet.orders.iter().enumerate().find(|(_ind, o)| (*o).eq(order)).map(|(ind, _o)| ind)
-}
-
-/// Choose a fee in a wallet and find a balance that covers it
-fn choose_fee(wallet: &mut SizedWallet, fees_disabled: bool) -> Result<(Fee, Balance), String> {
-    // Choose the first fee. If no fee is found and fee validation is disabled, use
-    // a zero fee
-    let first_fee = wallet.fees.iter().find(|f| !f.is_default()).cloned();
-    let fee = if fees_disabled {
-        first_fee.unwrap_or(Fee::default())
-    } else {
-        first_fee.ok_or_else(|| ERR_FEE_NOT_FOUND.to_string())?
-    };
-
-    // Choose a fee and a balance to cover it
-    let (_, fee_balance) = find_or_augment_balance(
-        &fee.gas_addr,
-        wallet,
-        false, // augment
-    )
-    .ok_or_else(|| ERR_BALANCE_NOT_FOUND.to_string())?;
-
-    Ok((fee, fee_balance))
 }
 
 /// Find a wallet on-chain, and update its validity proofs. That is, a proof of
@@ -307,8 +277,6 @@ pub(crate) async fn update_wallet_validity_proofs(
             order.clone(),
             &reblind_witness,
             &proof_manager_work_queue,
-            // TODO: Enable fees here when implemented
-            true, // fees_disabled
         )?;
         commitments_instances.push((*id, commitments_witness, response_channel));
     }
