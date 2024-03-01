@@ -6,9 +6,6 @@ default-run = "renegade-relayer"
 
 [features]
 debug-tui = []
-trace-otlp = ["util/trace-otlp"]
-metrics = []
-datadog = ["util/datadog", "trace-otlp", "metrics"]
 
 [dependencies]
 # === Runtime + Async === #

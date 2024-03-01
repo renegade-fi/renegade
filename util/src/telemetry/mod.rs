@@ -6,18 +6,20 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 
 use crate::err_str;
 
-#[cfg(feature = "datadog")]
 pub mod formatter;
-
-#[cfg(feature = "trace-otlp")]
 pub mod otlp_tracer;
 
 /// Possible errors that occur when setting up telemetry
 /// for the relayer
 #[derive(Debug)]
 pub enum TelemetrySetupError {
-    /// Error setting up the OTLP tracer
+    /// Error emitted when setting up the OTLP tracer
     Tracer(String),
+    /// Error emitted when the OTLP deployment environemt
+    /// is not provided
+    DeploymentEnvUnset,
+    /// Error emitted when the OTLP collector endpoint is not provided
+    CollectorEndpointUnset,
 }
 
 impl Error for TelemetrySetupError {}
@@ -34,24 +36,27 @@ pub fn setup_system_logger(level: LevelFilter) {
 
 /// Configures logging, tracing, and metrics for the relayer
 /// based on the compilation features enabled
-pub fn configure_telemetry() -> Result<(), TelemetrySetupError> {
+pub fn configure_telemetry(
+    datadog_enabled: bool,
+    otlp_enabled: bool,
+    deployment_env: Option<String>,
+    collector_endpoint: String,
+) -> Result<(), TelemetrySetupError> {
     let mut layers = Vec::new();
 
-    #[cfg(feature = "datadog")]
-    {
+    if datadog_enabled {
         layers.push(fmt::layer().json().event_format(formatter::DatadogFormatter).boxed());
 
         opentelemetry::global::set_text_map_propagator(
             opentelemetry_datadog::DatadogPropagator::new(),
         );
+    } else {
+        layers.push(fmt::layer().pretty().boxed());
     }
-    #[cfg(not(feature = "datadog"))]
-    layers.push(fmt::layer().pretty().boxed());
 
-    #[cfg(feature = "trace-otlp")]
-    {
-        let otlp_tracer =
-            otlp_tracer::configure_otlp_tracer().map_err(err_str!(TelemetrySetupError::Tracer))?;
+    if otlp_enabled {
+        let otlp_tracer = otlp_tracer::configure_otlp_tracer(deployment_env, collector_endpoint)
+            .map_err(err_str!(TelemetrySetupError::Tracer))?;
         let otlp_trace_layer = tracing_opentelemetry::layer().with_tracer(otlp_tracer);
         layers.push(otlp_trace_layer.boxed());
     }
