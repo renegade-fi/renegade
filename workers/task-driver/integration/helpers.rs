@@ -1,19 +1,21 @@
 //! Helpers for `task-driver` integration tests
 
+use std::str::FromStr;
+
 use alloy_primitives::Address as AlloyAddress;
 use arbitrum_client::client::ArbitrumClient;
-use circuit_types::{transfers::ExternalTransfer, Amount};
+use circuit_types::transfers::ExternalTransfer;
 use common::{
     types::{
         proof_bundles::mocks::dummy_valid_wallet_update_bundle,
         tasks::{LookupWalletTaskDescriptor, TaskDescriptor, TaskIdentifier},
-        transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
+        transfer_auth::ExternalTransferWithAuth,
         wallet::{Wallet, WalletIdentifier},
     },
     worker::Worker,
 };
 use constants::Scalar;
-use ethers::{core::k256::ecdsa::SigningKey, signers::Wallet as EthersWallet, types::Address};
+use ethers::types::Address;
 use eyre::Result;
 use job_types::{
     network_manager::NetworkManagerQueue,
@@ -151,6 +153,22 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
         .update_wallet(&proof, vec![] /* statement_sig */, None /* transfer_auth */)
         .await
         .map_err(Into::into)
+}
+
+/// Get an authorized external transfer for the wallet
+pub async fn authorize_transfer(
+    transfer: ExternalTransfer,
+    test_args: &IntegrationTestArgs,
+) -> Result<ExternalTransferWithAuth> {
+    let client = &test_args.arbitrum_client;
+    let chain_id = client.chain_id().await.unwrap();
+    let permit2_address = AlloyAddress::from_str(&test_args.permit2_addr)?;
+    let darkpool_address = AlloyAddress::from_slice(client.darkpool_contract.address().as_bytes());
+
+    let eth_client = client.darkpool_contract.client(); // Assigned to avoid dropping
+    let signer = eth_client.signer();
+
+    gen_transfer_with_auth(signer, permit2_address, darkpool_address, chain_id, transfer)
 }
 
 // ---------

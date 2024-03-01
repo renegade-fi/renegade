@@ -1636,7 +1636,7 @@ dependencies = [
 [[package]]
 name = "contracts-common"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-contracts.git#9a9b03e48db903d3fbd94e4ff06cba7d76dbd1b8"
+source = "git+https://github.com/renegade-fi/renegade-contracts.git#fe444929a6a594347f17cc9ecedeb16f740ea3e9"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -7498,6 +7498,7 @@ dependencies = [
  "circuit-types",
  "common",
  "constants",
+ "contracts-common",
  "dns-lookup",
  "ethers",
  "eyre",

@@ -6,10 +6,10 @@ use crate::{
 };
 use circuit_types::{
     balance::Balance,
-    fixed_point::FixedPoint,
+    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
     order::{Order, OrderSide},
     r#match::{MatchResult, OrderSettlementIndices},
-    SizedWallet,
+    Amount, SizedWallet,
 };
 use circuits::zk_circuits::valid_match_settle::{
     ValidMatchSettleStatement, ValidMatchSettleWitness,
@@ -33,16 +33,18 @@ use test_helpers::{assert_eq_result, assert_true_result, integration_test_async}
 use tokio::sync::oneshot::channel;
 use util::{
     hex::biguint_from_hex_string,
-    matching_engine::{compute_max_amount, match_orders, settle_match_into_wallets},
+    matching_engine::{
+        compute_fee_obligation, compute_max_amount, match_orders, settle_match_into_wallets,
+    },
 };
 use uuid::Uuid;
 
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
 /// The amounts that each order is for
-const BUY_ORDER_AMOUNT: u64 = 10;
+const BUY_ORDER_AMOUNT: u128 = 10;
 /// The amount of the sell order
-const SELL_ORDER_AMOUNT: u64 = 1;
+const SELL_ORDER_AMOUNT: u128 = 1;
 
 // -----------
 // | Helpers |
@@ -66,20 +68,17 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
         side,
         amount: order_amount,
         worst_case_price: FixedPoint::from_integer(worst_cast_price),
-        timestamp: 10,
     }
 }
 
 /// Create a dummy balance
 fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
-    match side {
-        OrderSide::Buy => {
-            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr0).unwrap(), amount: 100 }
-        },
-        OrderSide::Sell => {
-            Balance { mint: biguint_from_hex_string(&test_args.erc20_addr1).unwrap(), amount: 100 }
-        },
-    }
+    let mint = match side {
+        OrderSide::Buy => biguint_from_hex_string(&test_args.erc20_addr0).unwrap(),
+        OrderSide::Sell => biguint_from_hex_string(&test_args.erc20_addr1).unwrap(),
+    };
+
+    Balance::new_from_mint_and_amount(mint, Amount::from(100u8))
 }
 
 /// Setup a wallet with a given order and balance
@@ -154,7 +153,7 @@ async fn setup_match_result(
     wallet2.private_shares = witness2.reblind_witness.reblinded_wallet_private_shares.clone();
     wallet2.blinded_public_shares = witness2.commitment_witness.augmented_public_shares.clone();
 
-    let proof = dummy_match_bundle(&wallet1, &wallet2, match_.clone(), test_args).await?;
+    let proof = dummy_match_bundle(&mut wallet1, &mut wallet2, match_.clone(), test_args).await?;
     Ok((match_, proof))
 }
 
@@ -176,31 +175,46 @@ fn get_first_order_witness(wallet: &Wallet, state: &State) -> Result<OrderValidi
 
 /// Generate a dummy match proof on the first order in each wallet
 async fn dummy_match_bundle(
-    wallet1: &Wallet,
-    wallet2: &Wallet,
+    wallet1: &mut Wallet,
+    wallet2: &mut Wallet,
     match_res: MatchResult,
     test_args: &IntegrationTestArgs,
 ) -> Result<MatchBundle> {
     let price = FixedPoint::from_f64_round_down(EXECUTION_PRICE);
 
-    let order1 = wallet1.orders.first().unwrap().1.clone();
-    let balance1 = wallet1.balances.first().unwrap().1.clone();
-    let amount1 = compute_max_amount(&price, &order1, &balance1);
-    let party0_public_shares = wallet1.blinded_public_shares.clone();
-
-    let order2 = wallet2.orders.first().unwrap().1.clone();
-    let balance2 = wallet2.balances.first().unwrap().1.clone();
-    let amount2 = compute_max_amount(&price, &order2, &balance2);
-    let party1_public_shares = wallet2.blinded_public_shares.clone();
-
     let party0_indices = OrderSettlementIndices { order: 0, balance_send: 0, balance_receive: 1 };
     let party1_indices = party0_indices;
+
+    // Destructure the wallets into their match engine inputs
+    let order0 = wallet1.orders.first().unwrap().1.clone();
+    let balance0 = wallet1.balances.first().unwrap().1.clone();
+    let balance_receive0 = Balance::new_from_mint(order0.receive_mint().clone());
+    let relayer_fee0 = wallet1.match_fee;
+    let amount0 = compute_max_amount(&price, &order0, &balance0);
+    let party0_public_shares = wallet1.blinded_public_shares.clone();
+    *wallet1.balances.get_index_mut(party0_indices.balance_receive).unwrap() =
+        balance_receive0.clone();
+
+    let order1 = wallet2.orders.first().unwrap().1.clone();
+    let balance1 = wallet2.balances.first().unwrap().1.clone();
+    let balance_receive1 = Balance::new_from_mint(order1.receive_mint().clone());
+    let relayer_fee1 = wallet2.match_fee;
+    let amount1 = compute_max_amount(&price, &order1, &balance1);
+    let party1_public_shares = wallet2.blinded_public_shares.clone();
+    *wallet2.balances.get_index_mut(party1_indices.balance_receive).unwrap() =
+        balance_receive1.clone();
+
+    // Compute the fees owed after the match
+    let party0_fees = compute_fee_obligation(relayer_fee0, order0.side, &match_res);
+    let party1_fees = compute_fee_obligation(relayer_fee1, order1.side, &match_res);
 
     let mut party0_modified_shares = party0_public_shares.clone();
     let mut party1_modified_shares = party1_public_shares.clone();
     settle_match_into_wallets(
         &mut party0_modified_shares,
         &mut party1_modified_shares,
+        party0_fees,
+        party1_fees,
         party0_indices,
         party1_indices,
         &match_res,
@@ -210,14 +224,22 @@ async fn dummy_match_bundle(
     let job = ProofManagerJob {
         type_: ProofJob::ValidMatchSettleSingleprover {
             witness: ValidMatchSettleWitness {
+                order0,
+                balance0,
+                balance_receive0,
+                price0: price,
+                amount0: amount0.into(),
+                relayer_fee0,
+                party0_fees,
+
                 order1,
-                order2,
                 balance1,
-                balance2,
+                balance_receive1,
                 price1: price,
-                price2: price,
                 amount1: amount1.into(),
-                amount2: amount2.into(),
+                relayer_fee1,
+                party1_fees,
+
                 match_res,
                 party0_public_shares,
                 party1_public_shares,
@@ -227,6 +249,7 @@ async fn dummy_match_bundle(
                 party1_indices,
                 party0_modified_shares,
                 party1_modified_shares,
+                protocol_fee: *PROTOCOL_FEE_FP,
             },
         },
         response_channel: send,
