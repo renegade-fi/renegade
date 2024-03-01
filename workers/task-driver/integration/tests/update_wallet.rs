@@ -1,14 +1,11 @@
 //! Integration tests for the `UpdateWallet` task
 
-use std::str::FromStr;
-
-use alloy_primitives::Address;
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
     transfers::{ExternalTransfer, ExternalTransferDirection},
+    Amount,
 };
 use common::types::{
     tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor},
@@ -22,9 +19,7 @@ use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use rand::thread_rng;
 use test_helpers::{
-    contract_interaction::{
-        attach_merkle_opening, new_wallet_in_darkpool, transfer_auth::gen_transfer_with_auth,
-    },
+    contract_interaction::{attach_merkle_opening, new_wallet_in_darkpool},
     integration_test_async,
 };
 use tracing::info;
@@ -33,7 +28,8 @@ use uuid::Uuid;
 
 use crate::{
     helpers::{
-        await_task, biguint_from_address, lookup_wallet_and_check_result, setup_initial_wallet,
+        authorize_transfer, await_task, biguint_from_address, lookup_wallet_and_check_result,
+        setup_initial_wallet,
     },
     IntegrationTestArgs,
 };
@@ -48,15 +44,6 @@ lazy_static! {
         side: OrderSide::Buy,
         amount: 10,
         worst_case_price: FixedPoint::from_integer(10),
-        timestamp: *DUMMY_TIMESTAMP,
-    };
-
-    /// A dummy fee that is allocated in a wallet
-    static ref DUMMY_FEE: Fee = Fee {
-        gas_addr: BigUint::from(0u8),
-        gas_token_amount: 10,
-        settle_key: BigUint::from(15u8),
-        percentage_fee: FixedPoint::from_f32_round_down(0.01),
     };
 }
 
@@ -81,14 +68,8 @@ pub(crate) async fn execute_wallet_update(
     let sig = gen_wallet_update_sig(&new_wallet, key);
 
     let id = new_wallet.wallet_id;
-    let task = UpdateWalletTaskDescriptor::new(
-        *DUMMY_TIMESTAMP,
-        transfer_with_auth,
-        old_wallet,
-        new_wallet,
-        sig,
-    )
-    .unwrap();
+    let task =
+        UpdateWalletTaskDescriptor::new(transfer_with_auth, old_wallet, new_wallet, sig).unwrap();
 
     await_task(task.into(), &test_args).await?;
 
@@ -110,6 +91,33 @@ async fn execute_wallet_update_and_verify_shares(
         .await?;
     info!("Wallet updated successfully");
     lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, test_args).await
+}
+
+/// Create a new deposit
+pub fn new_deposit(
+    mint: BigUint,
+    amount: Amount,
+    test_args: &IntegrationTestArgs,
+) -> ExternalTransfer {
+    let client = &test_args.arbitrum_client;
+    let account_addr = biguint_from_address(client.wallet_address());
+    ExternalTransfer { mint, amount, direction: ExternalTransferDirection::Deposit, account_addr }
+}
+
+/// Create a new withdrawal
+pub fn new_withdrawal(
+    mint: BigUint,
+    amount: Amount,
+    test_args: &IntegrationTestArgs,
+) -> ExternalTransfer {
+    let client = &test_args.arbitrum_client;
+    let account_addr = biguint_from_address(client.wallet_address());
+    ExternalTransfer {
+        mint,
+        amount,
+        direction: ExternalTransferDirection::Withdrawal,
+        account_addr,
+    }
 }
 
 // ---------
@@ -154,7 +162,8 @@ async fn test_update_wallet__place_order(test_args: IntegrationTestArgs) -> Resu
     let mut wallet = mock_empty_wallet();
 
     let send_mint = DUMMY_ORDER.send_mint().clone();
-    wallet.balances.insert(send_mint.clone(), Balance { mint: send_mint, amount: 10 });
+    let bal = Balance::new_from_mint_and_amount(send_mint.clone(), 10);
+    wallet.balances.insert(send_mint.clone(), bal);
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Update the wallet by inserting an order
@@ -187,7 +196,8 @@ async fn test_update_wallet__place_multiple_orders(test_args: IntegrationTestArg
     let mut wallet = mock_empty_wallet();
 
     let send_mint = DUMMY_ORDER.send_mint().clone();
-    wallet.balances.insert(send_mint.clone(), Balance { mint: send_mint, amount: 10 });
+    let bal = Balance::new_from_mint_and_amount(send_mint.clone(), 10);
+    wallet.balances.insert(send_mint.clone(), bal);
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Update the wallet by inserting an order
@@ -312,7 +322,6 @@ async fn test_update_wallet__add_fee(test_args: IntegrationTestArgs) -> Result<(
 
     // Update the wallet by adding a fee
     let old_wallet = wallet.clone();
-    wallet.fees.push(DUMMY_FEE.clone());
     wallet.reblind_wallet();
 
     execute_wallet_update_and_verify_shares(
@@ -337,13 +346,11 @@ async fn test_update_wallet__remove_fee(test_args: IntegrationTestArgs) -> Resul
     let share_seed = Scalar::random(&mut rng);
 
     let mut wallet = mock_empty_wallet();
-    wallet.fees.push(DUMMY_FEE.clone());
 
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Update the wallet by removing a fee
     let old_wallet = wallet.clone();
-    wallet.fees.pop();
     wallet.reblind_wallet();
 
     execute_wallet_update_and_verify_shares(
@@ -364,14 +371,12 @@ integration_test_async!(test_update_wallet__remove_fee);
 
 /// Tests updating a wallet by depositing into the pool
 #[allow(non_snake_case)]
-async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs) -> Result<()> {
+async fn test_update_wallet__deposit_and_full_withdraw(
+    test_args: IntegrationTestArgs,
+) -> Result<()> {
     let client = &test_args.arbitrum_client;
-    let permit2_address = Address::from_str(&test_args.permit2_addr)?;
-    let darkpool_address = Address::from_slice(client.darkpool_contract.address().as_bytes());
-    let chain_id = client.darkpool_contract.client().get_chainid().await?.try_into().unwrap();
-    let account_addr = biguint_from_address(client.wallet_address());
-    let signer = client.darkpool_contract.client().signer();
 
+    // --- Deposit --- //
     // Create a new wallet and post it on-chain
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
@@ -379,21 +384,14 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     let old_wallet = wallet.clone();
 
     let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
-    let amount = 10u64;
+    let amount = Amount::from(10u8);
 
-    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
+    let bal = Balance::new_from_mint_and_amount(mint.clone(), amount);
+    wallet.balances.insert(mint.clone(), bal);
     wallet.reblind_wallet();
 
-    let deposit_with_auth = gen_transfer_with_auth(
-        &signer,
-        permit2_address,
-        darkpool_address,
-        chain_id,
-        account_addr.clone(),
-        mint.clone(),
-        amount.into(),
-        false, // is_withdrawal
-    )?;
+    let transfer = new_deposit(mint.clone(), amount, &test_args);
+    let deposit_with_auth = authorize_transfer(transfer, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
@@ -405,93 +403,14 @@ async fn test_update_wallet__deposit_and_withdraw(test_args: IntegrationTestArgs
     )
     .await?;
 
+    // --- Withdraw --- //
     // Now, withdraw the same amount
     let old_wallet = wallet.clone();
     wallet.balances.remove(&mint);
     wallet.reblind_wallet();
 
-    let withdrawal_with_auth = gen_transfer_with_auth(
-        &signer,
-        permit2_address,
-        darkpool_address,
-        chain_id,
-        account_addr,
-        mint,
-        amount.into(),
-        true, // is_withdrawal
-    )?;
-
-    execute_wallet_update_and_verify_shares(
-        old_wallet,
-        wallet,
-        Some(withdrawal_with_auth),
-        blinder_seed,
-        share_seed,
-        test_args,
-    )
-    .await
-}
-integration_test_async!(test_update_wallet__deposit_and_withdraw);
-
-/// Tests updating a wallet by depositing into the pool
-#[allow(non_snake_case)]
-async fn test_update_wallet__deposit_and_full_withdraw(
-    test_args: IntegrationTestArgs,
-) -> Result<()> {
-    let client = &test_args.arbitrum_client;
-    let permit2_address = Address::from_str(&test_args.permit2_addr)?;
-    let darkpool_address = Address::from_slice(client.darkpool_contract.address().as_bytes());
-    let chain_id = client.darkpool_contract.client().get_chainid().await?.try_into().unwrap();
-    let account_addr = biguint_from_address(client.wallet_address());
-    let signer = client.darkpool_contract.client().signer();
-
-    // Create a new wallet and post it on-chain
-    let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
-
-    // Update the wallet by depositing into the pool
-    let old_wallet = wallet.clone();
-
-    let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
-    let amount = 10u64;
-    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount });
-    wallet.reblind_wallet();
-
-    let deposit_with_auth = gen_transfer_with_auth(
-        &signer,
-        permit2_address,
-        darkpool_address,
-        chain_id,
-        account_addr.clone(),
-        mint.clone(),
-        amount.into(),
-        false, // is_withdrawal
-    )?;
-
-    execute_wallet_update_and_verify_shares(
-        old_wallet,
-        wallet.clone(),
-        Some(deposit_with_auth),
-        blinder_seed,
-        share_seed,
-        test_args.clone(),
-    )
-    .await?;
-
-    // Now, withdraw the same amount
-    let old_wallet = wallet.clone();
-    wallet.remove_balance(&mint);
-    wallet.reblind_wallet();
-
-    let withdrawal_with_auth = gen_transfer_with_auth(
-        &signer,
-        permit2_address,
-        darkpool_address,
-        chain_id,
-        account_addr,
-        mint,
-        amount.into(),
-        true, // is_withdrawal
-    )?;
+    let transfer = new_withdrawal(mint, amount, &test_args);
+    let withdrawal_with_auth = authorize_transfer(transfer, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
@@ -511,11 +430,6 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
     let client = &test_args.arbitrum_client;
-    let permit2_address = Address::from_str(&test_args.permit2_addr)?;
-    let darkpool_address = Address::from_slice(client.darkpool_contract.address().as_bytes());
-    let chain_id = client.darkpool_contract.client().get_chainid().await?.try_into().unwrap();
-    let account_addr = biguint_from_address(client.wallet_address());
-    let signer = client.darkpool_contract.client().signer();
 
     // Create a new wallet and post it on-chain
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
@@ -523,20 +437,13 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     // Update the wallet by depositing 10 tokens
     let old_wallet = wallet.clone();
     let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
-    let deposit_amount = 10u64;
-    wallet.balances.insert(mint.clone(), Balance { mint: mint.clone(), amount: deposit_amount });
+    let deposit_amount = Amount::from(10u64);
+    let bal = Balance::new_from_mint_and_amount(mint.clone(), deposit_amount);
+    wallet.balances.insert(mint.clone(), bal);
     wallet.reblind_wallet();
 
-    let deposit_with_auth = gen_transfer_with_auth(
-        &signer,
-        permit2_address,
-        darkpool_address,
-        chain_id,
-        account_addr.clone(),
-        mint.clone(),
-        deposit_amount.into(),
-        false, // is_withdrawal
-    )?;
+    let deposit = new_deposit(mint.clone(), deposit_amount, &test_args);
+    let deposit_with_auth = authorize_transfer(deposit, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet.clone(),
@@ -551,22 +458,12 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     // Now, withdraw only half of the deposited tokens
     let old_wallet = wallet.clone();
     let withdraw_amount = deposit_amount / 2;
-    wallet.balances.insert(
-        mint.clone(),
-        Balance { mint: mint.clone(), amount: deposit_amount - withdraw_amount },
-    );
+    let bal = wallet.balances.get_mut(&mint).unwrap();
+    bal.amount -= withdraw_amount;
     wallet.reblind_wallet();
 
-    let withdrawal_with_auth = gen_transfer_with_auth(
-        &signer,
-        permit2_address,
-        darkpool_address,
-        chain_id,
-        account_addr,
-        mint,
-        withdraw_amount.into(),
-        true, // is_withdrawal
-    )?;
+    let withdraw = new_withdrawal(mint.clone(), withdraw_amount, &test_args);
+    let withdrawal_with_auth = authorize_transfer(withdraw, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet,

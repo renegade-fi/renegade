@@ -3,6 +3,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use alloy_primitives::ChainId;
 use constants::{DEVNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
 use ethers::{
     core::k256::ecdsa::SigningKey,
@@ -11,6 +12,7 @@ use ethers::{
     signers::{LocalWallet, Signer, Wallet},
     types::{Address, BlockNumber},
 };
+use util::err_str;
 
 use crate::{
     abi::DarkpoolContract,
@@ -116,6 +118,15 @@ impl ArbitrumClient {
     /// Get a reference to the underlying RPC client
     pub fn client(&self) -> Arc<SignerHttpProvider> {
         self.darkpool_contract.client()
+    }
+
+    /// Get the chain ID
+    pub async fn chain_id(&self) -> Result<ChainId, ArbitrumClientError> {
+        self.client()
+            .get_chainid()
+            .await
+            .map_err(err_str!(ArbitrumClientError::Rpc))
+            .map(|id| id.as_u64())
     }
 
     /// Get the address of the wallet used for signing transactions
