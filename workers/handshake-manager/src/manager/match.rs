@@ -1,13 +1,13 @@
 //! Groups the handshake manager definitions necessary to run the MPC match
 //! computation and collaboratively generate a proof of `VALID MATCH MPC`
 
-use std::{cmp, sync::Arc};
+use std::sync::Arc;
 
 use ark_mpc::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
 use circuit_types::{
     balance::Balance,
-    fixed_point::FixedPoint,
-    order::{Order, OrderSide},
+    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
+    order::Order,
     r#match::OrderSettlementIndices,
     traits::{MpcBaseType, MpcType},
     CollaborativePlonkProof, Fabric, MpcPlonkLinkProof, MpcProofLinkingHint, PlonkProof,
@@ -35,6 +35,7 @@ use constants::SystemCurveGroup;
 use crossbeam::channel::{bounded, Receiver};
 use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use tracing::info;
+use util::matching_engine::compute_max_amount;
 use uuid::Uuid;
 
 use crate::error::HandshakeManagerError;
@@ -45,26 +46,6 @@ use super::HandshakeExecutor;
 const ERR_OPENING_STATEMENT: &str = "error opening statement";
 /// Error message emitted when opening a proof fails
 const ERR_OPENING_PROOF: &str = "error opening proof";
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Compute the maximum matchable amount for an order and balance
-fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) -> u64 {
-    match order.side {
-        // Buy the base, the max amount is possibly limited by the quote
-        // balance
-        OrderSide::Buy => {
-            let price_f64 = price.to_f64();
-            let balance_limit = (balance.amount as f64 / price_f64).floor() as u64;
-            cmp::min(order.amount, balance_limit)
-        },
-        // Buy the quote, sell the base, the maximum amount is directly limited
-        // by the balance
-        OrderSide::Sell => cmp::min(order.amount, balance.amount),
-    }
-}
 
 // ----------------------
 // | Handshake Executor |
@@ -154,6 +135,8 @@ impl HandshakeExecutor {
         let (witness, statement) = Self::execute_match_settle_mpc(
             &commitment_witness.order,
             &commitment_witness.balance_send,
+            &commitment_witness.balance_receive,
+            &commitment_witness.relayer_fee,
             &handshake_state.execution_price,
             &reblind_witness.reblinded_wallet_public_shares,
             party0_commitments_statement.indices,
@@ -187,9 +170,12 @@ impl HandshakeExecutor {
     }
 
     /// Execute the match settle MPC over the provisioned fabric
+    #[allow(clippy::too_many_arguments)]
     fn execute_match_settle_mpc(
         my_order: &Order,
         my_balance: &Balance,
+        my_balance_receive: &Balance,
+        my_relayer_fee: &FixedPoint,
         my_price: &FixedPoint,
         my_public_shares: &SizedWalletShare,
         party0_indices: OrderSettlementIndices,
@@ -199,45 +185,61 @@ impl HandshakeExecutor {
         let my_amount = compute_max_amount(my_price, my_order, my_balance);
 
         // Allocate the matching engine inputs in the MPC fabric
-        let o1 = my_order.allocate(PARTY0, fabric);
-        let b1 = my_balance.allocate(PARTY0, fabric);
-        let price1 = my_price.allocate(PARTY0, fabric);
-        let amount1 = my_amount.allocate(PARTY0, fabric);
+        let order0 = my_order.allocate(PARTY0, fabric);
+        let balance0 = my_balance.allocate(PARTY0, fabric);
+        let balance_receive0 = my_balance_receive.allocate(PARTY0, fabric);
+        let relayer_fee0 = my_relayer_fee.allocate(PARTY0, fabric);
+        let price0 = my_price.allocate(PARTY0, fabric);
+        let amount0 = my_amount.allocate(PARTY0, fabric);
         let party0_public_shares = my_public_shares.allocate(PARTY0, fabric);
 
-        let o2 = my_order.allocate(PARTY1, fabric);
-        let b2 = my_balance.allocate(PARTY1, fabric);
-        let price2 = my_price.allocate(PARTY1, fabric);
-        let amount2 = my_amount.allocate(PARTY1, fabric);
+        let order1 = my_order.allocate(PARTY1, fabric);
+        let balance1 = my_balance.allocate(PARTY1, fabric);
+        let balance_receive1 = my_balance_receive.allocate(PARTY1, fabric);
+        let relayer_fee1 = my_relayer_fee.allocate(PARTY1, fabric);
+        let price1 = my_price.allocate(PARTY1, fabric);
+        let amount1 = my_amount.allocate(PARTY1, fabric);
         let party1_public_shares = my_public_shares.allocate(PARTY1, fabric);
+
+        let protocol_fee = (*PROTOCOL_FEE_FP).allocate(PARTY0, fabric);
 
         // Match the orders
         //
         // We use the first party's price, the second party's price will be constrained
         // to equal the first party's in the subsequent proof of `VALID MATCH
         // MPC`
-        let match_res = compute_match(&o1, &amount1, &amount2, &price1, fabric);
+        let match_res = compute_match(&order0, &amount0, &amount1, &price0, fabric);
 
         // Settle the orders into the party's wallets
-        let (party0_modified_shares, party1_modified_shares) = settle_match(
-            party0_indices,
-            party1_indices,
-            &party0_public_shares,
-            &party1_public_shares,
-            &match_res,
-        );
+        let (party0_fees, party1_fees, party0_modified_shares, party1_modified_shares) =
+            settle_match(
+                &relayer_fee0,
+                &relayer_fee1,
+                party0_indices,
+                party1_indices,
+                &party0_public_shares,
+                &party1_public_shares,
+                &match_res,
+                fabric,
+            );
 
         // Build a witness and statement for the collaborative proof
         (
             SizedAuthenticatedMatchSettleWitness {
-                order1: o1,
-                balance1: b1,
-                amount1,
+                order0,
+                balance0,
+                balance_receive0,
+                relayer_fee0,
+                party0_fees,
+                price0,
+                amount0,
+                order1,
+                balance1,
+                balance_receive1,
+                relayer_fee1,
+                party1_fees,
                 price1,
-                order2: o2,
-                balance2: b2,
-                amount2,
-                price2,
+                amount1,
                 match_res,
                 party0_public_shares,
                 party1_public_shares,
@@ -247,6 +249,7 @@ impl HandshakeExecutor {
                 party1_indices: party1_indices.allocate(PARTY1, fabric),
                 party0_modified_shares,
                 party1_modified_shares,
+                protocol_fee,
             },
         )
     }
