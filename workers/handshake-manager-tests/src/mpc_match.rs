@@ -3,14 +3,12 @@
 use ark_mpc::{PARTY0, PARTY1};
 use circuit_types::{
     balance::Balance,
-    fee::Fee,
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
 };
 use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
 use eyre::Result;
 use job_types::handshake_manager::HandshakeExecutionJob;
-use num_bigint::BigUint;
 use test_helpers::integration_test_async;
 use util::hex::biguint_from_hex_string;
 use uuid::Uuid;
@@ -28,7 +26,7 @@ const ORDER_ID1: &str = "5e4216d2-dc68-431f-a8c6-098d672ea88e";
 const ORDER_ID2: &str = "c43f47f3-e944-4857-b52f-1e2e889e7c3e";
 
 /// The amount of each order
-const DEFAULT_ORDER_AMOUNT: u64 = 100;
+const DEFAULT_ORDER_AMOUNT: u128 = 100;
 
 // -----------
 // | Helpers |
@@ -70,7 +68,6 @@ fn get_order(side: OrderSide) -> Order {
         side,
         amount: DEFAULT_ORDER_AMOUNT,
         worst_case_price: FixedPoint::from_f64_round_down(worst_case_price),
-        timestamp: 10,
     }
 }
 
@@ -78,23 +75,11 @@ fn get_order(side: OrderSide) -> Order {
 fn get_balance(order: &Order) -> Balance {
     let mint = order.send_mint().clone();
     let amount = match order.side {
-        OrderSide::Buy => (order.amount as f64 * MOCK_EXECUTION_PRICE).ceil() as u64,
+        OrderSide::Buy => (order.amount as f64 * MOCK_EXECUTION_PRICE).ceil() as u128,
         OrderSide::Sell => order.amount,
     };
 
-    Balance { mint, amount }
-}
-
-/// Get the fee for a wallet
-///
-/// TODO: Update when fees are implemented
-fn get_fee(balance: &Balance) -> Fee {
-    Fee {
-        settle_key: BigUint::from(0u64),
-        percentage_fee: FixedPoint::from_f64_round_down(0.01),
-        gas_token_amount: 0,
-        gas_addr: balance.mint.clone(),
-    }
+    Balance::new_from_mint_and_amount(mint, amount)
 }
 
 /// Create a wallet for the given party
@@ -105,11 +90,9 @@ fn create_wallet_for_party(party_id: u64) -> Wallet {
     let id = get_order_id(party_id);
     let order = get_order(side);
     let balance = get_balance(&order);
-    let fee = get_fee(&balance);
 
     wallet.add_order(id, order.clone()).unwrap();
     wallet.add_balance(balance).unwrap();
-    wallet.fees.push(fee);
     wallet
 }
 
