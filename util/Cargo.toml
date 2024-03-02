@@ -42,7 +42,7 @@ opentelemetry-semantic-conventions = "0.13"
 opentelemetry-datadog = "0.9"
 
 # === Metrics === #
-metrics = "0.22"
+metrics = { workspace = true }
 metrics-util = "0.16"
 metrics-exporter-statsd = "0.7"
 metrics-tracing-context = "0.15"

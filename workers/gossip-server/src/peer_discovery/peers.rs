@@ -15,6 +15,13 @@ use crate::{
     server::GossipProtocolExecutor,
 };
 
+/// Metric describing the number of local peers the relayer
+/// is connected to
+const NUM_LOCAL_PEERS_METRIC: &str = "num_local_peers";
+/// Metric describing the number of remote peers the relayer
+/// is connected to
+const NUM_REMOTE_PEERS_METRIC: &str = "num_remote_peers";
+
 impl GossipProtocolExecutor {
     // --------------------
     // | Inbound Requests |
@@ -102,10 +109,18 @@ impl GossipProtocolExecutor {
                 .collect_vec()
         }; // locked_expiry_cache released
 
+        let my_cluster_id = self.global_state.get_cluster_id()?;
+        let num_local_peers =
+            filtered_peers.iter().filter(|peer| peer.cluster_id == my_cluster_id).count();
+        let num_remote_peers = filtered_peers.len() - num_local_peers;
+
         // Add all filtered peers to the network manager's address table
         self.add_new_addrs(&filtered_peers)?;
         // Add all filtered peers to the global peer index
         self.global_state.add_peer_batch(filtered_peers)?;
+
+        metrics::gauge!(NUM_LOCAL_PEERS_METRIC).increment(num_local_peers as f64);
+        metrics::gauge!(NUM_REMOTE_PEERS_METRIC).increment(num_remote_peers as f64);
 
         Ok(())
     }
