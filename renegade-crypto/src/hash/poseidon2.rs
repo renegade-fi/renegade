@@ -69,6 +69,7 @@ impl Poseidon2Sponge {
         }
 
         let entry = self.next_index + CAPACITY;
+        self.next_index += 1;
         self.state[entry]
     }
 
