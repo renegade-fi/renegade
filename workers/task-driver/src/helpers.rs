@@ -11,6 +11,7 @@ use circuit_types::{
     },
     order::Order,
     r#match::OrderSettlementIndices,
+    transfers::{ExternalTransfer, ExternalTransferDirection},
     SizedWallet,
 };
 use circuits::zk_circuits::{
@@ -22,6 +23,7 @@ use circuits::zk_circuits::{
 };
 use common::types::{
     proof_bundles::ProofBundle,
+    token::Token,
     wallet::{Wallet, WalletAuthenticationPath},
 };
 use common::types::{
@@ -40,6 +42,7 @@ use num_bigint::BigUint;
 use state::State;
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
 use tracing::debug;
+use util::hex::biguint_to_hex_string;
 
 // -------------
 // | Constants |
@@ -57,6 +60,16 @@ const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
 const ERR_PROVE_COMMITMENTS_FAILED: &str = "failed to prove valid commitments";
 /// Error message emitted when proving VALID REBLIND fails
 const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
+/// Metric describing the number of deposits made
+const NUM_DEPOSITS_METRICS: &str = "num_deposits";
+/// Metric describing the volume of deposits made
+const DEPOSIT_VOLUME_METRIC: &str = "deposit_volume";
+/// Metric describing the number of withdrawals made
+const NUM_WITHDRAWALS_METRICS: &str = "num_withdrawals";
+/// Metric describing the volume of withdrawals made
+const WITHDRAWAL_VOLUME_METRIC: &str = "withdrawal_volume";
+/// Metric label for the asset of a deposit/withdrawal
+const ASSET_METRIC_LABEL: &str = "asset";
 
 // -----------
 // | Helpers |
@@ -349,4 +362,40 @@ async fn link_and_store_proofs(
 
     let job = NetworkManagerJob::pubsub(ORDER_BOOK_TOPIC.to_string(), message);
     network_sender.send(job).map_err(|e| e.to_string())
+}
+
+/// Get the asset and volume of an external transfer,
+/// The asset is the token ticker, if it is found, otherwise
+/// the token's address.
+/// The amount is the decimal amount of the transfer, going through
+/// lossy f64 conversion via the associated number of decimals
+fn get_transfer_asset_and_volume(transfer: &ExternalTransfer) -> Result<(String, f64), String> {
+    let token = Token::from_addr_biguint(&transfer.mint);
+    let asset = token.get_ticker().unwrap_or(&biguint_to_hex_string(&transfer.mint)).to_string();
+    let volume = token.get_amount_f64(&transfer.amount)?;
+
+    Ok((asset, volume))
+}
+
+/// If an external transfer is present, record the count and volume metrics for
+/// it
+pub(crate) fn maybe_record_transfer_metrics(transfer: &Option<ExternalTransfer>) {
+    if let Some(transfer) = transfer.as_ref() {
+        let (count_metric, volume_metric) = match transfer.direction {
+            ExternalTransferDirection::Deposit => (NUM_DEPOSITS_METRICS, DEPOSIT_VOLUME_METRIC),
+            ExternalTransferDirection::Withdrawal => {
+                (NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC)
+            },
+        };
+        metrics::counter!(count_metric).increment(1);
+
+        // Record the volume metrics only if we successfully parse the asset and volume,
+        // to ensure metrics recording is infallible
+        if let Ok((asset, volume)) = get_transfer_asset_and_volume(transfer) {
+            // We use a gauge metric here to be able to capture a float value
+            // for the volume
+            metrics::gauge!(volume_metric, ASSET_METRIC_LABEL => asset).increment(volume);
+        }
+
+    }
 }
