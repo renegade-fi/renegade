@@ -25,7 +25,7 @@ use state::State;
 use tracing::instrument;
 
 use crate::driver::StateWrapper;
-use crate::helpers::{enqueue_proof_job, find_merkle_path};
+use crate::helpers::{enqueue_proof_job, find_merkle_path, maybe_record_transfer_metrics};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 use crate::helpers::update_wallet_validity_proofs;
@@ -225,6 +225,8 @@ impl Task for UpdateWalletTask {
                 // Update validity proofs for now-nullified orders
                 self.update_validity_proofs().await?;
                 self.task_state = UpdateWalletTaskState::Completed;
+
+                maybe_record_transfer_metrics(&self.external_transfer);
             },
             UpdateWalletTaskState::Completed => {
                 panic!("step() called in state Completed")
