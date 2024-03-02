@@ -159,21 +159,28 @@ struct Cli {
     // -------------
 
     /// Whether or not to enable OTLP tracing
-    #[clap(long = "otlp", value_parser)]
+    #[clap(long = "enable-otlp", value_parser)]
     pub otlp_enabled: bool,
-
     /// The deployment environment w/ which
     /// to tag OTLP traces
     #[clap(long, value_parser)]
     pub otlp_env: Option<String>,
-
     /// The OTLP collector endpoint to send traces to
     #[clap(long, value_parser, default_value = "http://localhost:4317")]
     pub otlp_collector_url: String,
-
     /// Whether or not to enable Datadog-formatted logs
-    #[clap(long = "datadog", value_parser)]
+    #[clap(long = "enable-datadog", value_parser)]
     pub datadog_enabled: bool,
+    /// Whether or not to enable metrics collection
+    #[clap(long = "enable-metrics", value_parser)]
+    pub metrics_enabled: bool,
+    /// The StatsD recorder host to send metrics to
+    #[clap(long, value_parser, default_value = "127.0.0.1")]
+    pub statsd_host: String,
+
+    /// The StatsD recorder port to send metrics to
+    #[clap(long, value_parser, default_value = "8125")]
+    pub statsd_port: u16,
 }
 
 // ----------
@@ -265,9 +272,14 @@ pub struct RelayerConfig {
     pub otlp_env: Option<String>,
     /// The OTLP collector endpoint to send traces to
     pub otlp_collector_url: String,
-
     /// Whether or not to enable Datadog-formatted logs
     pub datadog_enabled: bool,
+    /// Whether or not to enable metrics collection
+    pub metrics_enabled: bool,
+    /// The StatsD recorder host to send metrics to
+    pub statsd_host: String,
+    /// The StatsD recorder port to send metrics to
+    pub statsd_port: u16,
 }
 
 impl Default for RelayerConfig {
@@ -312,6 +324,9 @@ impl Clone for RelayerConfig {
             otlp_env: self.otlp_env.clone(),
             otlp_collector_url: self.otlp_collector_url.clone(),
             datadog_enabled: self.datadog_enabled,
+            metrics_enabled: self.metrics_enabled,
+            statsd_host: self.statsd_host.clone(),
+            statsd_port: self.statsd_port,
         }
     }
 }
@@ -422,6 +437,9 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         otlp_env: cli_args.otlp_env,
         otlp_collector_url: cli_args.otlp_collector_url,
         datadog_enabled: cli_args.datadog_enabled,
+        metrics_enabled: cli_args.metrics_enabled,
+        statsd_host: cli_args.statsd_host,
+        statsd_port: cli_args.statsd_port,
     };
 
     set_contract_from_file(&mut config, cli_args.deployments_file)?;
