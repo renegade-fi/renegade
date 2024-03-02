@@ -383,8 +383,8 @@ impl UpdateWalletTask {
         if let Some(transfer) = self.transfer.as_ref().map(|t| &t.external_transfer) {
             let mint = &transfer.mint;
             let idx = match transfer.direction {
-                ExternalTransferDirection::Deposit => self.old_wallet.get_balance_index(mint),
-                ExternalTransferDirection::Withdrawal => self.new_wallet.get_balance_index(mint),
+                ExternalTransferDirection::Deposit => self.new_wallet.get_balance_index(mint),
+                ExternalTransferDirection::Withdrawal => self.old_wallet.get_balance_index(mint),
             };
 
             idx.expect("transfer mint {mint:x} not found")

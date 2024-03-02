@@ -7817,7 +7817,6 @@ dependencies = [
  "circuit-types",
  "common",
  "constants",
- "contracts-common",
  "dns-lookup",
  "ethers",
  "eyre",
