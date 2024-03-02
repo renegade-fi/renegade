@@ -140,7 +140,9 @@ impl PoseidonHashGadget {
             self.in_squeeze_state = true;
         }
 
-        Ok(self.state[CAPACITY + self.next_index])
+        let res = self.state[CAPACITY + self.next_index];
+        self.next_index += 1;
+        Ok(res)
     }
 
     /// Squeeze a batch of elements from the sponge and return their
@@ -150,12 +152,7 @@ impl PoseidonHashGadget {
         num_elements: usize,
         cs: &mut C,
     ) -> Result<Vec<Variable>, CircuitError> {
-        let mut res = Vec::with_capacity(num_elements);
-        for _ in 0..num_elements {
-            res.push(self.squeeze(cs)?)
-        }
-
-        Ok(res)
+        (0..num_elements).map(|_| self.squeeze(cs)).collect()
     }
 
     /// Squeeze an output from the hasher, and constraint its value to equal the
@@ -323,7 +320,7 @@ mod test {
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::thread_rng;
-    use renegade_crypto::hash::compute_poseidon_hash;
+    use renegade_crypto::hash::{compute_poseidon_hash, Poseidon2Sponge};
 
     use crate::zk_gadgets::poseidon::PoseidonHashGadget;
 
@@ -349,5 +346,38 @@ mod test {
 
         // Check that the constraints are satisfied
         assert!(cs.check_circuit_satisfiability(&[expected.inner()]).is_ok());
+    }
+
+    /// Tests a batch absorb and squeeze of the hasher
+    #[test]
+    fn test_batch_absorb_squeeze() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
+        let absorb_values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+
+        // Compute the expected result
+        let mut hasher = Poseidon2Sponge::new();
+        hasher.absorb_batch(&absorb_values.iter().map(Scalar::inner).collect_vec());
+        let expected_squeeze_values =
+            hasher.squeeze_batch(N).into_iter().map(Scalar::new).collect_vec();
+
+        // Compute the result in-circuit
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let mut gadget = PoseidonHashGadget::new(cs.zero());
+        let absorb_vars = absorb_values.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
+
+        gadget.batch_absorb(&absorb_vars, &mut cs).unwrap();
+        let squeeze_vars = gadget.batch_squeeze(N, &mut cs).unwrap();
+
+        // Check that the squeezed values match the expected values
+        for (squeeze_var, expected_value) in
+            squeeze_vars.into_iter().zip(expected_squeeze_values.into_iter())
+        {
+            let expected_var = expected_value.create_witness(&mut cs);
+            cs.enforce_equal(squeeze_var, expected_var).unwrap();
+        }
+
+        // Check that the constraints are satisfied
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
     }
 }
