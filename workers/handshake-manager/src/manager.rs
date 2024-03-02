@@ -475,6 +475,8 @@ impl HandshakeExecutor {
         self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
 
         self.await_settlement_task(task_id).await
+
+        // TODO: Record volume metrics
     }
 
     /// Await match settlement given the ID of the settlement task
