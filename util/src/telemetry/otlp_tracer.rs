@@ -14,9 +14,7 @@ use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
 };
 
-/// The [OTLP service name](https://opentelemetry.io/docs/specs/semconv/resource/#service)
-/// for the relayer
-const RELAYER_SERVICE_NAME: &str = "renegade_relayer";
+use super::RELAYER_SERVICE_NAME;
 
 /// Constructs the resource tags for OTLP traces
 fn otlp_resource(deployment_env: Option<String>) -> Resource {

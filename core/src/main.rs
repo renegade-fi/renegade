@@ -122,8 +122,11 @@ async fn main() -> Result<(), CoordinatorError> {
         configure_telemetry(
             args.datadog_enabled,
             args.otlp_enabled,
+            args.metrics_enabled,
             args.otlp_env,
             args.otlp_collector_url,
+            &args.statsd_host,
+            args.statsd_port,
         )
         .map_err(err_str!(CoordinatorError::Telemetry))?;
     }
