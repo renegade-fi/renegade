@@ -43,6 +43,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
+metrics = { workspace = true }
 
 [dev-dependencies]
 ethers = "2"

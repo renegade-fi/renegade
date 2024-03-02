@@ -7757,6 +7757,7 @@ dependencies = [
  "itertools 0.11.0",
  "job-types",
  "lazy_static",
+ "metrics",
  "num-bigint",
  "num-traits",
  "proof-manager",
