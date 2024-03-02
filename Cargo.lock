@@ -3224,6 +3224,7 @@ dependencies = [
  "job-types",
  "libp2p",
  "lru 0.11.1",
+ "metrics",
  "state",
  "tokio",
  "tracing",
