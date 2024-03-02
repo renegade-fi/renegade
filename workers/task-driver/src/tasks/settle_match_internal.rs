@@ -4,7 +4,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::helpers::{enqueue_proof_job, update_wallet_validity_proofs};
+use crate::helpers::{enqueue_proof_job, maybe_record_match_volume, update_wallet_validity_proofs};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::{driver::StateWrapper, helpers::find_merkle_path};
 use arbitrum_client::client::ArbitrumClient;
@@ -236,7 +236,9 @@ impl Task for SettleMatchInternalTask {
 
             SettleMatchInternalTaskState::UpdatingValidityProofs => {
                 self.update_proofs().await?;
-                self.task_state = SettleMatchInternalTaskState::Completed
+                self.task_state = SettleMatchInternalTaskState::Completed;
+
+                maybe_record_match_volume(&self.match_result);
             },
 
             SettleMatchInternalTaskState::Completed => {
