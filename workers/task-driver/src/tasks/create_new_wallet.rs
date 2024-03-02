@@ -34,6 +34,9 @@ use crate::helpers::find_merkle_path;
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
 
+/// Metric describing the number of new wallets created
+const NUM_NEW_WALLETS_METRIC: &str = "num_new_wallets";
+
 // --------------
 // | Task State |
 // --------------
@@ -203,6 +206,7 @@ impl Task for NewWalletTask {
                 // in the global state
                 self.find_merkle_path().await?;
                 self.task_state = NewWalletTaskState::Completed;
+                metrics::counter!(NUM_NEW_WALLETS_METRIC).increment(1);
             },
             NewWalletTaskState::Completed => {
                 panic!("step() called in completed state")
