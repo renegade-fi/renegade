@@ -12,11 +12,24 @@ use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use num_integer::Integer;
 
+use crate::zk_gadgets::bits::BitRangeGadget;
+use crate::SCALAR_BITS_MINUS_TWO;
+
 use super::comparators::LessThanGadget;
 
 // -------------------------
 // | Single Prover Gadgets |
 // -------------------------
+
+/// The maximum bit size of the divisor in the div-rem gadget
+///
+/// This value is safely under half the field size, which prevents wraparound
+///
+/// Technically we can allow this value to go up to `D` where:
+///     2^{ 2(D + 1) } < p
+/// for the prime field modulus p, but this upper bound fits all our use cases
+/// at the moment
+const DIVREM_MAX_BITSIZE: usize = 100;
 
 /// A div-rem gadget which for inputs `a`, `b` returns
 /// values `q`, `r` such that a = bq + r and r < b
@@ -24,13 +37,18 @@ use super::comparators::LessThanGadget;
 /// The generic constant `D` represents the bitlength of the input `b`
 #[derive(Clone, Debug)]
 pub struct DivRemGadget<const D: usize> {}
-impl<const D: usize> DivRemGadget<D> {
+impl<const D: usize> DivRemGadget<D>
+where
+    [(); SCALAR_BITS_MINUS_TWO - D]: Sized,
+{
     /// Return (q, r) such that a = bq + r and r < b
     pub fn div_rem(
         a: Variable,
         b: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(Variable, Variable), CircuitError> {
+        assert!(D <= DIVREM_MAX_BITSIZE, "Bitlength of divisor is too large");
+
         let a_bigint = scalar_to_biguint(&a.eval(cs));
         let b_bigint = scalar_to_biguint(&b.eval(cs));
 
@@ -39,6 +57,14 @@ impl<const D: usize> DivRemGadget<D> {
 
         let q_var = biguint_to_scalar(&q).create_witness(cs);
         let r_var = biguint_to_scalar(&r).create_witness(cs);
+
+        // Constrain each of b, r to have bitlength at most `D`, and `q` to have
+        // bitlength less than `SCALAR_BITS_MINUS_TWO - D`. Together these
+        // constraints ensure that the expression b * q + r from wrapping around
+        // the field modulus
+        BitRangeGadget::<D>::constrain_bit_range(b, cs)?;
+        BitRangeGadget::<{ SCALAR_BITS_MINUS_TWO - D }>::constrain_bit_range(q_var, cs)?;
+        BitRangeGadget::<D>::constrain_bit_range(r_var, cs)?;
 
         // Constrain a == bq + r
         let one_var = cs.one();

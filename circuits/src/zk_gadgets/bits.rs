@@ -48,8 +48,8 @@ impl<const D: usize> ToBitsGadget<D> {
     /// constraint system
     pub fn to_bits(a: Variable, cs: &mut PlonkCircuit) -> Result<Vec<BoolVar>, CircuitError> {
         let bits = Self::to_bits_unconstrained(a, cs)?;
-        let reconstructed = Self::bit_reconstruct(&bits, cs);
-        cs.enforce_equal(reconstructed?, a)?;
+        let reconstructed = Self::bit_reconstruct(&bits, cs)?;
+        cs.enforce_equal(reconstructed, a)?;
 
         Ok(bits)
     }
@@ -89,6 +89,18 @@ impl<const D: usize> ToBitsGadget<D> {
 
         let bits_vars = bits.iter().map(|&b| Variable::from(b)).collect_vec();
         cs.lc_sum(&bits_vars, &coeffs)
+    }
+}
+
+/// A gadget to constrain a value to be representable in a given bitlength
+pub struct BitRangeGadget<const D: usize>;
+impl<const D: usize> BitRangeGadget<D> {
+    /// Constrain the given value to be representable in `D` bits
+    pub fn constrain_bit_range(a: Variable, cs: &mut PlonkCircuit) -> Result<(), CircuitError> {
+        // Decompose into `D` bits, this checks that the reconstruction is
+        // correct, so this will also force the value to be within the range [0,
+        // 2^D-1]
+        ToBitsGadget::<D>::to_bits(a, cs).map(|_| ())
     }
 }
 
@@ -137,6 +149,21 @@ impl<const D: usize> MultiproverToBitsGadget<D> {
     }
 }
 
+/// Constrain a value to be within a specific bit range in a multiprover context
+pub struct MultiproverBitRangeGadget<const D: usize>;
+impl<const D: usize> MultiproverBitRangeGadget<D> {
+    /// Constrain a value to be within a specific bit range
+    pub fn constrain_bit_range(
+        value: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Decompose into `D` bits, this checks that the reconstruction is correct, so
+        // this will also force the value to be within the range [0, 2^D-1]
+        MultiproverToBitsGadget::<D>::to_bits(value, fabric, cs).map(|_| ())
+    }
+}
+
 #[cfg(test)]
 mod bits_test {
     use ark_mpc::PARTY0;
@@ -145,14 +172,42 @@ mod bits_test {
         MpcPlonkCircuit, PlonkCircuit,
     };
     use constants::Scalar;
+    use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::{thread_rng, Rng, RngCore};
     use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::zk_gadgets::{bits::MultiproverToBitsGadget, comparators::NotEqualGadget};
+    use crate::{
+        zk_gadgets::{
+            bits::{BitRangeGadget, MultiproverBitRangeGadget, MultiproverToBitsGadget},
+            comparators::NotEqualGadget,
+        },
+        SCALAR_MAX_BITS,
+    };
 
     use super::ToBitsGadget;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Generate a random scalar under the specified bit amount
+    fn random_bitlength_scalar(bit_length: usize) -> Scalar {
+        let mut rng = thread_rng();
+
+        let bits = (0..bit_length).map(|_| rng.gen_bool(0.5)).collect_vec();
+        let mut res = Scalar::zero();
+
+        for bit in bits.into_iter() {
+            res *= Scalar::from(2u8);
+            if bit {
+                res += Scalar::one();
+            }
+        }
+
+        res
+    }
 
     /// Test that the to_bits single-prover gadget functions correctly
     #[test]
@@ -207,6 +262,53 @@ mod bits_test {
 
         // Check that the constraint system is satisfied
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_bit_range_gadget() {
+        const BIT_LEN: usize = 120; // Placeholder for the constant value
+
+        let two_to_bitlength = Scalar::from(2u8).pow(BIT_LEN as u64);
+        let rem_bitlength = SCALAR_MAX_BITS - BIT_LEN;
+        let random_high_scalar = random_bitlength_scalar(rem_bitlength) + two_to_bitlength;
+        let cases = [
+            (random_bitlength_scalar(BIT_LEN), true), // Random value below bitlength
+            (two_to_bitlength - Scalar::one(), true), // Maximum value for bitlength
+            (Scalar::zero(), true),                   // Minimum value for bitlength
+            (two_to_bitlength, false),                // Minimum invalid value
+            (two_to_bitlength + Scalar::one(), false), // Bitlength plus one
+            (random_high_scalar, false),              // Random value above bitlength
+        ];
+
+        // Test each case in a singleprover context
+        for (i, (value, is_valid)) in cases.into_iter().enumerate() {
+            let mut cs = PlonkCircuit::new_turbo_plonk();
+            let value_var = value.create_witness(&mut cs);
+
+            BitRangeGadget::<BIT_LEN>::constrain_bit_range(value_var, &mut cs).unwrap();
+
+            let res = cs.check_circuit_satisfiability(&[]).is_ok();
+            assert_eq!(res, is_valid, "test case {i} failed")
+        }
+
+        // Test each case in a multiprover context
+        for (i, (value, is_valid)) in cases.into_iter().enumerate() {
+            let (res, _) = execute_mock_mpc(move |fabric| async move {
+                let mut cs = MpcPlonkCircuit::new(fabric.clone());
+                let val = value.allocate(PARTY0, &fabric);
+                let value_var = val.create_shared_witness(&mut cs);
+
+                MultiproverBitRangeGadget::<BIT_LEN>::constrain_bit_range(
+                    value_var, &fabric, &mut cs,
+                )
+                .unwrap();
+
+                cs.check_circuit_satisfiability(&[]).is_ok()
+            })
+            .await;
+
+            assert_eq!(res, is_valid, "test case {i} failed")
+        }
     }
 
     /// Tests the multiprover to_bits gadget
