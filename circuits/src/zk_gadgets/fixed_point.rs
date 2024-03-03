@@ -91,7 +91,8 @@ impl FixedPointGadget {
     pub fn floor(val: FixedPointVar, cs: &mut PlonkCircuit) -> Result<Variable, CircuitError> {
         // Floor div by the scaling factor
         let divisor = cs.mul_constant(cs.one(), &*TWO_TO_M_SCALAR).unwrap();
-        let (div, _) = DivRemGadget::<DEFAULT_FP_PRECISION>::div_rem(val.repr, divisor, cs)?;
+        let (div, _) =
+            DivRemGadget::<{ DEFAULT_FP_PRECISION + 1 }>::div_rem(val.repr, divisor, cs)?;
 
         Ok(div)
     }

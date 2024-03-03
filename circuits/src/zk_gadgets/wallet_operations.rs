@@ -13,7 +13,7 @@ use constants::ScalarField;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 
 use super::{
-    bits::{MultiproverToBitsGadget, ToBitsGadget},
+    bits::{BitRangeGadget, MultiproverBitRangeGadget},
     merkle::PoseidonMerkleHashGadget,
     poseidon::{PoseidonCSPRNGGadget, PoseidonHashGadget},
     select::CondSelectGadget,
@@ -208,10 +208,7 @@ impl AmountGadget {
         amount: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Decompose into `AMOUNT_BITS` bits, this checks that the reconstruction is
-        // correct, so this will also force the value to be within the range [0,
-        // 2^AMOUNT_BITS-1]
-        ToBitsGadget::<AMOUNT_BITS>::to_bits(amount, cs).map(|_| ())
+        BitRangeGadget::<AMOUNT_BITS>::constrain_bit_range(amount, cs)
     }
 }
 
@@ -224,10 +221,7 @@ impl MultiproverAmountGadget {
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Decompose into `AMOUNT_BITS` bits, this checks that the reconstruction is
-        // correct, so this will also force the value to be within the range [0,
-        // 2^AMOUNT_BITS-1]
-        MultiproverToBitsGadget::<AMOUNT_BITS>::to_bits(amount, fabric, cs).map(|_| ())
+        MultiproverBitRangeGadget::<AMOUNT_BITS>::constrain_bit_range(amount, fabric, cs)
     }
 }
 
@@ -241,10 +235,7 @@ impl FeeGadget {
         fee: FixedPointVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Decompose into `FEE_BITS` bits, this checks that the reconstruction is
-        // correct, so this will also force the value to be within the range [0,
-        // 2^FEE_BITS-1]
-        ToBitsGadget::<FEE_BITS>::to_bits(fee.repr, cs).map(|_| ())
+        BitRangeGadget::<FEE_BITS>::constrain_bit_range(fee.repr, cs)
     }
 }
 
@@ -257,10 +248,7 @@ impl PriceGadget {
         price: FixedPointVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Decompose into `PRICE_BITS` bits, this checks that the reconstruction is
-        // correct, so this will also force the value to be within the range [0,
-        // 2^PRICE_BITS-1]
-        ToBitsGadget::<PRICE_BITS>::to_bits(price.repr, cs).map(|_| ())
+        BitRangeGadget::<PRICE_BITS>::constrain_bit_range(price.repr, cs)
     }
 }
 
@@ -273,10 +261,7 @@ impl MultiproverPriceGadget {
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // Decompose into `PRICE_BITS` bits, this checks that the reconstruction is
-        // correct, so this will also force the value to be within the range [0,
-        // 2^PRICE_BITS-1]
-        MultiproverToBitsGadget::<PRICE_BITS>::to_bits(price.repr, fabric, cs).map(|_| ())
+        MultiproverBitRangeGadget::<PRICE_BITS>::constrain_bit_range(price.repr, fabric, cs)
     }
 }
 
