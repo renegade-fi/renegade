@@ -8,7 +8,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
     order::Order,
-    r#match::OrderSettlementIndices,
+    r#match::{MatchResult, OrderSettlementIndices},
     traits::{MpcBaseType, MpcType},
     CollaborativePlonkProof, Fabric, MpcPlonkLinkProof, MpcProofLinkingHint, PlonkProof,
     ProofLinkingHint, SizedWalletShare,
@@ -46,6 +46,8 @@ use super::HandshakeExecutor;
 const ERR_OPENING_STATEMENT: &str = "error opening statement";
 /// Error message emitted when opening a proof fails
 const ERR_OPENING_PROOF: &str = "error opening proof";
+/// Error message emitted when opening a match result fails
+const ERR_OPENING_MATCH_RES: &str = "error opening match result";
 
 // ----------------------
 // | Handshake Executor |
@@ -65,7 +67,7 @@ impl HandshakeExecutor {
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
-    ) -> Result<MatchBundle, HandshakeManagerError> {
+    ) -> Result<(MatchBundle, MatchResult), HandshakeManagerError> {
         // Fetch the handshake state from the state index
         let handshake_state =
             self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
@@ -107,7 +109,7 @@ impl HandshakeExecutor {
         party1_validity_bundle: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
         cancel_channel: Receiver<()>,
-    ) -> Result<MatchBundle, HandshakeManagerError> {
+    ) -> Result<(MatchBundle, MatchResult), HandshakeManagerError> {
         info!("Matching order...");
 
         // Build a fabric
@@ -144,6 +146,8 @@ impl HandshakeExecutor {
             &fabric,
         );
 
+        let shared_match_res = witness.match_res.clone();
+
         // Check if a cancel has come in after the MPC
         if !cancel_channel.is_empty() {
             return Err(HandshakeManagerError::MpcShootdown);
@@ -158,7 +162,7 @@ impl HandshakeExecutor {
         )?;
 
         // Open and verify the result
-        Self::open_and_verify_match_settle_proofs(
+        let match_bundle = Self::open_and_verify_match_settle_proofs(
             &statement,
             match_proof,
             &link_proof0,
@@ -166,7 +170,16 @@ impl HandshakeExecutor {
             &party0_validity_bundle.commitment_proof.proof,
             &party1_validity_bundle.commitment_proof.proof,
         )
-        .await
+        .await?;
+
+        // Open the match result so that it can be recorded for the relayer's
+        // metrics
+        let match_res = shared_match_res
+            .open_and_authenticate()
+            .await
+            .map_err(|_| HandshakeManagerError::MpcNetwork(ERR_OPENING_MATCH_RES.to_string()))?;
+
+        Ok((match_bundle, match_res))
     }
 
     /// Execute the match settle MPC over the provisioned fabric

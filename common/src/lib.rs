@@ -15,6 +15,7 @@ use tokio::sync::RwLock as TokioRwLock;
 
 pub mod default_wrapper;
 pub mod keyed_list;
+pub mod metrics_helpers;
 pub mod types;
 pub mod worker;
 

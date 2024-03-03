@@ -4,7 +4,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::helpers::{enqueue_proof_job, maybe_record_match_volume, update_wallet_validity_proofs};
+use crate::helpers::{enqueue_proof_job, update_wallet_validity_proofs};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::{driver::StateWrapper, helpers::find_merkle_path};
 use arbitrum_client::client::ArbitrumClient;
@@ -16,6 +16,7 @@ use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
+use common::metrics_helpers::maybe_record_match_volume;
 use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
 use common::types::tasks::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::WalletIdentifier;
