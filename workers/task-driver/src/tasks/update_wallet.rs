@@ -14,9 +14,11 @@ use circuit_types::{native_helpers::wallet_from_blinded_shares, SizedWallet};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
-use common::types::tasks::UpdateWalletTaskDescriptor;
-use common::types::transfer_auth::ExternalTransferWithAuth;
-use common::types::{proof_bundles::ValidWalletUpdateBundle, wallet::Wallet};
+use common::metrics_helpers::maybe_record_transfer_metrics;
+use common::types::{
+    proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
+    transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
+};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
@@ -25,7 +27,7 @@ use state::State;
 use tracing::instrument;
 
 use crate::driver::StateWrapper;
-use crate::helpers::{enqueue_proof_job, find_merkle_path, maybe_record_transfer_metrics};
+use crate::helpers::{enqueue_proof_job, find_merkle_path};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 use crate::helpers::update_wallet_validity_proofs;
@@ -226,7 +228,7 @@ impl Task for UpdateWalletTask {
                 self.update_validity_proofs().await?;
                 self.task_state = UpdateWalletTaskState::Completed;
 
-                maybe_record_transfer_metrics(&self.external_transfer);
+                maybe_record_transfer_metrics(&self.transfer);
             },
             UpdateWalletTaskState::Completed => {
                 panic!("step() called in state Completed")

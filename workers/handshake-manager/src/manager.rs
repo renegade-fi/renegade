@@ -6,8 +6,10 @@ pub mod r#match;
 mod price_agreement;
 pub(crate) mod scheduler;
 
+use circuit_types::r#match::MatchResult;
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
+    metrics_helpers::maybe_record_match_volume,
     new_async_shared,
     types::{
         gossip::WrappedPeerId,
@@ -287,7 +289,7 @@ impl HandshakeExecutor {
                 let self_clone = self.clone();
                 let proof0_clone = party0_proof.clone();
                 let proof1_clone = party1_proof.clone();
-                let res = tokio::task::spawn_blocking(move || {
+                let (match_bundle, match_result) = tokio::task::spawn_blocking(move || {
                     block_on(self_clone.execute_match(
                         request_id,
                         party_id,
@@ -300,8 +302,8 @@ impl HandshakeExecutor {
                 .unwrap()?;
 
                 // Record the match in the cache
-                self.record_completed_match(request_id).await?;
-                self.submit_match(party0_proof, party1_proof, order_state, res).await
+                self.submit_match(party0_proof, party1_proof, order_state, match_bundle).await?;
+                self.record_completed_match(request_id, &match_result).await
             },
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
@@ -392,7 +394,11 @@ impl HandshakeExecutor {
     }
 
     /// Record a match as completed in the various state objects
-    async fn record_completed_match(&self, request_id: Uuid) -> Result<(), HandshakeManagerError> {
+    async fn record_completed_match(
+        &self,
+        request_id: Uuid,
+        match_result: &MatchResult,
+    ) -> Result<(), HandshakeManagerError> {
         // Get the order IDs from the state machine
         let state = self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
             HandshakeManagerError::InvalidRequest(format!("request_id {request_id:?}"))
@@ -406,7 +412,12 @@ impl HandshakeExecutor {
 
         // Update the state of the handshake in the completed state
         self.handshake_state_index.completed(&request_id).await;
-        self.publish_completion_messages(state.local_order_id, state.peer_order_id)
+        self.publish_completion_messages(state.local_order_id, state.peer_order_id)?;
+
+        // Record the volume of the match
+        maybe_record_match_volume(match_result);
+
+        Ok(())
     }
 
     /// Publish a cache sync message to the cluster and a local event indicating
@@ -475,8 +486,6 @@ impl HandshakeExecutor {
         self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
 
         self.await_settlement_task(task_id).await
-
-        // TODO: Record volume metrics
     }
 
     /// Await match settlement given the ID of the settlement task
