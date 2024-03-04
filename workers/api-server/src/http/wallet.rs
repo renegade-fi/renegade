@@ -1,7 +1,7 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
-use circuit_types::{balance::Balance, order::Order};
+use circuit_types::{balance::Balance, elgamal::BabyJubJubPoint, order::Order};
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
@@ -25,7 +25,7 @@ use hyper::HeaderMap;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
-use util::err_str;
+use util::{err_str, hex::jubjub_to_hex_string};
 
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},
@@ -158,9 +158,13 @@ impl TypedHandler for CreateWalletHandler {
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        req: Self::Request,
+        mut req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // TODO: Overwrite with relayer key, this is patch for the moment
+        let key = BabyJubJubPoint::default();
+        req.wallet.managing_cluster = jubjub_to_hex_string(&key);
+
         // Create an async task to drive this new wallet into the on-chain state
         // and create proofs of validity
         let wallet_id = req.wallet.id;
