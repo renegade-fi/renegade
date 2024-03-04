@@ -6,6 +6,7 @@ use ethers::core::types::Signature;
 use ethers::core::utils::keccak256;
 use ethers::utils::public_key_to_address;
 use k256::ecdsa::VerifyingKey as K256VerifyingKey;
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -79,6 +80,8 @@ pub enum TaskDescriptor {
     NewWallet(NewWalletTaskDescriptor),
     /// The task descriptor for the `LookupWallet` task
     LookupWallet(LookupWalletTaskDescriptor),
+    /// The task descriptor for the `PayFees` task
+    PayFees(PayFeesTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
     SettleMatchInternal(SettleMatchInternalTaskDescriptor),
     /// The task descriptor for the `SettleMatch` task
@@ -95,6 +98,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(task) => task.wallet.wallet_id,
             TaskDescriptor::LookupWallet(task) => task.wallet_id,
+            TaskDescriptor::PayFees(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
             },
@@ -113,6 +117,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(_)
             | TaskDescriptor::LookupWallet(_)
+            | TaskDescriptor::PayFees(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
@@ -353,6 +358,28 @@ impl UpdateWalletTaskDescriptor {
 impl From<UpdateWalletTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: UpdateWalletTaskDescriptor) -> Self {
         TaskDescriptor::UpdateWallet(descriptor)
+    }
+}
+
+/// The task descriptor for the fee payment task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PayFeesTaskDescriptor {
+    /// The wallet to pay fees for
+    pub wallet_id: WalletIdentifier,
+    /// The balance to pay fees for
+    pub balance_mint: BigUint,
+}
+
+impl PayFeesTaskDescriptor {
+    /// Constructor
+    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Self {
+        PayFeesTaskDescriptor { wallet_id, balance_mint }
+    }
+}
+
+impl From<PayFeesTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: PayFeesTaskDescriptor) -> Self {
+        TaskDescriptor::PayFees(descriptor)
     }
 }
 
