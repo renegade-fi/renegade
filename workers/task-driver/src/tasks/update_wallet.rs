@@ -43,7 +43,6 @@ const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 
 /// Defines the state of the deposit update wallet task
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(clippy::large_enum_variant)]
 pub enum UpdateWalletTaskState {
     /// The task is awaiting scheduling
     Pending,

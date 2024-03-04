@@ -2,6 +2,7 @@
 
 pub mod create_new_wallet;
 pub mod lookup_wallet;
+pub mod pay_fees;
 pub mod settle_match;
 pub mod settle_match_internal;
 pub mod update_merkle_proof;
