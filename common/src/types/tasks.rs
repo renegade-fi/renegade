@@ -81,7 +81,7 @@ pub enum TaskDescriptor {
     /// The task descriptor for the `LookupWallet` task
     LookupWallet(LookupWalletTaskDescriptor),
     /// The task descriptor for the `PayFees` task
-    PayFees(PayFeesTaskDescriptor),
+    ProtocolFee(PayProtocolFeeTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
     SettleMatchInternal(SettleMatchInternalTaskDescriptor),
     /// The task descriptor for the `SettleMatch` task
@@ -98,7 +98,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(task) => task.wallet.wallet_id,
             TaskDescriptor::LookupWallet(task) => task.wallet_id,
-            TaskDescriptor::PayFees(task) => task.wallet_id,
+            TaskDescriptor::ProtocolFee(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
             },
@@ -117,7 +117,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(_)
             | TaskDescriptor::LookupWallet(_)
-            | TaskDescriptor::PayFees(_)
+            | TaskDescriptor::ProtocolFee(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
@@ -363,23 +363,23 @@ impl From<UpdateWalletTaskDescriptor> for TaskDescriptor {
 
 /// The task descriptor for the fee payment task
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PayFeesTaskDescriptor {
+pub struct PayProtocolFeeTaskDescriptor {
     /// The wallet to pay fees for
     pub wallet_id: WalletIdentifier,
     /// The balance to pay fees for
     pub balance_mint: BigUint,
 }
 
-impl PayFeesTaskDescriptor {
+impl PayProtocolFeeTaskDescriptor {
     /// Constructor
     pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Self {
-        PayFeesTaskDescriptor { wallet_id, balance_mint }
+        PayProtocolFeeTaskDescriptor { wallet_id, balance_mint }
     }
 }
 
-impl From<PayFeesTaskDescriptor> for TaskDescriptor {
-    fn from(descriptor: PayFeesTaskDescriptor) -> Self {
-        TaskDescriptor::PayFees(descriptor)
+impl From<PayProtocolFeeTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: PayProtocolFeeTaskDescriptor) -> Self {
+        TaskDescriptor::ProtocolFee(descriptor)
     }
 }
 
