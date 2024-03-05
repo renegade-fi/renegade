@@ -14,7 +14,8 @@ nitro \
     --node.staker.enable=false \
     --init.dev-init \
     --init.empty=false \
-    --chain.id=412346 \
+    --chain.id=473474 \
+    --chain.info-files=/devnet_chain_info.json \
     --chain.dev-wallet.private-key=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659 \
     --http.addr=0.0.0.0 \
     --http.vhosts=* \
@@ -132,7 +133,8 @@ cargo run \
     --rpc-url $DEVNET_RPC_URL \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-stylus \
-    --contract darkpool-test-contract
+    --contract darkpool-test-contract \
+    $no_verify_flag
 
 # Deploy the proxy contract
 cargo run \
