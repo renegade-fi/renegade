@@ -7,6 +7,7 @@ use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
+use rand::thread_rng;
 use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,15 @@ pub struct Note {
 }
 
 impl Note {
+    /// Constructor
+    pub fn new(mint: BigUint, amount: Amount, receiver: EncryptionKey) -> Self {
+        // Sample a blinder
+        let mut rng = thread_rng();
+        let blinder = Scalar::random(&mut rng);
+
+        Note { mint, amount, receiver, blinder }
+    }
+
     /// Compute a commitment to the note
     pub fn commitment(&self) -> Scalar {
         let vals = self.to_scalars();

@@ -2,7 +2,11 @@
 
 use std::{fs::File, io::Read};
 
+use circuit_types::elgamal::EncryptionKey;
+use constants::PROTOCOL_ENCRYPTION_KEY;
 use eyre::{eyre, Result};
+
+use crate::hex::jubjub_from_hex_string;
 
 /// The deployments key in the `deployments.json` file
 pub const DEPLOYMENTS_KEY: &str = "deployments";
@@ -25,4 +29,10 @@ pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> 
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| eyre!("Could not parse {contract_key} address from deployments file"))
+}
+
+/// Get a copy of the protocol's encryption key
+pub fn get_protocol_encryption_key() -> EncryptionKey {
+    jubjub_from_hex_string(PROTOCOL_ENCRYPTION_KEY)
+        .expect("contract encryption key is not a valid jubjub point")
 }
