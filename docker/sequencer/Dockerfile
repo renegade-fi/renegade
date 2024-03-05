@@ -53,6 +53,9 @@ RUN RUSTFLAGS="-Clink-arg=-zstack-size=131072 -Zlocation-detail=none -C opt-leve
     -Z build-std=std,panic_abort \
     -Z build-std-features=panic_immediate_abort
 
+# Copy over devnet chain info
+COPY ./devnet_chain_info.json /devnet_chain_info.json
+
 # Copy over the contract deployment script
 COPY ./deploy_contracts.sh /deploy_contracts.sh
 RUN chmod +x /deploy_contracts.sh
@@ -67,7 +70,8 @@ CMD ["--node.dangerous.no-l1-listener",\
     "--node.staker.enable=false",\
     "--init.dev-init",\
     "--init.empty=false",\
-    "--chain.id=412346",\
+    "--chain.id=473474",\
+    "--chain.info-files=/devnet_chain_info.json",\
     "--chain.dev-wallet.private-key=b6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",\
     "--http.addr=0.0.0.0",\
     "--http.vhosts=*",\
