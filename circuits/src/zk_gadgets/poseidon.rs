@@ -79,6 +79,7 @@ impl PoseidonHashGadget {
     pub fn reset_state<C: Circuit<ScalarField>>(&mut self, cs: &C) {
         let zero = cs.zero();
         self.state = (0..CAPACITY + RATE).map(|_| zero).collect_vec();
+        self.next_index = 0;
         self.in_squeeze_state = false;
     }
 

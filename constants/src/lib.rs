@@ -34,8 +34,9 @@ pub const PROTOCOL_FEE: f64 = 0.0006; // 6 bps
 
 /// The encryption key used by the protocol to collect fees
 ///
-/// TODO: This is a dummy key, replace with real encryption key when it is created
-pub const PROTOCOL_ENCRYPTION_KEY: &str = 
+/// TODO: This is a dummy key, replace with real encryption key when it is
+/// created
+pub const PROTOCOL_ENCRYPTION_KEY: &str =
     "0x238605ef44e283ca92d1e2a373a8bb7885bddeff0be47d39d6016f270a9b900c79db2b3fe50110a1f9bcec1e924de82042be3351a0fb625d3f02042c28c3991e";
 
 // ------------------------------------

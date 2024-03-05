@@ -181,6 +181,7 @@ pub mod test_helpers {
         r#match::{MatchResult, OrderSettlementIndices},
         traits::BaseType,
         wallet::{Wallet, WalletShare},
+        Amount, AMOUNT_BITS,
     };
     use constants::{AuthenticatedScalar, Scalar};
     use futures::{future::join_all, Future, FutureExt};
@@ -250,6 +251,15 @@ pub mod test_helpers {
     fn random_index(max: usize) -> usize {
         let mut rng = thread_rng();
         rng.gen_range(0..max)
+    }
+
+    /// Generate a random amount valid in a wallet
+    pub fn random_wallet_amount() -> Amount {
+        let mut rng = thread_rng();
+        let amt_unreduced: Amount = rng.gen();
+
+        let max_amount = 1u128 << AMOUNT_BITS;
+        amt_unreduced % max_amount
     }
 
     /// Get a dummy set of wallet shares
