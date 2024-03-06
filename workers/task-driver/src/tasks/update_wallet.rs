@@ -14,13 +14,13 @@ use circuit_types::{native_helpers::wallet_from_blinded_shares, SizedWallet};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
-use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
