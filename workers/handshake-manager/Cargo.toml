@@ -28,6 +28,7 @@ state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
 test-helpers = { path = "../../test-helpers" }
 util = { path = "../../util" }
+renegade-metrics = { path = "../../renegade-metrics" }
 
 # === Misc Dependencies === #
 ark-serialize = "0.4"

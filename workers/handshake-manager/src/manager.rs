@@ -9,7 +9,6 @@ pub(crate) mod scheduler;
 use circuit_types::r#match::MatchResult;
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
-    metrics_helpers::maybe_record_match_volume,
     new_async_shared,
     types::{
         gossip::WrappedPeerId,
@@ -41,6 +40,7 @@ use job_types::{
 };
 use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
+use renegade_metrics::helpers::record_match_volume;
 use state::State;
 use std::{
     thread::JoinHandle,
@@ -415,7 +415,7 @@ impl HandshakeExecutor {
         self.publish_completion_messages(state.local_order_id, state.peer_order_id)?;
 
         // Record the volume of the match
-        maybe_record_match_volume(match_result);
+        record_match_volume(match_result);
 
         Ok(())
     }

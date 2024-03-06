@@ -28,9 +28,6 @@ use crate::biguint_to_str_addr;
 
 use super::exchange::{Exchange, ALL_EXCHANGES};
 
-/// Error message for when the decimals are not found for a token
-const DECIMALS_NOT_FOUND_ERR: &str = "Decimals not found for token";
-
 /// A helper enum to describe the state of each ticker on each Exchange. Same
 /// means that the ERC-20 and Exchange tickers are the same, Renamed means that
 /// the Exchange ticker is different from the underlying ERC-20, and Unsupported
@@ -705,14 +702,13 @@ impl Token {
             })
     }
 
-    /// Gets the amount of the token as an f64, accounting for the associated
+    /// Converts the amount of the token as an f64, accounting for the associated
     /// number of decimals.
     ///
     /// Note that due to conversion to f64, the result may lose precision.
-    pub fn get_amount_f64(&self, amount: u128) -> Result<f64, String> {
-        let decimals = self.get_decimals().ok_or(DECIMALS_NOT_FOUND_ERR.to_string())?;
+    pub fn convert_to_decimal(&self, amount: u128) -> f64 {
+        let decimals = self.get_decimals().unwrap_or_default();
         let decimal_adjustment = 10u128.pow(decimals as u32);
-        let res = amount as f64 / decimal_adjustment as f64;
-        Ok(res)
+        amount as f64 / decimal_adjustment as f64
     }
 }

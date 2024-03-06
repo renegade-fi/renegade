@@ -1,0 +1,16 @@
+[package]
+name = "renegade-metrics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Telemetry === #
+metrics = { workspace = true }
+
+# === Cryptography / Arithmetic === #
+num-bigint = { workspace = true }
+
+# === Workspace Dependencies === #
+circuit-types = { path = "../circuit-types" }
+util = { path = "../util" }
+common = { path = "../common" }

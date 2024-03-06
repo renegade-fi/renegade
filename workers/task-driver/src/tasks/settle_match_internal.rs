@@ -16,7 +16,6 @@ use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
-use common::metrics_helpers::maybe_record_match_volume;
 use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
 use common::types::tasks::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::WalletIdentifier;
@@ -27,6 +26,7 @@ use common::types::{
 use constants::Scalar;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use renegade_metrics::helpers::record_match_volume;
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
@@ -239,7 +239,7 @@ impl Task for SettleMatchInternalTask {
                 self.update_proofs().await?;
                 self.task_state = SettleMatchInternalTaskState::Completed;
 
-                maybe_record_match_volume(&self.match_result);
+                record_match_volume(&self.match_result);
             },
 
             SettleMatchInternalTaskState::Completed => {
