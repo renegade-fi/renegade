@@ -80,8 +80,10 @@ pub enum TaskDescriptor {
     NewWallet(NewWalletTaskDescriptor),
     /// The task descriptor for the `LookupWallet` task
     LookupWallet(LookupWalletTaskDescriptor),
-    /// The task descriptor for the `PayFees` task
+    /// The task descriptor for the `PayProtocolFee` task
     ProtocolFee(PayProtocolFeeTaskDescriptor),
+    /// The task descriptor for the `PayRelayerFee` task
+    RelayerFee(PayRelayerFeeTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
     SettleMatchInternal(SettleMatchInternalTaskDescriptor),
     /// The task descriptor for the `SettleMatch` task
@@ -99,6 +101,7 @@ impl TaskDescriptor {
             TaskDescriptor::NewWallet(task) => task.wallet.wallet_id,
             TaskDescriptor::LookupWallet(task) => task.wallet_id,
             TaskDescriptor::ProtocolFee(task) => task.wallet_id,
+            TaskDescriptor::RelayerFee(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
             },
@@ -118,6 +121,7 @@ impl TaskDescriptor {
             TaskDescriptor::NewWallet(_)
             | TaskDescriptor::LookupWallet(_)
             | TaskDescriptor::ProtocolFee(_)
+            | TaskDescriptor::RelayerFee(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
@@ -361,7 +365,7 @@ impl From<UpdateWalletTaskDescriptor> for TaskDescriptor {
     }
 }
 
-/// The task descriptor for the fee payment task
+/// The task descriptor for the protocol fee payment task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PayProtocolFeeTaskDescriptor {
     /// The wallet to pay fees for
@@ -380,6 +384,28 @@ impl PayProtocolFeeTaskDescriptor {
 impl From<PayProtocolFeeTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: PayProtocolFeeTaskDescriptor) -> Self {
         TaskDescriptor::ProtocolFee(descriptor)
+    }
+}
+
+/// The task descriptor for the relayer fee payment task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PayRelayerFeeTaskDescriptor {
+    /// The wallet to pay fees for
+    pub wallet_id: WalletIdentifier,
+    /// The balance to pay fees for
+    pub balance_mint: BigUint,
+}
+
+impl PayRelayerFeeTaskDescriptor {
+    /// Constructor
+    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Self {
+        PayRelayerFeeTaskDescriptor { wallet_id, balance_mint }
+    }
+}
+
+impl From<PayRelayerFeeTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: PayRelayerFeeTaskDescriptor) -> Self {
+        TaskDescriptor::RelayerFee(descriptor)
     }
 }
 
