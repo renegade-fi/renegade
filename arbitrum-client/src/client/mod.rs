@@ -37,7 +37,7 @@ pub struct ArbitrumClientConfig {
     /// HTTP-addressable RPC endpoint for the client to connect to
     pub rpc_url: String,
     /// The private key of the account to use for signing transactions
-    pub arb_priv_key: String,
+    pub arb_priv_key: LocalWallet,
 }
 
 /// A type alias for the RPC client, which is an ethers middleware stack that
@@ -61,17 +61,15 @@ impl ArbitrumClientConfig {
         let provider = Provider::<Http>::try_from(&self.rpc_url)
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
 
-        let wallet = LocalWallet::from_str(&self.arb_priv_key)
-            .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
-
         let chain_id = provider
             .get_chainid()
             .await
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?
             .as_u64();
 
-        let rpc_client =
-            Arc::new(SignerMiddleware::new(provider, wallet.clone().with_chain_id(chain_id)));
+        let wallet = self.arb_priv_key.clone().with_chain_id(chain_id);
+
+        let rpc_client = Arc::new(SignerMiddleware::new(provider, wallet));
 
         Ok(rpc_client)
     }

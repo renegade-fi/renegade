@@ -11,6 +11,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 
 mod error;
+mod setup;
 
 use std::{process::exit, thread, time::Duration};
 
@@ -42,6 +43,8 @@ use tokio::{
 };
 use tracing::info;
 use util::{err_str, telemetry::configure_telemetry};
+
+use crate::setup::node_setup;
 
 /// The amount of time to wait between sending teardown signals and terminating
 /// execution
@@ -145,6 +148,8 @@ async fn main() -> Result<(), CoordinatorError> {
     // | Worker Setup |
     // ----------------
 
+    // --- Node Setup Phase --- //
+
     // Build a task driver that may be used to spawn long-lived asynchronous tasks
     // that are common among workers
     let task_driver_config = TaskDriverConfig::new(
@@ -161,6 +166,25 @@ async fn main() -> Result<(), CoordinatorError> {
     let (task_driver_failure_sender, mut task_driver_failure_receiver) =
         mpsc::channel(1 /* buffer_size */);
     watch_worker::<TaskDriver>(&mut task_driver, &task_driver_failure_sender);
+
+    // Start the proof generation module
+    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = watch::channel(());
+    let mut proof_manager = ProofManager::new(ProofManagerConfig {
+        job_queue: proof_generation_worker_receiver,
+        cancel_channel: proof_manager_cancel_receiver,
+    })
+    .expect("failed to build proof generation module");
+    proof_manager.start().expect("failed to start proof generation module");
+    let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
+        mpsc::channel(1 /* buffer_size */);
+    watch_worker::<ProofManager>(&mut proof_manager, &proof_manager_failure_sender);
+
+    // Setup the relayer wallet once the task driver and proof manager are running
+    // TODO(@joey): This will be a more involved task when implementing raft
+    // snapshots, state sync, etc
+    node_setup(&args.arbitrum_private_key, task_sender.clone(), &global_state).await?;
+
+    // --- Workers Setup Phase --- //
 
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
@@ -276,18 +300,6 @@ async fn main() -> Result<(), CoordinatorError> {
     api_server.start().expect("failed to start api server");
     let (api_failure_sender, mut api_failure_receiver) = mpsc::channel(1 /* buffer_size */);
     watch_worker::<ApiServer>(&mut api_server, &api_failure_sender);
-
-    // Start the proof generation module
-    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = watch::channel(());
-    let mut proof_manager = ProofManager::new(ProofManagerConfig {
-        job_queue: proof_generation_worker_receiver,
-        cancel_channel: proof_manager_cancel_receiver,
-    })
-    .expect("failed to build proof generation module");
-    proof_manager.start().expect("failed to start proof generation module");
-    let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
-        mpsc::channel(1 /* buffer_size */);
-    watch_worker::<ProofManager>(&mut proof_manager, &proof_manager_failure_sender);
 
     // Await module termination, and send a cancel signal for any modules that
     // have been detected to fault

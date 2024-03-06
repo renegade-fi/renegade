@@ -30,7 +30,7 @@ use crate::{
 use crate::helpers::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The error thrown when the wallet cannot be found in tx history
-const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
+pub const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
 /// The task name for the lookup wallet task
 const LOOKUP_WALLET_TASK_NAME: &str = "lookup-wallet";
 

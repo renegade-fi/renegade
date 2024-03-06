@@ -10,13 +10,14 @@ use common::types::{
     wallet::Wallet,
 };
 use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
+use ethers::signers::LocalWallet;
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use std::{
-    env::{self},
-    fs,
+    env, fs,
     net::{IpAddr, SocketAddr},
+    str::FromStr,
 };
 use token_remaps::setup_token_remaps;
 use toml::{value::Map, Value};
@@ -147,7 +148,9 @@ struct Cli {
     #[clap(long = "rpc-url", value_parser)]
     pub rpc_url: Option<String>,
     /// The Arbitrum private key used to send transactions
-    #[clap(long = "arbitrum-pkey", value_parser, default_value = "0x0")]
+    /// 
+    /// Defaults to the devnet pre-funded key
+    #[clap(long = "arbitrum-pkey", value_parser, default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659")]
     pub arbitrum_private_key: String,
     /// A file holding a json representation of the wallets the local node
     /// should manage
@@ -259,7 +262,7 @@ pub struct RelayerConfig {
     /// The HTTP addressable Arbitrum JSON-RPC node
     pub rpc_url: Option<String>,
     /// The Arbitrum private key used to send transactions
-    pub arbitrum_private_key: String,
+    pub arbitrum_private_key: LocalWallet,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
 
@@ -387,6 +390,10 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         DalekKeypair::generate(&mut rng)
     };
 
+    // Parse the local relayer's arbitrum wallet from the cli
+    let arbitrum_private_key =
+        LocalWallet::from_str(&cli_args.arbitrum_private_key).map_err(|e| e.to_string())?;
+
     // Parse the p2p keypair or generate one
     let p2p_key = if let Some(keypair) = cli_args.p2p_key {
         let decoded = base64::decode(keypair).expect("p2p key formatted incorrectly");
@@ -430,7 +437,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
         rpc_url: cli_args.rpc_url,
-        arbitrum_private_key: cli_args.arbitrum_private_key,
+        arbitrum_private_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
         otlp_enabled: cli_args.otlp_enabled,

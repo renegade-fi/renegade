@@ -9,7 +9,7 @@ crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Crypto === #
-ethers = "2"
+ethers = { workspace = true }
 
 # === Workspace Dependencies === #
 arbitrum-client = { path = "../../arbitrum-client" }
