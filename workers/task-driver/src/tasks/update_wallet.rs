@@ -14,7 +14,7 @@ use circuit_types::{native_helpers::wallet_from_blinded_shares, SizedWallet};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
-use common::metrics_helpers::maybe_record_transfer_metrics;
+use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,

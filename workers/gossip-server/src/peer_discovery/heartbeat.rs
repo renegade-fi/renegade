@@ -7,6 +7,7 @@ use gossip_api::request_response::{
     GossipRequest,
 };
 use job_types::network_manager::NetworkManagerJob;
+use renegade_metrics::labels::{NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC};
 use tracing::info;
 use util::{err_str, get_current_time_seconds};
 
@@ -143,6 +144,12 @@ impl GossipProtocolExecutor {
         // having itself not expired the peer locally.
         let mut locked_expiry_cache = self.peer_expiry_cache.write().await;
         locked_expiry_cache.put(peer_id, now);
+
+        if same_cluster {
+            metrics::gauge!(NUM_LOCAL_PEERS_METRIC).decrement(1.0);
+        } else {
+            metrics::gauge!(NUM_REMOTE_PEERS_METRIC).decrement(1.0);
+        }
 
         Ok(())
     }

@@ -36,6 +36,7 @@ renegade-crypto = { path = "../../renegade-crypto" }
 state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
 util = { path = "../../util" }
+renegade-metrics = { path = "../../renegade-metrics" }
 
 # === Misc Dependencies === #
 itertools = "0.11"

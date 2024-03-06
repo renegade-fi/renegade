@@ -20,6 +20,7 @@ use circuits::zk_circuits::valid_wallet_create::{
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
@@ -33,9 +34,6 @@ use crate::helpers::find_merkle_path;
 
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
-
-/// Metric describing the number of new wallets created
-const NUM_NEW_WALLETS_METRIC: &str = "num_new_wallets";
 
 // --------------
 // | Task State |
