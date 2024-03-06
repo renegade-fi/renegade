@@ -36,4 +36,3 @@ pub const NUM_REMOTE_PEERS_METRIC: &str = "num_remote_peers";
 
 /// Metric tag for the asset of a deposit/withdrawal
 pub const ASSET_METRIC_TAG: &str = "asset";
-
