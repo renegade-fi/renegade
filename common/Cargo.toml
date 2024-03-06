@@ -20,6 +20,7 @@ mocks = [
 ark-mpc = { workspace = true }
 ark-ec = { version = "0.4", optional = true }
 ark-poly = { version = "0.4", optional = true }
+
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 ethers = "2.0"
@@ -28,6 +29,7 @@ k256 = { version = "0.13", features = ["ecdsa"] }
 mpc-plonk = { workspace = true, optional = true }
 mpc-relation = { workspace = true, optional = true }
 num-bigint = { workspace = true }
+num-traits = "0.2"
 signature = "2.0"
 
 # === Runtime + Networking === #

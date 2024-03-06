@@ -1612,6 +1612,7 @@ dependencies = [
  "mpc-plonk",
  "mpc-relation",
  "num-bigint",
+ "num-traits",
  "rand 0.8.5",
  "rand_core 0.5.1",
  "renegade-crypto",

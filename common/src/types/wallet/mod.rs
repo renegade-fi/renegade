@@ -3,6 +3,7 @@
 //! Separated out to aid discoverability on implementations
 
 mod balances;
+pub mod keychain;
 mod r#match;
 #[cfg(feature = "mocks")]
 pub mod mocks;
