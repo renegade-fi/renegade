@@ -702,8 +702,8 @@ impl Token {
             })
     }
 
-    /// Converts the amount of the token as an f64, accounting for the associated
-    /// number of decimals.
+    /// Converts the amount of the token as an f64, accounting for the
+    /// associated number of decimals.
     ///
     /// Note that due to conversion to f64, the result may lose precision.
     pub fn convert_to_decimal(&self, amount: u128) -> f64 {

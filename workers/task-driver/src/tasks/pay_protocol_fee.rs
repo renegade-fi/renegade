@@ -32,7 +32,7 @@ use crate::{
 };
 
 /// The name of the task
-const TASK_NAME: &str = "pay-fees";
+const TASK_NAME: &str = "pay-protocol-fee";
 /// The error emitted when a wallet is missing from state
 const ERR_WALLET_MISSING: &str = "wallet not found in global state";
 /// The error emitted when a balance for a given mint is missing
