@@ -6,7 +6,7 @@ use common::types::{
 };
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
 use libmdbx::TransactionKind;
-use tracing::error;
+use tracing::{error, warn};
 use util::err_str;
 
 use crate::storage::tx::StateTxn;
@@ -17,8 +17,6 @@ use super::{error::StateApplicatorError, Result, StateApplicator};
 const PENDING_STATE: &str = "Pending";
 /// Error emitted when a key cannot be found for a task
 const ERR_NO_KEY: &str = "key not found for task";
-/// Error emitted when a wallet cannot be found in state
-const ERR_NO_WALLET: &str = "wallet not found in state";
 
 /// Construct the running state for a newly started task
 fn new_running_state() -> QueuedTaskState {
@@ -172,9 +170,16 @@ impl StateApplicator {
         wallet_id: WalletIdentifier,
         tx: &StateTxn<'_, T>,
     ) -> Result<()> {
-        let wallet = tx
-            .get_wallet(&wallet_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_WALLET.to_string()))?;
+        let wallet = match tx.get_wallet(&wallet_id)? {
+            Some(wallet) => wallet,
+            // We simply skip running the matching engine if the wallet cannot be found, this may
+            // happen in a failed lookup task for example. We do not want to fail the tx
+            // in this case
+            None => {
+                warn!("wallet not found to run internal matching engine on: {wallet_id}");
+                return Ok(());
+            },
+        };
 
         for order_id in wallet.orders.keys() {
             let order = match tx.get_order_info(order_id)? {

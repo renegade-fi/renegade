@@ -1,8 +1,11 @@
 //! Defines wallet types useful throughout the workspace
 
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    iter,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use circuit_types::{
@@ -10,12 +13,16 @@ use circuit_types::{
     elgamal::EncryptionKey,
     fixed_point::FixedPoint,
     keychain::{PublicKeyChain, SecretIdentificationKey, SecretSigningKey},
+    native_helpers::create_wallet_shares_with_randomness,
     order::Order,
+    traits::BaseType,
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 use constants::Scalar;
 use derivative::Derivative;
+use itertools::Itertools;
 use num_bigint::BigUint;
+use renegade_crypto::hash::PoseidonCSPRNG;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -104,6 +111,54 @@ impl From<Wallet> for SizedCircuitWallet {
 }
 
 impl Wallet {
+    /// Create a new empty wallet from the given seed information
+    pub fn new_empty_wallet(
+        wallet_id: WalletIdentifier,
+        blinder_seed: Scalar,
+        share_seed: Scalar,
+        key_chain: KeyChain,
+    ) -> Self {
+        // Create a wallet with dummy shares, compute the shares, then update the wallet
+        let mut zero_iter = iter::repeat(Scalar::zero());
+        let dummy_shares = SizedWalletShare::from_scalars(&mut zero_iter);
+
+        let mut wallet = Self {
+            wallet_id,
+            orders: KeyedList::new(),
+            balances: KeyedList::new(),
+            match_fee: FixedPoint::from_integer(0),
+            managing_cluster: EncryptionKey::default(),
+            key_chain,
+            blinded_public_shares: dummy_shares.clone(),
+            private_shares: dummy_shares,
+            blinder: Scalar::zero(),
+            merkle_proof: None,
+            merkle_staleness: Arc::new(AtomicUsize::new(0)),
+        };
+
+        // Cast the wallet to a circuit type to use the circuit helpers
+        let circuit_wallet: SizedCircuitWallet = wallet.clone().into();
+
+        // Sample blinders and private shares
+        let mut blinder_csprng = PoseidonCSPRNG::new(blinder_seed);
+        let (blinder, blinder_private) = blinder_csprng.next_tuple().unwrap();
+
+        let share_csprng = PoseidonCSPRNG::new(share_seed);
+        let private_shares = share_csprng.take(SizedWalletShare::NUM_SCALARS).collect_vec();
+
+        let (private_shares, blinded_public_shares) = create_wallet_shares_with_randomness(
+            &circuit_wallet,
+            blinder,
+            blinder_private,
+            private_shares,
+        );
+        wallet.private_shares = private_shares;
+        wallet.blinded_public_shares = blinded_public_shares;
+        wallet.blinder = blinder;
+
+        wallet
+    }
+
     /// Invalidate the Merkle opening of a wallet after an update
     pub(crate) fn invalidate_merkle_opening(&mut self) {
         self.merkle_proof = None;

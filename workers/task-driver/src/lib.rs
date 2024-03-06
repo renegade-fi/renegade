@@ -21,3 +21,24 @@ mod running_task;
 pub mod tasks;
 pub mod traits;
 pub mod worker;
+
+use common::types::tasks::TaskDescriptor;
+use job_types::task_driver::{new_task_notification, TaskDriverQueue};
+use state::State;
+
+/// A helper to enqueue a task and await its completion
+/// Await the queueing, execution, and completion of a task
+pub async fn await_task(
+    task: TaskDescriptor,
+    state: &State,
+    task_queue: TaskDriverQueue,
+) -> Result<(), String> {
+    // Wait for the task to be queued
+    let (task_id, waiter) = state.append_task(task)?;
+    waiter.await?;
+
+    let (rx, job) = new_task_notification(task_id);
+    task_queue.send(job).unwrap();
+
+    rx.await.unwrap()
+}

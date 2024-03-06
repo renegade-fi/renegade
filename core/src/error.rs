@@ -14,6 +14,8 @@ pub enum CoordinatorError {
     Recovery(String),
     /// Failure to send a cancel signal to a worker
     CancelSend(String),
+    /// An error setting up the relayer
+    Setup(String),
     /// An error setting up global state
     State(String),
     /// An error setting up telemetry

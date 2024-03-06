@@ -18,6 +18,7 @@ arbitrum-client = { path = "../arbitrum-client" }
 circuit-types = { path = "../circuit-types" }
 chain-events = { path = "../workers/chain-events" }
 common = { path = "../common" }
+constants = { path = "../constants" }
 config = { path = "../config" }
 external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
@@ -34,6 +35,9 @@ util = { path = "../util" }
 
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }
+ethers = { workspace = true }
 lazy_static = "1.4"
 tracing = { workspace = true }
-opentelemetry = { version = "0.21", default-features = false, features = ["trace"]}
+opentelemetry = { version = "0.21", default-features = false, features = [
+    "trace",
+] }

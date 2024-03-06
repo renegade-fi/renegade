@@ -23,7 +23,7 @@ ark-poly = { version = "0.4", optional = true }
 
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
-ethers = "2.0"
+ethers = { workspace = true }
 jf-primitives = { workspace = true, optional = true }
 k256 = { version = "0.13", features = ["ecdsa"] }
 mpc-plonk = { workspace = true, optional = true }

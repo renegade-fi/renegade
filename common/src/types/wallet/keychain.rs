@@ -4,28 +4,32 @@ use std::borrow::Borrow;
 
 use circuit_types::keychain::{PublicKeyChain, SecretIdentificationKey};
 use constants::Scalar;
-use ethers::{signers::Wallet as EthWallet, utils::keccak256};
+use ethers::{signers::LocalWallet as EthWallet, utils::keccak256};
 use k256::ecdsa::SigningKey;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use num_traits::Num;
 use util::raw_err_str;
 
-use super::{KeyChain, PrivateKeyChain};
+use super::{KeyChain, PrivateKeyChain, WalletIdentifier};
 
 /// The message used to derive the blinder stream seed
-const BLINDER_STREAM_SEED_MESSAGE: &[u8] = b"blinder_stream_seed||v0";
+const BLINDER_STREAM_SEED_MESSAGE: &[u8] = b"blinder seed";
 /// The messages used to derive the share stream seed
-const SHARE_STREAM_SEED_MESSAGE: &[u8] = b"share_stream_seed||v0";
+const SHARE_STREAM_SEED_MESSAGE: &[u8] = b"share seed";
 /// The message used to derive the wallet's root key
-const ROOT_KEY_MESSAGE: &[u8] = b"root_key||v0";
+const ROOT_KEY_MESSAGE_PREFIX: &str = "Unlock your Renegade Wallet on chain ID:";
 /// The message used to derive the wallet's match key
-const MATCH_KEY_MESSAGE: &[u8] = b"match_key||v0";
+const MATCH_KEY_MESSAGE: &[u8] = b"match key";
+/// The message used to derive the wallet's ID
+const WALLET_ID_MESSAGE: &[u8] = b"wallet id";
 
 /// The number of bytes from a keccak hash
 const KECCAK_HASH_BYTES: usize = 32;
 /// The number of bytes we extend into to get a scalar
 const EXTENDED_BYTES: usize = 64;
+/// The number of bytes in a wallet ID
+const WALLET_ID_BYTES: usize = 16;
 
 lazy_static! {
     /// The secp256k1 scalar field modulus as a BigUint
@@ -41,16 +45,16 @@ lazy_static! {
 ///
 /// This does not necessarily match the implementation used in the clients to
 /// generate their wallets
-pub fn derive_wallet_keychain(eth_key: &SigningKey) -> Result<KeyChain, String> {
-    // Generate the match key
-    let sk_match_key = derive_scalar(MATCH_KEY_MESSAGE, eth_key)?;
-    let sk_match = SecretIdentificationKey::from(sk_match_key);
-    let pk_match = sk_match.get_public_key();
-
+pub fn derive_wallet_keychain(eth_key: &EthWallet, chain_id: u64) -> Result<KeyChain, String> {
     // Generate the root key
-    let sk_root_key = derive_signing_key(ROOT_KEY_MESSAGE, eth_key)?;
+    let sk_root_key = derive_signing_key(&get_root_key_msg(chain_id), eth_key)?;
     let sk_root = sk_root_key.borrow().into();
     let pk_root = sk_root_key.verifying_key().into();
+
+    // Generate the match key, this time using the root key to derive it
+    let sk_match_key = derive_scalar(MATCH_KEY_MESSAGE, &sk_root_key.into())?;
+    let sk_match = SecretIdentificationKey::from(sk_match_key);
+    let pk_match = sk_match.get_public_key();
 
     Ok(KeyChain {
         public_keys: PublicKeyChain { pk_root, pk_match },
@@ -59,30 +63,44 @@ pub fn derive_wallet_keychain(eth_key: &SigningKey) -> Result<KeyChain, String> 
 }
 
 /// Construct the blinder seed for the wallet
-pub fn get_blinder_seed(key: &SigningKey) -> Result<Scalar, String> {
+pub fn derive_blinder_seed(root_key: &EthWallet) -> Result<Scalar, String> {
     // Sign the blinder seed message and convert to a scalar
-    derive_scalar(BLINDER_STREAM_SEED_MESSAGE, key)
+    derive_scalar(BLINDER_STREAM_SEED_MESSAGE, root_key)
 }
 
 /// Construct the share seed for the wallet
-pub fn get_share_seed(key: &SigningKey) -> Result<Scalar, String> {
+pub fn derive_share_seed(root_key: &EthWallet) -> Result<Scalar, String> {
     // Sign the share seed message and convert to a scalar
-    derive_scalar(SHARE_STREAM_SEED_MESSAGE, key)
+    derive_scalar(SHARE_STREAM_SEED_MESSAGE, root_key)
+}
+
+/// Construct a wallet ID from the given Ethereum keypair
+///
+/// This is done to ensure deterministic wallet recovery
+pub fn derive_wallet_id(root_key: &EthWallet) -> Result<WalletIdentifier, String> {
+    let bytes = get_extended_sig_bytes(WALLET_ID_MESSAGE, root_key)?;
+    WalletIdentifier::from_slice(&bytes[..WALLET_ID_BYTES])
+        .map_err(raw_err_str!("failed to derive wallet ID from key: {}"))
 }
 
 // -----------
 // | Helpers |
 // -----------
 
+/// Get the root key message for the given chain ID
+fn get_root_key_msg(chain_id: u64) -> Vec<u8> {
+    format!("{} {}", ROOT_KEY_MESSAGE_PREFIX, chain_id).as_bytes().to_vec()
+}
+
 /// Get a `Scalar` from a signature on a message
-fn derive_scalar(msg: &[u8], key: &SigningKey) -> Result<Scalar, String> {
+fn derive_scalar(msg: &[u8], key: &EthWallet) -> Result<Scalar, String> {
     let sig_bytes = get_extended_sig_bytes(msg, key)?;
 
     Ok(Scalar::from_be_bytes_mod_order(&sig_bytes))
 }
 
 /// Derive a signing key from a signature on a message
-fn derive_signing_key(msg: &[u8], key: &SigningKey) -> Result<SigningKey, String> {
+fn derive_signing_key(msg: &[u8], key: &EthWallet) -> Result<SigningKey, String> {
     let sig_bytes = get_extended_sig_bytes(msg, key)?;
 
     // We must manually reduce the bytes to the base field as the k256 library
@@ -96,7 +114,7 @@ fn derive_signing_key(msg: &[u8], key: &SigningKey) -> Result<SigningKey, String
 }
 
 /// Sign a message, serialize the signature into bytes
-fn get_extended_sig_bytes(msg: &[u8], key: &SigningKey) -> Result<[u8; EXTENDED_BYTES], String> {
+fn get_extended_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; EXTENDED_BYTES], String> {
     let digest = keccak256(msg);
     let wallet = EthWallet::from(key.clone());
     let sig =
@@ -123,12 +141,16 @@ fn extend_to_64_bytes(bytes: &[u8]) -> [u8; EXTENDED_BYTES] {
 
 #[cfg(test)]
 mod test {
+    use ethers::signers::LocalWallet;
     use k256::ecdsa::SigningKey;
     use rand::thread_rng;
 
     use crate::types::wallet::keychain::get_extended_sig_bytes;
 
-    use super::{derive_wallet_keychain, get_blinder_seed, get_share_seed};
+    use super::{derive_blinder_seed, derive_share_seed, derive_wallet_keychain};
+
+    /// The dummy chain ID used for testing
+    const CHAIN_ID: u64 = 1;
 
     /// Tests that blinder seed derivation works
     ///
@@ -138,7 +160,7 @@ mod test {
         let mut rng = thread_rng();
         let key = SigningKey::random(&mut rng);
 
-        get_blinder_seed(&key).unwrap();
+        derive_blinder_seed(&key.into()).unwrap();
     }
 
     /// Tests that share seed derivation works
@@ -149,7 +171,7 @@ mod test {
         let mut rng = thread_rng();
         let key = SigningKey::random(&mut rng);
 
-        get_share_seed(&key).unwrap();
+        derive_share_seed(&key.into()).unwrap();
     }
 
     /// Tests that the wallet keychain derivation works
@@ -160,7 +182,7 @@ mod test {
         let mut rng = thread_rng();
         let key = SigningKey::random(&mut rng);
 
-        derive_wallet_keychain(&key).unwrap();
+        derive_wallet_keychain(&key.into(), CHAIN_ID).unwrap();
     }
 
     /// Tests that the key derivation is deterministic
@@ -169,13 +191,14 @@ mod test {
         let mut rng = thread_rng();
         let msg = b"test message";
         let key = SigningKey::random(&mut rng);
+        let wallet = LocalWallet::from(key);
 
-        let sig1 = get_extended_sig_bytes(msg, &key).unwrap();
-        let sig2 = get_extended_sig_bytes(msg, &key).unwrap();
+        let sig1 = get_extended_sig_bytes(msg, &wallet).unwrap();
+        let sig2 = get_extended_sig_bytes(msg, &wallet).unwrap();
         assert_eq!(sig1, sig2);
 
-        let keychain1 = derive_wallet_keychain(&key).unwrap();
-        let keychain2 = derive_wallet_keychain(&key).unwrap();
+        let keychain1 = derive_wallet_keychain(&wallet, CHAIN_ID).unwrap();
+        let keychain2 = derive_wallet_keychain(&wallet, CHAIN_ID).unwrap();
         assert_eq!(keychain1, keychain2);
     }
 }
