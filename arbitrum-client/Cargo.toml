@@ -27,7 +27,7 @@ ruint = { version = "1.11.1", features = ["num-bigint"] }
 mpc-relation = { workspace = true }
 
 # === Networking / Blockchain === #
-ethers = "2"
+ethers = { workspace = true }
 alloy-primitives = "0.3.1"
 alloy-sol-types = "0.3.1"
 

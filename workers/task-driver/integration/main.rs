@@ -10,7 +10,7 @@
 mod helpers;
 mod tests;
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use arbitrum_client::{
     client::{ArbitrumClient, ArbitrumClientConfig},
@@ -18,6 +18,7 @@ use arbitrum_client::{
 };
 use clap::Parser;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
+use ethers::signers::LocalWallet;
 use helpers::new_mock_task_driver;
 use job_types::{
     network_manager::NetworkManagerReceiver,
@@ -159,6 +160,7 @@ fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
 
 /// Setup a mock `ArbitrumClient` for the integration tests
 fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
+    let arb_priv_key = LocalWallet::from_str(&test_args.arbitrum_pkey).unwrap();
     let darkpool_addr =
         parse_addr_from_deployments_file(&test_args.deployments_path, DARKPOOL_PROXY_CONTRACT_KEY)
             .unwrap();
@@ -167,7 +169,7 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
     block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
         chain: Chain::Devnet,
         darkpool_addr,
-        arb_priv_key: test_args.arbitrum_pkey.clone(),
+        arb_priv_key,
         rpc_url: test_args.devnet_url.clone(),
     }))
     .unwrap()

@@ -510,7 +510,7 @@ mod test {
     use config::RelayerConfig;
     use external_api::{http::PingResponse, EmptyRequestResponse};
     use reqwest::Method;
-    use test_helpers::arbitrum::DEFAULT_DEVNET_PKEY;
+    use test_helpers::arbitrum::get_devnet_key;
 
     use crate::MockNodeController;
 
@@ -519,7 +519,7 @@ mod test {
     fn test_ping_mock() {
         let conf = RelayerConfig {
             rpc_url: Some("http://localhost:1234".to_string()),
-            arbitrum_private_key: DEFAULT_DEVNET_PKEY.to_string(),
+            arbitrum_private_key: get_devnet_key(),
             ..Default::default()
         };
 

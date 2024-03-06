@@ -47,7 +47,7 @@ uuid = { version = "1.1.2", features = ["v4", "serde"] }
 metrics = { workspace = true }
 
 [dev-dependencies]
-ethers = "2"
+ethers = { workspace = true }
 alloy-primitives = "0.3.1"
 
 clap = { version = "4.0", features = ["derive"] }
