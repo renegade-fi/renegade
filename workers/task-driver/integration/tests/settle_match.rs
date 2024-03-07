@@ -42,9 +42,11 @@ use uuid::Uuid;
 /// The price at which the mock trade executes at
 const EXECUTION_PRICE: f64 = 9.6;
 /// The amounts that each order is for
-const BUY_ORDER_AMOUNT: u128 = 10;
+const BUY_ORDER_AMOUNT: u128 = 100_000;
 /// The amount of the sell order
-const SELL_ORDER_AMOUNT: u128 = 1;
+const SELL_ORDER_AMOUNT: u128 = 10_000;
+/// The relayer fee to use for testing
+const RELAYER_FEE: f64 = 0.002; // 20 bps
 
 // -----------
 // | Helpers |
@@ -78,7 +80,7 @@ fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
         OrderSide::Sell => biguint_from_hex_string(&test_args.erc20_addr1).unwrap(),
     };
 
-    Balance::new_from_mint_and_amount(mint, Amount::from(100u8))
+    Balance::new_from_mint_and_amount(mint, Amount::from(100_000u32))
 }
 
 /// Setup a wallet with a given order and balance
@@ -90,10 +92,13 @@ async fn setup_wallet_with_order_balance(
     test_args: IntegrationTestArgs,
 ) -> Result<(Wallet, Scalar, Scalar)> {
     let mut rng = thread_rng();
+    let managing_cluster = test_args.state.get_fee_decryption_key()?.public_key();
 
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
     let mut wallet = mock_empty_wallet();
+    wallet.match_fee = FixedPoint::from_f64_round_down(RELAYER_FEE);
+    wallet.managing_cluster = managing_cluster;
 
     // Add the balance and order into the wallet
     wallet.balances.insert(balance.mint.clone(), balance.clone());
