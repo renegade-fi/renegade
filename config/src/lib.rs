@@ -3,14 +3,15 @@
 mod token_remaps;
 
 use arbitrum_client::constants::Chain;
+use circuit_types::elgamal::DecryptionKey;
 use clap::Parser;
+use colored::*;
 use common::types::{
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
-    wallet::Wallet,
 };
 use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
-use ethers::signers::LocalWallet;
+use ethers::{core::rand::thread_rng, signers::LocalWallet};
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
@@ -152,10 +153,9 @@ struct Cli {
     /// Defaults to the devnet pre-funded key
     #[clap(long = "arbitrum-pkey", value_parser, default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659")]
     pub arbitrum_private_key: String,
-    /// A file holding a json representation of the wallets the local node
-    /// should manage
-    #[clap(short, long, value_parser)]
-    pub wallet_file: Option<String>,
+    /// The key used to decrypt fee payments
+    #[clap(long = "fee-decryption-key", value_parser)]
+    pub fee_decryption_key: Option<String>,
 
     // -------------
     // | Telemetry |
@@ -251,8 +251,6 @@ pub struct RelayerConfig {
     // -----------
     // | Secrets |
     // -----------
-    /// The apriori known wallets to begin managing
-    pub wallets: Vec<Wallet>,
     /// The cluster ID, a parsed version of the cluster's pubkey
     pub cluster_id: ClusterId,
     /// The Coinbase API key to use for price streaming
@@ -265,6 +263,8 @@ pub struct RelayerConfig {
     pub arbitrum_private_key: LocalWallet,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
+    /// The decryption key used to settle managed match fees
+    pub fee_decryption_key: DecryptionKey,
 
     // -------------
     // | Telemetry |
@@ -314,13 +314,13 @@ impl Clone for RelayerConfig {
             disable_price_reporter: self.disable_price_reporter,
             disabled_exchanges: self.disabled_exchanges.clone(),
             disable_fee_validation: self.disable_fee_validation,
-            wallets: self.wallets.clone(),
             cluster_keypair: DalekKeypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
             cluster_id: self.cluster_id.clone(),
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),
             rpc_url: self.rpc_url.clone(),
             arbitrum_private_key: self.arbitrum_private_key.clone(),
+            fee_decryption_key: self.fee_decryption_key,
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
             otlp_enabled: self.otlp_enabled,
@@ -393,6 +393,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
     // Parse the local relayer's arbitrum wallet from the cli
     let arbitrum_private_key =
         LocalWallet::from_str(&cli_args.arbitrum_private_key).map_err(|e| e.to_string())?;
+    let fee_decryption_key = parse_decryption_key(cli_args.fee_decryption_key)?;
 
     // Parse the p2p keypair or generate one
     let p2p_key = if let Some(keypair) = cli_args.p2p_key {
@@ -431,13 +432,13 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         disable_price_reporter: cli_args.disable_price_reporter,
         disabled_exchanges: cli_args.disabled_exchanges,
         disable_fee_validation: cli_args.disable_fee_validation,
-        wallets: parse_wallet_file(cli_args.wallet_file)?,
         cluster_keypair: keypair,
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
         rpc_url: cli_args.rpc_url,
         arbitrum_private_key,
+        fee_decryption_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
         otlp_enabled: cli_args.otlp_enabled,
@@ -516,16 +517,6 @@ fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, String> {
     Ok(config_file_args)
 }
 
-/// Parse a file holding wallet data
-fn parse_wallet_file(file_name: Option<String>) -> Result<Vec<Wallet>, String> {
-    if file_name.is_none() {
-        return Ok(Vec::new());
-    }
-
-    let file_data = fs::read_to_string(file_name.unwrap()).map_err(|err| err.to_string())?;
-    serde_json::from_str(&file_data).map_err(|err| err.to_string())
-}
-
 /// Helper method to convert a toml value to a string
 fn toml_value_to_string(val: &Value) -> Result<String, String> {
     Ok(match val {
@@ -550,6 +541,17 @@ fn set_contract_from_file(config: &mut RelayerConfig, file: Option<String>) -> R
     }
 
     Ok(())
+}
+
+/// Parse the relayer's decryption key from a string
+pub fn parse_decryption_key(key_str: Option<String>) -> Result<DecryptionKey, String> {
+    if let Some(k) = key_str {
+        DecryptionKey::from_hex_str(&k)
+    } else {
+        // Must print here as logger is not yet setup
+        println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
+        Ok(DecryptionKey::random(&mut thread_rng()))
+    }
 }
 
 /// Runtime validation of the keypair passed into the relayer via config

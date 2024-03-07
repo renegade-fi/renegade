@@ -5,19 +5,25 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
+use circuit_types::balance::Balance;
 use circuit_types::Amount;
+use circuits::zk_circuits::valid_relayer_fee_settlement::{
+    SizedValidRelayerFeeSettlementStatement, SizedValidRelayerFeeSettlementWitness,
+};
 use common::types::proof_bundles::RelayerFeeSettlementBundle;
 use common::types::tasks::PayRelayerFeeTaskDescriptor;
 use common::types::wallet::Wallet;
 use job_types::network_manager::NetworkManagerQueue;
-use job_types::proof_manager::ProofManagerQueue;
+use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use num_bigint::BigUint;
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use tracing::instrument;
+use util::err_str;
 
 use crate::driver::StateWrapper;
+use crate::helpers::{enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 /// The name of the task
@@ -27,6 +33,8 @@ const TASK_NAME: &str = "pay-relayer-fee";
 const WALLET_NOT_FOUND: &str = "wallet not found";
 /// The error message emitted when the balance is missing
 const ERR_BALANCE_MISSING: &str = "balance missing";
+/// The error message emitted when a Merkle proof is missing
+const ERR_NO_MERKLE_PROOF: &str = "Merkle proof missing";
 
 // --------------
 // | Task State |
@@ -82,6 +90,8 @@ pub enum PayRelayerFeeTaskError {
     Arbitrum(String),
     /// An error generating a proof for fee payment
     ProofGeneration(String),
+    /// An error generating signatures for update
+    Signature(String),
     /// An error interacting with the state
     State(String),
     /// An error updating validity proofs after the fees are settled
@@ -95,6 +105,7 @@ impl TaskError for PayRelayerFeeTaskError {
             | PayRelayerFeeTaskError::ProofGeneration(_)
             | PayRelayerFeeTaskError::State(_)
             | PayRelayerFeeTaskError::UpdateValidityProofs(_) => true,
+            PayRelayerFeeTaskError::Signature(_) => false,
         }
     }
 }
@@ -122,11 +133,15 @@ pub struct PayRelayerFeeTask {
     /// The balance to pay fees for
     pub mint: BigUint,
     /// The wallet that this task pays fees for
-    pub old_wallet: Wallet,
+    pub old_sender_wallet: Wallet,
     /// The new wallet after fees have been paid
-    pub new_wallet: Wallet,
+    pub new_sender_wallet: Wallet,
+    /// The wallet that receives this fee payment
+    pub old_recipient_wallet: Wallet,
+    /// The new recipient wallet after fees have been paid
+    pub new_recipient_wallet: Wallet,
     /// The proof of `VALID RELAYER FEE SETTLEMENT` used to pay the protocol fee
-    pub protocol_proof: Option<RelayerFeeSettlementBundle>,
+    pub proof: Option<RelayerFeeSettlementBundle>,
     /// The arbitrum client used for submitting transactions
     pub arbitrum_client: ArbitrumClient,
     /// A hand to the global state
@@ -146,17 +161,24 @@ impl Task for PayRelayerFeeTask {
     type Descriptor = PayRelayerFeeTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        let old_wallet = ctx
-            .state
+        let state = &ctx.state;
+        let sender_wallet = state
             .get_wallet(&descriptor.wallet_id)?
             .ok_or_else(|| PayRelayerFeeTaskError::State(WALLET_NOT_FOUND.to_string()))?;
-        let new_wallet = Self::get_new_wallet(&descriptor.balance_mint, &old_wallet)?;
+        let recipient_wallet = state
+            .get_local_relayer_wallet()?
+            .ok_or_else(|| PayRelayerFeeTaskError::State(WALLET_NOT_FOUND.to_string()))?;
+
+        let (new_sender_wallet, new_recipient_wallet) =
+            Self::get_new_wallets(&descriptor.balance_mint, &sender_wallet, &recipient_wallet)?;
 
         Ok(Self {
             mint: descriptor.balance_mint,
-            old_wallet,
-            new_wallet,
-            protocol_proof: None,
+            old_sender_wallet: sender_wallet,
+            new_sender_wallet,
+            old_recipient_wallet: recipient_wallet,
+            new_recipient_wallet,
+            proof: None,
             arbitrum_client: ctx.arbitrum_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
@@ -168,7 +190,29 @@ impl Task for PayRelayerFeeTask {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
     async fn step(&mut self) -> Result<(), Self::Error> {
-        todo!()
+        match self.state() {
+            PayRelayerFeeTaskState::Pending => {
+                self.task_state = PayRelayerFeeTaskState::ProvingPayment;
+            },
+            PayRelayerFeeTaskState::ProvingPayment => {
+                self.generate_proof().await?;
+                self.task_state = PayRelayerFeeTaskState::SubmittingPayment;
+            },
+            PayRelayerFeeTaskState::SubmittingPayment => {
+                self.submit_payment().await?;
+                self.task_state = PayRelayerFeeTaskState::FindingOpening;
+            },
+            PayRelayerFeeTaskState::FindingOpening => {
+                self.find_opening().await?;
+                self.task_state = PayRelayerFeeTaskState::UpdatingValidityProofs;
+            },
+            PayRelayerFeeTaskState::UpdatingValidityProofs => {
+                self.update_validity_proofs().await?;
+                self.task_state = PayRelayerFeeTaskState::Completed;
+            },
+            PayRelayerFeeTaskState::Completed => panic!("step() called in state Completed"),
+        }
+        Ok(())
     }
 
     fn completed(&self) -> bool {
@@ -189,23 +233,164 @@ impl Task for PayRelayerFeeTask {
 // -----------------------
 
 impl PayRelayerFeeTask {
+    /// Generate a proof of `VALID RELAYER FEE SETTLEMENT` for the balance
+    async fn generate_proof(&mut self) -> Result<(), PayRelayerFeeTaskError> {
+        let (witness, statement) = self.get_witness_statement()?;
+        let job = ProofJob::ValidRelayerFeeSettlement { witness, statement };
+
+        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
+            .map_err(PayRelayerFeeTaskError::ProofGeneration)?;
+
+        // Await the proof
+        let bundle = proof_recv.await.map_err(err_str!(PayRelayerFeeTaskError::ProofGeneration))?;
+        self.proof = Some(bundle.proof.into());
+        Ok(())
+    }
+
+    /// Submit a `settle_relayer_fee` transaction to the contract
+    async fn submit_payment(&mut self) -> Result<(), PayRelayerFeeTaskError> {
+        let proof = self.proof.clone().unwrap();
+
+        // Sign the commitment to the new wallet, authorizing the fee receipt
+        let new_wallet_comm = self.new_recipient_wallet.get_wallet_share_commitment();
+        let sig = self
+            .old_recipient_wallet
+            .sign_commitment(new_wallet_comm)
+            .map_err(err_str!(PayRelayerFeeTaskError::Signature))?;
+
+        self.arbitrum_client
+            .settle_online_relayer_fee(&proof, sig.to_vec())
+            .await
+            .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))
+    }
+
+    /// Find the new Merkle opening for the user and relayer's wallets
+    async fn find_opening(&mut self) -> Result<(), PayRelayerFeeTaskError> {
+        // Find the opening for the sender's wallet
+        let sender_opening = find_merkle_path(&self.new_sender_wallet, &self.arbitrum_client)
+            .await
+            .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))?;
+        self.new_sender_wallet.merkle_proof = Some(sender_opening);
+
+        // Find the opening for the recipient's wallet
+        let recipient_opening = find_merkle_path(&self.new_recipient_wallet, &self.arbitrum_client)
+            .await
+            .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))?;
+        self.new_recipient_wallet.merkle_proof = Some(recipient_opening);
+
+        self.state.update_wallet(self.new_sender_wallet.clone())?.await?;
+        self.state.update_wallet(self.new_recipient_wallet.clone())?.await?;
+        Ok(())
+    }
+
+    /// Update the validity proofs for the user's wallet
+    ///
+    /// The recipient (relayer) wallet does not need to be updated as it holds
+    /// no orders
+    async fn update_validity_proofs(&mut self) -> Result<(), PayRelayerFeeTaskError> {
+        update_wallet_validity_proofs(
+            &self.new_sender_wallet,
+            self.proof_queue.clone(),
+            self.state.clone(),
+            self.network_sender.clone(),
+        )
+        .await
+        .map_err(PayRelayerFeeTaskError::UpdateValidityProofs)
+    }
+
     // -----------
     // | Helpers |
     // -----------
 
+    /// Create a witness and statement for a proof of `VALID RELAYER FEE
+    /// SETTLEMENT`
+    fn get_witness_statement(
+        &self,
+    ) -> Result<
+        (SizedValidRelayerFeeSettlementWitness, SizedValidRelayerFeeSettlementStatement),
+        PayRelayerFeeTaskError,
+    > {
+        let sender_wallet = &self.old_sender_wallet;
+        let new_sender_wallet = &self.new_sender_wallet;
+        let recipient_wallet = &self.old_recipient_wallet;
+        let new_recipient_wallet = &self.new_recipient_wallet;
+
+        let sender_public_shares = sender_wallet.blinded_public_shares.clone();
+        let sender_private_shares = sender_wallet.private_shares.clone();
+        let sender_updated_public_shares = new_sender_wallet.blinded_public_shares.clone();
+        let sender_updated_private_shares = new_sender_wallet.private_shares.clone();
+        let recipient_public_shares = recipient_wallet.blinded_public_shares.clone();
+        let recipient_private_shares = recipient_wallet.private_shares.clone();
+        let recipient_updated_public_shares = new_recipient_wallet.blinded_public_shares.clone();
+        let recipient_updated_private_shares = new_recipient_wallet.private_shares.clone();
+
+        let sender_opening = sender_wallet
+            .merkle_proof
+            .clone()
+            .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
+        let recipient_opening = recipient_wallet
+            .merkle_proof
+            .clone()
+            .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
+
+        let recipient_decryption_key = self.state.get_fee_decryption_key()?;
+        let sender_balance_index = sender_wallet.get_balance_index(&self.mint).unwrap();
+        let recipient_balance_index = new_recipient_wallet.get_balance_index(&self.mint).unwrap();
+
+        let statement = SizedValidRelayerFeeSettlementStatement {
+            sender_root: sender_opening.compute_root(),
+            recipient_root: recipient_opening.compute_root(),
+            sender_nullifier: self.old_sender_wallet.get_wallet_nullifier(),
+            recipient_nullifier: self.old_recipient_wallet.get_wallet_nullifier(),
+            sender_wallet_commitment: self.new_sender_wallet.get_wallet_share_commitment(),
+            recipient_wallet_commitment: self.new_recipient_wallet.get_wallet_share_commitment(),
+            sender_updated_public_shares,
+            recipient_updated_public_shares,
+            recipient_pk_root: recipient_wallet.key_chain.public_keys.pk_root.clone(),
+        };
+
+        let witness = SizedValidRelayerFeeSettlementWitness {
+            sender_public_shares,
+            sender_private_shares,
+            sender_updated_private_shares,
+            recipient_public_shares,
+            recipient_private_shares,
+            recipient_updated_private_shares,
+            sender_opening: sender_opening.into(),
+            recipient_opening: recipient_opening.into(),
+            recipient_decryption_key,
+            sender_balance_index,
+            recipient_balance_index,
+        };
+
+        Ok((witness, statement))
+    }
+
     /// Clone the old wallet and update it to reflect the fee payment
-    fn get_new_wallet(
+    fn get_new_wallets(
         mint: &BigUint,
-        old_wallet: &Wallet,
-    ) -> Result<Wallet, PayRelayerFeeTaskError> {
-        let mut new_wallet = old_wallet.clone();
-        let balance = new_wallet
+        sender_wallet: &Wallet,
+        recipient_wallet: &Wallet,
+    ) -> Result<(Wallet, Wallet), PayRelayerFeeTaskError> {
+        let mut new_sender_wallet = sender_wallet.clone();
+        let mut new_recipient_wallet = recipient_wallet.clone();
+
+        let balance = new_sender_wallet
             .get_balance_mut(mint)
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_BALANCE_MISSING.to_string()))?;
+        let mint = balance.mint.clone();
+        let relayer_fee = balance.relayer_fee_balance;
 
+        // Update the sender wallet
         balance.relayer_fee_balance = Amount::from(0u8);
-        new_wallet.reblind_wallet();
+        new_sender_wallet.reblind_wallet();
 
-        Ok(new_wallet)
+        // Update the recipient wallet
+        new_recipient_wallet
+            .add_balance(Balance::new_from_mint_and_amount(mint, relayer_fee))
+            .map_err(err_str!(PayRelayerFeeTaskError::State))?;
+        new_recipient_wallet.reblind_wallet();
+
+        Ok((new_sender_wallet, new_recipient_wallet))
     }
 }
