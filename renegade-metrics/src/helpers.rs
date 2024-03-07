@@ -6,8 +6,9 @@ use num_bigint::BigUint;
 use util::hex::biguint_to_hex_string;
 
 use crate::labels::{
-    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC,
-    NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
+    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
+    MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS,
+    WITHDRAWAL_VOLUME_METRIC,
 };
 
 /// Get the human-readable asset and volume of
@@ -57,4 +58,9 @@ pub fn maybe_record_transfer_metrics(transfer: &Option<ExternalTransferWithAuth>
 pub fn record_match_volume(match_result: &MatchResult) {
     record_volume(&match_result.base_mint, match_result.base_amount, MATCH_BASE_VOLUME_METRIC);
     record_volume(&match_result.quote_mint, match_result.quote_amount, MATCH_QUOTE_VOLUME_METRIC);
+}
+
+/// Record the volume of a fee settlement into the relayer's wallet
+pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
+    record_volume(mint, amount, FEES_COLLECTED_METRIC);
 }

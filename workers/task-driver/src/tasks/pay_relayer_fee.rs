@@ -16,6 +16,7 @@ use common::types::wallet::Wallet;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use num_bigint::BigUint;
+use renegade_metrics::helpers::record_relayer_fee_settlement;
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
@@ -209,6 +210,11 @@ impl Task for PayRelayerFeeTask {
             PayRelayerFeeTaskState::UpdatingValidityProofs => {
                 self.update_validity_proofs().await?;
                 self.task_state = PayRelayerFeeTaskState::Completed;
+
+                // Record metrics for fee settlement
+                let mint = &self.mint;
+                let amt = self.old_sender_wallet.get_balance(mint).unwrap().relayer_fee_balance;
+                record_relayer_fee_settlement(mint, amt)
             },
             PayRelayerFeeTaskState::Completed => panic!("step() called in state Completed"),
         }
@@ -378,7 +384,6 @@ impl PayRelayerFeeTask {
         let balance = new_sender_wallet
             .get_balance_mut(mint)
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_BALANCE_MISSING.to_string()))?;
-        let mint = balance.mint.clone();
         let relayer_fee = balance.relayer_fee_balance;
 
         // Update the sender wallet
@@ -387,7 +392,7 @@ impl PayRelayerFeeTask {
 
         // Update the recipient wallet
         new_recipient_wallet
-            .add_balance(Balance::new_from_mint_and_amount(mint, relayer_fee))
+            .add_balance(Balance::new_from_mint_and_amount(mint.clone(), relayer_fee))
             .map_err(err_str!(PayRelayerFeeTaskError::State))?;
         new_recipient_wallet.reblind_wallet();
 
