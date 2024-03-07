@@ -48,7 +48,8 @@ async fn test_pay_protocol_fee(test_args: IntegrationTestArgs) -> Result<()> {
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Pay the protocol fee
-    let descriptor = PayProtocolFeeTaskDescriptor::new(wallet.wallet_id, bal.mint.clone());
+    let descriptor =
+        PayProtocolFeeTaskDescriptor::new(wallet.wallet_id, bal.mint.clone()).expect("infallible");
     await_task(descriptor.into(), &test_args).await?;
 
     // Check the wallet, first from global state

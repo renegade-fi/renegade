@@ -17,6 +17,7 @@ use arbitrum_client::{
     constants::Chain,
 };
 use clap::Parser;
+use common::types::token::TOKEN_REMAPS;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use ethers::signers::LocalWallet;
 use helpers::new_mock_task_driver;
@@ -181,6 +182,9 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
 
 /// Setup code for the integration tests
 fn setup_integration_tests(test_args: &CliArgs) {
+    // Setup token remaps, this is used in metrics collection, will panic if not set
+    TOKEN_REMAPS.set(Default::default()).unwrap();
+
     // Configure logging
     if matches!(test_args.verbosity, TestVerbosity::Full) {
         util::telemetry::setup_system_logger(LevelFilter::INFO);
