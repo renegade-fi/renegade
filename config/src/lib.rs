@@ -3,7 +3,7 @@
 mod token_remaps;
 
 use arbitrum_client::constants::Chain;
-use circuit_types::elgamal::DecryptionKey;
+use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use colored::*;
 use common::types::{
@@ -46,6 +46,17 @@ struct Cli {
     /// An auth config file to read from
     #[clap(long, value_parser)]
     pub config_file: Option<String>,
+
+    // -----------------------------
+    // | Application Level Configs |
+    // -----------------------------
+
+    /// The take rate of this relayer on a managed match, i.e. the amount of the received asset 
+    /// that the relayer takes as a fee
+    /// 
+    /// Defaults to 20 basis points
+    #[clap(long, value_parser, default_value = "0.002")]
+    pub match_take_rate: f64,
 
     // -----------------------
     // | Environment Configs |
@@ -123,9 +134,6 @@ struct Cli {
     /// Disables exchanges for price reporting
     #[clap(long, value_parser, num_args=1.., value_delimiter=' ')]
     pub disabled_exchanges: Vec<Exchange>,
-    /// Flag to disable fee validation
-    #[clap(long, value_parser)]
-    pub disable_fee_validation: bool,
     /// Whether or not to run the relayer in debug mode
     #[clap(short, long, value_parser)]
     pub debug: bool,
@@ -193,6 +201,13 @@ struct Cli {
 /// Defines the system config for the relayer
 #[derive(Debug)]
 pub struct RelayerConfig {
+    // -----------------------------
+    // | Application Level Configs |
+    // -----------------------------
+    /// The take rate of this relayer on a managed match, i.e. the amount of the
+    /// received asset that the relayer takes as a fee
+    pub match_take_rate: FixedPoint,
+
     // -----------------------
     // | Environment Configs |
     // -----------------------
@@ -243,8 +258,6 @@ pub struct RelayerConfig {
     pub disable_price_reporter: bool,
     /// The exchanges explicitly disabled for price reports
     pub disabled_exchanges: Vec<Exchange>,
-    /// Whether to disable fee validation, allowing for zero fees
-    pub disable_fee_validation: bool,
     /// Whether or not the relayer is in debug mode
     pub debug: bool,
 
@@ -299,6 +312,7 @@ impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
             version: self.version.clone(),
+            match_take_rate: self.match_take_rate,
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
             bootstrap_servers: self.bootstrap_servers.clone(),
@@ -313,7 +327,6 @@ impl Clone for RelayerConfig {
             public_ip: self.public_ip,
             disable_price_reporter: self.disable_price_reporter,
             disabled_exchanges: self.disabled_exchanges.clone(),
-            disable_fee_validation: self.disable_fee_validation,
             cluster_keypair: DalekKeypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
             cluster_id: self.cluster_id.clone(),
             coinbase_api_key: self.coinbase_api_key.clone(),
@@ -417,6 +430,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
 
     let mut config = RelayerConfig {
         version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
+        match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
@@ -431,7 +445,6 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         public_ip: cli_args.public_ip,
         disable_price_reporter: cli_args.disable_price_reporter,
         disabled_exchanges: cli_args.disabled_exchanges,
-        disable_fee_validation: cli_args.disable_fee_validation,
         cluster_keypair: keypair,
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,

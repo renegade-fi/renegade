@@ -1,7 +1,7 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
-use circuit_types::{balance::Balance, elgamal::BabyJubJubPoint, order::Order};
+use circuit_types::{balance::Balance, order::Order};
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
@@ -161,9 +161,11 @@ impl TypedHandler for CreateWalletHandler {
         mut req: Self::Request,
         _params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
-        // TODO: Overwrite with relayer key, this is patch for the moment
-        let key = BabyJubJubPoint::default();
-        req.wallet.managing_cluster = jubjub_to_hex_string(&key);
+        // Overwrite the managing cluster and the match fee with the configured values
+        let relayer_key = self.global_state.get_fee_decryption_key()?.public_key();
+        let relayer_take_rate = self.global_state.get_relayer_take_rate()?;
+        req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
+        req.wallet.match_fee = relayer_take_rate;
 
         // Create an async task to drive this new wallet into the on-chain state
         // and create proofs of validity

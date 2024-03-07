@@ -1,6 +1,6 @@
 //! Storage access methods for the local node's metadata
 
-use circuit_types::elgamal::DecryptionKey;
+use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     wallet::WalletIdentifier,
@@ -30,7 +30,9 @@ const LOCAL_ADDR_KEY: &str = "local-addr";
 const LOCAL_WALLET_ID_KEY: &str = "local-wallet-id";
 /// The key for the local relayer's fee decryption key in the node metadata
 /// table
-const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee";
+const LOCAL_RELAYER_DECRYPTION_KEY: &str = "local-relayer-decryption-key";
+/// The key for the local relayer's match take rate in the node metadata table
+const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
 
 // -----------
 // | Helpers |
@@ -92,8 +94,15 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get the local relayer's fee decryption key
     pub fn get_fee_decryption_key(&self) -> Result<DecryptionKey, StorageError> {
         self.inner()
-            .read(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string())?
-            .ok_or_else(|| err_not_found(LOCAL_RELAYER_FEE_KEY))
+            .read(NODE_METADATA_TABLE, &LOCAL_RELAYER_DECRYPTION_KEY.to_string())?
+            .ok_or_else(|| err_not_found(LOCAL_RELAYER_DECRYPTION_KEY))
+    }
+
+    /// Get the local relayer's match take rate
+    pub fn get_relayer_take_rate(&self) -> Result<FixedPoint, StorageError> {
+        self.inner()
+            .read(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string())?
+            .ok_or_else(|| err_not_found(RELAYER_TAKE_RATE_KEY))
     }
 }
 
@@ -130,6 +139,11 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Set the local relayer's fee decryption key
     pub fn set_fee_decryption_key(&self, fee_key: &DecryptionKey) -> Result<(), StorageError> {
-        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), fee_key)
+        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_DECRYPTION_KEY.to_string(), fee_key)
+    }
+
+    /// Set the local relayer's match take rate
+    pub fn set_relayer_take_rate(&self, take_rate: &FixedPoint) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string(), take_rate)
     }
 }
