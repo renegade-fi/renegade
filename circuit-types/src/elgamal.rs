@@ -55,7 +55,8 @@ impl DecryptionKey {
     /// Parse a decryption key from a hex string
     pub fn from_hex_str(s: &str) -> Result<Self, String> {
         let stripped = s.strip_prefix("0x").unwrap_or(s);
-        let key_bigint = BigUint::from_str_radix(stripped, 16).map_err(|e| e.to_string())?;
+        let key_bigint =
+            BigUint::from_str_radix(stripped, 16 /* radix */).map_err(|e| e.to_string())?;
 
         Ok(Self { key: biguint_to_jubjub(&key_bigint) })
     }
@@ -98,7 +99,6 @@ impl<'de> Deserialize<'de> for DecryptionKey {
     where
         D: serde::Deserializer<'de>,
     {
-        // Deserialize as a sequence to avoid issues with serde formats
         let bytes = <Vec<u8>>::deserialize(deserializer)?;
         Self::deserialize_compressed(bytes.as_slice()).map_err(serde::de::Error::custom)
     }

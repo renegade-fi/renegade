@@ -20,6 +20,8 @@ pub const WITHDRAWAL_VOLUME_METRIC: &str = "withdrawal_volume";
 pub const MATCH_BASE_VOLUME_METRIC: &str = "match_base_volume";
 /// Metric describing the volume of the quote asset in a match
 pub const MATCH_QUOTE_VOLUME_METRIC: &str = "match_quote_volume";
+/// Metric describing the total fees collected by asset
+pub const FEES_COLLECTED_METRIC: &str = "fees_collected";
 
 // P2P metrics
 
