@@ -1,6 +1,6 @@
 //! Stores state information relating to the node's configuration
 
-use circuit_types::elgamal::DecryptionKey;
+use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use common::types::{
     gossip::{ClusterId, PeerInfo, WrappedPeerId},
     wallet::{Wallet, WalletIdentifier},
@@ -62,6 +62,15 @@ impl State {
         Ok(key)
     }
 
+    /// Get the local relayer's match take rate
+    pub fn get_relayer_take_rate(&self) -> Result<FixedPoint, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let rate = tx.get_relayer_take_rate()?;
+        tx.commit()?;
+
+        Ok(rate)
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -108,6 +117,7 @@ impl State {
         tx.set_cluster_id(&config.cluster_id)?;
         tx.set_node_keypair(&config.p2p_key)?;
         tx.set_fee_decryption_key(&config.fee_decryption_key)?;
+        tx.set_relayer_take_rate(&config.match_take_rate)?;
 
         tx.commit()?;
         Ok(())
