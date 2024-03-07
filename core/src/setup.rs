@@ -8,7 +8,7 @@ use std::time::Duration;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor},
     wallet::{
-        keychain::{
+        derivation::{
             derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
         },
         KeyChain, Wallet, WalletIdentifier,

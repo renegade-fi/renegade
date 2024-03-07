@@ -1,6 +1,10 @@
 //! Storage access methods for the local node's metadata
 
-use common::types::gossip::{ClusterId, WrappedPeerId};
+use circuit_types::elgamal::DecryptionKey;
+use common::types::{
+    gossip::{ClusterId, WrappedPeerId},
+    wallet::WalletIdentifier,
+};
 use libmdbx::{TransactionKind, RW};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
@@ -22,6 +26,11 @@ const CLUSTER_ID_KEY: &str = "cluster-id";
 const NODE_KEYPAIR_KEY: &str = "node-keypair";
 /// The name of the local peer addr in the node metadata table
 const LOCAL_ADDR_KEY: &str = "local-addr";
+/// The key for the local relayer's wallet ID in the node metadata table
+const LOCAL_WALLET_ID_KEY: &str = "local-wallet-id";
+/// The key for the local relayer's fee decryption key in the node metadata
+/// table
+const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee";
 
 // -----------
 // | Helpers |
@@ -72,6 +81,20 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
             .read(NODE_METADATA_TABLE, &LOCAL_ADDR_KEY.to_string())?
             .ok_or_else(|| err_not_found(LOCAL_ADDR_KEY))
     }
+
+    /// Get the wallet ID of the local relayer's wallet
+    pub fn get_local_node_wallet(&self) -> Result<WalletIdentifier, StorageError> {
+        self.inner()
+            .read(NODE_METADATA_TABLE, &LOCAL_WALLET_ID_KEY.to_string())?
+            .ok_or_else(|| err_not_found(LOCAL_WALLET_ID_KEY))
+    }
+
+    /// Get the local relayer's fee decryption key
+    pub fn get_fee_decryption_key(&self) -> Result<DecryptionKey, StorageError> {
+        self.inner()
+            .read(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string())?
+            .ok_or_else(|| err_not_found(LOCAL_RELAYER_FEE_KEY))
+    }
 }
 
 // -----------
@@ -98,5 +121,15 @@ impl<'db> StateTxn<'db, RW> {
     /// Set the local addr of the node
     pub fn set_local_addr(&self, addr: &Multiaddr) -> Result<(), StorageError> {
         self.inner().write(NODE_METADATA_TABLE, &LOCAL_ADDR_KEY.to_string(), addr)
+    }
+
+    /// Set the wallet ID of the local relayer's wallet
+    pub fn set_local_node_wallet(&self, wallet_id: WalletIdentifier) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &LOCAL_WALLET_ID_KEY.to_string(), &wallet_id)
+    }
+
+    /// Set the local relayer's fee decryption key
+    pub fn set_fee_decryption_key(&self, fee_key: &DecryptionKey) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), fee_key)
     }
 }

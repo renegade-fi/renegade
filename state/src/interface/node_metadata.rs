@@ -1,8 +1,13 @@
 //! Stores state information relating to the node's configuration
 
-use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use circuit_types::elgamal::DecryptionKey;
+use common::types::{
+    gossip::{ClusterId, PeerInfo, WrappedPeerId},
+    wallet::{Wallet, WalletIdentifier},
+};
 use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
+use util::res_some;
 
 use crate::{error::StateError, State, NODE_METADATA_TABLE};
 
@@ -38,6 +43,25 @@ impl State {
         Ok(keypair)
     }
 
+    /// Get the wallet owned by the local relayer
+    pub fn get_local_relayer_wallet(&self) -> Result<Option<Wallet>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet_id = tx.get_local_node_wallet()?;
+        let wallet = res_some!(tx.get_wallet(&wallet_id)?);
+        tx.commit()?;
+
+        Ok(Some(wallet))
+    }
+
+    /// Get the decryption key used to settle managed match fees
+    pub fn get_fee_decryption_key(&self) -> Result<DecryptionKey, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let key = tx.get_fee_decryption_key()?;
+        tx.commit()?;
+
+        Ok(key)
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -60,6 +84,19 @@ impl State {
         Ok(tx.commit()?)
     }
 
+    /// Set the wallet ID of the local relayer's wallet
+    ///
+    /// This wallet is managed the same as any other wallet, but we index its ID
+    /// here for retrieval
+    pub fn set_local_relayer_wallet_id(
+        &self,
+        wallet_id: WalletIdentifier,
+    ) -> Result<(), StateError> {
+        let tx = self.db.new_write_tx()?;
+        tx.set_local_node_wallet(wallet_id)?;
+        Ok(tx.commit()?)
+    }
+
     /// Setup the node metadata table from a relayer config
     pub fn setup_node_metadata(&self, config: &RelayerConfig) -> Result<(), StateError> {
         let keypair = &config.p2p_key;
@@ -70,6 +107,7 @@ impl State {
         tx.set_peer_id(&peer_id)?;
         tx.set_cluster_id(&config.cluster_id)?;
         tx.set_node_keypair(&config.p2p_key)?;
+        tx.set_fee_decryption_key(&config.fee_decryption_key)?;
 
         tx.commit()?;
         Ok(())

@@ -6,6 +6,8 @@ use ark_ec::{
     CurveGroup, Group,
 };
 use ark_ff::UniformRand;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use bigdecimal::Num;
 use circuit_macros::circuit_type;
 use constants::{
     AuthenticatedScalar, EmbeddedCurveConfig, EmbeddedCurveGroup, EmbeddedCurveGroupAffine,
@@ -17,8 +19,10 @@ use jf_primitives::{
     elgamal::{Ciphertext, DecKey, EncKey},
 };
 use mpc_relation::{gadgets::ecc::PointVariable, traits::Circuit, Variable};
+use num_bigint::BigUint;
 use rand::{CryptoRng, Rng};
-use serde::{Deserialize, Serialize};
+use renegade_crypto::fields::biguint_to_jubjub;
+use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
 use std::ops::Add;
 
 use crate::{
@@ -41,13 +45,21 @@ pub type EncryptionKey = BabyJubJubPoint;
 pub type EncryptionKeyVar = BabyJubJubPointVar;
 
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct DecryptionKey {
     /// The underlying scalar field element
     pub key: EmbeddedScalarField,
 }
 
 impl DecryptionKey {
+    /// Parse a decryption key from a hex string
+    pub fn from_hex_str(s: &str) -> Result<Self, String> {
+        let stripped = s.strip_prefix("0x").unwrap_or(s);
+        let key_bigint = BigUint::from_str_radix(stripped, 16).map_err(|e| e.to_string())?;
+
+        Ok(Self { key: biguint_to_jubjub(&key_bigint) })
+    }
+
     /// Generate a new random decryption key
     pub fn random<R: Rng + CryptoRng>(r: &mut R) -> Self {
         Self { key: EmbeddedScalarField::rand(r) }
@@ -61,6 +73,34 @@ impl DecryptionKey {
 
         let enc_key = EncryptionKey::from(key_point);
         (dec_key, enc_key)
+    }
+}
+
+impl Serialize for DecryptionKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut bytes = Vec::new();
+        self.serialize_compressed(&mut bytes).unwrap();
+
+        // Serialize explicitly as a sequence to avoid issues with serde formats
+        let mut seq = serializer.serialize_seq(Some(bytes.len()))?;
+        for byte in bytes.iter() {
+            seq.serialize_element(byte)?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for DecryptionKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // Deserialize as a sequence to avoid issues with serde formats
+        let bytes = <Vec<u8>>::deserialize(deserializer)?;
+        Self::deserialize_compressed(bytes.as_slice()).map_err(serde::de::Error::custom)
     }
 }
 
