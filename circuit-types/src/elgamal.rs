@@ -61,6 +61,12 @@ impl DecryptionKey {
         Ok(Self { key: biguint_to_jubjub(&key_bigint) })
     }
 
+    /// Get the public encryption key associated with this decryption key
+    pub fn public_key(&self) -> EncryptionKey {
+        let inner = EmbeddedCurveGroup::generator() * self.key;
+        EncryptionKey::from(inner)
+    }
+
     /// Generate a new random decryption key
     pub fn random<R: Rng + CryptoRng>(r: &mut R) -> Self {
         Self { key: EmbeddedScalarField::rand(r) }
@@ -70,9 +76,8 @@ impl DecryptionKey {
     /// encryption keypair
     pub fn random_pair<R: Rng + CryptoRng>(r: &mut R) -> (Self, EncryptionKey) {
         let dec_key = Self::random(r);
-        let key_point = EmbeddedCurveGroup::generator() * dec_key.key;
+        let enc_key = dec_key.public_key();
 
-        let enc_key = EncryptionKey::from(key_point);
         (dec_key, enc_key)
     }
 }

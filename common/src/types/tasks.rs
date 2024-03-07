@@ -376,8 +376,8 @@ pub struct PayProtocolFeeTaskDescriptor {
 
 impl PayProtocolFeeTaskDescriptor {
     /// Constructor
-    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Self {
-        PayProtocolFeeTaskDescriptor { wallet_id, balance_mint }
+    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Result<Self, String> {
+        Ok(PayProtocolFeeTaskDescriptor { wallet_id, balance_mint })
     }
 }
 
@@ -398,8 +398,8 @@ pub struct PayRelayerFeeTaskDescriptor {
 
 impl PayRelayerFeeTaskDescriptor {
     /// Constructor
-    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Self {
-        PayRelayerFeeTaskDescriptor { wallet_id, balance_mint }
+    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Result<Self, String> {
+        Ok(PayRelayerFeeTaskDescriptor { wallet_id, balance_mint })
     }
 }
 
