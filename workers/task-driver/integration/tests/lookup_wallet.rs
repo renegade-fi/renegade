@@ -48,6 +48,6 @@ async fn test_lookup_wallet__valid_wallet(test_args: IntegrationTestArgs) -> Res
 
     // Check that the wallet is discoverable from contract state and correctly
     // constructed
-    lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, test_args).await
+    lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, &test_args).await
 }
 integration_test_async!(test_lookup_wallet__valid_wallet);

@@ -81,7 +81,7 @@ pub enum TaskDescriptor {
     /// The task descriptor for the `LookupWallet` task
     LookupWallet(LookupWalletTaskDescriptor),
     /// The task descriptor for the `PayProtocolFee` task
-    ProtocolFee(PayProtocolFeeTaskDescriptor),
+    OfflineFee(PayOfflineFeeTaskDescriptor),
     /// The task descriptor for the `PayRelayerFee` task
     RelayerFee(PayRelayerFeeTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
@@ -100,7 +100,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(task) => task.wallet.wallet_id,
             TaskDescriptor::LookupWallet(task) => task.wallet_id,
-            TaskDescriptor::ProtocolFee(task) => task.wallet_id,
+            TaskDescriptor::OfflineFee(task) => task.wallet_id,
             TaskDescriptor::RelayerFee(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
@@ -120,7 +120,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(_)
             | TaskDescriptor::LookupWallet(_)
-            | TaskDescriptor::ProtocolFee(_)
+            | TaskDescriptor::OfflineFee(_)
             | TaskDescriptor::RelayerFee(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
@@ -365,25 +365,38 @@ impl From<UpdateWalletTaskDescriptor> for TaskDescriptor {
     }
 }
 
-/// The task descriptor for the protocol fee payment task
+/// The task descriptor for the offline fee payment task
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PayProtocolFeeTaskDescriptor {
+pub struct PayOfflineFeeTaskDescriptor {
+    /// Whether the fee is a protocol fee or a relayer fee
+    pub is_protocol_fee: bool,
     /// The wallet to pay fees for
     pub wallet_id: WalletIdentifier,
     /// The balance to pay fees for
     pub balance_mint: BigUint,
 }
 
-impl PayProtocolFeeTaskDescriptor {
-    /// Constructor
-    pub fn new(wallet_id: WalletIdentifier, balance_mint: BigUint) -> Result<Self, String> {
-        Ok(PayProtocolFeeTaskDescriptor { wallet_id, balance_mint })
+impl PayOfflineFeeTaskDescriptor {
+    /// Constructor for the relayer fee payment task
+    pub fn new_relayer_fee(
+        wallet_id: WalletIdentifier,
+        balance_mint: BigUint,
+    ) -> Result<Self, String> {
+        Ok(PayOfflineFeeTaskDescriptor { is_protocol_fee: false, wallet_id, balance_mint })
+    }
+
+    /// Constructor for the protocol fee payment task
+    pub fn new_protocol_fee(
+        wallet_id: WalletIdentifier,
+        balance_mint: BigUint,
+    ) -> Result<Self, String> {
+        Ok(PayOfflineFeeTaskDescriptor { is_protocol_fee: true, wallet_id, balance_mint })
     }
 }
 
-impl From<PayProtocolFeeTaskDescriptor> for TaskDescriptor {
-    fn from(descriptor: PayProtocolFeeTaskDescriptor) -> Self {
-        TaskDescriptor::ProtocolFee(descriptor)
+impl From<PayOfflineFeeTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: PayOfflineFeeTaskDescriptor) -> Self {
+        TaskDescriptor::OfflineFee(descriptor)
     }
 }
 

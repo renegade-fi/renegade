@@ -54,7 +54,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
     expected_wallet: &Wallet,
     blinder_seed: Scalar,
     secret_share_seed: Scalar,
-    test_args: IntegrationTestArgs,
+    test_args: &IntegrationTestArgs,
 ) -> Result<()> {
     // Start a lookup task for the new wallet
     let wallet_id = expected_wallet.wallet_id;
@@ -64,7 +64,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
     let task =
         LookupWalletTaskDescriptor::new(wallet_id, blinder_seed, secret_share_seed, key_chain)
             .unwrap();
-    await_task(task.into(), &test_args).await?;
+    await_task(task.into(), test_args).await?;
 
     // Check the global state for the wallet and verify that it was correctly
     // recovered
@@ -123,7 +123,7 @@ pub(crate) async fn setup_initial_wallet(
 ) -> Result<()> {
     setup_wallet_shares(blinder_seed, share_seed, wallet);
     allocate_wallet_in_darkpool(wallet, &test_args.arbitrum_client).await?;
-    lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args.clone()).await?;
+    lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args).await?;
 
     // Read the wallet from the global state so that order IDs match
     *wallet = test_args.state.get_wallet(&wallet.wallet_id)?.unwrap();
