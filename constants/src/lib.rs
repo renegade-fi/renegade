@@ -11,6 +11,13 @@ use ark_mpc::algebra::{
     ScalarResult as GenericScalarResult,
 };
 
+// ---------------------------
+// | Configuration Constants |
+// ---------------------------
+
+/// The current relayer version
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 // -------------------------
 // | System-Wide Constants |
 // -------------------------

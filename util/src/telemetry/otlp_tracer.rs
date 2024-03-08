@@ -1,8 +1,6 @@
 //! Configuration for exporting traces to an OTLP collector
 
-use std::env;
-
-use opentelemetry::{trace::TraceError, KeyValue};
+use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     runtime,
@@ -14,31 +12,43 @@ use opentelemetry_semantic_conventions::{
     SCHEMA_URL,
 };
 
-use super::RELAYER_SERVICE_NAME;
+use crate::err_str;
+
+use super::{
+    datadog::{get_unified_service_tags, UnifiedServiceTags},
+    TelemetrySetupError,
+};
 
 /// Constructs the resource tags for OTLP traces
-fn otlp_resource(deployment_env: Option<String>) -> Resource {
-    let mut resource_kvs = vec![
-        KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-        KeyValue::new(SERVICE_NAME, RELAYER_SERVICE_NAME),
-    ];
+fn otlp_resource() -> Result<Resource, TelemetrySetupError> {
+    let UnifiedServiceTags { service, env, version } = get_unified_service_tags()?;
 
-    if let Some(env) = deployment_env {
-        resource_kvs.push(KeyValue::new(DEPLOYMENT_ENVIRONMENT, env));
-    }
-
-    Resource::from_schema_url(resource_kvs, SCHEMA_URL)
+    Ok(Resource::from_schema_url(
+        [
+            KeyValue::new(SERVICE_NAME, service),
+            KeyValue::new(SERVICE_VERSION, version),
+            KeyValue::new(DEPLOYMENT_ENVIRONMENT, env),
+        ],
+        SCHEMA_URL,
+    ))
 }
 
 /// Creates an OTLP tracing pipeline for sending spans to the collector
 pub fn configure_otlp_tracer(
-    deployment_env: Option<String>,
+    datadog_enabled: bool,
     collector_endpoint: String,
-) -> Result<Tracer, TraceError> {
+) -> Result<Tracer, TelemetrySetupError> {
+    let trace_config = if datadog_enabled {
+        trace::Config::default().with_resource(otlp_resource()?)
+    } else {
+        trace::Config::default()
+    };
+
     opentelemetry_otlp::new_pipeline()
         .tracing()
-        .with_trace_config(trace::Config::default().with_resource(otlp_resource(deployment_env)))
+        .with_trace_config(trace_config)
         .with_batch_config(BatchConfig::default())
         .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(collector_endpoint))
         .install_batch(runtime::Tokio)
+        .map_err(err_str!(TelemetrySetupError::Tracer))
 }
