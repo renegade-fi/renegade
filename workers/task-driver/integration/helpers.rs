@@ -33,7 +33,8 @@ use task_driver::{
 use test_helpers::{
     assert_eq_result,
     contract_interaction::{
-        allocate_wallet_in_darkpool, setup_wallet_shares, transfer_auth::gen_transfer_with_auth,
+        allocate_wallet_in_darkpool, new_wallet_in_darkpool, setup_wallet_shares,
+        transfer_auth::gen_transfer_with_auth,
     },
 };
 
@@ -106,6 +107,24 @@ pub(crate) async fn await_immediate_task(
     rx.await.unwrap().map_err(|e| eyre::eyre!(e))
 }
 
+/// Wait for a task queue on a wallet to flush
+pub(crate) async fn await_wallet_task_queue_flush(
+    wallet_id: WalletIdentifier,
+    test_args: &IntegrationTestArgs,
+) -> Result<()> {
+    let state = &test_args.state;
+
+    // Await the task queue to flush if there are any tasks
+    let tasks = state.get_queued_tasks(&wallet_id)?;
+    if let Some(task_id) = tasks.last().map(|t| t.id) {
+        let (recv, job) = new_task_notification(task_id);
+        test_args.task_queue.send(job)?;
+        recv.await?.map_err(|e| eyre::eyre!(format!("error in task: {e}")))?;
+    }
+
+    Ok(())
+}
+
 // ------------------------
 // | Contract Interaction |
 // ------------------------
@@ -153,6 +172,17 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
         .update_wallet(&proof, vec![] /* statement_sig */, None /* transfer_auth */)
         .await
         .map_err(Into::into)
+}
+
+/// Setup a relayer wallet for collecting fees
+pub(crate) async fn setup_relayer_wallet(test_args: &IntegrationTestArgs) -> Result<()> {
+    let state = &test_args.state;
+    let (wallet, _, _) = new_wallet_in_darkpool(&test_args.arbitrum_client).await?;
+
+    state.set_local_relayer_wallet_id(wallet.wallet_id)?;
+    state.update_wallet(wallet).unwrap().await.unwrap();
+
+    Ok(())
 }
 
 /// Get an authorized external transfer for the wallet

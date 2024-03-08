@@ -1,7 +1,10 @@
 //! Integration tests for settling matches, both internal and cross-cluster
 
 use crate::{
-    helpers::{await_immediate_task, lookup_wallet_and_check_result, setup_initial_wallet},
+    helpers::{
+        await_immediate_task, await_wallet_task_queue_flush, lookup_wallet_and_check_result,
+        setup_initial_wallet, setup_relayer_wallet,
+    },
     IntegrationTestArgs,
 };
 use circuit_types::{
@@ -26,16 +29,10 @@ use common::types::{
 };
 use constants::Scalar;
 use eyre::{eyre, Result};
-use job_types::{
-    proof_manager::{ProofJob, ProofManagerJob},
-    task_driver::new_task_notification,
-};
+use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rand::thread_rng;
 use state::State;
-use test_helpers::{
-    assert_eq_result, assert_true_result, contract_interaction::new_wallet_in_darkpool,
-    integration_test_async,
-};
+use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::oneshot::channel;
 use util::{
     hex::biguint_from_hex_string,
@@ -87,17 +84,6 @@ fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
     };
 
     Balance::new_from_mint_and_amount(mint, Amount::from(100_000u32))
-}
-
-/// Setup a relayer wallet for collecting fees
-async fn setup_relayer_wallet(test_args: &IntegrationTestArgs) -> Result<()> {
-    let state = &test_args.state;
-    let (wallet, _, _) = new_wallet_in_darkpool(&test_args.arbitrum_client).await?;
-
-    state.set_local_relayer_wallet_id(wallet.wallet_id)?;
-    state.update_wallet(wallet).unwrap().await.unwrap();
-
-    Ok(())
 }
 
 /// Setup a wallet with a given order and balance
@@ -333,18 +319,12 @@ async fn verify_settlement(
 
 /// Verify that fees are paid for a wallet after a match
 async fn verify_fees_paid(wallet: &Wallet, test_args: &IntegrationTestArgs) -> Result<()> {
-    let state = &test_args.state;
-
-    // Await the task queue to flush if there are any tasks
-    let tasks = state.get_queued_tasks(&wallet.wallet_id)?;
-    if let Some(task_id) = tasks.last().map(|t| t.id) {
-        let (recv, job) = new_task_notification(task_id);
-        test_args.task_queue.send(job)?;
-        recv.await?.map_err(|e| eyre!(format!("error in task: {e}")))?;
-    }
+    let id = wallet.wallet_id;
+    await_wallet_task_queue_flush(id, test_args).await?;
 
     // Check the wallet in state, verify that no fees remain
-    let wallet = state.get_wallet(&wallet.wallet_id)?.ok_or(eyre!("wallet not found in state"))?;
+    let state = &test_args.state;
+    let wallet = state.get_wallet(&id)?.ok_or(eyre!("wallet not found in state"))?;
     for balance in wallet.balances.values() {
         assert_true_result!(balance.fees().total() == 0)?;
     }
