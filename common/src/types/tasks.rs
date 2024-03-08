@@ -1,6 +1,8 @@
 //! Defines task related types
 
-use circuit_types::{fixed_point::FixedPoint, keychain::PublicSigningKey, r#match::MatchResult};
+use circuit_types::{
+    fixed_point::FixedPoint, keychain::PublicSigningKey, note::Note, r#match::MatchResult,
+};
 use constants::Scalar;
 use ethers::core::types::Signature;
 use ethers::core::utils::keccak256;
@@ -84,6 +86,8 @@ pub enum TaskDescriptor {
     OfflineFee(PayOfflineFeeTaskDescriptor),
     /// The task descriptor for the `PayRelayerFee` task
     RelayerFee(PayRelayerFeeTaskDescriptor),
+    /// The task descriptor for the `RedeemRelayerFee` task
+    RedeemRelayerFee(RedeemRelayerFeeTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
     SettleMatchInternal(SettleMatchInternalTaskDescriptor),
     /// The task descriptor for the `SettleMatch` task
@@ -102,6 +106,7 @@ impl TaskDescriptor {
             TaskDescriptor::LookupWallet(task) => task.wallet_id,
             TaskDescriptor::OfflineFee(task) => task.wallet_id,
             TaskDescriptor::RelayerFee(task) => task.wallet_id,
+            TaskDescriptor::RedeemRelayerFee(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
             },
@@ -122,6 +127,7 @@ impl TaskDescriptor {
             | TaskDescriptor::LookupWallet(_)
             | TaskDescriptor::OfflineFee(_)
             | TaskDescriptor::RelayerFee(_)
+            | TaskDescriptor::RedeemRelayerFee(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
@@ -419,6 +425,31 @@ impl PayRelayerFeeTaskDescriptor {
 impl From<PayRelayerFeeTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: PayRelayerFeeTaskDescriptor) -> Self {
         TaskDescriptor::RelayerFee(descriptor)
+    }
+}
+
+/// The task descriptor for redeeming a relayer note
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RedeemRelayerFeeTaskDescriptor {
+    /// The wallet ID of the relayer's wallet
+    ///
+    /// Technically this should be static and not needed here, but we include it
+    /// to allow the descriptor struct to compute its own task queue key
+    pub wallet_id: WalletIdentifier,
+    /// The note to redeem
+    pub note: Note,
+}
+
+impl RedeemRelayerFeeTaskDescriptor {
+    /// Constructor
+    pub fn new(wallet_id: WalletIdentifier, note: Note) -> Result<Self, String> {
+        Ok(RedeemRelayerFeeTaskDescriptor { wallet_id, note })
+    }
+}
+
+impl From<RedeemRelayerFeeTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: RedeemRelayerFeeTaskDescriptor) -> Self {
+        TaskDescriptor::RedeemRelayerFee(descriptor)
     }
 }
 
