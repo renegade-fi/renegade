@@ -19,6 +19,7 @@ use api_server::worker::{ApiServer, ApiServerConfig};
 use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{watch_worker, Worker};
+use constants::VERSION;
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
@@ -82,7 +83,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
-        args.version, args.p2p_port, args.cluster_id
+        VERSION, args.p2p_port, args.cluster_id
     );
 
     // Build communication primitives
@@ -126,7 +127,6 @@ async fn main() -> Result<(), CoordinatorError> {
             args.datadog_enabled,
             args.otlp_enabled,
             args.metrics_enabled,
-            args.otlp_env,
             args.otlp_collector_url,
             &args.statsd_host,
             args.statsd_port,

@@ -24,8 +24,6 @@ use token_remaps::setup_token_remaps;
 use toml::{value::Map, Value};
 use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 
-/// The default version of the node
-const DEFAULT_VERSION: &str = "0.1.0";
 /// The dummy message used for checking elliptic curve key pairs
 const DUMMY_MESSAGE: &str = "signature check";
 /// The CLI argument name for the config file
@@ -137,9 +135,6 @@ struct Cli {
     /// Whether or not to run the relayer in debug mode
     #[clap(short, long, value_parser)]
     pub debug: bool,
-    /// The software version of the relayer
-    #[clap(short, long, value_parser)]
-    pub version: Option<String>,
 
     // -----------
     // | Secrets |
@@ -172,10 +167,6 @@ struct Cli {
     /// Whether or not to enable OTLP tracing
     #[clap(long = "enable-otlp", value_parser)]
     pub otlp_enabled: bool,
-    /// The deployment environment w/ which
-    /// to tag OTLP traces
-    #[clap(long, value_parser)]
-    pub otlp_env: Option<String>,
     /// The OTLP collector endpoint to send traces to
     #[clap(long, value_parser, default_value = "http://localhost:4317")]
     pub otlp_collector_url: String,
@@ -211,8 +202,6 @@ pub struct RelayerConfig {
     // -----------------------
     // | Environment Configs |
     // -----------------------
-    /// Software version of the relayer
-    pub version: String,
     /// The chain that the relayer settles to
     pub chain_id: Chain,
     /// The address of the contract in the target network
@@ -284,8 +273,6 @@ pub struct RelayerConfig {
     // -------------
     /// Whether or not to enable OTLP tracing
     pub otlp_enabled: bool,
-    /// The deployment environment w/ which to tag OTLP traces
-    pub otlp_env: Option<String>,
     /// The OTLP collector endpoint to send traces to
     pub otlp_collector_url: String,
     /// Whether or not to enable Datadog-formatted logs
@@ -311,7 +298,6 @@ impl Default for RelayerConfig {
 impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
-            version: self.version.clone(),
             match_take_rate: self.match_take_rate,
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
@@ -337,7 +323,6 @@ impl Clone for RelayerConfig {
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
             otlp_enabled: self.otlp_enabled,
-            otlp_env: self.otlp_env.clone(),
             otlp_collector_url: self.otlp_collector_url.clone(),
             datadog_enabled: self.datadog_enabled,
             metrics_enabled: self.metrics_enabled,
@@ -429,7 +414,6 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
     }
 
     let mut config = RelayerConfig {
-        version: cli_args.version.unwrap_or_else(|| String::from(DEFAULT_VERSION)),
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
@@ -455,7 +439,6 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
         otlp_enabled: cli_args.otlp_enabled,
-        otlp_env: cli_args.otlp_env,
         otlp_collector_url: cli_args.otlp_collector_url,
         datadog_enabled: cli_args.datadog_enabled,
         metrics_enabled: cli_args.metrics_enabled,

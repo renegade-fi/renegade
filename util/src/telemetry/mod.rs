@@ -6,20 +6,16 @@ use tracing_subscriber::{
     fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer, Registry,
 };
 
-use crate::err_str;
-
-pub mod formatter;
+pub mod datadog;
 pub mod metrics;
 pub mod otlp_tracer;
-
-/// The [OTLP service name](https://opentelemetry.io/docs/specs/semconv/resource/#service)
-/// for the relayer
-pub const RELAYER_SERVICE_NAME: &str = "renegade_relayer";
 
 /// Possible errors that occur when setting up telemetry
 /// for the relayer
 #[derive(Debug)]
 pub enum TelemetrySetupError {
+    /// Error emitted when an expected environment variable is missing
+    EnvVarMissing,
     /// Error emitted when setting up the OTLP tracer
     Tracer(String),
     /// Error emitted when the OTLP deployment environemt
@@ -64,7 +60,7 @@ impl TelemetryBuilder {
                 opentelemetry_datadog::DatadogPropagator::new(),
             );
 
-            self.with_layer(fmt::layer().json().event_format(formatter::DatadogFormatter))
+            self.with_layer(fmt::layer().json().event_format(datadog::formatter::DatadogFormatter))
         } else {
             self.with_layer(fmt::layer().pretty())
         }
@@ -73,11 +69,10 @@ impl TelemetryBuilder {
     /// Configure OTLP tracing for the relayer
     pub fn with_tracing(
         self,
-        deployment_env: Option<String>,
+        datadog_enabled: bool,
         collector_endpoint: String,
     ) -> Result<Self, TelemetrySetupError> {
-        let otlp_tracer = otlp_tracer::configure_otlp_tracer(deployment_env, collector_endpoint)
-            .map_err(err_str!(TelemetrySetupError::Tracer))?;
+        let otlp_tracer = otlp_tracer::configure_otlp_tracer(datadog_enabled, collector_endpoint)?;
         let otlp_trace_layer = tracing_opentelemetry::layer().with_tracer(otlp_tracer);
 
         Ok(self.with_layer(otlp_trace_layer))
@@ -86,11 +81,11 @@ impl TelemetryBuilder {
     /// Configure StatsD metrics for the relayer
     pub fn with_metrics(
         self,
+        datadog_enabled: bool,
         statsd_host: &str,
         statsd_port: u16,
     ) -> Result<Self, TelemetrySetupError> {
-        metrics::configure_metrics_statsd_recorder(statsd_host, statsd_port)
-            .map_err(err_str!(TelemetrySetupError::Metrics))?;
+        metrics::configure_metrics_statsd_recorder(datadog_enabled, statsd_host, statsd_port)?;
 
         Ok(self.with_layer(metrics_tracing_context::MetricsLayer::new()))
     }
@@ -110,7 +105,6 @@ pub fn configure_telemetry(
     datadog_enabled: bool,
     otlp_enabled: bool,
     metrics_enabled: bool,
-    deployment_env: Option<String>,
     collector_endpoint: String,
     statsd_host: &str,
     statsd_port: u16,
@@ -118,11 +112,11 @@ pub fn configure_telemetry(
     let mut telemetry = TelemetryBuilder::default().with_logging(datadog_enabled);
 
     if otlp_enabled {
-        telemetry = telemetry.with_tracing(deployment_env, collector_endpoint)?;
+        telemetry = telemetry.with_tracing(datadog_enabled, collector_endpoint)?;
     }
 
     if metrics_enabled {
-        telemetry = telemetry.with_metrics(statsd_host, statsd_port)?;
+        telemetry = telemetry.with_metrics(datadog_enabled, statsd_host, statsd_port)?;
     }
 
     telemetry.build();
