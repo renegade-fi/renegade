@@ -22,7 +22,8 @@ use circuits::zk_circuits::{
 };
 use common::types::{
     proof_bundles::ProofBundle,
-    wallet::{Wallet, WalletAuthenticationPath},
+    tasks::{PayProtocolFeeTaskDescriptor, PayRelayerFeeTaskDescriptor},
+    wallet::{Wallet, WalletAuthenticationPath, WalletIdentifier},
 };
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -349,4 +350,44 @@ async fn link_and_store_proofs(
 
     let job = NetworkManagerJob::pubsub(ORDER_BOOK_TOPIC.to_string(), message);
     network_sender.send(job).map_err(|e| e.to_string())
+}
+
+/// Enqueue tasks to settle fees from a wallet
+pub(crate) async fn enqueue_fee_settlement_tasks(
+    wallet_id: WalletIdentifier,
+    state: &State,
+) -> Result<(), String> {
+    // Read the wallet
+    let wallet = state.get_wallet(&wallet_id)?.ok_or(format!("wallet {wallet_id} not found"))?;
+    for (mint, balance) in wallet.balances.iter() {
+        if balance.relayer_fee_balance > 0 {
+            enqueue_relayer_fee_settlement_task(wallet_id, mint.clone(), state)?;
+        }
+
+        if balance.protocol_fee_balance > 0 {
+            enqueue_protocol_fee_settlement_task(wallet_id, mint.clone(), state)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Enqueue a job to settle a relayer fee
+fn enqueue_relayer_fee_settlement_task(
+    wallet_id: WalletIdentifier,
+    mint: BigUint,
+    state: &State,
+) -> Result<(), String> {
+    let descriptor = PayRelayerFeeTaskDescriptor::new(wallet_id, mint).expect("infallible");
+    state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
+}
+
+/// Enqueue a job to settle a protocol fee
+fn enqueue_protocol_fee_settlement_task(
+    wallet_id: WalletIdentifier,
+    mint: BigUint,
+    state: &State,
+) -> Result<(), String> {
+    let descriptor = PayProtocolFeeTaskDescriptor::new(wallet_id, mint).expect("infallible");
+    state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
 }

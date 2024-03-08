@@ -31,7 +31,9 @@ use tracing::instrument;
 use crate::driver::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
-use crate::helpers::{find_merkle_path, update_wallet_validity_proofs};
+use crate::helpers::{
+    enqueue_fee_settlement_tasks, find_merkle_path, update_wallet_validity_proofs,
+};
 
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
@@ -294,7 +296,14 @@ impl SettleMatchTask {
         wallet.merkle_proof = Some(opening);
 
         // Index the updated wallet in global state
+        let wallet_id = wallet.wallet_id;
         self.global_state.update_wallet(wallet)?.await?;
+
+        // Enqueue a job to settle the wallet's fees
+        enqueue_fee_settlement_tasks(wallet_id, &self.global_state)
+            .await
+            .map_err(SettleMatchTaskError::State)?;
+
         Ok(())
     }
 

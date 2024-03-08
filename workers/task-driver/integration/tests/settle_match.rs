@@ -26,10 +26,16 @@ use common::types::{
 };
 use constants::Scalar;
 use eyre::{eyre, Result};
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::{
+    proof_manager::{ProofJob, ProofManagerJob},
+    task_driver::new_task_notification,
+};
 use rand::thread_rng;
 use state::State;
-use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
+use test_helpers::{
+    assert_eq_result, assert_true_result, contract_interaction::new_wallet_in_darkpool,
+    integration_test_async,
+};
 use tokio::sync::oneshot::channel;
 use util::{
     hex::biguint_from_hex_string,
@@ -81,6 +87,17 @@ fn dummy_balance(side: OrderSide, test_args: &IntegrationTestArgs) -> Balance {
     };
 
     Balance::new_from_mint_and_amount(mint, Amount::from(100_000u32))
+}
+
+/// Setup a relayer wallet for collecting fees
+async fn setup_relayer_wallet(test_args: &IntegrationTestArgs) -> Result<()> {
+    let state = &test_args.state;
+    let (wallet, _, _) = new_wallet_in_darkpool(&test_args.arbitrum_client).await?;
+
+    state.set_local_relayer_wallet_id(wallet.wallet_id)?;
+    state.update_wallet(wallet).unwrap().await.unwrap();
+
+    Ok(())
 }
 
 /// Setup a wallet with a given order and balance
@@ -276,36 +293,63 @@ async fn dummy_match_bundle(
 
 /// Verify that a match has been correctly applied to a wallet
 async fn verify_settlement(
-    mut wallet: Wallet,
+    wallet: &Wallet,
     blinder_seed: Scalar,
     share_seed: Scalar,
     match_res: MatchResult,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
+    // Verify that fees were paid
+    verify_fees_paid(wallet, &test_args).await?;
+
+    let mut wallet = wallet.clone();
     let state = &test_args.state;
 
-    // 1. Apply the match to the wallet
-    wallet.reblind_wallet();
-
+    // 1. Apply the match to the wallet, remove fees as we waited for them to settle
     let first_order = wallet.orders.first().unwrap().0;
     wallet.apply_match(&match_res, &first_order).unwrap();
+    for (_mint, balance) in wallet.balances.iter_mut() {
+        balance.relayer_fee_balance = 0;
+        balance.protocol_fee_balance = 0;
+    }
+    wallet.reblind_wallet();
 
     // 2. Lookup the wallet in global state, verify that this matches the expected
+    // Do not check the blinder, it's too clumsy to track the blinder through the
+    // multiple updates in our mock
     let new_wallet =
         state.get_wallet(&wallet.wallet_id)?.ok_or_else(|| eyre!("wallet not found in state"))?;
+    wallet.blinder = new_wallet.blinder;
 
     let circuit_wallet1: SizedWallet = wallet.clone().into();
     let circuit_wallet2: SizedWallet = new_wallet.clone().into();
-
-    assert_eq_result!(new_wallet.blinder, wallet.blinder)?;
-    assert_eq_result!(new_wallet.private_shares, wallet.private_shares)?;
-
     assert_eq_result!(circuit_wallet1, circuit_wallet2)?;
 
-    assert_eq_result!(new_wallet.blinded_public_shares, wallet.blinded_public_shares)?;
-
     // 3. Lookup the wallet on-chain, verify that this matches the expected
-    lookup_wallet_and_check_result(&wallet, blinder_seed, share_seed, test_args.clone()).await
+    // Use the state wallet to check that the stored wallet stored matches the one
+    // on-chain
+    lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, test_args.clone()).await
+}
+
+/// Verify that fees are paid for a wallet after a match
+async fn verify_fees_paid(wallet: &Wallet, test_args: &IntegrationTestArgs) -> Result<()> {
+    let state = &test_args.state;
+
+    // Await the task queue to flush if there are any tasks
+    let tasks = state.get_queued_tasks(&wallet.wallet_id)?;
+    if let Some(task_id) = tasks.last().map(|t| t.id) {
+        let (recv, job) = new_task_notification(task_id);
+        test_args.task_queue.send(job)?;
+        recv.await?.map_err(|e| eyre!(format!("error in task: {e}")))?;
+    }
+
+    // Check the wallet in state, verify that no fees remain
+    let wallet = state.get_wallet(&wallet.wallet_id)?.ok_or(eyre!("wallet not found in state"))?;
+    for balance in wallet.balances.values() {
+        assert_true_result!(balance.fees().total() == 0)?;
+    }
+
+    Ok(())
 }
 
 // ---------
@@ -316,6 +360,7 @@ async fn verify_settlement(
 async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Create two new wallets with orders that match
     let state = &test_args.state;
+    setup_relayer_wallet(&test_args).await?;
     let (buy_wallet, buy_blinder_seed, buy_share_seed) =
         setup_buy_side_wallet(test_args.clone()).await?;
     let (sell_wallet, sell_blinder_seed, sell_share_seed) =
@@ -345,7 +390,7 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
 
     // Verify the match on both wallets
     verify_settlement(
-        buy_wallet,
+        &buy_wallet,
         buy_blinder_seed,
         buy_share_seed,
         match_res.clone(),
@@ -353,8 +398,14 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     )
     .await?;
 
-    verify_settlement(sell_wallet, sell_blinder_seed, sell_share_seed, match_res, test_args.clone())
-        .await
+    verify_settlement(
+        &sell_wallet,
+        sell_blinder_seed,
+        sell_share_seed,
+        match_res,
+        test_args.clone(),
+    )
+    .await
 }
 integration_test_async!(test_settle_internal_match);
 
@@ -362,6 +413,7 @@ integration_test_async!(test_settle_internal_match);
 async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Create two new wallets with orders that match
     let state = &test_args.state;
+    setup_relayer_wallet(&test_args).await?;
     let (buy_wallet, buy_blinder_seed, buy_share_seed) =
         setup_buy_side_wallet(test_args.clone()).await?;
     let (mut sell_wallet, sell_blinder_seed, sell_share_seed) =
@@ -393,7 +445,7 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     // Only the first wallet would have been updated in the global state, as the
     // second wallet is assumed to be managed by another cluster
     verify_settlement(
-        buy_wallet,
+        &buy_wallet,
         buy_blinder_seed,
         buy_share_seed,
         match_res.clone(),
