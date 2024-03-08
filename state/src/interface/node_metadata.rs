@@ -43,6 +43,15 @@ impl State {
         Ok(keypair)
     }
 
+    /// Get the wallet ID that the local relayer owns
+    pub fn get_relayer_wallet_id(&self) -> Result<Option<WalletIdentifier>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet_id = tx.get_local_node_wallet()?;
+        tx.commit()?;
+
+        Ok(Some(wallet_id))
+    }
+
     /// Get the wallet owned by the local relayer
     pub fn get_local_relayer_wallet(&self) -> Result<Option<Wallet>, StateError> {
         let tx = self.db.new_read_tx()?;

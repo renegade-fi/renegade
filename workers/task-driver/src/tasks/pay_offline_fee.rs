@@ -27,18 +27,17 @@ use util::{arbitrum::get_protocol_encryption_key, err_str};
 
 use crate::{
     driver::StateWrapper,
-    helpers::{enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs},
+    helpers::{
+        enqueue_proof_job, enqueue_relayer_redeem_job, find_merkle_path,
+        update_wallet_validity_proofs,
+    },
     traits::{Task, TaskContext, TaskError, TaskState},
 };
 
+use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
+
 /// The name of the task
 const TASK_NAME: &str = "pay-offline-fee";
-/// The error emitted when a wallet is missing from state
-const ERR_WALLET_MISSING: &str = "wallet not found in global state";
-/// The error emitted when a balance for a given mint is missing
-const ERR_BALANCE_MISSING: &str = "balance not found in wallet";
-/// The error message emitted when a Merkle proof is not found for a wallet
-const ERR_NO_MERKLE_PROOF: &str = "no merkle proof found for wallet";
 
 // --------------
 // | Task State |
@@ -271,6 +270,14 @@ impl PayOfflineFeeTask {
 
         // Update the global state to include the new wallet
         self.state.update_wallet(self.new_wallet.clone())?.await?;
+
+        // If this was a relayer fee payment, enqueue a job for the relayer to redeem
+        // the fee
+        if !self.is_protocol_fee {
+            enqueue_relayer_redeem_job(self.note.clone(), &self.state)
+                .map_err(PayOfflineFeeTaskError::State)?;
+        }
+
         Ok(())
     }
 
