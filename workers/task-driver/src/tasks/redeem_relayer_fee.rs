@@ -4,6 +4,7 @@ use std::{error::Error, fmt::Display};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
+<<<<<<< HEAD
 use circuit_types::{balance::Balance, note::Note};
 use circuits::zk_circuits::valid_fee_redemption::{
     SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
@@ -30,6 +31,20 @@ use crate::{
 
 use super::lookup_wallet::ERR_WALLET_NOT_FOUND;
 
+=======
+use circuit_types::note::Note;
+use common::types::{proof_bundles::FeeRedemptionBundle, tasks::RedeemRelayerFeeTaskDescriptor};
+use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
+use serde::Serialize;
+use state::{error::StateError, State};
+use tracing::instrument;
+
+use crate::{
+    driver::StateWrapper,
+    traits::{Task, TaskContext, TaskError, TaskState},
+};
+
+>>>>>>> e133c441 (task-driver: redeem-realyer-fee: Define task skeleton)
 /// The name of the task
 const TASK_NAME: &str = "redeem-relayer-fee";
 
@@ -87,8 +102,11 @@ pub enum RedeemRelayerFeeError {
     Arbitrum(String),
     /// An error generating a proof for fee payment
     ProofGeneration(String),
+<<<<<<< HEAD
     /// An error signing the commitment to the new wallet
     Signature(String),
+=======
+>>>>>>> e133c441 (task-driver: redeem-realyer-fee: Define task skeleton)
     /// An error interacting with the state
     State(String),
     /// An error updating validity proofs after the fees are settled
@@ -102,7 +120,10 @@ impl TaskError for RedeemRelayerFeeError {
             | RedeemRelayerFeeError::ProofGeneration(_)
             | RedeemRelayerFeeError::State(_)
             | RedeemRelayerFeeError::UpdateValidityProofs(_) => true,
+<<<<<<< HEAD
             RedeemRelayerFeeError::Signature(_) => false,
+=======
+>>>>>>> e133c441 (task-driver: redeem-realyer-fee: Define task skeleton)
         }
     }
 }
