@@ -27,15 +27,10 @@ use crate::driver::StateWrapper;
 use crate::helpers::{enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
+use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
+
 /// The name of the task
 const TASK_NAME: &str = "pay-relayer-fee";
-
-/// The error message emitted when the wallet is not found
-const WALLET_NOT_FOUND: &str = "wallet not found";
-/// The error message emitted when the balance is missing
-const ERR_BALANCE_MISSING: &str = "balance missing";
-/// The error message emitted when a Merkle proof is missing
-const ERR_NO_MERKLE_PROOF: &str = "Merkle proof missing";
 
 // --------------
 // | Task State |
@@ -165,10 +160,10 @@ impl Task for PayRelayerFeeTask {
         let state = &ctx.state;
         let sender_wallet = state
             .get_wallet(&descriptor.wallet_id)?
-            .ok_or_else(|| PayRelayerFeeTaskError::State(WALLET_NOT_FOUND.to_string()))?;
+            .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
         let recipient_wallet = state
             .get_local_relayer_wallet()?
-            .ok_or_else(|| PayRelayerFeeTaskError::State(WALLET_NOT_FOUND.to_string()))?;
+            .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
 
         let (new_sender_wallet, new_recipient_wallet) =
             Self::get_new_wallets(&descriptor.balance_mint, &sender_wallet, &recipient_wallet)?;

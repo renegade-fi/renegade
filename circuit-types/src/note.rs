@@ -53,6 +53,12 @@ impl Note {
         compute_poseidon_hash(&vals)
     }
 
+    /// Compute the nullifier for the note
+    pub fn nullifier(&self) -> Scalar {
+        let comm = self.commitment();
+        compute_poseidon_hash(&[comm, self.blinder])
+    }
+
     /// Get the elements of the note that are encrypted when the note is created
     pub fn plaintext_elements(&self) -> [Scalar; NOTE_CIPHERTEXT_SIZE] {
         [biguint_to_scalar(&self.mint), Scalar::from(self.amount), self.blinder]

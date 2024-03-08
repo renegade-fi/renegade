@@ -9,6 +9,7 @@ use circuit_types::{
         compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
         wallet_from_blinded_shares,
     },
+    note::Note,
     order::Order,
     r#match::OrderSettlementIndices,
     SizedWallet,
@@ -22,7 +23,7 @@ use circuits::zk_circuits::{
 };
 use common::types::{
     proof_bundles::ProofBundle,
-    tasks::PayOfflineFeeTaskDescriptor,
+    tasks::{PayOfflineFeeTaskDescriptor, RedeemRelayerFeeTaskDescriptor},
     wallet::{Wallet, WalletAuthenticationPath, WalletIdentifier},
 };
 use common::types::{
@@ -391,5 +392,14 @@ fn enqueue_protocol_fee_settlement_task(
 ) -> Result<(), String> {
     let descriptor =
         PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, mint).expect("infallible");
+    state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
+}
+
+/// Enqueue a job to redeem a relayer fee into the relayer's wallet
+pub(crate) fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
+    let relayer_wallet_id = state.get_relayer_wallet_id()?.ok_or("relayer wallet not found")?;
+    let descriptor =
+        RedeemRelayerFeeTaskDescriptor::new(relayer_wallet_id, note).expect("infallible");
+
     state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
 }
