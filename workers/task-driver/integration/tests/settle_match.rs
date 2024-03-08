@@ -328,7 +328,7 @@ async fn verify_settlement(
     // 3. Lookup the wallet on-chain, verify that this matches the expected
     // Use the state wallet to check that the stored wallet stored matches the one
     // on-chain
-    lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, test_args.clone()).await
+    lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, &test_args).await
 }
 
 /// Verify that fees are paid for a wallet after a match
@@ -458,12 +458,7 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     sell_wallet.reblind_wallet();
     sell_wallet.apply_match(&match_res, &sell_order_id).unwrap();
 
-    lookup_wallet_and_check_result(
-        &sell_wallet,
-        sell_blinder_seed,
-        sell_share_seed,
-        test_args.clone(),
-    )
-    .await
+    lookup_wallet_and_check_result(&sell_wallet, sell_blinder_seed, sell_share_seed, &test_args)
+        .await
 }
 integration_test_async!(test_settle_mpc_match);

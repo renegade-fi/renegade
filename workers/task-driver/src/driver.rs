@@ -29,7 +29,7 @@ use crate::{
     tasks::{
         create_new_wallet::{NewWalletTask, NewWalletTaskState},
         lookup_wallet::{LookupWalletTask, LookupWalletTaskState},
-        pay_protocol_fee::{PayProtocolFeeTask, PayProtocolFeeTaskState},
+        pay_offline_fee::{PayOfflineFeeTask, PayOfflineFeeTaskState},
         pay_relayer_fee::{PayRelayerFeeTask, PayRelayerFeeTaskState},
         settle_match::{SettleMatchTask, SettleMatchTaskState},
         settle_match_internal::{SettleMatchInternalTask, SettleMatchInternalTaskState},
@@ -335,8 +335,8 @@ impl TaskExecutor {
                 Self::start_task_helper::<LookupWalletTask>(immediate, id, desc, ctx, args, notif)
                     .await
             },
-            TaskDescriptor::ProtocolFee(desc) => {
-                Self::start_task_helper::<PayProtocolFeeTask>(immediate, id, desc, ctx, args, notif)
+            TaskDescriptor::OfflineFee(desc) => {
+                Self::start_task_helper::<PayOfflineFeeTask>(immediate, id, desc, ctx, args, notif)
                     .await
             },
             TaskDescriptor::RelayerFee(desc) => {
@@ -447,7 +447,7 @@ pub enum StateWrapper {
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
     /// The state object for the pay protocol fee task
-    PayProtocolFee(PayProtocolFeeTaskState),
+    PayOfflineFee(PayOfflineFeeTaskState),
     /// The state object for the pay relayer fee task
     PayRelayerFee(PayRelayerFeeTaskState),
     /// The state object for the settle match task
@@ -466,7 +466,7 @@ impl StateWrapper {
         match self {
             StateWrapper::LookupWallet(state) => state.committed(),
             StateWrapper::NewWallet(state) => state.committed(),
-            StateWrapper::PayProtocolFee(state) => state.committed(),
+            StateWrapper::PayOfflineFee(state) => state.committed(),
             StateWrapper::PayRelayerFee(state) => state.committed(),
             StateWrapper::SettleMatch(state) => state.committed(),
             StateWrapper::SettleMatchInternal(state) => state.committed(),
@@ -481,9 +481,7 @@ impl StateWrapper {
         match self {
             StateWrapper::LookupWallet(state) => state == &LookupWalletTaskState::commit_point(),
             StateWrapper::NewWallet(state) => state == &NewWalletTaskState::commit_point(),
-            StateWrapper::PayProtocolFee(state) => {
-                state == &PayProtocolFeeTaskState::commit_point()
-            },
+            StateWrapper::PayOfflineFee(state) => state == &PayOfflineFeeTaskState::commit_point(),
             StateWrapper::PayRelayerFee(state) => state == &PayRelayerFeeTaskState::commit_point(),
             StateWrapper::SettleMatch(state) => state == &SettleMatchTaskState::commit_point(),
             StateWrapper::SettleMatchInternal(state) => {
@@ -502,7 +500,7 @@ impl Display for StateWrapper {
         let out = match self {
             StateWrapper::LookupWallet(state) => state.to_string(),
             StateWrapper::NewWallet(state) => state.to_string(),
-            StateWrapper::PayProtocolFee(state) => state.to_string(),
+            StateWrapper::PayOfflineFee(state) => state.to_string(),
             StateWrapper::PayRelayerFee(state) => state.to_string(),
             StateWrapper::SettleMatch(state) => state.to_string(),
             StateWrapper::SettleMatchInternal(state) => state.to_string(),

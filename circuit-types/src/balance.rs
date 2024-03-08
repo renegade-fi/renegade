@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     biguint_from_hex_string, biguint_to_hex_string,
+    elgamal::EncryptionKey,
+    note::Note,
     r#match::FeeTake,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
@@ -62,5 +64,27 @@ impl Balance {
     /// Get the fees due in the balance
     pub fn fees(&self) -> FeeTake {
         FeeTake { relayer_fee: self.relayer_fee_balance, protocol_fee: self.protocol_fee_balance }
+    }
+
+    /// Generate a note for the relayer fee on the balance
+    ///
+    /// Zeros out the relayer fee balance                   
+    pub fn create_relayer_note(&mut self, relayer_key: EncryptionKey) -> Note {
+        let mint = self.mint.clone();
+        let amount = self.relayer_fee_balance;
+        self.relayer_fee_balance = 0;
+
+        Note::new(mint, amount, relayer_key)
+    }
+
+    /// Generate a note for the protocol fee on the balance
+    ///
+    /// Zeros out the protocol fee balance
+    pub fn create_protocol_note(&mut self, protocol_key: EncryptionKey) -> Note {
+        let mint = self.mint.clone();
+        let amount = self.protocol_fee_balance;
+        self.protocol_fee_balance = 0;
+
+        Note::new(mint, amount, protocol_key)
     }
 }

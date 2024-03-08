@@ -84,7 +84,7 @@ async fn check_result_wallet(
     assert_eq_result!(wallet.private_shares, expected.private_shares)?;
 
     // Lookup the wallet from on-chain, and verify its construction
-    lookup_wallet_and_check_result(&expected, blinder_seed, secret_share_seed, args.clone()).await
+    lookup_wallet_and_check_result(&expected, blinder_seed, secret_share_seed, args).await
 }
 
 // --------------

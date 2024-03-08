@@ -90,7 +90,7 @@ async fn execute_wallet_update_and_verify_shares(
     execute_wallet_update(old_wallet, new_wallet.clone(), transfer_with_auth, test_args.clone())
         .await?;
     info!("Wallet updated successfully");
-    lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, test_args).await
+    lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, &test_args).await
 }
 
 /// Create a new deposit

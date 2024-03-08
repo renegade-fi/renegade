@@ -22,7 +22,7 @@ use circuits::zk_circuits::{
 };
 use common::types::{
     proof_bundles::ProofBundle,
-    tasks::{PayProtocolFeeTaskDescriptor, PayRelayerFeeTaskDescriptor},
+    tasks::PayOfflineFeeTaskDescriptor,
     wallet::{Wallet, WalletAuthenticationPath, WalletIdentifier},
 };
 use common::types::{
@@ -378,7 +378,8 @@ fn enqueue_relayer_fee_settlement_task(
     mint: BigUint,
     state: &State,
 ) -> Result<(), String> {
-    let descriptor = PayRelayerFeeTaskDescriptor::new(wallet_id, mint).expect("infallible");
+    let descriptor =
+        PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, mint).expect("infallible");
     state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
 }
 
@@ -388,6 +389,7 @@ fn enqueue_protocol_fee_settlement_task(
     mint: BigUint,
     state: &State,
 ) -> Result<(), String> {
-    let descriptor = PayProtocolFeeTaskDescriptor::new(wallet_id, mint).expect("infallible");
+    let descriptor =
+        PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, mint).expect("infallible");
     state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
 }
