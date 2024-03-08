@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     biguint_from_hex_string, biguint_to_hex_string,
+    r#match::FeeTake,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
@@ -56,5 +57,10 @@ impl Balance {
     /// Construct a balance with zero fees from a mint and amount
     pub fn new_from_mint_and_amount(mint: BigUint, amount: Amount) -> Balance {
         Balance { mint, amount, relayer_fee_balance: 0, protocol_fee_balance: 0 }
+    }
+
+    /// Get the fees due in the balance
+    pub fn fees(&self) -> FeeTake {
+        FeeTake { relayer_fee: self.relayer_fee_balance, protocol_fee: self.protocol_fee_balance }
     }
 }

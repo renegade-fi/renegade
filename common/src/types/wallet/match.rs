@@ -33,11 +33,11 @@ impl Wallet {
         recv_balance.relayer_fee_balance = recv_balance
             .relayer_fee_balance
             .checked_add(fees.relayer_fee)
-            .expect("balance overflow");
+            .expect("relayer fee balance overflow");
         recv_balance.protocol_fee_balance = recv_balance
             .protocol_fee_balance
             .checked_add(fees.protocol_fee)
-            .expect("balance overflow");
+            .expect("protocol fee balance overflow");
 
         // Update the public shares of the wallet, reblinding the wallet should be done
         // separately
