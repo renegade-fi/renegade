@@ -1,7 +1,10 @@
 //! Groups wallet API handlers and definitions
 
 use async_trait::async_trait;
-use circuit_types::{balance::Balance, order::Order};
+use circuit_types::{
+    balance::Balance, native_helpers::create_wallet_shares_from_private, order::Order,
+    SizedWallet as SizedCircuitWallet,
+};
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
@@ -171,6 +174,16 @@ impl TypedHandler for CreateWalletHandler {
         // and create proofs of validity
         let wallet_id = req.wallet.id;
         let mut wallet: Wallet = req.wallet.try_into().map_err(|e: String| bad_request(e))?;
+
+        // Modify the public shares of the new wallet to reflect the overwritten fields
+        let circuit_wallet: SizedCircuitWallet = wallet.clone().into();
+        let (_, public_shares) = create_wallet_shares_from_private(
+            &circuit_wallet,
+            &wallet.private_shares,
+            wallet.blinder,
+        );
+        wallet.blinded_public_shares = public_shares;
+
         wallet.wallet_id = wallet_id;
         let task = NewWalletTaskDescriptor::new(wallet).map_err(bad_request)?;
 
