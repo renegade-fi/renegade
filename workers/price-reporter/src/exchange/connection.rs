@@ -18,7 +18,7 @@ use tracing::error;
 use tungstenite::Error as WsError;
 use url::Url;
 
-use crate::worker::PriceReporterConfig;
+use crate::worker::ExchangeConnectionsConfig;
 
 use super::{super::errors::ExchangeConnectionError, PriceStreamType};
 
@@ -139,7 +139,7 @@ pub trait ExchangeConnection: Stream<Item = PriceStreamType> + Unpin + Send {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: &PriceReporterConfig,
+        config: &ExchangeConnectionsConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized;

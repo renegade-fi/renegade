@@ -30,6 +30,7 @@ use job_types::price_reporter::new_price_reporter_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
 use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
+use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
 use state::State;
@@ -264,9 +265,11 @@ async fn main() -> Result<(), CoordinatorError> {
         system_bus: system_bus.clone(),
         job_receiver: Some(price_reporter_worker_receiver).into(),
         cancel_channel: price_reporter_cancel_receiver,
-        coinbase_api_key: args.coinbase_api_key,
-        coinbase_api_secret: args.coinbase_api_secret,
-        eth_websocket_addr: args.eth_websocket_addr,
+        exchange_conn_config: ExchangeConnectionsConfig {
+            coinbase_api_key: args.coinbase_api_key,
+            coinbase_api_secret: args.coinbase_api_secret,
+            eth_websocket_addr: args.eth_websocket_addr,
+        },
         disabled: args.disable_price_reporter,
         disabled_exchanges: args.disabled_exchanges,
     })

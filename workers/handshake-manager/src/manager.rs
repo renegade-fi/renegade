@@ -52,6 +52,7 @@ use util::err_str;
 use uuid::Uuid;
 
 pub(super) use price_agreement::init_price_streams;
+pub use price_agreement::DEFAULT_PAIRS;
 
 use self::{
     handshake::{ERR_NO_PROOF, ERR_NO_WALLET},

@@ -16,7 +16,7 @@ use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::get_current_time_seconds;
 
-use crate::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
+use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
 
 use super::{
     connection::{
@@ -186,7 +186,7 @@ impl ExchangeConnection for CoinbaseConnection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: &PriceReporterConfig,
+        config: &ExchangeConnectionsConfig,
     ) -> Result<Self, ExchangeConnectionError> {
         // Build the base websocket connection
         let url = Self::websocket_url();

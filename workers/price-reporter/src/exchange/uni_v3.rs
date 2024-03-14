@@ -22,7 +22,7 @@ use web3::{
     Web3,
 };
 
-use crate::worker::PriceReporterConfig;
+use crate::worker::ExchangeConnectionsConfig;
 
 use super::{
     super::errors::ExchangeConnectionError, ExchangeConnection, InitializablePriceStream,
@@ -318,7 +318,7 @@ impl ExchangeConnection for UniswapV3Connection {
     async fn connect(
         base_token: Token,
         quote_token: Token,
-        config: &PriceReporterConfig,
+        config: &ExchangeConnectionsConfig,
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized,

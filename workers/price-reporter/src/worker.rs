@@ -26,12 +26,8 @@ pub struct PriceReporterConfig {
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The receiver for jobs from other workers
     pub job_receiver: DefaultOption<PriceReporterReceiver>,
-    /// The coinbase API key that the price reporter may use
-    pub coinbase_api_key: Option<String>,
-    /// The coinbase API secret that the price reporter may use
-    pub coinbase_api_secret: Option<String>,
-    /// The ethereum RPC node websocket addresses for on-chain data
-    pub eth_websocket_addr: Option<String>,
+    /// Exchange connection config options
+    pub exchange_conn_config: ExchangeConnectionsConfig,
     /// Whether or not the worker is disabled
     pub disabled: bool,
     /// Exchanges that are explicitly disabled for price reporting
@@ -39,6 +35,17 @@ pub struct PriceReporterConfig {
     /// The channel on which the coordinator may mandate that the price reporter
     /// manager cancel its execution
     pub cancel_channel: CancelChannel,
+}
+
+/// The configuration options that may be used by exchange connections
+#[derive(Clone, Debug, Default)]
+pub struct ExchangeConnectionsConfig {
+    /// The coinbase API key that the price reporter may use
+    pub coinbase_api_key: Option<String>,
+    /// The coinbase API secret that the price reporter may use
+    pub coinbase_api_secret: Option<String>,
+    /// The ethereum RPC node websocket addresses for on-chain data
+    pub eth_websocket_addr: Option<String>,
 }
 
 impl PriceReporterConfig {
@@ -51,9 +58,10 @@ impl PriceReporterConfig {
         let disabled = self.disabled_exchanges.contains(&exchange);
         let configured = match exchange {
             Exchange::Coinbase => {
-                self.coinbase_api_key.is_some() && self.coinbase_api_secret.is_some()
+                self.exchange_conn_config.coinbase_api_key.is_some()
+                    && self.exchange_conn_config.coinbase_api_secret.is_some()
             },
-            Exchange::UniswapV3 => self.eth_websocket_addr.is_some(),
+            Exchange::UniswapV3 => self.exchange_conn_config.eth_websocket_addr.is_some(),
             _ => true,
         };
 
