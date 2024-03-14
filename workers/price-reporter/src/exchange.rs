@@ -16,7 +16,7 @@ use std::{
 
 use atomic_float::AtomicF64;
 use common::types::{exchange::Exchange, token::Token, Price};
-use connection::{get_current_time, ExchangeConnection};
+pub use connection::{get_current_time, ExchangeConnection};
 
 use futures_util::Stream;
 
@@ -25,13 +25,13 @@ use self::{
     okx::OkxConnection, uni_v3::UniswapV3Connection,
 };
 
-use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
+use super::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
 
 /// Construct a new websocket connection for the given exchange
 pub async fn connect_exchange(
     base_token: &Token,
     quote_token: &Token,
-    config: &PriceReporterConfig,
+    config: &ExchangeConnectionsConfig,
     exchange: Exchange,
 ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
     let base_token = base_token.clone();
@@ -55,12 +55,12 @@ pub async fn connect_exchange(
 }
 
 /// The type that a price stream should return
-type PriceStreamType = Result<Price, ExchangeConnectionError>;
+pub type PriceStreamType = Result<Price, ExchangeConnectionError>;
 
 /// A helper struct that represents a stream of midpoint prices that may
 /// be initialized at construction
 #[derive(Debug)]
-struct InitializablePriceStream<T: Stream<Item = PriceStreamType> + Unpin> {
+pub struct InitializablePriceStream<T: Stream<Item = PriceStreamType> + Unpin> {
     /// The underlying stream
     stream: T,
     /// A buffered stream value, possibly used for initialization

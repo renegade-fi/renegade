@@ -20,7 +20,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     str::FromStr,
 };
-use token_remaps::setup_token_remaps;
+pub use token_remaps::setup_token_remaps;
 use toml::{value::Map, Value};
 use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 

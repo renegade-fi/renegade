@@ -45,7 +45,7 @@ const MAX_DEVIATION: f64 = 0.02;
 
 /// The number of milliseconds to wait in between sending keepalive messages to
 /// the connections
-const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
+pub const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
 /// The number of milliseconds to wait in between retrying connections
 const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
 /// The number of milliseconds in which `MAX_CONN_RETRIES` failures will cause a
@@ -455,7 +455,7 @@ impl ConnectionMuxer {
             .map(|exchange| {
                 let base_token = self.base_token.clone();
                 let quote_token = self.quote_token.clone();
-                let config = self.config.clone();
+                let config = self.config.exchange_conn_config.clone();
 
                 async move { connect_exchange(&base_token, &quote_token, &config, *exchange).await }
             })
@@ -489,6 +489,12 @@ impl ConnectionMuxer {
 
         // Reconnect
         info!("Retrying connection to {exchange}");
-        connect_exchange(&self.base_token, &self.quote_token, &self.config, exchange).await
+        connect_exchange(
+            &self.base_token,
+            &self.quote_token,
+            &self.config.exchange_conn_config,
+            exchange,
+        )
+        .await
     }
 }
