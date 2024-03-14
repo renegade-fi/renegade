@@ -32,7 +32,7 @@ use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 use crate::helpers::update_wallet_validity_proofs;
 
-/// The human-readable name of the the task
+/// The human-readable name of the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
 /// The given wallet shares do not recover the new wallet
 const ERR_INVALID_BLINDING: &str = "invalid blinding for new wallet";

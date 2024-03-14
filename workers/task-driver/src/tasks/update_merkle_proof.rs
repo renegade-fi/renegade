@@ -21,7 +21,7 @@ use crate::{
     traits::{Task, TaskContext, TaskError, TaskState},
 };
 
-/// The human-readable name of the the task
+/// The human-readable name of the task
 const UPDATE_MERKLE_PROOF_TASK_NAME: &str = "update-merkle-proof";
 
 // --------------
