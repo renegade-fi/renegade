@@ -56,7 +56,7 @@ const AAVE_TICKER: &str = "AAVE";
 
 lazy_static! {
     /// The token pairs we want to keep price streams open for persistently
-    static ref DEFAULT_PAIRS: Vec<(Token, Token)> = {
+    pub static ref DEFAULT_PAIRS: Vec<(Token, Token)> = {
         // For now we only stream prices quoted in USDC
         vec![
             (

@@ -45,7 +45,7 @@ use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::{
     manager::PriceReporter,
     mock::{setup_mock_token_remap, MockPriceReporter},
-    worker::PriceReporterConfig,
+    worker::{ExchangeConnectionsConfig, PriceReporterConfig},
 };
 use proof_manager::{
     mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
@@ -397,9 +397,11 @@ impl MockNodeController {
         let system_bus = self.bus.clone();
 
         let conf = PriceReporterConfig {
-            coinbase_api_key: config.coinbase_api_key.clone(),
-            coinbase_api_secret: config.coinbase_api_secret.clone(),
-            eth_websocket_addr: config.eth_websocket_addr.clone(),
+            exchange_conn_config: ExchangeConnectionsConfig {
+                coinbase_api_key: config.coinbase_api_key.clone(),
+                coinbase_api_secret: config.coinbase_api_secret.clone(),
+                eth_websocket_addr: config.eth_websocket_addr.clone(),
+            },
             disabled: config.disable_price_reporter,
             disabled_exchanges: config.disabled_exchanges.clone(),
             job_receiver: default_option(job_receiver),
