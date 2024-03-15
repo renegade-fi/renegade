@@ -255,6 +255,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the price reporter manager
     let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
     let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
+        price_reporter_url: args.price_reporter_url,
         system_bus: system_bus.clone(),
         job_receiver: Some(price_reporter_worker_receiver).into(),
         cancel_channel: price_reporter_cancel_receiver,

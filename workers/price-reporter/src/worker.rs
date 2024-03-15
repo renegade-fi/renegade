@@ -22,6 +22,8 @@ const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
 /// The config passed from the coordinator to the PriceReporter
 #[derive(Clone, Debug)]
 pub struct PriceReporterConfig {
+    /// The external price reporter to connect to, if any
+    pub price_reporter_url: Option<String>,
     /// The global system bus
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The receiver for jobs from other workers
@@ -56,13 +58,19 @@ impl PriceReporterConfig {
     /// and secret is not provided
     pub(crate) fn exchange_configured(&self, exchange: Exchange) -> bool {
         let disabled = self.disabled_exchanges.contains(&exchange);
-        let configured = match exchange {
-            Exchange::Coinbase => {
-                self.exchange_conn_config.coinbase_api_key.is_some()
-                    && self.exchange_conn_config.coinbase_api_secret.is_some()
-            },
-            Exchange::UniswapV3 => self.exchange_conn_config.eth_websocket_addr.is_some(),
-            _ => true,
+        let configured = if self.price_reporter_url.is_some() {
+            // If we are connecting to an external price reporter, we assume all exchanges
+            // are configured
+            true
+        } else {
+            match exchange {
+                Exchange::Coinbase => {
+                    self.exchange_conn_config.coinbase_api_key.is_some()
+                        && self.exchange_conn_config.coinbase_api_secret.is_some()
+                },
+                Exchange::UniswapV3 => self.exchange_conn_config.eth_websocket_addr.is_some(),
+                _ => true,
+            }
         };
 
         !disabled && configured

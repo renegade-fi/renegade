@@ -38,7 +38,7 @@ const CLOUDFLARE_RESET_MESSAGE: &str = "CloudFlare WebSocket proxy restarting";
 // -----------
 
 /// Build a websocket connection to the given endpoint
-pub(super) async fn ws_connect(
+pub(crate) async fn ws_connect(
     url: Url,
 ) -> Result<
     (

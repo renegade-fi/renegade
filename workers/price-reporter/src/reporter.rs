@@ -23,8 +23,12 @@ use util::get_current_time_seconds;
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 
+use self::external_reporter::stream_from_external_reporter;
+
 use super::MEDIAN_SOURCE_NAME;
 use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
+
+mod external_reporter;
 
 // -------------
 // | Constants |
@@ -45,7 +49,7 @@ const MAX_DEVIATION: f64 = 0.02;
 
 /// The number of milliseconds to wait in between sending keepalive messages to
 /// the connections
-pub const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
+const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
 /// The number of milliseconds to wait in between retrying connections
 const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
 /// The number of milliseconds in which `MAX_CONN_RETRIES` failures will cause a
@@ -363,7 +367,18 @@ impl ConnectionMuxer {
     }
 
     /// Start the connection muxer
-    pub async fn execution_loop(mut self) -> Result<(), ExchangeConnectionError> {
+    pub async fn execution_loop(self) -> Result<(), ExchangeConnectionError> {
+        match self.config.price_reporter_url.as_ref() {
+            Some(price_reporter_url) => {
+                stream_from_external_reporter(&self, price_reporter_url).await
+            },
+            None => self.stream_from_exchanges().await,
+        }
+    }
+
+    /// Stream prices by connecting directly to the exchanges in the absence of
+    /// an external price reporter
+    async fn stream_from_exchanges(mut self) -> Result<(), ExchangeConnectionError> {
         // Start a keepalive timer
         let delay = tokio::time::sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS));
         tokio::pin!(delay);
@@ -388,30 +403,7 @@ impl ConnectionMuxer {
                 stream_elem = stream_map.next() => {
                     if let Some((exchange, res)) = stream_elem {
                         match res {
-                            Ok(price) => {
-                                // Do not update if the price is default, simply let the price age
-                                if price == Price::default() {
-                                    continue;
-                                }
-
-                                let ts = get_current_time_seconds();
-                                self.exchange_state
-                                    .new_price(exchange, price, ts);
-
-                                // Stream a price update to the bus
-                                self.config.system_bus.publish(
-                                    price_report_topic_name(&exchange.to_string(), &self.base_token, &self.quote_token),
-                                    SystemBusMessage::PriceReportExchange(PriceReport {
-                                        base_token: self.base_token.clone(),
-                                        quote_token: self.quote_token.clone(),
-                                        exchange: Some(exchange),
-                                        midpoint_price: price,
-                                        local_timestamp: ts,
-                                        reported_timestamp: None
-                                    }),
-                                );
-                            },
-
+                            Ok(price) => self.update_price(exchange, price),
                             Err(e) => {
                                 // Restart the connection
                                 error!("Error streaming from {exchange}: {e}, restarting connection...");
@@ -485,7 +477,7 @@ impl ConnectionMuxer {
         }
 
         // Add delay before retrying
-        tokio::time::sleep(Duration::from_secs(CONN_RETRY_DELAY_MS)).await;
+        tokio::time::sleep(Duration::from_millis(CONN_RETRY_DELAY_MS)).await;
 
         // Reconnect
         info!("Retrying connection to {exchange}");
@@ -496,5 +488,29 @@ impl ConnectionMuxer {
             exchange,
         )
         .await
+    }
+
+    /// Update a given exchange's price in the shared state
+    fn update_price(&self, exchange: Exchange, price: Price) {
+        // Do not update if the price is default, simply let the price age
+        if price == Price::default() {
+            return;
+        }
+
+        let ts = get_current_time_seconds();
+        self.exchange_state.new_price(exchange, price, ts);
+
+        // Stream a price update to the bus
+        self.config.system_bus.publish(
+            price_report_topic_name(&exchange.to_string(), &self.base_token, &self.quote_token),
+            SystemBusMessage::PriceReportExchange(PriceReport {
+                base_token: self.base_token.clone(),
+                quote_token: self.quote_token.clone(),
+                exchange: Some(exchange),
+                midpoint_price: price,
+                local_timestamp: ts,
+                reported_timestamp: None,
+            }),
+        );
     }
 }

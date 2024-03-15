@@ -397,6 +397,7 @@ impl MockNodeController {
         let system_bus = self.bus.clone();
 
         let conf = PriceReporterConfig {
+            price_reporter_url: config.price_reporter_url.clone(),
             exchange_conn_config: ExchangeConnectionsConfig {
                 coinbase_api_key: config.coinbase_api_key.clone(),
                 coinbase_api_secret: config.coinbase_api_secret.clone(),
