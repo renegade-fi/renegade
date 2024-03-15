@@ -47,12 +47,12 @@ const MAX_DEVIATION: f64 = 0.02;
 /// the connections
 pub const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
 /// The number of milliseconds to wait in between retrying connections
-const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
+pub const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
 /// The number of milliseconds in which `MAX_CONN_RETRIES` failures will cause a
 /// failure of the price reporter
-const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
+pub const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
 /// The maximum number of retries to attempt before giving up on a connection
-const MAX_CONN_RETRIES: usize = 5;
+pub const MAX_CONN_RETRIES: usize = 5;
 
 /// The number of milliseconds to wait in between sending median price report
 /// updates
@@ -485,7 +485,7 @@ impl ConnectionMuxer {
         }
 
         // Add delay before retrying
-        tokio::time::sleep(Duration::from_secs(CONN_RETRY_DELAY_MS)).await;
+        tokio::time::sleep(Duration::from_millis(CONN_RETRY_DELAY_MS)).await;
 
         // Reconnect
         info!("Retrying connection to {exchange}");
