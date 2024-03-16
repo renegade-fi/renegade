@@ -107,6 +107,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    // TODO: Update, this is now supported (w/ USDT pair)
     (
         "0x6810e776880c02933d47db1b9fc05908e5386b96",
         18,
@@ -117,6 +118,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Unsupported,
     ),
     // LSDs
+    // TODO: Remove b/c unsupported by Binance
     (
         "0xbe9895146f7af43049ca1c1ae358b0541ea49704",
         18,
@@ -154,6 +156,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    // TODO: Remove b/c being deprecated
     (
         "0x4fabb145d64652a948d72533023f6e7a623c7c53",
         18,
@@ -320,6 +323,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Same,
     ),
     // DeFi Lending Undercollateralized
+    // TODO: Update, this is now supported (w/ USDT pair)
     (
         "0x4c19596f5aaff459fa38b0f7ed92f11ae6543784",
         8,
@@ -329,6 +333,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
+    // TODO: Remove b/c unsupported by Binance
     (
         "0x33349b282065b0284d756f0577fb39c158f935e6",
         18,
@@ -348,6 +353,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    // TODO: Remove b/c unsupported by Binance
     (
         "0x221657776846890989a759ba2973e427dff5c9bb",
         18,
@@ -404,6 +410,7 @@ pub static ERC20_DATA: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    // TODO: Remove b/c unsupported by Binance
     (
         "0x42bbfa2e77757c645eeaad1655e0911a7553efbc",
         18,

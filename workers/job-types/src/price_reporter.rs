@@ -40,6 +40,15 @@ pub enum PriceReporterJob {
         /// The quote Token
         quote_token: Token,
     },
+    /// Peek at the Binance price report
+    PeekBinance {
+        /// The base Token
+        base_token: Token,
+        /// The quote Token
+        quote_token: Token,
+        /// The return channel for the price report
+        channel: TokioSender<PriceReporterState>,
+    },
     /// Peek at the median price report
     PeekMedian {
         /// The base Token

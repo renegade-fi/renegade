@@ -81,7 +81,10 @@ pub enum PriceReporterState {
     Nominal(PriceReport),
     /// Not enough data has yet to be reported from the ExchangeConnections.
     /// Includes the number of ExchangeConnection reporters.
+    // NOTE(@akirillo): We will probably remove this since we're no longer computing medians
     NotEnoughDataReported(usize),
+    /// No data has been reported as of yet
+    NoDataReported,
     /// At least one of the ExchangeConnection has not reported a recent enough
     /// report. Includes the current time_diff in milliseconds.
     DataTooStale(PriceReport, u64),

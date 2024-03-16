@@ -103,6 +103,10 @@ impl PriceReporterExecutor {
                 self.start_price_reporter(base_token, quote_token).await
             },
 
+            PriceReporterJob::PeekBinance { base_token, quote_token, channel } => {
+                self.peek_binance(base_token, quote_token, channel).await
+            },
+
             PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
                 self.peek_median(base_token, quote_token, channel).await
             },
@@ -141,6 +145,24 @@ impl PriceReporterExecutor {
             };
 
         locked_reporters.insert((base_token.clone(), quote_token.clone()), reporter);
+
+        Ok(())
+    }
+
+    /// Handler for PeekBinance job
+    async fn peek_binance(
+        &mut self,
+        base_token: Token,
+        quote_token: Token,
+        channel: TokioSender<PriceReporterState>,
+    ) -> Result<(), PriceReporterError> {
+        match self.get_price_reporter_or_create(base_token, quote_token).await {
+            Ok(reporter) => channel.send(reporter.peek_binance()).unwrap(),
+            Err(PriceReporterError::UnsupportedPair(base, quote)) => {
+                channel.send(PriceReporterState::UnsupportedPair(base, quote)).unwrap()
+            },
+            Err(e) => return Err(e),
+        };
 
         Ok(())
     }

@@ -137,7 +137,7 @@ impl HandshakeExecutor {
         for (base, quote) in DEFAULT_PAIRS.iter().cloned() {
             let (sender, receiver) = oneshot::channel();
             self.price_reporter_job_queue
-                .send(PriceReporterJob::PeekMedian {
+                .send(PriceReporterJob::PeekBinance {
                     base_token: base,
                     quote_token: quote,
                     channel: sender,
@@ -168,6 +168,7 @@ impl HandshakeExecutor {
                 // TODO: We may want to re-evaluate whether we want to accept price reports
                 // with large deviation. This largely happens because of Uniswap, and we could
                 // implement a more complex deviation calculation that ignores DEXs
+                // NOTE(@akirillo): We're going to remove Uniswap anyway, lol
                 PriceReporterState::TooMuchDeviation(report, _) => {
                     midpoint_prices.push((
                         report.base_token,

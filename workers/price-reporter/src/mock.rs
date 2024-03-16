@@ -75,6 +75,9 @@ impl MockPriceReporter {
                 debug!("mock price reporter got `StartPriceReporter` job");
                 Ok(())
             },
+            PriceReporterJob::PeekBinance { base_token, quote_token, channel } => {
+                self.handle_peek_binance(base_token, quote_token, channel)
+            },
             PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
                 self.handle_peek_median(base_token, quote_token, channel)
             },
@@ -84,7 +87,33 @@ impl MockPriceReporter {
         }
     }
 
+    /// Handle a peek Binance job
+    fn handle_peek_binance(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+        channel: OneshotSender<PriceReporterState>,
+    ) -> Result<(), PriceReporterError> {
+        // Construct a state and send it back on the queue
+        let timestamp = get_current_time_seconds();
+        let state = PriceReporterState::Nominal(PriceReport {
+            base_token,
+            quote_token,
+            exchange: None, // midpoint
+            midpoint_price: self.price,
+            local_timestamp: timestamp,
+            reported_timestamp: Some(timestamp as u128),
+        });
+
+        if let Err(e) = channel.send(state) {
+            error!("error sending price report: {e:?}");
+        }
+
+        Ok(())
+    }
+
     /// Handle a peek median job
+    // NOTE(@akirillo): This will get removed
     fn handle_peek_median(
         &self,
         base_token: Token,

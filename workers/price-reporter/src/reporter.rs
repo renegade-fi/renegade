@@ -173,7 +173,22 @@ impl Reporter {
         Ok(self_)
     }
 
+    /// Non-blocking report of the latest ReporterState for the Binance exchange
+    // TODO: Substitute this into `get_state`
+    pub fn peek_binance(&self) -> PriceReporterState {
+        if let Some((price, ts)) = self.exchange_info.read_price(&Exchange::Binance) {
+            if price == Price::default() {
+                PriceReporterState::NoDataReported
+            } else {
+                PriceReporterState::Nominal(self.price_report_from_price(price, ts))
+            }
+        } else {
+            PriceReporterState::UnsupportedPair(self.base_token.clone(), self.quote_token.clone())
+        }
+    }
+
     /// Non-blocking report of the latest ReporterState for the median
+    // NOTE(@akirillo): This will get removed
     pub fn peek_median(&self) -> PriceReporterState {
         self.get_state()
     }
@@ -204,6 +219,7 @@ impl Reporter {
     // -----------
 
     /// An execution loop that streams median price reports to the system bus
+    // NOTE(@akirillo): This will get removed
     async fn median_streamer_loop(&self, system_bus: SystemBus<SystemBusMessage>) {
         let topic_name =
             price_report_topic_name(MEDIAN_SOURCE_NAME, &self.base_token, &self.quote_token);
@@ -262,6 +278,8 @@ impl Reporter {
     /// ReporterState. We check for various issues (delayed prices, no
     /// data yet received, etc.), and if no issues are found, compute the
     /// median PriceReport
+    // TODO: Adapt this to return the Binance price as opposed to median,
+    // but keeping the same staleness & deviation checks in place
     fn get_state(&self) -> PriceReporterState {
         // If the Token pair is Unnamed, then we simply report the UniswapV3 price if
         // one exists.

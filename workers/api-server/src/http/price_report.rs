@@ -40,6 +40,7 @@ impl ExchangeHealthStatesHandler {
     }
 }
 
+// NOTE(@akirillo): We'll remove this route / file
 #[async_trait]
 impl TypedHandler for ExchangeHealthStatesHandler {
     type Request = GetExchangeHealthStatesRequest;

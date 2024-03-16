@@ -80,6 +80,7 @@ impl PriceReporterHandler {
     }
 }
 
+// NOTE(@akirillo): Remove this route / file
 #[async_trait]
 impl WebsocketTopicHandler for PriceReporterHandler {
     /// Handle a subscription to a price report
