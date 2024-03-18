@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod network;
 pub mod order_book;
-pub mod price_report;
+pub mod price_report; // TODO: REMOVE AFTER FE INTEGRATION W/ STANDALONE PRICE REPORTER
 pub mod task;
 pub mod wallet;
 

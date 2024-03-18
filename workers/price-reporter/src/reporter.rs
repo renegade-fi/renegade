@@ -1,4 +1,4 @@
-//! Defines the Reporter, which is responsible for computing median
+//! Defines the Reporter, which is responsible for computing
 //! PriceReports by managing individual ExchangeConnections in a fault-tolerant
 //! manner.
 use atomic_float::AtomicF64;
@@ -23,14 +23,13 @@ use util::get_current_time_seconds;
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 
-use super::MEDIAN_SOURCE_NAME;
 use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
 
 // -------------
 // | Constants |
 // -------------
 
-/// If none of the ExchangeConnections have reported an update within
+/// If Binance has not reported an update within
 /// MAX_REPORT_AGE (in milliseconds), we pause matches until we receive a more
 /// recent price. Note that this threshold cannot be too aggressive, as certain
 /// long-tail asset pairs legitimately do not update that often.
@@ -39,8 +38,8 @@ const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
 /// we have enough reports. This only applies to Named tokens, as Unnamed tokens
 /// simply use UniswapV3.
 const MIN_CONNECTIONS: usize = 1;
-/// If a single PriceReport is more than MAX_DEVIATION (as a fraction) away from
-/// the midpoint, then we pause matches until the prices stabilize.
+/// If a Binance PriceReport is more than MAX_DEVIATION (as a fraction) away
+/// from the midpoint, then we pause matches until the prices stabilize.
 const MAX_DEVIATION: f64 = 0.02;
 
 /// The number of milliseconds to wait in between sending keepalive messages to
@@ -54,12 +53,11 @@ const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
 /// The maximum number of retries to attempt before giving up on a connection
 const MAX_CONN_RETRIES: usize = 5;
 
-/// The number of milliseconds to wait in between sending median price report
-/// updates
-const MEDIAN_PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
+/// The number of milliseconds to wait in between sending price report updates
+const PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
 
 /// The price reporter handles opening connections to exchanges, and computing
-/// price reports and medians from the exchange data
+/// price reports from the exchange data
 #[derive(Clone, Debug)]
 pub struct Reporter {
     /// The base Token (e.g., WETH)
@@ -160,17 +158,17 @@ impl Reporter {
             }
         });
 
-        // Spawn a thread to stream median price reports
+        // Spawn a thread to stream price reports
         let self_ = Self { base_token, quote_token, exchange_info: shared_exchange_state };
 
         let self_clone = self_.clone();
-        tokio::spawn(async move { self_clone.median_streamer_loop(config.system_bus).await });
+        tokio::spawn(async move { self_clone.price_streamer_loop(config.system_bus).await });
 
         Ok(self_)
     }
 
-    /// Non-blocking report of the latest ReporterState for the median
-    pub fn peek_median(&self) -> PriceReporterState {
+    /// Non-blocking report of the latest ReporterState for the price
+    pub fn peek_price(&self) -> PriceReporterState {
         self.get_state()
     }
 
@@ -199,20 +197,18 @@ impl Reporter {
     // | Helpers |
     // -----------
 
-    /// An execution loop that streams median price reports to the system bus
-    async fn median_streamer_loop(&self, system_bus: SystemBus<SystemBusMessage>) {
-        let topic_name =
-            price_report_topic_name(MEDIAN_SOURCE_NAME, &self.base_token, &self.quote_token);
+    /// An execution loop that streams price reports to the system bus
+    async fn price_streamer_loop(&self, system_bus: SystemBus<SystemBusMessage>) {
+        let topic_name = price_report_topic_name(&self.base_token, &self.quote_token);
 
         loop {
             if system_bus.has_listeners(&topic_name) {
                 if let PriceReporterState::Nominal(report) = self.get_state() {
-                    system_bus
-                        .publish(topic_name.clone(), SystemBusMessage::PriceReportMedian(report));
+                    system_bus.publish(topic_name.clone(), SystemBusMessage::PriceReport(report));
                 }
             }
 
-            tokio::time::sleep(Duration::from_millis(MEDIAN_PRICE_REPORT_INTERVAL_MS)).await;
+            tokio::time::sleep(Duration::from_millis(PRICE_REPORT_INTERVAL_MS)).await;
         }
     }
 
@@ -252,64 +248,68 @@ impl Reporter {
         }
     }
 
-    /// Given a PriceReport for each Exchange, compute the current
-    /// ReporterState. We check for various issues (delayed prices, no
-    /// data yet received, etc.), and if no issues are found, compute the
-    /// median PriceReport
+    /// Get the current Binance price for the given pair, converting
+    /// through the most liquid stablecoin quote asset if appropriate.
+    /// Checks if the price is too stale or deviates too much from the median
+    /// across other exchanges.
     fn get_state(&self) -> PriceReporterState {
-        // If the Token pair is Unnamed, then we simply report the UniswapV3 price if
-        // one exists.
+        // We don't currently support Unnamed pairs
         if !self.is_named() {
-            let (uni_price, uni_ts) = self.exchange_info.read_price(&Exchange::UniswapV3).unwrap();
-            if uni_price == Price::default() {
-                return PriceReporterState::NotEnoughDataReported(0);
-            } else {
-                return PriceReporterState::Nominal(
-                    self.price_report_from_price(uni_price, uni_ts),
-                );
-            }
+            return PriceReporterState::UnsupportedPair(
+                self.base_token.clone(),
+                self.quote_token.clone(),
+            );
         }
 
-        // Collect all non-zero PriceReports and ensure that we have enough.
-        let (non_zero_prices, timestamps): (Vec<Price>, Vec<u64>) = ALL_EXCHANGES
-            .iter()
-            .filter_map(|exchange| self.exchange_info.read_price(exchange))
-            .filter(|(price, _)| *price != Price::default() && price.is_finite())
-            .unzip();
+        // Fetch the most recent Binance price
+        match self.exchange_info.read_price(&Exchange::Binance) {
+            None => PriceReporterState::NotEnoughDataReported(0),
+            Some((price, ts)) => {
+                if price == Price::default() {
+                    return PriceReporterState::NotEnoughDataReported(0);
+                }
 
-        // Ensure that we have enough data to create a median
-        if non_zero_prices.len() < MIN_CONNECTIONS {
-            return PriceReporterState::NotEnoughDataReported(non_zero_prices.len());
+                let price_report = PriceReport {
+                    base_token: self.base_token.clone(),
+                    quote_token: self.quote_token.clone(),
+                    price,
+                    local_timestamp: ts,
+                };
+
+                // Check that the most recent timestamp is not too old
+                let (too_stale, time_diff) = ts_too_stale(ts);
+                if too_stale {
+                    return PriceReporterState::DataTooStale(price_report, time_diff);
+                }
+
+                // Collect all non-zero, non-stale prices from other exchanges and ensure that
+                // we have enough.
+                let (non_zero_prices, _): (Vec<Price>, Vec<u64>) = ALL_EXCHANGES
+                    .iter()
+                    .filter(|exchange| *exchange != &Exchange::Binance)
+                    .filter_map(|exchange| self.exchange_info.read_price(exchange))
+                    .filter(|(price, ts)| {
+                        *price != Price::default() && price.is_finite() && !ts_too_stale(*ts).0
+                    })
+                    .unzip();
+
+                // If we have enough data to create a median, check for deviation against it
+                if non_zero_prices.len() >= MIN_CONNECTIONS {
+                    // Compute the median price
+                    let median_midpoint_price = Data::new(non_zero_prices.clone()).median();
+
+                    // Ensure that there is not too much deviation between the prices
+                    let deviation = (price - median_midpoint_price).abs() / median_midpoint_price;
+                    if deviation > MAX_DEVIATION {
+                        return PriceReporterState::TooMuchDeviation(price_report, deviation);
+                    }
+                } else {
+                    return PriceReporterState::NotEnoughDataReported(non_zero_prices.len());
+                }
+
+                PriceReporterState::Nominal(price_report)
+            },
         }
-
-        // Compute the median price report
-        let median_midpoint_price = Data::new(non_zero_prices.clone()).median();
-        let median_ts =
-            Data::new(timestamps.iter().map(|ts| *ts as f64).collect_vec()).median() as u64;
-        let median_price_report = PriceReport {
-            base_token: self.base_token.clone(),
-            quote_token: self.quote_token.clone(),
-            price: median_midpoint_price,
-            local_timestamp: median_ts,
-        };
-
-        // Check that the most recent timestamp is not too old
-        let most_recent_report = timestamps.iter().max().unwrap();
-        let time_diff = get_current_time_seconds() - most_recent_report;
-        if time_diff > MAX_REPORT_AGE_MS {
-            return PriceReporterState::DataTooStale(median_price_report, time_diff);
-        }
-
-        // Ensure that there is not too much deviation between the prices
-        let max_deviation = non_zero_prices
-            .iter()
-            .map(|price| (price - median_midpoint_price).abs() / median_midpoint_price)
-            .fold(0f64, |a, b| a.max(b));
-        if non_zero_prices.len() > 1 && max_deviation > MAX_DEVIATION {
-            return PriceReporterState::TooMuchDeviation(median_price_report, max_deviation);
-        }
-
-        PriceReporterState::Nominal(median_price_report)
     }
 }
 
@@ -480,4 +480,15 @@ impl ConnectionMuxer {
         )
         .await
     }
+}
+
+// -----------
+// | HELPERS |
+// -----------
+
+/// Returns whether or not the provided timestamp is too stale,
+/// and the time difference between the current time and the provided timestamp
+fn ts_too_stale(ts: u64) -> (bool, u64) {
+    let time_diff = get_current_time_seconds() - ts;
+    (time_diff > MAX_REPORT_AGE_MS, time_diff)
 }

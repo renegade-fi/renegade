@@ -26,20 +26,10 @@ const ERR_SENDING_MESSAGE: &str = "error sending message to price reporter";
 // | URL Captures |
 // ----------------
 
-/// The source to fetch a price report from
-const PRICE_SOURCE_URL_PARAM: &str = "source";
 /// The base mint url param to fetch a price report for
 const BASE_MINT_URL_PARAM: &str = "base";
 /// The quote mint url param to fetch a price report for
 const QUOTE_MINT_URL_PARAM: &str = "quote";
-
-/// Parse a price report source from a set of URL params
-fn parse_source_from_url_params(params: &UrlParams) -> Result<String, ApiServerError> {
-    params
-        .get(&PRICE_SOURCE_URL_PARAM.to_string())
-        .ok_or_else(|| bad_request(ERR_MISSING_PARAMS.to_string()))
-        .cloned()
-}
 
 /// Parse a base mint from a URL param
 fn parse_base_mint_from_url_params(params: &UrlParams) -> Result<String, ApiServerError> {
@@ -91,8 +81,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
         _topic: String,
         route_params: &UrlParams,
     ) -> Result<TopicReader<SystemBusMessage>, ApiServerError> {
-        // Parse the source, base mint, and quote mint from the route
-        let source = parse_source_from_url_params(route_params)?;
+        // Parse the base mint and quote mint from the route
         let base = Token::from_addr(&parse_base_mint_from_url_params(route_params)?);
         let quote = Token::from_addr(&parse_quote_mint_from_url_params(route_params)?);
 
@@ -104,7 +93,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
             })
             .map_err(|_| ApiServerError::WebsocketServerFailure(ERR_SENDING_MESSAGE.to_string()))?;
 
-        Ok(self.system_bus.subscribe(price_report_topic_name(&source, &base, &quote)))
+        Ok(self.system_bus.subscribe(price_report_topic_name(&base, &quote)))
     }
 
     /// Handle an unsubscribe message from the price reporter
