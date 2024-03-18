@@ -1,7 +1,6 @@
 //! The price reporter module manages all external price feeds, including
 //! PriceReporter spin-up and tear-down, websocket connections to all exchanges
-//! (both centralized and decentralized), and aggregation of individual
-//! PriceReports into medians.
+//! (both centralized and decentralized), and computing PriceReports.
 
 #![deny(unsafe_code)]
 #![deny(missing_docs)]
@@ -17,6 +16,3 @@ pub mod manager;
 pub mod mock;
 pub mod reporter;
 pub mod worker;
-
-/// The pubsub topic source name for median price reports
-pub const MEDIAN_SOURCE_NAME: &str = "median";

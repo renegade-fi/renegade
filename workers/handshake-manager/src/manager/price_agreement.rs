@@ -137,7 +137,7 @@ impl HandshakeExecutor {
         for (base, quote) in DEFAULT_PAIRS.iter().cloned() {
             let (sender, receiver) = oneshot::channel();
             self.price_reporter_job_queue
-                .send(PriceReporterJob::PeekMedian {
+                .send(PriceReporterJob::PeekPrice {
                     base_token: base,
                     quote_token: quote,
                     channel: sender,

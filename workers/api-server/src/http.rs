@@ -47,6 +47,7 @@ use self::{
         GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
         GET_NETWORK_ORDER_BY_ID_ROUTE,
     },
+    price_report::{PriceReportHandler, PRICE_REPORT_ROUTE},
     task::{
         GetTaskQueueHandler, GetTaskStatusHandler, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE,
     },
@@ -65,6 +66,7 @@ use super::{
 
 mod network;
 mod order_book;
+mod price_report;
 mod task;
 mod wallet;
 
@@ -184,14 +186,22 @@ impl HttpServer {
     /// Create a new http server
     pub(super) fn new(config: ApiServerConfig, global_state: State) -> Self {
         // Build the router, server, and register routes
-        let router = Self::build_router(global_state);
+        let router = Self::build_router(&config, global_state);
         Self { router: Arc::new(router), config }
     }
 
     /// Build a router and register routes on it
-    fn build_router(global_state: State) -> Router {
+    fn build_router(config: &ApiServerConfig, global_state: State) -> Router {
         // Build the router and register its routes
         let mut router = Router::new(global_state.clone());
+
+        // The "/exchangeHealthStates" route
+        router.add_route(
+            &Method::POST,
+            PRICE_REPORT_ROUTE.to_string(),
+            false, // auth_required
+            PriceReportHandler::new(config.clone()),
+        );
 
         // The "/ping" route
         router.add_route(

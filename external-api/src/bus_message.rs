@@ -33,8 +33,8 @@ pub fn task_topic_name(task_id: &TaskIdentifier) -> String {
 }
 
 /// Get the topic name for a price report
-pub fn price_report_topic_name(source: &str, base: &Token, quote: &Token) -> String {
-    format!("{}-price-report-{}-{}", source, base.get_addr(), quote.get_addr())
+pub fn price_report_topic_name(base: &Token, quote: &Token) -> String {
+    format!("price-report-{}-{}", base.get_addr(), quote.get_addr())
 }
 
 /// A message type for generic system bus messages, broadcast to all modules
@@ -88,11 +88,8 @@ pub enum SystemBusMessage {
     },
 
     // -- Price Report -- //
-    /// A message indicating that a new median PriceReport has been published
-    PriceReportMedian(PriceReport),
-    /// A message indicating that a new individual exchange PriceReport has been
-    /// published
-    PriceReportExchange(PriceReport),
+    /// A message indicating that a new PriceReport has been published
+    PriceReport(PriceReport),
 
     // -- Tasks -- //
     /// A message indicating that a task has

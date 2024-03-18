@@ -36,8 +36,8 @@ pub enum PriceReporterJob {
         /// The quote Token
         quote_token: Token,
     },
-    /// Peek at the median price report
-    PeekMedian {
+    /// Peek at the price report
+    PeekPrice {
         /// The base Token
         base_token: Token,
         /// The quote Token
