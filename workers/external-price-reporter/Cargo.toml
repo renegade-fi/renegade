@@ -1,0 +1,16 @@
+[package]
+name = "external-price-reporter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# === Async + Runtime === #
+tokio = { workspace = true }
+
+# === Workspace Dependencies === #
+common = { path = "../../common" }
+external-api = { path = "../../external-api" }
+job-types = { path = "../job-types" }
+system-bus = { path = "../../system-bus" }
+util = { path = "../../util" }

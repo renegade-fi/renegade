@@ -2836,6 +2836,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "external-price-reporter"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "external-api",
+ "job-types",
+ "system-bus",
+ "tokio",
+ "util",
+]
+
+[[package]]
 name = "eyre"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6504,6 +6516,7 @@ dependencies = [
  "crossbeam",
  "ethers",
  "external-api",
+ "external-price-reporter",
  "gossip-api",
  "gossip-server",
  "handshake-manager",

@@ -21,6 +21,8 @@ use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{watch_worker, Worker};
 use constants::VERSION;
 use external_api::bus_message::SystemBusMessage;
+use external_price_reporter::manager::ExternalPriceReporter;
+use external_price_reporter::worker::ExternalPriceReporterConfig;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::gossip_server::new_gossip_server_queue;
@@ -253,24 +255,57 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<HandshakeManager>(&mut handshake_manager, &handshake_failure_sender);
 
     // Start the price reporter manager
+    let using_external_price_reporter = args.price_reporter_url.is_some();
+
     let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
-    let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
-        system_bus: system_bus.clone(),
-        job_receiver: Some(price_reporter_worker_receiver).into(),
-        cancel_channel: price_reporter_cancel_receiver,
-        exchange_conn_config: ExchangeConnectionsConfig {
-            coinbase_api_key: args.coinbase_api_key,
-            coinbase_api_secret: args.coinbase_api_secret,
-            eth_websocket_addr: args.eth_websocket_addr,
-        },
-        disabled: args.disable_price_reporter,
-        disabled_exchanges: args.disabled_exchanges,
-    })
-    .expect("failed to build price reporter manager");
-    price_reporter_manager.start().expect("failed to start price reporter manager");
     let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
-    watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
+
+    let (mut external_price_reporter_manager, mut native_price_reporter_manager) =
+        if let Some(price_reporter_url) = args.price_reporter_url {
+            let mut external_price_reporter_manager =
+                ExternalPriceReporter::new(ExternalPriceReporterConfig {
+                    system_bus: system_bus.clone(),
+                    job_receiver: Some(price_reporter_worker_receiver).into(),
+                    price_reporter_url,
+                    cancel_channel: price_reporter_cancel_receiver,
+                    disabled: args.disable_price_reporter,
+                    disabled_exchanges: args.disabled_exchanges,
+                })
+                .expect("failed to build external price reporter manager");
+            external_price_reporter_manager
+                .start()
+                .expect("failed to start external price reporter manager");
+
+            watch_worker::<ExternalPriceReporter>(
+                &mut external_price_reporter_manager,
+                &price_reporter_failure_sender,
+            );
+
+            (Some(external_price_reporter_manager), None)
+        } else {
+            let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
+                system_bus: system_bus.clone(),
+                job_receiver: Some(price_reporter_worker_receiver).into(),
+                cancel_channel: price_reporter_cancel_receiver,
+                exchange_conn_config: ExchangeConnectionsConfig {
+                    coinbase_api_key: args.coinbase_api_key,
+                    coinbase_api_secret: args.coinbase_api_secret,
+                    eth_websocket_addr: args.eth_websocket_addr,
+                },
+                disabled: args.disable_price_reporter,
+                disabled_exchanges: args.disabled_exchanges,
+            })
+            .expect("failed to build price reporter manager");
+            price_reporter_manager.start().expect("failed to start price reporter manager");
+
+            watch_worker::<PriceReporter>(
+                &mut price_reporter_manager,
+                &price_reporter_failure_sender,
+            );
+
+            (None, Some(price_reporter_manager))
+        };
 
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
@@ -332,7 +367,11 @@ async fn main() -> Result<(), CoordinatorError> {
                 _ = price_reporter_failure_receiver.recv() => {
                     price_reporter_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
-                    price_reporter_manager = recover_worker(price_reporter_manager)?;
+                    if using_external_price_reporter {
+                        external_price_reporter_manager = Some(recover_worker(external_price_reporter_manager.unwrap())?);
+                    } else {
+                        native_price_reporter_manager = Some(recover_worker(native_price_reporter_manager.unwrap())?);
+                    }
                 }
                 _= chain_listener_failure_receiver.recv() => {
                     chain_listener_cancel_sender.send(())

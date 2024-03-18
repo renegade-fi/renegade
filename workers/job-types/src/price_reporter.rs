@@ -16,10 +16,15 @@ pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver)
     unbounded_channel()
 }
 
-/// All possible jobs that the PriceReporter accepts.
+/// All possible jobs that the PriceReporter and ExternalPriceReporter accept.
 #[derive(Debug)]
 pub enum PriceReporterJob {
-    /// Create and start a new PriceReporter for a given token pair.
+    /// Start streaming prices for the given token pair.
+    /// 
+    /// If using the ExternalPriceReporter, this will subscribe to the pair's
+    /// price stream on the external price reporter service.
+    /// 
+    /// If using the native PriceReporter:
     ///
     /// If the PriceReporter does not yet exist, spawn it and begin publication
     /// to the global system bus. If the PriceReporter already exists and id

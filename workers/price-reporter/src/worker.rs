@@ -93,6 +93,7 @@ impl Worker for PriceReporter {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Spawn a tokio thread pool to run the manager in
+        // NOTE(@akirillo): Do we need this?
         let tokio_runtime = TokioBuilder::new_multi_thread()
             .worker_threads(PRICE_REPORTER_MANAGER_NUM_THREADS)
             .enable_io()

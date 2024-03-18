@@ -46,7 +46,7 @@ pub struct ApiServerConfig {
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// The worker job queue for the PriceReporter
-    pub price_reporter_work_queue: PriceReporterQueue,
+    pub price_reporter_work_queue: PriceReporterQueue, // TODO: REMOVE AFTER FE INTEGRATION W/ STANDALONE PRICE REPORTER
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: ProofManagerQueue,
     /// The relayer-global state

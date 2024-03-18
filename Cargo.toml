@@ -27,6 +27,7 @@ members = [
 	"workers/proof-manager",
 	"workers/task-driver",
 	"renegade-metrics",
+	"workers/external-price-reporter",
 ]
 
 [profile.bench]
