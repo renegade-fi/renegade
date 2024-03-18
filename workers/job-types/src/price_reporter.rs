@@ -1,9 +1,5 @@
 //! Defines all possible jobs for the PriceReporter.
-use common::types::{
-    exchange::{Exchange, ExchangeConnectionState, PriceReporterState},
-    token::Token,
-};
-use std::collections::HashMap;
+use common::types::{exchange::PriceReporterState, token::Token};
 use tokio::sync::mpsc::{
     unbounded_channel, UnboundedReceiver as TokioUnboundedReceiver,
     UnboundedSender as TokioUnboundedSender,
@@ -48,14 +44,5 @@ pub enum PriceReporterJob {
         quote_token: Token,
         /// The return channel for the price report
         channel: TokioSender<PriceReporterState>,
-    },
-    /// Peek at each ExchangeConnectionState
-    PeekAllExchanges {
-        /// The base Token
-        base_token: Token,
-        /// The quote Token
-        quote_token: Token,
-        /// The return channel for the ExchangeConnectionStates
-        channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
     },
 }

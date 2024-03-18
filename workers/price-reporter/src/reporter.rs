@@ -247,10 +247,8 @@ impl Reporter {
         PriceReport {
             base_token: self.base_token.clone(),
             quote_token: self.quote_token.clone(),
-            exchange: None,
-            midpoint_price: price,
+            price,
             local_timestamp,
-            reported_timestamp: None,
         }
     }
 
@@ -291,10 +289,8 @@ impl Reporter {
         let median_price_report = PriceReport {
             base_token: self.base_token.clone(),
             quote_token: self.quote_token.clone(),
-            exchange: None,
-            midpoint_price: median_midpoint_price,
+            price: median_midpoint_price,
             local_timestamp: median_ts,
-            reported_timestamp: None,
         };
 
         // Check that the most recent timestamp is not too old
@@ -397,19 +393,6 @@ impl ConnectionMuxer {
                                 let ts = get_current_time_seconds();
                                 self.exchange_state
                                     .new_price(exchange, price, ts);
-
-                                // Stream a price update to the bus
-                                self.config.system_bus.publish(
-                                    price_report_topic_name(&exchange.to_string(), &self.base_token, &self.quote_token),
-                                    SystemBusMessage::PriceReportExchange(PriceReport {
-                                        base_token: self.base_token.clone(),
-                                        quote_token: self.quote_token.clone(),
-                                        exchange: Some(exchange),
-                                        midpoint_price: price,
-                                        local_timestamp: ts,
-                                        reported_timestamp: None
-                                    }),
-                                );
                             },
 
                             Err(e) => {

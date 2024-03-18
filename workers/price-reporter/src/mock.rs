@@ -1,12 +1,9 @@
 //! A mock price reporter used for testing
 
-use std::collections::HashMap;
 use std::thread;
 
 use bimap::BiMap;
-use common::types::exchange::{
-    Exchange, ExchangeConnectionState, PriceReport, PriceReporterState, ALL_EXCHANGES,
-};
+use common::types::exchange::{PriceReport, PriceReporterState};
 use common::types::token::{Token, ERC20_DATA, TOKEN_REMAPS};
 use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
@@ -78,9 +75,6 @@ impl MockPriceReporter {
             PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
                 self.handle_peek_median(base_token, quote_token, channel)
             },
-            PriceReporterJob::PeekAllExchanges { base_token, quote_token, channel } => {
-                self.handle_peek_all_exchanges(base_token, quote_token, channel)
-            },
         }
     }
 
@@ -96,43 +90,9 @@ impl MockPriceReporter {
         let state = PriceReporterState::Nominal(PriceReport {
             base_token,
             quote_token,
-            exchange: None, // midpoint
-            midpoint_price: self.price,
+            price: self.price,
             local_timestamp: timestamp,
-            reported_timestamp: Some(timestamp as u128),
         });
-
-        if let Err(e) = channel.send(state) {
-            error!("error sending price report: {e:?}");
-        }
-
-        Ok(())
-    }
-
-    /// Handle a peek all exchanges job
-    fn handle_peek_all_exchanges(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        channel: OneshotSender<HashMap<Exchange, ExchangeConnectionState>>,
-    ) -> Result<(), PriceReporterError> {
-        // Construct a state and send it back on the queue
-        let timestamp = get_current_time_seconds();
-        let report = PriceReport {
-            base_token,
-            quote_token,
-            exchange: Some(Exchange::Binance),
-            midpoint_price: self.price,
-            local_timestamp: timestamp,
-            reported_timestamp: Some(timestamp as u128),
-        };
-
-        let mut state = HashMap::new();
-        for exchange in ALL_EXCHANGES.iter() {
-            let mut report_clone = report.clone();
-            report_clone.exchange = Some(*exchange);
-            state.insert(*exchange, ExchangeConnectionState::Nominal(report_clone));
-        }
 
         if let Err(e) = channel.send(state) {
             error!("error sending price report: {e:?}");
@@ -144,10 +104,7 @@ impl MockPriceReporter {
 
 #[cfg(test)]
 mod test {
-    use common::types::{
-        exchange::{ExchangeConnectionState, PriceReporterState, ALL_EXCHANGES},
-        token::Token,
-    };
+    use common::types::{exchange::PriceReporterState, token::Token};
     use job_types::price_reporter::{new_price_reporter_queue, PriceReporterJob};
     use tokio::sync::oneshot::channel;
 
@@ -179,43 +136,9 @@ mod test {
         let resp = resp_recv.await.unwrap();
         match resp {
             PriceReporterState::Nominal(report) => {
-                assert_eq!(report.midpoint_price, PRICE);
+                assert_eq!(report.price, PRICE);
             },
             _ => panic!("unexpected response: {resp:?}"),
         };
-    }
-
-    /// Test the all exchanges price reporter from the mock
-    #[tokio::test]
-    async fn test_peek_all_exchanges() {
-        const PRICE: f64 = 100.9;
-        setup_mock_token_remap();
-
-        // Start a price reporter
-        let (price_sender, price_recv) = new_price_reporter_queue();
-
-        let reporter = MockPriceReporter::new(PRICE, price_recv);
-        reporter.run();
-
-        // Request a median price
-        let (resp_send, resp_recv) = channel();
-        let job = PriceReporterJob::PeekAllExchanges {
-            base_token: Token::from_ticker("WETH"),
-            quote_token: Token::from_ticker("USDC"),
-            channel: resp_send,
-        };
-
-        price_sender.send(job).unwrap();
-
-        // Check the response
-        let resp = resp_recv.await.unwrap();
-        for exchange in ALL_EXCHANGES {
-            match resp.get(exchange) {
-                Some(ExchangeConnectionState::Nominal(report)) => {
-                    assert_eq!(report.midpoint_price, PRICE);
-                },
-                _ => panic!("unexpected response: {resp:?}"),
-            }
-        }
     }
 }
