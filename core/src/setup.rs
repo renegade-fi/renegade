@@ -52,7 +52,9 @@ async fn setup_relayer_wallet(
     let keychain =
         derive_wallet_keychain(key, chain_id).map_err(err_str!(CoordinatorError::Setup))?;
 
+    // Set the node metadata entry for the relayer's wallet
     let wallet_id = derive_wallet_id(key).map_err(err_str!(CoordinatorError::Setup))?;
+    state.set_local_relayer_wallet_id(wallet_id).map_err(err_str!(CoordinatorError::Setup))?;
 
     // Attempt to find the wallet on-chain
     if find_wallet_onchain(
