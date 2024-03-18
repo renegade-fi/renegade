@@ -39,10 +39,17 @@ use uuid::Uuid;
 use crate::error::{bad_request, not_found};
 
 use self::{
-    network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
-    order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
-    price_report::ExchangeHealthStatesHandler,
-    task::{GetTaskQueueHandler, GetTaskStatusHandler},
+    network::{
+        GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler,
+        GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE,
+    },
+    order_book::{
+        GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
+        GET_NETWORK_ORDER_BY_ID_ROUTE,
+    },
+    task::{
+        GetTaskQueueHandler, GetTaskStatusHandler, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE,
+    },
     wallet::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
         FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetOrderByIdHandler,
@@ -58,7 +65,6 @@ use super::{
 
 mod network;
 mod order_book;
-mod price_report;
 mod task;
 mod wallet;
 
@@ -178,22 +184,14 @@ impl HttpServer {
     /// Create a new http server
     pub(super) fn new(config: ApiServerConfig, global_state: State) -> Self {
         // Build the router, server, and register routes
-        let router = Self::build_router(&config, global_state);
+        let router = Self::build_router(global_state);
         Self { router: Arc::new(router), config }
     }
 
     /// Build a router and register routes on it
-    fn build_router(config: &ApiServerConfig, global_state: State) -> Router {
+    fn build_router(global_state: State) -> Router {
         // Build the router and register its routes
         let mut router = Router::new(global_state.clone());
-
-        // The "/exchangeHealthStates" route
-        router.add_route(
-            &Method::POST,
-            EXCHANGE_HEALTH_ROUTE.to_string(),
-            false, // auth_required
-            ExchangeHealthStatesHandler::new(config.clone()),
-        );
 
         // The "/ping" route
         router.add_route(
