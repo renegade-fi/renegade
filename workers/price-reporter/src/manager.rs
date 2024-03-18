@@ -1,9 +1,7 @@
 //! Defines the PriceReporterExecutor, the handler that is responsible
 //! for executing individual PriceReporterJobs.
 use common::default_wrapper::{DefaultOption, DefaultWrapper};
-use common::types::exchange::{
-    Exchange, ExchangeConnectionState, PriceReporterState, ALL_EXCHANGES,
-};
+use common::types::exchange::PriceReporterState;
 use common::types::token::Token;
 use common::types::CancelChannel;
 use common::{new_async_shared, AsyncShared};
@@ -106,10 +104,6 @@ impl PriceReporterExecutor {
             PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
                 self.peek_median(base_token, quote_token, channel).await
             },
-
-            PriceReporterJob::PeekAllExchanges { base_token, quote_token, channel } => {
-                self.peek_all_exchanges(base_token, quote_token, channel).await
-            },
         }
     }
 
@@ -159,34 +153,6 @@ impl PriceReporterExecutor {
             },
             Err(e) => return Err(e),
         };
-
-        Ok(())
-    }
-
-    /// Handler for PeekAllExchanges job
-    async fn peek_all_exchanges(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<HashMap<Exchange, ExchangeConnectionState>>,
-    ) -> Result<(), PriceReporterError> {
-        let resp = match self.get_price_reporter_or_create(base_token, quote_token).await {
-            Ok(reporter) => reporter.peek_all_exchanges(),
-            Err(PriceReporterError::UnsupportedPair(..)) => {
-                // If the price pair is unsupported, send back an exchange state with all state
-                // set as unsupported
-                ALL_EXCHANGES
-                    .iter()
-                    .map(|&exchange| (exchange, ExchangeConnectionState::Unsupported))
-                    .collect()
-            },
-            Err(e) => return Err(e),
-        };
-
-        // Send the response to the requesting worker
-        if channel.send(resp).is_err() {
-            error!("Error sending all exchanges response");
-        }
 
         Ok(())
     }

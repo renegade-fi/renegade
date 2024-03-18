@@ -158,22 +158,14 @@ impl HandshakeExecutor {
 
             match midpoint_state {
                 PriceReporterState::Nominal(report) => {
-                    midpoint_prices.push((
-                        report.base_token,
-                        report.quote_token,
-                        report.midpoint_price,
-                    ));
+                    midpoint_prices.push((report.base_token, report.quote_token, report.price));
                 },
 
                 // TODO: We may want to re-evaluate whether we want to accept price reports
                 // with large deviation. This largely happens because of Uniswap, and we could
                 // implement a more complex deviation calculation that ignores DEXs
                 PriceReporterState::TooMuchDeviation(report, _) => {
-                    midpoint_prices.push((
-                        report.base_token,
-                        report.quote_token,
-                        report.midpoint_price,
-                    ));
+                    midpoint_prices.push((report.base_token, report.quote_token, report.price));
                 },
 
                 err_state => {
