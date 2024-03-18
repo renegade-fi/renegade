@@ -12,7 +12,6 @@ use crate::{driver::StateWrapper, helpers::find_merkle_path};
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;
-use circuit_types::fixed_point::PROTOCOL_FEE_FP;
 use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
@@ -34,6 +33,7 @@ use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
 use tracing::instrument;
+use util::arbitrum::get_protocol_fee;
 use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
 };
@@ -475,7 +475,7 @@ impl SettleMatchInternalTask {
             party0_modified_shares,
             party1_indices,
             party1_modified_shares,
-            protocol_fee: *PROTOCOL_FEE_FP,
+            protocol_fee: get_protocol_fee(),
         };
 
         (witness, statement)

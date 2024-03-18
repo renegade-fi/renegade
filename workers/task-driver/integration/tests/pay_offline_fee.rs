@@ -9,7 +9,9 @@ use renegade_crypto::fields::scalar_to_biguint;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{
-    helpers::{await_task, lookup_wallet_and_check_result, setup_initial_wallet},
+    helpers::{
+        await_task, lookup_wallet_and_check_result, setup_initial_wallet, setup_relayer_wallet,
+    },
     IntegrationTestArgs,
 };
 
@@ -36,6 +38,7 @@ fn random_balance_with_fees() -> Balance {
 async fn test_pay_offline_fees(test_args: IntegrationTestArgs) -> Result<()> {
     let mut rng = thread_rng();
     let state = &test_args.state;
+    setup_relayer_wallet(&test_args).await?;
 
     // Create a wallet in the darkpool with a non-zero fee
     let mut wallet = mock_empty_wallet();

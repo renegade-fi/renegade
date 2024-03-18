@@ -1,12 +1,9 @@
 //! Utils relating to Starknet interaction
 
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, sync::OnceLock};
 
-use circuit_types::elgamal::EncryptionKey;
-use constants::PROTOCOL_ENCRYPTION_KEY;
+use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
 use eyre::{eyre, Result};
-
-use crate::hex::jubjub_from_hex_string;
 
 /// The deployments key in the `deployments.json` file
 pub const DEPLOYMENTS_KEY: &str = "deployments";
@@ -18,6 +15,10 @@ pub const DUMMY_ERC20_0_CONTRACT_KEY: &str = "DUMMY1";
 pub const DUMMY_ERC20_1_CONTRACT_KEY: &str = "DUMMY2";
 /// The permit2 contract key in a `deployments.json` file
 pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
+/// The protocol fee that the contract charges on a match
+pub static PROTOCOL_FEE: OnceLock<FixedPoint> = OnceLock::new();
+/// The protocol's public encryption key used for paying fees
+pub static PROTOCOL_PUBKEY: OnceLock<EncryptionKey> = OnceLock::new();
 
 /// Parse the address of the deployed contract from the `deployments.json` file
 pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> Result<String> {
@@ -31,8 +32,42 @@ pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> 
         .ok_or_else(|| eyre!("Could not parse {contract_key} address from deployments file"))
 }
 
-/// Get a copy of the protocol's encryption key
-pub fn get_protocol_encryption_key() -> EncryptionKey {
-    jubjub_from_hex_string(PROTOCOL_ENCRYPTION_KEY)
-        .expect("contract encryption key is not a valid jubjub point")
+/// Get the protocol fee from the static variable
+///
+/// Panics if the protocol fee has not been set
+pub fn get_protocol_fee() -> FixedPoint {
+    let fee = PROTOCOL_FEE.get();
+
+    // If the mocks feature is enabled we unwrap to a default
+    #[cfg(feature = "mocks")]
+    {
+        *fee.unwrap_or(&FixedPoint::from_f64_round_down(0.0006)) // 6 bps
+    }
+
+    #[cfg(not(feature = "mocks"))]
+    {
+        *fee.expect("Protocol fee not set")
+    }
+}
+
+/// Get the protocol encryption key from the static variable
+///
+/// Panics if the protocol encryption key has not been set
+pub fn get_protocol_pubkey() -> EncryptionKey {
+    let key = PROTOCOL_PUBKEY.get();
+
+    // If the mocks feature is enabled we unwrap to a default
+    #[cfg(feature = "mocks")]
+    {
+        use circuit_types::elgamal::DecryptionKey;
+        use rand::thread_rng;
+
+        let mut rng = thread_rng();
+        *key.unwrap_or(&DecryptionKey::random(&mut rng).public_key())
+    }
+
+    #[cfg(not(feature = "mocks"))]
+    {
+        *key.expect("Protocol pubkey has not been set")
+    }
 }

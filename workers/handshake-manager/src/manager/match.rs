@@ -6,7 +6,7 @@ use std::sync::Arc;
 use ark_mpc::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
 use circuit_types::{
     balance::Balance,
-    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
+    fixed_point::FixedPoint,
     order::Order,
     r#match::{MatchResult, OrderSettlementIndices},
     traits::{MpcBaseType, MpcType},
@@ -35,7 +35,7 @@ use constants::SystemCurveGroup;
 use crossbeam::channel::{bounded, Receiver};
 use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use tracing::info;
-use util::matching_engine::compute_max_amount;
+use util::{arbitrum::get_protocol_fee, matching_engine::compute_max_amount};
 use uuid::Uuid;
 
 use crate::error::HandshakeManagerError;
@@ -214,7 +214,7 @@ impl HandshakeExecutor {
         let amount1 = my_amount.allocate(PARTY1, fabric);
         let party1_public_shares = my_public_shares.allocate(PARTY1, fabric);
 
-        let protocol_fee = (*PROTOCOL_FEE_FP).allocate(PARTY0, fabric);
+        let protocol_fee = get_protocol_fee().allocate(PARTY0, fabric);
 
         // Match the orders
         //
