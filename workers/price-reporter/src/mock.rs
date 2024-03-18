@@ -72,14 +72,14 @@ impl MockPriceReporter {
                 debug!("mock price reporter got `StartPriceReporter` job");
                 Ok(())
             },
-            PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
-                self.handle_peek_median(base_token, quote_token, channel)
+            PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
+                self.handle_peek_price(base_token, quote_token, channel)
             },
         }
     }
 
-    /// Handle a peek median job
-    fn handle_peek_median(
+    /// Handle a peek price job
+    fn handle_peek_price(
         &self,
         base_token: Token,
         quote_token: Token,
@@ -110,9 +110,9 @@ mod test {
 
     use crate::mock::{setup_mock_token_remap, MockPriceReporter};
 
-    /// Test the median price reporter from the mock
+    /// Test the price reporter from the mock
     #[tokio::test]
-    async fn test_peek_median() {
+    async fn test_peek_price() {
         const PRICE: f64 = 100.9;
         setup_mock_token_remap();
 
@@ -122,9 +122,9 @@ mod test {
         let reporter = MockPriceReporter::new(PRICE, price_recv);
         reporter.run();
 
-        // Request a median price
+        // Request a price
         let (resp_send, resp_recv) = channel();
-        let job = PriceReporterJob::PeekMedian {
+        let job = PriceReporterJob::PeekPrice {
             base_token: Token::from_ticker("WETH"),
             quote_token: Token::from_ticker("USDC"),
             channel: resp_send,

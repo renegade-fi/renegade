@@ -101,8 +101,8 @@ impl PriceReporterExecutor {
                 self.start_price_reporter(base_token, quote_token).await
             },
 
-            PriceReporterJob::PeekMedian { base_token, quote_token, channel } => {
-                self.peek_median(base_token, quote_token, channel).await
+            PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
+                self.peek_price(base_token, quote_token, channel).await
             },
         }
     }
@@ -139,15 +139,15 @@ impl PriceReporterExecutor {
         Ok(())
     }
 
-    /// Handler for PeekMedian job
-    async fn peek_median(
+    /// Handler for PeekPrice job
+    async fn peek_price(
         &mut self,
         base_token: Token,
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
         match self.get_price_reporter_or_create(base_token, quote_token).await {
-            Ok(reporter) => channel.send(reporter.peek_median()).unwrap(),
+            Ok(reporter) => channel.send(reporter.peek_price()).unwrap(),
             Err(PriceReporterError::UnsupportedPair(base, quote)) => {
                 channel.send(PriceReporterState::UnsupportedPair(base, quote)).unwrap()
             },
