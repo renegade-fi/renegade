@@ -12,6 +12,8 @@ abigen!(
     r#"[
         function isNullifierSpent(uint256 memory nullifier) external view returns (bool)
         function getRoot() external view returns (uint256)
+        function getFee() external view returns (uint256)
+        function getPubkey() external view returns (uint256[2])
         function rootInHistory(uint256 memory root) external view returns (bool)
 
         function newWallet(bytes memory proof, bytes memory valid_wallet_create_statement_bytes) external
@@ -36,6 +38,8 @@ abigen!(
     r#"[
         function isNullifierSpent(uint256 memory nullifier) external view returns (bool)
         function getRoot() external view returns (uint256)
+        function getFee() external view returns (uint256)
+        function getPubkey() external view returns (uint256[2])
         function rootInHistory(uint256 memory root) external view returns (bool)
 
         function newWallet(bytes memory proof, bytes memory valid_wallet_create_statement_bytes) external

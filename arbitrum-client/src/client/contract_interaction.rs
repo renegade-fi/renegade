@@ -1,7 +1,9 @@
 //! Defines `ArbitrumClient` helpers that allow for interacting with the
 //! darkpool contract
 
-use circuit_types::{merkle::MerkleRoot, wallet::Nullifier};
+use circuit_types::{
+    elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
+};
 use common::types::{
     proof_bundles::{
         GenericFeeRedemptionBundle, GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
@@ -16,6 +18,7 @@ use constants::Scalar;
 use contracts_common::types::MatchPayload;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{info, instrument};
+use util::err_str;
 
 use crate::{
     conversion::{
@@ -46,6 +49,31 @@ impl ArbitrumClient {
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
             .map(|r| u256_to_scalar(&r))
+    }
+
+    /// Get the fee charged by the contract
+    #[instrument(skip_all, err)]
+    pub async fn get_protocol_fee(&self) -> Result<FixedPoint, ArbitrumClientError> {
+        // The contract returns the repr of the fee as a u256
+        self.darkpool_contract
+            .get_fee()
+            .call()
+            .await
+            .map_err(err_str!(ArbitrumClientError::ContractInteraction))
+            .map(|r| FixedPoint::from_repr(u256_to_scalar(&r)))
+    }
+
+    /// Get the public encryption key used for protocol fees
+    #[instrument(skip_all, err)]
+    pub async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, ArbitrumClientError> {
+        let pubkey = self
+            .darkpool_contract
+            .get_pubkey()
+            .call()
+            .await
+            .map_err(err_str!(ArbitrumClientError::ContractInteraction))?;
+
+        Ok(EncryptionKey { x: u256_to_scalar(&pubkey[0]), y: u256_to_scalar(&pubkey[1]) })
     }
 
     /// Check whether the given Merkle root is a valid historical root

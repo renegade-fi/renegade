@@ -4,7 +4,7 @@ use ark_mpc::PARTY0;
 use circuit_types::Amount;
 use circuit_types::{
     balance::Balance,
-    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
+    fixed_point::FixedPoint,
     order::OrderSide,
     r#match::OrderSettlementIndices,
     traits::{BaseType, MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType},
@@ -28,6 +28,7 @@ use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::scalar_to_u128;
 use test_helpers::{assert_true_result, integration_test_async};
+use util::arbitrum::get_protocol_fee;
 use util::matching_engine::compute_max_amount;
 
 use crate::{types::create_wallet_shares, IntegrationTestArgs};
@@ -184,7 +185,7 @@ fn run_match_settle_with_amounts(
             party1_indices: ind1.allocate(PARTY0, fabric),
             party0_modified_shares,
             party1_modified_shares,
-            protocol_fee: (*PROTOCOL_FEE_FP).allocate(PARTY0, fabric),
+            protocol_fee: get_protocol_fee().allocate(PARTY0, fabric),
         },
         SizedValidMatchSettleWitness {
             order0,

@@ -2,7 +2,7 @@
 
 use circuit_types::{
     balance::Balance,
-    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
+    fixed_point::FixedPoint,
     order::{Order, OrderSide},
     r#match::{FeeTake, MatchResult, OrderSettlementIndices},
     wallet::WalletShare,
@@ -10,6 +10,8 @@ use circuit_types::{
 };
 use constants::Scalar;
 use renegade_crypto::fields::scalar_to_u128;
+
+use crate::arbitrum::get_protocol_fee;
 
 // ------------
 // | Matching |
@@ -165,7 +167,7 @@ pub fn compute_fee_obligation(
     let receive_amount = Scalar::from(receive_amount);
 
     let relayer_take = (relayer_fee * receive_amount).floor();
-    let protocol_take = (*PROTOCOL_FEE_FP * receive_amount).floor();
+    let protocol_take = (get_protocol_fee() * receive_amount).floor();
 
     FeeTake {
         relayer_fee: scalar_to_u128(&relayer_take),

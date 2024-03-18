@@ -1,12 +1,13 @@
 //! Settles a match into secret shared wallets
 
 use circuit_types::{
-    fixed_point::{AuthenticatedFixedPoint, PROTOCOL_FEE_FP},
+    fixed_point::AuthenticatedFixedPoint,
     r#match::{AuthenticatedFeeTake, AuthenticatedMatchResult, OrderSettlementIndices},
     wallet::AuthenticatedWalletShare,
     Fabric,
 };
 use constants::AuthenticatedScalar;
+use util::arbitrum::get_protocol_fee;
 
 use crate::mpc_gadgets::{comparators::cond_select_vec, fixed_point::FixedPointMpcGadget};
 
@@ -98,7 +99,7 @@ fn compute_settlement_fees(
     let party1_relayer_fee = FixedPointMpcGadget::as_integer(&party1_relayer_fee_fp, fabric);
 
     // Protocol fees
-    let protocol_fee = *PROTOCOL_FEE_FP;
+    let protocol_fee = get_protocol_fee();
     let party0_protocol_fee_fp = protocol_fee * party0_buy_amount;
     let party0_protocol_fee = FixedPointMpcGadget::as_integer(&party0_protocol_fee_fp, fabric);
     let party1_protocol_fee_fp = protocol_fee * party1_buy_amount;
