@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use arbitrum_client::client::ArbitrumClient;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor},
     wallet::{
@@ -20,7 +21,10 @@ use job_types::task_driver::TaskDriverQueue;
 use state::State;
 use task_driver::{await_task, tasks::lookup_wallet::ERR_WALLET_NOT_FOUND};
 use tracing::info;
-use util::err_str;
+use util::{
+    arbitrum::{PROTOCOL_FEE, PROTOCOL_PUBKEY},
+    err_str,
+};
 
 use crate::error::CoordinatorError;
 
@@ -29,14 +33,34 @@ pub async fn node_setup(
     key: &LocalWallet,
     chain_id: u64,
     task_queue: TaskDriverQueue,
+    client: &ArbitrumClient,
     state: &State,
 ) -> Result<(), CoordinatorError> {
     // Wait a small amount of time for raft to stabilize
     // TODO: remove this once we have a more fleshed out startup flow
     tokio::time::sleep(Duration::from_secs(1)).await;
 
+    // Setup the contract constants
+    fetch_contract_constants(client).await?;
     // Setup the local node's wallet
     setup_relayer_wallet(key, chain_id, task_queue, state).await
+}
+
+/// Parameterize local constants by pulling them from the contract's storage
+///
+/// Concretely, this is the contract protocol key and the protocol fee
+async fn fetch_contract_constants(client: &ArbitrumClient) -> Result<(), CoordinatorError> {
+    // Fetch the values from the contract
+    let protocol_fee =
+        client.get_protocol_fee().await.map_err(err_str!(CoordinatorError::Setup))?;
+    let protocol_key =
+        client.get_protocol_pubkey().await.map_err(err_str!(CoordinatorError::Setup))?;
+    info!("Fetched protocol fee and protocol pubkey");
+
+    // Set the values in their constant refs
+    PROTOCOL_FEE.set(protocol_fee).expect("protocol fee already set");
+    PROTOCOL_PUBKEY.set(protocol_key).expect("protocol pubkey already set");
+    Ok(())
 }
 
 /// Lookup the relayer's wallet or create a new one

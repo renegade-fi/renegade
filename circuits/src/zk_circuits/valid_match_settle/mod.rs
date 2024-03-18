@@ -244,13 +244,15 @@ where
 pub mod test_helpers {
     use circuit_types::{
         balance::Balance,
-        fixed_point::PROTOCOL_FEE_FP,
         order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
     };
     use constants::Scalar;
     use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
-    use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
+    use util::{
+        arbitrum::get_protocol_fee,
+        matching_engine::{apply_match_to_shares, compute_fee_obligation},
+    };
 
     use crate::{
         test_helpers::random_orders_and_match,
@@ -330,7 +332,7 @@ pub mod test_helpers {
                 party1_indices,
                 party0_modified_shares,
                 party1_modified_shares,
-                protocol_fee: *PROTOCOL_FEE_FP,
+                protocol_fee: get_protocol_fee(),
             },
         )
     }

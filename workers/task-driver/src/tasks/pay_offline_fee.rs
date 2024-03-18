@@ -23,7 +23,7 @@ use num_bigint::BigUint;
 use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::instrument;
-use util::{arbitrum::get_protocol_encryption_key, err_str};
+use util::{arbitrum::get_protocol_pubkey, err_str};
 
 use crate::{
     driver::StateWrapper,
@@ -308,7 +308,7 @@ impl PayOfflineFeeTask {
             .get_balance_mut(mint)
             .ok_or_else(|| PayOfflineFeeTaskError::State(ERR_BALANCE_MISSING.to_string()))?;
         let note = if is_protocol {
-            balance.create_protocol_note(get_protocol_encryption_key())
+            balance.create_protocol_note(get_protocol_pubkey())
         } else {
             balance.create_relayer_note(old_wallet.managing_cluster)
         };
@@ -338,7 +338,7 @@ impl PayOfflineFeeTask {
         let send_index = wallet.get_balance_index(&self.mint).unwrap();
 
         // Encrypt the note
-        let protocol_key = get_protocol_encryption_key();
+        let protocol_key = get_protocol_pubkey();
         let key = if self.is_protocol_fee { protocol_key } else { wallet.managing_cluster };
         let note_commitment = note.commitment();
 

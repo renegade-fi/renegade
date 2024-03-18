@@ -16,6 +16,7 @@ use arbitrum_client::{
     client::{ArbitrumClient, ArbitrumClientConfig},
     constants::Chain,
 };
+use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::token::TOKEN_REMAPS;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
@@ -27,6 +28,7 @@ use job_types::{
     task_driver::{new_task_driver_queue, TaskDriverQueue},
 };
 use proof_manager::mock::MockProofManager;
+use rand::thread_rng;
 use state::{test_helpers::mock_state_with_task_queue, State};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
@@ -37,7 +39,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use util::{
     arbitrum::{
         parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
-        DUMMY_ERC20_1_CONTRACT_KEY, PERMIT2_CONTRACT_KEY,
+        DUMMY_ERC20_1_CONTRACT_KEY, PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
     },
     runtime::block_on_result,
     telemetry::LevelFilter,
@@ -184,6 +186,14 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
 fn setup_integration_tests(test_args: &CliArgs) {
     // Setup token remaps, this is used in metrics collection, will panic if not set
     TOKEN_REMAPS.set(Default::default()).unwrap();
+
+    // Set the protocol fee and pubkey
+    let protocol_fee = FixedPoint::from_f64_round_down(0.0006); // 6 bps
+    PROTOCOL_FEE.set(protocol_fee).expect("protocol fee already set");
+
+    let mut rng = thread_rng();
+    let protocol_key = DecryptionKey::random(&mut rng).public_key();
+    PROTOCOL_PUBKEY.set(protocol_key).expect("protocol pubkey already set");
 
     // Configure logging
     if matches!(test_args.verbosity, TestVerbosity::Full) {

@@ -184,7 +184,14 @@ async fn main() -> Result<(), CoordinatorError> {
     // snapshots, state sync, etc
     let chain_id =
         arbitrum_client.chain_id().await.map_err(err_str!(CoordinatorError::Arbitrum))?;
-    node_setup(&args.arbitrum_private_key, chain_id, task_sender.clone(), &global_state).await?;
+    node_setup(
+        &args.arbitrum_private_key,
+        chain_id,
+        task_sender.clone(),
+        &arbitrum_client,
+        &global_state,
+    )
+    .await?;
 
     // --- Workers Setup Phase --- //
 

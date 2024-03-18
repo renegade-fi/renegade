@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test_helpers = ["dep:tracing-subscriber", "dep:ctor", "dep:util"]
+test_helpers = ["dep:tracing-subscriber", "dep:ctor", "util/mocks"]
 large_benchmarks = []
 large_tests = []
 stats = ["ark-mpc/stats"]
@@ -82,7 +82,7 @@ circuit-macros = { path = "../circuit-macros" }
 circuit-types = { path = "../circuit-types" }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util", optional = true }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 bitvec = "1.0"
@@ -113,4 +113,4 @@ rand = "0.8"
 serde_json = "1.0"
 test-helpers = { path = "../test-helpers" }
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
-util = { path = "../util" }
+util = { path = "../util", feaures = ["mocks"] }
