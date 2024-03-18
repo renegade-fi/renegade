@@ -69,10 +69,10 @@ pub struct PriceReport {
 
 /// The state of the PriceReporter. The Nominal state means that enough
 /// ExchangeConnections are reporting recent prices, so it is OK to proceed with
-/// MPCs at the given median price.
+/// MPCs at the given price.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PriceReporterState {
-    /// Enough reporters are correctly reporting to construct a median price.
+    /// Enough reporters are correctly reporting to construct a price.
     Nominal(PriceReport),
     /// Not enough data has yet to be reported from the ExchangeConnections.
     /// Includes the number of ExchangeConnection reporters.
