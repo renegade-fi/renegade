@@ -97,9 +97,7 @@ impl BinanceConnection {
         Ok(PriceReport {
             base_token,
             quote_token,
-            exchange: Some(Exchange::Binance),
-            midpoint_price,
-            reported_timestamp: None,
+            price: midpoint_price,
             local_timestamp: get_current_time(),
         })
     }
@@ -171,7 +169,7 @@ impl ExchangeConnection for BinanceConnection {
         // stream
         let price_stream = InitializablePriceStream::new_with_initial(
             Box::pin(mapped_stream),
-            initial_price_report.midpoint_price,
+            initial_price_report.price,
         );
 
         Ok(Self { price_stream: Box::new(price_stream), write_stream: Box::new(write) })
