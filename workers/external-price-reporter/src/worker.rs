@@ -1,7 +1,7 @@
 //! Defines the Worker logic for the ExtenalPriceReporterManager, which simply
 //! dispatches jobs to the ExternalPriceReporterExecutor.
 
-use std::thread::{JoinHandle, Builder as ThreadBuilder};
+use std::thread::{Builder as ThreadBuilder, JoinHandle};
 
 use common::{
     default_wrapper::DefaultOption,

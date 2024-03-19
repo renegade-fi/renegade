@@ -20,10 +20,10 @@ pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver)
 #[derive(Debug)]
 pub enum PriceReporterJob {
     /// Start streaming prices for the given token pair.
-    /// 
+    ///
     /// If using the ExternalPriceReporter, this will subscribe to the pair's
     /// price stream on the external price reporter service.
-    /// 
+    ///
     /// If using the native PriceReporter:
     ///
     /// If the PriceReporter does not yet exist, spawn it and begin publication
