@@ -64,7 +64,7 @@ struct Cli {
     #[clap(long, value_parser, default_value = "testnet")]
     pub chain_id: Chain,
     /// The address of the darkpool contract, defaults to the internal testnet deployment
-    #[clap(long, value_parser, default_value = "0xe1080224b632a93951a7cfa33eeea9fd81558b5e")]
+    #[clap(long, value_parser, default_value = "0x84bc75bc4fb943d5576545fb4724c5cab781a61e")]
     pub contract_address: String,
     /// The path to the file containing deployments info for the darkpool contract
     #[clap(long, value_parser)]

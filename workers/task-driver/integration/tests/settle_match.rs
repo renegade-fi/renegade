@@ -9,7 +9,7 @@ use crate::{
 };
 use circuit_types::{
     balance::Balance,
-    fixed_point::{FixedPoint, PROTOCOL_FEE_FP},
+    fixed_point::FixedPoint,
     order::{Order, OrderSide},
     r#match::{MatchResult, OrderSettlementIndices},
     Amount, SizedWallet,
@@ -35,6 +35,7 @@ use state::State;
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::oneshot::channel;
 use util::{
+    arbitrum::get_protocol_fee,
     hex::biguint_from_hex_string,
     matching_engine::{
         compute_fee_obligation, compute_max_amount, match_orders, settle_match_into_wallets,
@@ -257,7 +258,7 @@ async fn dummy_match_bundle(
                 party1_indices,
                 party0_modified_shares,
                 party1_modified_shares,
-                protocol_fee: *PROTOCOL_FEE_FP,
+                protocol_fee: get_protocol_fee(),
             },
         },
         response_channel: send,
