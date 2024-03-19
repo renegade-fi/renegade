@@ -21,7 +21,7 @@ use util::get_current_time_seconds;
 
 use crate::{errors::PriceReporterError, worker::PriceReporterConfig};
 
-// pub mod external_executor;
+pub mod external_executor;
 pub mod native_executor;
 
 // -------------
