@@ -402,6 +402,7 @@ impl MockNodeController {
                 coinbase_api_secret: config.coinbase_api_secret.clone(),
                 eth_websocket_addr: config.eth_websocket_addr.clone(),
             },
+            price_reporter_url: config.price_reporter_url.clone(),
             disabled: config.disable_price_reporter,
             disabled_exchanges: config.disabled_exchanges.clone(),
             job_receiver: default_option(job_receiver),

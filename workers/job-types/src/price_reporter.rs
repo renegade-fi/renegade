@@ -19,7 +19,12 @@ pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver)
 /// All possible jobs that the PriceReporter accepts.
 #[derive(Debug)]
 pub enum PriceReporterJob {
-    /// Create and start a new PriceReporter for a given token pair.
+    /// Stream prices for the given token pair.
+    ///
+    /// If using the external executor, this will send a subscription request
+    /// for the pair across all exchanges.
+    ///
+    /// If using the native executor, this will create and start a new PriceReporter for the pair.
     ///
     /// If the PriceReporter does not yet exist, spawn it and begin publication
     /// to the global system bus. If the PriceReporter already exists and id
@@ -30,7 +35,7 @@ pub enum PriceReporterJob {
     /// subscribers on the system bus stop listening. Cleanup is done via
     /// DropListenerID, and callees are responsible for dropping all
     /// listener IDs.
-    StartPriceReporter {
+    StreamPrice {
         /// The base Token
         base_token: Token,
         /// The quote Token
