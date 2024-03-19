@@ -9,7 +9,6 @@ use common::types::token::{is_pair_named, Token};
 use common::types::Price;
 use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
 use futures_util::future::try_join_all;
-use itertools::Itertools;
 use std::collections::HashMap;
 use std::time::Duration;
 use system_bus::SystemBus;
@@ -21,8 +20,9 @@ use util::get_current_time_seconds;
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 use crate::manager::{
-    compute_price_reporter_state, AtomicPriceStreamState, CONN_RETRY_DELAY_MS,
-    KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS, PRICE_REPORT_INTERVAL_MS,
+    compute_price_reporter_state, compute_supported_exchanges_for_pair, AtomicPriceStreamState,
+    CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS,
+    PRICE_REPORT_INTERVAL_MS,
 };
 
 use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
@@ -53,7 +53,7 @@ impl Reporter {
     ) -> Result<Self, ExchangeConnectionError> {
         // Get the supported exchanges for the token pair
         let supported_exchanges =
-            Self::compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
+            compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
         if supported_exchanges.is_empty() {
             warn!("No supported exchanges for {base_token}-{quote_token}");
             return Err(ExchangeConnectionError::NoSupportedExchanges(base_token, quote_token));
@@ -135,23 +135,6 @@ impl Reporter {
 
             tokio::time::sleep(Duration::from_millis(PRICE_REPORT_INTERVAL_MS)).await;
         }
-    }
-
-    /// Returns the set of supported exchanges on the pair
-    fn compute_supported_exchanges_for_pair(
-        base_token: &Token,
-        quote_token: &Token,
-        config: &PriceReporterConfig,
-    ) -> Vec<Exchange> {
-        // Compute the intersection of the supported exchanges for each of the assets
-        // in the pair, filtering for those not configured
-        let base_token_supported_exchanges = base_token.supported_exchanges();
-        let quote_token_supported_exchanges = quote_token.supported_exchanges();
-        base_token_supported_exchanges
-            .intersection(&quote_token_supported_exchanges)
-            .copied()
-            .filter(|exchange| config.exchange_configured(*exchange))
-            .collect_vec()
     }
 
     /// Construct a price report from a given price
