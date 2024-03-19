@@ -1,19 +1,17 @@
 //! Defines the Reporter, which is responsible for computing
 //! PriceReports by managing individual ExchangeConnections in a fault-tolerant
 //! manner.
-use atomic_float::AtomicF64;
+
 use common::types::exchange::{
     Exchange, ExchangeConnectionState, PriceReport, PriceReporterState, ALL_EXCHANGES,
 };
-use common::types::token::Token;
+use common::types::token::{is_pair_named, Token};
 use common::types::Price;
 use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
 use futures_util::future::try_join_all;
 use itertools::Itertools;
-use statrs::statistics::{Data, Median};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::HashMap;
 use std::time::Duration;
-use std::{collections::HashMap, sync::Arc};
 use system_bus::SystemBus;
 use tokio::time::Instant;
 use tokio_stream::{StreamExt, StreamMap};
@@ -22,39 +20,12 @@ use util::get_current_time_seconds;
 
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
+use crate::manager::{
+    compute_price_reporter_state, AtomicPriceStreamState, CONN_RETRY_DELAY_MS,
+    KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS, PRICE_REPORT_INTERVAL_MS,
+};
 
 use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
-
-// -------------
-// | Constants |
-// -------------
-
-/// If Binance has not reported an update within
-/// MAX_REPORT_AGE (in milliseconds), we pause matches until we receive a more
-/// recent price. Note that this threshold cannot be too aggressive, as certain
-/// long-tail asset pairs legitimately do not update that often.
-const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
-/// If we do not have at least MIN_CONNECTIONS reports, we pause matches until
-/// we have enough reports. This only applies to Named tokens, as Unnamed tokens
-/// simply use UniswapV3.
-const MIN_CONNECTIONS: usize = 1;
-/// If a Binance PriceReport is more than MAX_DEVIATION (as a fraction) away
-/// from the midpoint, then we pause matches until the prices stabilize.
-const MAX_DEVIATION: f64 = 0.02;
-
-/// The number of milliseconds to wait in between sending keepalive messages to
-/// the connections
-pub const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
-/// The number of milliseconds to wait in between retrying connections
-const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
-/// The number of milliseconds in which `MAX_CONN_RETRIES` failures will cause a
-/// failure of the price reporter
-const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
-/// The maximum number of retries to attempt before giving up on a connection
-const MAX_CONN_RETRIES: usize = 5;
-
-/// The number of milliseconds to wait in between sending price report updates
-const PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
 
 /// The price reporter handles opening connections to exchanges, and computing
 /// price reports from the exchange data
@@ -67,52 +38,6 @@ pub struct Reporter {
     /// The shared memory map from exchange to most recent price
     /// and reporting timestamp
     exchange_info: AtomicPriceStreamState,
-}
-
-/// The state streamed from the connection multiplexer to the price reporter
-/// Uses atomic primitives to allow for hardware synchronized update streaming
-#[derive(Clone, Debug)]
-pub struct AtomicPriceStreamState {
-    /// The price information for each exchange, updated by the
-    /// `ConnectionMuxer`
-    price_map: HashMap<Exchange, Arc<AtomicF64>>,
-    /// A map indicating the time at which the last price was received from each
-    /// exchange
-    last_received: HashMap<Exchange, Arc<AtomicU64>>,
-}
-
-impl AtomicPriceStreamState {
-    /// Construct a new price stream state instance from a set fo exchanges
-    pub fn new_from_exchanges(exchanges: &[Exchange]) -> Self {
-        Self {
-            price_map: exchanges
-                .iter()
-                .map(|exchange| (*exchange, Arc::new(AtomicF64::new(0.))))
-                .collect(),
-            last_received: exchanges
-                .iter()
-                .map(|exchange| (*exchange, Arc::new(AtomicU64::new(0))))
-                .collect(),
-        }
-    }
-
-    /// Add a new price report for a given exchange
-    pub fn new_price(&self, exchange: Exchange, price: Price, timestamp: u64) {
-        // These operations are not transactionally related, so there is a chance
-        // for a race in between updating the timestamp and the price. This is
-        // generally okay as the timestamp is only used for determining staleness
-        // and given a race the timestamp will be very close to correct
-        self.price_map.get(&exchange).unwrap().store(price, Ordering::Relaxed);
-        self.last_received.get(&exchange).unwrap().store(timestamp, Ordering::Relaxed);
-    }
-
-    /// Read the price and timestamp from a given exchange
-    pub fn read_price(&self, exchange: &Exchange) -> Option<(Price, u64)> {
-        Some((
-            self.price_map.get(exchange)?.load(Ordering::Relaxed),
-            self.last_received.get(exchange)?.load(Ordering::Relaxed),
-        ))
-    }
 }
 
 impl Reporter {
@@ -212,15 +137,6 @@ impl Reporter {
         }
     }
 
-    /// Returns if this PriceReport is of a "Named" token pair (as opposed to an
-    /// "Unnamed" pair) If the PriceReport is Named, then the prices are
-    /// denominated in USD and largely derived from centralized exchanges.
-    /// If the PriceReport is Unnamed, then the prices are derived from
-    /// UniswapV3 and do not do fixed-point decimals adjustment.
-    fn is_named(&self) -> bool {
-        self.base_token.is_named() && self.quote_token.is_named()
-    }
-
     /// Returns the set of supported exchanges on the pair
     fn compute_supported_exchanges_for_pair(
         base_token: &Token,
@@ -248,75 +164,43 @@ impl Reporter {
         }
     }
 
-    /// Get the current Binance price for the given pair, converting
+    /// Get the current price for the given pair, converting
     /// through the most liquid stablecoin quote asset if appropriate.
     /// Checks if the price is too stale or deviates too much from the median
     /// across other exchanges.
     fn get_state(&self) -> PriceReporterState {
         // We don't currently support Unnamed pairs
-        if !self.is_named() {
+        if !is_pair_named(&self.base_token, &self.quote_token) {
             return PriceReporterState::UnsupportedPair(
                 self.base_token.clone(),
                 self.quote_token.clone(),
             );
         }
 
-        // Fetch the most recent Binance price
+        // Fetch the most recent price
         match self.exchange_info.read_price(&Exchange::Binance) {
             None => PriceReporterState::NotEnoughDataReported(0),
-            Some((price, ts)) => self.compute_price_reporter_state(price, ts),
+            Some((price, ts)) => {
+                // Fetch the most recent prices from all other exchanges
+                let exchange_prices = ALL_EXCHANGES
+                    .iter()
+                    .filter_map(|exchange| {
+                        self.exchange_info
+                            .read_price(exchange)
+                            .map(|price_state| (*exchange, price_state))
+                    })
+                    .collect::<Vec<_>>();
+
+                // Compute the state of the price reporter
+                compute_price_reporter_state(
+                    self.base_token.clone(),
+                    self.quote_token.clone(),
+                    price,
+                    ts,
+                    &exchange_prices,
+                )
+            },
         }
-    }
-
-    /// Compute the price reporter state from the given price and timestamp
-    fn compute_price_reporter_state(
-        &self,
-        price: Price,
-        local_timestamp: u64,
-    ) -> PriceReporterState {
-        if price == Price::default() {
-            return PriceReporterState::NotEnoughDataReported(0);
-        }
-
-        let price_report = PriceReport {
-            base_token: self.base_token.clone(),
-            quote_token: self.quote_token.clone(),
-            price,
-            local_timestamp,
-        };
-
-        // Check that the most recent timestamp is not too old
-        let (too_stale, time_diff) = ts_too_stale(local_timestamp);
-        if too_stale {
-            return PriceReporterState::DataTooStale(price_report, time_diff);
-        }
-
-        // Collect all non-zero, non-stale prices from other exchanges and ensure that
-        // we have enough.
-        let (non_zero_prices, _): (Vec<Price>, Vec<u64>) = ALL_EXCHANGES
-            .iter()
-            .filter(|exchange| *exchange != &Exchange::Binance)
-            .filter_map(|exchange| self.exchange_info.read_price(exchange))
-            .filter(|(price, ts)| {
-                *price != Price::default() && price.is_finite() && !ts_too_stale(*ts).0
-            })
-            .unzip();
-
-        // If we have enough data to create a median, check for deviation against it
-        if non_zero_prices.len() >= MIN_CONNECTIONS {
-            // Compute the median price
-            let median_midpoint_price = Data::new(non_zero_prices.clone()).median();
-
-            // Ensure that there is not too much deviation between the prices
-            let deviation = (price - median_midpoint_price).abs() / median_midpoint_price;
-            if deviation > MAX_DEVIATION {
-                return PriceReporterState::TooMuchDeviation(price_report, deviation);
-            }
-        } else {
-            return PriceReporterState::NotEnoughDataReported(non_zero_prices.len());
-        }
-
-        PriceReporterState::Nominal(price_report)
     }
 }
 
@@ -487,15 +371,4 @@ impl ConnectionMuxer {
         )
         .await
     }
-}
-
-// -----------
-// | HELPERS |
-// -----------
-
-/// Returns whether or not the provided timestamp is too stale,
-/// and the time difference between the current time and the provided timestamp
-fn ts_too_stale(ts: u64) -> (bool, u64) {
-    let time_diff = get_current_time_seconds() - ts;
-    (time_diff > MAX_REPORT_AGE_MS, time_diff)
 }
