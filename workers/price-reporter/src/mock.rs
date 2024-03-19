@@ -68,7 +68,7 @@ impl MockPriceReporter {
     /// Handle a job
     fn handle_job(&self, job: PriceReporterJob) -> Result<(), PriceReporterError> {
         match job {
-            PriceReporterJob::StartPriceReporter { .. } => {
+            PriceReporterJob::StreamPrice { .. } => {
                 debug!("mock price reporter got `StartPriceReporter` job");
                 Ok(())
             },

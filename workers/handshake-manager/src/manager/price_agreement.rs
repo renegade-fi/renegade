@@ -119,7 +119,7 @@ pub fn init_price_streams(
 ) -> Result<(), HandshakeManagerError> {
     for (base, quote) in DEFAULT_PAIRS.iter() {
         price_reporter_job_queue
-            .send(PriceReporterJob::StartPriceReporter {
+            .send(PriceReporterJob::StreamPrice {
                 base_token: base.clone(),
                 quote_token: quote.clone(),
             })
