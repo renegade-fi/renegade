@@ -12,6 +12,8 @@ use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use tokio::runtime::Builder as TokioBuilder;
 
+use crate::manager::external_executor::ExternalPriceReporterExecutor;
+
 use super::{
     errors::PriceReporterError,
     manager::{native_executor::PriceReporterExecutor, PriceReporter},
@@ -59,13 +61,20 @@ impl PriceReporterConfig {
     /// and secret is not provided
     pub(crate) fn exchange_configured(&self, exchange: Exchange) -> bool {
         let disabled = self.disabled_exchanges.contains(&exchange);
-        let configured = match exchange {
-            Exchange::Coinbase => {
-                self.exchange_conn_config.coinbase_api_key.is_some()
-                    && self.exchange_conn_config.coinbase_api_secret.is_some()
-            },
-            Exchange::UniswapV3 => self.exchange_conn_config.eth_websocket_addr.is_some(),
-            _ => true,
+
+        let configured = if self.price_reporter_url.is_some() {
+            // If we are using the external price reporter, we assume all exchanges are
+            // configured
+            true
+        } else {
+            match exchange {
+                Exchange::Coinbase => {
+                    self.exchange_conn_config.coinbase_api_key.is_some()
+                        && self.exchange_conn_config.coinbase_api_secret.is_some()
+                },
+                Exchange::UniswapV3 => self.exchange_conn_config.eth_websocket_addr.is_some(),
+                _ => true,
+            }
         };
 
         !disabled && configured
@@ -96,25 +105,31 @@ impl Worker for PriceReporter {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Start the loop that dispatches incoming jobs to the executor
-        let manager_executor = PriceReporterExecutor::new(
-            self.config.job_receiver.take().unwrap(),
-            self.config.clone(),
-            self.config.cancel_channel.clone(),
-        );
+        let job_receiver = self.config.job_receiver.take().unwrap();
+        let cancel_channel = self.config.cancel_channel.clone();
+        let config = self.config.clone();
 
-        let manager_executor_handle = {
+        // Build a tokio runtime to drive the price reporter
+        let runtime = TokioBuilder::new_multi_thread()
+            .worker_threads(PRICE_REPORTER_MANAGER_NUM_THREADS)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let manager_executor_handle = if self.config.price_reporter_url.is_some() {
+            let manager_executor =
+                ExternalPriceReporterExecutor::new(job_receiver, config, cancel_channel);
+
             thread::Builder::new()
                 .name("price-reporter-manager-executor".to_string())
-                .spawn(move || {
-                    // Build a tokio runtime to drive the price reporter
-                    let runtime = TokioBuilder::new_multi_thread()
-                        .worker_threads(PRICE_REPORTER_MANAGER_NUM_THREADS)
-                        .enable_all()
-                        .build()
-                        .unwrap();
+                .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())
+                .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))
+        } else {
+            let manager_executor = PriceReporterExecutor::new(job_receiver, config, cancel_channel);
 
-                    runtime.block_on(manager_executor.execution_loop()).err().unwrap()
-                })
+            thread::Builder::new()
+                .name("price-reporter-manager-executor".to_string())
+                .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())
                 .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))
         }?;
 
