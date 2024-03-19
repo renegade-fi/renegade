@@ -270,6 +270,7 @@ async fn main() -> Result<(), CoordinatorError> {
             coinbase_api_secret: args.coinbase_api_secret,
             eth_websocket_addr: args.eth_websocket_addr,
         },
+        price_reporter_url: args.price_reporter_url,
         disabled: args.disable_price_reporter,
         disabled_exchanges: args.disabled_exchanges,
     })

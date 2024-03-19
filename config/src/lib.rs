@@ -44,6 +44,10 @@ struct Cli {
     /// An auth config file to read from
     #[clap(long, value_parser)]
     pub config_file: Option<String>,
+    /// The price reporter from which to stream prices.
+    /// If unset, the relayer will connect to exchanges directly.
+    #[clap(long, value_parser, conflicts_with_all = &["coinbase_api_key", "coinbase_api_secret", "eth_websocket_addr"])]
+    pub price_reporter_url: Option<String>,
 
     // -----------------------------
     // | Application Level Configs |
@@ -198,6 +202,9 @@ pub struct RelayerConfig {
     /// The take rate of this relayer on a managed match, i.e. the amount of the
     /// received asset that the relayer takes as a fee
     pub match_take_rate: FixedPoint,
+    /// The price reporter from which to stream prices.
+    /// If unset, the relayer will connect to exchanges directly.
+    pub price_reporter_url: Option<String>,
 
     // -----------------------
     // | Environment Configs |
@@ -299,6 +306,7 @@ impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
             match_take_rate: self.match_take_rate,
+            price_reporter_url: self.price_reporter_url.clone(),
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
             bootstrap_servers: self.bootstrap_servers.clone(),
@@ -415,6 +423,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
 
     let mut config = RelayerConfig {
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
+        price_reporter_url: cli_args.price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
