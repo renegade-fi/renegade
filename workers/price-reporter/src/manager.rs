@@ -16,6 +16,7 @@ use common::types::{
     token::Token,
     Price,
 };
+use itertools::Itertools;
 use statrs::statistics::{Data, Median};
 use util::get_current_time_seconds;
 
@@ -118,6 +119,23 @@ impl AtomicPriceStreamState {
 // -----------
 // | HELPERS |
 // -----------
+
+/// Returns the set of supported exchanges on the pair
+pub fn compute_supported_exchanges_for_pair(
+    base_token: &Token,
+    quote_token: &Token,
+    config: &PriceReporterConfig,
+) -> Vec<Exchange> {
+    // Compute the intersection of the supported exchanges for each of the assets
+    // in the pair, filtering for those not configured
+    let base_token_supported_exchanges = base_token.supported_exchanges();
+    let quote_token_supported_exchanges = quote_token.supported_exchanges();
+    base_token_supported_exchanges
+        .intersection(&quote_token_supported_exchanges)
+        .copied()
+        .filter(|exchange| config.exchange_configured(*exchange))
+        .collect_vec()
+}
 
 /// Computes the state of the price reporter for the given token pair,
 /// checking against the provided exchange prices.

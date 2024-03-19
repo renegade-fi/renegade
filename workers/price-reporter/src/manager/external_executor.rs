@@ -44,7 +44,10 @@ use crate::{
     worker::PriceReporterConfig,
 };
 
-use super::{compute_price_reporter_state, AtomicPriceStreamState, PRICE_REPORT_INTERVAL_MS};
+use super::{
+    compute_price_reporter_state, compute_supported_exchanges_for_pair, AtomicPriceStreamState,
+    PRICE_REPORT_INTERVAL_MS,
+};
 
 /// A type alias for the shared state of the price streams
 type SubscriptionStates = AsyncShared<HashMap<(Token, Token), AtomicPriceStreamState>>;
@@ -84,7 +87,7 @@ pub struct ExternalPriceReporterExecutor {
 
 impl ExternalPriceReporterExecutor {
     /// Creates the executor for the PriceReporter worker.
-    pub(super) fn new(
+    pub(crate) fn new(
         job_receiver: PriceReporterReceiver,
         config: PriceReporterConfig,
         cancel_channel: CancelChannel,
@@ -98,7 +101,7 @@ impl ExternalPriceReporterExecutor {
     }
 
     /// The execution loop for the price reporter
-    pub(super) async fn execution_loop(mut self) -> Result<(), PriceReporterError> {
+    pub(crate) async fn execution_loop(mut self) -> Result<(), PriceReporterError> {
         let mut job_receiver = self.job_receiver.take().unwrap();
         let mut cancel_channel = self.cancel_channel.take().unwrap();
 
@@ -205,11 +208,10 @@ impl ExternalPriceReporterExecutor {
             .map_err(err_str!(ExchangeConnectionError::InvalidMessage))?;
         let ts = get_current_time_seconds();
 
-        let mut subscriptions = self.subscription_states.write().await;
-        subscriptions
-            .entry((base_token, quote_token))
-            .or_insert_with(|| AtomicPriceStreamState::new_from_exchanges(ALL_EXCHANGES))
-            .new_price(exchange, price, ts);
+        let subscriptions = self.subscription_states.write().await;
+        // We unwrap here as we should only get price updates for which we've already
+        // mapped a subscription
+        subscriptions.get(&(base_token, quote_token)).unwrap().new_price(exchange, price, ts);
 
         Ok(())
     }
@@ -245,7 +247,9 @@ impl ExternalPriceReporterExecutor {
             }
 
             // Send subscription messages to WS connection
-            for exchange in ALL_EXCHANGES {
+            let exchanges =
+                compute_supported_exchanges_for_pair(&base_token, &quote_token, &self.config);
+            for exchange in &exchanges {
                 let topic = format_topic(exchange, &base_token, &quote_token);
                 let message = WebsocketMessage::Subscribe { topic };
                 msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
@@ -254,7 +258,7 @@ impl ExternalPriceReporterExecutor {
             // Insert the new subscription state
             subscriptions.insert(
                 (base_token.clone(), quote_token.clone()),
-                AtomicPriceStreamState::new_from_exchanges(ALL_EXCHANGES),
+                AtomicPriceStreamState::new_from_exchanges(&exchanges),
             );
         }
 
@@ -316,7 +320,7 @@ impl ExternalPriceReporterExecutor {
             .read()
             .await
             .get(&(base_token.clone(), quote_token.clone()))
-            .and_then(|state| state.read_price(&exchange))
+            .and_then(|state| state.read_price(exchange))
     }
 }
 
@@ -424,15 +428,8 @@ async fn log_subscribed_exchanges(
         .map(|t| parse_topic(t))
         .collect::<Result<Vec<(Exchange, Token, Token)>, ExchangeConnectionError>>()?;
 
-    let current_subscriptions = subscription_states.read().await;
     for (exchange, base, quote) in subscriptions {
-        if !current_subscriptions.contains_key(&(base.clone(), quote.clone()))
-            || current_subscriptions
-                .get(&(base.clone(), quote.clone()))
-                .unwrap()
-                .read_price(&exchange)
-                .is_none()
-        {
+        if is_new_subscription(subscription_states, &exchange, &base, &quote).await {
             info!(
                 "Now subscribed to {}-{} pair on {} from external price reporter",
                 base, quote, exchange
@@ -441,4 +438,30 @@ async fn log_subscribed_exchanges(
     }
 
     Ok(())
+}
+
+/// Check if the given subscription is a new subscription
+async fn is_new_subscription(
+    subscription_states: &SubscriptionStates,
+    exchange: &Exchange,
+    base: &Token,
+    quote: &Token,
+) -> bool {
+    let current_subscriptions = subscription_states.read().await;
+
+    // If the we have no subscriptions at all for the pair it must be a new
+    // subscription
+    if !current_subscriptions.contains_key(&(base.clone(), quote.clone())) {
+        return true;
+    }
+
+    // If we have a subscription for the pair, but the price for the given exchange
+    // is default, it must be a new subscription
+    current_subscriptions
+        .get(&(base.clone(), quote.clone()))
+        .unwrap()
+        .read_price(exchange)
+        .unwrap_or_default()
+        .0
+        == Price::default()
 }
