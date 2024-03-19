@@ -54,8 +54,6 @@ pub fn get_protocol_fee() -> FixedPoint {
 ///
 /// Panics if the protocol encryption key has not been set
 pub fn get_protocol_pubkey() -> EncryptionKey {
-    let key = PROTOCOL_PUBKEY.get();
-
     // If the mocks feature is enabled we unwrap to a default
     #[cfg(feature = "mocks")]
     {
@@ -63,11 +61,11 @@ pub fn get_protocol_pubkey() -> EncryptionKey {
         use rand::thread_rng;
 
         let mut rng = thread_rng();
-        *key.unwrap_or(&DecryptionKey::random(&mut rng).public_key())
+        *PROTOCOL_PUBKEY.get_or_init(|| DecryptionKey::random(&mut rng).public_key())
     }
 
     #[cfg(not(feature = "mocks"))]
     {
-        *key.expect("Protocol pubkey has not been set")
+        *PROTOCOL_PUBKEY.get().expect("Protocol pubkey has not been set")
     }
 }
