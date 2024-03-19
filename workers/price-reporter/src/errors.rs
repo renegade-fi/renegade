@@ -46,6 +46,8 @@ pub enum PriceReporterError {
     PriceReporterNotCreated(String),
     /// Unsupported pair for the reporter
     UnsupportedPair(Token, Token),
+    /// Error thrown by an individual exchange connection
+    ExchangeConnectionError(ExchangeConnectionError),
 }
 
 impl Error for PriceReporterError {}

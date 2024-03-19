@@ -1,5 +1,6 @@
 //! Defines the Worker logic for the PriceReporterManger, which simply
 //! dispatches jobs to the PriceReporterExecutor.
+
 use common::{
     default_wrapper::DefaultOption,
     types::{exchange::Exchange, CancelChannel},
@@ -13,7 +14,7 @@ use tokio::runtime::Builder as TokioBuilder;
 
 use super::{
     errors::PriceReporterError,
-    manager::{PriceReporter, PriceReporterExecutor},
+    manager::{native_executor::PriceReporterExecutor, PriceReporter},
 };
 
 /// The number of threads backing the price reporter manager
@@ -28,6 +29,8 @@ pub struct PriceReporterConfig {
     pub job_receiver: DefaultOption<PriceReporterReceiver>,
     /// Exchange connection config options
     pub exchange_conn_config: ExchangeConnectionsConfig,
+    /// The URL of an external price reporter service
+    pub price_reporter_url: Option<String>,
     /// Whether or not the worker is disabled
     pub disabled: bool,
     /// Exchanges that are explicitly disabled for price reporting
@@ -74,7 +77,7 @@ impl Worker for PriceReporter {
     type Error = PriceReporterError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        Ok(Self { config, manager_executor_handle: None, manager_runtime: None })
+        Ok(Self { config, manager_executor_handle: None })
     }
 
     fn is_recoverable(&self) -> bool {
@@ -92,14 +95,6 @@ impl Worker for PriceReporter {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        // Spawn a tokio thread pool to run the manager in
-        let tokio_runtime = TokioBuilder::new_multi_thread()
-            .worker_threads(PRICE_REPORTER_MANAGER_NUM_THREADS)
-            .enable_io()
-            .enable_time()
-            .build()
-            .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))?;
-
         // Start the loop that dispatches incoming jobs to the executor
         let manager_executor = PriceReporterExecutor::new(
             self.config.job_receiver.take().unwrap(),
@@ -124,7 +119,6 @@ impl Worker for PriceReporter {
         }?;
 
         self.manager_executor_handle = Some(manager_executor_handle);
-        self.manager_runtime = Some(tokio_runtime);
         Ok(())
     }
 

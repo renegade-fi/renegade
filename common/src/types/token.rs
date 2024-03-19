@@ -712,3 +712,13 @@ impl Token {
         amount as f64 / decimal_adjustment as f64
     }
 }
+
+// -----------
+// | HELPERS |
+// -----------
+
+/// Returns true if the given pair of Tokens is named, indicating that
+/// the pair should be supported on centralized exchanges.
+pub fn is_pair_named(base: &Token, quote: &Token) -> bool {
+    base.is_named() && quote.is_named()
+}

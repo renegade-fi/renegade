@@ -87,7 +87,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
 
         // Start a price reporting stream in the manager
         self.price_reporter_work_queue
-            .send(PriceReporterJob::StartPriceReporter {
+            .send(PriceReporterJob::StreamPrice {
                 base_token: base.clone(),
                 quote_token: quote.clone(),
             })

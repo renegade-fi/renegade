@@ -1,20 +1,63 @@
 //! Defines the PriceReporterExecutor, the handler that is responsible
 //! for executing individual PriceReporterJobs.
-use common::default_wrapper::{DefaultOption, DefaultWrapper};
-use common::types::exchange::PriceReporterState;
-use common::types::token::Token;
-use common::types::CancelChannel;
-use common::{new_async_shared, AsyncShared};
-use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
-use std::{collections::HashMap, thread::JoinHandle};
-use tokio::runtime::Runtime;
-use tokio::sync::oneshot::Sender as TokioSender;
-use tracing::{error, info, info_span, warn, Instrument};
-use util::err_str;
 
-use crate::errors::{ExchangeConnectionError, PriceReporterError};
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+};
 
-use super::{reporter::Reporter, worker::PriceReporterConfig};
+use atomic_float::AtomicF64;
+use common::types::{
+    exchange::{Exchange, PriceReport, PriceReporterState},
+    token::Token,
+    Price,
+};
+use statrs::statistics::{Data, Median};
+use util::get_current_time_seconds;
+
+use crate::{errors::PriceReporterError, worker::PriceReporterConfig};
+
+// pub mod external_executor;
+pub mod native_executor;
+
+// -------------
+// | Constants |
+// -------------
+
+/// If a pair has not reported an update within
+/// MAX_REPORT_AGE (in milliseconds), we pause matches until we receive a more
+/// recent price. Note that this threshold cannot be too aggressive, as certain
+/// long-tail asset pairs legitimately do not update that often.
+const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
+/// If we do not have at least MIN_CONNECTIONS reports, we pause matches until
+/// we have enough reports. This only applies to Named tokens, as Unnamed tokens
+/// simply use UniswapV3.
+const MIN_CONNECTIONS: usize = 1;
+/// If a PriceReport is more than MAX_DEVIATION (as a fraction) away
+/// from the midpoint, then we pause matches until the prices stabilize.
+const MAX_DEVIATION: f64 = 0.01;
+
+/// The number of milliseconds to wait in between sending keepalive messages to
+/// the connections
+pub const KEEPALIVE_INTERVAL_MS: u64 = 15_000; // 15 seconds
+/// The number of milliseconds to wait in between retrying connections
+pub const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
+/// The number of milliseconds in which `MAX_CONN_RETRIES` failures will cause a
+/// failure of the price reporter
+pub const MAX_CONN_RETRY_WINDOW_MS: u64 = 60_000; // 1 minute
+/// The maximum number of retries to attempt before giving up on a connection
+pub const MAX_CONN_RETRIES: usize = 5;
+
+/// The number of milliseconds to wait in between sending price report updates
+pub const PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
+
+// ---------
+// | TYPES |
+// ---------
 
 /// The PriceReporter worker is a wrapper around the
 /// PriceReporterExecutor, handling and dispatching jobs to the executor
@@ -24,174 +67,112 @@ pub struct PriceReporter {
     pub(super) config: PriceReporterConfig,
     /// The single thread that joins all individual PriceReporter threads
     pub(super) manager_executor_handle: Option<JoinHandle<PriceReporterError>>,
-    /// The tokio runtime that the manager runs inside of
-    pub(super) manager_runtime: Option<Runtime>,
 }
 
-/// The actual executor that handles incoming jobs, to create and destroy
-/// PriceReporters, and peek at PriceReports.
-#[derive(Clone)]
-pub struct PriceReporterExecutor {
-    /// The map between base/quote token pairs and the instantiated
-    /// PriceReporter
-    active_price_reporters: AsyncShared<HashMap<(Token, Token), Reporter>>,
-    /// The manager config
-    config: PriceReporterConfig,
-    /// The channel along which jobs are passed to the price reporter
-    job_receiver: DefaultOption<PriceReporterReceiver>,
-    /// The channel on which the coordinator may cancel execution
-    cancel_channel: DefaultOption<CancelChannel>,
+/// The state streamed from the connection multiplexer to the price reporter
+/// Uses atomic primitives to allow for hardware synchronized update streaming
+#[derive(Clone, Debug)]
+pub struct AtomicPriceStreamState {
+    /// The price information for each exchange, updated by the
+    /// `ConnectionMuxer`
+    price_map: HashMap<Exchange, Arc<AtomicF64>>,
+    /// A map indicating the time at which the last price was received from each
+    /// exchange
+    last_received: HashMap<Exchange, Arc<AtomicU64>>,
 }
 
-impl PriceReporterExecutor {
-    /// Creates the executor for the PriceReporter worker.
-    pub(super) fn new(
-        job_receiver: PriceReporterReceiver,
-        config: PriceReporterConfig,
-        cancel_channel: CancelChannel,
-    ) -> Self {
+impl AtomicPriceStreamState {
+    /// Construct a new price stream state instance from a set fo exchanges
+    pub fn new_from_exchanges(exchanges: &[Exchange]) -> Self {
         Self {
-            job_receiver: DefaultWrapper::new(Some(job_receiver)),
-            cancel_channel: DefaultWrapper::new(Some(cancel_channel)),
-            active_price_reporters: new_async_shared(HashMap::new()),
-            config,
+            price_map: exchanges
+                .iter()
+                .map(|exchange| (*exchange, Arc::new(AtomicF64::new(0.))))
+                .collect(),
+            last_received: exchanges
+                .iter()
+                .map(|exchange| (*exchange, Arc::new(AtomicU64::new(0))))
+                .collect(),
         }
     }
 
-    /// The execution loop for the price reporter
-    pub(super) async fn execution_loop(mut self) -> Result<(), PriceReporterError> {
-        let mut job_receiver = self.job_receiver.take().unwrap();
-        let mut cancel_channel = self.cancel_channel.take().unwrap();
-
-        loop {
-            tokio::select! {
-                // Dequeue the next job from elsewhere in the local node
-                Some(job) = job_receiver.recv() => {
-                    if self.config.disabled {
-                        warn!("PriceReporter received job while disabled, ignoring...");
-                        continue;
-                    }
-
-                    tokio::spawn({
-                        let mut self_clone = self.clone();
-                        async move {
-                            if let Err(e) = self_clone.handle_job(job).await {
-                                error!("Error in PriceReporter execution loop: {e}");
-                            }
-                        }.instrument(info_span!("handle_job"))
-                    });
-                },
-
-                // Await cancellation by the coordinator
-                _ = cancel_channel.changed() => {
-                    info!("PriceReporter cancelled, shutting down...");
-                    return Err(PriceReporterError::Cancelled("received cancel signal".to_string()));
-                }
-            }
-        }
+    /// Add a new price report for a given exchange
+    pub fn new_price(&self, exchange: Exchange, price: Price, timestamp: u64) {
+        // These operations are not transactionally related, so there is a chance
+        // for a race in between updating the timestamp and the price. This is
+        // generally okay as the timestamp is only used for determining staleness
+        // and given a race the timestamp will be very close to correct
+        self.price_map.get(&exchange).unwrap().store(price, Ordering::Relaxed);
+        self.last_received.get(&exchange).unwrap().store(timestamp, Ordering::Relaxed);
     }
 
-    /// Handles a job for the PriceReporter worker.
-    pub(super) async fn handle_job(
-        &mut self,
-        job: PriceReporterJob,
-    ) -> Result<(), PriceReporterError> {
-        match job {
-            PriceReporterJob::StartPriceReporter { base_token, quote_token } => {
-                self.start_price_reporter(base_token, quote_token).await
-            },
+    /// Read the price and timestamp from a given exchange
+    pub fn read_price(&self, exchange: &Exchange) -> Option<(Price, u64)> {
+        Some((
+            self.price_map.get(exchange)?.load(Ordering::Relaxed),
+            self.last_received.get(exchange)?.load(Ordering::Relaxed),
+        ))
+    }
+}
 
-            PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.peek_price(base_token, quote_token, channel).await
-            },
-        }
+// -----------
+// | HELPERS |
+// -----------
+
+/// Computes the state of the price reporter for the given token pair,
+/// checking against the provided exchange prices.
+pub fn compute_price_reporter_state(
+    base_token: Token,
+    quote_token: Token,
+    price: f64,
+    local_timestamp: u64,
+    exchange_prices: &[(Exchange, (Price, u64))],
+) -> PriceReporterState {
+    if price == Price::default() {
+        return PriceReporterState::NotEnoughDataReported(0);
     }
 
-    // ----------------
-    // | Job Handlers |
-    // ----------------
+    let price_report = PriceReport { base_token, quote_token, price, local_timestamp };
 
-    /// Handler for StartPriceReporter job
-    async fn start_price_reporter(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-    ) -> Result<(), PriceReporterError> {
-        let mut locked_reporters = self.active_price_reporters.write().await;
-        if locked_reporters.contains_key(&(base_token.clone(), quote_token.clone())) {
-            return Ok(());
-        }
-
-        // Create the price reporter
-        let reporter =
-            match Reporter::new(base_token.clone(), quote_token.clone(), self.config.clone()) {
-                Ok(reporter) => reporter,
-                Err(ExchangeConnectionError::NoSupportedExchanges(base, quote)) => {
-                    return Err(PriceReporterError::UnsupportedPair(base, quote));
-                },
-                Err(e) => {
-                    return Err(e).map_err(err_str!(PriceReporterError::PriceReporterCreation))
-                },
-            };
-
-        locked_reporters.insert((base_token.clone(), quote_token.clone()), reporter);
-
-        Ok(())
+    // Check that the most recent timestamp is not too old
+    let (too_stale, time_diff) = ts_too_stale(local_timestamp);
+    if too_stale {
+        return PriceReporterState::DataTooStale(price_report, time_diff);
     }
 
-    /// Handler for PeekPrice job
-    async fn peek_price(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<PriceReporterState>,
-    ) -> Result<(), PriceReporterError> {
-        match self.get_price_reporter_or_create(base_token, quote_token).await {
-            Ok(reporter) => channel.send(reporter.peek_price()).unwrap(),
-            Err(PriceReporterError::UnsupportedPair(base, quote)) => {
-                channel.send(PriceReporterState::UnsupportedPair(base, quote)).unwrap()
-            },
-            Err(e) => return Err(e),
-        };
-
-        Ok(())
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Internal helper function to get a (base_token, quote_token)
-    /// PriceReporter
-    async fn get_price_reporter(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-    ) -> Result<Reporter, PriceReporterError> {
-        let locked_reporters = self.active_price_reporters.read().await;
-        locked_reporters.get(&(base_token.clone(), quote_token.clone())).cloned().ok_or_else(|| {
-            PriceReporterError::PriceReporterNotCreated(format!("{:?}", (base_token, quote_token)))
+    // Collect all non-zero, non-stale prices from other exchanges and ensure that
+    // we have enough.
+    let non_zero_prices: Vec<Price> = exchange_prices
+        .iter()
+        .filter(|(exchange, (price, ts))| {
+            exchange != &Exchange::Binance
+                && *price != Price::default()
+                && price.is_finite()
+                && !ts_too_stale(*ts).0
         })
+        .map(|(_, (price, _))| *price)
+        .collect();
+
+    // If we have enough data to create a median, check for deviation against it
+    if non_zero_prices.len() < MIN_CONNECTIONS {
+        return PriceReporterState::NotEnoughDataReported(non_zero_prices.len());
     }
 
-    /// Internal helper function to get a (base_token, quote_token)
-    /// PriceReporter. If the PriceReporter does not already exist, first
-    /// creates it.
-    async fn get_price_reporter_or_create(
-        &mut self,
-        base_token: Token,
-        quote_token: Token,
-    ) -> Result<Reporter, PriceReporterError> {
-        let reporter_exists = {
-            self.active_price_reporters
-                .read()
-                .await
-                .contains_key(&(base_token.clone(), quote_token.clone()))
-        };
+    // Compute the median price
+    let median_midpoint_price = Data::new(non_zero_prices.clone()).median();
 
-        if !reporter_exists {
-            self.start_price_reporter(base_token.clone(), quote_token.clone()).await?;
-        }
-        self.get_price_reporter(base_token, quote_token).await
+    // Ensure that there is not too much deviation between the prices
+    let deviation = (price - median_midpoint_price).abs() / median_midpoint_price;
+    if deviation > MAX_DEVIATION {
+        return PriceReporterState::TooMuchDeviation(price_report, deviation);
     }
+
+    PriceReporterState::Nominal(price_report)
+}
+
+/// Returns whether or not the provided timestamp is too stale,
+/// and the time difference between the current time and the provided timestamp
+fn ts_too_stale(ts: u64) -> (bool, u64) {
+    let time_diff = get_current_time_seconds() - ts;
+    (time_diff > MAX_REPORT_AGE_MS, time_diff)
 }
