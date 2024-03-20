@@ -46,6 +46,7 @@ impl TokenRemap {
 }
 
 /// Setup token remaps in the global `OnceCell`
+// TODO(@akirillo): populate `ADDR_DECIMALS_MAP` with the decimals from the remap
 pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<(), String> {
     // If the remap file is not provided, fetch the Renegade maintained remap file
     // from the default location
