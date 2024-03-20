@@ -195,7 +195,7 @@ impl HttpServer {
         // Build the router and register its routes
         let mut router = Router::new(global_state.clone());
 
-        // The "/exchangeHealthStates" route
+        // The "/price_report" route
         router.add_route(
             &Method::POST,
             PRICE_REPORT_ROUTE.to_string(),

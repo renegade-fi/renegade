@@ -22,7 +22,7 @@ ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 ethers = { workspace = true }
 json = "0.12"
 rand_core = "0.5"
-reqwest = { verison = "0.11", features = ["blocking"] }
+reqwest = { verison = "0.11", features = ["blocking", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
