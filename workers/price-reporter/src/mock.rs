@@ -4,7 +4,7 @@ use std::thread;
 
 use bimap::BiMap;
 use common::types::exchange::{PriceReport, PriceReporterState};
-use common::types::token::{Token, ERC20_DATA, TOKEN_REMAPS};
+use common::types::token::{Token, TICKER_NAMES, TOKEN_REMAPS};
 use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
@@ -19,9 +19,9 @@ use crate::errors::PriceReporterError;
 pub fn setup_mock_token_remap() {
     // Setup the mock token map
     let mut token_map = BiMap::new();
-    for (i, token_data) in ERC20_DATA.iter().enumerate() {
-        // Pull the ticker, the index 2 field
-        let ticker = token_data.2.to_string();
+    for (i, token_data) in TICKER_NAMES.iter().enumerate() {
+        // Pull the ticker, the index 0 field
+        let ticker = token_data.0.to_string();
         let addr = format!("{i:x}");
 
         token_map.insert(addr, ticker);
