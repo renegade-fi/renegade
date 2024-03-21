@@ -22,6 +22,7 @@ use std::{
 };
 pub use token_remaps::setup_token_remaps;
 use toml::{value::Map, Value};
+use url::Url;
 use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 
 /// The dummy message used for checking elliptic curve key pairs
@@ -204,7 +205,7 @@ pub struct RelayerConfig {
     pub match_take_rate: FixedPoint,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
-    pub price_reporter_url: Option<String>,
+    pub price_reporter_url: Option<Url>,
 
     // -----------------------
     // | Environment Configs |
@@ -421,9 +422,14 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
+    // Parse the price reporter URL, if ther is one
+    let price_reporter_url = cli_args
+        .price_reporter_url
+        .map(|url| Url::parse(&url).expect("Invalid price reporter URL"));
+
     let mut config = RelayerConfig {
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
-        price_reporter_url: cli_args.price_reporter_url,
+        price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         bootstrap_servers: parsed_bootstrap_addrs,
