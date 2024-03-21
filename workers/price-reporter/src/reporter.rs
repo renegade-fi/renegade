@@ -20,7 +20,7 @@ use util::get_current_time_seconds;
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 use crate::manager::{
-    compute_price_reporter_state, compute_supported_exchanges_for_pair, AtomicPriceStreamState,
+    compute_price_reporter_state, get_supported_exchanges, AtomicPriceStreamState,
     CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS,
     PRICE_REPORT_INTERVAL_MS,
 };
@@ -52,8 +52,7 @@ impl Reporter {
         config: PriceReporterConfig,
     ) -> Result<Self, ExchangeConnectionError> {
         // Get the supported exchanges for the token pair
-        let supported_exchanges =
-            compute_supported_exchanges_for_pair(&base_token, &quote_token, &config);
+        let supported_exchanges = get_supported_exchanges(&base_token, &quote_token, &config);
         if supported_exchanges.is_empty() {
             warn!("No supported exchanges for {base_token}-{quote_token}");
             return Err(ExchangeConnectionError::NoSupportedExchanges(base_token, quote_token));

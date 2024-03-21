@@ -1658,6 +1658,7 @@ dependencies = [
  "tempfile",
  "toml 0.5.11",
  "tracing",
+ "url",
  "util",
 ]
 
