@@ -121,7 +121,7 @@ impl AtomicPriceStreamState {
 // -----------
 
 /// Returns the set of supported exchanges on the pair
-pub fn compute_supported_exchanges_for_pair(
+pub fn get_supported_exchanges(
     base_token: &Token,
     quote_token: &Token,
     config: &PriceReporterConfig,

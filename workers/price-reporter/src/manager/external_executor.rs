@@ -44,10 +44,7 @@ use crate::{
     worker::PriceReporterConfig,
 };
 
-use super::{
-    compute_price_reporter_state, compute_supported_exchanges_for_pair, AtomicPriceStreamState,
-    PRICE_REPORT_INTERVAL_MS,
-};
+use super::{compute_price_reporter_state, get_supported_exchanges, AtomicPriceStreamState};
 
 /// A type alias for the shared state of the price streams
 type SubscriptionStates = AsyncShared<HashMap<(Token, Token), AtomicPriceStreamState>>;
@@ -147,13 +144,7 @@ impl ExternalPriceReporterExecutor {
     fn spawn_ws_handler_loop(
         &self,
     ) -> (UnboundedSender<WebsocketMessage>, UnboundedReceiver<PriceMessage>) {
-        let price_reporter_url: Url = self
-            .config
-            .price_reporter_url
-            .clone()
-            .unwrap()
-            .parse()
-            .expect("Invalid price reporter URL");
+        let price_reporter_url: Url = self.config.price_reporter_url.clone().unwrap();
 
         let (msg_out_tx, msg_out_rx) = unbounded_channel();
         let (msg_in_tx, msg_in_rx) = unbounded_channel();
@@ -168,28 +159,6 @@ impl ExternalPriceReporterExecutor {
         ));
 
         (msg_out_tx, msg_in_rx)
-    }
-
-    /// Spawns the price streamer loop, which periodically publishes price
-    /// reports to the system bus for the given token pair
-    fn spawn_price_streamer_loop(self, base: Token, quote: Token) {
-        tokio::spawn(async move {
-            let topic_name = price_report_topic_name(&base, &quote);
-
-            loop {
-                if self.config.system_bus.has_listeners(&topic_name) {
-                    if let PriceReporterState::Nominal(report) =
-                        self.get_state(base.clone(), quote.clone()).await
-                    {
-                        self.config
-                            .system_bus
-                            .publish(topic_name.clone(), SystemBusMessage::PriceReport(report));
-                    }
-                }
-
-                tokio::time::sleep(Duration::from_millis(PRICE_REPORT_INTERVAL_MS)).await;
-            }
-        });
     }
 
     /// Handles a price update from the external price reporter
@@ -208,10 +177,26 @@ impl ExternalPriceReporterExecutor {
             .map_err(err_str!(ExchangeConnectionError::InvalidMessage))?;
         let ts = get_current_time_seconds();
 
-        let subscriptions = self.subscription_states.write().await;
-        // We unwrap here as we should only get price updates for which we've already
-        // mapped a subscription
-        subscriptions.get(&(base_token, quote_token)).unwrap().new_price(exchange, price, ts);
+        // Save the price update for the pair on the given exchange
+        {
+            let subscriptions = self.subscription_states.read().await;
+            // We unwrap here as we should only get price updates for which we've already
+            // mapped a subscription
+            subscriptions
+                .get(&(base_token.clone(), quote_token.clone()))
+                .unwrap()
+                .new_price(exchange, price, ts);
+        }
+
+        // Compute the high-level price report for the pair
+        let topic_name = price_report_topic_name(&base_token, &quote_token);
+        if self.config.system_bus.has_listeners(&topic_name) {
+            if let PriceReporterState::Nominal(report) =
+                self.get_state(base_token, quote_token).await
+            {
+                self.config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));
+            }
+        }
 
         Ok(())
     }
@@ -241,29 +226,26 @@ impl ExternalPriceReporterExecutor {
         msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), ExchangeConnectionError> {
         {
-            let mut subscriptions = self.subscription_states.write().await;
+            let subscriptions = self.subscription_states.read().await;
             if subscriptions.contains_key(&(base_token.clone(), quote_token.clone())) {
                 return Ok(());
             }
-
-            // Send subscription messages to WS connection
-            let exchanges =
-                compute_supported_exchanges_for_pair(&base_token, &quote_token, &self.config);
-            for exchange in &exchanges {
-                let topic = format_topic(exchange, &base_token, &quote_token);
-                let message = WebsocketMessage::Subscribe { topic };
-                msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
-            }
-
-            // Insert the new subscription state
-            subscriptions.insert(
-                (base_token.clone(), quote_token.clone()),
-                AtomicPriceStreamState::new_from_exchanges(&exchanges),
-            );
         }
 
-        // Spawn a price streamer loop associated with the pair
-        self.clone().spawn_price_streamer_loop(base_token, quote_token);
+        // Send subscription messages to WS connection
+        let exchanges = get_supported_exchanges(&base_token, &quote_token, &self.config);
+        for exchange in &exchanges {
+            let topic = format_topic(exchange, &base_token, &quote_token);
+            let message = WebsocketMessage::Subscribe { topic };
+            msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
+        }
+
+        // Insert the new subscription state
+        let mut subscriptions = self.subscription_states.write().await;
+        subscriptions.insert(
+            (base_token.clone(), quote_token.clone()),
+            AtomicPriceStreamState::new_from_exchanges(&exchanges),
+        );
 
         Ok(())
     }
@@ -344,44 +326,69 @@ async fn ws_handler_loop(
                 // Forward incoming messages from the external price reporter
                 // to the executor
                 Some(res) = ws_read.next() => {
-                    match res {
-                        Ok(msg) => {
-                            if let Message::Text(text) = msg {
-                                // If receiving a subscription response from the price reporter,
-                                // log the subscribed topics (exchange, base, quote)
-                                if let Ok(subscription_response) =
-                                    serde_json::from_str::<SubscriptionResponse>(&text)
-                                {
-                                    if log_subscribed_exchanges(&subscription_response, &subscription_states).await.is_err() {
-                                        break;
-                                    }
-                                }
-
-                                if let Ok(price_message) = serde_json::from_str::<PriceMessage>(&text) {
-                                    // If receiving a price update from the external price reporter, forward to the executor
-                                    if msg_in_tx.send(price_message).is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        Err(_) => break,
+                    if let Err(e) = handle_incoming_ws_message(res, &subscription_states, &msg_in_tx).await {
+                        error!("Error handling incoming message from external price reporter: {e}");
+                        break;
                     }
                 }
 
                 // Forward outgoing messages from the executor to the external price reporter
                 Some(message) = msg_out_rx.recv() => {
-                    if ws_write.send(Message::Text(serde_json::to_string(&message).unwrap())).await.is_err() {
+                    if let Err(e) = ws_write.send(Message::Text(serde_json::to_string(&message).unwrap())).await {
+                        error!("Error sending message to external price reporter: {e}");
                         break;
                     }
                 },
             }
         }
-
-        // We only break out of the inner loop in case of an error
-        error!("Error communicating with external price reporter, restarting connection...");
     }
+}
+
+/// Handle an incoming websocket message from the external price reporter
+async fn handle_incoming_ws_message(
+    maybe_msg: Result<Message, tungstenite::Error>,
+    subscription_states: &SubscriptionStates,
+    msg_in_tx: &UnboundedSender<PriceMessage>,
+) -> Result<(), ExchangeConnectionError> {
+    match maybe_msg {
+        Ok(msg) => {
+            if let Message::Text(text) = msg {
+                try_handle_subscription_response(&text, subscription_states).await?;
+                try_handle_price_message(&text, msg_in_tx)?;
+            }
+            Ok(())
+        },
+
+        Err(e) => Err(ExchangeConnectionError::ConnectionHangup(e.to_string())),
+    }
+}
+
+/// Attempt to process the websocket message as a subscription response
+async fn try_handle_subscription_response(
+    msg_text: &str,
+    subscription_states: &SubscriptionStates,
+) -> Result<(), ExchangeConnectionError> {
+    // If receiving a subscription response from the price reporter,
+    // log the subscribed topics (exchange, base, quote)
+    if let Ok(subscription_response) = serde_json::from_str::<SubscriptionResponse>(msg_text) {
+        return log_subscribed_exchanges(&subscription_response, subscription_states).await;
+    }
+
+    Ok(())
+}
+
+/// Attempt to process the websocket message as a price message
+fn try_handle_price_message(
+    msg_text: &str,
+    msg_in_tx: &UnboundedSender<PriceMessage>,
+) -> Result<(), ExchangeConnectionError> {
+    // If receiving a price update from the external price reporter, forward to the
+    // executor
+    if let Ok(price_message) = serde_json::from_str::<PriceMessage>(msg_text) {
+        return msg_in_tx.send(price_message).map_err(err_str!(ExchangeConnectionError::SendError));
+    }
+
+    Ok(())
 }
 
 /// Attempt to reconnect to the external price reporter,
