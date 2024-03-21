@@ -11,6 +11,7 @@ use job_types::price_reporter::PriceReporterReceiver;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use tokio::runtime::Builder as TokioBuilder;
+use url::Url;
 
 use crate::manager::external_executor::ExternalPriceReporterExecutor;
 
@@ -32,7 +33,7 @@ pub struct PriceReporterConfig {
     /// Exchange connection config options
     pub exchange_conn_config: ExchangeConnectionsConfig,
     /// The URL of an external price reporter service
-    pub price_reporter_url: Option<String>,
+    pub price_reporter_url: Option<Url>,
     /// Whether or not the worker is disabled
     pub disabled: bool,
     /// Exchanges that are explicitly disabled for price reporting
