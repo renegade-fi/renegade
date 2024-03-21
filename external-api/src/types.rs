@@ -98,8 +98,7 @@ impl TryFrom<ApiWallet> for Wallet {
     type Error = String;
 
     fn try_from(wallet: ApiWallet) -> Result<Self, Self::Error> {
-        let orders =
-            wallet.orders.into_iter().map(|order| (Uuid::new_v4(), order.into())).collect();
+        let orders = wallet.orders.into_iter().map(|order| (order.id, order.into())).collect();
         let balances =
             wallet.balances.into_iter().map(|balance| (balance.mint.clone(), balance)).collect();
 
@@ -114,7 +113,7 @@ impl TryFrom<ApiWallet> for Wallet {
         let managing_cluster = jubjub_from_hex_string(&wallet.managing_cluster)?;
 
         Ok(Wallet {
-            wallet_id: Uuid::new_v4(),
+            wallet_id: wallet.id,
             orders,
             balances,
             key_chain: wallet.key_chain.try_into()?,

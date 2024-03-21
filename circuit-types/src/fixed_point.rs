@@ -12,9 +12,9 @@ use lazy_static::lazy_static;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::{
-    bigint_to_scalar, biguint_to_scalar, scalar_to_bigdecimal, scalar_to_bigint, scalar_to_u64,
+    bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_u64,
 };
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     scalar,
@@ -63,7 +63,7 @@ pub fn right_shift_scalar_by_m(scalar: Scalar) -> Scalar {
 /// This is useful for centralizing conversion logic to provide an abstract
 /// to_scalar, from_scalar interface to modules that commit to this value
 #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
     pub repr: Scalar,
@@ -238,29 +238,6 @@ impl Sub<FixedPoint> for Scalar {
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: FixedPoint) -> Self::Output {
         self + rhs.neg()
-    }
-}
-
-impl Serialize for FixedPoint {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // Serialize the value as a floating point
-        let mut bigdec = scalar_to_bigdecimal(&self.repr);
-        bigdec = &bigdec / (1u64 << DEFAULT_FP_PRECISION);
-
-        serializer.serialize_f32(bigdec.to_f32().unwrap())
-    }
-}
-
-impl<'de> Deserialize<'de> for FixedPoint {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let val_f32 = f32::deserialize(deserializer)?;
-        Ok(FixedPoint::from(val_f32))
     }
 }
 

@@ -63,33 +63,6 @@ async fn append_task_and_await(
     Ok(task_id)
 }
 
-// ---------------
-// | HTTP Routes |
-// ---------------
-
-/// Create a new wallet
-pub(super) const CREATE_WALLET_ROUTE: &str = "/v0/wallet";
-/// Find a wallet in contract storage
-pub(super) const FIND_WALLET_ROUTE: &str = "/v0/wallet/lookup";
-/// Returns the wallet information for the given id
-pub(super) const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
-/// Route to the orders of a given wallet
-pub(super) const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
-/// Returns a single order by the given identifier
-pub(super) const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
-/// Updates a given order
-pub(super) const UPDATE_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/update";
-/// Cancels a given order
-pub(super) const CANCEL_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/cancel";
-/// Returns the balances within a given wallet
-pub(super) const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
-/// Returns the balance associated with the given mint
-pub(super) const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint";
-/// Deposits an ERC-20 token into the darkpool
-pub(super) const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
-/// Withdraws an ERC-20 token from the darkpool
-pub(super) const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
-
 // ------------------
 // | Error Messages |
 // ------------------

@@ -12,6 +12,11 @@ pub mod http;
 pub mod types;
 pub mod websocket;
 
+/// Header name for the HTTP auth signature
+pub const RENEGADE_AUTH_HEADER_NAME: &str = "renegade-auth";
+/// Header name for the expiration timestamp of a signature
+pub const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "renegade-auth-expiration";
+
 /// An empty request/response type
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmptyRequestResponse {}

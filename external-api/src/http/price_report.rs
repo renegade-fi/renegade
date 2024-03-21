@@ -8,6 +8,17 @@ use common::types::{
 };
 use serde::{Deserialize, Serialize};
 
+// ---------------
+// | HTTP Routes |
+// ---------------
+
+/// Exchange health check route
+pub const EXCHANGE_HEALTH_ROUTE: &str = "/v0/exchange/health_check";
+
+// -------------
+// | API Types |
+// -------------
+
 /// A request to get the health of each exchange for a given token pair
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetExchangeHealthStatesRequest {

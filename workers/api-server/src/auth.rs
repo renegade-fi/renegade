@@ -4,15 +4,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::engine::{general_purpose as b64_general_purpose, Engine};
 use circuit_types::keychain::PublicSigningKey;
+use external_api::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};
 use hyper::HeaderMap;
 use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 
 use crate::error::{bad_request, unauthorized, ApiServerError};
-
-/// Header name for the HTTP auth signature
-const RENEGADE_AUTH_HEADER_NAME: &str = "renegade-auth";
-/// Header name for the expiration timestamp of a signature
-const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "renegade-auth-expiration";
 
 /// Error displayed when the signature format is invalid
 const ERR_SIG_FORMAT_INVALID: &str = "signature format invalid";
@@ -98,13 +94,12 @@ fn validate_expiring_signature(
 #[cfg(test)]
 mod test {
     use base64::engine::{general_purpose as b64_general_purpose, Engine};
+    use external_api::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};
     use hyper::{header::HeaderValue, HeaderMap};
     use k256::ecdsa::{signature::Signer, Signature, SigningKey};
     use rand::thread_rng;
 
-    use super::{
-        authenticate_wallet_request, RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME,
-    };
+    use super::authenticate_wallet_request;
 
     /// A message to sign for testing
     const MSG: &[u8] = b"dummy";
