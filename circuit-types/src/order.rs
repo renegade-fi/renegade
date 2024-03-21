@@ -7,7 +7,7 @@ use mpc_relation::{traits::Circuit, BoolVar, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
-use std::ops::Add;
+use std::{fmt::Display, ops::Add};
 
 use crate::{
     biguint_from_hex_string, biguint_to_hex_string,
@@ -98,6 +98,15 @@ pub enum OrderSide {
     Buy = 0,
     /// Sell side
     Sell,
+}
+
+impl Display for OrderSide {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrderSide::Buy => write!(f, "Buy"),
+            OrderSide::Sell => write!(f, "Sell"),
+        }
+    }
 }
 
 impl OrderSide {

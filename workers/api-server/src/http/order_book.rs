@@ -1,9 +1,5 @@
 //! Groups routes and handlers for order book API operations
 
-// ---------------
-// | HTTP Routes |
-// ---------------
-
 use async_trait::async_trait;
 use external_api::{
     http::order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
@@ -26,15 +22,6 @@ use super::parse_order_id_from_params;
 
 /// Error displayed when an order cannot be found in the network order book
 const ERR_ORDER_NOT_FOUND: &str = "order not found in network order book";
-
-// ---------------
-// | HTTP Routes |
-// ---------------
-
-/// Returns all known network orders
-pub(super) const GET_NETWORK_ORDERS_ROUTE: &str = "/v0/order_book/orders";
-/// Returns the network order information of the specified order
-pub(super) const GET_NETWORK_ORDER_BY_ID_ROUTE: &str = "/v0/order_book/orders/:order_id";
 
 // ----------------------
 // | Order Book Routers |

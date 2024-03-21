@@ -20,11 +20,6 @@ use crate::{
 
 use super::{parse_task_id_from_params, parse_wallet_id_from_params};
 
-/// Get the status of a task
-pub const GET_TASK_STATUS_ROUTE: &str = "/v0/tasks/:task_id";
-/// Get the task queue of a given wallet
-pub const GET_TASK_QUEUE_ROUTE: &str = "/v0/task_queue/:wallet_id";
-
 // ------------------
 // | Error Messages |
 // ------------------

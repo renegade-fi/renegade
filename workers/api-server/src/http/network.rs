@@ -26,17 +26,6 @@ use super::{parse_cluster_id_from_params, parse_peer_id_from_params};
 /// Error displayed when a requested peer could not be found in the peer index
 const ERR_PEER_NOT_FOUND: &str = "could not find peer in index";
 
-// ---------------
-// | HTTP Routes |
-// ---------------
-
-/// Returns the full network topology known to the local node
-pub(super) const GET_NETWORK_TOPOLOGY_ROUTE: &str = "/v0/network";
-/// Returns the cluster information for the specified cluster
-pub(super) const GET_CLUSTER_INFO_ROUTE: &str = "/v0/network/clusters/:cluster_id";
-/// Returns the peer info for a given peer
-pub(super) const GET_PEER_INFO_ROUTE: &str = "/v0/network/peers/:peer_id";
-
 // ------------------
 // | Route Handlers |
 // ------------------

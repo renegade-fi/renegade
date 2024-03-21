@@ -14,13 +14,6 @@ use crate::{
     worker::ApiServerConfig,
 };
 
-// ---------------
-// | HTTP Routes |
-// ---------------
-
-/// Exchange health check route
-pub(super) const EXCHANGE_HEALTH_ROUTE: &str = "/v0/exchange/health_check";
-
 // ------------------
 // | Route Handlers |
 // ------------------

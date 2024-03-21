@@ -11,6 +11,33 @@ use crate::{
     types::{ApiKeychain, ApiOrder, ApiWallet},
 };
 
+// ---------------
+// | HTTP Routes |
+// ---------------
+
+/// Create a new wallet
+pub const CREATE_WALLET_ROUTE: &str = "/v0/wallet";
+/// Find a wallet in contract storage
+pub const FIND_WALLET_ROUTE: &str = "/v0/wallet/lookup";
+/// Returns the wallet information for the given id
+pub const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
+/// Route to the orders of a given wallet
+pub const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
+/// Returns a single order by the given identifier
+pub const GET_ORDER_BY_ID_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id";
+/// Updates a given order
+pub const UPDATE_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/update";
+/// Cancels a given order
+pub const CANCEL_ORDER_ROUTE: &str = "/v0/wallet/:wallet_id/orders/:order_id/cancel";
+/// Returns the balances within a given wallet
+pub const GET_BALANCES_ROUTE: &str = "/v0/wallet/:wallet_id/balances";
+/// Returns the balance associated with the given mint
+pub const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint";
+/// Deposits an ERC-20 token into the darkpool
+pub const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
+/// Withdraws an ERC-20 token from the darkpool
+pub const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
+
 // --------------------
 // | Wallet API Types |
 // --------------------
