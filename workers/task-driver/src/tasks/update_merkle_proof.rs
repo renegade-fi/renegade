@@ -56,8 +56,8 @@ impl Display for UpdateMerkleProofTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Pending => write!(f, "Pending"),
-            Self::FindingOpening => write!(f, "FindingOpening"),
-            Self::UpdatingValidityProofs => write!(f, "UpdatingValidityProofs"),
+            Self::FindingOpening => write!(f, "Finding Opening"),
+            Self::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
             Self::Completed => write!(f, "Completed"),
         }
     }

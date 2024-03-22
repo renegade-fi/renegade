@@ -4,6 +4,10 @@ use common::types::{
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::WalletIdentifier,
 };
+use external_api::{
+    bus_message::{task_topic_name, SystemBusMessage},
+    http::task::ApiTaskStatus,
+};
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
 use libmdbx::TransactionKind;
 use tracing::{error, warn};
@@ -75,8 +79,15 @@ impl StateApplicator {
         if tasks.is_empty() && task.descriptor.is_wallet_task() {
             self.run_matching_engine_on_wallet(key, &tx)?;
         }
+        tx.commit()?;
 
-        Ok(tx.commit()?)
+        // Publish a completed message to the system bus
+        let mut status = ApiTaskStatus::from(task);
+        status.state = "Completed".to_string();
+        self.system_bus()
+            .publish(task_topic_name(&task_id), SystemBusMessage::TaskStatusUpdate { status });
+
+        Ok(())
     }
 
     /// Transition the state of the top task on the queue
@@ -95,7 +106,17 @@ impl StateApplicator {
         }
 
         tx.transition_task(&key, state)?;
-        Ok(tx.commit()?)
+        let task = tx.get_task(&task_id)?;
+        tx.commit()?;
+
+        // Publish a state update to the bus
+        if let Some(task) = task {
+            let status: ApiTaskStatus = task.into();
+            self.system_bus()
+                .publish(task_topic_name(&task_id), SystemBusMessage::TaskStatusUpdate { status });
+        }
+
+        Ok(())
     }
 
     /// Preempt the given task queue

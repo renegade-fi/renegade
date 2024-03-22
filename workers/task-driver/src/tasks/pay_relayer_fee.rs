@@ -65,7 +65,14 @@ impl TaskState for PayRelayerFeeTaskState {
 
 impl Display for PayRelayerFeeTaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            PayRelayerFeeTaskState::Pending => write!(f, "Pending"),
+            PayRelayerFeeTaskState::ProvingPayment => write!(f, "Proving Payment"),
+            PayRelayerFeeTaskState::SubmittingPayment => write!(f, "Submitting Payment"),
+            PayRelayerFeeTaskState::FindingOpening => write!(f, "Finding Opening"),
+            PayRelayerFeeTaskState::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
+            PayRelayerFeeTaskState::Completed => write!(f, "Completed"),
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use common::types::{
 };
 use serde::Serialize;
 
-use crate::types::ApiWallet;
+use crate::{http::task::ApiTaskStatus, types::ApiWallet};
 
 // ----------------------------
 // | System Bus Message Types |
@@ -97,10 +97,8 @@ pub enum SystemBusMessage {
     // -- Tasks -- //
     /// A message indicating that a task has
     TaskStatusUpdate {
-        /// The ID of the task
-        task_id: TaskIdentifier,
-        /// The new state of the task
-        state: String,
+        /// The updated status of the task
+        status: ApiTaskStatus,
     },
 
     // -- Wallet Updates -- //

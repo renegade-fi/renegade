@@ -328,7 +328,8 @@ impl TypedHandler for CreateOrderHandler {
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new(
-            None, // transfer
+            "Create Order".to_string(), // description
+            None,                       // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -388,7 +389,8 @@ impl TypedHandler for UpdateOrderHandler {
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new(
-            None, // transfer
+            "Update Order".to_string(), // description
+            None,                       // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -439,7 +441,8 @@ impl TypedHandler for CancelOrderHandler {
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new(
-            None, // transfer
+            "Cancel Order".to_string(), // description
+            None,                       // transfer
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -582,6 +585,7 @@ impl TypedHandler for DepositBalanceHandler {
         );
 
         let task = UpdateWalletTaskDescriptor::new(
+            "Deposit".to_string(), // description
             Some(deposit_with_auth),
             old_wallet,
             new_wallet,
@@ -647,6 +651,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         );
 
         let task = UpdateWalletTaskDescriptor::new(
+            "Withdraw".to_string(), // description
             Some(withdrawal_with_auth),
             old_wallet,
             new_wallet,

@@ -72,6 +72,14 @@ impl QueuedTaskState {
     pub fn is_committed(&self) -> bool {
         matches!(self, QueuedTaskState::Running { committed: true, .. })
     }
+
+    /// Get a human-readable description of the task state
+    pub fn display_description(&self) -> String {
+        match self {
+            QueuedTaskState::Queued => "Queued".to_string(),
+            QueuedTaskState::Running { state, .. } => state.clone(),
+        }
+    }
 }
 
 /// A wrapper around the task descriptors
@@ -132,6 +140,21 @@ impl TaskDescriptor {
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
             | TaskDescriptor::UpdateMerkleProof(_) => true,
+        }
+    }
+
+    /// Get a human readable description of the task
+    pub fn display_description(&self) -> String {
+        match self {
+            TaskDescriptor::NewWallet(_) => "New Wallet".to_string(),
+            TaskDescriptor::UpdateWallet(args) => args.description.clone(),
+            TaskDescriptor::LookupWallet(_) => "Lookup Wallet".to_string(),
+            TaskDescriptor::SettleMatch(_) => "Settle Match".to_string(),
+            TaskDescriptor::SettleMatchInternal(_) => "Settle Match".to_string(),
+            TaskDescriptor::OfflineFee(_) => "Pay Fee Offline".to_string(),
+            TaskDescriptor::RelayerFee(_) => "Pay Relayer Fee".to_string(),
+            TaskDescriptor::RedeemRelayerFee(_) => "Redeem Relayer Fee".to_string(),
+            TaskDescriptor::UpdateMerkleProof(_) => "Update Merkle Proof".to_string(),
         }
     }
 }
@@ -327,6 +350,8 @@ impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
 /// `UpdateWallet` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateWalletTaskDescriptor {
+    /// A human-readable description of the update
+    pub description: String,
     /// The external transfer & auth data, if one exists
     pub transfer: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
@@ -341,6 +366,7 @@ pub struct UpdateWalletTaskDescriptor {
 impl UpdateWalletTaskDescriptor {
     /// Constructor
     pub fn new(
+        description: String,
         transfer_with_auth: Option<ExternalTransferWithAuth>,
         old_wallet: Wallet,
         new_wallet: Wallet,
@@ -357,6 +383,7 @@ impl UpdateWalletTaskDescriptor {
             .map_err(|e| format!("invalid wallet update sig: {e}"))?;
 
         Ok(UpdateWalletTaskDescriptor {
+            description,
             transfer: transfer_with_auth,
             old_wallet,
             new_wallet,
@@ -494,7 +521,9 @@ pub mod mocks {
         wallet_mocks::mock_empty_wallet,
     };
 
-    use super::{QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey};
+    use super::{
+        NewWalletTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey,
+    };
 
     /// Generate the wallet update signature for a new wallet
     pub fn gen_wallet_update_sig(wallet: &Wallet, key: &SecretSigningKey) -> Vec<u8> {
@@ -521,13 +550,13 @@ pub mod mocks {
     }
 
     /// Get a dummy task descriptor
-    pub fn mock_task_descriptor(queue_key: TaskQueueKey) -> super::TaskDescriptor {
+    pub fn mock_task_descriptor(queue_key: TaskQueueKey) -> TaskDescriptor {
         // Set the wallet ID to the task queue key so we can generate predictable mock
         // queues
         let mut wallet = mock_empty_wallet();
         wallet.wallet_id = queue_key;
 
-        TaskDescriptor::NewWallet(super::NewWalletTaskDescriptor { wallet })
+        TaskDescriptor::NewWallet(NewWalletTaskDescriptor { wallet })
     }
 }
 
@@ -563,7 +592,8 @@ mod test {
         wallet.blinded_public_shares.orders[0].amount += Scalar::one();
 
         UpdateWalletTaskDescriptor::new(
-            None, // transfer
+            "test".to_string(), // description
+            None,               // transfer
             wallet.clone(),
             wallet,
             vec![],
@@ -579,7 +609,8 @@ mod test {
         let sig = vec![0; 64];
 
         UpdateWalletTaskDescriptor::new(
-            None, // transfer
+            "test".to_string(), // description
+            None,               // transfer
             wallet.clone(),
             wallet,
             sig,
@@ -596,7 +627,8 @@ mod test {
         let sig = gen_wallet_update_sig(&wallet, key);
 
         UpdateWalletTaskDescriptor::new(
-            None, // transfer
+            "test".to_string(), // description
+            None,               // transfer
             wallet.clone(),
             wallet,
             sig,

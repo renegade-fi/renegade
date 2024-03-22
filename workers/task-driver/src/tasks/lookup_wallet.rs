@@ -63,7 +63,12 @@ impl TaskState for LookupWalletTaskState {
 
 impl Display for LookupWalletTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
+        match self {
+            LookupWalletTaskState::Pending => write!(f, "Pending"),
+            LookupWalletTaskState::FindingWallet => write!(f, "Finding Wallet"),
+            LookupWalletTaskState::CreatingValidityProofs => write!(f, "Creating Validity Proofs"),
+            LookupWalletTaskState::Completed => write!(f, "Completed"),
+        }
     }
 }
 

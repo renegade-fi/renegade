@@ -76,8 +76,12 @@ impl TaskState for UpdateWalletTaskState {
 impl Display for UpdateWalletTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            Self::SubmittingTx { .. } => write!(f, "SubmittingTx"),
-            _ => write!(f, "{self:?}"),
+            Self::Pending => write!(f, "Pending"),
+            Self::Proving => write!(f, "Proving"),
+            Self::SubmittingTx => write!(f, "Submitting Tx"),
+            Self::FindingOpening => write!(f, "Finding Opening"),
+            Self::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
+            Self::Completed => write!(f, "Completed"),
         }
     }
 }

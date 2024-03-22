@@ -86,8 +86,11 @@ impl From<SettleMatchTaskState> for StateWrapper {
 impl Display for SettleMatchTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            SettleMatchTaskState::SubmittingMatch { .. } => write!(f, "SubmittingMatch"),
-            _ => write!(f, "{self:?}"),
+            SettleMatchTaskState::Pending => write!(f, "Pending"),
+            SettleMatchTaskState::SubmittingMatch => write!(f, "Submitting Match"),
+            SettleMatchTaskState::UpdatingState => write!(f, "Updating State"),
+            SettleMatchTaskState::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
+            SettleMatchTaskState::Completed => write!(f, "Completed"),
         }
     }
 }
