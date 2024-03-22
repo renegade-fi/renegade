@@ -2,9 +2,7 @@
 //! logic
 
 use common::types::tasks::TaskIdentifier;
-use external_api::bus_message::{task_topic_name, SystemBusMessage};
 use state::{error::StateError, State};
-use system_bus::SystemBus;
 use tracing::{error, info};
 
 use crate::{
@@ -29,20 +27,12 @@ pub struct RunnableTask<T: Task> {
     task: T,
     /// A handle to the relayer-global state
     state: State,
-    /// A sender to the system bus for state updates
-    bus: SystemBus<SystemBusMessage>,
 }
 
 impl<T: Task> RunnableTask<T> {
     /// Creates a new running task from the given task and state
-    pub fn new(
-        preemptive: bool,
-        task_id: TaskIdentifier,
-        task: T,
-        state: State,
-        bus: SystemBus<SystemBusMessage>,
-    ) -> Self {
-        Self { preemptive, task_id, task, state, bus }
+    pub fn new(preemptive: bool, task_id: TaskIdentifier, task: T, state: State) -> Self {
+        Self { preemptive, task_id, task, state }
     }
 
     /// Create a runnable from the given descriptor and context
@@ -53,10 +43,9 @@ impl<T: Task> RunnableTask<T> {
         ctx: TaskContext,
     ) -> Result<Self, TaskDriverError> {
         let state = ctx.state.clone();
-        let bus = ctx.bus.clone();
         let task = T::new(descriptor, ctx).await?;
 
-        Ok(Self::new(preemptive, id, task, state, bus))
+        Ok(Self::new(preemptive, id, task, state))
     }
 
     /// The ID of the underlying task
@@ -113,11 +102,6 @@ impl<T: Task> RunnableTask<T> {
             waiter.await?;
         }
 
-        // Publish the state to the system bus for listeners on this task
-        self.bus.publish(
-            task_topic_name(&task_id),
-            SystemBusMessage::TaskStatusUpdate { task_id, state: self.task.state().to_string() },
-        );
         Ok(())
     }
 

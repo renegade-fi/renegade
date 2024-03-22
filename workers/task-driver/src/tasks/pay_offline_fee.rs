@@ -72,7 +72,14 @@ impl TaskState for PayOfflineFeeTaskState {
 
 impl Display for PayOfflineFeeTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{self:?}")
+        match self {
+            PayOfflineFeeTaskState::Pending => write!(f, "Pending"),
+            PayOfflineFeeTaskState::ProvingPayment => write!(f, "Proving Payment"),
+            PayOfflineFeeTaskState::SubmittingPayment => write!(f, "Submitting Payment"),
+            PayOfflineFeeTaskState::FindingOpening => write!(f, "Finding Opening"),
+            PayOfflineFeeTaskState::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
+            PayOfflineFeeTaskState::Completed => write!(f, "Completed"),
+        }
     }
 }
 

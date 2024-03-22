@@ -66,7 +66,14 @@ impl TaskState for RedeemRelayerFeeTaskState {
 
 impl Display for RedeemRelayerFeeTaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            RedeemRelayerFeeTaskState::Pending => write!(f, "Pending"),
+            RedeemRelayerFeeTaskState::FindingNoteOpening => write!(f, "Finding Note Opening"),
+            RedeemRelayerFeeTaskState::ProvingRedemption => write!(f, "Proving Redemption"),
+            RedeemRelayerFeeTaskState::SubmittingRedemption => write!(f, "Submitting Redemption"),
+            RedeemRelayerFeeTaskState::FindingWalletOpening => write!(f, "Finding Opening"),
+            RedeemRelayerFeeTaskState::Completed => write!(f, "Completed"),
+        }
     }
 }
 

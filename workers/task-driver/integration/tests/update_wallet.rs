@@ -68,8 +68,14 @@ pub(crate) async fn execute_wallet_update(
     let sig = gen_wallet_update_sig(&new_wallet, key);
 
     let id = new_wallet.wallet_id;
-    let task =
-        UpdateWalletTaskDescriptor::new(transfer_with_auth, old_wallet, new_wallet, sig).unwrap();
+    let task = UpdateWalletTaskDescriptor::new(
+        "test".to_string(),
+        transfer_with_auth,
+        old_wallet,
+        new_wallet,
+        sig,
+    )
+    .unwrap();
 
     await_task(task.into(), &test_args).await?;
 

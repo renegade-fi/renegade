@@ -6,15 +6,14 @@
 
 use async_trait::async_trait;
 use external_api::{
-    http::task::{GetTaskStatusResponse, TaskQueueListResponse, TaskStatus},
+    http::task::{ApiTaskStatus, GetTaskStatusResponse, TaskQueueListResponse},
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use state::State;
-use util::err_str;
 
 use crate::{
-    error::{internal_error, not_found, ApiServerError},
+    error::{not_found, ApiServerError},
     router::{TypedHandler, UrlParams},
 };
 
@@ -57,11 +56,11 @@ impl TypedHandler for GetTaskStatusHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Lookup the task status in the task driver's state
         let task_id = parse_task_id_from_params(&params)?;
-        let task_status = self.state.get_task_status(&task_id)?;
+        let task_status = self.state.get_task(&task_id)?;
 
         if let Some(status) = task_status {
-            let status = serde_json::to_string(&status).map_err(err_str!(internal_error))?;
-            Ok(GetTaskStatusResponse { status: status.to_string() })
+            let status: ApiTaskStatus = status.into();
+            Ok(GetTaskStatusResponse { status })
         } else {
             Err(not_found(ERR_TASK_NOT_FOUND.to_string()))
         }
@@ -96,7 +95,7 @@ impl TypedHandler for GetTaskQueueHandler {
 
         // Lookup all tasks from global state
         let tasks = self.state.get_queued_tasks(&wallet_id)?;
-        let api_tasks: Vec<TaskStatus> = tasks.into_iter().map(|t| t.into()).collect();
+        let api_tasks: Vec<ApiTaskStatus> = tasks.into_iter().map(|t| t.into()).collect();
 
         Ok(TaskQueueListResponse { tasks: api_tasks })
     }

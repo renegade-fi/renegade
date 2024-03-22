@@ -70,10 +70,11 @@ impl TaskState for NewWalletTaskState {
 impl Display for NewWalletTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
-            NewWalletTaskState::SubmittingTx { .. } => {
-                write!(f, "SubmittingTx")
-            },
-            _ => write!(f, "{self:?}"),
+            NewWalletTaskState::Pending => write!(f, "Pending"),
+            NewWalletTaskState::Proving => write!(f, "Proving"),
+            NewWalletTaskState::SubmittingTx => write!(f, "Submitting Tx"),
+            NewWalletTaskState::FindingMerkleOpening => write!(f, "Finding Opening"),
+            NewWalletTaskState::Completed => write!(f, "Completed"),
         }
     }
 }

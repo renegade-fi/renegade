@@ -528,8 +528,8 @@ impl Display for StateWrapper {
 impl From<StateWrapper> for QueuedTaskState {
     fn from(value: StateWrapper) -> Self {
         // Serialize the state into a string
-        let state = serde_json::to_string(&value).expect("error serializing state");
+        let description = value.to_string();
         let committed = value.committed();
-        QueuedTaskState::Running { state, committed }
+        QueuedTaskState::Running { state: description, committed }
     }
 }
