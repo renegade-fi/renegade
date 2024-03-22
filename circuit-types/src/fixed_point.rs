@@ -63,10 +63,30 @@ pub fn right_shift_scalar_by_m(scalar: Scalar) -> Scalar {
 /// This is useful for centralizing conversion logic to provide an abstract
 /// to_scalar, from_scalar interface to modules that commit to this value
 #[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
     pub repr: Scalar,
+}
+
+/// Serialize and deserialize a fixed-point as an f64
+impl Serialize for FixedPoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_f64().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FixedPoint {
+    fn deserialize<D>(deserializer: D) -> Result<FixedPoint, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let val = f64::deserialize(deserializer)?;
+        Ok(FixedPoint::from_f64_round_down(val))
+    }
 }
 
 impl FixedPoint {
@@ -466,6 +486,20 @@ mod fixed_point_tests {
     // ----------------------------
     // | Native Fixed Point Tests |
     // ----------------------------
+
+    /// Tests serialization and deserialization of FixedPoint
+    #[test]
+    fn test_serde() {
+        let mut rng = thread_rng();
+        let val: f64 = rng.gen_range(0.0..1000.0);
+
+        let fp = FixedPoint::from_f64_round_down(val);
+        println!("{:?}", serde_json::to_string(&fp).unwrap());
+        let serialized = serde_json::to_vec(&fp).unwrap();
+        let recovered: FixedPoint = serde_json::from_slice(&serialized).unwrap();
+
+        check_within_tolerance(val, recovered.to_f64(), F64_TOLERANCE);
+    }
 
     /// Tests conversion f64 <--> FixedPoint
     #[test]
