@@ -434,8 +434,7 @@ impl TypedHandler for CancelOrderHandler {
         // Remove the order from the new wallet
         let mut new_wallet = old_wallet.clone();
         let order = new_wallet
-            .orders
-            .remove(&order_id)
+            .remove_order(&order_id)
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         new_wallet.reblind_wallet();
 

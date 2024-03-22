@@ -64,28 +64,16 @@ impl Wallet {
     /// wallet is full
     pub fn add_order(&mut self, id: OrderIdentifier, order: Order) -> Result<(), String> {
         // Append if the orders are not full
-        if self.orders.len() < MAX_ORDERS {
-            self.orders.insert(id, order);
-            return Ok(());
+        if self.orders.len() >= MAX_ORDERS {
+            return Err(ERR_ORDERS_FULL.to_string());
         }
 
-        // Otherwise try to find an order to overwrite
-        let idx = self
-            .orders
-            .iter()
-            .enumerate()
-            .find_map(|(i, (_, order))| order.is_zero().then_some(i))
-            .ok_or_else(|| ERR_ORDERS_FULL.to_string())?;
-        self.orders.replace_at_index(idx, id, order);
-
+        self.orders.append(id, order);
         Ok(())
     }
 
     /// Remove an order from the wallet, replacing it with a default order
     pub fn remove_order(&mut self, id: &OrderIdentifier) -> Option<Order> {
-        let order = self.get_order_mut(id)?;
-        *order = Order::default();
-
-        Some(order.clone())
+        self.orders.remove(id)
     }
 }

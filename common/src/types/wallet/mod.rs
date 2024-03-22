@@ -115,32 +115,6 @@ mod test {
         assert_eq!(wallet.orders.index_of(&id2), Some(1));
     }
 
-    /// Tests adding an order that overwrites a default order
-    #[test]
-    fn test_add_order_overwrite() {
-        let mut wallet = mock_empty_wallet();
-
-        // Fill the orders with default orders
-        for _ in 0..MAX_ORDERS {
-            let id = Uuid::new_v4();
-            let order = mock_order();
-            wallet.add_order(id, order).unwrap();
-        }
-
-        // Zero a random order
-        let mut rng = thread_rng();
-        let idx = (0..MAX_ORDERS).sample_single(&mut rng);
-        wallet.orders.get_index_mut(idx).unwrap().amount = 0;
-
-        // Add a new order
-        let id = Uuid::new_v4();
-        let order = mock_order();
-        wallet.add_order(id, order).unwrap();
-
-        // Check that the order overrode the correct idx
-        assert_eq!(wallet.orders.index_of(&id), Some(idx));
-    }
-
     /// Tests adding an order when the wallet is full
     #[test]
     #[should_panic(expected = "orders full")]
