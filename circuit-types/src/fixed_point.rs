@@ -5,14 +5,14 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInteger, Field, PrimeField};
-use bigdecimal::{BigDecimal, ToPrimitive};
+use bigdecimal::{BigDecimal, FromPrimitive, Num, ToPrimitive};
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use lazy_static::lazy_static;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
-use num_bigint::BigUint;
+use num_bigint::{BigUint, ToBigInt};
 use renegade_crypto::fields::{
-    bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_u64,
+    bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_biguint, scalar_to_u64,
 };
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +75,8 @@ impl Serialize for FixedPoint {
     where
         S: serde::Serializer,
     {
-        self.to_f64().serialize(serializer)
+        let repr_bigint = scalar_to_biguint(&self.repr);
+        repr_bigint.to_str_radix(10 /* radix */).serialize(serializer)
     }
 }
 
@@ -84,8 +85,11 @@ impl<'de> Deserialize<'de> for FixedPoint {
     where
         D: serde::Deserializer<'de>,
     {
-        let val = f64::deserialize(deserializer)?;
-        Ok(FixedPoint::from_f64_round_down(val))
+        let decimal_string = String::deserialize(deserializer)?;
+        let repr_bigint = BigUint::from_str_radix(&decimal_string, 10 /* radix */)
+            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
+
+        Ok(Self { repr: biguint_to_scalar(&repr_bigint) })
     }
 }
 
@@ -125,8 +129,16 @@ impl FixedPoint {
     /// Create a new fixed point representation, rounding up to the nearest
     /// representable float
     pub fn from_f64_round_down(val: f64) -> Self {
-        let shifted_val = val * (2u64.pow(DEFAULT_FP_PRECISION as u32) as f64);
-        Self { repr: Scalar::from(shifted_val.floor() as u64) }
+        // Convert to a bigdecimal to shift
+        let val_big_dec = BigDecimal::from_f64(val).expect("Failed to convert f64 to BigDecimal");
+        let shifted_val_big_dec =
+            val_big_dec * BigDecimal::from(2u64.pow(DEFAULT_FP_PRECISION as u32));
+
+        // Convert to a big integer
+        let val_bigint =
+            shifted_val_big_dec.to_bigint().expect("Failed to convert BigDecimal to BigInt");
+
+        Self { repr: bigint_to_scalar(&val_bigint) }
     }
 
     /// Return the represented value as an f64
@@ -494,7 +506,6 @@ mod fixed_point_tests {
         let val: f64 = rng.gen_range(0.0..1000.0);
 
         let fp = FixedPoint::from_f64_round_down(val);
-        println!("{:?}", serde_json::to_string(&fp).unwrap());
         let serialized = serde_json::to_vec(&fp).unwrap();
         let recovered: FixedPoint = serde_json::from_slice(&serialized).unwrap();
 

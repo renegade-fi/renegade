@@ -64,12 +64,7 @@ pub struct ApiWallet {
 /// Conversion from a wallet that has been indexed in the global state to the
 /// API type
 impl From<Wallet> for ApiWallet {
-    fn from(mut wallet: Wallet) -> Self {
-        // Remove all default orders and balances from the wallet
-        // These are used to pad the wallet to the size of the circuit, and are
-        // not relevant to the client
-        wallet.remove_default_elements();
-
+    fn from(wallet: Wallet) -> Self {
         // Build API types from the indexed wallet
         let orders = wallet.orders.into_iter().map(|order| order.into()).collect_vec();
         let balances = wallet.balances.into_values().collect_vec();
