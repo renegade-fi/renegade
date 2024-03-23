@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use circuit_types::{balance::Balance, order::Order};
+use circuit_types::{balance::Balance, order::Order, Amount};
 use constants::MAX_BALANCES;
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -13,6 +13,9 @@ use super::Wallet;
 const ERR_BALANCE_OVERFLOW: &str = "balance overflowed";
 /// Error message emitted when the balances of a wallet are full
 const ERR_BALANCES_FULL: &str = "balances full";
+/// Error message emitted when a wallet has insufficient balance for a
+/// withdrawal
+const ERR_INSUFFICIENT_BALANCE: &str = "insufficient balance";
 
 impl Wallet {
     // -----------
@@ -94,6 +97,17 @@ impl Wallet {
             .ok_or_else(|| ERR_BALANCES_FULL.to_string())?;
         self.balances.replace_at_index(idx, balance.mint.clone(), balance);
 
+        Ok(())
+    }
+
+    /// Withdraw an amount from the balance for the given mint
+    pub fn withdraw(&mut self, mint: &BigUint, amount: Amount) -> Result<(), String> {
+        let bal = self.get_balance_mut(mint).ok_or(ERR_INSUFFICIENT_BALANCE.to_string())?;
+        if bal.amount < amount {
+            return Err(ERR_INSUFFICIENT_BALANCE.to_string());
+        }
+
+        bal.amount = bal.amount.saturating_sub(amount);
         Ok(())
     }
 

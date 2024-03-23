@@ -67,9 +67,6 @@ async fn append_task_and_await(
 // | Error Messages |
 // ------------------
 
-/// Error message displayed when a balance is insufficient to transfer the
-/// requested amount
-const ERR_INSUFFICIENT_BALANCE: &str = "insufficient balance";
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
 
@@ -102,13 +99,11 @@ impl TypedHandler for GetWalletHandler {
         params: UrlParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let mut wallet = self
+        let wallet = self
             .global_state
             .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
-        // Filter out empty orders, balances
-        wallet.remove_default_elements();
         Ok(GetWalletResponse { wallet: wallet.into() })
     }
 }
@@ -634,13 +629,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         let withdrawal_amount = req.amount.to_u128().unwrap();
 
         let mut new_wallet = old_wallet.clone();
-        if let Some(balance) = new_wallet.balances.get_mut(&mint)
-            && balance.amount >= withdrawal_amount
-        {
-            balance.amount -= withdrawal_amount;
-        } else {
-            return Err(bad_request(ERR_INSUFFICIENT_BALANCE.to_string()));
-        }
+        new_wallet.withdraw(&mint, withdrawal_amount).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
         let withdrawal_with_auth = ExternalTransferWithAuth::withdrawal(
