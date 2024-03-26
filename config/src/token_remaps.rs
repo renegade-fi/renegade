@@ -2,9 +2,11 @@
 //!
 //! See https://github.com/renegade-fi/token-mappings/tree/main for more information
 
+use std::collections::HashMap;
+
 use arbitrum_client::constants::Chain;
 use bimap::BiMap;
-use common::types::token::TOKEN_REMAPS;
+use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use util::raw_err_str;
@@ -43,10 +45,14 @@ impl TokenRemap {
     pub fn to_remap(&self) -> BiMap<String, String> {
         self.tokens.iter().map(|info| (info.address.clone(), info.ticker.clone())).collect()
     }
+
+    /// Convert the token mapping into a map of token addresses to decimals
+    pub fn to_decimal_map(&self) -> HashMap<String, u8> {
+        self.tokens.iter().map(|info| (info.address.clone(), info.decimals)).collect()
+    }
 }
 
 /// Setup token remaps in the global `OnceCell`
-// TODO(@akirillo): populate `ADDR_DECIMALS_MAP` with the decimals from the remap
 pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<(), String> {
     // If the remap file is not provided, fetch the Renegade maintained remap file
     // from the default location
@@ -61,9 +67,20 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     match TOKEN_REMAPS.get() {
         Some(_) => {
             warn!("Token remap already set, cannot override");
+        },
+        None => TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}"))?,
+    };
+
+    // Update the static decimals map with the decimals in the token remap
+    let decimals_map = map.to_decimal_map();
+    match ADDR_DECIMALS_MAP.get() {
+        Some(_) => {
+            warn!("Token decimals map already set, cannot override");
             Ok(())
         },
-        None => TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}")),
+        None => ADDR_DECIMALS_MAP
+            .set(decimals_map)
+            .map_err(raw_err_str!("Failed to set token decimals map: {:?}")),
     }
 }
 
