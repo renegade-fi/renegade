@@ -25,7 +25,7 @@ const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 /// USDC ticker
 ///
 /// For now we only stream prices quoted in USDC
-const USDC_TICKER: &str = "USDC";
+const USDT_TICKER: &str = "USDT";
 
 // ---------------
 // | Base Tokens |
@@ -41,8 +41,6 @@ const BNB_TICKER: &str = "BNB";
 const MATIC_TICKER: &str = "MATIC";
 /// LDO ticker
 const LDO_TICKER: &str = "LDO";
-/// CBETH ticker
-const CBETH_TICKER: &str = "CBETH";
 /// LINK ticker
 const LINK_TICKER: &str = "LINK";
 /// UNI ticker
@@ -61,47 +59,43 @@ lazy_static! {
         vec![
             (
                 Token::from_ticker(BTC_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(ETH_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(BNB_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(MATIC_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(LDO_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(CBETH_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(LINK_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(UNI_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(CRV_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(DYDX_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             ),
             (
                 Token::from_ticker(AAVE_TICKER),
-                Token::from_ticker(USDC_TICKER),
+                Token::from_ticker(USDT_TICKER),
             )
         ]
     };
