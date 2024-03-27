@@ -8,7 +8,7 @@ use common::{
     default_wrapper::DefaultOption,
     new_async_shared,
     types::{
-        exchange::{Exchange, PriceReporterState, ALL_EXCHANGES},
+        exchange::{Exchange, PriceReporterState},
         token::{is_pair_named, Token},
         CancelChannel, Price,
     },
@@ -22,7 +22,7 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
+use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue, PriceReporterReceiver};
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpStream,
@@ -109,7 +109,7 @@ impl ExternalPriceReporterExecutor {
             tokio::select! {
                 // Process price update from external price reporter
                 Some(price_message) = msg_in_rx.recv() => {
-                    self.handle_price_update(price_message).await.map_err(PriceReporterError::ExchangeConnectionError)?;
+                    self.handle_price_update(price_message).await.map_err(PriceReporterError::ExchangeConnection)?;
                 }
 
                 // Dequeue the next job from elsewhere in the local node
@@ -144,7 +144,8 @@ impl ExternalPriceReporterExecutor {
     fn spawn_ws_handler_loop(
         &self,
     ) -> (UnboundedSender<WebsocketMessage>, UnboundedReceiver<PriceMessage>) {
-        let price_reporter_url: Url = self.config.price_reporter_url.clone().unwrap();
+        let price_reporter_url = self.config.price_reporter_url.clone().unwrap();
+        let price_reporter_job_queue = self.config.job_sender.clone();
 
         let (msg_out_tx, msg_out_rx) = unbounded_channel();
         let (msg_in_tx, msg_in_rx) = unbounded_channel();
@@ -156,6 +157,7 @@ impl ExternalPriceReporterExecutor {
             subscription_states,
             msg_out_rx,
             msg_in_tx,
+            price_reporter_job_queue,
         ));
 
         (msg_out_tx, msg_in_rx)
@@ -211,7 +213,7 @@ impl ExternalPriceReporterExecutor {
             PriceReporterJob::StreamPrice { base_token, quote_token } => self
                 .subscribe_to_price_stream(base_token, quote_token, msg_out_tx)
                 .await
-                .map_err(PriceReporterError::ExchangeConnectionError),
+                .map_err(PriceReporterError::ExchangeConnection),
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
                 self.peek_price(base_token, quote_token, channel).await
             },
@@ -277,11 +279,13 @@ impl ExternalPriceReporterExecutor {
             Some((price, ts)) => {
                 // Fetch the most recent prices from all other exchanges
                 let mut exchange_prices = Vec::new();
-                for exchange in ALL_EXCHANGES {
+                let supported_exchanges =
+                    get_supported_exchanges(&base_token, &quote_token, &self.config);
+                for exchange in supported_exchanges {
                     if let Some((price, ts)) =
-                        self.get_latest_price(exchange, &base_token, &quote_token).await
+                        self.get_latest_price(&exchange, &base_token, &quote_token).await
                     {
-                        exchange_prices.push((*exchange, (price, ts)));
+                        exchange_prices.push((exchange, (price, ts)));
                     }
                 }
 
@@ -314,11 +318,15 @@ async fn ws_handler_loop(
     subscription_states: SubscriptionStates,
     mut msg_out_rx: UnboundedReceiver<WebsocketMessage>,
     msg_in_tx: UnboundedSender<PriceMessage>,
+    price_reporter_job_queue: PriceReporterQueue,
 ) -> Result<(), PriceReporterError> {
     // Outer loop handles retrying the websocket connection to the external price
     // reporter in case of some failure
     loop {
         let (mut ws_write, mut ws_read) = connect_with_retries(price_reporter_url.clone()).await;
+
+        // Re-subscribe to any previously subscribed price streams
+        resubscribe_to_prior_streams(&price_reporter_job_queue, &subscription_states).await?;
 
         // Inner loop handles the actual communication over the websocket
         loop {
@@ -327,7 +335,7 @@ async fn ws_handler_loop(
                 // to the executor
                 Some(res) = ws_read.next() => {
                     if let Err(e) = handle_incoming_ws_message(res, &subscription_states, &msg_in_tx).await {
-                        error!("Error handling incoming message from external price reporter: {e}");
+                        error!("Error handling incoming message from external price reporter: {e}, retrying...");
                         break;
                     }
                 }
@@ -335,7 +343,7 @@ async fn ws_handler_loop(
                 // Forward outgoing messages from the executor to the external price reporter
                 Some(message) = msg_out_rx.recv() => {
                     if let Err(e) = ws_write.send(Message::Text(serde_json::to_string(&message).unwrap())).await {
-                        error!("Error sending message to external price reporter: {e}");
+                        error!("Error sending message to external price reporter: {e}, retrying...");
                         break;
                     }
                 },
@@ -403,6 +411,30 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
             },
         }
     }
+}
+
+/// Re-send subscription jobs to the price reporter for all the pairs currently
+/// indexed in the subscription states, clearing the mapping in the process.
+async fn resubscribe_to_prior_streams(
+    price_reporter_job_queue: &PriceReporterQueue,
+    subscription_states: &SubscriptionStates,
+) -> Result<(), PriceReporterError> {
+    // Get the currently subscribed pairs and clear the mapping
+    let pairs = {
+        let mut subscriptions = subscription_states.write().await;
+        let pairs: Vec<(Token, Token)> = subscriptions.keys().cloned().collect();
+        subscriptions.clear();
+        pairs
+    };
+
+    // Re-send subscription jobs for all the pairs
+    for (base_token, quote_token) in pairs {
+        price_reporter_job_queue
+            .send(PriceReporterJob::StreamPrice { base_token, quote_token })
+            .map_err(err_str!(PriceReporterError::ReSubscription))?;
+    }
+
+    Ok(())
 }
 
 /// Format the topic for the given exchange and token pair

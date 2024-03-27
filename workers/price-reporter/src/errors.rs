@@ -47,7 +47,10 @@ pub enum PriceReporterError {
     /// Unsupported pair for the reporter
     UnsupportedPair(Token, Token),
     /// Error thrown by an individual exchange connection
-    ExchangeConnectionError(ExchangeConnectionError),
+    ExchangeConnection(ExchangeConnectionError),
+    /// Error thrown when sending a job to the PriceReporter to resubscribe
+    /// to a pair's price stream
+    ReSubscription(String),
 }
 
 impl Error for PriceReporterError {}

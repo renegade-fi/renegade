@@ -8,10 +8,7 @@ use futures_util::{
     Sink, SinkExt, Stream,
 };
 use serde_json::Value;
-use std::{
-    str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::str::FromStr;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::error;
@@ -121,11 +118,6 @@ pub fn parse_json_from_message(message: Message) -> Result<Option<Value>, Exchan
     } else {
         Ok(None)
     }
-}
-
-/// Helper function to get the current UNIX epoch time in milliseconds
-pub fn get_current_time() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
 // --------------------------
