@@ -16,7 +16,7 @@ use common::{
 };
 use external_api::{
     bus_message::{price_report_topic_name, SystemBusMessage},
-    websocket::{SubscriptionResponse, WebsocketMessage},
+    websocket::WebsocketMessage,
 };
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -325,16 +325,13 @@ async fn ws_handler_loop(
     loop {
         let (mut ws_write, mut ws_read) = connect_with_retries(price_reporter_url.clone()).await;
 
-        // Re-subscribe to any previously subscribed price streams
-        resubscribe_to_prior_streams(&price_reporter_job_queue, &subscription_states).await?;
-
         // Inner loop handles the actual communication over the websocket
         loop {
             tokio::select! {
                 // Forward incoming messages from the external price reporter
                 // to the executor
                 Some(res) = ws_read.next() => {
-                    if let Err(e) = handle_incoming_ws_message(res, &subscription_states, &msg_in_tx).await {
+                    if let Err(e) = handle_incoming_ws_message(res, &msg_in_tx) {
                         error!("Error handling incoming message from external price reporter: {e}, retrying...");
                         break;
                     }
@@ -349,19 +346,24 @@ async fn ws_handler_loop(
                 },
             }
         }
+
+        // Breaking from the loop above indicates a failure in the websocket connection.
+        // As such, we will have to re-subscribe to all the price streams that
+        // were previously subscribed to on the re-established connection, so we
+        // enqueue the re-subscription jobs here
+        info!("Enqueueing re-subscriptions to prior price streams...");
+        resubscribe_to_prior_streams(&price_reporter_job_queue, &subscription_states).await?;
     }
 }
 
 /// Handle an incoming websocket message from the external price reporter
-async fn handle_incoming_ws_message(
+fn handle_incoming_ws_message(
     maybe_msg: Result<Message, tungstenite::Error>,
-    subscription_states: &SubscriptionStates,
     msg_in_tx: &UnboundedSender<PriceMessage>,
 ) -> Result<(), ExchangeConnectionError> {
     match maybe_msg {
         Ok(msg) => {
             if let Message::Text(text) = msg {
-                try_handle_subscription_response(&text, subscription_states).await?;
                 try_handle_price_message(&text, msg_in_tx)?;
             }
             Ok(())
@@ -369,20 +371,6 @@ async fn handle_incoming_ws_message(
 
         Err(e) => Err(ExchangeConnectionError::ConnectionHangup(e.to_string())),
     }
-}
-
-/// Attempt to process the websocket message as a subscription response
-async fn try_handle_subscription_response(
-    msg_text: &str,
-    subscription_states: &SubscriptionStates,
-) -> Result<(), ExchangeConnectionError> {
-    // If receiving a subscription response from the price reporter,
-    // log the subscribed topics (exchange, base, quote)
-    if let Ok(subscription_response) = serde_json::from_str::<SubscriptionResponse>(msg_text) {
-        return log_subscribed_exchanges(&subscription_response, subscription_states).await;
-    }
-
-    Ok(())
 }
 
 /// Attempt to process the websocket message as a price message
@@ -451,56 +439,4 @@ fn parse_topic(topic: &str) -> Result<(Exchange, Token, Token), ExchangeConnecti
     let quote = Token::from_addr(parts[2]);
 
     Ok((exchange, base, quote))
-}
-
-/// Log the exchanges that the price reporter has subscribed to
-async fn log_subscribed_exchanges(
-    subscription_response: &SubscriptionResponse,
-    subscription_states: &AsyncShared<HashMap<(Token, Token), AtomicPriceStreamState>>,
-) -> Result<(), ExchangeConnectionError> {
-    // Iterate over the subscriptions, parse the topic, and filter for those
-    // which are not already present in the subscription states
-
-    let subscriptions = subscription_response
-        .subscriptions
-        .iter()
-        .map(|t| parse_topic(t))
-        .collect::<Result<Vec<(Exchange, Token, Token)>, ExchangeConnectionError>>()?;
-
-    for (exchange, base, quote) in subscriptions {
-        if is_new_subscription(subscription_states, &exchange, &base, &quote).await {
-            info!(
-                "Now subscribed to {}-{} pair on {} from external price reporter",
-                base, quote, exchange
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Check if the given subscription is a new subscription
-async fn is_new_subscription(
-    subscription_states: &SubscriptionStates,
-    exchange: &Exchange,
-    base: &Token,
-    quote: &Token,
-) -> bool {
-    let current_subscriptions = subscription_states.read().await;
-
-    // If the we have no subscriptions at all for the pair it must be a new
-    // subscription
-    if !current_subscriptions.contains_key(&(base.clone(), quote.clone())) {
-        return true;
-    }
-
-    // If we have a subscription for the pair, but the price for the given exchange
-    // is default, it must be a new subscription
-    current_subscriptions
-        .get(&(base.clone(), quote.clone()))
-        .unwrap()
-        .read_price(exchange)
-        .unwrap_or_default()
-        .0
-        == Price::default()
 }
