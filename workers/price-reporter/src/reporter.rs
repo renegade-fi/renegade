@@ -160,6 +160,8 @@ impl Reporter {
         }
 
         // Fetch the most recent price
+        // TODO(@akirillo): HERE, we will need to wrap around `read_price` to do stable
+        // quote conversion logic
         match self.exchange_info.read_price(&Exchange::Binance) {
             None => PriceReporterState::NotEnoughDataReported(0),
             Some((price, ts)) => {

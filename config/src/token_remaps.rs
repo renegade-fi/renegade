@@ -6,13 +6,16 @@ use std::collections::HashMap;
 
 use arbitrum_client::constants::Chain;
 use bimap::BiMap;
-use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS};
+use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS, USD_TICKER};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use util::raw_err_str;
 
 /// The base URL for raw token remap files
 const REMAP_BASE_URL: &str = "https://raw.githubusercontent.com/renegade-fi/token-mappings/main/";
+
+/// The zero address, used for the dummy "USD" token
+const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
 // --------------------
 // | Serialized Types |
@@ -63,7 +66,11 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     }?;
 
     // Update the static token remap with the given one
-    let remap = map.to_remap();
+    let mut remap = map.to_remap();
+    // Insert a dummy token w/ the "USD" ticker so that we can fetch USD-quoted
+    // prices from exchanges that support this.
+    remap.insert(ZERO_ADDRESS.to_string(), USD_TICKER.to_string());
+
     match TOKEN_REMAPS.get() {
         Some(_) => {
             warn!("Token remap already set, cannot override");
