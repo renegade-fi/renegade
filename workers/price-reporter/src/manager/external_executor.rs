@@ -228,7 +228,7 @@ impl ExternalPriceReporterExecutor {
 
     /// Handler for the PeekPrice job
     async fn peek_price(
-        &mut self,
+        &self,
         base_token: Token,
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
