@@ -22,9 +22,9 @@ const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 // | Quote Tokens |
 // ----------------
 
-/// USDC ticker
+/// USDT ticker
 ///
-/// For now we only stream prices quoted in USDC
+/// For now we only stream prices quoted in USDT
 const USDT_TICKER: &str = "USDT";
 
 // ---------------
