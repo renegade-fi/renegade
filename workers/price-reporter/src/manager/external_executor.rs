@@ -47,7 +47,7 @@ use crate::{
 use super::{compute_price_reporter_state, get_supported_exchanges, AtomicPriceStreamState};
 
 /// A type alias for the shared state of the price streams
-type SubscriptionStates = AsyncShared<HashMap<(Token, Token), AtomicPriceStreamState>>;
+type SubscriptionStates = AsyncShared<HashMap<(Exchange, Token, Token), AtomicPriceStreamState>>;
 
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
@@ -150,12 +150,10 @@ impl ExternalPriceReporterExecutor {
         let (msg_in_tx, msg_in_rx) = unbounded_channel();
 
         let subscription_states = self.subscription_states.clone();
-        let config = self.config.clone();
 
         tokio::spawn(ws_handler_loop(
             price_reporter_url,
             subscription_states,
-            config,
             msg_out_rx,
             msg_out_tx.clone(),
             msg_in_tx,
@@ -186,9 +184,9 @@ impl ExternalPriceReporterExecutor {
             // We unwrap here as we should only get price updates for which we've already
             // mapped a subscription
             subscriptions
-                .get(&(base_token.clone(), quote_token.clone()))
+                .get(&(exchange, base_token.clone(), quote_token.clone()))
                 .unwrap()
-                .new_price(exchange, price, ts);
+                .new_price(price, ts);
         }
 
         // Compute the high-level price report for the pair
@@ -211,19 +209,38 @@ impl ExternalPriceReporterExecutor {
         msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
         match job {
-            PriceReporterJob::StreamPrice { base_token, quote_token } => subscribe_to_price_stream(
-                &self.subscription_states,
-                &self.config,
-                base_token,
-                quote_token,
-                msg_out_tx,
-            )
-            .await
-            .map_err(PriceReporterError::ExchangeConnection),
+            PriceReporterJob::StreamPrice { base_token, quote_token } => {
+                self.stream_price(base_token, quote_token, msg_out_tx).await
+            },
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
                 self.peek_price(base_token, quote_token, channel).await
             },
         }
+    }
+
+    /// Handler for the StreamPrice job
+    async fn stream_price(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+        msg_out_tx: UnboundedSender<WebsocketMessage>,
+    ) -> Result<(), PriceReporterError> {
+        // TODO: Conditional price conversion
+
+        let exchanges = get_supported_exchanges(&base_token, &quote_token, &self.config);
+        for exchange in exchanges {
+            subscribe_to_price_stream(
+                &self.subscription_states,
+                exchange,
+                base_token.clone(),
+                quote_token.clone(),
+                msg_out_tx.clone(),
+            )
+            .await
+            .map_err(PriceReporterError::ExchangeConnection)?;
+        }
+
+        Ok(())
     }
 
     /// Handler for the PeekPrice job
@@ -248,7 +265,7 @@ impl ExternalPriceReporterExecutor {
         }
 
         // Fetch the most recent Binance price
-        match self.get_latest_price(&Exchange::Binance, &base_token, &quote_token).await {
+        match self.get_latest_price(Exchange::Binance, &base_token, &quote_token).await {
             None => PriceReporterState::NotEnoughDataReported(0),
             Some((price, ts)) => {
                 // Fetch the most recent prices from all other exchanges
@@ -257,7 +274,7 @@ impl ExternalPriceReporterExecutor {
                     get_supported_exchanges(&base_token, &quote_token, &self.config);
                 for exchange in supported_exchanges {
                     if let Some((price, ts)) =
-                        self.get_latest_price(&exchange, &base_token, &quote_token).await
+                        self.get_latest_price(exchange, &base_token, &quote_token).await
                     {
                         exchange_prices.push((exchange, (price, ts)));
                     }
@@ -274,15 +291,15 @@ impl ExternalPriceReporterExecutor {
     // conversion logic for each exchange.
     async fn get_latest_price(
         &self,
-        exchange: &Exchange,
+        exchange: Exchange,
         base_token: &Token,
         quote_token: &Token,
     ) -> Option<(Price, u64)> {
         self.subscription_states
             .read()
             .await
-            .get(&(base_token.clone(), quote_token.clone()))
-            .and_then(|state| state.read_price(exchange))
+            .get(&(exchange, base_token.clone(), quote_token.clone()))
+            .map(|state| state.read_price())
     }
 }
 
@@ -292,7 +309,6 @@ impl ExternalPriceReporterExecutor {
 async fn ws_handler_loop(
     price_reporter_url: Url,
     subscription_states: SubscriptionStates,
-    config: PriceReporterConfig,
     mut msg_out_rx: UnboundedReceiver<WebsocketMessage>,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
     msg_in_tx: UnboundedSender<PriceMessage>,
@@ -332,7 +348,6 @@ async fn ws_handler_loop(
             price_reporter_url.clone(),
             msg_out_tx.clone(),
             &subscription_states,
-            &config,
         )
         .await?;
     }
@@ -369,35 +384,29 @@ fn try_handle_price_message(
     Ok(())
 }
 
-/// Handler for the StreamPrice job
+/// Subscribes to a price stream for the given exchange and token pair
 async fn subscribe_to_price_stream(
     subscription_states: &SubscriptionStates,
-    config: &PriceReporterConfig,
+    exchange: Exchange,
     base_token: Token,
     quote_token: Token,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
 ) -> Result<(), ExchangeConnectionError> {
     {
         let subscriptions = subscription_states.read().await;
-        if subscriptions.contains_key(&(base_token.clone(), quote_token.clone())) {
+        if subscriptions.contains_key(&(exchange, base_token.clone(), quote_token.clone())) {
             return Ok(());
         }
     }
 
     // Send subscription messages to WS connection
-    let exchanges = get_supported_exchanges(&base_token, &quote_token, config);
-    for exchange in &exchanges {
-        let topic = format_topic(exchange, &base_token, &quote_token);
-        let message = WebsocketMessage::Subscribe { topic };
-        msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
-    }
+    let topic = format_topic(&exchange, &base_token, &quote_token);
+    let message = WebsocketMessage::Subscribe { topic };
+    msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
 
     // Insert the new subscription state
     let mut subscriptions = subscription_states.write().await;
-    subscriptions.insert(
-        (base_token.clone(), quote_token.clone()),
-        AtomicPriceStreamState::new_from_exchanges(&exchanges),
-    );
+    subscriptions.insert((exchange, base_token, quote_token), AtomicPriceStreamState::default());
 
     Ok(())
 }
@@ -408,10 +417,9 @@ async fn connect_and_resubscribe(
     price_reporter_url: Url,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
     subscription_states: &SubscriptionStates,
-    config: &PriceReporterConfig,
 ) -> Result<(WsWriteStream, WsReadStream), PriceReporterError> {
     let (ws_write, ws_read) = connect_with_retries(price_reporter_url).await;
-    resubscribe_to_prior_streams(msg_out_tx, subscription_states, config)
+    resubscribe_to_prior_streams(msg_out_tx, subscription_states)
         .await
         .map_err(PriceReporterError::ExchangeConnection)?;
     Ok((ws_write, ws_read))
@@ -437,21 +445,20 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
 async fn resubscribe_to_prior_streams(
     msg_out_tx: UnboundedSender<WebsocketMessage>,
     subscription_states: &SubscriptionStates,
-    config: &PriceReporterConfig,
 ) -> Result<(), ExchangeConnectionError> {
     // Get the currently subscribed pairs and clear the mapping
-    let pairs = {
+    let streams = {
         let mut subscriptions = subscription_states.write().await;
-        let pairs: Vec<(Token, Token)> = subscriptions.keys().cloned().collect();
+        let pairs: Vec<(Exchange, Token, Token)> = subscriptions.keys().cloned().collect();
         subscriptions.clear();
         pairs
     };
 
     // Re-send subscription jobs for all the pairs
-    for (base_token, quote_token) in pairs {
+    for (exchange, base_token, quote_token) in streams {
         subscribe_to_price_stream(
             subscription_states,
-            config,
+            exchange,
             base_token,
             quote_token,
             msg_out_tx.clone(),
