@@ -70,49 +70,56 @@ pub struct PriceReporter {
     pub(super) manager_executor_handle: Option<JoinHandle<PriceReporterError>>,
 }
 
-/// The state streamed from the connection multiplexer to the price reporter
+/// The state of a price stream for a given (exchange, base, quote).
 /// Uses atomic primitives to allow for hardware synchronized update streaming
-#[derive(Clone, Debug)]
+#[derive(Debug, Default)]
 pub struct AtomicPriceStreamState {
-    /// The price information for each exchange, updated by the
-    /// `ConnectionMuxer`
-    price_map: HashMap<Exchange, Arc<AtomicF64>>,
-    /// A map indicating the time at which the last price was received from each
-    /// exchange
-    last_received: HashMap<Exchange, Arc<AtomicU64>>,
+    /// The price of the pair on the exchange
+    price_map: AtomicF64,
+    /// The time at which the last price was received from the exchange
+    last_received: AtomicU64,
 }
 
 impl AtomicPriceStreamState {
-    /// Construct a new price stream state instance from a set fo exchanges
-    pub fn new_from_exchanges(exchanges: &[Exchange]) -> Self {
-        Self {
-            price_map: exchanges
-                .iter()
-                .map(|exchange| (*exchange, Arc::new(AtomicF64::new(0.))))
-                .collect(),
-            last_received: exchanges
-                .iter()
-                .map(|exchange| (*exchange, Arc::new(AtomicU64::new(0))))
-                .collect(),
-        }
-    }
-
-    /// Add a new price report for a given exchange
-    pub fn new_price(&self, exchange: Exchange, price: Price, timestamp: u64) {
+    /// Update the state of the price stream
+    pub fn new_price(&self, price: Price, timestamp: u64) {
         // These operations are not transactionally related, so there is a chance
         // for a race in between updating the timestamp and the price. This is
         // generally okay as the timestamp is only used for determining staleness
         // and given a race the timestamp will be very close to correct
-        self.price_map.get(&exchange).unwrap().store(price, Ordering::Relaxed);
-        self.last_received.get(&exchange).unwrap().store(timestamp, Ordering::Relaxed);
+        self.price_map.store(price, Ordering::Relaxed);
+        self.last_received.store(timestamp, Ordering::Relaxed);
     }
 
-    /// Read the price and timestamp from a given exchange
+    /// Read the price and timestamp
+    pub fn read_price(&self) -> (Price, u64) {
+        (self.price_map.load(Ordering::Relaxed), self.last_received.load(Ordering::Relaxed))
+    }
+}
+
+/// A shareable mapping between exchange and the most recent state of their
+/// price stream for a given pair
+#[derive(Clone, Debug)]
+pub struct ExchangeStates(HashMap<Exchange, Arc<AtomicPriceStreamState>>);
+
+impl ExchangeStates {
+    /// Construct a new exchange states instance from a set of exchanges
+    pub fn new_from_exchanges(exchanges: &[Exchange]) -> Self {
+        let mut exchange_states = ExchangeStates(HashMap::new());
+        for exchange in exchanges {
+            exchange_states.0.insert(*exchange, Arc::new(AtomicPriceStreamState::default()));
+        }
+        exchange_states
+    }
+
+    /// Update the price state for a given exchange
+    pub fn new_price(&self, exchange: &Exchange, price: Price, timestamp: u64) {
+        self.0.get(exchange).unwrap().new_price(price, timestamp);
+    }
+
+    /// Read the price state for a given exchange
     pub fn read_price(&self, exchange: &Exchange) -> Option<(Price, u64)> {
-        Some((
-            self.price_map.get(exchange)?.load(Ordering::Relaxed),
-            self.last_received.get(exchange)?.load(Ordering::Relaxed),
-        ))
+        self.0.get(exchange).map(|state| state.read_price())
     }
 }
 
