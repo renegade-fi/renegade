@@ -139,6 +139,18 @@ pub fn get_supported_exchanges(
 
 /// Computes the state of the price reporter for the given token pair,
 /// checking against the provided exchange prices.
+
+// NOTE(@akirillo): This feels like the most sensible place to do stable-quote
+// price conversion. But, we need access to other pairs, e.g. base-liquid quote,
+// liquid quote-USDC. Can get this off of the price reporter structs, but this
+// method is generic over them. May be worth making a trait for this...
+// However, we also need to fetch alternate pair prices for each of the
+// exchanges. Let's start by writing this in `get_state` separately for each
+// executor, and re-abstract later. Though, I think the way this will play out
+// is a trait method that is an analogue of `get_state` for each exchange,
+// performing whatever conversions are necessary.
+// In fact, we can keep this method the same. The only thing that changes is the
+// prices that are passed in from each respective executor.
 pub fn compute_price_reporter_state(
     base_token: Token,
     quote_token: Token,

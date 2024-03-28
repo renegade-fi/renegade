@@ -2,7 +2,15 @@
 
 use std::collections::HashMap;
 
-use common::types::{exchange::PriceReporterState, token::Token, wallet::OrderIdentifier, Price};
+use common::types::{
+    exchange::PriceReporterState,
+    token::{
+        Token, AAVE_TICKER, BNB_TICKER, CRV_TICKER, DYDX_TICKER, LDO_TICKER, LINK_TICKER,
+        MATIC_TICKER, UNI_TICKER, USDC_TICKER, WBTC_TICKER, WETH_TICKER,
+    },
+    wallet::OrderIdentifier,
+    Price,
+};
 use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use lazy_static::lazy_static;
@@ -18,84 +26,50 @@ const MAX_PRICE_DEVIATION: f64 = 0.01;
 /// pair
 const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 
-// ----------------
-// | Quote Tokens |
-// ----------------
-
-/// USDT ticker
-///
-/// For now we only stream prices quoted in USDT
-const USDT_TICKER: &str = "USDT";
-
-// ---------------
-// | Base Tokens |
-// ---------------
-
-/// BTC ticker
-const BTC_TICKER: &str = "WBTC";
-/// ETH ticker
-const ETH_TICKER: &str = "WETH";
-/// BNB ticker
-const BNB_TICKER: &str = "BNB";
-/// MATIC ticker
-const MATIC_TICKER: &str = "MATIC";
-/// LDO ticker
-const LDO_TICKER: &str = "LDO";
-/// LINK ticker
-const LINK_TICKER: &str = "LINK";
-/// UNI ticker
-const UNI_TICKER: &str = "UNI";
-/// CRV ticker
-const CRV_TICKER: &str = "CRV";
-/// DYDX ticker
-const DYDX_TICKER: &str = "DYDX";
-/// AAVE ticker
-const AAVE_TICKER: &str = "AAVE";
-
 lazy_static! {
     /// The token pairs we want to keep price streams open for persistently
     pub static ref DEFAULT_PAIRS: Vec<(Token, Token)> = {
         // For now we only stream prices quoted in USDC
         vec![
             (
-                Token::from_ticker(BTC_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(WBTC_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
-                Token::from_ticker(ETH_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(WETH_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(BNB_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(MATIC_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(LDO_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(LINK_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(UNI_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(CRV_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(DYDX_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             ),
             (
                 Token::from_ticker(AAVE_TICKER),
-                Token::from_ticker(USDT_TICKER),
+                Token::from_ticker(USDC_TICKER),
             )
         ]
     };

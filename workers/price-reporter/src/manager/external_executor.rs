@@ -270,6 +270,8 @@ impl ExternalPriceReporterExecutor {
     }
 
     /// Get the latest price for the given exchange and token pair
+    // TODO(@akirillo): HERE is where we will need to add the stable-quote price
+    // conversion logic for each exchange.
     async fn get_latest_price(
         &self,
         exchange: &Exchange,
