@@ -20,9 +20,8 @@ use util::get_current_time_seconds;
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 use crate::manager::{
-    compute_price_reporter_state, get_supported_exchanges, AtomicPriceStreamState,
-    CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS,
-    PRICE_REPORT_INTERVAL_MS,
+    compute_price_reporter_state, get_supported_exchanges, ExchangeStates, CONN_RETRY_DELAY_MS,
+    KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS, PRICE_REPORT_INTERVAL_MS,
 };
 
 use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
@@ -37,7 +36,7 @@ pub struct Reporter {
     quote_token: Token,
     /// The shared memory map from exchange to most recent price
     /// and reporting timestamp
-    exchange_info: AtomicPriceStreamState,
+    exchange_info: ExchangeStates,
 }
 
 impl Reporter {
@@ -60,8 +59,7 @@ impl Reporter {
 
         // Create shared memory that the `ConnectionMuxer` will use to communicate with
         // the `Reporter`
-        let shared_exchange_state =
-            AtomicPriceStreamState::new_from_exchanges(&supported_exchanges);
+        let shared_exchange_state = ExchangeStates::new_from_exchanges(&supported_exchanges);
 
         // Spawn a thread to manage the connections
         let connection_muxer = ConnectionMuxer::new(
@@ -206,7 +204,7 @@ struct ConnectionMuxer {
     /// The set of exchanges connected
     exchanges: Vec<Exchange>,
     /// The shared memory map from exchange to most recent price
-    exchange_state: AtomicPriceStreamState,
+    exchange_states: ExchangeStates,
     /// Tracks the number of failures in connecting to an exchange
     ///
     /// Maps from a given exchange to a vector of timestamps representing
@@ -221,14 +219,14 @@ impl ConnectionMuxer {
         quote_token: Token,
         config: PriceReporterConfig,
         exchanges: Vec<Exchange>,
-        exchange_state: AtomicPriceStreamState,
+        exchange_states: ExchangeStates,
     ) -> Self {
         Self {
             base_token,
             quote_token,
             config,
             exchanges,
-            exchange_state,
+            exchange_states,
             exchange_retries: HashMap::new(),
         }
     }
@@ -266,8 +264,8 @@ impl ConnectionMuxer {
                                 }
 
                                 let ts = get_current_time_seconds();
-                                self.exchange_state
-                                    .new_price(exchange, price, ts);
+                                self.exchange_states
+                                    .new_price(&exchange, price, ts);
                             },
 
                             Err(e) => {
