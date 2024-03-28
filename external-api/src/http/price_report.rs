@@ -3,6 +3,13 @@
 use common::types::{exchange::PriceReporterState, token::Token};
 use serde::{Deserialize, Serialize};
 
+// ---------------
+// | HTTP Routes |
+// ---------------
+
+/// Price report route
+pub const PRICE_REPORT_ROUTE: &str = "/v0/price_report";
+
 /// A request to get the relayer's price report for a pair
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetPriceReportRequest {

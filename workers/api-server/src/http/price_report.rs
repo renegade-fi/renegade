@@ -12,13 +12,6 @@ use crate::{
     worker::ApiServerConfig,
 };
 
-// ---------------
-// | HTTP Routes |
-// ---------------
-
-/// Price report route
-pub(super) const PRICE_REPORT_ROUTE: &str = "/v0/price_report";
-
 // ------------------
 // | Route Handlers |
 // ------------------
