@@ -322,13 +322,13 @@ lazy_static! {
         exchange_tickers
     };
     /// The set of stablecoin quote assets
-    static ref STABLECOIN_QUOTES: HashSet<Token> = {
+    pub static ref STABLECOIN_QUOTES: HashSet<Token> = {
         let stablecoin_tickers = [USDC_TICKER, USDT_TICKER];
         stablecoin_tickers.iter().map(|ticker| Token::from_ticker(ticker)).collect()
     };
     /// The mapping between exchanges and the stablecoin quote asset on which they are generally
     /// the most liquid
-    static ref MOST_LIQ_STABLE: HashMap<Exchange, Token> = {
+    pub static ref MOST_LIQ_STABLE: HashMap<Exchange, Token> = {
         let mut most_liquid_stable = HashMap::<Exchange, Token>::new();
 
         // Most liquid stablecoin quote on Binance is generally USDT
