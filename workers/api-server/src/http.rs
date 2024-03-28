@@ -9,7 +9,7 @@ use external_api::{
     http::{
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
-        price_report::EXCHANGE_HEALTH_ROUTE,
+        price_report::PRICE_REPORT_ROUTE,
         task::{GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         wallet::{
             CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE,
@@ -39,18 +39,10 @@ use uuid::Uuid;
 use crate::error::{bad_request, not_found};
 
 use self::{
-    network::{
-        GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler,
-        GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE,
-    },
-    order_book::{
-        GetNetworkOrderByIdHandler, GetNetworkOrdersHandler, GET_NETWORK_ORDERS_ROUTE,
-        GET_NETWORK_ORDER_BY_ID_ROUTE,
-    },
-    price_report::{PriceReportHandler, PRICE_REPORT_ROUTE},
-    task::{
-        GetTaskQueueHandler, GetTaskStatusHandler, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE,
-    },
+    network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
+    order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
+    price_report::PriceReportHandler,
+    task::{GetTaskQueueHandler, GetTaskStatusHandler},
     wallet::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
         FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetOrderByIdHandler,
