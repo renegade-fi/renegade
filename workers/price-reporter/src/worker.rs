@@ -7,7 +7,7 @@ use common::{
     worker::Worker,
 };
 use external_api::bus_message::SystemBusMessage;
-use job_types::price_reporter::{PriceReporterQueue, PriceReporterReceiver};
+use job_types::price_reporter::PriceReporterReceiver;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use tokio::runtime::Builder as TokioBuilder;
@@ -30,9 +30,6 @@ pub struct PriceReporterConfig {
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The receiver for jobs from other workers
     pub job_receiver: DefaultOption<PriceReporterReceiver>,
-    /// The sender for jobs, used by the price reporter itself to
-    /// resubscribe to price streams
-    pub job_sender: PriceReporterQueue,
     /// Exchange connection config options
     pub exchange_conn_config: ExchangeConnectionsConfig,
     /// The URL of an external price reporter service

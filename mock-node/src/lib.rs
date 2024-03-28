@@ -393,7 +393,6 @@ impl MockNodeController {
     pub fn with_price_reporter(mut self) -> Self {
         let config = &self.config;
         let job_receiver = self.price_queue.1.take().unwrap();
-        let job_sender = self.price_queue.0.clone();
         let cancel_channel = mock_cancel();
         let system_bus = self.bus.clone();
 
@@ -407,7 +406,6 @@ impl MockNodeController {
             disabled: config.disable_price_reporter,
             disabled_exchanges: config.disabled_exchanges.clone(),
             job_receiver: default_option(job_receiver),
-            job_sender,
             system_bus,
             cancel_channel,
         };
