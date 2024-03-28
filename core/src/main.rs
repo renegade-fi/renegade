@@ -264,7 +264,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
         system_bus: system_bus.clone(),
         job_receiver: Some(price_reporter_worker_receiver).into(),
-        job_sender: price_reporter_worker_sender.clone(),
         cancel_channel: price_reporter_cancel_receiver,
         exchange_conn_config: ExchangeConnectionsConfig {
             coinbase_api_key: args.coinbase_api_key,
