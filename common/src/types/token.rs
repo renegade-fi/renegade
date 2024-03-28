@@ -43,6 +43,10 @@ pub const USDT_TICKER: &str = "USDT";
 /// stream prices for it.
 pub const USD_TICKER: &str = "USD";
 
+/// The set of tickers of stablecoin quote assets for which price conversion may
+/// be invoked
+pub const STABLECOIN_QUOTE_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
+
 // ---------------
 // | Base Tokens |
 // ---------------
@@ -321,29 +325,6 @@ lazy_static! {
         }
         exchange_tickers
     };
-    /// The set of stablecoin quote assets
-    pub static ref STABLECOIN_QUOTES: HashSet<Token> = {
-        let stablecoin_tickers = [USDC_TICKER, USDT_TICKER];
-        stablecoin_tickers.iter().map(|ticker| Token::from_ticker(ticker)).collect()
-    };
-    /// The mapping between exchanges and the stablecoin quote asset on which they are generally
-    /// the most liquid
-    pub static ref MOST_LIQ_STABLE: HashMap<Exchange, Token> = {
-        let mut most_liquid_stable = HashMap::<Exchange, Token>::new();
-
-        // Most liquid stablecoin quote on Binance is generally USDT
-        most_liquid_stable.insert(Exchange::Binance, Token::from_ticker(USDT_TICKER));
-        // Most liquid stablecoin quote on Coinbase is generally USDC
-        most_liquid_stable.insert(Exchange::Coinbase, Token::from_ticker(USDC_TICKER));
-        // Most liquid "stablecoin" quote on Kraken is generally USD
-        most_liquid_stable.insert(Exchange::Kraken, Token::from_ticker(USD_TICKER));
-        // Most liquid stablecoin quote on Okx is generally USDT
-        most_liquid_stable.insert(Exchange::Okx, Token::from_ticker(USDT_TICKER));
-
-        // We currently omit UniswapV3 here, as it requires more involved routing logic
-
-        most_liquid_stable
-    };
 }
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20
@@ -468,4 +449,15 @@ impl Token {
 /// the pair should be supported on centralized exchanges.
 pub fn is_pair_named(base: &Token, quote: &Token) -> bool {
     base.is_named() && quote.is_named()
+}
+
+/// Returns the default stable quote asset for the given exchange.
+pub fn default_exchange_stable(exchange: &Exchange) -> Token {
+    match exchange {
+        Exchange::Binance => Token::from_ticker(USDT_TICKER),
+        Exchange::Coinbase => Token::from_ticker(USDC_TICKER),
+        Exchange::Kraken => Token::from_ticker(USD_TICKER),
+        Exchange::Okx => Token::from_ticker(USDT_TICKER),
+        _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
+    }
 }
