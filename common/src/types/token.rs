@@ -43,9 +43,9 @@ pub const USDT_TICKER: &str = "USDT";
 /// stream prices for it.
 pub const USD_TICKER: &str = "USD";
 
-/// The set of tickers of stablecoin quote assets for which price conversion may
-/// be invoked
-pub const STABLECOIN_QUOTE_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
+/// The set of tickers of stablecoins for which price conversion may
+/// be invoked if they are the quote
+pub const STABLECOIN_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
 
 // ---------------
 // | Base Tokens |
@@ -384,6 +384,11 @@ impl Token {
     /// Returns true if the Token has a Renegade-native ticker.
     pub fn is_named(&self) -> bool {
         self.get_ticker().is_some()
+    }
+
+    /// Returns true if the Token is a stablecoin.
+    pub fn is_stablecoin(&self) -> bool {
+        self.get_ticker().map_or(false, |ticker| STABLECOIN_TICKERS.contains(&ticker))
     }
 
     /// Returns the set of Exchanges that support this token.
