@@ -9,7 +9,7 @@ use common::{
     new_async_shared,
     types::{
         exchange::{Exchange, PriceReporterState},
-        token::{is_pair_named, Token},
+        token::{default_exchange_stable, is_pair_named, Token},
         CancelChannel, Price,
     },
     AsyncShared,
@@ -225,19 +225,32 @@ impl ExternalPriceReporterExecutor {
         quote_token: Token,
         msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
-        // TODO: Conditional price conversion
-
         let exchanges = get_supported_exchanges(&base_token, &quote_token, &self.config);
         for exchange in exchanges {
-            subscribe_to_price_stream(
-                &self.subscription_states,
-                exchange,
-                base_token.clone(),
-                quote_token.clone(),
-                msg_out_tx.clone(),
-            )
-            .await
-            .map_err(PriceReporterError::ExchangeConnection)?;
+            // If the quote is a stablecoin (and the base is not), we may invoke price
+            // conversion through the default stable quote for the exchange
+            let subs = if eligible_for_stable_quote_conversion(&base_token, &quote_token, &exchange)
+            {
+                let default_stable = default_exchange_stable(&exchange);
+                vec![
+                    (base_token.clone(), default_stable.clone()),
+                    (quote_token.clone(), default_stable),
+                ]
+            } else {
+                vec![(base_token.clone(), quote_token.clone())]
+            };
+
+            for (base, quote) in subs {
+                subscribe_to_price_stream(
+                    &self.subscription_states,
+                    exchange,
+                    base,
+                    quote,
+                    msg_out_tx.clone(),
+                )
+                .await
+                .map_err(PriceReporterError::ExchangeConnection)?;
+            }
         }
 
         Ok(())
@@ -286,20 +299,31 @@ impl ExternalPriceReporterExecutor {
         }
     }
 
-    /// Get the latest price for the given exchange and token pair
-    // TODO(@akirillo): HERE is where we will need to add the stable-quote price
-    // conversion logic for each exchange.
+    /// Get the latest price for the given exchange and token pair.
+    ///
+    /// If the pair is eligible, we convert the price through the default stable
+    /// quote for the exchange.
     async fn get_latest_price(
         &self,
         exchange: Exchange,
         base_token: &Token,
         quote_token: &Token,
     ) -> Option<(Price, u64)> {
-        self.subscription_states
-            .read()
+        if eligible_for_stable_quote_conversion(base_token, quote_token, &exchange) {
+            convert_through_default_stable(
+                base_token,
+                quote_token,
+                exchange,
+                &self.subscription_states,
+            )
             .await
-            .get(&(exchange, base_token.clone(), quote_token.clone()))
-            .map(|state| state.read_price())
+        } else {
+            self.subscription_states
+                .read()
+                .await
+                .get(&(exchange, base_token.clone(), quote_token.clone()))
+                .map(|state| state.read_price())
+        }
     }
 }
 
@@ -483,4 +507,42 @@ fn parse_topic(topic: &str) -> Result<(Exchange, Token, Token), ExchangeConnecti
     let quote = Token::from_addr(parts[2]);
 
     Ok((exchange, base, quote))
+}
+
+/// Returns whether or not the given pair on the given exchange may have its
+/// price converted through the default stable quote asset for the exchange.
+fn eligible_for_stable_quote_conversion(base: &Token, quote: &Token, exchange: &Exchange) -> bool {
+    !base.is_stablecoin() && quote.is_stablecoin() && quote != &default_exchange_stable(exchange)
+}
+
+/// Converts the price for the given pair through the default stable quote asset
+/// for the exchange
+async fn convert_through_default_stable(
+    base_token: &Token,
+    quote_token: &Token,
+    exchange: Exchange,
+    subscription_states: &SubscriptionStates,
+) -> Option<(Price, u64)> {
+    let subscription_states = subscription_states.read().await;
+
+    let default_stable = default_exchange_stable(&exchange);
+
+    // Get the base / default stable price
+    let (base_price, base_ts) = subscription_states
+        .get(&(exchange, base_token.clone(), default_stable.clone()))?
+        .read_price();
+
+    // Get the quote / default stable price
+    let (quote_price, quote_ts) = subscription_states
+        .get(&(exchange, quote_token.clone(), default_stable.clone()))?
+        .read_price();
+
+    // The converted price = (base / default stable) / (quote / default stable)
+    let price = base_price / quote_price;
+
+    // We take the minimum of the two timestamps, so we err on the side of safety
+    // and call a price stale if one of the two price streams is stale
+    let ts = base_ts.min(quote_ts);
+
+    Some((price, ts))
 }
