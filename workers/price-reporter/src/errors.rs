@@ -23,6 +23,8 @@ pub enum ExchangeConnectionError {
     NoSupportedExchanges(Token, Token),
     /// Error sending on the `write` end of the websocket
     SendError(String),
+    /// Error saving the state of a price stream
+    SaveState(String),
 }
 
 impl Error for ExchangeConnectionError {}
