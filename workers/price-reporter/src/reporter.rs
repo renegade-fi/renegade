@@ -298,6 +298,7 @@ impl ConnectionMuxer {
 
     /// Sets up the initial connections to each exchange and places them in a
     /// `StreamMap` for multiplexing
+    // TODO(@akirillo): Should we conditionally start component price streams here?
     async fn initialize_connections<'a>(
         &mut self,
     ) -> Result<StreamMap<Exchange, Box<dyn ExchangeConnection>>, ExchangeConnectionError> {

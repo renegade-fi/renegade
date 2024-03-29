@@ -3,18 +3,19 @@
 
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU64, Ordering},
     thread::JoinHandle,
 };
 
 use atomic_float::AtomicF64;
-use common::types::{
-    exchange::{Exchange, PriceReport, PriceReporterState},
-    token::Token,
-    Price,
+use common::{
+    new_async_shared,
+    types::{
+        exchange::{Exchange, PriceReport, PriceReporterState},
+        token::{default_exchange_stable, Token},
+        Price,
+    },
+    AsyncShared,
 };
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
@@ -97,29 +98,118 @@ impl AtomicPriceStreamState {
     }
 }
 
-/// A shareable mapping between exchange and the most recent state of their
-/// price stream for a given pair
-#[derive(Clone, Debug)]
-pub struct ExchangeStates(HashMap<Exchange, Arc<AtomicPriceStreamState>>);
+/// A shareable mapping between (exchange, base, quote) and the most recent
+/// state of the associated price stream
+#[derive(Clone)]
+pub struct SharedPriceStates(
+    AsyncShared<HashMap<(Exchange, Token, Token), AtomicPriceStreamState>>,
+);
 
-impl ExchangeStates {
-    /// Construct a new exchange states instance from a set of exchanges
-    pub fn new_from_exchanges(exchanges: &[Exchange]) -> Self {
-        let mut exchange_states = ExchangeStates(HashMap::new());
-        for exchange in exchanges {
-            exchange_states.0.insert(*exchange, Arc::new(AtomicPriceStreamState::default()));
+impl SharedPriceStates {
+    /// Create a new shared price states object
+    pub fn new() -> Self {
+        Self(new_async_shared(HashMap::new()))
+    }
+
+    pub async fn initialize_state(&self, exchange: Exchange, base: Token, quote: Token) {
+        let mut price_states = self.0.write().await;
+
+        price_states.insert((exchange, base, quote), AtomicPriceStreamState::default());
+    }
+
+    /// Returns whether or not the price stream state is initialized for the
+    /// given (exchange, base, quote) is indexed in the mapping, indicating
+    /// whether or not it's been initialized
+    pub async fn state_is_initialized(
+        &self,
+        exchange: Exchange,
+        base: Token,
+        quote: Token,
+    ) -> bool {
+        let price_states = self.0.read().await;
+
+        price_states.contains_key(&(exchange, base, quote))
+    }
+
+    /// Clear all price states, returning the keys that were cleared
+    pub async fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
+        let mut price_states = self.0.write().await;
+
+        let keys = price_states.keys().cloned().collect();
+        price_states.clear();
+
+        keys
+    }
+
+    /// Update the price state for the given (exchange, base, quote)
+    pub async fn new_price(
+        &self,
+        exchange: Exchange,
+        base: Token,
+        quote: Token,
+        price: Price,
+        timestamp: u64,
+    ) -> Result<(), String> {
+        let price_states = self.0.read().await;
+
+        let price_state = price_states
+            .get(&(exchange.clone(), base.clone(), quote.clone()))
+            .ok_or(format!("Price stream state not found for ({exchange}, {base}, {quote})",))?;
+
+        price_state.new_price(price, timestamp);
+
+        Ok(())
+    }
+
+    /// Get the latest price for the given exchange and token pair.
+    ///
+    /// If the pair is eligible, we convert the price through the default stable
+    /// quote for the exchange.
+    async fn get_latest_price(
+        &self,
+        exchange: Exchange,
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Option<(Price, u64)> {
+        if eligible_for_stable_quote_conversion(base_token, quote_token, &exchange) {
+            self.convert_through_default_stable(base_token, quote_token, exchange).await
+        } else {
+            self.0
+                .read()
+                .await
+                .get(&(exchange, base_token.clone(), quote_token.clone()))
+                .map(|state| state.read_price())
         }
-        exchange_states
     }
 
-    /// Update the price state for a given exchange
-    pub fn new_price(&self, exchange: &Exchange, price: Price, timestamp: u64) {
-        self.0.get(exchange).unwrap().new_price(price, timestamp);
-    }
+    /// Converts the price for the given pair through the default stable quote
+    /// asset for the exchange
+    async fn convert_through_default_stable(
+        &self,
+        base_token: &Token,
+        quote_token: &Token,
+        exchange: Exchange,
+    ) -> Option<(Price, u64)> {
+        let states = self.0.read().await;
 
-    /// Read the price state for a given exchange
-    pub fn read_price(&self, exchange: &Exchange) -> Option<(Price, u64)> {
-        self.0.get(exchange).map(|state| state.read_price())
+        let default_stable = default_exchange_stable(&exchange);
+
+        // Get the base / default stable price
+        let (base_price, base_ts) =
+            states.get(&(exchange, base_token.clone(), default_stable.clone()))?.read_price();
+
+        // Get the quote / default stable price
+        let (quote_price, quote_ts) =
+            states.get(&(exchange, quote_token.clone(), default_stable.clone()))?.read_price();
+
+        // The converted price = (base / default stable) / (quote / default stable)
+        let price = base_price / quote_price;
+
+        // We take the minimum of the two timestamps, so we err on the side of safety
+        // and call a price stale if one of the two price streams is stale
+        let ts = base_ts.min(quote_ts);
+
+        Some((price, ts))
     }
 }
 
@@ -200,4 +290,14 @@ pub fn compute_price_reporter_state(
 fn ts_too_stale(ts: u64) -> (bool, u64) {
     let time_diff = get_current_time_seconds() - ts;
     (time_diff > MAX_REPORT_AGE, time_diff)
+}
+
+/// Returns whether or not the given pair on the given exchange may have its
+/// price converted through the default stable quote asset for the exchange.
+pub fn eligible_for_stable_quote_conversion(
+    base: &Token,
+    quote: &Token,
+    exchange: &Exchange,
+) -> bool {
+    !base.is_stablecoin() && quote.is_stablecoin() && quote != &default_exchange_stable(exchange)
 }
