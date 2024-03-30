@@ -143,6 +143,13 @@ impl SharedPriceStreamStates {
         keys
     }
 
+    /// Remove the state for the given (exchange, base, quote) price stream
+    pub async fn remove_state(&self, exchange: Exchange, base: Token, quote: Token) {
+        let mut price_stream_states = self.0.write().await;
+
+        price_stream_states.remove(&(exchange, base, quote));
+    }
+
     /// Update the price state for the given (exchange, base, quote)
     pub async fn new_price(
         &self,
