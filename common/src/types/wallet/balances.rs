@@ -82,22 +82,20 @@ impl Wallet {
             return Ok(());
         }
 
-        // Otherwise, add the balance
-        if self.balances.len() < MAX_BALANCES {
-            self.balances.insert(balance.mint.clone(), balance);
-            return Ok(());
+        if let Some(index) = self.find_first_replaceable_balance() {
+            self.balances.replace_at_index(index, balance.mint.clone(), balance);
+        } else if self.balances.len() < MAX_BALANCES {
+            self.balances.append(balance.mint.clone(), balance);
+        } else {
+            return Err(ERR_BALANCES_FULL.to_string());
         }
 
-        // If the balances are full, try to find a balance to overwrite
-        let idx = self
-            .balances
-            .iter()
-            .enumerate()
-            .find_map(|(i, (_, balance))| balance.is_zero().then_some(i))
-            .ok_or_else(|| ERR_BALANCES_FULL.to_string())?;
-        self.balances.replace_at_index(idx, balance.mint.clone(), balance);
-
         Ok(())
+    }
+
+    /// Find the first replaceable balance
+    fn find_first_replaceable_balance(&self) -> Option<usize> {
+        self.balances.iter().position(|(_, balance)| balance.is_zero())
     }
 
     /// Withdraw an amount from the balance for the given mint

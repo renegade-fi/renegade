@@ -64,8 +64,8 @@ impl Wallet {
     /// wallet is full
     pub fn add_order(&mut self, id: OrderIdentifier, order: Order) -> Result<(), String> {
         // Append if the orders are not full
-        if let Some(index) = self.find_first_default_order() {
-            self.orders.insert_at_index(index, id, order);
+        if let Some(index) = self.find_first_replaceable_order() {
+            self.orders.replace_at_index(index, id, order);
         } else if self.orders.len() < MAX_ORDERS {
             self.orders.append(id, order)
         } else {
@@ -76,8 +76,8 @@ impl Wallet {
     }
 
     /// Find the first default order in the wallet
-    fn find_first_default_order(&self) -> Option<usize> {
-        self.orders.iter().position(|(_, order)| order.is_default())
+    fn find_first_replaceable_order(&self) -> Option<usize> {
+        self.orders.iter().position(|(_, order)| order.is_zero())
     }
 
     /// Remove an order from the wallet, replacing it with a default order
