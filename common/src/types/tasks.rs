@@ -17,7 +17,7 @@ use super::{
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
     transfer_auth::ExternalTransferWithAuth,
-    wallet::{KeyChain, OrderIdentifier, Wallet, WalletIdentifier},
+    wallet::{KeyChain, Wallet, WalletIdentifier},
 };
 
 /// The error message returned when a wallet's shares are invalid
@@ -227,12 +227,8 @@ impl From<LookupWalletTaskDescriptor> for TaskDescriptor {
 pub struct SettleMatchInternalTaskDescriptor {
     /// The price at which the match was executed
     pub execution_price: FixedPoint,
-    /// The identifier of the first order
-    pub order_id1: OrderIdentifier,
     /// The identifier of the first order's wallet
     pub wallet_id1: WalletIdentifier,
-    /// The identifier of the second order
-    pub order_id2: OrderIdentifier,
     /// The identifier of the second order's wallet
     pub wallet_id2: WalletIdentifier,
     /// The validity proofs for the first order
@@ -252,9 +248,7 @@ impl SettleMatchInternalTaskDescriptor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         execution_price: FixedPoint,
-        order_id1: OrderIdentifier,
         wallet_id1: WalletIdentifier,
-        order_id2: OrderIdentifier,
         wallet_id2: WalletIdentifier,
         order1_proof: OrderValidityProofBundle,
         order1_validity_witness: OrderValidityWitnessBundle,
@@ -264,9 +258,7 @@ impl SettleMatchInternalTaskDescriptor {
     ) -> Result<Self, String> {
         Ok(SettleMatchInternalTaskDescriptor {
             execution_price,
-            order_id1,
             wallet_id1,
-            order_id2,
             wallet_id2,
             order1_proof,
             order1_validity_witness,

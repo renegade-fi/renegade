@@ -2,6 +2,7 @@
 
 use circuit_types::order::Order;
 use constants::MAX_ORDERS;
+use itertools::Itertools;
 
 use super::{OrderIdentifier, Wallet};
 
@@ -35,25 +36,24 @@ impl Wallet {
             .unwrap()
     }
 
-    /// Returns whether any of the orders in the wallet are eligible for
-    /// matching
+    /// Get the list of orders that are eligible for matching
     ///
-    /// This amounts to non-default orders with non-zero balances to cover them
-    pub fn has_orders_to_match(&self) -> bool {
-        for order in self.orders.values() {
-            let send_mint = order.send_mint();
-            let has_balance = match self.balances.get(send_mint) {
-                Some(balance) => balance.amount > 0,
-                None => false,
-            };
+    /// An order is ready to match if it is non-zero and has a non-zero sell
+    /// balance backing it
+    pub fn get_matchable_orders(&self) -> Vec<(OrderIdentifier, Order)> {
+        self.orders
+            .iter()
+            .filter(|(_id, order)| {
+                let send_mint = order.send_mint();
+                let has_balance = match self.get_balance(send_mint) {
+                    Some(balance) => balance.amount > 0,
+                    None => false,
+                };
 
-            // If a single non-default order has a non-zero balance, we can match on it
-            if !order.is_default() && has_balance {
-                return true;
-            }
-        }
-
-        false
+                !order.is_zero() && has_balance
+            })
+            .cloned()
+            .collect_vec()
     }
 
     // -----------
