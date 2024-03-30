@@ -95,8 +95,6 @@ impl HandshakeExecutor {
                 .try_match_and_settle(
                     my_order.clone(),
                     order2,
-                    network_order.id,
-                    order_id,
                     wallet.wallet_id,
                     other_wallet_id,
                     price,
@@ -130,8 +128,6 @@ impl HandshakeExecutor {
         &self,
         o1: Order,
         o2: Order,
-        order_id1: OrderIdentifier,
-        order_id2: OrderIdentifier,
         wallet_id1: WalletIdentifier,
         wallet_id2: WalletIdentifier,
         price: FixedPoint,
@@ -151,9 +147,7 @@ impl HandshakeExecutor {
         // Submit the match to the task driver
         let task: TaskDescriptor = SettleMatchInternalTaskDescriptor::new(
             price,
-            order_id1,
             wallet_id1,
-            order_id2,
             wallet_id2,
             validity_proof1,
             validity_witness1,

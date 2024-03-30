@@ -41,7 +41,6 @@ use job_types::{
 use num_bigint::BigUint;
 use state::State;
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
-use tracing::debug;
 
 // -------------
 // | Constants |
@@ -257,13 +256,8 @@ pub(crate) async fn update_wallet_validity_proofs(
     global_state: State,
     network_sender: NetworkManagerQueue,
 ) -> Result<(), String> {
-    // No validity proofs needed for an empty wallet, they will be re-proven on
-    // the next update that adds a non-empty order
-    if !wallet.has_orders_to_match() {
-        debug!(
-            "wallet {} has no orders ready for matching, skipping validity proofs",
-            wallet.wallet_id
-        );
+    let matchable_orders = wallet.get_matchable_orders();
+    if matchable_orders.is_empty() {
         return Ok(());
     }
 
@@ -273,7 +267,7 @@ pub(crate) async fn update_wallet_validity_proofs(
 
     // For each order, construct a proof of `VALID COMMITMENTS`
     let mut commitments_instances = Vec::new();
-    for (id, order) in wallet.orders.iter().filter(|(_id, o)| !o.is_zero()) {
+    for (id, order) in matchable_orders.iter() {
         // Start a proof of `VALID COMMITMENTS`
         let (commitments_witness, response_channel) = construct_order_commitment_proof(
             order.clone(),

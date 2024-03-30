@@ -22,7 +22,7 @@ use common::types::tasks::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::WalletIdentifier;
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::{OrderIdentifier, Wallet},
+    wallet::Wallet,
 };
 use constants::Scalar;
 use job_types::network_manager::NetworkManagerQueue;
@@ -148,12 +148,8 @@ impl From<StateError> for SettleMatchInternalTaskError {
 pub struct SettleMatchInternalTask {
     /// The price at which the match was executed
     execution_price: FixedPoint,
-    /// The identifier of the first order
-    order_id1: OrderIdentifier,
     /// The identifier of the first order's wallet
     wallet_id1: WalletIdentifier,
-    /// The identifier of the second order
-    order_id2: OrderIdentifier,
     /// The identifier of the second order's wallet
     wallet_id2: WalletIdentifier,
     /// The validity proofs for the first order
@@ -189,9 +185,7 @@ impl Task for SettleMatchInternalTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let SettleMatchInternalTaskDescriptor {
             execution_price,
-            order_id1,
             wallet_id1,
-            order_id2,
             wallet_id2,
             order1_proof,
             order1_validity_witness,
@@ -202,9 +196,7 @@ impl Task for SettleMatchInternalTask {
 
         Ok(Self {
             execution_price,
-            order_id1,
             wallet_id1,
-            order_id2,
             wallet_id2,
             order1_proof,
             order1_validity_witness,
@@ -327,17 +319,16 @@ impl SettleMatchInternalTask {
         let mut wallet1 = self.find_wallet(&self.wallet_id1)?;
         let mut wallet2 = self.find_wallet(&self.wallet_id2)?;
 
-        // Apply the match to each of the wallets
-        wallet1
-            .apply_match(&self.match_result, &self.order_id1)
-            .map_err(SettleMatchInternalTaskError::State)?;
-        wallet2
-            .apply_match(&self.match_result, &self.order_id2)
-            .map_err(SettleMatchInternalTaskError::State)?;
-
-        // Reblind both wallets and update their merkle openings
-        wallet1.reblind_wallet();
-        wallet2.reblind_wallet();
+        // Update wallets from the shares after settlement
+        let match_bundle = self.match_bundle.as_ref().unwrap();
+        let party0_public_shares = &match_bundle.match_proof.statement.party0_modified_shares;
+        let party0_private_shares =
+            &self.order1_validity_witness.reblind_witness.reblinded_wallet_private_shares;
+        let party1_public_shares = &match_bundle.match_proof.statement.party1_modified_shares;
+        let party1_private_shares =
+            &self.order2_validity_witness.reblind_witness.reblinded_wallet_private_shares;
+        wallet1.update_from_shares(party0_private_shares, party0_public_shares);
+        wallet2.update_from_shares(party1_private_shares, party1_public_shares);
 
         self.find_opening(&mut wallet1).await?;
         self.find_opening(&mut wallet2).await?;
