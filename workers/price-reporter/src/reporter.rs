@@ -196,7 +196,7 @@ impl ConnectionMuxer {
 
                 // New price streamed from an exchange
                 stream_elem = stream_map.next() => {
-                    if let Some((exchange, res)) = stream_elem {
+                    if let Some(((exchange, base, quote), res)) = stream_elem {
                         match res {
                             Ok(price) => {
                                 // Do not update if the price is default, simply let the price age
@@ -206,7 +206,7 @@ impl ConnectionMuxer {
 
                                 let ts = get_current_time_seconds();
                                 self.price_stream_states
-                                    .new_price(exchange, self.base_token.clone(), self.quote_token.clone(), price, ts).await.map_err(err_str!(ExchangeConnectionError::SaveState))?;
+                                    .new_price(exchange, base, quote, price, ts).await.map_err(err_str!(ExchangeConnectionError::SaveState))?;
                             },
 
                             Err(e) => {
@@ -216,11 +216,14 @@ impl ConnectionMuxer {
                                     match self.retry_connection(exchange).await {
                                         Ok(conn) => {
                                             info!("Successfully reconnected to {exchange}");
-                                            stream_map.insert(exchange, conn);
+                                            stream_map.insert((exchange, base.clone(), quote.clone()), conn);
+                                            // The stream's state must have already been initialized in `self.price_stream_states`,
+                                            // so we do not need to re-add it here
                                         }
                                         Err(ExchangeConnectionError::MaxRetries(_)) => {
                                             error!("Max retries ({MAX_CONN_RETRIES}) exceeded, unable to connect to {exchange}... removing from data sources");
-                                            stream_map.remove(&exchange);
+                                            stream_map.remove(&(exchange, base.clone(), quote.clone()));
+                                            self.price_stream_states.remove_state(exchange, base, quote).await;
                                             break;
                                         }
                                         _ => {
@@ -239,16 +242,18 @@ impl ConnectionMuxer {
 
     /// Sets up the initial connections to each exchange and places them in a
     /// `StreamMap` for multiplexing
-    // TODO(@akirillo): Conditionally start component price streams here
     async fn initialize_connections<'a>(
         &mut self,
-    ) -> Result<StreamMap<Exchange, Box<dyn ExchangeConnection>>, ExchangeConnectionError> {
+    ) -> Result<
+        StreamMap<(Exchange, Token, Token), Box<dyn ExchangeConnection>>,
+        ExchangeConnectionError,
+    > {
         // We do not use a more convenient stream here for concurrent init because of:
         //   https://github.com/rust-lang/rust/issues/102211
         // In specific, streams in async blocks sometimes have lifetimes erased which
         // makes it impossible for the compiler to infer auto-traits like `Send`
 
-        let mut conns = Vec::new();
+        let mut stream_map = StreamMap::new();
         for exchange in &self.exchanges {
             // If pair is eligible, we may invoke price conversion through the default
             // stable quote for the exchange
@@ -256,43 +261,56 @@ impl ConnectionMuxer {
                 let default_stable = default_exchange_stable(exchange);
 
                 // Connect to the price stream for the base / default stable pair
-                conns.push(
-                    connect_exchange(
-                        &self.base_token,
-                        &default_stable,
-                        &self.config.exchange_conn_config,
-                        *exchange,
-                    )
-                    .await?,
-                );
+                self.initialize_stream(
+                    *exchange,
+                    self.base_token.clone(),
+                    default_stable.clone(),
+                    &mut stream_map,
+                )
+                .await?;
 
                 // Connect to the price stream for the quote / default stable
                 // pair
-                conns.push(
-                    connect_exchange(
-                        &self.quote_token,
-                        &default_stable,
-                        &self.config.exchange_conn_config,
-                        *exchange,
-                    )
-                    .await?,
-                );
+                self.initialize_stream(
+                    *exchange,
+                    self.quote_token.clone(),
+                    default_stable,
+                    &mut stream_map,
+                )
+                .await?;
             } else {
                 // Connect directly to the price stream for the base / quote pair
-                conns.push(
-                    connect_exchange(
-                        &self.base_token,
-                        &self.quote_token,
-                        &self.config.exchange_conn_config,
-                        *exchange,
-                    )
-                    .await?,
-                );
+                self.initialize_stream(
+                    *exchange,
+                    self.base_token.clone(),
+                    self.quote_token.clone(),
+                    &mut stream_map,
+                )
+                .await?;
             }
         }
 
         // Build a shared, mapped stream from the individual exchange streams
-        Ok(self.exchanges.clone().into_iter().zip(conns.into_iter()).collect::<StreamMap<_, _>>())
+        Ok(stream_map)
+    }
+
+    /// Initializes a stream for a given exchange and token pair, inserting it
+    /// into the stream map and initializing a state for it in the shared price
+    /// stream states
+    async fn initialize_stream(
+        &self,
+        exchange: Exchange,
+        base: Token,
+        quote: Token,
+        stream_map: &mut StreamMap<(Exchange, Token, Token), Box<dyn ExchangeConnection>>,
+    ) -> Result<(), ExchangeConnectionError> {
+        self.price_stream_states.initialize_state(exchange, base.clone(), quote.clone()).await;
+        stream_map.insert(
+            (exchange, base.clone(), quote.clone()),
+            connect_exchange(&base, &quote, &self.config.exchange_conn_config, exchange).await?,
+        );
+
+        Ok(())
     }
 
     /// Retries an exchange connection after it has failed
