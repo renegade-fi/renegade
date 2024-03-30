@@ -138,7 +138,7 @@ impl PriceReporterExecutor {
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
         match self.get_price_reporter_or_create(base_token, quote_token).await {
-            Ok(reporter) => channel.send(reporter.peek_price()).unwrap(),
+            Ok(reporter) => channel.send(reporter.peek_price().await).unwrap(),
             Err(PriceReporterError::UnsupportedPair(base, quote)) => {
                 channel.send(PriceReporterState::UnsupportedPair(base, quote)).unwrap()
             },

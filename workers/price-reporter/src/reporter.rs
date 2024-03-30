@@ -2,26 +2,23 @@
 //! PriceReports by managing individual ExchangeConnections in a fault-tolerant
 //! manner.
 
-use common::types::exchange::{
-    Exchange, ExchangeConnectionState, PriceReport, PriceReporterState, ALL_EXCHANGES,
-};
-use common::types::token::{is_pair_named, Token};
+use common::types::exchange::{Exchange, PriceReporterState};
+use common::types::token::{default_exchange_stable, Token};
 use common::types::Price;
 use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
-use futures_util::future::try_join_all;
 use std::collections::HashMap;
 use std::time::Duration;
-use system_bus::SystemBus;
 use tokio::time::Instant;
 use tokio_stream::{StreamExt, StreamMap};
 use tracing::{error, info, warn};
-use util::get_current_time_seconds;
+use util::{err_str, get_current_time_seconds};
 
 use crate::exchange::connect_exchange;
 use crate::exchange::connection::ExchangeConnection;
 use crate::manager::{
-    compute_price_reporter_state, get_supported_exchanges, ExchangeStates, CONN_RETRY_DELAY_MS,
-    KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS, PRICE_REPORT_INTERVAL_MS,
+    eligible_for_stable_quote_conversion, get_state, get_supported_exchanges,
+    SharedPriceStreamStates, CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES,
+    MAX_CONN_RETRY_WINDOW_MS, PRICE_REPORT_INTERVAL_MS,
 };
 
 use super::{errors::ExchangeConnectionError, worker::PriceReporterConfig};
@@ -34,9 +31,10 @@ pub struct Reporter {
     base_token: Token,
     /// The quote Token (e.g., USDC)
     quote_token: Token,
-    /// The shared memory map from exchange to most recent price
-    /// and reporting timestamp
-    exchange_info: ExchangeStates,
+    /// The latest states of all price streams from exchange connections
+    price_stream_states: SharedPriceStreamStates,
+    /// The configuration for the price reporter
+    config: PriceReporterConfig,
 }
 
 impl Reporter {
@@ -59,7 +57,7 @@ impl Reporter {
 
         // Create shared memory that the `ConnectionMuxer` will use to communicate with
         // the `Reporter`
-        let shared_exchange_state = ExchangeStates::new_from_exchanges(&supported_exchanges);
+        let price_stream_states = SharedPriceStreamStates::default();
 
         // Spawn a thread to manage the connections
         let connection_muxer = ConnectionMuxer::new(
@@ -67,7 +65,7 @@ impl Reporter {
             quote_token.clone(),
             config.clone(),
             supported_exchanges,
-            shared_exchange_state.clone(),
+            price_stream_states.clone(),
         );
 
         tokio::spawn({
@@ -81,38 +79,23 @@ impl Reporter {
         });
 
         // Spawn a thread to stream price reports
-        let self_ = Self { base_token, quote_token, exchange_info: shared_exchange_state };
+        let self_ = Self { base_token, quote_token, price_stream_states, config };
 
         let self_clone = self_.clone();
-        tokio::spawn(async move { self_clone.price_streamer_loop(config.system_bus).await });
+        tokio::spawn(async move { self_clone.price_streamer_loop().await });
 
         Ok(self_)
     }
 
     /// Non-blocking report of the latest ReporterState for the price
-    pub fn peek_price(&self) -> PriceReporterState {
-        self.get_state()
-    }
-
-    /// Non-blocking report of the latest ExchangeConnectionState for all
-    /// exchanges
-    pub fn peek_all_exchanges(&self) -> HashMap<Exchange, ExchangeConnectionState> {
-        let mut exchange_connection_states = HashMap::<Exchange, ExchangeConnectionState>::new();
-
-        for exchange in ALL_EXCHANGES.iter() {
-            let state = if let Some((price, ts)) = self.exchange_info.read_price(exchange) {
-                if price == Price::default() {
-                    ExchangeConnectionState::NoDataReported
-                } else {
-                    ExchangeConnectionState::Nominal(self.price_report_from_price(price, ts))
-                }
-            } else {
-                ExchangeConnectionState::Unsupported
-            };
-
-            exchange_connection_states.insert(*exchange, state);
-        }
-        exchange_connection_states
+    pub async fn peek_price(&self) -> PriceReporterState {
+        get_state(
+            &self.price_stream_states,
+            self.base_token.clone(),
+            self.quote_token.clone(),
+            &self.config,
+        )
+        .await
     }
 
     // -----------
@@ -120,68 +103,26 @@ impl Reporter {
     // -----------
 
     /// An execution loop that streams price reports to the system bus
-    async fn price_streamer_loop(&self, system_bus: SystemBus<SystemBusMessage>) {
+    async fn price_streamer_loop(&self) {
         let topic_name = price_report_topic_name(&self.base_token, &self.quote_token);
 
         loop {
-            if system_bus.has_listeners(&topic_name) {
-                if let PriceReporterState::Nominal(report) = self.get_state() {
-                    system_bus.publish(topic_name.clone(), SystemBusMessage::PriceReport(report));
+            if self.config.system_bus.has_listeners(&topic_name) {
+                if let PriceReporterState::Nominal(report) = get_state(
+                    &self.price_stream_states,
+                    self.base_token.clone(),
+                    self.quote_token.clone(),
+                    &self.config,
+                )
+                .await
+                {
+                    self.config
+                        .system_bus
+                        .publish(topic_name.clone(), SystemBusMessage::PriceReport(report));
                 }
             }
 
             tokio::time::sleep(Duration::from_millis(PRICE_REPORT_INTERVAL_MS)).await;
-        }
-    }
-
-    /// Construct a price report from a given price
-    fn price_report_from_price(&self, price: Price, local_timestamp: u64) -> PriceReport {
-        PriceReport {
-            base_token: self.base_token.clone(),
-            quote_token: self.quote_token.clone(),
-            price,
-            local_timestamp,
-        }
-    }
-
-    /// Get the current price for the given pair, converting
-    /// through the most liquid stablecoin quote asset if appropriate.
-    /// Checks if the price is too stale or deviates too much from the median
-    /// across other exchanges.
-    fn get_state(&self) -> PriceReporterState {
-        // We don't currently support Unnamed pairs
-        if !is_pair_named(&self.base_token, &self.quote_token) {
-            return PriceReporterState::UnsupportedPair(
-                self.base_token.clone(),
-                self.quote_token.clone(),
-            );
-        }
-
-        // Fetch the most recent price
-        // TODO(@akirillo): HERE, we will need to wrap around `read_price` to do stable
-        // quote conversion logic
-        match self.exchange_info.read_price(&Exchange::Binance) {
-            None => PriceReporterState::NotEnoughDataReported(0),
-            Some((price, ts)) => {
-                // Fetch the most recent prices from all other exchanges
-                let exchange_prices = ALL_EXCHANGES
-                    .iter()
-                    .filter_map(|exchange| {
-                        self.exchange_info
-                            .read_price(exchange)
-                            .map(|price_state| (*exchange, price_state))
-                    })
-                    .collect::<Vec<_>>();
-
-                // Compute the state of the price reporter
-                compute_price_reporter_state(
-                    self.base_token.clone(),
-                    self.quote_token.clone(),
-                    price,
-                    ts,
-                    &exchange_prices,
-                )
-            },
         }
     }
 }
@@ -204,7 +145,7 @@ struct ConnectionMuxer {
     /// The set of exchanges connected
     exchanges: Vec<Exchange>,
     /// The shared memory map from exchange to most recent price
-    exchange_states: ExchangeStates,
+    price_stream_states: SharedPriceStreamStates,
     /// Tracks the number of failures in connecting to an exchange
     ///
     /// Maps from a given exchange to a vector of timestamps representing
@@ -219,14 +160,14 @@ impl ConnectionMuxer {
         quote_token: Token,
         config: PriceReporterConfig,
         exchanges: Vec<Exchange>,
-        exchange_states: ExchangeStates,
+        price_stream_states: SharedPriceStreamStates,
     ) -> Self {
         Self {
             base_token,
             quote_token,
             config,
             exchanges,
-            exchange_states,
+            price_stream_states,
             exchange_retries: HashMap::new(),
         }
     }
@@ -264,8 +205,8 @@ impl ConnectionMuxer {
                                 }
 
                                 let ts = get_current_time_seconds();
-                                self.exchange_states
-                                    .new_price(&exchange, price, ts);
+                                self.price_stream_states
+                                    .new_price(exchange, self.base_token.clone(), self.quote_token.clone(), price, ts).await.map_err(err_str!(ExchangeConnectionError::SaveState))?;
                             },
 
                             Err(e) => {
@@ -298,7 +239,7 @@ impl ConnectionMuxer {
 
     /// Sets up the initial connections to each exchange and places them in a
     /// `StreamMap` for multiplexing
-    // TODO(@akirillo): Should we conditionally start component price streams here?
+    // TODO(@akirillo): Conditionally start component price streams here
     async fn initialize_connections<'a>(
         &mut self,
     ) -> Result<StreamMap<Exchange, Box<dyn ExchangeConnection>>, ExchangeConnectionError> {
@@ -306,18 +247,49 @@ impl ConnectionMuxer {
         //   https://github.com/rust-lang/rust/issues/102211
         // In specific, streams in async blocks sometimes have lifetimes erased which
         // makes it impossible for the compiler to infer auto-traits like `Send`
-        let futures = self
-            .exchanges
-            .iter()
-            .map(|exchange| {
-                let base_token = self.base_token.clone();
-                let quote_token = self.quote_token.clone();
-                let config = self.config.exchange_conn_config.clone();
 
-                async move { connect_exchange(&base_token, &quote_token, &config, *exchange).await }
-            })
-            .collect::<Vec<_>>();
-        let conns = try_join_all(futures.into_iter()).await?;
+        let mut conns = Vec::new();
+        for exchange in &self.exchanges {
+            // If pair is eligible, we may invoke price conversion through the default
+            // stable quote for the exchange
+            if eligible_for_stable_quote_conversion(&self.base_token, &self.quote_token, exchange) {
+                let default_stable = default_exchange_stable(exchange);
+
+                // Connect to the price stream for the base / default stable pair
+                conns.push(
+                    connect_exchange(
+                        &self.base_token,
+                        &default_stable,
+                        &self.config.exchange_conn_config,
+                        *exchange,
+                    )
+                    .await?,
+                );
+
+                // Connect to the price stream for the quote / default stable
+                // pair
+                conns.push(
+                    connect_exchange(
+                        &self.quote_token,
+                        &default_stable,
+                        &self.config.exchange_conn_config,
+                        *exchange,
+                    )
+                    .await?,
+                );
+            } else {
+                // Connect directly to the price stream for the base / quote pair
+                conns.push(
+                    connect_exchange(
+                        &self.base_token,
+                        &self.quote_token,
+                        &self.config.exchange_conn_config,
+                        *exchange,
+                    )
+                    .await?,
+                );
+            }
+        }
 
         // Build a shared, mapped stream from the individual exchange streams
         Ok(self.exchanges.clone().into_iter().zip(conns.into_iter()).collect::<StreamMap<_, _>>())
