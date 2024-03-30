@@ -167,6 +167,13 @@ pub static TICKER_NAMES: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    (
+        USD_TICKER,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
+    ),
     // Oracles
     (
         LINK_TICKER,
