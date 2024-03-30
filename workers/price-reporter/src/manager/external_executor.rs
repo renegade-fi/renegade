@@ -8,7 +8,7 @@ use common::{
     default_wrapper::DefaultOption,
     types::{
         exchange::{Exchange, PriceReporterState},
-        token::{default_exchange_stable, is_pair_named, Token},
+        token::{default_exchange_stable, Token},
         CancelChannel, Price,
     },
 };
@@ -43,8 +43,8 @@ use crate::{
 };
 
 use super::{
-    compute_price_reporter_state, eligible_for_stable_quote_conversion, get_supported_exchanges,
-    SharedPriceStates,
+    eligible_for_stable_quote_conversion, get_state, get_supported_exchanges,
+    SharedPriceStreamStates,
 };
 
 /// A type alias for the write end of the websocket connection
@@ -69,9 +69,8 @@ pub struct PriceMessage {
 /// price streams, and peek at PriceReports.
 #[derive(Clone)]
 pub struct ExternalPriceReporterExecutor {
-    /// The map between (base, quote) pairs and the latest
-    /// timestamped prices for those pairs across the exchanges
-    subscription_states: SharedPriceStates,
+    /// The latest states of the all price streams
+    price_stream_states: SharedPriceStreamStates,
     /// The manager config
     config: PriceReporterConfig,
     /// The channel along which jobs are passed to the price reporter
@@ -88,7 +87,7 @@ impl ExternalPriceReporterExecutor {
         cancel_channel: CancelChannel,
     ) -> Self {
         Self {
-            subscription_states: SharedPriceStates::new(),
+            price_stream_states: SharedPriceStreamStates::default(),
             config,
             job_receiver: DefaultOption::new(Some(job_receiver)),
             cancel_channel: DefaultOption::new(Some(cancel_channel)),
@@ -147,7 +146,7 @@ impl ExternalPriceReporterExecutor {
         let (msg_out_tx, msg_out_rx) = unbounded_channel();
         let (msg_in_tx, msg_in_rx) = unbounded_channel();
 
-        let subscription_states = self.subscription_states.clone();
+        let subscription_states = self.price_stream_states.clone();
 
         tokio::spawn(ws_handler_loop(
             price_reporter_url,
@@ -177,7 +176,7 @@ impl ExternalPriceReporterExecutor {
         let ts = get_current_time_seconds();
 
         // Save the price update for the pair on the given exchange
-        self.subscription_states
+        self.price_stream_states
             .new_price(exchange, base_token.clone(), quote_token.clone(), price, ts)
             .await
             .map_err(err_str!(ExchangeConnectionError::SaveState))?;
@@ -186,7 +185,7 @@ impl ExternalPriceReporterExecutor {
         let topic_name = price_report_topic_name(&base_token, &quote_token);
         if self.config.system_bus.has_listeners(&topic_name) {
             if let PriceReporterState::Nominal(report) =
-                self.get_state(base_token, quote_token).await
+                get_state(&self.price_stream_states, base_token, quote_token, &self.config).await
             {
                 self.config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));
             }
@@ -235,7 +234,7 @@ impl ExternalPriceReporterExecutor {
 
             for (base, quote) in subs {
                 subscribe_to_price_stream(
-                    &self.subscription_states,
+                    &self.price_stream_states,
                     exchange,
                     base,
                     quote,
@@ -257,45 +256,11 @@ impl ExternalPriceReporterExecutor {
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
         // TODO: Get-or-create price stream subscription
-        let state = self.get_state(base_token, quote_token).await;
+        let state =
+            get_state(&self.price_stream_states, base_token, quote_token, &self.config).await;
         channel.send(state).unwrap();
 
         Ok(())
-    }
-
-    /// Get the state of the price reporter for the given token pair
-    async fn get_state(&self, base_token: Token, quote_token: Token) -> PriceReporterState {
-        // We don't currently support unnamed pairs
-        if !is_pair_named(&base_token, &quote_token) {
-            return PriceReporterState::UnsupportedPair(base_token, quote_token);
-        }
-
-        // Fetch the most recent Binance price
-        match self
-            .subscription_states
-            .get_latest_price(Exchange::Binance, &base_token, &quote_token)
-            .await
-        {
-            None => PriceReporterState::NotEnoughDataReported(0),
-            Some((price, ts)) => {
-                // Fetch the most recent prices from all other exchanges
-                let mut exchange_prices = Vec::new();
-                let supported_exchanges =
-                    get_supported_exchanges(&base_token, &quote_token, &self.config);
-                for exchange in supported_exchanges {
-                    if let Some((price, ts)) = self
-                        .subscription_states
-                        .get_latest_price(exchange, &base_token, &quote_token)
-                        .await
-                    {
-                        exchange_prices.push((exchange, (price, ts)));
-                    }
-                }
-
-                // Compute the state of the price reporter
-                compute_price_reporter_state(base_token, quote_token, price, ts, &exchange_prices)
-            },
-        }
     }
 }
 
@@ -304,7 +269,7 @@ impl ExternalPriceReporterExecutor {
 /// re-establishing connections indefinitely in case of failure
 async fn ws_handler_loop(
     price_reporter_url: Url,
-    subscription_states: SharedPriceStates,
+    subscription_states: SharedPriceStreamStates,
     mut msg_out_rx: UnboundedReceiver<WebsocketMessage>,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
     msg_in_tx: UnboundedSender<PriceMessage>,
@@ -382,7 +347,7 @@ fn try_handle_price_message(
 
 /// Subscribes to a price stream for the given exchange and token pair
 async fn subscribe_to_price_stream(
-    subscription_states: &SharedPriceStates,
+    subscription_states: &SharedPriceStreamStates,
     exchange: Exchange,
     base_token: Token,
     quote_token: Token,
@@ -411,7 +376,7 @@ async fn subscribe_to_price_stream(
 async fn connect_and_resubscribe(
     price_reporter_url: Url,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
-    subscription_states: &SharedPriceStates,
+    subscription_states: &SharedPriceStreamStates,
 ) -> Result<(WsWriteStream, WsReadStream), PriceReporterError> {
     let (ws_write, ws_read) = connect_with_retries(price_reporter_url).await;
     resubscribe_to_prior_streams(msg_out_tx, subscription_states)
@@ -439,7 +404,7 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
 /// the process.
 async fn resubscribe_to_prior_streams(
     msg_out_tx: UnboundedSender<WebsocketMessage>,
-    subscription_states: &SharedPriceStates,
+    subscription_states: &SharedPriceStreamStates,
 ) -> Result<(), ExchangeConnectionError> {
     // Get the currently subscribed pairs and clear the mapping
     let streams = subscription_states.clear_states().await;

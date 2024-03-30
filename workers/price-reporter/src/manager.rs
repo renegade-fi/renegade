@@ -12,7 +12,7 @@ use common::{
     new_async_shared,
     types::{
         exchange::{Exchange, PriceReport, PriceReporterState},
-        token::{default_exchange_stable, Token},
+        token::{default_exchange_stable, is_pair_named, Token},
         Price,
     },
     AsyncShared,
@@ -100,21 +100,23 @@ impl AtomicPriceStreamState {
 
 /// A shareable mapping between (exchange, base, quote) and the most recent
 /// state of the associated price stream
-#[derive(Clone)]
-pub struct SharedPriceStates(
+#[derive(Clone, Debug)]
+pub struct SharedPriceStreamStates(
     AsyncShared<HashMap<(Exchange, Token, Token), AtomicPriceStreamState>>,
 );
 
-impl SharedPriceStates {
-    /// Create a new shared price states object
-    pub fn new() -> Self {
+impl Default for SharedPriceStreamStates {
+    fn default() -> Self {
         Self(new_async_shared(HashMap::new()))
     }
+}
 
+impl SharedPriceStreamStates {
+    /// Initialize the state for the given (exchange, base, quote) price stream
     pub async fn initialize_state(&self, exchange: Exchange, base: Token, quote: Token) {
-        let mut price_states = self.0.write().await;
+        let mut price_stream_states = self.0.write().await;
 
-        price_states.insert((exchange, base, quote), AtomicPriceStreamState::default());
+        price_stream_states.insert((exchange, base, quote), AtomicPriceStreamState::default());
     }
 
     /// Returns whether or not the price stream state is initialized for the
@@ -126,17 +128,17 @@ impl SharedPriceStates {
         base: Token,
         quote: Token,
     ) -> bool {
-        let price_states = self.0.read().await;
+        let price_stream_states = self.0.read().await;
 
-        price_states.contains_key(&(exchange, base, quote))
+        price_stream_states.contains_key(&(exchange, base, quote))
     }
 
     /// Clear all price states, returning the keys that were cleared
     pub async fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
-        let mut price_states = self.0.write().await;
+        let mut price_stream_states = self.0.write().await;
 
-        let keys = price_states.keys().cloned().collect();
-        price_states.clear();
+        let keys = price_stream_states.keys().cloned().collect();
+        price_stream_states.clear();
 
         keys
     }
@@ -150,10 +152,10 @@ impl SharedPriceStates {
         price: Price,
         timestamp: u64,
     ) -> Result<(), String> {
-        let price_states = self.0.read().await;
+        let price_stream_states = self.0.read().await;
 
-        let price_state = price_states
-            .get(&(exchange.clone(), base.clone(), quote.clone()))
+        let price_state = price_stream_states
+            .get(&(exchange, base.clone(), quote.clone()))
             .ok_or(format!("Price stream state not found for ({exchange}, {base}, {quote})",))?;
 
         price_state.new_price(price, timestamp);
@@ -232,6 +234,39 @@ pub fn get_supported_exchanges(
         .copied()
         .filter(|exchange| config.exchange_configured(*exchange))
         .collect_vec()
+}
+
+/// Get the state of the price reporter for the given token pair
+pub async fn get_state(
+    price_stream_states: &SharedPriceStreamStates,
+    base_token: Token,
+    quote_token: Token,
+    config: &PriceReporterConfig,
+) -> PriceReporterState {
+    // We don't currently support unnamed pairs
+    if !is_pair_named(&base_token, &quote_token) {
+        return PriceReporterState::UnsupportedPair(base_token, quote_token);
+    }
+
+    // Fetch the most recent Binance price
+    match price_stream_states.get_latest_price(Exchange::Binance, &base_token, &quote_token).await {
+        None => PriceReporterState::NotEnoughDataReported(0),
+        Some((price, ts)) => {
+            // Fetch the most recent prices from all other exchanges
+            let mut exchange_prices = Vec::new();
+            let supported_exchanges = get_supported_exchanges(&base_token, &quote_token, config);
+            for exchange in supported_exchanges {
+                if let Some((price, ts)) =
+                    price_stream_states.get_latest_price(exchange, &base_token, &quote_token).await
+                {
+                    exchange_prices.push((exchange, (price, ts)));
+                }
+            }
+
+            // Compute the state of the price reporter
+            compute_price_reporter_state(base_token, quote_token, price, ts, &exchange_prices)
+        },
+    }
 }
 
 /// Computes the state of the price reporter for the given token pair,
