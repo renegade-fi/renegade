@@ -17,6 +17,7 @@ use common::{
     },
     AsyncShared,
 };
+use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
 use util::get_current_time_seconds;
@@ -170,6 +171,56 @@ impl SharedPriceStreamStates {
         Ok(())
     }
 
+    /// Get the state of the price reporter for the given token pair
+    pub async fn get_state(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+        config: &PriceReporterConfig,
+    ) -> PriceReporterState {
+        // We don't currently support unnamed pairs
+        if !is_pair_named(&base_token, &quote_token) {
+            return PriceReporterState::UnsupportedPair(base_token, quote_token);
+        }
+
+        // Fetch the most recent Binance price
+        match self.get_latest_price(Exchange::Binance, &base_token, &quote_token).await {
+            None => PriceReporterState::NotEnoughDataReported(0),
+            Some((price, ts)) => {
+                // Fetch the most recent prices from all other exchanges
+                let mut exchange_prices = Vec::new();
+                let supported_exchanges =
+                    get_supported_exchanges(&base_token, &quote_token, config);
+                for exchange in supported_exchanges {
+                    if let Some((price, ts)) =
+                        self.get_latest_price(exchange, &base_token, &quote_token).await
+                    {
+                        exchange_prices.push((exchange, (price, ts)));
+                    }
+                }
+
+                // Compute the state of the price reporter
+                compute_price_reporter_state(base_token, quote_token, price, ts, &exchange_prices)
+            },
+        }
+    }
+
+    /// Compute a price report for the given token pair and publish it to the
+    /// system bus
+    pub async fn publish_price_report(
+        &self,
+        base: Token,
+        quote: Token,
+        config: &PriceReporterConfig,
+    ) {
+        let topic_name = price_report_topic_name(&base, &quote);
+        if config.system_bus.has_listeners(&topic_name) {
+            if let PriceReporterState::Nominal(report) = self.get_state(base, quote, config).await {
+                config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));
+            }
+        }
+    }
+
     /// Get the latest price for the given exchange and token pair.
     ///
     /// If the pair is eligible, we convert the price through the default stable
@@ -220,6 +271,27 @@ impl SharedPriceStreamStates {
 
         Some((price, ts))
     }
+
+    /// For the requested token pair, returns the (exchange, base, quote) price
+    /// streams which are necessary to correctly compute the price for that
+    /// pair which are not already initialized
+    async fn missing_streams_for_pair(
+        &self,
+        requested_base: Token,
+        requested_quote: Token,
+        config: &PriceReporterConfig,
+    ) -> Vec<(Exchange, Token, Token)> {
+        let mut missing_streams = Vec::new();
+        let req_streams = required_streams_for_pair(&requested_base, &requested_quote, config);
+
+        for (exchange, base, quote) in req_streams {
+            if !self.state_is_initialized(exchange, base.clone(), quote.clone()).await {
+                missing_streams.push((exchange, base, quote));
+            }
+        }
+
+        missing_streams
+    }
 }
 
 // -----------
@@ -241,39 +313,6 @@ pub fn get_supported_exchanges(
         .copied()
         .filter(|exchange| config.exchange_configured(*exchange))
         .collect_vec()
-}
-
-/// Get the state of the price reporter for the given token pair
-pub async fn get_state(
-    price_stream_states: &SharedPriceStreamStates,
-    base_token: Token,
-    quote_token: Token,
-    config: &PriceReporterConfig,
-) -> PriceReporterState {
-    // We don't currently support unnamed pairs
-    if !is_pair_named(&base_token, &quote_token) {
-        return PriceReporterState::UnsupportedPair(base_token, quote_token);
-    }
-
-    // Fetch the most recent Binance price
-    match price_stream_states.get_latest_price(Exchange::Binance, &base_token, &quote_token).await {
-        None => PriceReporterState::NotEnoughDataReported(0),
-        Some((price, ts)) => {
-            // Fetch the most recent prices from all other exchanges
-            let mut exchange_prices = Vec::new();
-            let supported_exchanges = get_supported_exchanges(&base_token, &quote_token, config);
-            for exchange in supported_exchanges {
-                if let Some((price, ts)) =
-                    price_stream_states.get_latest_price(exchange, &base_token, &quote_token).await
-                {
-                    exchange_prices.push((exchange, (price, ts)));
-                }
-            }
-
-            // Compute the state of the price reporter
-            compute_price_reporter_state(base_token, quote_token, price, ts, &exchange_prices)
-        },
-    }
 }
 
 /// Computes the state of the price reporter for the given token pair,
@@ -332,6 +371,34 @@ pub fn compute_price_reporter_state(
 fn ts_too_stale(ts: u64) -> (bool, u64) {
     let time_diff = get_current_time_seconds() - ts;
     (time_diff > MAX_REPORT_AGE, time_diff)
+}
+
+/// Returns the (exchange, base, quote) tuples for which price streams are
+/// required to accurately compute the price for the (requested_base,
+/// requested_quote) pair
+pub fn required_streams_for_pair(
+    requested_base: &Token,
+    requested_quote: &Token,
+    config: &PriceReporterConfig,
+) -> Vec<(Exchange, Token, Token)> {
+    let mut streams = Vec::new();
+    let exchanges = get_supported_exchanges(requested_base, requested_quote, config);
+    for exchange in exchanges {
+        let pairs =
+            if eligible_for_stable_quote_conversion(requested_base, requested_quote, &exchange) {
+                let default_stable = default_exchange_stable(&exchange);
+                vec![
+                    (exchange, requested_base.clone(), default_stable.clone()),
+                    (exchange, requested_quote.clone(), default_stable),
+                ]
+            } else {
+                vec![(exchange, requested_base.clone(), requested_quote.clone())]
+            };
+
+        streams.extend(pairs);
+    }
+
+    streams
 }
 
 /// Returns whether or not the given pair on the given exchange may have its
