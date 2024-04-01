@@ -3,19 +3,17 @@
 //! relayer opts for natively streaming price data from exchanges.
 
 use common::default_wrapper::{DefaultOption, DefaultWrapper};
-use common::types::exchange::PriceReporterState;
+use common::types::exchange::{Exchange, PriceReporterState};
 use common::types::token::Token;
 use common::types::CancelChannel;
-use common::{new_async_shared, AsyncShared};
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
-use std::collections::HashMap;
 use tokio::sync::oneshot::Sender as TokioSender;
 use tracing::{error, info, info_span, warn, Instrument};
-use util::err_str;
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
-    reporter::Reporter,
+    exchange::connection::ExchangeConnectionManager,
+    manager::SharedPriceStreamStates,
     worker::PriceReporterConfig,
 };
 
@@ -23,9 +21,8 @@ use crate::{
 /// PriceReporters, and peek at PriceReports.
 #[derive(Clone)]
 pub struct PriceReporterExecutor {
-    /// The map between base/quote token pairs and the instantiated
-    /// PriceReporter
-    active_price_reporters: AsyncShared<HashMap<(Token, Token), Reporter>>,
+    /// The latest states of all price streams from exchange connections
+    price_stream_states: SharedPriceStreamStates,
     /// The manager config
     config: PriceReporterConfig,
     /// The channel along which jobs are passed to the price reporter
@@ -44,7 +41,7 @@ impl PriceReporterExecutor {
         Self {
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
             cancel_channel: DefaultWrapper::new(Some(cancel_channel)),
-            active_price_reporters: new_async_shared(HashMap::new()),
+            price_stream_states: SharedPriceStreamStates::default(),
             config,
         }
     }
@@ -89,7 +86,7 @@ impl PriceReporterExecutor {
     ) -> Result<(), PriceReporterError> {
         match job {
             PriceReporterJob::StreamPrice { base_token, quote_token } => {
-                self.start_price_reporter(base_token, quote_token).await
+                self.stream_price(base_token, quote_token).await
             },
 
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
@@ -102,30 +99,22 @@ impl PriceReporterExecutor {
     // | Job Handlers |
     // ----------------
 
-    /// Handler for StartPriceReporter job
-    async fn start_price_reporter(
+    /// Handler for StreamPrice job
+    async fn stream_price(
         &mut self,
         base_token: Token,
         quote_token: Token,
     ) -> Result<(), PriceReporterError> {
-        let mut locked_reporters = self.active_price_reporters.write().await;
-        if locked_reporters.contains_key(&(base_token.clone(), quote_token.clone())) {
-            return Ok(());
+        let req_streams = self
+            .price_stream_states
+            .missing_streams_for_pair(base_token, quote_token, &self.config)
+            .await;
+
+        for (exchange, base, quote) in req_streams {
+            self.start_exchange_connection(exchange, base, quote)
+                .await
+                .map_err(PriceReporterError::ExchangeConnection)?;
         }
-
-        // Create the price reporter
-        let reporter =
-            match Reporter::new(base_token.clone(), quote_token.clone(), self.config.clone()) {
-                Ok(reporter) => reporter,
-                Err(ExchangeConnectionError::NoSupportedExchanges(base, quote)) => {
-                    return Err(PriceReporterError::UnsupportedPair(base, quote));
-                },
-                Err(e) => {
-                    return Err(e).map_err(err_str!(PriceReporterError::PriceReporterCreation))
-                },
-            };
-
-        locked_reporters.insert((base_token.clone(), quote_token.clone()), reporter);
 
         Ok(())
     }
@@ -137,13 +126,18 @@ impl PriceReporterExecutor {
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
-        match self.get_price_reporter_or_create(base_token, quote_token).await {
-            Ok(reporter) => channel.send(reporter.peek_price().await).unwrap(),
-            Err(PriceReporterError::UnsupportedPair(base, quote)) => {
-                channel.send(PriceReporterState::UnsupportedPair(base, quote)).unwrap()
-            },
-            Err(e) => return Err(e),
-        };
+        // Spawn a task to stream the price. If all of the required streams are already
+        // initialized, this will be a no-op.
+        tokio::spawn({
+            let mut self_clone = self.clone();
+            let base_token = base_token.clone();
+            let quote_token = quote_token.clone();
+            async move { self_clone.stream_price(base_token, quote_token).await }
+        });
+
+        channel
+            .send(self.price_stream_states.get_state(base_token, quote_token, &self.config).await)
+            .unwrap();
 
         Ok(())
     }
@@ -152,37 +146,22 @@ impl PriceReporterExecutor {
     // | Helpers |
     // -----------
 
-    /// Internal helper function to get a (base_token, quote_token)
-    /// PriceReporter
-    async fn get_price_reporter(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-    ) -> Result<Reporter, PriceReporterError> {
-        let locked_reporters = self.active_price_reporters.read().await;
-        locked_reporters.get(&(base_token.clone(), quote_token.clone())).cloned().ok_or_else(|| {
-            PriceReporterError::PriceReporterNotCreated(format!("{:?}", (base_token, quote_token)))
-        })
-    }
-
-    /// Internal helper function to get a (base_token, quote_token)
-    /// PriceReporter. If the PriceReporter does not already exist, first
-    /// creates it.
-    async fn get_price_reporter_or_create(
+    /// Initializes a connection to an exchange for the given token pair
+    /// by spawning a new ExchangeConnectionManager.
+    async fn start_exchange_connection(
         &mut self,
+        exchange: Exchange,
         base_token: Token,
         quote_token: Token,
-    ) -> Result<Reporter, PriceReporterError> {
-        let reporter_exists = {
-            self.active_price_reporters
-                .read()
-                .await
-                .contains_key(&(base_token.clone(), quote_token.clone()))
-        };
+    ) -> Result<(), ExchangeConnectionError> {
+        let conn_manager = ExchangeConnectionManager::new(
+            exchange,
+            base_token,
+            quote_token,
+            self.config.clone(),
+            self.price_stream_states.clone(),
+        );
 
-        if !reporter_exists {
-            self.start_price_reporter(base_token.clone(), quote_token.clone()).await?;
-        }
-        self.get_price_reporter(base_token, quote_token).await
+        conn_manager.execution_loop().await
     }
 }

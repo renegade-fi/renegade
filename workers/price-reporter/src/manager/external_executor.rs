@@ -8,14 +8,11 @@ use common::{
     default_wrapper::DefaultOption,
     types::{
         exchange::{Exchange, PriceReporterState},
-        token::{default_exchange_stable, Token},
+        token::Token,
         CancelChannel, Price,
     },
 };
-use external_api::{
-    bus_message::{price_report_topic_name, SystemBusMessage},
-    websocket::WebsocketMessage,
-};
+use external_api::websocket::WebsocketMessage;
 use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
@@ -42,10 +39,7 @@ use crate::{
     worker::PriceReporterConfig,
 };
 
-use super::{
-    eligible_for_stable_quote_conversion, get_state, get_supported_exchanges,
-    SharedPriceStreamStates,
-};
+use super::SharedPriceStreamStates;
 
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
@@ -181,15 +175,9 @@ impl ExternalPriceReporterExecutor {
             .await
             .map_err(err_str!(ExchangeConnectionError::SaveState))?;
 
-        // Compute the high-level price report for the pair
-        let topic_name = price_report_topic_name(&base_token, &quote_token);
-        if self.config.system_bus.has_listeners(&topic_name) {
-            if let PriceReporterState::Nominal(report) =
-                get_state(&self.price_stream_states, base_token, quote_token, &self.config).await
-            {
-                self.config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));
-            }
-        }
+        // Compute the high-level price report for the pair and publish to the system
+        // bus
+        self.price_stream_states.publish_price_report(base_token, quote_token, &self.config).await;
 
         Ok(())
     }
@@ -205,7 +193,7 @@ impl ExternalPriceReporterExecutor {
                 self.stream_price(base_token, quote_token, msg_out_tx).await
             },
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.peek_price(base_token, quote_token, channel).await
+                self.peek_price(base_token, quote_token, channel, msg_out_tx).await
             },
         }
     }
@@ -217,32 +205,21 @@ impl ExternalPriceReporterExecutor {
         quote_token: Token,
         msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
-        let exchanges = get_supported_exchanges(&base_token, &quote_token, &self.config);
-        for exchange in exchanges {
-            // If the quote is a stablecoin (and the base is not), we may invoke price
-            // conversion through the default stable quote for the exchange
-            let subs = if eligible_for_stable_quote_conversion(&base_token, &quote_token, &exchange)
-            {
-                let default_stable = default_exchange_stable(&exchange);
-                vec![
-                    (base_token.clone(), default_stable.clone()),
-                    (quote_token.clone(), default_stable),
-                ]
-            } else {
-                vec![(base_token.clone(), quote_token.clone())]
-            };
+        let req_streams = self
+            .price_stream_states
+            .missing_streams_for_pair(base_token, quote_token, &self.config)
+            .await;
 
-            for (base, quote) in subs {
-                subscribe_to_price_stream(
-                    &self.price_stream_states,
-                    exchange,
-                    base,
-                    quote,
-                    msg_out_tx.clone(),
-                )
-                .await
-                .map_err(PriceReporterError::ExchangeConnection)?;
-            }
+        for (exchange, base, quote) in req_streams {
+            subscribe_to_price_stream(
+                &self.price_stream_states,
+                exchange,
+                base,
+                quote,
+                msg_out_tx.clone(),
+            )
+            .await
+            .map_err(PriceReporterError::ExchangeConnection)?;
         }
 
         Ok(())
@@ -254,10 +231,19 @@ impl ExternalPriceReporterExecutor {
         base_token: Token,
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
+        msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
-        // TODO: Get-or-create price stream subscription
-        let state =
-            get_state(&self.price_stream_states, base_token, quote_token, &self.config).await;
+        // Spawn a task to stream the price. If all of the required streams are already
+        // initialized, this will be a no-op.
+        tokio::spawn({
+            let self_clone = self.clone();
+            let base_token = base_token.clone();
+            let quote_token = quote_token.clone();
+            let msg_out_tx = msg_out_tx.clone();
+            async move { self_clone.stream_price(base_token, quote_token, msg_out_tx).await }
+        });
+
+        let state = self.price_stream_states.get_state(base_token, quote_token, &self.config).await;
         channel.send(state).unwrap();
 
         Ok(())
