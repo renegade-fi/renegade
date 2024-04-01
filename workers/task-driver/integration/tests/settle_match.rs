@@ -354,9 +354,7 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     // Create the task
     let task = SettleMatchInternalTaskDescriptor::new(
         FixedPoint::from_f64_round_down(EXECUTION_PRICE),
-        buy_wallet.orders.first().unwrap().0,
         buy_wallet.wallet_id,
-        sell_wallet.orders.first().unwrap().0,
         sell_wallet.wallet_id,
         get_first_order_proofs(&buy_wallet, state)?,
         get_first_order_witness(&buy_wallet, state)?,

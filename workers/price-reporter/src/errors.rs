@@ -25,6 +25,8 @@ pub enum ExchangeConnectionError {
     SendError(String),
     /// Error saving the state of a price stream
     SaveState(String),
+    /// Tried to initialize an ExchangeConnection that was already initialized
+    AlreadyInitialized(Exchange, Token, Token),
 }
 
 impl Error for ExchangeConnectionError {}
