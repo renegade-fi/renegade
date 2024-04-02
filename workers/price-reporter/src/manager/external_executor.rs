@@ -39,7 +39,7 @@ use crate::{
     worker::PriceReporterConfig,
 };
 
-use super::SharedPriceStreamStates;
+use super::PriceStreamStatesManager;
 
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
@@ -64,7 +64,7 @@ pub struct PriceMessage {
 #[derive(Clone)]
 pub struct ExternalPriceReporterExecutor {
     /// The latest states of the all price streams
-    price_stream_states: SharedPriceStreamStates,
+    price_stream_states: PriceStreamStatesManager,
     /// The manager config
     config: PriceReporterConfig,
     /// The channel along which jobs are passed to the price reporter
@@ -81,7 +81,7 @@ impl ExternalPriceReporterExecutor {
         cancel_channel: CancelChannel,
     ) -> Self {
         Self {
-            price_stream_states: SharedPriceStreamStates::default(),
+            price_stream_states: PriceStreamStatesManager::new(config.clone()),
             config,
             job_receiver: DefaultOption::new(Some(job_receiver)),
             cancel_channel: DefaultOption::new(Some(cancel_channel)),
@@ -175,9 +175,9 @@ impl ExternalPriceReporterExecutor {
             .await
             .map_err(err_str!(ExchangeConnectionError::SaveState))?;
 
-        // Compute the high-level price report for the pair and publish to the system
-        // bus
-        self.price_stream_states.publish_price_report(base_token, quote_token, &self.config).await;
+        // Compute any high-level price reports subsequent to this update and publish
+        // them to the system bus
+        self.price_stream_states.publish_price_reports(base_token, quote_token).await;
 
         Ok(())
     }
@@ -207,10 +207,10 @@ impl ExternalPriceReporterExecutor {
     ) -> Result<(), PriceReporterError> {
         let req_streams = self
             .price_stream_states
-            .missing_streams_for_pair(base_token, quote_token, &self.config)
+            .missing_streams_for_pair(base_token.clone(), quote_token.clone())
             .await;
 
-        for (exchange, base, quote) in req_streams {
+        for (exchange, base, quote) in req_streams.clone() {
             subscribe_to_price_stream(
                 &self.price_stream_states,
                 exchange,
@@ -221,6 +221,8 @@ impl ExternalPriceReporterExecutor {
             .await
             .map_err(PriceReporterError::ExchangeConnection)?;
         }
+
+        self.price_stream_states.register_pairs(base_token, quote_token, &req_streams).await;
 
         Ok(())
     }
@@ -243,7 +245,7 @@ impl ExternalPriceReporterExecutor {
             async move { self_clone.stream_price(base_token, quote_token, msg_out_tx).await }
         });
 
-        let state = self.price_stream_states.get_state(base_token, quote_token, &self.config).await;
+        let state = self.price_stream_states.get_state(base_token, quote_token).await;
         channel.send(state).unwrap();
 
         Ok(())
@@ -255,7 +257,7 @@ impl ExternalPriceReporterExecutor {
 /// re-establishing connections indefinitely in case of failure
 async fn ws_handler_loop(
     price_reporter_url: Url,
-    subscription_states: SharedPriceStreamStates,
+    subscription_states: PriceStreamStatesManager,
     mut msg_out_rx: UnboundedReceiver<WebsocketMessage>,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
     msg_in_tx: UnboundedSender<PriceMessage>,
@@ -333,7 +335,7 @@ fn try_handle_price_message(
 
 /// Subscribes to a price stream for the given exchange and token pair
 async fn subscribe_to_price_stream(
-    subscription_states: &SharedPriceStreamStates,
+    subscription_states: &PriceStreamStatesManager,
     exchange: Exchange,
     base_token: Token,
     quote_token: Token,
@@ -362,7 +364,7 @@ async fn subscribe_to_price_stream(
 async fn connect_and_resubscribe(
     price_reporter_url: Url,
     msg_out_tx: UnboundedSender<WebsocketMessage>,
-    subscription_states: &SharedPriceStreamStates,
+    subscription_states: &PriceStreamStatesManager,
 ) -> Result<(WsWriteStream, WsReadStream), PriceReporterError> {
     let (ws_write, ws_read) = connect_with_retries(price_reporter_url).await;
     resubscribe_to_prior_streams(msg_out_tx, subscription_states)
@@ -390,7 +392,7 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
 /// the process.
 async fn resubscribe_to_prior_streams(
     msg_out_tx: UnboundedSender<WebsocketMessage>,
-    subscription_states: &SharedPriceStreamStates,
+    subscription_states: &PriceStreamStatesManager,
 ) -> Result<(), ExchangeConnectionError> {
     // Get the currently subscribed pairs and clear the mapping
     let streams = subscription_states.clear_states().await;

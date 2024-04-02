@@ -18,7 +18,7 @@ use util::{err_str, get_current_time_seconds};
 
 use crate::{
     manager::{
-        SharedPriceStreamStates, CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES,
+        PriceStreamStatesManager, CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES,
         MAX_CONN_RETRY_WINDOW_MS,
     },
     worker::{ExchangeConnectionsConfig, PriceReporterConfig},
@@ -165,7 +165,7 @@ pub struct ExchangeConnectionManager {
     /// The config for the price reporter
     config: PriceReporterConfig,
     /// The shared memory map from exchange to most recent price
-    price_stream_states: SharedPriceStreamStates,
+    price_stream_states: PriceStreamStatesManager,
     /// Tracks the number of failures within the last `MAX_CONN_RETRY_WINDOW_MS`
     /// milliseconds in connecting to the exchange
     retries: Vec<Instant>,
@@ -178,7 +178,7 @@ impl ExchangeConnectionManager {
         base_token: Token,
         quote_token: Token,
         config: PriceReporterConfig,
-        price_stream_states: SharedPriceStreamStates,
+        price_stream_states: PriceStreamStatesManager,
     ) -> Self {
         Self { exchange, base_token, quote_token, config, price_stream_states, retries: Vec::new() }
     }
@@ -237,10 +237,10 @@ impl ExchangeConnectionManager {
             .await
             .map_err(err_str!(ExchangeConnectionError::SaveState))?;
 
-        // Compute the high-level price report for the pair and publish to the system
-        // bus
+        // Compute any high-level price reports subsequent to this update and publish
+        // them to the system bus
         self.price_stream_states
-            .publish_price_report(self.base_token.clone(), self.quote_token.clone(), &self.config)
+            .publish_price_reports(self.base_token.clone(), self.quote_token.clone())
             .await;
 
         Ok(())

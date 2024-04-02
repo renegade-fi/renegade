@@ -59,7 +59,7 @@ const HANDSHAKE_ROUTE: &str = "/v0/handshake";
 /// The wallet topic, events about wallet updates are streamed here
 const WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// The price report topic, events about price updates are streamed
-const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
+const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:base/:quote";
 /// The order book topic, streams events about known network orders
 const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
 /// The network topic, streams events about network peers
@@ -114,7 +114,7 @@ impl WebsocketServer {
             )
             .unwrap();
 
-        // The "/v0/price_report/:source/:base/:quote" route
+        // The "/v0/price_report/:base/:quote" route
         router
             .insert(
                 PRICE_REPORT_ROUTE,

@@ -2,7 +2,7 @@
 //! for executing individual PriceReporterJobs.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering},
     thread::JoinHandle,
 };
@@ -62,6 +62,9 @@ pub const PRICE_REPORT_INTERVAL_MS: u64 = 1_000; // 1 second
 // | TYPES |
 // ---------
 
+/// A type alias for a (base, quote) token pair
+type Pair = (Token, Token);
+
 /// The PriceReporter worker is a wrapper around the
 /// PriceReporterExecutor, handling and dispatching jobs to the executor
 /// for spin-up and shut-down of individual PriceReporters.
@@ -99,23 +102,41 @@ impl AtomicPriceStreamState {
     }
 }
 
-/// A shareable mapping between (exchange, base, quote) and the most recent
-/// state of the associated price stream
+/// Manages the global state of all price streams, exposing a shareable,
+/// synchronized interface for updating and querying the state of price streams,
+/// as well as logic for computing the state of the price reporter for a given
+/// token pair
 #[derive(Clone, Debug)]
-pub struct SharedPriceStreamStates(
-    AsyncShared<HashMap<(Exchange, Token, Token), AtomicPriceStreamState>>,
-);
-
-impl Default for SharedPriceStreamStates {
-    fn default() -> Self {
-        Self(new_async_shared(HashMap::new()))
-    }
+pub struct PriceStreamStatesManager {
+    /// The configuration for the price reporter
+    config: PriceReporterConfig,
+    /// A shareable mapping between (exchange, base, quote) and the most recent
+    /// state of the associated price stream
+    price_stream_states: AsyncShared<HashMap<(Exchange, Token, Token), AtomicPriceStreamState>>,
+    /// The set of top-level pairs for which prices have been externally
+    /// requested from the price reporter, i.e. via a `StreamPrice` or
+    /// `PeekPrice` job
+    requested_pairs: AsyncShared<HashSet<Pair>>,
+    /// A mapping between a conversion pair (i.e., a pair which was not
+    /// requested externally but is used to compute the price of a requested
+    /// pair) and the requested pairs that depend on it
+    converted_pairs: AsyncShared<HashMap<Pair, Vec<Pair>>>,
 }
 
-impl SharedPriceStreamStates {
+impl PriceStreamStatesManager {
+    /// Create a new PriceStreamStatesManager with the given configuration
+    pub fn new(config: PriceReporterConfig) -> Self {
+        Self {
+            config,
+            price_stream_states: new_async_shared(HashMap::new()),
+            requested_pairs: new_async_shared(HashSet::new()),
+            converted_pairs: new_async_shared(HashMap::new()),
+        }
+    }
+
     /// Initialize the state for the given (exchange, base, quote) price stream
     pub async fn initialize_state(&self, exchange: Exchange, base: Token, quote: Token) {
-        let mut price_stream_states = self.0.write().await;
+        let mut price_stream_states = self.price_stream_states.write().await;
 
         price_stream_states.insert((exchange, base, quote), AtomicPriceStreamState::default());
     }
@@ -129,14 +150,38 @@ impl SharedPriceStreamStates {
         base: Token,
         quote: Token,
     ) -> bool {
-        let price_stream_states = self.0.read().await;
+        let price_stream_states = self.price_stream_states.read().await;
 
         price_stream_states.contains_key(&(exchange, base, quote))
     }
 
+    /// Register the given (base, quote) pair as a top-level, requested pair
+    pub async fn register_requested_pair(&self, base: Token, quote: Token) {
+        let mut requested_pairs = self.requested_pairs.write().await;
+
+        requested_pairs.insert((base, quote));
+    }
+
+    /// Register the conversion pair being used for the given requested pair
+    pub async fn register_conversion_pair(
+        &self,
+        requested_pair: (Token, Token),
+        conversion_pair: (Token, Token),
+    ) {
+        let mut converted_pairs = self.converted_pairs.write().await;
+
+        // Add the requested pair as a dependent of the conversion pair if it already
+        // exists, otherwise insert the conversion pair with the requested pair
+        // as a dependent
+        converted_pairs
+            .entry(conversion_pair)
+            .and_modify(|pairs| pairs.push(requested_pair.clone()))
+            .or_insert(vec![requested_pair]);
+    }
+
     /// Clear all price states, returning the keys that were cleared
     pub async fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
-        let mut price_stream_states = self.0.write().await;
+        let mut price_stream_states = self.price_stream_states.write().await;
 
         let keys = price_stream_states.keys().cloned().collect();
         price_stream_states.clear();
@@ -146,7 +191,7 @@ impl SharedPriceStreamStates {
 
     /// Remove the state for the given (exchange, base, quote) price stream
     pub async fn remove_state(&self, exchange: Exchange, base: Token, quote: Token) {
-        let mut price_stream_states = self.0.write().await;
+        let mut price_stream_states = self.price_stream_states.write().await;
 
         price_stream_states.remove(&(exchange, base, quote));
     }
@@ -160,7 +205,7 @@ impl SharedPriceStreamStates {
         price: Price,
         timestamp: u64,
     ) -> Result<(), String> {
-        let price_stream_states = self.0.read().await;
+        let price_stream_states = self.price_stream_states.read().await;
 
         let price_state = price_stream_states
             .get(&(exchange, base.clone(), quote.clone()))
@@ -172,12 +217,7 @@ impl SharedPriceStreamStates {
     }
 
     /// Get the state of the price reporter for the given token pair
-    pub async fn get_state(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        config: &PriceReporterConfig,
-    ) -> PriceReporterState {
+    pub async fn get_state(&self, base_token: Token, quote_token: Token) -> PriceReporterState {
         // We don't currently support unnamed pairs
         if !is_pair_named(&base_token, &quote_token) {
             return PriceReporterState::UnsupportedPair(base_token, quote_token);
@@ -190,7 +230,7 @@ impl SharedPriceStreamStates {
                 // Fetch the most recent prices from all other exchanges
                 let mut exchange_prices = Vec::new();
                 let supported_exchanges =
-                    get_supported_exchanges(&base_token, &quote_token, config);
+                    get_supported_exchanges(&base_token, &quote_token, &self.config);
                 for exchange in supported_exchanges {
                     if let Some((price, ts)) =
                         self.get_latest_price(exchange, &base_token, &quote_token).await
@@ -205,20 +245,37 @@ impl SharedPriceStreamStates {
         }
     }
 
-    /// Compute a price report for the given token pair and publish it to the
+    /// Compute price reports for all pairs whose price is affected by an update
+    /// to price for the given (base, quote) pair and publish them to the
     /// system bus
-    pub async fn publish_price_report(
-        &self,
-        base: Token,
-        quote: Token,
-        config: &PriceReporterConfig,
-    ) {
-        let topic_name = price_report_topic_name(&base, &quote);
-        if config.system_bus.has_listeners(&topic_name) {
-            if let PriceReporterState::Nominal(report) = self.get_state(base, quote, config).await {
-                config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));
+    pub async fn publish_price_reports(&self, base: Token, quote: Token) {
+        for (affected_base, affected_quote) in self.get_pairs_to_report(base, quote).await {
+            let topic_name = price_report_topic_name(&affected_base, &affected_quote);
+            if self.config.system_bus.has_listeners(&topic_name) {
+                if let PriceReporterState::Nominal(report) =
+                    self.get_state(affected_base.clone(), affected_quote.clone()).await
+                {
+                    self.config
+                        .system_bus
+                        .publish(topic_name, SystemBusMessage::PriceReport(report));
+                }
             }
         }
+    }
+
+    /// Return the pairs for which a new `PriceReport` should be computed if the
+    /// given pair has had a price update
+    async fn get_pairs_to_report(&self, base: Token, quote: Token) -> Vec<(Token, Token)> {
+        let mut pairs_to_report = Vec::new();
+        if self.requested_pairs.read().await.contains(&(base.clone(), quote.clone())) {
+            pairs_to_report.push((base.clone(), quote.clone()));
+        }
+
+        if let Some(dependent_pairs) = self.converted_pairs.read().await.get(&(base, quote)) {
+            pairs_to_report.extend(dependent_pairs.clone());
+        }
+
+        pairs_to_report
     }
 
     /// Get the latest price for the given exchange and token pair.
@@ -234,7 +291,7 @@ impl SharedPriceStreamStates {
         if eligible_for_stable_quote_conversion(base_token, quote_token, &exchange) {
             self.convert_through_default_stable(base_token, quote_token, exchange).await
         } else {
-            self.0
+            self.price_stream_states
                 .read()
                 .await
                 .get(&(exchange, base_token.clone(), quote_token.clone()))
@@ -250,7 +307,7 @@ impl SharedPriceStreamStates {
         quote_token: &Token,
         exchange: Exchange,
     ) -> Option<(Price, u64)> {
-        let states = self.0.read().await;
+        let states = self.price_stream_states.read().await;
 
         let default_stable = default_exchange_stable(&exchange);
 
@@ -279,10 +336,10 @@ impl SharedPriceStreamStates {
         &self,
         requested_base: Token,
         requested_quote: Token,
-        config: &PriceReporterConfig,
     ) -> Vec<(Exchange, Token, Token)> {
         let mut missing_streams = Vec::new();
-        let req_streams = required_streams_for_pair(&requested_base, &requested_quote, config);
+        let req_streams =
+            required_streams_for_pair(&requested_base, &requested_quote, &self.config);
 
         for (exchange, base, quote) in req_streams {
             if !self.state_is_initialized(exchange, base.clone(), quote.clone()).await {
@@ -291,6 +348,31 @@ impl SharedPriceStreamStates {
         }
 
         missing_streams
+    }
+
+    /// For the requested token pair, and the given list of (exchange, base,
+    /// quote) tuples for which price streams were initialized, register the
+    /// conversion pairs and the requested pair.
+    async fn register_pairs(
+        &self,
+        requested_base: Token,
+        requested_quote: Token,
+        initialized_streams: &[(Exchange, Token, Token)],
+    ) {
+        for (_, base, quote) in initialized_streams {
+            if quote != &requested_quote {
+                // This is a conversion pair, i.e. either (base, default stable) or (quote,
+                // default stable)
+                self.register_conversion_pair(
+                    (requested_base.clone(), requested_quote.clone()),
+                    (base.clone(), quote.clone()),
+                )
+                .await;
+            } else {
+                // This is the requested pair
+                self.register_requested_pair(requested_base.clone(), requested_quote.clone()).await;
+            }
+        }
     }
 }
 

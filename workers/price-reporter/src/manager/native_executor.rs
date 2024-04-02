@@ -13,7 +13,7 @@ use tracing::{error, info, info_span, warn, Instrument};
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
     exchange::connection::ExchangeConnectionManager,
-    manager::SharedPriceStreamStates,
+    manager::PriceStreamStatesManager,
     worker::PriceReporterConfig,
 };
 
@@ -22,7 +22,7 @@ use crate::{
 #[derive(Clone)]
 pub struct PriceReporterExecutor {
     /// The latest states of all price streams from exchange connections
-    price_stream_states: SharedPriceStreamStates,
+    price_stream_states: PriceStreamStatesManager,
     /// The manager config
     config: PriceReporterConfig,
     /// The channel along which jobs are passed to the price reporter
@@ -41,7 +41,7 @@ impl PriceReporterExecutor {
         Self {
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
             cancel_channel: DefaultWrapper::new(Some(cancel_channel)),
-            price_stream_states: SharedPriceStreamStates::default(),
+            price_stream_states: PriceStreamStatesManager::new(config.clone()),
             config,
         }
     }
@@ -107,14 +107,15 @@ impl PriceReporterExecutor {
     ) -> Result<(), PriceReporterError> {
         let req_streams = self
             .price_stream_states
-            .missing_streams_for_pair(base_token, quote_token, &self.config)
+            .missing_streams_for_pair(base_token.clone(), quote_token.clone())
             .await;
 
-        for (exchange, base, quote) in req_streams {
+        for (exchange, base, quote) in req_streams.clone() {
             self.start_exchange_connection(exchange, base, quote)
-                .await
                 .map_err(PriceReporterError::ExchangeConnection)?;
         }
+
+        self.price_stream_states.register_pairs(base_token, quote_token, &req_streams).await;
 
         Ok(())
     }
@@ -135,9 +136,7 @@ impl PriceReporterExecutor {
             async move { self_clone.stream_price(base_token, quote_token).await }
         });
 
-        channel
-            .send(self.price_stream_states.get_state(base_token, quote_token, &self.config).await)
-            .unwrap();
+        channel.send(self.price_stream_states.get_state(base_token, quote_token).await).unwrap();
 
         Ok(())
     }
@@ -148,7 +147,7 @@ impl PriceReporterExecutor {
 
     /// Initializes a connection to an exchange for the given token pair
     /// by spawning a new ExchangeConnectionManager.
-    async fn start_exchange_connection(
+    fn start_exchange_connection(
         &mut self,
         exchange: Exchange,
         base_token: Token,
@@ -156,12 +155,18 @@ impl PriceReporterExecutor {
     ) -> Result<(), ExchangeConnectionError> {
         let conn_manager = ExchangeConnectionManager::new(
             exchange,
-            base_token,
-            quote_token,
+            base_token.clone(),
+            quote_token.clone(),
             self.config.clone(),
             self.price_stream_states.clone(),
         );
 
-        conn_manager.execution_loop().await
+        tokio::spawn(async move {
+            if let Err(e) = conn_manager.execution_loop().await {
+                error!("Error in ExchangeConnectionManager for ({exchange}, {base_token}, {quote_token}): {e}");
+            }
+        });
+
+        Ok(())
     }
 }
