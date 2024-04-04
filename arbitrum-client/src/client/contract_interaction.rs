@@ -18,7 +18,7 @@ use constants::Scalar;
 use contracts_common::types::MatchPayload;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{info, instrument};
-use util::err_str;
+use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{
     conversion::{
@@ -133,7 +133,7 @@ impl ArbitrumClient {
         .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
-        tracing::Span::current().record("tx_hash", &tx_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
         info!("`new_wallet` tx hash: {}", tx_hash);
 
         Ok(())
@@ -174,7 +174,7 @@ impl ArbitrumClient {
         .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
-        tracing::Span::current().record("tx_hash", &tx_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
         info!("`update_wallet` tx hash: {}", tx_hash);
 
         Ok(())
@@ -258,7 +258,6 @@ impl ArbitrumClient {
         let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
 
         // Call `process_match_settle` on darkpool contract
-
         let receipt = send_tx(self.darkpool_contract.process_match_settle(
             party_0_match_payload_calldata,
             party_1_match_payload_calldata,
@@ -269,7 +268,7 @@ impl ArbitrumClient {
         .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
-        tracing::Span::current().record("tx_hash", &tx_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
         info!("`process_match_settle` tx hash: {}", tx_hash);
 
         Ok(())
@@ -306,7 +305,7 @@ impl ArbitrumClient {
         .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
-        tracing::Span::current().record("tx_hash", &tx_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
         info!("`settle_online_relayer_fee` tx hash: {}", tx_hash);
 
         Ok(())
@@ -341,7 +340,7 @@ impl ArbitrumClient {
             .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
-        tracing::Span::current().record("tx_hash", &tx_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
         info!("`settle_offline_fee` tx hash: {}", tx_hash);
 
         Ok(())
@@ -376,7 +375,7 @@ impl ArbitrumClient {
         .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
-        tracing::Span::current().record("tx_hash", &tx_hash);
+        backfill_trace_field("tx_hash", &tx_hash);
         info!("`redeem_fee` tx hash: {}", tx_hash);
 
         Ok(())

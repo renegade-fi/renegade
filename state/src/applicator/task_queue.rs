@@ -10,7 +10,7 @@ use external_api::{
 };
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
 use libmdbx::TransactionKind;
-use tracing::{error, warn};
+use tracing::{error, instrument, warn};
 use util::err_str;
 
 use crate::storage::tx::StateTxn;
@@ -33,6 +33,7 @@ impl StateApplicator {
     // ---------------------
 
     /// Apply an `AppendTask` state transition
+    #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
     pub fn append_task(&self, task: &QueuedTask) -> Result<()> {
         let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
@@ -52,6 +53,7 @@ impl StateApplicator {
     }
 
     /// Apply a `PopTask` state transition
+    #[instrument(skip_all, err, fields(task_id = %task_id))]
     pub fn pop_task(&self, task_id: TaskIdentifier) -> Result<()> {
         let tx = self.db().new_write_tx()?;
         let key = tx
@@ -91,6 +93,7 @@ impl StateApplicator {
     }
 
     /// Transition the state of the top task on the queue
+    #[instrument(skip_all, err, fields(task_id = %task_id, state = %state.display_description()))]
     pub fn transition_task_state(
         &self,
         task_id: TaskIdentifier,
@@ -120,6 +123,7 @@ impl StateApplicator {
     }
 
     /// Preempt the given task queue
+    #[instrument(skip_all, err, fields(queue_key = %key))]
     pub fn preempt_task_queue(&self, key: TaskQueueKey) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
@@ -136,12 +140,19 @@ impl StateApplicator {
             tx.transition_task(&key, state)?;
         }
 
+        // If the queue is already paused, a preemptive task is already
+        // running, with which we should not conflict
+        if tx.is_queue_paused(&key)? {
+            return Err(StateApplicatorError::Preemption);
+        }
+
         // Pause the queue
         tx.pause_task_queue(&key)?;
         Ok(tx.commit()?)
     }
 
     /// Resume a task queue
+    #[instrument(skip_all, err, fields(queue_key = %key))]
     pub fn resume_task_queue(&self, key: TaskQueueKey) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
@@ -168,6 +179,7 @@ impl StateApplicator {
     // -----------
 
     /// Start a task if the current peer is the executor
+    #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
     fn maybe_start_task<T: TransactionKind>(
         &self,
         task: &QueuedTask,

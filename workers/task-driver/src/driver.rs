@@ -166,15 +166,6 @@ impl TaskExecutor {
         self.preemptive_tasks.read().unwrap().contains(task_id)
     }
 
-    // -----------
-    // | Setters |
-    // -----------
-
-    /// Add a preemptive task to the set of running tasks
-    fn add_preemptive_task(&self, task_id: TaskIdentifier) {
-        self.preemptive_tasks.write().unwrap().insert(task_id);
-    }
-
     // ------------------
     // | Execution Loop |
     // ------------------
@@ -192,7 +183,7 @@ impl TaskExecutor {
                     let fut = self.create_task_future(
                         false, // immediate
                         task.id,
-                        task.descriptor,
+                        task.descriptor.clone(),
                     );
                     self.runtime.spawn(
                         async move {
@@ -201,7 +192,12 @@ impl TaskExecutor {
                                 error!("error running task: {e:?}");
                             }
                         }
-                        .instrument(info_span!("task", task_id = %task.id)),
+                        .instrument(info_span!(
+                            "task",
+                            task_id = %task.id,
+                            task = %task.descriptor.display_description(),
+                            queue_key = %task.descriptor.queue_key(),
+                        )),
                     );
 
                     Ok(())
@@ -260,37 +256,12 @@ impl TaskExecutor {
             }
         }
 
-        // Pause the queues for the affected local wallets
-        for wallet_id in wallet_ids.iter() {
-            self.state().pause_task_queue(wallet_id)?;
-        }
-
-        // Start the task optimistically assuming that the queues are paused
-        self.add_preemptive_task(task_id);
+        let task_fut = self.create_task_future(true /* immediate */, task_id, task);
         let preemptive_tasks = self.preemptive_tasks.clone();
-
-        let fut = self.create_task_future(true /* immediate */, task_id, task);
         let state = self.state().clone();
         self.runtime.spawn(
-            async move {
-                let res = fut.await;
-                if let Err(e) = res {
-                    error!("error running immediate task: {e:?}");
-                }
-
-                // Unpause the queues for the affected local wallets
-                for wallet_id in wallet_ids.iter() {
-                    state
-                        .resume_task_queue(wallet_id)
-                        .expect("error proposing wallet resume for {wallet_id}")
-                        .await
-                        .expect("error resuming wallet task queue for {wallet_id}");
-                }
-
-                // Remove from the preemptive tasks list
-                preemptive_tasks.write().unwrap().remove(&task_id);
-            }
-            .instrument(info_span!("task", task_id = %task_id)),
+            Self::start_preemptive_task(wallet_ids, task_id, state, preemptive_tasks, task_fut)
+                .instrument(info_span!("task", task_id = %task_id)),
         );
 
         Ok(())
@@ -299,6 +270,47 @@ impl TaskExecutor {
     // ------------------
     // | Task Execution |
     // ------------------
+
+    /// Start the given task, preempting the queues of the given wallets
+    async fn start_preemptive_task(
+        wallet_ids: Vec<WalletIdentifier>,
+        task_id: TaskIdentifier,
+        state: State,
+        preemptive_tasks: Shared<HashSet<TaskIdentifier>>,
+        task_fut: impl Future<Output = Result<(), TaskDriverError>>,
+    ) -> Result<(), TaskDriverError> {
+        // Pause the queues for the affected local wallets
+        for wallet_id in wallet_ids.iter() {
+            state
+                .pause_task_queue(wallet_id)
+                .expect("error proposing task queue pause for wallet {wallet_id}")
+                .await
+                .expect("error pausing task queue for wallet {wallet_id}");
+        }
+
+        // Add the task to the preemptive tasks list so that notification requests can
+        // be registered for it
+        preemptive_tasks.write().unwrap().insert(task_id);
+
+        let res = task_fut.await;
+        if let Err(e) = res {
+            error!("error running immediate task: {e:?}");
+        }
+
+        // Unpause the queues for the affected local wallets
+        for wallet_id in wallet_ids.iter() {
+            state
+                .resume_task_queue(wallet_id)
+                .expect("error proposing task queue resume for wallet {wallet_id}")
+                .await
+                .expect("error resuming task queue for wallet {wallet_id}");
+        }
+
+        // Remove from the preemptive tasks list
+        preemptive_tasks.write().unwrap().remove(&task_id);
+
+        Ok(())
+    }
 
     /// Get the future for a task execution
     fn create_task_future(

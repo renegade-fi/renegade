@@ -7,6 +7,7 @@ use tracing_subscriber::{
 };
 
 pub mod datadog;
+pub mod helpers;
 pub mod metrics;
 pub mod otlp_tracer;
 
