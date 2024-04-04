@@ -68,4 +68,9 @@ itertools = "0.10"
 serde = { version = "1.0.139" }
 serde_json = "1.0.64"
 tracing = "0.1"
-metrics = "0.22.1"
+metrics = "=0.22.3"
+
+[patch.crates-io]
+# We patch `ahash` here since version mismatches w/ the contracts code have
+# led to verification errors in the past.
+ahash = { git = "https://github.com/tkaitchuck/aHash.git", tag = "v0.8.11" }

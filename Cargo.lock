@@ -50,9 +50,8 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.8.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c3a9648d43b9cd48db467b3f87fdd6e146bcc88ab0180006cef2179fe11d01"
+version = "0.8.11"
+source = "git+https://github.com/tkaitchuck/aHash.git?tag=v0.8.11#db36e4c4f0606b786bc617eefaffbe4ae9100762"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -4748,9 +4747,9 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "0.22.1"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd71d9db2e4287c3407fa04378b8c2ee570aebe0854431562cdd89ca091854f4"
+checksum = "2be3cbd384d4e955b231c895ce10685e3d8260c5ccffae898c96c723b0772835"
 dependencies = [
  "ahash",
  "portable-atomic",
