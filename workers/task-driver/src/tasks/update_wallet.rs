@@ -204,7 +204,12 @@ impl Task for UpdateWalletTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
+    #[instrument(skip_all, err, fields(
+        task = self.name(),
+        state = %self.state(),
+        old_wallet_id = %self.old_wallet.wallet_id,
+        new_wallet_id = %self.new_wallet.wallet_id,
+    ))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current transaction step
         match self.state() {

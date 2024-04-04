@@ -3,6 +3,8 @@
 use common::types::tasks::{
     QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
 };
+use tracing::instrument;
+use util::telemetry::helpers::backfill_trace_field;
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
@@ -85,12 +87,16 @@ impl State {
     // -----------
 
     /// Append a task to the queue
+    #[instrument(name = "propose_append_task", skip_all, err, fields(task_id, task = %task.display_description()))]
     pub fn append_task(
         &self,
         task: TaskDescriptor,
     ) -> Result<(TaskIdentifier, ProposalWaiter), StateError> {
         // Pick a task ID and create a task from the description
         let id = TaskIdentifier::new_v4();
+
+        backfill_trace_field("task_id", id.to_string());
+
         let self_id = self.get_peer_id()?;
         let task =
             QueuedTask { id, state: QueuedTaskState::Queued, executor: self_id, descriptor: task };
@@ -101,6 +107,7 @@ impl State {
     }
 
     /// Pop a task from the queue
+    #[instrument(name = "propose_pop_task", skip_all, err, fields(task_id = %task_id))]
     pub fn pop_task(&self, task_id: TaskIdentifier) -> Result<ProposalWaiter, StateError> {
         // Propose the task to the task queue
         self.send_proposal(StateTransition::PopTask { task_id })
@@ -122,6 +129,7 @@ impl State {
     }
 
     /// Resume a task queue
+    #[instrument(name = "propose_resume_task_queue", skip_all, err, fields(queue_key = %key))]
     pub fn resume_task_queue(&self, key: &TaskQueueKey) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::ResumeTaskQueue { key: *key })
     }

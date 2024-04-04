@@ -213,7 +213,12 @@ impl Task for SettleMatchInternalTask {
     }
 
     #[allow(clippy::blocks_in_conditions)]
-    #[instrument(skip_all, err, fields(task = self.name(), state = %self.state()))]
+    #[instrument(skip_all, err, fields(
+        task = self.name(),
+        state = %self.state(),
+        wallet_id1 = %self.wallet_id1,
+        wallet_id2 = %self.wallet_id2,
+    ))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         // Dispatch based on the current task state
         match self.state() {
