@@ -13,12 +13,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     jq
 
+# ADD the contracts rust-toolchain to only re-install the toolchain if it changes
+ADD https://raw.githubusercontent.com/renegade-fi/renegade-contracts/main/rust-toolchain /rust-toolchain
+
 # Install the rust toolchain
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH=/root/.cargo/bin:$PATH
-RUN rustup toolchain install nightly
-RUN rustup component add rust-src --toolchain nightly
-RUN rustup target add wasm32-unknown-unknown
+RUN rustup toolchain install $(cat /rust-toolchain)
+RUN rustup component add rust-src --toolchain $(cat /rust-toolchain)
+RUN rustup target add wasm32-unknown-unknown --toolchain $(cat /rust-toolchain)
 
 # Install `cargo-stylus`
 RUN RUSTFLAGS="-C link-args=-rdynamic" cargo install --force cargo-stylus
@@ -44,7 +47,6 @@ RUN cargo build -p scripts
 # the others.
 RUN RUSTFLAGS="-Clink-arg=-zstack-size=131072 -Zlocation-detail=none -C opt-level=3" \
     cargo \
-    +nightly \
     build \
     -r \
     -p contracts-stylus \
