@@ -79,9 +79,15 @@ impl ArbitrumClient {
         let authentication_path_coords =
             MerkleAuthenticationPath::construct_path_coords(leaf_index.clone(), MERKLE_HEIGHT);
 
+        let mut path = *DEFAULT_AUTHENTICATION_PATH;
+
+        // Get the latest block number, so that we can query a consistent view of events
+        // up to that block without worrying about Merkle tree updates during
+        // the queries
+        let to_block = self.block_number().await?;
+
         // For each coordinate in the authentication path,
         // find the last value it was updated to
-        let mut path = *DEFAULT_AUTHENTICATION_PATH;
         for coords in authentication_path_coords {
             let height = H256::from_slice((coords.height as u8).encode().as_slice());
             let index = H256::from_slice(coords.index.to_u128().unwrap().encode().as_slice());
@@ -92,6 +98,7 @@ impl ArbitrumClient {
                 .topic1(height)
                 .topic2(index)
                 .from_block(self.deploy_block)
+                .to_block(to_block)
                 .query()
                 .await
                 .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
