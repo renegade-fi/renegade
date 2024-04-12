@@ -7,7 +7,7 @@ use gossip_api::request_response::{
 };
 use itertools::Itertools;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use renegade_metrics::labels::{NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC};
+use renegade_metrics::helpers::record_num_peers_metrics;
 use tracing::warn;
 use util::{err_str, get_current_time_seconds};
 
@@ -108,13 +108,7 @@ impl GossipProtocolExecutor {
         // Add all filtered peers to the global peer index
         self.global_state.add_peer_batch(filtered_peers.clone())?;
 
-        let my_cluster_id = self.global_state.get_cluster_id()?;
-        let num_local_peers =
-            filtered_peers.iter().filter(|peer| peer.cluster_id == my_cluster_id).count();
-        let num_remote_peers = filtered_peers.len() - num_local_peers;
-
-        metrics::gauge!(NUM_LOCAL_PEERS_METRIC).increment(num_local_peers as f64);
-        metrics::gauge!(NUM_REMOTE_PEERS_METRIC).increment(num_remote_peers as f64);
+        record_num_peers_metrics(&self.global_state);
 
         Ok(())
     }
