@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 # === Telemetry === #
+tracing = { workspace = true }
 metrics = { workspace = true }
 
 # === Cryptography / Arithmetic === #
@@ -14,3 +15,4 @@ num-bigint = { workspace = true }
 circuit-types = { path = "../circuit-types" }
 util = { path = "../util" }
 common = { path = "../common" }
+state = { path = "../state" }
