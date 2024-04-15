@@ -4,10 +4,15 @@ use std::collections::HashMap;
 
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use libmdbx::{TransactionKind, RW};
+use libp2p::core::Multiaddr;
 
 use crate::{storage::error::StorageError, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE};
 
 use super::StateTxn;
+
+/// The error thrown when a requested peer could not be found in the peer info
+/// table
+const PEER_NOT_FOUND_ERR: &str = "could not find peer in peer info table";
 
 // -----------
 // | Getters |
@@ -93,11 +98,27 @@ impl<'db> StateTxn<'db, RW> {
     ) -> Result<(), StorageError> {
         self.remove_from_set(CLUSTER_MEMBERSHIP_TABLE, cluster_id, peer_id)
     }
+
+    /// Update the peer's address
+    pub fn update_peer_addr(
+        &self,
+        peer_id: &WrappedPeerId,
+        addr: Multiaddr,
+    ) -> Result<(), StorageError> {
+        let mut peer_info = self
+            .get_peer_info(peer_id)?
+            .ok_or(StorageError::NotFound(PEER_NOT_FOUND_ERR.into()))?;
+        peer_info.addr = addr;
+        self.write_peer(&peer_info)
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::net::{IpAddr, Ipv4Addr};
+
     use common::types::gossip::mocks::mock_peer;
+    use libp2p::Multiaddr;
 
     use crate::{test_helpers::mock_db, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE};
 
@@ -226,5 +247,29 @@ mod test {
         assert_eq!(info_map.len(), 2);
         assert_eq!(info_map.get(&peer1.peer_id), Some(&peer1));
         assert_eq!(info_map.get(&peer2.peer_id), Some(&peer2));
+    }
+
+    /// Tests updating a peer's address
+    #[test]
+    fn test_update_peer_addr() {
+        let db = mock_db();
+        db.create_table(PEER_INFO_TABLE).unwrap();
+
+        // Write a peer to the index
+        let peer = mock_peer();
+        let tx = db.new_write_tx().unwrap();
+        tx.write_peer(&peer).unwrap();
+        tx.commit().unwrap();
+
+        // Update the peer's address
+        let new_addr = Multiaddr::from(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)));
+        let tx = db.new_write_tx().unwrap();
+        tx.update_peer_addr(&peer.peer_id, new_addr.clone()).unwrap();
+        tx.commit().unwrap();
+
+        // Read the peer back
+        let tx = db.new_read_tx().unwrap();
+        let res = tx.get_peer_info(&peer.peer_id).unwrap().unwrap();
+        assert_eq!(res.addr, new_addr);
     }
 }
