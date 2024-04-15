@@ -28,7 +28,7 @@ impl NetworkManagerExecutor {
 
                 // Update the addr in the global state
                 info!("discovered local peer's public IP: {:?}", local_addr);
-                self.global_state.update_local_peer_addr(&local_addr)?;
+                self.global_state.update_local_peer_addr(local_addr)?;
                 self.discovered_identity = true;
 
                 // Optimistically broadcast the discovered identity to the network via

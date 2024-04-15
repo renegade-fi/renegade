@@ -85,9 +85,13 @@ impl State {
     // -----------
 
     /// Set the known public address of the local peer when discovered
-    pub fn update_local_peer_addr(&self, addr: &Multiaddr) -> Result<(), StateError> {
+    pub fn update_local_peer_addr(&self, addr: Multiaddr) -> Result<(), StateError> {
         let tx = self.db.new_write_tx()?;
-        tx.set_local_addr(addr)?;
+        // Update the local peer's address in the metadata table
+        tx.set_local_addr(&addr)?;
+        let peer_id = tx.get_peer_id()?;
+        // Update the peer's address in the peer info table
+        tx.update_peer_addr(&peer_id, addr)?;
         Ok(tx.commit()?)
     }
 
