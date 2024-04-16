@@ -6,9 +6,10 @@ use std::{
 };
 
 use ark_mpc::{
-    beaver::SharedValueSource,
+    algebra::ScalarShare,
     error::MpcNetworkError,
     network::{MpcNetwork, NetworkOutbound, PartyId},
+    offline_prep::OfflinePhase,
 };
 use async_trait::async_trait;
 
@@ -21,7 +22,7 @@ pub const MAX_MESSAGE_LEN: u64 = 1_000_000;
 
 /// An implementation of a beaver value source that returns
 /// beaver triples (0, 0, 0) for party 0 and (1, 1, 1) for party 1
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PartyIDBeaverSource {
     /// The ID of the local party
     party_id: u64,
@@ -37,27 +38,54 @@ impl PartyIDBeaverSource {
 /// The PartyIDBeaverSource returns beaver triplets split statically between the
 /// parties. We assume a = 2, b = 3 ==> c = 6. [a] = (1, 1); [b] = (3, 0) [c] =
 /// (2, 4)
-impl SharedValueSource<SystemCurveGroup> for PartyIDBeaverSource {
-    fn next_shared_bit(&mut self) -> Scalar {
+///
+/// We also assume the MAC key is a secret sharing of 1 with each party holding
+/// their own party id as a mac key share
+impl OfflinePhase<SystemCurveGroup> for PartyIDBeaverSource {
+    fn next_shared_bit(&mut self) -> ScalarShare<SystemCurveGroup> {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
-        Scalar::from(self.party_id)
+        let value = Scalar::from(self.party_id);
+        ScalarShare::new(value, value)
     }
 
-    fn next_triplet(&mut self) -> (Scalar, Scalar, Scalar) {
-        if self.party_id == 0 {
+    fn next_triplet(
+        &mut self,
+    ) -> (ScalarShare<SystemCurveGroup>, ScalarShare<SystemCurveGroup>, ScalarShare<SystemCurveGroup>)
+    {
+        let a = Scalar::from(2u8);
+        let b = Scalar::from(3u8);
+        let c = Scalar::from(6u8);
+
+        let party_id = Scalar::from(self.party_id);
+        let a_mac = party_id * a;
+        let b_mac = party_id * b;
+        let c_mac = party_id * c;
+
+        let (a_share, b_share, c_share) = if self.party_id == 0 {
             (Scalar::from(1u64), Scalar::from(3u64), Scalar::from(2u64))
         } else {
             (Scalar::from(1u64), Scalar::from(0u64), Scalar::from(4u64))
-        }
+        };
+
+        (
+            ScalarShare::new(a_share, a_mac),
+            ScalarShare::new(b_share, b_mac),
+            ScalarShare::new(c_share, c_mac),
+        )
     }
 
-    fn next_shared_inverse_pair(&mut self) -> (Scalar, Scalar) {
-        (Scalar::from(self.party_id), Scalar::from(self.party_id))
+    fn next_shared_inverse_pair(
+        &mut self,
+    ) -> (ScalarShare<SystemCurveGroup>, ScalarShare<SystemCurveGroup>) {
+        (
+            ScalarShare::new(Scalar::from(self.party_id), Scalar::from(self.party_id)),
+            ScalarShare::new(Scalar::from(self.party_id), Scalar::from(self.party_id)),
+        )
     }
 
-    fn next_shared_value(&mut self) -> Scalar {
-        Scalar::from(self.party_id)
+    fn next_shared_value(&mut self) -> ScalarShare<SystemCurveGroup> {
+        ScalarShare::new(Scalar::from(self.party_id), Scalar::from(self.party_id))
     }
 }
 
