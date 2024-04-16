@@ -133,8 +133,8 @@ pub fn kary_or<const D: usize>(
     let max_bits = ((a.len() + 1) as f32).log2().ceil() as usize;
     let blinding_bits = fabric.random_shared_bits(max_bits);
     let blinding_value = scalar_from_bits_le(&blinding_bits);
-    let blinding_value_upper_bits = Scalar::from((1 << max_bits) as u64)
-        * &fabric.random_shared_scalars_authenticated(1 /* n */)[0];
+    let blinding_value_upper_bits =
+        Scalar::from((1 << max_bits) as u64) * &fabric.random_shared_scalars(1 /* n */)[0];
 
     // Blind the sum of all booleans and open the result
     let sum_a: AuthenticatedScalar = a.iter().cloned().sum();

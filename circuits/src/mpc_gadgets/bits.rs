@@ -218,7 +218,7 @@ pub fn to_bits_le<const D: usize>(
     let random_upper_bits = if D < SCALAR_MAX_BITS {
         &fabric.random_shared_scalars(1 /* n */)[0] * scalar_2_to_m(D as u64)
     } else {
-        fabric.zero()
+        fabric.zero_authenticated()
     };
 
     // This value is used to blind the opening so that the opened value is

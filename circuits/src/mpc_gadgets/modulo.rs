@@ -56,8 +56,7 @@ pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> Authe
     };
 
     // Generate a random upper half to the scalar
-    let random_upper_bits =
-        scalar_2m * &fabric.random_shared_scalars_authenticated(1 /* num_scalars */)[0];
+    let random_upper_bits = scalar_2m * &fabric.random_shared_scalars(1 /* num_scalars */)[0];
     let blinding_factor = random_upper_bits + &random_lower_bits;
 
     let blinded_value = a + &blinding_factor;
