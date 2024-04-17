@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use alloy_primitives::Address as AlloyAddress;
 use arbitrum_client::client::ArbitrumClient;
-use circuit_types::transfers::ExternalTransfer;
+use circuit_types::{keychain::PublicSigningKey, transfers::ExternalTransfer};
 use common::{
     types::{
         proof_bundles::mocks::dummy_valid_wallet_update_bundle,
@@ -188,6 +188,7 @@ pub(crate) async fn setup_relayer_wallet(test_args: &IntegrationTestArgs) -> Res
 /// Get an authorized external transfer for the wallet
 pub async fn authorize_transfer(
     transfer: ExternalTransfer,
+    pk_root: &PublicSigningKey,
     test_args: &IntegrationTestArgs,
 ) -> Result<ExternalTransferWithAuth> {
     let client = &test_args.arbitrum_client;
@@ -198,7 +199,7 @@ pub async fn authorize_transfer(
     let eth_client = client.darkpool_contract.client(); // Assigned to avoid dropping
     let signer = eth_client.signer();
 
-    gen_transfer_with_auth(signer, permit2_address, darkpool_address, chain_id, transfer)
+    gen_transfer_with_auth(signer, pk_root, permit2_address, darkpool_address, chain_id, transfer)
 }
 
 // ---------

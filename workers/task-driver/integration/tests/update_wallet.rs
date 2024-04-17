@@ -388,6 +388,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
 
     // Update the wallet by depositing into the pool
     let old_wallet = wallet.clone();
+    let pk_root = old_wallet.key_chain.public_keys.pk_root.clone();
 
     let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
     let amount = Amount::from(10u8);
@@ -397,7 +398,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
     wallet.reblind_wallet();
 
     let transfer = new_deposit(mint.clone(), amount, &test_args);
-    let deposit_with_auth = authorize_transfer(transfer, &test_args).await?;
+    let deposit_with_auth = authorize_transfer(transfer, &pk_root, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
@@ -416,7 +417,7 @@ async fn test_update_wallet__deposit_and_full_withdraw(
     wallet.reblind_wallet();
 
     let transfer = new_withdrawal(mint, amount, &test_args);
-    let withdrawal_with_auth = authorize_transfer(transfer, &test_args).await?;
+    let withdrawal_with_auth = authorize_transfer(transfer, &pk_root, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
@@ -442,6 +443,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
 
     // Update the wallet by depositing 10 tokens
     let old_wallet = wallet.clone();
+    let pk_root = old_wallet.key_chain.public_keys.pk_root.clone();
     let mint = biguint_from_hex_string(&test_args.erc20_addr0).unwrap();
     let deposit_amount = Amount::from(10u64);
     let bal = Balance::new_from_mint_and_amount(mint.clone(), deposit_amount);
@@ -449,7 +451,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     wallet.reblind_wallet();
 
     let deposit = new_deposit(mint.clone(), deposit_amount, &test_args);
-    let deposit_with_auth = authorize_transfer(deposit, &test_args).await?;
+    let deposit_with_auth = authorize_transfer(deposit, &pk_root, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet.clone(),
@@ -469,7 +471,7 @@ async fn test_update_wallet__deposit_and_partial_withdraw(
     wallet.reblind_wallet();
 
     let withdraw = new_withdrawal(mint.clone(), withdraw_amount, &test_args);
-    let withdrawal_with_auth = authorize_transfer(withdraw, &test_args).await?;
+    let withdrawal_with_auth = authorize_transfer(withdraw, &pk_root, &test_args).await?;
 
     execute_wallet_update_and_verify_shares(
         old_wallet,
