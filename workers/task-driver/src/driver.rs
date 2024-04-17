@@ -518,6 +518,21 @@ impl StateWrapper {
             },
         }
     }
+
+    /// Whether the underlying state is completed or not
+    pub fn completed(&self) -> bool {
+        match self {
+            StateWrapper::LookupWallet(state) => state.completed(),
+            StateWrapper::NewWallet(state) => state.completed(),
+            StateWrapper::PayOfflineFee(state) => state.completed(),
+            StateWrapper::PayRelayerFee(state) => state.completed(),
+            StateWrapper::RedeemRelayerFee(state) => state.completed(),
+            StateWrapper::SettleMatch(state) => state.completed(),
+            StateWrapper::SettleMatchInternal(state) => state.completed(),
+            StateWrapper::UpdateWallet(state) => state.completed(),
+            StateWrapper::UpdateMerkleProof(state) => state.completed(),
+        }
+    }
 }
 
 impl Display for StateWrapper {

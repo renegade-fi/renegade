@@ -94,11 +94,12 @@ impl<T: Task> RunnableTask<T> {
             return Ok(());
         }
 
-        // If this state commits the task (first state past the commit point) then await
-        // consensus before continuing
+        // If this state commits the task (first state past the commit point),
+        // or if the task is completed, then await consensus before continuing
         let is_commit = new_state.is_committing();
+        let is_completed = new_state.completed();
         let waiter = self.state.transition_task(task_id, new_state.into())?;
-        if is_commit {
+        if is_commit || is_completed {
             waiter.await?;
         }
 
