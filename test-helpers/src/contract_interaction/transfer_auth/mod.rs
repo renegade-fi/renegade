@@ -7,8 +7,14 @@ use alloy_sol_types::{
     sol_data::{Address as SolAddress, Uint as SolUint},
     Eip712Domain, SolStruct, SolType,
 };
-use arbitrum_client::{conversion::to_contract_external_transfer, helpers::serialize_calldata};
-use circuit_types::transfers::{ExternalTransfer, ExternalTransferDirection};
+use arbitrum_client::{
+    conversion::{pk_to_u256s, to_contract_external_transfer},
+    helpers::serialize_calldata,
+};
+use circuit_types::{
+    keychain::PublicSigningKey,
+    transfers::{ExternalTransfer, ExternalTransferDirection},
+};
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
 use ethers::{signers::Wallet, types::H256};
 use eyre::Result;
@@ -16,7 +22,7 @@ use k256::ecdsa::SigningKey;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
-use self::abi::{PermitTransferFrom, TokenPermissions};
+use self::abi::{DepositWitness, PermitWitnessTransferFrom, TokenPermissions};
 
 mod abi;
 
@@ -24,18 +30,23 @@ mod abi;
 const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
 
 /// Generates an external transfer augmented with auth data
-#[allow(clippy::too_many_arguments)]
 pub fn gen_transfer_with_auth(
     wallet: &Wallet<SigningKey>,
+    pk_root: &PublicSigningKey,
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
     transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth> {
     match transfer.direction {
-        ExternalTransferDirection::Deposit => {
-            gen_deposit_with_auth(wallet, transfer, permit2_address, darkpool_address, chain_id)
-        },
+        ExternalTransferDirection::Deposit => gen_deposit_with_auth(
+            wallet,
+            pk_root,
+            transfer,
+            permit2_address,
+            darkpool_address,
+            chain_id,
+        ),
         ExternalTransferDirection::Withdrawal => gen_withdrawal_with_auth(wallet, transfer),
     }
 }
@@ -61,6 +72,7 @@ fn gen_withdrawal_with_auth(
 /// Generate a deposit payload with proper auth data
 fn gen_deposit_with_auth(
     wallet: &Wallet<SigningKey>,
+    pk_root: &PublicSigningKey,
     transfer: ExternalTransfer,
     permit2_address: Address,
     darkpool_address: Address,
@@ -71,6 +83,7 @@ fn gen_deposit_with_auth(
         wallet,
         contract_transfer.mint,
         contract_transfer.amount,
+        pk_root,
         permit2_address,
         darkpool_address,
         chain_id,
@@ -92,6 +105,7 @@ fn gen_permit_payload(
     wallet: &Wallet<SigningKey>,
     token: Address,
     amount: U256,
+    pk_root: &PublicSigningKey,
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
@@ -106,8 +120,15 @@ fn gen_permit_payload(
     // Set an effectively infinite deadline
     let deadline = U256::from(u64::MAX);
 
-    let signable_permit =
-        PermitTransferFrom { permitted, spender: darkpool_address, nonce, deadline };
+    let witness = DepositWitness { pkRoot: pk_to_u256s(pk_root)? };
+
+    let signable_permit = PermitWitnessTransferFrom {
+        permitted,
+        spender: darkpool_address,
+        nonce,
+        deadline,
+        witness,
+    };
 
     // Construct the EIP712 domain
     let permit_domain = eip712_domain!(
@@ -136,7 +157,7 @@ fn gen_permit_payload(
 /// include this fix.
 ///
 /// TODO: Remove this function when `renegade-contracts` uses `alloy >= 0.4.0`
-fn permit_signing_hash(permit: &PermitTransferFrom, domain: &Eip712Domain) -> B256 {
+fn permit_signing_hash(permit: &PermitWitnessTransferFrom, domain: &Eip712Domain) -> B256 {
     let domain_separator = domain.hash_struct();
 
     let mut type_hash = permit.eip712_type_hash().to_vec();
@@ -145,6 +166,7 @@ fn permit_signing_hash(permit: &PermitTransferFrom, domain: &Eip712Domain) -> B2
         SolAddress::eip712_data_word(&permit.spender).0,
         SolUint::<256>::eip712_data_word(&permit.nonce).0,
         SolUint::<256>::eip712_data_word(&permit.deadline).0,
+        permit.witness.eip712_hash_struct().0,
     ]
     .concat();
     type_hash.extend(encoded_data);
