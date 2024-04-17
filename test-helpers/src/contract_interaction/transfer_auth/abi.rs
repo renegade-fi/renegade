@@ -14,13 +14,23 @@ sol! {
         uint256 amount;
     }
 
+    /// The Permit2 witness type used in a deposit
+    struct DepositWitness {
+        /// The root public key of the wallet receiving the deposit
+        uint256[4] pkRoot;
+    }
+
     /// The signed permit message for a single token transfer
     ///
     /// NOTE: This differs from the `PermitTransferFrom` struct in the `ISignatureTransfer` interface
-    /// in that it includes the `spender` field. This field is signed and thus must be included in the
-    /// EIP-712 hash, but is not included in the Solidity definition of the  `PermitTransferFrom` struct
-    /// (as this field is injected by the Permit2 contract).
-    struct PermitTransferFrom {
+    /// in the following ways:
+    /// - It is named `PermitWitnessTransferFrom`, which is indicated to be the proper EIP-712 type name
+    ///   by the [_PERMIT_TRANSFER_FROM_WITNESS_TYPEHASH_STUB](https://github.com/Uniswap/permit2/blob/main/src/libraries/PermitHash.sol#L31)
+    ///   in the Permit2 contract source code.
+    /// - It includes the `spender` and `witness` fields, which are signed and thus must be included in the
+    ///   EIP-712 hash, but are not included in the Solidity definition of the  `PermitTransferFrom` struct
+    ///   (as these fields are injected by the Permit2 contract).
+    struct PermitWitnessTransferFrom {
         /// The token permissions for the transfer
         TokenPermissions permitted;
         /// The address to which the transfer is made
@@ -29,5 +39,7 @@ sol! {
         uint256 nonce;
         /// deadline on the permit signature
         uint256 deadline;
+        /// The witness for the transfer
+        DepositWitness witness;
     }
 }

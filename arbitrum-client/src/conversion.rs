@@ -29,21 +29,25 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
-use contracts_common::types::{
-    BabyJubJubPoint as ContractBabyJubJubPoint, ExternalTransfer as ContractExternalTransfer,
-    LinkingProof as ContractLinkingProof, MatchLinkingProofs as ContractMatchLinkingProofs,
-    MatchProofs as ContractMatchProofs, NoteCiphertext as ContractNoteCiphertext,
-    OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
-    PublicEncryptionKey as ContractPublicEncryptionKey,
-    PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
-    ValidCommitmentsStatement as ContractValidCommitmentsStatement,
-    ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
-    ValidMatchSettleStatement as ContractValidMatchSettleStatement,
-    ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
-    ValidReblindStatement as ContractValidReblindStatement,
-    ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
-    ValidWalletCreateStatement as ContractValidWalletCreateStatement,
-    ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
+use contracts_common::{
+    constants::NUM_SCALARS_PK,
+    custom_serde::scalar_to_u256,
+    types::{
+        BabyJubJubPoint as ContractBabyJubJubPoint, ExternalTransfer as ContractExternalTransfer,
+        LinkingProof as ContractLinkingProof, MatchLinkingProofs as ContractMatchLinkingProofs,
+        MatchProofs as ContractMatchProofs, NoteCiphertext as ContractNoteCiphertext,
+        OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
+        PublicEncryptionKey as ContractPublicEncryptionKey,
+        PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
+        ValidCommitmentsStatement as ContractValidCommitmentsStatement,
+        ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+        ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+        ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
+        ValidReblindStatement as ContractValidReblindStatement,
+        ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
+        ValidWalletCreateStatement as ContractValidWalletCreateStatement,
+        ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
+    },
 };
 use ruint::aliases::{U160, U256};
 use util::hex::biguint_to_hex_string;
@@ -360,6 +364,17 @@ pub fn to_contract_valid_fee_redemption_statement(
             .collect(),
         old_pk_root: to_contract_public_signing_key(&statement.recipient_root_key)?,
     })
+}
+
+/// Converts a [`PublicSigningKey`] to a fixed-length array of [`AlloyU256`]
+/// elements
+pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[AlloyU256; NUM_SCALARS_PK], ConversionError> {
+    pk.to_scalars()
+        .iter()
+        .map(|s| scalar_to_u256(s.inner()))
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| ConversionError::InvalidLength)
 }
 
 // ------------------------
