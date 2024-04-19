@@ -1,10 +1,15 @@
 //! Defines pubsub message handlers
 
 use gossip_api::{
-    pubsub::{AuthenticatedPubsubMessage, PubsubMessage},
+    pubsub::{
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
+        AuthenticatedPubsubMessage, PubsubMessage,
+    },
     GossipDestination,
 };
+use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeExecutionJob};
 use libp2p::gossipsub::{Message as GossipsubMessage, Sha256Topic};
+use util::err_str;
 
 use crate::error::NetworkManagerError;
 
@@ -48,8 +53,29 @@ impl NetworkManagerExecutor {
         event.verify_cluster_auth(&self.cluster_key.public)?;
 
         match event.body.destination() {
-            GossipDestination::GossipServer => todo!(),
-            GossipDestination::HandshakeManager => todo!(),
+            GossipDestination::GossipServer => self
+                .gossip_work_queue
+                .send(GossipServerJob::Pubsub(event.body))
+                .map_err(err_str!(NetworkManagerError::EnqueueJob)),
+
+            GossipDestination::HandshakeManager => match event.body {
+                PubsubMessage::Cluster(ClusterManagementMessage { message_type, .. }) => {
+                    match message_type {
+                        ClusterManagementMessageType::CacheSync(order1, order2) => self
+                            .handshake_work_queue
+                            .send(HandshakeExecutionJob::CacheEntry { order1, order2 })
+                            .map_err(err_str!(NetworkManagerError::EnqueueJob)),
+                        ClusterManagementMessageType::MatchInProgress(order1, order2) => self
+                            .handshake_work_queue
+                            .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
+                            .map_err(err_str!(NetworkManagerError::EnqueueJob)),
+                    }
+                },
+                PubsubMessage::Orderbook(_) => {
+                    unreachable!("handshake manager should not receive orderbook messages")
+                },
+            },
+
             GossipDestination::NetworkManager => {
                 unreachable!("network manager should not receive pubsub messages")
             },
