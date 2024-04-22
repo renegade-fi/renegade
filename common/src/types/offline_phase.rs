@@ -6,7 +6,7 @@ use renegade_dealer_api::DealerResponse;
 use serde::{Deserialize, Serialize};
 
 /// The result of an offline phase
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CorrelatedRandomness {
     /// The random bits, shares of values in {0, 1}
     pub random_bits: Vec<ScalarShare>,
@@ -100,7 +100,7 @@ impl From<DealerResponse> for CorrelatedRandomness {
 }
 
 /// The result of an offline phase with the counterparty
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PairwiseOfflineSetup {
     /// The local share of the MAC key
     pub mac_key: Scalar,
@@ -109,6 +109,11 @@ pub struct PairwiseOfflineSetup {
 }
 
 impl PairwiseOfflineSetup {
+    /// Create a new empty setup
+    pub fn new(mac_key: Scalar) -> Self {
+        PairwiseOfflineSetup { mac_key, values: CorrelatedRandomness::default() }
+    }
+
     /// Append new correlated randomness to the setup
     pub fn append(&mut self, other: &CorrelatedRandomness) {
         self.values.append(other);

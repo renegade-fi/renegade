@@ -6,6 +6,7 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
+pub mod mpc_preprocessing;
 pub mod node_metadata;
 pub mod order_book;
 pub mod peer_index;
@@ -18,8 +19,9 @@ use std::collections::VecDeque;
 use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
 
 use crate::{
-    CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE, ORDER_TO_WALLET_TABLE,
-    PEER_INFO_TABLE, PRIORITIES_TABLE, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE, WALLETS_TABLE,
+    CLUSTER_MEMBERSHIP_TABLE, MPC_PREPROCESSING_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE,
+    ORDER_TO_WALLET_TABLE, PEER_INFO_TABLE, PRIORITIES_TABLE, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE,
+    WALLETS_TABLE,
 };
 
 use self::raft_log::RAFT_METADATA_TABLE;
@@ -98,6 +100,7 @@ impl<'db> StateTxn<'db, RW> {
             WALLETS_TABLE,
             TASK_QUEUE_TABLE,
             TASK_TO_KEY_TABLE,
+            MPC_PREPROCESSING_TABLE,
             NODE_METADATA_TABLE,
             RAFT_METADATA_TABLE,
         ]
