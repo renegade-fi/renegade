@@ -60,6 +60,9 @@ pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
 /// The name of the db table that maps tasks to their queue key
 pub(crate) const TASK_TO_KEY_TABLE: &str = "task-to-key";
 
+/// The name of the db table that stores the offline phase values
+pub(crate) const MPC_PREPROCESSING_TABLE: &str = "mpc-preprocessing";
+
 /// The `Proposal` type wraps a state transition and the channel on which to
 /// send the result of the proposal's application
 #[derive(Debug)]
