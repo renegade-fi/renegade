@@ -2,6 +2,8 @@
 //! collaborative proof
 #![allow(unused)]
 #![allow(missing_docs)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 
 use std::time::{Duration, Instant};
 

@@ -8,7 +8,7 @@ use ark_ec::Group;
 #[cfg(feature = "mpc-types")]
 use ark_mpc::algebra::{
     AuthenticatedScalarResult, CurvePoint as GenericCurvePoint, Scalar as GenericScalar,
-    ScalarResult as GenericScalarResult,
+    ScalarResult as GenericScalarResult, ScalarShare as GenericScalarShare,
 };
 
 // ---------------------------
@@ -65,6 +65,10 @@ pub type EmbeddedScalarField = ark_ed_on_bn254::Fr;
 /// The scalar type that the MPC is defined over    
 #[cfg(feature = "mpc-types")]
 pub type Scalar = GenericScalar<SystemCurveGroup>;
+
+/// The scalar share type that the MPC is defined over
+#[cfg(feature = "mpc-types")]
+pub type ScalarShare = GenericScalarShare<SystemCurveGroup>;
 
 /// The scalar result type that the MPC is defined over
 #[cfg(feature = "mpc-types")]
