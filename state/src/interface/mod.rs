@@ -44,6 +44,12 @@ use self::{error::StateError, notifications::ProposalWaiter};
 
 /// The default tick interval for the raft node
 const DEFAULT_TICK_INTERVAL_MS: u64 = 10; // 10 milliseconds
+/// The default number of ticks between Raft heartbeats
+const DEFAULT_HEARTBEAT_TICKS: usize = 100; // 1 second at 10ms per tick
+/// The default lower bound on the number of ticks before a Raft election
+const DEFAULT_MIN_ELECTION_TICKS: usize = 1000; // 10 seconds at 10ms per tick
+/// The default upper bound on the number of ticks before a Raft election
+const DEFAULT_MAX_ELECTION_TICKS: usize = 1500; // 15 seconds at 10ms per tick
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -170,7 +176,14 @@ impl State {
     fn build_raft_config(relayer_config: &RelayerConfig) -> RaftConfig {
         let peer_id = relayer_config.p2p_key.public().to_peer_id();
         let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
-        RaftConfig { id: raft_id, ..Default::default() }
+        RaftConfig {
+            id: raft_id,
+            heartbeat_tick: DEFAULT_HEARTBEAT_TICKS,
+            election_tick: DEFAULT_MIN_ELECTION_TICKS,
+            min_election_tick: DEFAULT_MIN_ELECTION_TICKS,
+            max_election_tick: DEFAULT_MAX_ELECTION_TICKS,
+            ..Default::default()
+        }
     }
 
     /// Send a proposal to the raft node
