@@ -6,14 +6,13 @@ use std::{
 };
 
 use ark_mpc::{
-    algebra::ScalarShare,
     error::MpcNetworkError,
     network::{MpcNetwork, NetworkOutbound, PartyId},
-    offline_prep::OfflinePhase,
+    offline_prep::PreprocessingPhase,
 };
 use async_trait::async_trait;
 
-use constants::{Scalar, SystemCurveGroup};
+use constants::{Scalar, ScalarShare, SystemCurveGroup};
 use futures::{Future, Sink, Stream};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
@@ -41,18 +40,38 @@ impl PartyIDBeaverSource {
 ///
 /// We also assume the MAC key is a secret sharing of 1 with each party holding
 /// their own party id as a mac key share
-impl OfflinePhase<SystemCurveGroup> for PartyIDBeaverSource {
-    fn next_shared_bit(&mut self) -> ScalarShare<SystemCurveGroup> {
+impl PreprocessingPhase<SystemCurveGroup> for PartyIDBeaverSource {
+    fn get_mac_key_share(&self) -> Scalar {
+        Scalar::from(self.party_id)
+    }
+
+    // Use three for input masks as a non zero or one value
+    fn next_local_input_mask(&mut self) -> (Scalar, ScalarShare) {
+        let party = Scalar::from(self.party_id);
+        let value = Scalar::from(3u8);
+
+        let share = party * value;
+        let mac = party * value;
+
+        (value, ScalarShare::new(share, mac))
+    }
+
+    fn next_counterparty_input_mask(&mut self) -> ScalarShare {
+        let party = Scalar::from(self.party_id);
+        let value = Scalar::from(3u8) * party;
+        let mac = party * value;
+
+        ScalarShare::new(value, mac)
+    }
+
+    fn next_shared_bit(&mut self) -> ScalarShare {
         // Simply output partyID, assume partyID \in {0, 1}
         assert!(self.party_id == 0 || self.party_id == 1);
         let value = Scalar::from(self.party_id);
         ScalarShare::new(value, value)
     }
 
-    fn next_triplet(
-        &mut self,
-    ) -> (ScalarShare<SystemCurveGroup>, ScalarShare<SystemCurveGroup>, ScalarShare<SystemCurveGroup>)
-    {
+    fn next_triplet(&mut self) -> (ScalarShare, ScalarShare, ScalarShare) {
         let a = Scalar::from(2u8);
         let b = Scalar::from(3u8);
         let c = Scalar::from(6u8);
@@ -75,16 +94,14 @@ impl OfflinePhase<SystemCurveGroup> for PartyIDBeaverSource {
         )
     }
 
-    fn next_shared_inverse_pair(
-        &mut self,
-    ) -> (ScalarShare<SystemCurveGroup>, ScalarShare<SystemCurveGroup>) {
+    fn next_shared_inverse_pair(&mut self) -> (ScalarShare, ScalarShare) {
         (
             ScalarShare::new(Scalar::from(self.party_id), Scalar::from(self.party_id)),
             ScalarShare::new(Scalar::from(self.party_id), Scalar::from(self.party_id)),
         )
     }
 
-    fn next_shared_value(&mut self) -> ScalarShare<SystemCurveGroup> {
+    fn next_shared_value(&mut self) -> ScalarShare {
         ScalarShare::new(Scalar::from(self.party_id), Scalar::from(self.party_id))
     }
 }

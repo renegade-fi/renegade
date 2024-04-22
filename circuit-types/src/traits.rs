@@ -108,7 +108,7 @@ pub trait BaseType: Clone {
     /// full `MpcBaseType` trait
     async fn share_public(&self, owning_party: PartyId, fabric: &Fabric) -> Self {
         let self_scalars = self.to_scalars();
-        let res_scalars = fabric.batch_share_plaintext(self_scalars, owning_party).await;
+        let res_scalars = join_all(fabric.batch_share_plaintext(self_scalars, owning_party)).await;
 
         Self::from_scalars(&mut res_scalars.into_iter())
     }
