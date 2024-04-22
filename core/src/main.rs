@@ -180,22 +180,6 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::channel(1 /* buffer_size */);
     watch_worker::<ProofManager>(&mut proof_manager, &proof_manager_failure_sender);
 
-    // Setup the relayer wallet once the task driver and proof manager are running
-    // TODO(@joey): This will be a more involved task when implementing raft
-    // snapshots, state sync, etc
-    let chain_id =
-        arbitrum_client.chain_id().await.map_err(err_str!(CoordinatorError::Arbitrum))?;
-    node_setup(
-        &args.arbitrum_private_key,
-        chain_id,
-        task_sender.clone(),
-        &arbitrum_client,
-        &global_state,
-    )
-    .await?;
-
-    // --- Workers Setup Phase --- //
-
     // Start the network manager
     let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
     let network_manager_config = NetworkManagerConfig {
@@ -240,6 +224,24 @@ async fn main() -> Result<(), CoordinatorError> {
     let (gossip_failure_sender, mut gossip_failure_receiver) =
         mpsc::channel(1 /* buffer size */);
     watch_worker::<GossipServer>(&mut gossip_server, &gossip_failure_sender);
+
+    // Setup the relayer wallet once the task driver, proof manager, and gossip
+    // server are running
+
+    // TODO(@joey): This will be a more involved task when implementing raft
+    // snapshots, state sync, etc
+    let chain_id =
+        arbitrum_client.chain_id().await.map_err(err_str!(CoordinatorError::Arbitrum))?;
+    node_setup(
+        &args.arbitrum_private_key,
+        chain_id,
+        task_sender.clone(),
+        &arbitrum_client,
+        &global_state,
+    )
+    .await?;
+
+    // --- Workers Setup Phase --- //
 
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());

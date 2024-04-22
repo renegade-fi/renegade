@@ -36,9 +36,12 @@ pub async fn node_setup(
     client: &ArbitrumClient,
     state: &State,
 ) -> Result<(), CoordinatorError> {
-    // Wait a small amount of time for raft to stabilize
-    // TODO: remove this once we have a more fleshed out startup flow
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    // Wait for raft to stabilize, this must be at least the length of the max
+    // election timeout
+
+    // TODO: remove this once we have a more fleshed
+    // out startup flow
+    tokio::time::sleep(Duration::from_secs(15)).await;
 
     // Setup the contract constants
     fetch_contract_constants(client).await?;
