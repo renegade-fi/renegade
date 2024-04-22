@@ -4,6 +4,7 @@ pub mod gossip;
 pub mod handshake;
 pub mod merkle;
 pub mod network_order;
+pub mod offline_phase;
 pub mod proof_bundles;
 pub mod tasks;
 pub mod token;
