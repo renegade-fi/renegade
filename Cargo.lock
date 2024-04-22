@@ -1624,6 +1624,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_core 0.5.1",
  "renegade-crypto",
+ "renegade-dealer-api",
  "serde",
  "serde_json",
  "signature 2.2.0",
@@ -4006,7 +4007,7 @@ checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#b65d4f9705d5f35d17b4f492178a18435366d590"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#f974a9484da58c476eeb607cdefe6f0391ee963c"
 dependencies = [
  "anyhow",
  "ark-bls12-377",
@@ -4050,7 +4051,7 @@ dependencies = [
 [[package]]
 name = "jf-utils"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#b65d4f9705d5f35d17b4f492178a18435366d590"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#f974a9484da58c476eeb607cdefe6f0391ee963c"
 dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
@@ -4875,7 +4876,7 @@ dependencies = [
 [[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#b65d4f9705d5f35d17b4f492178a18435366d590"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#f974a9484da58c476eeb607cdefe6f0391ee963c"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -4909,7 +4910,7 @@ dependencies = [
 [[package]]
 name = "mpc-relation"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#b65d4f9705d5f35d17b4f492178a18435366d590"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#f974a9484da58c476eeb607cdefe6f0391ee963c"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
@@ -6611,6 +6612,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "renegade-dealer-api"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade-dealer.git#aacf10952604cce9abea2ec101da880f6d55f615"
+dependencies = [
+ "ark-bn254",
+ "ark-mpc",
+ "k256",
+ "serde",
+ "serde_json",
+ "uuid 1.8.0",
+]
+
+[[package]]
 name = "renegade-metrics"
 version = "0.1.0"
 dependencies = [
@@ -6926,9 +6940,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.33"
+version = "0.38.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3cc72858054fcff6d7dea32df2aeaee6a7c24227366d7ea429aada2f26b16ad"
+checksum = "70dc5ec042f7a43c4a73241207cecc9873a06d45debb38b329f8541d85c2730f"
 dependencies = [
  "bitflags 2.5.0",
  "errno",
