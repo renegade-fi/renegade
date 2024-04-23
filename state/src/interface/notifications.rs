@@ -11,48 +11,51 @@ use std::{
 };
 use util::err_str;
 
-use tokio::sync::oneshot::Receiver;
+use tokio::sync::oneshot::{Receiver, Sender};
 
-use crate::{error::StateError, replication::error::ReplicationError};
+use crate::{
+    applicator::return_type::ApplicatorReturnType, error::StateError,
+    replication::error::ReplicationError,
+};
+
+/// The return type of the proposal waiter
+pub type ProposalReturnType = Result<ApplicatorReturnType, ReplicationError>;
+/// The sender of the proposal result
+pub type ProposalResultSender = Sender<ProposalReturnType>;
+/// The receiver of the proposal result
+pub type ProposalResultReceiver = Receiver<ProposalReturnType>;
 
 /// The proposal waiter awaits a proposal's successful application to the raft
 /// log
 #[derive(Debug)]
 pub struct ProposalWaiter {
-    /// The channels on which the notifications will be sent
-    recvs: Vec<Receiver<Result<(), ReplicationError>>>,
+    /// The channel on which the notifications will be sent
+    recv: ProposalResultReceiver,
 }
 
 impl ProposalWaiter {
     /// Create a new proposal waiter
-    pub fn new(recv: Receiver<Result<(), ReplicationError>>) -> Self {
-        Self { recvs: vec![recv] }
-    }
-
-    /// Join two proposal waiters into one
-    pub fn join(self, other: Self) -> Self {
-        let recvs = self.recvs.into_iter().chain(other.recvs).collect();
-        Self { recvs }
+    pub fn new(recv: ProposalResultReceiver) -> Self {
+        Self { recv }
     }
 }
 
 impl Future for ProposalWaiter {
-    type Output = Result<(), StateError>;
+    type Output = Result<ApplicatorReturnType, StateError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        for recv in self.recvs.iter_mut() {
-            ready!(recv.poll_unpin(cx))
+        let val = ready!(self.recv.poll_unpin(cx))
                 .map_err(err_str!(StateError::Proposal))? // RecvError
-                .map_err(Into::<StateError>::into)?; // ReplicationError
-        }
-
-        Poll::Ready(Ok(()))
+                .map_err(Into::<StateError>::into); // ReplicationError
+        Poll::Ready(val)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::replication::error::ReplicationError;
+    use crate::{
+        applicator::return_type::ApplicatorReturnType, replication::error::ReplicationError,
+    };
 
     use super::ProposalWaiter;
 
@@ -63,33 +66,18 @@ mod test {
         let waiter = ProposalWaiter::new(rx);
 
         // Send an Ok
-        tx.send(Ok(())).unwrap();
+        tx.send(Ok(ApplicatorReturnType::None)).unwrap();
         assert!(waiter.await.is_ok());
     }
 
-    /// Tests a waiter on multiple proposals
+    /// Test a waiter on a single proposal that errors
     #[tokio::test]
-    async fn test_multi_proposal_ok() {
-        let (tx1, rx1) = tokio::sync::oneshot::channel();
-        let (tx2, rx2) = tokio::sync::oneshot::channel();
-        let waiter = ProposalWaiter::new(rx1).join(ProposalWaiter::new(rx2));
+    async fn test_single_proposal_err() {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let waiter = ProposalWaiter::new(rx);
 
-        // Send two Oks
-        tx1.send(Ok(())).unwrap();
-        tx2.send(Ok(())).unwrap();
-        assert!(waiter.await.is_ok());
-    }
-
-    /// Tests a waiter on multiple proposals in which an error is returned
-    #[tokio::test]
-    async fn test_multi_proposal_err() {
-        let (tx1, rx1) = tokio::sync::oneshot::channel();
-        let (tx2, rx2) = tokio::sync::oneshot::channel();
-        let waiter = ProposalWaiter::new(rx1).join(ProposalWaiter::new(rx2));
-
-        // Send an Ok and an Err
-        tx1.send(Ok(())).unwrap();
-        tx2.send(Err(ReplicationError::ProposalResponse("test".to_string()))).unwrap();
+        // Send an Err
+        tx.send(Err(ReplicationError::EntryNotFound)).unwrap();
         assert!(waiter.await.is_err());
     }
 }

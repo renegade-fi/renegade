@@ -145,7 +145,10 @@ mod test {
     };
     use system_bus::SystemBus;
 
-    use crate::{replication::network::traits::test_helpers::MockNetwork, State};
+    use crate::{
+        replication::network::traits::test_helpers::MockNetwork, test_helpers::mock_raft_config,
+        State,
+    };
 
     /// Tests the node metadata setup from a mock config
     #[test]
@@ -156,9 +159,16 @@ mod test {
         let (task_queue, _recv) = new_task_driver_queue();
         let (handshake_queue, _recv) = new_handshake_manager_queue();
         let bus = SystemBus::new();
-        let state =
-            State::new_with_network(&config, nets.remove(0), task_queue, handshake_queue, bus)
-                .unwrap();
+        let raft_config = mock_raft_config(&config);
+        let state = State::new_with_network(
+            &config,
+            &raft_config,
+            nets.remove(0),
+            task_queue,
+            handshake_queue,
+            bus,
+        )
+        .unwrap();
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();

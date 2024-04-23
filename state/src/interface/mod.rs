@@ -86,8 +86,12 @@ impl State {
     ) -> Result<Self, StateError> {
         let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
         let network = GossipRaftNetwork::new(network_outbound, raft_inbound, shared_map.clone());
+
+        // Build a raft config
+        let raft_config = Self::build_raft_config(config);
         Self::new_with_network_and_map(
             config,
+            &raft_config,
             network,
             task_queue,
             handshake_manager_queue,
@@ -99,6 +103,7 @@ impl State {
     /// Create a new state handle with a network specified
     pub fn new_with_network<N: 'static + RaftNetwork + Send>(
         config: &RelayerConfig,
+        raft_config: &RaftConfig,
         network: N,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
@@ -107,6 +112,7 @@ impl State {
         let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
         Self::new_with_network_and_map(
             config,
+            raft_config,
             network,
             task_queue,
             handshake_manager_queue,
@@ -118,6 +124,7 @@ impl State {
     /// The base constructor allowing for the variadic constructors above
     fn new_with_network_and_map<N: 'static + RaftNetwork + Send>(
         config: &RelayerConfig,
+        raft_config: &RaftConfig,
         network: N,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
@@ -146,11 +153,8 @@ impl State {
             system_bus: system_bus.clone(),
         };
 
-        // Build a raft config
-        let raft_config = Self::build_raft_config(config);
-
         // Start the raft in a new thread
-        let raft = ReplicationNode::new_with_config(replication_config, &raft_config)
+        let raft = ReplicationNode::new_with_config(replication_config, raft_config)
             .map_err(StateError::Replication)?;
         thread::spawn(move || {
             raft.run().expect("Raft node failed");
@@ -209,6 +213,7 @@ mod test {
 
         let wallet = mock_empty_wallet();
         let res = state.new_wallet(wallet.clone()).unwrap().await;
+        println!("res: {res:?}");
         assert!(res.is_ok());
 
         // Check for the wallet in the state

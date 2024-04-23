@@ -271,7 +271,8 @@ impl NewWalletTask {
         // Index the wallet in the global state
         let mut wallet = self.wallet.clone();
         wallet.merkle_proof = Some(wallet_auth_path);
-        Ok(self.global_state.new_wallet(wallet)?.await?)
+        self.global_state.new_wallet(wallet)?.await?;
+        Ok(())
     }
 
     // -----------
