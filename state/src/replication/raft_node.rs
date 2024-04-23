@@ -24,14 +24,14 @@ use raft::{
 use rand::{thread_rng, RngCore};
 use slog::Logger;
 use system_bus::SystemBus;
-use tokio::sync::oneshot::Sender as OneshotSender;
 use tracing::{debug, error, info};
 use tracing_slog::TracingSlogDrain;
 use util::err_str;
 use uuid::Uuid;
 
 use crate::{
-    applicator::{StateApplicator, StateApplicatorConfig},
+    applicator::{return_type::ApplicatorReturnType, StateApplicator, StateApplicatorConfig},
+    notifications::ProposalResultSender,
     storage::db::DB,
     Proposal, StateTransition,
 };
@@ -100,7 +100,7 @@ pub struct ReplicationNode<N: RaftNetwork> {
     /// A handle on the database underlying the state
     db: Arc<DB>,
     /// Maps proposal IDs to a response channel for the proposal
-    proposal_responses: HashMap<Uuid, OneshotSender<Result<(), ReplicationError>>>,
+    proposal_responses: HashMap<Uuid, ProposalResultSender>,
 }
 
 impl<N: RaftNetwork> ReplicationNode<N> {
@@ -285,7 +285,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     fn add_learner(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
         // Short-circuit if the peer is already present
         if self.peer_present(peer_id)? {
-            self.notify_proposal_sender(&request_id, Ok(()))?;
+            self.notify_proposal_sender(&request_id, Ok(ApplicatorReturnType::None))?;
             return Ok(());
         }
 
@@ -315,7 +315,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     fn add_peer(&mut self, request_id: Uuid, peer_id: u64) -> Result<(), ReplicationError> {
         // Short-circuit if the peer is already present
         if self.peer_present(peer_id)? {
-            self.notify_proposal_sender(&request_id, Ok(()))?;
+            self.notify_proposal_sender(&request_id, Ok(ApplicatorReturnType::None))?;
             return Ok(());
         }
 
@@ -522,7 +522,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
                         Ok(conf_state) => {
                             // Store the new config
                             self.inner.mut_store().apply_config_state(conf_state)?;
-                            Ok(())
+                            Ok(ApplicatorReturnType::None)
                         },
                         Err(e) => Err(ReplicationError::ConfChange(e.to_string())),
                     }
@@ -591,7 +591,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
     fn notify_proposal_sender(
         &mut self,
         id: &Uuid,
-        res: Result<(), ReplicationError>,
+        res: Result<ApplicatorReturnType, ReplicationError>,
     ) -> Result<(), ReplicationError> {
         // If the proposal is not local to the node, or if the channel is dropped, no
         // notification is needed

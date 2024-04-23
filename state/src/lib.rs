@@ -20,9 +20,9 @@ use common::types::{
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::{OrderIdentifier, Wallet},
 };
-use replication::{error::ReplicationError, RaftPeerId};
+use interface::notifications::ProposalResultSender;
+use replication::RaftPeerId;
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot::Sender as OneshotSender;
 
 pub mod applicator;
 mod interface;
@@ -70,7 +70,7 @@ pub struct Proposal {
     /// The state transition to propose
     pub transition: StateTransition,
     /// The channel on which to send the result of the proposal's application
-    pub response: OneshotSender<Result<(), ReplicationError>>,
+    pub response: ProposalResultSender,
 }
 
 /// The `StateTransitionType` encapsulates all possible state transitions,
@@ -130,6 +130,7 @@ pub mod test_helpers {
     //! Test helpers for the state crate
     use std::{mem, time::Duration};
 
+    use common::types::gossip::WrappedPeerId;
     use config::RelayerConfig;
     use job_types::{
         handshake_manager::new_handshake_manager_queue,
@@ -139,7 +140,9 @@ pub mod test_helpers {
     use tempfile::tempdir;
 
     use crate::{
-        replication::network::traits::test_helpers::MockNetwork,
+        replication::network::{
+            address_translation::PeerIdTranslationMap, traits::test_helpers::MockNetwork,
+        },
         storage::db::{DbConfig, DB},
         State,
     };
@@ -171,6 +174,15 @@ pub mod test_helpers {
         db
     }
 
+    /// Create a mock raft config for testing
+    ///
+    /// We set the timeouts very low to speed up leader election
+    pub fn mock_raft_config(relayer_config: &RelayerConfig) -> raft::Config {
+        let peer_id = relayer_config.p2p_key.public().to_peer_id();
+        let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
+        raft::Config { id: raft_id, election_tick: 10, ..Default::default() }
+    }
+
     /// Create a mock state instance
     pub fn mock_state() -> State {
         let (task_queue, recv) = new_task_driver_queue();
@@ -182,10 +194,12 @@ pub mod test_helpers {
     pub fn mock_state_with_task_queue(task_queue: TaskDriverQueue) -> State {
         let config =
             RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
+
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
         let state = State::new_with_network(
             &config,
+            &mock_raft_config(&config),
             nets.remove(0),
             task_queue,
             handshake_manager_queue,
