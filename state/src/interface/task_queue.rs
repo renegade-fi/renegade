@@ -94,7 +94,6 @@ impl State {
     ) -> Result<(TaskIdentifier, ProposalWaiter), StateError> {
         // Pick a task ID and create a task from the description
         let id = TaskIdentifier::new_v4();
-
         backfill_trace_field("task_id", id.to_string());
 
         let self_id = self.get_peer_id()?;

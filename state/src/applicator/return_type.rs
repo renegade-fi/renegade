@@ -6,7 +6,7 @@
 //!
 //! Each of such waiters will be given a copy of the return value
 
-use common::types::offline_phase::PairwiseOfflineSetup;
+use common::types::mpc_preprocessing::PairwiseOfflineSetup;
 
 /// The return type from the Applicator
 #[derive(Clone, Debug)]
