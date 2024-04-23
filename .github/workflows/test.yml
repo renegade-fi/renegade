@@ -14,12 +14,8 @@ jobs:
       uses: arduino/setup-protoc@v1
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
     - name: Test 
       uses: actions-rs/cargo@v1
       with: 
         command: test
-        args: --workspace --all-features --verbose -- --skip integration
+        args: --workspace --release --all-features --verbose -- --skip integration

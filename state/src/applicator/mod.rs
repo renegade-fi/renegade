@@ -10,10 +10,11 @@ use system_bus::SystemBus;
 
 use crate::{storage::db::DB, StateTransition};
 
-use self::error::StateApplicatorError;
+use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod error;
 pub mod order_book;
+pub mod return_type;
 pub mod task_queue;
 pub mod wallet_index;
 
@@ -61,7 +62,10 @@ impl StateApplicator {
     }
 
     /// Handle a state transition
-    pub fn handle_state_transition(&self, transition: StateTransition) -> Result<()> {
+    pub fn handle_state_transition(
+        &self,
+        transition: StateTransition,
+    ) -> Result<ApplicatorReturnType> {
         match transition {
             StateTransition::AddWallet { wallet } => self.add_wallet(&wallet),
             StateTransition::UpdateWallet { wallet } => self.update_wallet(&wallet),
@@ -77,6 +81,7 @@ impl StateApplicator {
             StateTransition::ResumeTaskQueue { key } => self.resume_task_queue(key),
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
+        .map(|_| ApplicatorReturnType::None)
     }
 
     /// Get a reference to the db
