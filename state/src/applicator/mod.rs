@@ -13,6 +13,7 @@ use crate::{storage::db::DB, StateTransition};
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod error;
+pub mod mpc_preprocessing;
 pub mod order_book;
 pub mod return_type;
 pub mod task_queue;
@@ -79,6 +80,12 @@ impl StateApplicator {
             },
             StateTransition::PreemptTaskQueue { key } => self.preempt_task_queue(key),
             StateTransition::ResumeTaskQueue { key } => self.resume_task_queue(key),
+            StateTransition::AddMpcPreprocessingValues { cluster, values } => {
+                self.add_preprocessing_values(&cluster, &values)
+            },
+            StateTransition::ConsumePreprocessingValues { recipient, cluster, request } => {
+                return self.consume_preprocessing_values(recipient, &cluster, &request);
+            },
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
         .map(|_| ApplicatorReturnType::None)
