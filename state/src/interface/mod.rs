@@ -2,6 +2,7 @@
 //! proposing state transitions and reading from state
 
 pub mod error;
+pub mod mpc_preprocessing;
 pub mod node_metadata;
 pub mod notifications;
 pub mod order_book;

@@ -16,6 +16,8 @@
 #![feature(generic_const_exprs)]
 
 use common::types::{
+    gossip::{ClusterId, WrappedPeerId},
+    mpc_preprocessing::{PairwiseOfflineSetup, PreprocessingSlice},
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::{OrderIdentifier, Wallet},
@@ -103,6 +105,16 @@ pub enum StateTransition {
     PreemptTaskQueue { key: TaskQueueKey },
     /// Resume the given task queue
     ResumeTaskQueue { key: TaskQueueKey },
+
+    // --- MPC Preprocessing --- //
+    /// Add a preprocessing bundle to the state
+    AddMpcPreprocessingValues { cluster: ClusterId, values: PairwiseOfflineSetup },
+    /// Consume a set of preprocessing values from the state
+    ConsumePreprocessingValues {
+        recipient: WrappedPeerId,
+        cluster: ClusterId,
+        request: PreprocessingSlice,
+    },
 
     // --- Raft --- //
     /// Add a raft learner to the cluster

@@ -5,6 +5,21 @@ use constants::{Scalar, ScalarShare, SystemCurveGroup};
 use renegade_dealer_api::DealerResponse;
 use serde::{Deserialize, Serialize};
 
+/// A manifest of all values to pull from the preprocessing source
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct PreprocessingSlice {
+    /// The number of random bits to consume
+    pub num_bits: usize,
+    /// The number of random values to consume
+    pub num_values: usize,
+    /// The number of input masks to consume
+    pub num_input_masks: usize,
+    /// The number of inverse pairs to consume
+    pub num_inverse_pairs: usize,
+    /// The number of beaver triples to consume
+    pub num_triples: usize,
+}
+
 /// The result of an offline phase
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CorrelatedRandomness {
