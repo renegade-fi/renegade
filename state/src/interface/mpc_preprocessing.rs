@@ -49,3 +49,57 @@ impl State {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::str::FromStr;
+
+    use common::types::{
+        gossip::ClusterId,
+        mpc_preprocessing::{PairwiseOfflineSetup, PreprocessingSlice},
+    };
+
+    use crate::{
+        applicator::mpc_preprocessing::test_helpers::mock_prep_values, test_helpers::mock_state,
+    };
+
+    #[tokio::test]
+    async fn test_add_prep_values() {
+        let state = mock_state();
+        let cluster = ClusterId::from_str("test").unwrap();
+
+        // One of each type
+        let prep = mock_prep_values(1, 1, 1, 1, 1);
+        state.append_preprocessing_values(cluster.clone(), prep).unwrap().await.unwrap();
+
+        // Check the size of the preprocessing store
+        let size = state.get_mpc_prep_size(&cluster).unwrap();
+        assert_eq!(size.num_bits, 1);
+        assert_eq!(size.num_values, 1);
+        assert_eq!(size.num_inverse_pairs, 1);
+        assert_eq!(size.num_input_masks, 1);
+        assert_eq!(size.num_triples, 1);
+    }
+
+    #[tokio::test]
+    async fn test_consume_prep_values() {
+        let state = mock_state();
+        let cluster = ClusterId::from_str("test").unwrap();
+
+        // Add prep values to the state, one of each type
+        let prep = mock_prep_values(1, 1, 1, 1, 1);
+        let _ = state.append_preprocessing_values(cluster.clone(), prep).unwrap().await.unwrap();
+
+        let request = PreprocessingSlice { num_inverse_pairs: 1, ..Default::default() };
+        let prep: PairwiseOfflineSetup =
+            state.consume_preprocessing_values(cluster, request).unwrap().await.unwrap().into();
+
+        let vals = prep.values;
+        assert_eq!(vals.random_bits.len(), 0);
+        assert_eq!(vals.random_values.len(), 0);
+        assert_eq!(vals.my_input_masks.0.len(), 0);
+        assert_eq!(vals.counterparty_input_masks.len(), 0);
+        assert_eq!(vals.beaver_triples.0.len(), 0);
+        assert_eq!(vals.inverse_pairs.0.len(), 1);
+    }
+}

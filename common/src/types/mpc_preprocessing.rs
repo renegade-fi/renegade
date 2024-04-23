@@ -6,7 +6,7 @@ use renegade_dealer_api::DealerResponse;
 use serde::{Deserialize, Serialize};
 
 /// A manifest of all values to pull from the preprocessing source
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct PreprocessingSlice {
     /// The number of random bits to consume
     pub num_bits: usize,
@@ -63,28 +63,28 @@ impl CorrelatedRandomness {
     ///
     /// Returns an instance of `CorrelatedRandomness` with the given number of
     /// randomness values popped from each of the randomness vectors
-    pub fn pop(
-        &mut self,
-        num_bits: usize,
-        num_values: usize,
-        num_input_masks: usize,
-        num_inverse_pairs: usize,
-        num_triples: usize,
-    ) -> CorrelatedRandomness {
-        let bits = self.random_bits.split_off(self.random_bits.len() - num_bits);
-        let values = self.random_values.split_off(self.random_values.len() - num_values);
-        let masks = self.my_input_masks.0.split_off(self.my_input_masks.0.len() - num_input_masks);
-        let masks1 = self.my_input_masks.1.split_off(self.my_input_masks.1.len() - num_input_masks);
+    pub fn pop(&mut self, slice: &PreprocessingSlice) -> CorrelatedRandomness {
+        assert!(self.has_capacity_for_slice(slice));
+
+        let bits = self.random_bits.split_off(self.random_bits.len() - slice.num_bits);
+        let values = self.random_values.split_off(self.random_values.len() - slice.num_values);
+        let masks =
+            self.my_input_masks.0.split_off(self.my_input_masks.0.len() - slice.num_input_masks);
+        let masks1 =
+            self.my_input_masks.1.split_off(self.my_input_masks.1.len() - slice.num_input_masks);
         let masks2 = self
             .counterparty_input_masks
-            .split_off(self.counterparty_input_masks.len() - num_input_masks);
+            .split_off(self.counterparty_input_masks.len() - slice.num_input_masks);
         let inverse0 =
-            self.inverse_pairs.0.split_off(self.inverse_pairs.0.len() - num_inverse_pairs);
+            self.inverse_pairs.0.split_off(self.inverse_pairs.0.len() - slice.num_inverse_pairs);
         let inverse1 =
-            self.inverse_pairs.1.split_off(self.inverse_pairs.1.len() - num_inverse_pairs);
-        let triples0 = self.beaver_triples.0.split_off(self.beaver_triples.0.len() - num_triples);
-        let triples1 = self.beaver_triples.1.split_off(self.beaver_triples.1.len() - num_triples);
-        let triples2 = self.beaver_triples.2.split_off(self.beaver_triples.2.len() - num_triples);
+            self.inverse_pairs.1.split_off(self.inverse_pairs.1.len() - slice.num_inverse_pairs);
+        let triples0 =
+            self.beaver_triples.0.split_off(self.beaver_triples.0.len() - slice.num_triples);
+        let triples1 =
+            self.beaver_triples.1.split_off(self.beaver_triples.1.len() - slice.num_triples);
+        let triples2 =
+            self.beaver_triples.2.split_off(self.beaver_triples.2.len() - slice.num_triples);
 
         CorrelatedRandomness {
             random_bits: bits,
@@ -94,6 +94,17 @@ impl CorrelatedRandomness {
             inverse_pairs: (inverse0, inverse1),
             beaver_triples: (triples0, triples1, triples2),
         }
+    }
+
+    /// Validate that the correlated randomness has enough capacity to consumer
+    /// the given slice
+    pub fn has_capacity_for_slice(&self, slice: &PreprocessingSlice) -> bool {
+        self.random_bits.len() >= slice.num_bits
+            && self.random_values.len() >= slice.num_values
+            && self.my_input_masks.0.len() >= slice.num_input_masks
+            && self.counterparty_input_masks.len() >= slice.num_input_masks
+            && self.inverse_pairs.0.len() >= slice.num_inverse_pairs
+            && self.beaver_triples.0.len() >= slice.num_triples
     }
 }
 
@@ -115,7 +126,7 @@ impl From<DealerResponse> for CorrelatedRandomness {
 }
 
 /// The result of an offline phase with the counterparty
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct PairwiseOfflineSetup {
     /// The local share of the MAC key
     pub mac_key: Scalar,
@@ -140,17 +151,14 @@ impl PairwiseOfflineSetup {
     }
 
     /// Pop the given number of correlated randomness values from the setup
-    pub fn pop(
-        &mut self,
-        num_bits: usize,
-        num_values: usize,
-        num_input_masks: usize,
-        num_inverse_pairs: usize,
-        num_triples: usize,
-    ) -> Self {
-        let values =
-            self.values.pop(num_bits, num_values, num_input_masks, num_inverse_pairs, num_triples);
+    pub fn pop(&mut self, slice: &PreprocessingSlice) -> Self {
+        let values = self.values.pop(slice);
         PairwiseOfflineSetup { mac_key: self.mac_key, values }
+    }
+
+    /// Validate that the setup has enough capacity to consumer the given slice
+    pub fn has_capacity_for_slice(&self, slice: &PreprocessingSlice) -> bool {
+        self.values.has_capacity_for_slice(slice)
     }
 }
 
