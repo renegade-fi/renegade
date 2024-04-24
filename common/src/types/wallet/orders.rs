@@ -4,6 +4,8 @@ use circuit_types::order::Order;
 use constants::MAX_ORDERS;
 use itertools::Itertools;
 
+use crate::keyed_list::KeyedList;
+
 use super::{OrderIdentifier, Wallet};
 
 /// Error message emitted when the orders of a wallet are full
@@ -13,6 +15,11 @@ impl Wallet {
     // -----------
     // | Getters |
     // -----------
+
+    /// Whether or not the wallet contains an order with the given identifier
+    pub fn contains_order(&self, order_id: &OrderIdentifier) -> bool {
+        self.orders.contains_key(order_id)
+    }
 
     /// Get the given order
     pub fn get_order(&self, order_id: &OrderIdentifier) -> Option<&Order> {
@@ -34,6 +41,11 @@ impl Wallet {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap()
+    }
+
+    /// Get the non-zero orders in the wallet
+    pub fn get_nonzero_orders(&self) -> KeyedList<OrderIdentifier, Order> {
+        self.orders.iter().filter(|(_id, order)| !order.is_zero()).cloned().collect()
     }
 
     /// Get the list of orders that are eligible for matching

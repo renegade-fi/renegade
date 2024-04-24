@@ -1,13 +1,22 @@
 //! Applicator methods for the wallet index, separated out for discoverability
 
-use common::types::{network_order::NetworkOrder, wallet::Wallet};
+use common::types::{
+    network_order::NetworkOrder,
+    wallet::{
+        order_metadata::{OrderMetadata, OrderState},
+        Wallet,
+    },
+};
 use external_api::bus_message::{wallet_topic, SystemBusMessage};
 use itertools::Itertools;
 use libmdbx::RW;
 
 use crate::storage::tx::StateTxn;
 
-use super::{Result, StateApplicator};
+use super::{error::StateApplicatorError, Result, StateApplicator};
+
+/// Error message emitted when metadata for an order is not found
+const ERR_NO_METADATA: &str = "metadata not found for order";
 
 impl StateApplicator {
     // -------------
@@ -21,7 +30,6 @@ impl StateApplicator {
     pub fn add_wallet(&self, wallet: &Wallet) -> Result<()> {
         // Add the wallet to the wallet indices
         let tx = self.db().new_write_tx()?;
-        tx.index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec())?;
         tx.write_wallet(wallet)?;
         tx.commit()?;
 
@@ -47,22 +55,10 @@ impl StateApplicator {
     pub fn update_wallet(&self, wallet: &Wallet) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
-        // Any new orders in the wallet should be added to the orderbook
-        let nullifier = wallet.get_wallet_nullifier();
-        for (id, _order) in wallet.orders.iter().filter(|(_id, order)| !order.is_zero()) {
-            self.add_local_order_with_tx(
-                NetworkOrder::new(
-                    *id,
-                    nullifier,
-                    self.config.cluster_id.clone(),
-                    true, // local
-                ),
-                &tx,
-            )?;
-        }
+        // Index the orders in the wallet
+        self.index_orders_with_tx(wallet, &tx)?;
 
         // Update the order -> wallet mapping and index the wallet
-        tx.index_orders(&wallet.wallet_id, &wallet.orders.keys().cloned().collect_vec())?;
         tx.write_wallet(wallet)?;
         tx.commit()?;
 
@@ -80,20 +76,85 @@ impl StateApplicator {
     // | Helpers |
     // -----------
 
-    /// Add an order within a given transaction
-    pub(crate) fn add_local_order_with_tx(
-        &self,
-        mut order: NetworkOrder,
-        tx: &StateTxn<RW>,
-    ) -> Result<()> {
-        // Add to the locally managed orders
-        order.local = true;
-        tx.mark_order_local(&order.id)?;
+    /// Index the orders of a wallet and update denormalized order state
+    fn index_orders_with_tx(&self, wallet: &Wallet, tx: &StateTxn<RW>) -> Result<()> {
+        // Add network orders for the locally managed wallet
+        self.add_network_orders(wallet, tx)?;
 
-        // Update the order priority, the order, and its nullifier
-        tx.write_order_priority(&order)?;
-        tx.write_order(&order)?;
-        Ok(tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?)
+        // Update the order -> wallet mapping
+        let nonzero_orders = wallet.get_nonzero_orders().into_keys().collect_vec();
+        tx.index_orders(&wallet.wallet_id, &nonzero_orders)?;
+
+        // Handle new orders and previous orders that are not cancelled
+        self.handle_new_and_cancelled_orders(wallet, tx)?;
+
+        // Change the state of each active order in the wallet to `Created`
+        // to reflect that validity proofs have not been created yet
+        let wallet_id = wallet.wallet_id;
+        for id in wallet.get_nonzero_orders().into_keys() {
+            let mut md = tx
+                .get_order_metadata(wallet_id, id)?
+                .ok_or(StateApplicatorError::MissingEntry(ERR_NO_METADATA))?;
+            md.state = OrderState::Created;
+            self.update_order_metadata_with_tx(tx, md)?;
+        }
+
+        Ok(())
+    }
+
+    /// Add network order entries for the non-zero orders in the wallet
+    fn add_network_orders(&self, wallet: &Wallet, tx: &StateTxn<RW>) -> Result<()> {
+        let nullifier = wallet.get_wallet_nullifier();
+        for id in wallet.get_nonzero_orders().into_keys() {
+            let net_order = NetworkOrder::new(
+                id,
+                nullifier,
+                self.config.cluster_id.clone(),
+                true, // local
+            );
+
+            // Update the order priority, the order, and its nullifier
+            tx.mark_order_local(&id)?;
+            tx.write_order_priority(&net_order)?;
+            tx.write_order(&net_order)?;
+            tx.update_order_nullifier_set(&id, nullifier)?;
+        }
+
+        Ok(())
+    }
+
+    /// Update order metadata states for cancellations and additions
+    fn handle_new_and_cancelled_orders(&self, wallet: &Wallet, tx: &StateTxn<RW>) -> Result<()> {
+        let old_wallet = tx.get_wallet(&wallet.wallet_id)?;
+        let old_orders = old_wallet
+            .map(|w| w.get_nonzero_orders().into_keys().collect_vec())
+            .unwrap_or_default();
+
+        // New orders
+        let wallet_id = wallet.wallet_id;
+        for id in wallet.get_nonzero_orders().into_keys() {
+            if !old_orders.contains(&id) {
+                let new_state = OrderMetadata::new(id);
+                self.update_order_metadata_with_tx(tx, new_state)?;
+            }
+        }
+
+        // Cancelled orders
+        for id in old_orders {
+            if !wallet.contains_order(&id) {
+                let mut old_meta = tx
+                    .get_order_metadata(wallet_id, id)?
+                    .ok_or(StateApplicatorError::MissingEntry(ERR_NO_METADATA))?;
+
+                // Only update the state if it has not already entered a terminal state
+                if !old_meta.state.is_terminal() {
+                    old_meta.state = OrderState::Cancelled;
+                    self.update_order_metadata_with_tx(tx, old_meta)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -117,9 +178,7 @@ pub(crate) mod test {
         let applicator = mock_applicator();
 
         // Add a wallet and an order to the wallet
-        let mut wallet = mock_empty_wallet();
-        wallet.orders.insert(Uuid::new_v4(), mock_order());
-
+        let wallet = mock_empty_wallet();
         applicator.add_wallet(&wallet).unwrap();
 
         // Check that the wallet is indexed correctly
@@ -129,12 +188,6 @@ pub(crate) mod test {
         let wallet: Wallet = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap().unwrap();
 
         assert_eq!(wallet, expected_wallet);
-
-        // Check that the order -> wallet mapping is correct
-        let order_id = expected_wallet.orders.keys().next().unwrap();
-        let wallet_id: Uuid = db.read(ORDER_TO_WALLET_TABLE, order_id).unwrap().unwrap();
-
-        assert_eq!(wallet_id, expected_wallet.wallet_id);
     }
 
     /// Test updating the wallet
@@ -151,10 +204,15 @@ pub(crate) mod test {
         applicator.update_wallet(&wallet).unwrap();
 
         // Check that the indexed wallet is as expected
-        let expected_wallet: Wallet = wallet;
+        let expected_wallet: Wallet = wallet.clone();
         let db = applicator.db();
         let wallet: Wallet = db.read(WALLETS_TABLE, &expected_wallet.wallet_id).unwrap().unwrap();
 
         assert_eq!(wallet, expected_wallet);
+
+        // Check the order -> wallet mapping
+        let order_id = wallet.orders.keys().next().unwrap();
+        let wallet_id: Uuid = db.read(ORDER_TO_WALLET_TABLE, order_id).unwrap().unwrap();
+        assert_eq!(wallet_id, expected_wallet.wallet_id);
     }
 }

@@ -1,22 +1,40 @@
 //! Applicator handlers for order metadata updates
 
-use crate::order_metadata::ERR_MISSING_WALLET;
+use crate::{order_metadata::ERR_MISSING_WALLET, storage::tx::StateTxn};
 
 use super::{error::StateApplicatorError, StateApplicator};
 use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
+use libmdbx::RW;
 
 impl StateApplicator {
     /// Handle an update to an order's metadata
     pub fn update_order_metadata(&self, meta: OrderMetadata) -> Result<(), StateApplicatorError> {
         // Update the state
         let tx = self.db().new_write_tx()?;
+        self.update_order_metadata_with_tx(&tx, meta)?;
+        tx.commit()?;
+
+        Ok(())
+    }
+
+    /// Update the state of an order's metadata given a transaction
+    pub(crate) fn update_order_metadata_with_tx(
+        &self,
+        tx: &StateTxn<RW>,
+        meta: OrderMetadata,
+    ) -> Result<(), StateApplicatorError> {
         let wallet = tx
             .get_wallet_for_order(&meta.id)?
             .ok_or(StateApplicatorError::MissingEntry(ERR_MISSING_WALLET))?;
-        tx.update_order_metadata(&wallet, meta)?;
 
-        tx.commit()?;
+        // Add the order to the history if it doesn't exist
+        let old_meta = tx.get_order_metadata(wallet, meta.id)?;
+        if old_meta.is_none() {
+            tx.push_order_history(&wallet, meta)?;
+        } else {
+            tx.update_order_metadata(&wallet, meta)?;
+        }
 
         // Write to system bus
         let topic = wallet_order_history_topic(&wallet);
