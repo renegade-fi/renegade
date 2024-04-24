@@ -31,6 +31,46 @@ done
 # Exit on error
 set -e
 
+# Deploy the Permit2 contract.
+# This must be deployed before the ERC20s so they can approve it
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-permit2
+
+# Deploy the dummy ERC20 contracts
+# The funding amount here is 1 million of a token with 18 decimal places
+cargo run \
+    --package scripts -- \
+    --priv-key $DEVNET_PKEY \
+    --rpc-url $DEVNET_RPC_URL \
+    --deployments-path $DEPLOYMENTS_PATH \
+    deploy-erc20s \
+    --account-skeys $DEVNET_PKEY \
+    --tickers \
+        WBTC \
+        WETH \
+        BNB \
+        MATIC \
+        LDO \
+        USDC \
+        USDT \
+        LINK \
+        UNI \
+        SUSHI \
+        1INCH \
+        AAVE \
+        COMP \
+        MKR \
+        REN \
+        MANA \
+        ENS \
+        DYDX \
+        CRV \
+    --funding-amount 1000000000000000000000000
+
 # If $NO_VERIFY is set, write dummy addresses to the deployments file.
 # Otherwise, deploy the verification keys.
 if [[ -n $NO_VERIFY ]]; then
@@ -78,27 +118,6 @@ cargo run \
     deploy-stylus \
     --contract transfer-executor \
     $no_verify_flag
-
-# Deploy the Permit2 contract.
-# This must be deployed before the ERC20s so they can approve it
-cargo run \
-    --package scripts -- \
-    --priv-key $DEVNET_PKEY \
-    --rpc-url $DEVNET_RPC_URL \
-    --deployments-path $DEPLOYMENTS_PATH \
-    deploy-permit2
-
-# Deploy the dummy ERC20 contracts
-# The funding amount here is 1 million of a token with 18 decimal places
-cargo run \
-    --package scripts -- \
-    --priv-key $DEVNET_PKEY \
-    --rpc-url $DEVNET_RPC_URL \
-    --deployments-path $DEPLOYMENTS_PATH \
-    deploy-erc20s \
-    --account-skeys $DEVNET_PKEY \
-    --tickers DUMMY1 DUMMY2 \
-    --funding-amount 1000000000000000000000000
 
 # If the $NO_VERIFY env var is unset, deploy the verifier.
 # We do this after deploying the other contracts because it uses

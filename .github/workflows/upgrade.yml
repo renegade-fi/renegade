@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - 'staging'
+      - 'dev'
       - 'testnet'
       - 'mainnet'
 
@@ -11,7 +12,7 @@ jobs:
   build-and-push-ecr:
     runs-on: buildjet-16vcpu-ubuntu-2204-arm
     outputs:
-      image: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}:${{ github.sha }}
+      image: ${{ steps.login-ecr.outputs.registry }}/relayer-${{ github.ref_name }}:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,7 +21,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ca-central-1
+          aws-region: ${{ github.ref_name == 'dev' && 'us-east-2' || 'ca-central-1' }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -33,7 +34,7 @@ jobs:
         id: docker-build-push
         uses: docker/build-push-action@v5
         env:
-          IMAGE: ${{ steps.login-ecr.outputs.registry }}/renegade-${{ github.ref_name }}
+          IMAGE: ${{ steps.login-ecr.outputs.registry }}/relayer-${{ github.ref_name }}
         with:
           platforms: linux/arm64
           context: .
@@ -58,6 +59,9 @@ jobs:
           if [[ "${{ github.ref_name }}" == "staging" ]]; then
             NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_STAGING }}
             NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_STAGING }}
+          elif [[ "${{ github.ref_name }}" == "dev" ]]; then
+            NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_DEV }}
+            NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_DEV }}
           elif [[ "${{ github.ref_name }}" == "testnet" ]]; then
             NUM_CLUSTERS=${{ vars.NUM_CLUSTERS_TESTNET }}
             NUM_SINGLENODE_CLUSTERS=${{ vars.NUM_SINGLENODE_CLUSTERS_TESTNET }}
@@ -89,7 +93,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ca-central-1
+          aws-region: ${{ github.ref_name == 'dev' && 'us-east-2' || 'ca-central-1' }}
 
       - name: Get the existing task definitions
         id: fetch-task-def
