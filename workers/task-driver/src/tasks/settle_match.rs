@@ -32,7 +32,8 @@ use crate::driver::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 use crate::helpers::{
-    enqueue_fee_settlement_tasks, find_merkle_path, update_wallet_validity_proofs,
+    enqueue_fee_settlement_tasks, find_merkle_path, transition_order_filled,
+    transition_order_settling, update_wallet_validity_proofs,
 };
 
 /// The error message the contract emits when a nullifier has been used
@@ -256,6 +257,10 @@ impl SettleMatchTask {
 
     /// Submit the match transaction to the contract
     async fn submit_match(&self) -> Result<(), SettleMatchTaskError> {
+        // Place the local order in the `SubmittingMatch` state
+        transition_order_settling(self.handshake_state.local_order_id, &self.global_state)
+            .map_err(SettleMatchTaskError::State)?;
+
         let tx_submit_res = self
             .arbitrum_client
             .process_match_settle(
@@ -285,6 +290,12 @@ impl SettleMatchTask {
         let mut wallet = self.get_wallet()?;
         let (private_shares, blinded_public_shares) = self.get_new_shares()?;
         wallet.update_from_shares(&private_shares, &blinded_public_shares);
+
+        // Transition the order state to filled if the new volume is zero
+        let id = self.handshake_state.local_order_id;
+        if wallet.get_order(&id).map(|o| o.amount == 0).unwrap_or(false) {
+            transition_order_filled(id, &self.global_state).map_err(SettleMatchTaskError::State)?;
+        }
 
         // Cancel all orders on both nullifiers, await new validity proofs
         let party0_reblind_statement = &self.party0_validity_proof.reblind_proof.statement;

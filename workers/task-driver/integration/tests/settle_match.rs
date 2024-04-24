@@ -352,10 +352,14 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         setup_match_result(buy_wallet.clone(), sell_wallet.clone(), &test_args).await?;
 
     // Create the task
+    let order_id1 = *buy_wallet.orders.keys().next().unwrap();
+    let order_id2 = *sell_wallet.orders.keys().next().unwrap();
     let task = SettleMatchInternalTaskDescriptor::new(
         FixedPoint::from_f64_round_down(EXECUTION_PRICE),
         buy_wallet.wallet_id,
         sell_wallet.wallet_id,
+        order_id1,
+        order_id2,
         get_first_order_proofs(&buy_wallet, state)?,
         get_first_order_witness(&buy_wallet, state)?,
         get_first_order_proofs(&sell_wallet, state)?,
