@@ -55,7 +55,7 @@ impl State {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::cmp::Reverse;
 
     use common::types::wallet::order_metadata::OrderState;
@@ -67,7 +67,7 @@ mod test {
     use super::*;
 
     /// Get a random order metadata instance
-    fn random_metadata() -> OrderMetadata {
+    pub fn random_metadata() -> OrderMetadata {
         let mut rng = thread_rng();
         OrderMetadata {
             id: OrderIdentifier::new_v4(),
@@ -78,7 +78,7 @@ mod test {
     }
 
     /// Setup an order history using the given orders and wallet id
-    fn setup_order_history(wallet_id: &WalletIdentifier, orders: &[OrderMetadata], db: &DB) {
+    pub fn setup_order_history(wallet_id: &WalletIdentifier, orders: &[OrderMetadata], db: &DB) {
         // Add orders to the history
         let tx = db.new_write_tx().unwrap();
         orders.iter().for_each(|o| tx.push_order_history(wallet_id, *o).unwrap());
