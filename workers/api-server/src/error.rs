@@ -46,21 +46,25 @@ impl From<ApiServerError> for Response<Body> {
 }
 
 /// Create an `ApiServerError` with a 400 bad request code
-pub(crate) fn bad_request(e: String) -> ApiServerError {
-    ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, e)
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn bad_request<E: ToString>(e: E) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, e.to_string())
 }
 
 /// Create an `ApiServerError` with a 401 unauthorized code
-pub(crate) fn unauthorized(e: String) -> ApiServerError {
-    ApiServerError::HttpStatusCode(StatusCode::UNAUTHORIZED, e)
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn unauthorized<E: ToString>(e: E) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::UNAUTHORIZED, e.to_string())
 }
 
 /// Create an `ApiServerError` with a 404 not found code
-pub(crate) fn not_found(e: String) -> ApiServerError {
-    ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, e)
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn not_found<E: ToString>(e: E) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::NOT_FOUND, e.to_string())
 }
 
 /// Create an `ApiServerError` with a 500 internal server error code
-pub(crate) fn internal_error(e: String) -> ApiServerError {
-    ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, e)
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn internal_error<E: ToString>(e: E) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }

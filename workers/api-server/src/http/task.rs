@@ -14,7 +14,7 @@ use state::State;
 
 use crate::{
     error::{not_found, ApiServerError},
-    router::{TypedHandler, UrlParams},
+    router::{QueryParams, TypedHandler, UrlParams},
 };
 
 use super::{parse_task_id_from_params, parse_wallet_id_from_params};
@@ -53,6 +53,7 @@ impl TypedHandler for GetTaskStatusHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Lookup the task status in the task driver's state
         let task_id = parse_task_id_from_params(&params)?;
@@ -90,6 +91,7 @@ impl TypedHandler for GetTaskQueueHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 

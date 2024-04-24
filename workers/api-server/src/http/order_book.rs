@@ -11,7 +11,7 @@ use state::State;
 
 use crate::{
     error::{not_found, ApiServerError},
-    router::{TypedHandler, UrlParams},
+    router::{QueryParams, TypedHandler, UrlParams},
 };
 
 use super::parse_order_id_from_params;
@@ -51,6 +51,7 @@ impl TypedHandler for GetNetworkOrdersHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch all orders from state and convert to api type
         let all_orders = self.global_state.get_all_orders()?;
@@ -84,6 +85,7 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
         if let Some(order) = self.global_state.get_order(&order_id)? {

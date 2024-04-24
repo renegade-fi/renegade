@@ -3,7 +3,7 @@
 use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
-use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode};
+use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode, Uri};
 use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -18,12 +18,16 @@ use super::{
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
+/// A type alias for query params, i.e. /path/to/resource?id=123
+pub(super) type QueryParams = HashMap<String, String>;
 
 /// The maximum time an OPTIONS request to our HTTP API may be cached, we go
 /// above the default of 5 seconds to avoid unnecessary pre-flights
 const PREFLIGHT_CACHE_TIME: &str = "7200"; // 2 hours, Chromium max
 /// Error message displayed when a wallet cannot be found in the global state
 pub(super) const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
+/// Error message returned when query params are invalid
+const ERR_INVALID_QUERY_PARAMS: &str = "invalid query params";
 
 // -----------
 // | Helpers |
@@ -52,6 +56,21 @@ pub(super) fn build_response_from_status_code(
     Response::builder().status(status_code).body(Body::from(err)).unwrap()
 }
 
+/// Parse key value pairs from query params string
+fn parse_query_params(query_str: &str) -> Result<QueryParams, &'static str> {
+    if query_str.is_empty() {
+        return Ok(QueryParams::new());
+    }
+
+    let mut params = QueryParams::new();
+    for param in query_str.split('&') {
+        let (key, value) = param.split_once('=').ok_or(ERR_INVALID_QUERY_PARAMS)?;
+        params.insert(key.to_string(), value.to_string());
+    }
+
+    Ok(params)
+}
+
 // -------------------------
 // | Trait Implementations |
 // -------------------------
@@ -61,7 +80,12 @@ pub(super) fn build_response_from_status_code(
 #[async_trait]
 pub trait Handler: Send + Sync {
     /// The handler method for the request/response on the handler's route
-    async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body>;
+    async fn handle(
+        &self,
+        req: Request<Body>,
+        url_params: UrlParams,
+        query_params: QueryParams,
+    ) -> Response<Body>;
 }
 
 /// A handler that has associated Request/Response type information attached to
@@ -81,6 +105,7 @@ pub trait TypedHandler: Send + Sync {
         headers: HeaderMap,
         req: Self::Request,
         url_params: UrlParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError>;
 }
 
@@ -94,7 +119,12 @@ impl<
         T: TypedHandler<Request = Req, Response = Resp>,
     > Handler for T
 {
-    async fn handle(&self, req: Request<Body>, url_params: UrlParams) -> Response<Body> {
+    async fn handle(
+        &self,
+        req: Request<Body>,
+        url_params: UrlParams,
+        query_params: QueryParams,
+    ) -> Response<Body> {
         // Copy the headers before consuming the body
         let headers = req.headers().clone();
 
@@ -119,7 +149,7 @@ impl<
         let req_body: Req = deserialized.unwrap();
 
         // Forward to the typed handler
-        let res = self.handle_typed(headers, req_body, url_params).await;
+        let res = self.handle_typed(headers, req_body, url_params, query_params).await;
         let builder = Response::builder().header("Access-Control-Allow-Origin", "*");
         match res {
             Ok(resp) => {
@@ -203,15 +233,16 @@ impl Router {
     pub async fn handle_req(
         &self,
         method: Method,
-        route: String,
+        route: Uri,
         mut req: Request<Body>,
     ) -> Response<Body> {
+        let path = route.path();
         let res = if method == Method::OPTIONS {
             // If the request is an options request, handle it directly
-            self.handle_options_req(&route)
+            self.handle_options_req(path)
         } else {
             // Get the full routable path
-            let full_route = Self::create_full_route(&method, route.clone());
+            let full_route = Self::create_full_route(&method, path.to_string());
 
             // Dispatch to handler
             if let Ok(matched_path) = self.router.at(&full_route) {
@@ -224,13 +255,22 @@ impl Router {
                     params_map.insert(key.to_string(), value.to_string());
                 }
 
-                if *auth_required
-                    && let Err(e) = self.check_wallet_auth(&params_map, &mut req).await
-                {
-                    e.into()
-                } else {
-                    handler.as_ref().handle(req, params_map).await
+                // Parse query params
+                let query_params = match parse_query_params(route.query().unwrap_or("")) {
+                    Ok(params) => params,
+                    Err(e) => {
+                        return build_400_response(e.to_string());
+                    },
+                };
+
+                // Auth check and handler
+                if *auth_required {
+                    if let Err(e) = self.check_wallet_auth(&params_map, &mut req).await {
+                        return e.into();
+                    }
                 }
+
+                handler.as_ref().handle(req, params_map, query_params).await
             } else {
                 build_404_response(format!("Route {route} for method {method} not found"))
             }
