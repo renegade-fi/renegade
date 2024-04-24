@@ -15,6 +15,7 @@ use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 pub mod error;
 pub mod mpc_preprocessing;
 pub mod order_book;
+pub mod order_metadata;
 pub mod return_type;
 pub mod task_queue;
 pub mod wallet_index;
@@ -73,6 +74,7 @@ impl StateApplicator {
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
+            StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
             StateTransition::AppendTask { task } => self.append_task(&task),
             StateTransition::PopTask { task_id } => self.pop_task(task_id),
             StateTransition::TransitionTask { task_id, state } => {

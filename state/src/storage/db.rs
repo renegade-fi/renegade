@@ -15,7 +15,7 @@ use super::{
 };
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 13;
+const NUM_TABLES: usize = 14;
 /// The total maximum size of the DB in bytes
 const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 

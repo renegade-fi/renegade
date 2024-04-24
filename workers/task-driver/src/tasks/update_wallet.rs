@@ -120,8 +120,6 @@ pub enum UpdateWalletTaskError {
     State(String),
     /// An error while updating validity proofs for a wallet
     UpdatingValidityProofs(String),
-    /// Wallet is already locked, cannot update
-    WalletLocked,
 }
 
 impl TaskError for UpdateWalletTaskError {

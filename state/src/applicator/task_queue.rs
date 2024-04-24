@@ -5,7 +5,7 @@ use common::types::{
     wallet::WalletIdentifier,
 };
 use external_api::{
-    bus_message::{task_topic_name, SystemBusMessage},
+    bus_message::{task_topic, SystemBusMessage},
     http::task::ApiTaskStatus,
 };
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
@@ -58,7 +58,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY.to_string()))?;
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::QueuePaused(key));
@@ -87,7 +87,7 @@ impl StateApplicator {
         let mut status = ApiTaskStatus::from(task);
         status.state = "Completed".to_string();
         self.system_bus()
-            .publish(task_topic_name(&task_id), SystemBusMessage::TaskStatusUpdate { status });
+            .publish(task_topic(&task_id), SystemBusMessage::TaskStatusUpdate { status });
 
         Ok(())
     }
@@ -102,7 +102,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY.to_string()))?;
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::QueuePaused(key));
@@ -116,7 +116,7 @@ impl StateApplicator {
         if let Some(task) = task {
             let status: ApiTaskStatus = task.into();
             self.system_bus()
-                .publish(task_topic_name(&task_id), SystemBusMessage::TaskStatusUpdate { status });
+                .publish(task_topic(&task_id), SystemBusMessage::TaskStatusUpdate { status });
         }
 
         Ok(())

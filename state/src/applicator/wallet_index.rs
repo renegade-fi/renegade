@@ -1,7 +1,7 @@
 //! Applicator methods for the wallet index, separated out for discoverability
 
 use common::types::{network_order::NetworkOrder, wallet::Wallet};
-use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
+use external_api::bus_message::{wallet_topic, SystemBusMessage};
 use itertools::Itertools;
 use libmdbx::RW;
 
@@ -26,7 +26,7 @@ impl StateApplicator {
         tx.commit()?;
 
         // Publish a message to the bus describing the wallet update
-        let wallet_topic = wallet_topic_name(&wallet.wallet_id);
+        let wallet_topic = wallet_topic(&wallet.wallet_id);
         self.system_bus().publish(
             wallet_topic,
             SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
@@ -67,7 +67,7 @@ impl StateApplicator {
         tx.commit()?;
 
         // Push an update to the bus
-        let wallet_topic = wallet_topic_name(&wallet.wallet_id);
+        let wallet_topic = wallet_topic(&wallet.wallet_id);
         self.system_bus().publish(
             wallet_topic,
             SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },

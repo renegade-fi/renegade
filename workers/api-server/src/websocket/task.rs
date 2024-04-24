@@ -5,7 +5,7 @@
 // ------------------
 
 use async_trait::async_trait;
-use external_api::bus_message::{task_topic_name, SystemBusMessage};
+use external_api::bus_message::{task_topic, SystemBusMessage};
 use state::State;
 use system_bus::{SystemBus, TopicReader};
 
@@ -56,7 +56,7 @@ impl WebsocketTopicHandler for TaskStatusHandler {
         }
 
         // Subscribe to the topic
-        Ok(self.system_bus.subscribe(task_topic_name(&task_id)))
+        Ok(self.system_bus.subscribe(task_topic(&task_id)))
     }
 
     async fn handle_unsubscribe_message(
