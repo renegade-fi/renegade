@@ -24,7 +24,7 @@ use circuits::zk_circuits::{
 use common::types::{
     proof_bundles::ProofBundle,
     tasks::{PayOfflineFeeTaskDescriptor, RedeemRelayerFeeTaskDescriptor},
-    wallet::{Wallet, WalletAuthenticationPath, WalletIdentifier},
+    wallet::{order_metadata::OrderState, Wallet, WalletAuthenticationPath, WalletIdentifier},
 };
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -58,10 +58,36 @@ const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
 const ERR_PROVE_COMMITMENTS_FAILED: &str = "failed to prove valid commitments";
 /// Error message emitted when proving VALID REBLIND fails
 const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
+/// The error message emitted when metadata for an order cannot be found
+const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
 
-// -----------
-// | Helpers |
-// -----------
+// ----------------
+// | Order States |
+// ----------------
+
+/// Update an order's state to `SettlingMatch`
+pub fn transition_order_settling(order_id: OrderIdentifier, state: &State) -> Result<(), String> {
+    let mut metadata =
+        state.get_order_metadata(&order_id)?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
+    metadata.state = OrderState::SettlingMatch;
+    state.update_order_metadata(metadata)?;
+
+    Ok(())
+}
+
+/// Update an order's state to `Filled`
+pub fn transition_order_filled(order_id: OrderIdentifier, state: &State) -> Result<(), String> {
+    let mut metadata =
+        state.get_order_metadata(&order_id)?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
+    metadata.state = OrderState::Filled;
+    state.update_order_metadata(metadata)?;
+
+    Ok(())
+}
+
+// --------------
+// | Proof Jobs |
+// --------------
 
 /// Enqueue a job with the proof manager
 ///

@@ -7,7 +7,7 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::OrderIdentifier,
+    wallet::{order_metadata::OrderState, OrderIdentifier},
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
@@ -28,6 +28,10 @@ pub const ORDER_DEFAULT_PRIORITY: u32 = 1;
 
 /// The error message emitted when an order is missing from the message
 const ERR_ORDER_MISSING: &str = "Order missing from message";
+/// The error message emitted when a wallet cannot be found for an order
+const ERR_WALLET_MISSING: &str = "Cannot find wallet for order";
+/// The error message emitted when the order metadata cannot be found
+const ERR_ORDER_META_MISSING: &str = "Cannot find order metadata";
 
 // ----------------------------
 // | Orderbook Implementation |
@@ -76,6 +80,20 @@ impl StateApplicator {
         tx.attach_validity_proof(&order_id, proof)?;
         tx.attach_validity_witness(&order_id, witness)?;
 
+        // Update the order metadata into the `Matching` state
+        let wallet = tx
+            .get_wallet_for_order(&order_id)?
+            .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
+        let mut meta = tx
+            .get_order_metadata(wallet, order_id)?
+            .ok_or(StateApplicatorError::MissingEntry(ERR_ORDER_META_MISSING))?;
+
+        if !meta.state.is_terminal() {
+            meta.state = OrderState::Matching;
+        }
+        self.update_order_metadata_with_tx(meta, &tx)?;
+
+        // Get the order info for update message
         let order_info = tx
             .get_order_info(&order_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING))?;
@@ -96,8 +114,10 @@ impl StateApplicator {
 #[cfg(all(test, feature = "all-tests"))]
 mod test {
     use common::types::{
-        network_order::{test_helpers::dummy_network_order, NetworkOrderState},
+        network_order::NetworkOrderState,
         proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
+        wallet::OrderIdentifier,
+        wallet_mocks::{mock_empty_wallet, mock_order},
     };
 
     use crate::applicator::test_helpers::mock_applicator;
@@ -107,21 +127,21 @@ mod test {
     fn test_add_validity_proof() {
         let applicator = mock_applicator();
 
-        // First add an order
-        let order = dummy_network_order();
-        let tx = applicator.db().new_write_tx().unwrap();
-        tx.write_order(&order).unwrap();
-        tx.commit().unwrap();
+        // First add an order via a wallet
+        let mut wallet = mock_empty_wallet();
+        let order_id = OrderIdentifier::new_v4();
+        wallet.add_order(order_id, mock_order()).unwrap();
+        applicator.update_wallet(&wallet).unwrap();
 
         // Then add a validity proof
         let proof = dummy_validity_proof_bundle();
         let witness = dummy_validity_witness_bundle();
-        applicator.add_order_validity_proof(order.id, proof, witness).unwrap();
+        applicator.add_order_validity_proof(order_id, proof, witness).unwrap();
 
         // Verify that the order's state is updated
         let db = applicator.db();
         let tx = db.new_read_tx().unwrap();
-        let order = tx.get_order_info(&order.id).unwrap().unwrap();
+        let order = tx.get_order_info(&order_id).unwrap().unwrap();
 
         assert_eq!(order.state, NetworkOrderState::Verified);
         assert!(order.validity_proofs.is_some());

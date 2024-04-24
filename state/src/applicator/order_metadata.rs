@@ -12,7 +12,7 @@ impl StateApplicator {
     pub fn update_order_metadata(&self, meta: OrderMetadata) -> Result<(), StateApplicatorError> {
         // Update the state
         let tx = self.db().new_write_tx()?;
-        self.update_order_metadata_with_tx(&tx, meta)?;
+        self.update_order_metadata_with_tx(meta, &tx)?;
         tx.commit()?;
 
         Ok(())
@@ -21,8 +21,8 @@ impl StateApplicator {
     /// Update the state of an order's metadata given a transaction
     pub(crate) fn update_order_metadata_with_tx(
         &self,
-        tx: &StateTxn<RW>,
         meta: OrderMetadata,
+        tx: &StateTxn<RW>,
     ) -> Result<(), StateApplicatorError> {
         let wallet = tx
             .get_wallet_for_order(&meta.id)?
