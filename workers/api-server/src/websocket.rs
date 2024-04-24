@@ -25,6 +25,7 @@ use crate::{
 
 use self::{
     handler::{DefaultHandler, WebsocketTopicHandler},
+    order_status::OrderStatusHandler,
     price_report::PriceReporterHandler,
     task::TaskStatusHandler,
     wallet::WalletTopicHandler,
@@ -36,6 +37,7 @@ use super::{
 };
 
 mod handler;
+mod order_status;
 mod price_report;
 mod task;
 mod wallet;
@@ -58,6 +60,8 @@ const ERR_HEADER_PARSE: &str = "error parsing headers";
 const HANDSHAKE_ROUTE: &str = "/v0/handshake";
 /// The wallet topic, events about wallet updates are streamed here
 const WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
+/// The wallet order status topic, streams events about wallet's orders
+const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/order-status";
 /// The price report topic, events about price updates are streamed
 const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
 /// The order book topic, streams events about known network orders
@@ -108,6 +112,17 @@ impl WebsocketServer {
             .insert(
                 WALLET_ROUTE,
                 Box::new(WalletTopicHandler::new(
+                    config.global_state.clone(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
+
+        // The "/v0/wallet/:id/order-status" route
+        router
+            .insert(
+                WALLET_ORDERS_ROUTE,
+                Box::new(OrderStatusHandler::new(
                     config.global_state.clone(),
                     config.system_bus.clone(),
                 )),
