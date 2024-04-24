@@ -14,7 +14,7 @@ use external_api::{
         wallet::{
             CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE,
             GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
-            UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
+            ORDER_HISTORY_ROUTE, UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
         },
         PingResponse,
     },
@@ -36,7 +36,10 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::error::{bad_request, not_found};
+use crate::{
+    error::{bad_request, not_found},
+    router::QueryParams,
+};
 
 use self::{
     network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
@@ -46,7 +49,8 @@ use self::{
     wallet::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
         FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetOrderByIdHandler,
-        GetOrdersHandler, GetWalletHandler, UpdateOrderHandler, WithdrawBalanceHandler,
+        GetOrderHistoryHandler, GetOrdersHandler, GetWalletHandler, UpdateOrderHandler,
+        WithdrawBalanceHandler,
     },
 };
 
@@ -315,6 +319,14 @@ impl HttpServer {
             WithdrawBalanceHandler::new(global_state.clone()),
         );
 
+        // The "/wallet/:id/order-history" route
+        router.add_route(
+            &Method::GET,
+            ORDER_HISTORY_ROUTE.to_string(),
+            true, // auth_required
+            GetOrderHistoryHandler::new(global_state.clone()),
+        );
+
         // The "/order_book/orders" route
         router.add_route(
             &Method::GET,
@@ -385,7 +397,7 @@ impl HttpServer {
 
     /// Serve an http request
     async fn serve_request(&self, req: Request<Body>) -> Response<Body> {
-        self.router.handle_req(req.method().to_owned(), req.uri().path().to_string(), req).await
+        self.router.handle_req(req.method().to_owned(), req.uri().clone(), req).await
     }
 }
 
@@ -409,6 +421,7 @@ impl TypedHandler for PingHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
         Ok(PingResponse { timestamp })

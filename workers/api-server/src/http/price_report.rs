@@ -8,7 +8,7 @@ use tokio::sync::oneshot::channel;
 
 use crate::{
     error::ApiServerError,
-    router::{TypedHandler, UrlParams},
+    router::{QueryParams, TypedHandler, UrlParams},
     worker::ApiServerConfig,
 };
 
@@ -41,6 +41,7 @@ impl TypedHandler for PriceReportHandler {
         _headers: HeaderMap,
         req: Self::Request,
         _params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let (price_reporter_state_sender, price_reporter_state_receiver) = channel();
         self.config

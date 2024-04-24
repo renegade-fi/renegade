@@ -31,7 +31,7 @@ impl State {
         Ok(Some(md))
     }
 
-    /// Get a history of the wallet's orders
+    /// Get a truncated history of the wallet's orders
     pub fn get_order_history(
         &self,
         n: usize,

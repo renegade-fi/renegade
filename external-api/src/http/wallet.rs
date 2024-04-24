@@ -1,7 +1,10 @@
 //! Groups API type definitions for wallet API operations
 
 use circuit_types::balance::Balance;
-use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
+use common::types::{
+    tasks::TaskIdentifier,
+    wallet::{order_metadata::OrderMetadata, WalletIdentifier},
+};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -37,6 +40,9 @@ pub const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:min
 pub const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
 /// Withdraws an ERC-20 token from the darkpool
 pub const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
+
+/// Returns the order history of a wallet
+pub const ORDER_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/order-history";
 
 // --------------------
 // | Wallet API Types |
@@ -252,29 +258,13 @@ pub struct WithdrawBalanceResponse {
     pub task_id: TaskIdentifier,
 }
 
-/// The request type to create an internal transfer to another darkpool wallet
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InternalTransferRequest {
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    ///
-    /// TODO: For now this is just a blob, we will add this feature in
-    /// a follow up
-    pub statement_sig: Vec<u8>,
-    /// The recipient's settle key
-    #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
-        deserialize_with = "deserialize_biguint_from_hex_string"
-    )]
-    pub recipient_key: BigUint,
-    /// The amount to transfer
-    pub amount: BigUint,
-}
+// ---------------------------
+// | Order History API Types |
+// ---------------------------
 
-/// The response type to a request to create an internal transfer
+/// The response type for order history
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct InternalTransferResponse {
-    /// The ID of the task that was allocated on behalf of this request
-    pub task_id: TaskIdentifier,
+pub struct GetOrderHistoryResponse {
+    /// A history of orders in the wallet
+    pub orders: Vec<OrderMetadata>,
 }

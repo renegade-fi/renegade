@@ -18,8 +18,8 @@ use external_api::{
         CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
         CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
         FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
-        GetOrderByIdResponse, GetOrdersResponse, GetWalletResponse, UpdateOrderRequest,
-        UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
+        GetOrderByIdResponse, GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse,
+        UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
     },
     types::ApiOrder,
     EmptyRequestResponse,
@@ -32,7 +32,7 @@ use util::{err_str, hex::jubjub_to_hex_string};
 
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},
-    router::{TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
+    router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
@@ -40,6 +40,12 @@ use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_
 // -----------
 // | Helpers |
 // -----------
+
+/// The default number of orders in history to truncate at if not specified
+const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
+/// The name of the query parameter specifying the length of the order history
+/// to return
+const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
 
 /// Find the wallet for the given id in the global state
 ///
@@ -77,13 +83,13 @@ const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// Handler for the GET /wallet/:id route
 pub struct GetWalletHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl GetWalletHandler {
     /// Create a new handler for the /v0/wallet/:id route
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -97,10 +103,11 @@ impl TypedHandler for GetWalletHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let wallet = self
-            .global_state
+            .state
             .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
@@ -111,13 +118,13 @@ impl TypedHandler for GetWalletHandler {
 /// Handler for the POST /wallet route
 pub struct CreateWalletHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl CreateWalletHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -131,10 +138,11 @@ impl TypedHandler for CreateWalletHandler {
         _headers: HeaderMap,
         mut req: Self::Request,
         _params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Overwrite the managing cluster and the match fee with the configured values
-        let relayer_key = self.global_state.get_fee_decryption_key()?.public_key();
-        let relayer_take_rate = self.global_state.get_relayer_take_rate()?;
+        let relayer_key = self.state.get_fee_decryption_key()?.public_key();
+        let relayer_take_rate = self.state.get_relayer_take_rate()?;
         req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
         req.wallet.match_fee = relayer_take_rate;
 
@@ -156,7 +164,7 @@ impl TypedHandler for CreateWalletHandler {
         let task = NewWalletTaskDescriptor::new(wallet).map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(CreateWalletResponse { wallet_id, task_id })
     }
 }
@@ -164,13 +172,13 @@ impl TypedHandler for CreateWalletHandler {
 /// Handler for the POST /wallet route
 pub struct FindWalletHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl FindWalletHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -184,6 +192,7 @@ impl TypedHandler for FindWalletHandler {
         _headers: HeaderMap,
         req: Self::Request,
         _params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Create a task in thew driver to find and prove validity for
         // the wallet
@@ -197,7 +206,7 @@ impl TypedHandler for FindWalletHandler {
                 .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
 
         Ok(FindWalletResponse { wallet_id: req.wallet_id, task_id })
     }
@@ -211,13 +220,13 @@ impl TypedHandler for FindWalletHandler {
 #[derive(Clone)]
 pub struct GetOrdersHandler {
     /// A copy of the relayer-global state
-    pub global_state: State,
+    pub state: State,
 }
 
 impl GetOrdersHandler {
     /// Create a new handler for the /wallet/:id/orders route
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -231,10 +240,11 @@ impl TypedHandler for GetOrdersHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mut wallet = self
-            .global_state
+            .state
             .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
@@ -248,13 +258,13 @@ impl TypedHandler for GetOrdersHandler {
 #[derive(Clone)]
 pub struct GetOrderByIdHandler {
     /// A copy of the relayer-global state
-    pub global_state: State,
+    pub state: State,
 }
 
 impl GetOrderByIdHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -268,13 +278,14 @@ impl TypedHandler for GetOrderByIdHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
 
         // Find the wallet in global state and use its keys to authenticate the request
         let wallet = self
-            .global_state
+            .state
             .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
@@ -289,13 +300,13 @@ impl TypedHandler for GetOrderByIdHandler {
 /// Handler for the POST /wallet/:id/orders route
 pub struct CreateOrderHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -309,12 +320,13 @@ impl TypedHandler for CreateOrderHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let id = req.order.id;
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
         let mut new_wallet = old_wallet.clone();
         let new_order: Order = req.order.into();
 
@@ -332,7 +344,7 @@ impl TypedHandler for CreateOrderHandler {
         .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(CreateOrderResponse { id, task_id })
     }
 }
@@ -340,13 +352,13 @@ impl TypedHandler for CreateOrderHandler {
 /// Handler for the POST /wallet/:id/orders/:id/update route
 pub struct UpdateOrderHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl UpdateOrderHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -360,12 +372,13 @@ impl TypedHandler for UpdateOrderHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
 
         // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
@@ -393,7 +406,7 @@ impl TypedHandler for UpdateOrderHandler {
         .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(UpdateOrderResponse { task_id })
     }
 }
@@ -401,13 +414,13 @@ impl TypedHandler for UpdateOrderHandler {
 /// Handler for the POST /wallet/:id/orders/:id/cancel route
 pub struct CancelOrderHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl CancelOrderHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -421,12 +434,13 @@ impl TypedHandler for CancelOrderHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
 
         // Remove the order from the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -445,7 +459,7 @@ impl TypedHandler for CancelOrderHandler {
         .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(CancelOrderResponse { task_id, order: (order_id, order).into() })
     }
 }
@@ -458,13 +472,13 @@ impl TypedHandler for CancelOrderHandler {
 #[derive(Clone)]
 pub struct GetBalancesHandler {
     /// A copy of the relayer-global state
-    pub global_state: State,
+    pub state: State,
 }
 
 impl GetBalancesHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -478,9 +492,10 @@ impl TypedHandler for GetBalancesHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(mut wallet) = self.global_state.get_wallet(&wallet_id)? {
+        if let Some(mut wallet) = self.state.get_wallet(&wallet_id)? {
             // Filter out the default balances used to pad the wallet to the circuit size
             wallet.remove_default_elements();
             let balances = wallet.get_balances_list().to_vec();
@@ -496,13 +511,13 @@ impl TypedHandler for GetBalancesHandler {
 #[derive(Clone)]
 pub struct GetBalanceByMintHandler {
     /// A copy of the relayer-global state
-    pub global_state: State,
+    pub state: State,
 }
 
 impl GetBalanceByMintHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -516,11 +531,12 @@ impl TypedHandler for GetBalanceByMintHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mint = parse_mint_from_params(&params)?;
 
-        if let Some(wallet) = self.global_state.get_wallet(&wallet_id)? {
+        if let Some(wallet) = self.state.get_wallet(&wallet_id)? {
             let balance =
                 wallet.get_balance(&mint).cloned().unwrap_or_else(|| Balance::new_from_mint(mint));
             Ok(GetBalanceByMintResponse { balance })
@@ -533,13 +549,13 @@ impl TypedHandler for GetBalanceByMintHandler {
 /// Handler for the POST /wallet/:id/balances/deposit route
 pub struct DepositBalanceHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -553,12 +569,13 @@ impl TypedHandler for DepositBalanceHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Parse the wallet ID from the params
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the old wallet by id
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -589,7 +606,7 @@ impl TypedHandler for DepositBalanceHandler {
         .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(DepositBalanceResponse { task_id })
     }
 }
@@ -597,13 +614,13 @@ impl TypedHandler for DepositBalanceHandler {
 /// Handler for the POST /wallet/:id/balances/:mint/withdraw route
 pub struct WithdrawBalanceHandler {
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
 }
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(global_state: State) -> Self {
-        Self { global_state }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -617,13 +634,14 @@ impl TypedHandler for WithdrawBalanceHandler {
         _headers: HeaderMap,
         req: Self::Request,
         params: UrlParams,
+        _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Parse the wallet ID and mint from the params
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mint = parse_mint_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.global_state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
 
         // Apply the withdrawal to the wallet
         let withdrawal_amount = req.amount.to_u128().unwrap();
@@ -649,7 +667,50 @@ impl TypedHandler for WithdrawBalanceHandler {
         .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.global_state).await?;
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(WithdrawBalanceResponse { task_id })
+    }
+}
+
+// --------------------------------
+// | Order History Route Handlers |
+// --------------------------------
+
+/// The handler for the `/wallet/:id/order-history` route
+#[derive(Clone)]
+pub struct GetOrderHistoryHandler {
+    /// A copy of the relayer-global state
+    state: State,
+}
+
+impl GetOrderHistoryHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetOrderHistoryHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetOrderHistoryResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        mut query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let len = query_params
+            .remove(ORDER_HISTORY_LEN_PARAM)
+            .map(|x| x.parse::<usize>())
+            .transpose()
+            .map_err(bad_request)?
+            .unwrap_or(DEFAULT_ORDER_HISTORY_LEN);
+
+        let orders = self.state.get_order_history(len, &wallet_id).map_err(internal_error)?;
+        Ok(GetOrderHistoryResponse { orders })
     }
 }
