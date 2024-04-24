@@ -8,6 +8,7 @@ mod keychain;
 mod r#match;
 #[cfg(feature = "mocks")]
 pub mod mocks;
+pub mod order_metadata;
 mod orders;
 mod shares;
 mod types;
