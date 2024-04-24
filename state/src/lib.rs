@@ -51,6 +51,8 @@ pub(crate) const CLUSTER_MEMBERSHIP_TABLE: &str = "cluster-membership";
 pub(crate) const PRIORITIES_TABLE: &str = "priorities";
 /// The name of the table that stores orders by their ID
 pub(crate) const ORDERS_TABLE: &str = "orders";
+/// The table that stores order metadata indexed by wallet id
+pub(crate) const ORDER_HISTORY_TABLE: &str = "order-history";
 
 /// The name of the db table that maps order to their encapsulating wallet
 pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
