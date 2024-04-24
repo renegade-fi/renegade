@@ -12,7 +12,7 @@ pub enum StateApplicatorError {
     /// An error enqueueing a task
     EnqueueTask(String),
     /// Missing keys in the database necessary for a tx
-    MissingEntry(String),
+    MissingEntry(&'static str),
     /// An error interacting with storage
     Storage(StorageError),
     /// A task queue is empty when it should not be

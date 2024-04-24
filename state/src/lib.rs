@@ -20,7 +20,7 @@ use common::types::{
     mpc_preprocessing::{PairwiseOfflineSetup, PreprocessingSlice},
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
-    wallet::{OrderIdentifier, Wallet},
+    wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
 };
 use interface::notifications::ProposalResultSender;
 use replication::RaftPeerId;
@@ -81,6 +81,7 @@ pub struct Proposal {
 /// allowing transitions to be handled generically before they are applied
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[allow(missing_docs)]
+#[rustfmt::skip]
 pub enum StateTransition {
     // --- Wallets --- //
     /// Add a wallet to the managed state
@@ -93,6 +94,10 @@ pub enum StateTransition {
         proof: OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
     },
+
+    // --- Order History --- //
+    /// Update the metadata for a given order
+    UpdateOrderMetadata { meta: OrderMetadata },
 
     // --- Task Queue --- //
     /// Add a task to the task queue

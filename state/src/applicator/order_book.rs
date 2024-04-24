@@ -78,7 +78,7 @@ impl StateApplicator {
 
         let order_info = tx
             .get_order_info(&order_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING.to_string()))?;
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING))?;
         tx.commit()?;
 
         self.system_bus().publish(

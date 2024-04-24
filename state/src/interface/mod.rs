@@ -6,6 +6,7 @@ pub mod mpc_preprocessing;
 pub mod node_metadata;
 pub mod notifications;
 pub mod order_book;
+pub mod order_metadata;
 pub mod peer_index;
 pub mod raft;
 pub mod task_queue;

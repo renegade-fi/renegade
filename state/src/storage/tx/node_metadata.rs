@@ -43,7 +43,7 @@ const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
 /// Values in the node metadata should always be present, so we promote
 /// `Option::None` to an error
 fn err_not_found(key: &str) -> StorageError {
-    StorageError::NotFound(format!("node metadata key {} not found", key))
+    StorageError::NotFound(format!("node metadata key {key} not found"))
 }
 
 // -----------

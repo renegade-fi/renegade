@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use common::types::token::Token;
-use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
+use external_api::bus_message::{price_report_topic, SystemBusMessage};
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use system_bus::{SystemBus, TopicReader};
 
@@ -93,7 +93,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
             })
             .map_err(|_| ApiServerError::WebsocketServerFailure(ERR_SENDING_MESSAGE.to_string()))?;
 
-        Ok(self.system_bus.subscribe(price_report_topic_name(&base, &quote)))
+        Ok(self.system_bus.subscribe(price_report_topic(&base, &quote)))
     }
 
     /// Handle an unsubscribe message from the price reporter

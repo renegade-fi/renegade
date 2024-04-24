@@ -17,7 +17,7 @@ use common::{
     },
     AsyncShared,
 };
-use external_api::bus_message::{price_report_topic_name, SystemBusMessage};
+use external_api::bus_message::{price_report_topic, SystemBusMessage};
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
 use util::get_current_time_seconds;
@@ -213,7 +213,7 @@ impl SharedPriceStreamStates {
         quote: Token,
         config: &PriceReporterConfig,
     ) {
-        let topic_name = price_report_topic_name(&base, &quote);
+        let topic_name = price_report_topic(&base, &quote);
         if config.system_bus.has_listeners(&topic_name) {
             if let PriceReporterState::Nominal(report) = self.get_state(base, quote, config).await {
                 config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));

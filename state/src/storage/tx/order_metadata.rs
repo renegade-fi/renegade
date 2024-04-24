@@ -23,12 +23,13 @@ fn order_history_key(wallet_id: &WalletIdentifier) -> String {
 
 impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get metadata for a given order
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_order_metadata(
         &self,
-        wallet_id: &WalletIdentifier,
+        wallet_id: WalletIdentifier,
         order_id: OrderIdentifier,
     ) -> Result<Option<OrderMetadata>, StorageError> {
-        let orders = self.get_order_history(wallet_id)?;
+        let orders = self.get_order_history(&wallet_id)?;
         Ok(orders.iter().find(|o| o.id == order_id).cloned())
     }
 
@@ -188,7 +189,7 @@ mod tests {
 
         // Check the current state of that order
         let tx = db.new_read_tx().unwrap();
-        let order = tx.get_order_metadata(&wallet_id, curr_order.id).unwrap().unwrap();
+        let order = tx.get_order_metadata(wallet_id, curr_order.id).unwrap().unwrap();
         assert_eq!(order, curr_order);
 
         // Update the order
@@ -201,7 +202,7 @@ mod tests {
 
         // Get the updated order
         let tx = db.new_read_tx().unwrap();
-        let order = tx.get_order_metadata(&wallet_id, updated_order.id).unwrap().unwrap();
+        let order = tx.get_order_metadata(wallet_id, updated_order.id).unwrap().unwrap();
         assert_eq!(order, updated_order);
     }
 }

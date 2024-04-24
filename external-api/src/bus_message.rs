@@ -6,7 +6,9 @@ use common::types::{
     network_order::NetworkOrder,
     tasks::TaskIdentifier,
     token::Token,
-    wallet::{OrderIdentifier, Wallet as StateWallet, WalletIdentifier},
+    wallet::{
+        order_metadata::OrderMetadata, OrderIdentifier, Wallet as StateWallet, WalletIdentifier,
+    },
 };
 use serde::Serialize;
 
@@ -23,17 +25,22 @@ pub const NETWORK_TOPOLOGY_TOPIC: &str = "network-topology";
 pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
 
 /// Get the topic name for a given wallet
-pub fn wallet_topic_name(wallet_id: &WalletIdentifier) -> String {
+pub fn wallet_topic(wallet_id: &WalletIdentifier) -> String {
     format!("wallet-updates-{}", wallet_id)
 }
 
+/// Get the topic name for a wallet's order history
+pub fn wallet_order_history_topic(wallet_id: &WalletIdentifier) -> String {
+    format!("wallet-order-history-{}", wallet_id)
+}
+
 /// Get the topic name for a given task
-pub fn task_topic_name(task_id: &TaskIdentifier) -> String {
+pub fn task_topic(task_id: &TaskIdentifier) -> String {
     format!("task-updates-{}", task_id)
 }
 
 /// Get the topic name for a price report
-pub fn price_report_topic_name(base: &Token, quote: &Token) -> String {
+pub fn price_report_topic(base: &Token, quote: &Token) -> String {
     format!("price-report-{}-{}", base.get_addr(), quote.get_addr())
 }
 
@@ -110,6 +117,13 @@ pub enum SystemBusMessage {
     InternalWalletUpdate {
         /// The new wallet after update
         wallet: Box<StateWallet>,
+    },
+
+    // -- Order History Updates -- //
+    /// A message indicating that an order has been updated
+    OrderMetadataUpdated {
+        /// The new state of the order
+        order: OrderMetadata,
     },
 }
 

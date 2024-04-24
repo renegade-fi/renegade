@@ -1,6 +1,6 @@
 //! Handler definitions for wallet websocket topics
 use async_trait::async_trait;
-use external_api::bus_message::{wallet_topic_name, SystemBusMessage};
+use external_api::bus_message::{wallet_topic, SystemBusMessage};
 use state::State;
 use system_bus::{SystemBus, TopicReader};
 
@@ -56,7 +56,7 @@ impl WebsocketTopicHandler for WalletTopicHandler {
         }
 
         // Subscribe to the topic
-        Ok(self.system_bus.subscribe(wallet_topic_name(&wallet_id)))
+        Ok(self.system_bus.subscribe(wallet_topic(&wallet_id)))
     }
 
     /// Does nothing for now, `TopicReader`s clean themselves up
