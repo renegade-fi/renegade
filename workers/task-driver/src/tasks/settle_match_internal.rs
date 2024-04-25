@@ -5,8 +5,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::helpers::{
-    enqueue_fee_settlement_tasks, enqueue_proof_job, transition_order_filled,
-    transition_order_settling, update_wallet_validity_proofs,
+    enqueue_proof_job, transition_order_filled, transition_order_settling,
+    update_wallet_validity_proofs,
 };
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::{driver::StateWrapper, helpers::find_merkle_path};
@@ -358,19 +358,8 @@ impl SettleMatchInternalTask {
         self.find_opening(&mut wallet2).await?;
 
         // Re-index the updated wallets in the global state
-        let id1 = wallet1.wallet_id;
-        let id2 = wallet2.wallet_id;
         self.state.update_wallet(wallet1)?.await?;
         self.state.update_wallet(wallet2)?.await?;
-
-        // Enqueue jobs to pay fees for the wallets
-        let state = &self.state;
-        enqueue_fee_settlement_tasks(id1, state)
-            .await
-            .map_err(SettleMatchInternalTaskError::State)?;
-        enqueue_fee_settlement_tasks(id2, state)
-            .await
-            .map_err(SettleMatchInternalTaskError::State)?;
 
         Ok(())
     }
