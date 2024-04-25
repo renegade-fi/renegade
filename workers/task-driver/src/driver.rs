@@ -281,11 +281,7 @@ impl TaskExecutor {
     ) -> Result<(), TaskDriverError> {
         // Pause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            state
-                .pause_task_queue(wallet_id)
-                .expect("error proposing task queue pause for wallet {wallet_id}")
-                .await
-                .expect("error pausing task queue for wallet {wallet_id}");
+            state.pause_task_queue(wallet_id)?.await?;
         }
 
         // Add the task to the preemptive tasks list so that notification requests can
@@ -299,11 +295,7 @@ impl TaskExecutor {
 
         // Unpause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            state
-                .resume_task_queue(wallet_id)
-                .expect("error proposing task queue resume for wallet {wallet_id}")
-                .await
-                .expect("error resuming task queue for wallet {wallet_id}");
+            state.resume_task_queue(wallet_id)?.await?;
         }
 
         // Remove from the preemptive tasks list
