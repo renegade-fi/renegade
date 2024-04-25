@@ -68,17 +68,14 @@ impl StateApplicator {
         let task = tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
 
         // If the queue is non-empty, start the next task
-        let tasks = tx.get_queued_tasks(&key)?;
-        if let Some(task) = tasks.first() {
+        let remaining_tasks = tx.get_queued_tasks(&key)?;
+        if let Some(task) = remaining_tasks.first() {
             tx.transition_task(&key, new_running_state())?;
             self.maybe_start_task(task, &tx)?;
         }
 
-        // If the queue is empty and the task was a wallet task, run the matching engine
-        // on all orders that are ready
-        // TODO: We should only have one node execute the internal matching engine,
-        // though this is okay for the moment
-        if tasks.is_empty() && task.descriptor.is_wallet_task() {
+        if Self::should_run_matching_engine(&remaining_tasks, &task, &tx)? {
+            // Run the matching engine on all orders that are ready
             self.run_matching_engine_on_wallet(key, &tx)?;
         }
         tx.commit()?;
@@ -194,6 +191,21 @@ impl StateApplicator {
         }
 
         Ok(())
+    }
+
+    /// Given the current state of the queue and the last popped task, determine
+    /// if the matching engine should be run.
+    /// This should be the case if the queue is empty, the last task was a
+    /// wallet task, and the current peer is the executor of the last task.
+    fn should_run_matching_engine<T: TransactionKind>(
+        queued_tasks: &[QueuedTask],
+        popped_task: &QueuedTask,
+        tx: &StateTxn<'_, T>,
+    ) -> Result<bool> {
+        let my_peer_id = tx.get_peer_id()?;
+        Ok(queued_tasks.is_empty()
+            && popped_task.descriptor.is_wallet_task()
+            && popped_task.executor == my_peer_id)
     }
 
     /// Run the internal matching engine on all of a wallet's orders that are
