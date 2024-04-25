@@ -7,8 +7,8 @@ use circuit_types::{
 };
 use common::types::{
     tasks::{
-        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
-        UpdateWalletTaskDescriptor,
+        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
+        TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
     },
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{KeyChain, Wallet, WalletIdentifier},
@@ -67,6 +67,32 @@ async fn append_task_and_await(
     waiter.await.map_err(err_str!(internal_error))?;
 
     Ok(task_id)
+}
+
+/// Enqueue tasks to pay all fees for a wallet
+///
+/// Modifies the wallet in place to remove fees
+async fn pay_wallet_fees(wallet: &mut Wallet, state: &State) -> Result<(), ApiServerError> {
+    let wallet_id = wallet.wallet_id;
+    for (mint, balance) in wallet.balances.iter_mut() {
+        if balance.relayer_fee_balance > 0 {
+            // Pay relayer fee
+            let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, mint.clone())
+                .expect("infallible");
+            append_task_and_await(task.into(), state).await?;
+            balance.relayer_fee_balance = 0;
+        }
+
+        if balance.protocol_fee_balance > 0 {
+            // Pay protocol fee
+            let task = PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, mint.clone())
+                .expect("infallible");
+            append_task_and_await(task.into(), state).await?;
+            balance.protocol_fee_balance = 0;
+        }
+    }
+
+    Ok(())
 }
 
 // ------------------
@@ -642,11 +668,13 @@ impl TypedHandler for WithdrawBalanceHandler {
 
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let mut new_wallet = old_wallet.clone();
+
+        // Pay fees for the wallet
+        pay_wallet_fees(&mut new_wallet, &self.state).await?;
 
         // Apply the withdrawal to the wallet
         let withdrawal_amount = req.amount.to_u128().unwrap();
-
-        let mut new_wallet = old_wallet.clone();
         new_wallet.withdraw(&mint, withdrawal_amount).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
