@@ -24,7 +24,8 @@ abigen!(
         function redeemFee(bytes memory proof, bytes memory valid_fee_redemption_statement, bytes memory recipient_wallet_commitment_signature) external
 
         event WalletUpdated(uint256 indexed wallet_blinder_share)
-        event NodeChanged(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
+        event MerkleOpeningNode(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
+        event MerkleInsertion(uint128 indexed index, uint256 indexed value)
         event NullifierSpent(uint256 nullifier)
     ]"#
 );
@@ -50,7 +51,8 @@ abigen!(
         function redeemFee(bytes memory proof, bytes memory valid_fee_redemption_statement, bytes memory recipient_wallet_commitment_signature) external
 
         event WalletUpdated(uint256 indexed wallet_blinder_share)
-        event NodeChanged(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
+        event MerkleOpeningNode(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
+        event MerkleInsertion(uint128 indexed index, uint256 indexed value)
         event NullifierSpent(uint256 nullifier)
 
         function clearMerkle() external

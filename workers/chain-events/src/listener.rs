@@ -1,13 +1,13 @@
 //! Defines the core implementation of the on-chain event listener
 
-use std::{sync::atomic::Ordering, thread::JoinHandle};
+use std::thread::JoinHandle;
 
 use arbitrum_client::{
-    abi::{DarkpoolContractEvents, NodeChangedFilter, NullifierSpentFilter},
+    abi::{DarkpoolContractEvents, NullifierSpentFilter},
     client::ArbitrumClient,
     constants::{MERKLE_NODE_CHANGED_EVENT_NAME, NULLIFIER_SPENT_EVENT_NAME},
 };
-use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet, CancelChannel};
+use common::types::CancelChannel;
 use ethers::{prelude::StreamExt, types::Filter};
 use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
@@ -19,16 +19,6 @@ use state::State;
 use tracing::{error, info, instrument, warn};
 
 use super::error::OnChainEventListenerError;
-
-// -------------
-// | Constants |
-// -------------
-
-/// The "height" coordinate value of the root node's children in the Merkle tree
-///
-/// We do not emit events for the root, so we instead rely on the root's
-/// children to count the staleness of Merkle proofs
-const ROOT_CHILDREN_HEIGHT: u8 = 0;
 
 // ----------
 // | Worker |
@@ -73,16 +63,12 @@ pub struct OnChainEventListener {
 pub struct OnChainEventListenerExecutor {
     /// A copy of the config that the executor maintains
     config: OnChainEventListenerConfig,
-    /// A copy of the relayer-global state
-    global_state: State,
 }
 
 impl OnChainEventListenerExecutor {
     /// Create a new executor
     pub fn new(config: OnChainEventListenerConfig) -> Self {
-        let global_state = config.global_state.clone();
-
-        Self { config, global_state }
+        Self { config }
     }
 
     /// Shorthand for fetching a reference to the arbitrum client
@@ -133,9 +119,6 @@ impl OnChainEventListenerExecutor {
             DarkpoolContractEvents::NullifierSpentFilter(event) => {
                 self.handle_nullifier_spent(&event)?;
             },
-            DarkpoolContractEvents::NodeChangedFilter(event) => {
-                self.handle_internal_node_update(event).await?;
-            },
             _ => {
                 // Simply log the error and ignore the event
                 warn!("chain listener received unexpected event type: {event}");
@@ -159,42 +142,6 @@ impl OnChainEventListenerExecutor {
 
         // Nullify any orders that used this nullifier in their validity proof
         self.config.global_state.nullify_orders(nullifier)?;
-
-        Ok(())
-    }
-
-    /// Handle an internal node update to the contract's Merkle tree
-    async fn handle_internal_node_update(
-        &self,
-        event: NodeChangedFilter,
-    ) -> Result<(), OnChainEventListenerError> {
-        // Skip events that are not root children updates
-        if event.height != ROOT_CHILDREN_HEIGHT {
-            return Ok(());
-        }
-
-        for wallet in self.global_state.get_all_wallets()?.into_iter() {
-            // Increment the staleness on the wallet
-            let last_val = wallet.merkle_staleness.fetch_add(1, Ordering::Relaxed);
-            if last_val > self.config.max_root_staleness {
-                self.update_wallet_merkle_path(wallet).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Update the Merkle path of the given wallet to the latest known root
-    ///
-    /// Does not block on task completion, if the task fails it will be retried
-    /// on subsequent events streamed into the listener
-    async fn update_wallet_merkle_path(
-        &self,
-        wallet: Wallet,
-    ) -> Result<(), OnChainEventListenerError> {
-        let task = UpdateMerkleProofTaskDescriptor::new(wallet).unwrap();
-        let (_task_id, waiter) = self.global_state.append_task(task.into())?;
-        waiter.await?;
 
         Ok(())
     }

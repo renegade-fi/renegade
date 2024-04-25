@@ -1,26 +1,30 @@
 //! Defines `ArbitrumClient` helpers that allow for indexing events
 //! emitted by the darkpool contract
 
+use std::cmp::Reverse;
+
 use alloy_sol_types::SolCall;
 use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
-use constants::{Scalar, MERKLE_HEIGHT};
+use constants::Scalar;
+use ethers::contract::EthLogDecode;
 use ethers::{
-    abi::AbiEncode,
     middleware::Middleware,
-    types::{TxHash, H256},
+    types::{TransactionReceipt, TxHash},
 };
+use itertools::Itertools;
 use num_bigint::BigUint;
-use num_traits::ToPrimitive;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{error, instrument};
 
+use crate::abi::MerkleInsertionFilter;
 use crate::{
     abi::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
-        settleOnlineRelayerFeeCall, updateWalletCall, NodeChangedFilter, WalletUpdatedFilter,
+        settleOnlineRelayerFeeCall, updateWalletCall, DarkpoolContractEvents,
+        MerkleOpeningNodeFilter, WalletUpdatedFilter,
     },
-    constants::{DEFAULT_AUTHENTICATION_PATH, SELECTOR_LEN},
+    constants::SELECTOR_LEN,
     errors::ArbitrumClientError,
     helpers::{
         parse_shares_from_new_wallet, parse_shares_from_process_match_settle,
@@ -30,6 +34,9 @@ use crate::{
 };
 
 use super::ArbitrumClient;
+
+/// The error message emitted when not enough Merkle path siblings are found
+const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 
 impl ArbitrumClient {
     /// Return the hash of the transaction that last indexed secret shares for
@@ -71,65 +78,75 @@ impl ArbitrumClient {
         &self,
         commitment: Scalar,
     ) -> Result<MerkleAuthenticationPath, ArbitrumClientError> {
-        let leaf_index = BigUint::from(self.find_commitment_in_state(commitment).await?);
+        let (index, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
+        let leaf_index = BigUint::from(index);
+        let tx: TransactionReceipt = self
+            .darkpool_contract
+            .client()
+            .get_transaction_receipt(tx)
+            .await
+            .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxNotFound(tx.to_string()))?;
 
-        // Construct a set that holds pairs of (depth, index) values in the
-        // authentication path; i.e. the tree coordinates of the sibling nodes
-        // in the authentication path
-        let authentication_path_coords =
-            MerkleAuthenticationPath::construct_path_coords(leaf_index.clone(), MERKLE_HEIGHT);
-
-        let mut path = *DEFAULT_AUTHENTICATION_PATH;
-
-        // Get the latest block number, so that we can query a consistent view of events
-        // up to that block without worrying about Merkle tree updates during
-        // the queries
-        let to_block = self.block_number().await?;
-
-        // For each coordinate in the authentication path,
-        // find the last value it was updated to
-        for coords in authentication_path_coords {
-            let height = H256::from_slice((coords.height as u8).encode().as_slice());
-            let index = H256::from_slice(coords.index.to_u128().unwrap().encode().as_slice());
-            let events = self
-                .darkpool_contract
-                .event::<NodeChangedFilter>()
-                .address(self.darkpool_contract.address().into())
-                .topic1(height)
-                .topic2(index)
-                .from_block(self.deploy_block)
-                .to_block(to_block)
-                .query()
-                .await
-                .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
-
-            let value = events.last().map(|event| event.new_value);
-
-            if let Some(value) = value {
-                path[MERKLE_HEIGHT - coords.height] = u256_to_scalar(&value);
+        // Parse the Merkle path from the transaction logs
+        let mut merkle_path = vec![];
+        for eth_log in tx.logs.into_iter() {
+            match DarkpoolContractEvents::decode_log(&eth_log.into()) {
+                Ok(DarkpoolContractEvents::MerkleOpeningNodeFilter(MerkleOpeningNodeFilter {
+                    height: depth,
+                    new_value,
+                    ..
+                })) => {
+                    merkle_path.push((depth, u256_to_scalar(&new_value)));
+                },
+                // Ignore other events and unknown events
+                _ => continue,
             }
         }
 
-        Ok(MerkleAuthenticationPath::new(path, leaf_index, commitment))
+        // Sort the Merkle path by depth; "deepest" here being the leaves
+        merkle_path.sort_by_key(|(depth, _)| Reverse(*depth));
+        let siblings =
+            merkle_path.into_iter().map(|(_, sibling)| sibling).collect_vec().try_into().map_err(
+                |_| ArbitrumClientError::EventQuerying(ERR_MERKLE_PATH_SIBLINGS.to_string()),
+            )?;
+
+        Ok(MerkleAuthenticationPath::new(siblings, leaf_index, commitment))
     }
 
     /// A helper to find a commitment's index in the Merkle tree
+    ///
+    /// Returns the tx that submitted the commitment
     #[instrument(skip_all, err, fields(commitment = %commitment))]
     pub async fn find_commitment_in_state(
         &self,
         commitment: Scalar,
     ) -> Result<u128, ArbitrumClientError> {
+        let (index, _) = self.find_commitment_in_state_with_tx(commitment).await?;
+        Ok(index)
+    }
+
+    /// A helper to find a commitment's index in the Merkle tree, also returns
+    /// the tx that submitted the commitment
+    #[instrument(skip_all, err, fields(commitment = %commitment))]
+    pub async fn find_commitment_in_state_with_tx(
+        &self,
+        commitment: Scalar,
+    ) -> Result<(u128, TxHash), ArbitrumClientError> {
         let events = self
             .darkpool_contract
-            .event::<NodeChangedFilter>()
+            .event::<MerkleInsertionFilter>()
             .address(self.darkpool_contract.address().into())
-            .topic3(scalar_to_u256(&commitment))
+            .topic2(scalar_to_u256(&commitment))
             .from_block(self.deploy_block)
-            .query()
+            .query_with_meta()
             .await
             .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
 
-        events.last().map(|event| event.index).ok_or(ArbitrumClientError::CommitmentNotFound)
+        events
+            .last()
+            .map(|(event, meta)| (event.index, meta.transaction_hash))
+            .ok_or(ArbitrumClientError::CommitmentNotFound)
     }
 
     /// Fetch and parse the public secret shares from the calldata of the
