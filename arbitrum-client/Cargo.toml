@@ -45,6 +45,7 @@ serde_with = "3.4"
 postcard = { version = "1", features = ["alloc"] }
 
 # === Misc === #
+itertools = "0.12"
 lazy_static = "1.4.0"
 tracing = { workspace = true }
 
