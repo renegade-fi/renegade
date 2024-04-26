@@ -4,7 +4,10 @@
 //! order them
 
 use circuit_types::order::Order;
-use common::types::wallet::{OrderIdentifier, Wallet, WalletIdentifier};
+use common::types::{
+    tasks::QueuedTask,
+    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
+};
 use util::res_some;
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
@@ -21,6 +24,21 @@ impl State {
         tx.commit()?;
 
         Ok(wallet)
+    }
+
+    /// Get the wallet and the tasks in the queue for the wallet
+    ///
+    /// Defined here to manage these in a single tx
+    pub fn get_wallet_and_tasks(
+        &self,
+        id: &WalletIdentifier,
+    ) -> Result<Option<(Wallet, Vec<QueuedTask>)>, StateError> {
+        let tx = self.db.new_read_tx()?;
+        let wallet = res_some!(tx.get_wallet(id)?);
+        let tasks = tx.get_queued_tasks(id)?;
+        tx.commit()?;
+
+        Ok(Some((wallet, tasks)))
     }
 
     /// Get the plaintext order for a locally managed order ID
