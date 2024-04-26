@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use alloy_sol_types::SolCall;
 use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
-use constants::Scalar;
+use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::contract::EthLogDecode;
 use ethers::{
     middleware::Middleware,
@@ -88,8 +88,12 @@ impl ArbitrumClient {
             .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
             .ok_or(ArbitrumClientError::TxNotFound(tx.to_string()))?;
 
+        // The number of Merkle insertions that occurred in a transaction
+        let mut n_insertions = 0;
+        let mut insertion_idx = 0;
+
         // Parse the Merkle path from the transaction logs
-        let mut merkle_path = vec![];
+        let mut all_insertion_events = vec![];
         for eth_log in tx.logs.into_iter() {
             match DarkpoolContractEvents::decode_log(&eth_log.into()) {
                 Ok(DarkpoolContractEvents::MerkleOpeningNodeFilter(MerkleOpeningNodeFilter {
@@ -97,12 +101,31 @@ impl ArbitrumClient {
                     new_value,
                     ..
                 })) => {
-                    merkle_path.push((depth, u256_to_scalar(&new_value)));
+                    all_insertion_events.push((depth, u256_to_scalar(&new_value)));
                 },
+
+                // Track the number of Merkle insertions in the tx, so that we may properly find our
+                // commitment in the log stream
+                Ok(DarkpoolContractEvents::MerkleInsertionFilter(MerkleInsertionFilter {
+                    value,
+                    ..
+                })) => {
+                    if u256_to_scalar(&value) == commitment {
+                        insertion_idx = n_insertions;
+                    }
+
+                    n_insertions += 1;
+                },
+
                 // Ignore other events and unknown events
                 _ => continue,
             }
         }
+
+        // Slice only the events corresponding to the correct insertion in the tx
+        let start = MERKLE_HEIGHT * insertion_idx;
+        let end = start + MERKLE_HEIGHT;
+        let mut merkle_path = all_insertion_events[start..end].to_vec();
 
         // Sort the Merkle path by depth; "deepest" here being the leaves
         merkle_path.sort_by_key(|(depth, _)| Reverse(*depth));
