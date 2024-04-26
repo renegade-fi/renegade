@@ -12,8 +12,9 @@ use external_api::{
         price_report::PRICE_REPORT_ROUTE,
         task::{GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         wallet::{
-            CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE, DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE,
-            GET_BALANCES_ROUTE, GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
+            BACK_OF_QUEUE_WALLET_ROUTE, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
+            DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
+            GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
             ORDER_HISTORY_ROUTE, UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
         },
         PingResponse,
@@ -48,9 +49,9 @@ use self::{
     task::{GetTaskQueueHandler, GetTaskStatusHandler},
     wallet::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
-        FindWalletHandler, GetBalanceByMintHandler, GetBalancesHandler, GetOrderByIdHandler,
-        GetOrderHistoryHandler, GetOrdersHandler, GetWalletHandler, UpdateOrderHandler,
-        WithdrawBalanceHandler,
+        FindWalletHandler, GetBackOfQueueWalletHandler, GetBalanceByMintHandler,
+        GetBalancesHandler, GetOrderByIdHandler, GetOrderHistoryHandler, GetOrdersHandler,
+        GetWalletHandler, UpdateOrderHandler, WithdrawBalanceHandler,
     },
 };
 
@@ -229,6 +230,14 @@ impl HttpServer {
             GET_WALLET_ROUTE.to_string(),
             true, // auth_required
             GetWalletHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:id/back_of_queue" route
+        router.add_route(
+            &Method::GET,
+            BACK_OF_QUEUE_WALLET_ROUTE.to_string(),
+            true, // auth_required
+            GetBackOfQueueWalletHandler::new(global_state.clone()),
         );
 
         // The "/wallet" route

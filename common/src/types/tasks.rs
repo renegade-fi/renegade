@@ -125,7 +125,7 @@ impl TaskDescriptor {
                 unimplemented!("SettleMatchInternal should preempt queue, no key needed")
             },
             TaskDescriptor::UpdateMerkleProof(task) => task.wallet.wallet_id,
-            TaskDescriptor::UpdateWallet(task) => task.old_wallet.wallet_id,
+            TaskDescriptor::UpdateWallet(task) => task.wallet_id,
         }
     }
 
@@ -358,7 +358,7 @@ pub struct UpdateWalletTaskDescriptor {
     /// The external transfer & auth data, if one exists
     pub transfer: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
-    pub old_wallet: Wallet,
+    pub wallet_id: WalletIdentifier,
     /// The new wallet after update
     pub new_wallet: Wallet,
     /// A signature of the `VALID WALLET UPDATE` statement by the wallet's root
@@ -368,6 +368,7 @@ pub struct UpdateWalletTaskDescriptor {
 
 impl UpdateWalletTaskDescriptor {
     /// Constructor
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(
         description: String,
         transfer_with_auth: Option<ExternalTransferWithAuth>,
@@ -388,7 +389,7 @@ impl UpdateWalletTaskDescriptor {
         Ok(UpdateWalletTaskDescriptor {
             description,
             transfer: transfer_with_auth,
-            old_wallet,
+            wallet_id: old_wallet.wallet_id,
             new_wallet,
             wallet_update_signature,
         })

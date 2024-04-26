@@ -24,6 +24,9 @@ pub const CREATE_WALLET_ROUTE: &str = "/v0/wallet";
 pub const FIND_WALLET_ROUTE: &str = "/v0/wallet/lookup";
 /// Returns the wallet information for the given id
 pub const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
+/// Get the wallet at the "back of the queue", i.e. the speculatively updated
+/// wallet as if all enqueued wallet tasks had completed
+pub const BACK_OF_QUEUE_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id/back_of_queue";
 /// Route to the orders of a given wallet
 pub const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
 /// Returns a single order by the given identifier

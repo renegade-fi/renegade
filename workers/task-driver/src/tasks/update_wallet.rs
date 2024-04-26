@@ -10,7 +10,6 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::transfers::ExternalTransferDirection;
-use circuit_types::{native_helpers::wallet_from_blinded_shares, SizedWallet};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
@@ -34,8 +33,8 @@ use crate::helpers::update_wallet_validity_proofs;
 
 /// The human-readable name of the the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
-/// The given wallet shares do not recover the new wallet
-const ERR_INVALID_BLINDING: &str = "invalid blinding for new wallet";
+/// The wallet no longer exists in global state
+const ERR_WALLET_MISSING: &str = "wallet not found in global state";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 
@@ -184,12 +183,15 @@ impl Task for UpdateWalletTask {
     type Descriptor = UpdateWalletTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        // Safety check, the new wallet's secret shares must recover the new wallet
-        Self::check_wallet_shares(&descriptor.new_wallet)?;
+        // Pull in the most recent version of the `old_wallet`
+        let old_wallet = ctx
+            .state
+            .get_wallet(&descriptor.wallet_id)?
+            .ok_or_else(|| UpdateWalletTaskError::Missing(ERR_WALLET_MISSING.to_string()))?;
 
         Ok(Self {
             transfer: descriptor.transfer,
-            old_wallet: descriptor.old_wallet,
+            old_wallet,
             new_wallet: descriptor.new_wallet,
             wallet_update_signature: descriptor.wallet_update_signature,
             proof_bundle: None,
@@ -329,22 +331,6 @@ impl UpdateWalletTask {
     // -----------
     // | Helpers |
     // -----------
-
-    /// Check the construction of a wallet's shares, i.e. that the shares match
-    /// the wallet as a whole
-    fn check_wallet_shares(new_wallet: &Wallet) -> Result<(), UpdateWalletTaskError> {
-        let new_circuit_wallet: SizedWallet = new_wallet.clone().into();
-        let recovered_wallet = wallet_from_blinded_shares(
-            &new_wallet.private_shares,
-            &new_wallet.blinded_public_shares,
-        );
-
-        if recovered_wallet != new_circuit_wallet {
-            return Err(UpdateWalletTaskError::InvalidShares(ERR_INVALID_BLINDING.to_string()));
-        }
-
-        Ok(())
-    }
 
     /// Construct a witness and statement for `VALID WALLET UPDATE`
     fn get_witness_statement(

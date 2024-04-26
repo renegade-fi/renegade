@@ -25,9 +25,11 @@ use external_api::{
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
+use itertools::Itertools;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
+use task_driver::simulation::simulate_wallet_tasks;
 use util::{err_str, hex::jubjub_to_hex_string};
 
 use crate::{
@@ -47,15 +49,20 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 /// to return
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
 
-/// Find the wallet for the given id in the global state
-///
-/// Attempts to acquire the lock for an update on the wallet
+/// Find the wallet in global state and apply any tasks to its state
 fn find_wallet_for_update(
     wallet_id: WalletIdentifier,
     state: &State,
 ) -> Result<Wallet, ApiServerError> {
-    // Find the wallet in global state and use its keys to authenticate the request
-    state.get_wallet(&wallet_id)?.ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))
+    // Find the wallet and tasks
+    let (mut wallet, tasks) = state
+        .get_wallet_and_tasks(&wallet_id)?
+        .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
+
+    // Apply tasks to the wallet
+    let descriptors = tasks.into_iter().map(|t| t.descriptor).collect_vec();
+    simulate_wallet_tasks(&mut wallet, descriptors).map_err(internal_error)?;
+    Ok(wallet)
 }
 
 /// Append a task to a task queue and await consensus on this queue update
@@ -137,6 +144,38 @@ impl TypedHandler for GetWalletHandler {
             .get_wallet(&wallet_id)?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
+        Ok(GetWalletResponse { wallet: wallet.into() })
+    }
+}
+
+/// Handler for the GET /wallet/back_of_queue route
+pub struct GetBackOfQueueWalletHandler {
+    /// A copy of the relayer-global state
+    state: State,
+}
+
+impl GetBackOfQueueWalletHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetBackOfQueueWalletHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetWalletResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Fetch the wallet and its tasks from state
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let wallet = find_wallet_for_update(wallet_id, &self.state)?;
         Ok(GetWalletResponse { wallet: wallet.into() })
     }
 }
