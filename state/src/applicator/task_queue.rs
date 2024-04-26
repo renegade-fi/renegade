@@ -121,7 +121,7 @@ impl StateApplicator {
 
     /// Preempt the given task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn preempt_task_queue(&self, key: TaskQueueKey) -> Result<()> {
+    pub fn preempt_task_queue(&self, key: TaskQueueKey, task: QueuedTask) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         // Stop any running tasks if possible
@@ -145,6 +145,7 @@ impl StateApplicator {
 
         // Pause the queue
         tx.pause_task_queue(&key)?;
+        tx.add_task_front(&key, &task)?;
         Ok(tx.commit()?)
     }
 
@@ -153,8 +154,10 @@ impl StateApplicator {
     pub fn resume_task_queue(&self, key: TaskQueueKey) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
-        // Resume the queue
+        // Resume the queue, and pop the preemptive task that was added when the queue
+        // was paused
         tx.resume_task_queue(&key)?;
+        tx.pop_task(&key)?;
 
         // Start running the first task if it exists
         let tasks = tx.get_queued_tasks(&key)?;
@@ -248,7 +251,10 @@ impl StateApplicator {
 mod test {
     use common::types::{
         gossip::{mocks::mock_peer, WrappedPeerId},
-        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskIdentifier, TaskQueueKey},
+        tasks::{
+            mocks::{mock_preemptive_task, mock_queued_task},
+            QueuedTaskState, TaskIdentifier, TaskQueueKey,
+        },
         wallet_mocks::mock_empty_wallet,
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
@@ -535,7 +541,8 @@ mod test {
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Pause the queue
-        applicator.preempt_task_queue(task_queue_key).unwrap();
+        let preemptive_task = mock_preemptive_task(task_queue_key);
+        applicator.preempt_task_queue(task_queue_key, preemptive_task).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
@@ -555,8 +562,9 @@ mod test {
         tx.commit().unwrap();
 
         assert!(task_recv.is_empty());
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].state, QueuedTaskState::Queued);
+        assert_eq!(tasks.len(), 2); // Includes the preemptive task
+        assert_eq!(tasks[0].state, QueuedTaskState::Preemptive);
+        assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
         applicator.resume_task_queue(task_queue_key).unwrap();
@@ -587,7 +595,7 @@ mod test {
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task
-        let mut task = mock_queued_task(task_queue_key);
+        let mut task = mock_preemptive_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
         applicator.append_task(&task).unwrap();
@@ -599,7 +607,8 @@ mod test {
         tx.commit().unwrap();
 
         // Pause the queue
-        applicator.preempt_task_queue(task_queue_key).unwrap();
+        let preemptive_task = mock_preemptive_task(task_queue_key);
+        applicator.preempt_task_queue(task_queue_key, preemptive_task).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
@@ -613,8 +622,9 @@ mod test {
         let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
-        assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].state, QueuedTaskState::Queued);
+        assert_eq!(tasks.len(), 2); // Includes the preemptive task
+        assert_eq!(tasks[0].state, QueuedTaskState::Preemptive);
+        assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
         applicator.resume_task_queue(task_queue_key).unwrap();

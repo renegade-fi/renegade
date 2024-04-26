@@ -92,6 +92,18 @@ impl<'db> StateTxn<'db, RW> {
         self.inner().write(TASK_TO_KEY_TABLE, &task.id, key)
     }
 
+    /// Add a task to the front of the queue
+    pub fn add_task_front(
+        &self,
+        key: &TaskQueueKey,
+        task: &QueuedTask,
+    ) -> Result<(), StorageError> {
+        self.push_to_queue_front(TASK_QUEUE_TABLE, key, task)?;
+
+        // Add a mapping from the task to the queue key
+        self.inner().write(TASK_TO_KEY_TABLE, &task.id, key)
+    }
+
     /// Pop a task from the queue
     pub fn pop_task(&self, key: &TaskQueueKey) -> Result<Option<QueuedTask>, StorageError> {
         let res: Option<QueuedTask> = self.pop_from_queue(TASK_QUEUE_TABLE, key)?;

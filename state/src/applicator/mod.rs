@@ -80,7 +80,7 @@ impl StateApplicator {
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)
             },
-            StateTransition::PreemptTaskQueue { key } => self.preempt_task_queue(key),
+            StateTransition::PreemptTaskQueue { key, task } => self.preempt_task_queue(key, task),
             StateTransition::ResumeTaskQueue { key } => self.resume_task_queue(key),
             StateTransition::AddMpcPreprocessingValues { cluster, values } => {
                 self.add_preprocessing_values(&cluster, &values)

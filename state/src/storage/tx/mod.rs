@@ -176,7 +176,7 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Push a value to a queue type
     ///
-    /// Assumes the underlying queue is represented by a vector
+    /// Assumes the underlying queue is represented by a `VecDeque`
     pub(crate) fn push_to_queue<K: Key, V: Value>(
         &self,
         table_name: &str,
@@ -185,6 +185,21 @@ impl<'db> StateTxn<'db, RW> {
     ) -> Result<(), StorageError> {
         let mut queue = self.read_queue(table_name, key)?;
         queue.push_back(value.clone());
+
+        self.write_queue(table_name, key, &queue)
+    }
+
+    /// Push a value to the front of a queue type
+    ///
+    /// Assumes the underlying queue is represented by a `VecDeque`
+    pub(crate) fn push_to_queue_front<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &V,
+    ) -> Result<(), StorageError> {
+        let mut queue = self.read_queue(table_name, key)?;
+        queue.push_front(value.clone());
 
         self.write_queue(table_name, key, &queue)
     }

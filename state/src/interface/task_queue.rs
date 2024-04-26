@@ -122,9 +122,25 @@ impl State {
         self.send_proposal(StateTransition::TransitionTask { task_id, state })
     }
 
-    /// Pause a task queue
-    pub fn pause_task_queue(&self, key: &TaskQueueKey) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::PreemptTaskQueue { key: *key })
+    /// Pause a task queue placing the given task at the front of the queue
+    #[instrument(name = "propose_preempt_task_queue", skip_all, err, fields(task_id, task = %task.display_description()))]
+    pub fn pause_task_queue(
+        &self,
+        key: &TaskQueueKey,
+        task_id: TaskIdentifier,
+        task: TaskDescriptor,
+    ) -> Result<ProposalWaiter, StateError> {
+        // Pick a task ID and create a task from the description
+        backfill_trace_field("task_id", task_id.to_string());
+        let self_id = self.get_peer_id()?;
+        let task = QueuedTask {
+            id: task_id,
+            state: QueuedTaskState::Preemptive,
+            executor: self_id,
+            descriptor: task,
+        };
+
+        self.send_proposal(StateTransition::PreemptTaskQueue { key: *key, task })
     }
 
     /// Resume a task queue

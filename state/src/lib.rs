@@ -109,7 +109,7 @@ pub enum StateTransition {
     /// Preempt the given task queue
     ///
     /// Returns any running tasks to `Queued` state and pauses the queue
-    PreemptTaskQueue { key: TaskQueueKey },
+    PreemptTaskQueue { key: TaskQueueKey, task: QueuedTask },
     /// Resume the given task queue
     ResumeTaskQueue { key: TaskQueueKey },
 
