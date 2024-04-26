@@ -18,6 +18,7 @@ pub mod driver;
 pub mod error;
 mod helpers;
 mod running_task;
+pub mod simulation;
 pub mod tasks;
 pub mod traits;
 pub mod worker;
