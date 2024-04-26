@@ -89,6 +89,12 @@ pub enum NetworkManagerControlSignal {
         /// The new address
         address: Multiaddr,
     },
+    /// A command signalling to the network manager that a peer has been expired
+    /// and it should be removed from the Kademlia DHT
+    PeerExpired {
+        /// The PeerID of the expired Peer
+        peer_id: WrappedPeerId,
+    },
     /// A command informing the network manager that the gossip protocol has
     /// warmed up in the network
     ///
