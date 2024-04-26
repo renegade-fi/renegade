@@ -6,7 +6,7 @@ use gossip_api::request_response::{
     orderbook::OrderInfoRequest,
     GossipRequest,
 };
-use job_types::network_manager::NetworkManagerJob;
+use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
 use tracing::info;
 use util::{err_str, get_current_time_seconds};
@@ -133,9 +133,12 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        // Remove expired peers from global state
+        // Remove expired peer from global state & DHT
         info!("Expiring peer {peer_id}");
         self.global_state.remove_peer(peer_id)?;
+        self.network_channel
+            .send(NetworkManagerJob::internal(NetworkManagerControlSignal::PeerExpired { peer_id }))
+            .map_err(err_str!(GossipError::SendMessage))?;
 
         // Add peers to expiry cache for the duration of their invisibility window. This
         // ensures that we do not add the expired peer back to the global state

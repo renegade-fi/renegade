@@ -38,6 +38,12 @@ impl NetworkManagerExecutor {
                 Ok(())
             },
 
+            // Remove a peer from the distributed routing tables
+            NetworkManagerControlSignal::PeerExpired { peer_id } => {
+                self.handle_peer_expired(&peer_id.inner());
+                Ok(())
+            },
+
             // Inform the network manager that the gossip server has warmed up the local node in
             // the cluster by advertising the local node's presence
             //
@@ -75,6 +81,11 @@ impl NetworkManagerExecutor {
         }
 
         self.swarm.behaviour_mut().kademlia_dht.add_address(&peer_id, addr);
+    }
+
+    /// Handle removing a peer from the DHT
+    fn handle_peer_expired(&mut self, peer_id: &PeerId) {
+        self.swarm.behaviour_mut().kademlia_dht.remove_peer(peer_id);
     }
 
     /// Handle a complete gossip warmup
