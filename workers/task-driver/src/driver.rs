@@ -256,12 +256,20 @@ impl TaskExecutor {
             }
         }
 
-        let task_fut = self.create_task_future(true /* immediate */, task_id, task);
+        let task_clone = task.clone();
+        let task_fut = self.create_task_future(true /* immediate */, task_id, task_clone);
         let preemptive_tasks = self.preemptive_tasks.clone();
         let state = self.state().clone();
         self.runtime.spawn(
-            Self::start_preemptive_task(wallet_ids, task_id, state, preemptive_tasks, task_fut)
-                .instrument(info_span!("task", task_id = %task_id)),
+            Self::start_preemptive_task(
+                wallet_ids,
+                task_id,
+                task,
+                state,
+                preemptive_tasks,
+                task_fut,
+            )
+            .instrument(info_span!("task", task_id = %task_id)),
         );
 
         Ok(())
@@ -275,13 +283,14 @@ impl TaskExecutor {
     async fn start_preemptive_task(
         wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
+        task: TaskDescriptor,
         state: State,
         preemptive_tasks: Shared<HashSet<TaskIdentifier>>,
         task_fut: impl Future<Output = Result<(), TaskDriverError>>,
     ) -> Result<(), TaskDriverError> {
         // Pause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            state.pause_task_queue(wallet_id)?.await?;
+            state.pause_task_queue(wallet_id, task_id, task.clone())?.await?;
         }
 
         // Add the task to the preemptive tasks list so that notification requests can

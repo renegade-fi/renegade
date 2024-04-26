@@ -50,6 +50,8 @@ pub struct QueuedTask {
 pub enum QueuedTaskState {
     /// The task is waiting in the queue
     Queued,
+    /// The task is running and has preempted the queue
+    Preemptive,
     /// The task is being run
     ///
     /// The state is serialized to a string before being stored to give a better
@@ -77,6 +79,7 @@ impl QueuedTaskState {
     pub fn display_description(&self) -> String {
         match self {
             QueuedTaskState::Queued => "Queued".to_string(),
+            QueuedTaskState::Preemptive => "Running".to_string(),
             QueuedTaskState::Running { state, .. } => state.clone(),
         }
     }
@@ -547,6 +550,13 @@ pub mod mocks {
             state: QueuedTaskState::Queued,
             descriptor: mock_task_descriptor(queue_key),
         }
+    }
+
+    /// Get a dummy preemptive queued task
+    pub fn mock_preemptive_task(queue_key: TaskQueueKey) -> super::QueuedTask {
+        let mut task = mock_queued_task(queue_key);
+        task.state = QueuedTaskState::Preemptive;
+        task
     }
 
     /// Get a dummy task descriptor
