@@ -8,10 +8,10 @@ use circuit_types::{
     Amount,
 };
 use common::types::{
-    tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor},
+    tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor, WalletUpdateType},
     transfer_auth::ExternalTransferWithAuth,
     wallet::Wallet,
-    wallet_mocks::mock_empty_wallet,
+    wallet_mocks::{mock_empty_wallet, mock_order},
 };
 use constants::Scalar;
 use eyre::Result;
@@ -53,6 +53,7 @@ lazy_static! {
 
 /// Perform a wallet update task and verify that it succeeds
 pub(crate) async fn execute_wallet_update(
+    description: WalletUpdateType,
     mut old_wallet: Wallet,
     new_wallet: Wallet,
     transfer_with_auth: Option<ExternalTransferWithAuth>,
@@ -69,7 +70,7 @@ pub(crate) async fn execute_wallet_update(
 
     let id = new_wallet.wallet_id;
     let task = UpdateWalletTaskDescriptor::new(
-        "test".to_string(),
+        description,
         transfer_with_auth,
         old_wallet,
         new_wallet,
@@ -93,8 +94,15 @@ async fn execute_wallet_update_and_verify_shares(
     share_seed: Scalar,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    execute_wallet_update(old_wallet, new_wallet.clone(), transfer_with_auth, test_args.clone())
-        .await?;
+    let desc = WalletUpdateType::PlaceOrder { order: mock_order() };
+    execute_wallet_update(
+        desc,
+        old_wallet,
+        new_wallet.clone(),
+        transfer_with_auth,
+        test_args.clone(),
+    )
+    .await?;
     info!("Wallet updated successfully");
     lookup_wallet_and_check_result(&new_wallet, blinder_seed, share_seed, &test_args).await
 }

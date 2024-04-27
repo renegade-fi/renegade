@@ -4,7 +4,7 @@ use common::types::tasks::{
     QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
 };
 use tracing::instrument;
-use util::telemetry::helpers::backfill_trace_field;
+use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
@@ -97,8 +97,13 @@ impl State {
         backfill_trace_field("task_id", id.to_string());
 
         let self_id = self.get_peer_id()?;
-        let task =
-            QueuedTask { id, state: QueuedTaskState::Queued, executor: self_id, descriptor: task };
+        let task = QueuedTask {
+            id,
+            state: QueuedTaskState::Queued,
+            executor: self_id,
+            descriptor: task,
+            created_at: get_current_time_millis(),
+        };
 
         // Propose the task to the task queue
         let waiter = self.send_proposal(StateTransition::AppendTask { task })?;
@@ -138,6 +143,7 @@ impl State {
             state: QueuedTaskState::Preemptive,
             executor: self_id,
             descriptor: task,
+            created_at: get_current_time_millis(),
         };
 
         self.send_proposal(StateTransition::PreemptTaskQueue { key: *key, task })
