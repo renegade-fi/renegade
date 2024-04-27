@@ -19,7 +19,8 @@ use external_api::{
         CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
         FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
         GetOrderByIdResponse, GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse,
-        UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
+        PayFeesResponse, UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest,
+        WithdrawBalanceResponse,
     },
     types::ApiOrder,
     EmptyRequestResponse,
@@ -76,38 +77,14 @@ async fn append_task_and_await(
     Ok(task_id)
 }
 
-/// Enqueue tasks to pay all fees for a wallet
-///
-/// Modifies the wallet in place to remove fees
-async fn pay_wallet_fees(wallet: &mut Wallet, state: &State) -> Result<(), ApiServerError> {
-    let wallet_id = wallet.wallet_id;
-    for (mint, balance) in wallet.balances.iter_mut() {
-        if balance.relayer_fee_balance > 0 {
-            // Pay relayer fee
-            let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, mint.clone())
-                .expect("infallible");
-            append_task_and_await(task.into(), state).await?;
-            balance.relayer_fee_balance = 0;
-        }
-
-        if balance.protocol_fee_balance > 0 {
-            // Pay protocol fee
-            let task = PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, mint.clone())
-                .expect("infallible");
-            append_task_and_await(task.into(), state).await?;
-            balance.protocol_fee_balance = 0;
-        }
-    }
-
-    Ok(())
-}
-
 // ------------------
 // | Error Messages |
 // ------------------
 
 /// Error message displayed when a given order cannot be found
 const ERR_ORDER_NOT_FOUND: &str = "order not found";
+/// Error message emitted when a withdrawal is attempted with non-zero fees
+const ERR_WITHDRAW_NONZERO_FEES: &str = "cannot withdraw with non-zero fees";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -709,8 +686,10 @@ impl TypedHandler for WithdrawBalanceHandler {
         let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
         let mut new_wallet = old_wallet.clone();
 
-        // Pay fees for the wallet
-        pay_wallet_fees(&mut new_wallet, &self.state).await?;
+        // Check that fees are paid for the wallet
+        if old_wallet.has_outstanding_fees() {
+            return Err(bad_request(ERR_WITHDRAW_NONZERO_FEES.to_string()));
+        }
 
         // Apply the withdrawal to the wallet
         let withdrawal_amount = req.amount.to_u128().unwrap();
@@ -736,6 +715,61 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(WithdrawBalanceResponse { task_id })
+    }
+}
+
+// ----------------------
+// | Fee Route Handlers |
+// ----------------------
+
+/// The handler for the `/wallet/:id/pay-fees` route
+#[derive(Clone)]
+pub struct PayFeesHandler {
+    /// A copy of the relayer-global state
+    state: State,
+}
+
+impl PayFeesHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for PayFeesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = PayFeesResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let wallet = find_wallet_for_update(wallet_id, &self.state)?;
+
+        // Pay all fees in the wallet
+        let mut tasks = Vec::new();
+        for (mint, balance) in wallet.balances.iter() {
+            if balance.relayer_fee_balance > 0 {
+                let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, mint.clone())
+                    .expect("infallible");
+                let task_id = append_task_and_await(task.into(), &self.state).await?;
+                tasks.push(task_id);
+            }
+
+            if balance.protocol_fee_balance > 0 {
+                let task = PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, mint.clone())
+                    .expect("infallible");
+                let task_id = append_task_and_await(task.into(), &self.state).await?;
+                tasks.push(task_id);
+            }
+        }
+
+        Ok(PayFeesResponse { task_ids: tasks })
     }
 }
 

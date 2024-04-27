@@ -15,7 +15,8 @@ use external_api::{
             BACK_OF_QUEUE_WALLET_ROUTE, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
             DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
             GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
-            ORDER_HISTORY_ROUTE, UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
+            ORDER_HISTORY_ROUTE, PAY_FEES_ROUTE, UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE,
+            WITHDRAW_BALANCE_ROUTE,
         },
         PingResponse,
     },
@@ -51,7 +52,7 @@ use self::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
         FindWalletHandler, GetBackOfQueueWalletHandler, GetBalanceByMintHandler,
         GetBalancesHandler, GetOrderByIdHandler, GetOrderHistoryHandler, GetOrdersHandler,
-        GetWalletHandler, UpdateOrderHandler, WithdrawBalanceHandler,
+        GetWalletHandler, PayFeesHandler, UpdateOrderHandler, WithdrawBalanceHandler,
     },
 };
 
@@ -326,6 +327,14 @@ impl HttpServer {
             WITHDRAW_BALANCE_ROUTE.to_string(),
             true, // auth_required
             WithdrawBalanceHandler::new(global_state.clone()),
+        );
+
+        // The `wallet/:id/pay-fees` route
+        router.add_route(
+            &Method::POST,
+            PAY_FEES_ROUTE.to_string(),
+            true, // auth_required
+            PayFeesHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id/order-history" route

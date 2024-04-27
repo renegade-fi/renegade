@@ -69,6 +69,11 @@ impl Wallet {
         Some(balance)
     }
 
+    /// Return whether the wallet has any fees to pay
+    pub fn has_outstanding_fees(&self) -> bool {
+        self.balances.values().any(|balance| balance.fees().total() > 0)
+    }
+
     // -----------
     // | Setters |
     // -----------

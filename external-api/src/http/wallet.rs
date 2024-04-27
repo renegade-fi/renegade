@@ -26,7 +26,7 @@ pub const FIND_WALLET_ROUTE: &str = "/v0/wallet/lookup";
 pub const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// Get the wallet at the "back of the queue", i.e. the speculatively updated
 /// wallet as if all enqueued wallet tasks had completed
-pub const BACK_OF_QUEUE_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id/back_of_queue";
+pub const BACK_OF_QUEUE_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id/back-of-queue";
 /// Route to the orders of a given wallet
 pub const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/orders";
 /// Returns a single order by the given identifier
@@ -43,6 +43,8 @@ pub const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:min
 pub const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
 /// Withdraws an ERC-20 token from the darkpool
 pub const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
+/// Pays all wallet fees
+pub const PAY_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/pay-fees";
 
 /// Returns the order history of a wallet
 pub const ORDER_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/order-history";
@@ -259,6 +261,17 @@ pub struct WithdrawBalanceRequest {
 pub struct WithdrawBalanceResponse {
     /// The ID of the task allocated for this operation
     pub task_id: TaskIdentifier,
+}
+
+// ------------------
+// | Fees API Types |
+// ------------------
+
+/// The response type to a request to pay all wallet fees
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PayFeesResponse {
+    /// The fee payment tasks allocated for the request
+    pub task_ids: Vec<TaskIdentifier>,
 }
 
 // ---------------------------
