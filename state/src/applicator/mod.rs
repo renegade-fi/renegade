@@ -15,7 +15,7 @@ use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 pub mod error;
 pub mod mpc_preprocessing;
 pub mod order_book;
-pub mod order_metadata;
+pub mod order_history;
 pub mod return_type;
 pub mod task_queue;
 pub mod wallet_index;

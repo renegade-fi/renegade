@@ -1,6 +1,6 @@
 //! Applicator handlers for order metadata updates
 
-use crate::{order_metadata::ERR_MISSING_WALLET, storage::tx::StateTxn};
+use crate::{order_history::ERR_MISSING_WALLET, storage::tx::StateTxn};
 
 use super::{error::StateApplicatorError, StateApplicator};
 use common::types::wallet::order_metadata::OrderMetadata;
@@ -31,9 +31,9 @@ impl StateApplicator {
         // Add the order to the history if it doesn't exist
         let old_meta = tx.get_order_metadata(wallet, meta.id)?;
         if old_meta.is_none() {
-            tx.push_order_history(&wallet, meta)?;
+            tx.push_order_history(&wallet, meta.clone())?;
         } else {
-            tx.update_order_metadata(&wallet, meta)?;
+            tx.update_order_metadata(&wallet, meta.clone())?;
         }
 
         // Write to system bus
@@ -46,7 +46,7 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod tests {
-    use common::types::wallet::order_metadata::OrderState;
+    use common::types::{wallet::order_metadata::OrderState, wallet_mocks::mock_order};
     use uuid::Uuid;
 
     use crate::applicator::test_helpers::mock_applicator;
@@ -62,10 +62,16 @@ mod tests {
         let order_id = Uuid::new_v4();
 
         // Add initial metadata
-        let mut md =
-            OrderMetadata { id: order_id, state: OrderState::Created, filled: 0, created: 1 };
+        let order = mock_order();
+        let mut md = OrderMetadata {
+            id: order_id,
+            data: order,
+            state: OrderState::Created,
+            filled: 0,
+            created: 1,
+        };
         let tx = db.new_write_tx().unwrap();
-        tx.push_order_history(&wallet_id, md).unwrap();
+        tx.push_order_history(&wallet_id, md.clone()).unwrap();
 
         // Add an association of wallet to order
         tx.index_orders(&wallet_id, &[order_id]).unwrap();

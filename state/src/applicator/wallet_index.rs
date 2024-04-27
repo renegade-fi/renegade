@@ -132,9 +132,9 @@ impl StateApplicator {
 
         // New orders
         let wallet_id = wallet.wallet_id;
-        for id in wallet.get_nonzero_orders().into_keys() {
+        for (id, o) in wallet.get_nonzero_orders() {
             if !old_orders.contains(&id) {
-                let new_state = OrderMetadata::new(id);
+                let new_state = OrderMetadata::new(id, o);
                 self.update_order_metadata_with_tx(new_state, tx)?;
             }
         }

@@ -303,7 +303,14 @@ impl HandshakeExecutor {
                 .unwrap()?;
 
                 // Record the match in the cache
-                self.submit_match(party0_proof, party1_proof, order_state, match_bundle).await?;
+                self.submit_match(
+                    party0_proof,
+                    party1_proof,
+                    order_state,
+                    match_result.clone(),
+                    match_bundle,
+                )
+                .await?;
                 self.record_completed_match(request_id, &match_result).await
             },
 
@@ -462,6 +469,7 @@ impl HandshakeExecutor {
         party0_proof: OrderValidityProofBundle,
         party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
+        match_result: MatchResult,
         match_bundle: MatchBundle,
     ) -> Result<(), HandshakeManagerError> {
         // Enqueue a task to settle the match
@@ -473,6 +481,7 @@ impl HandshakeExecutor {
         let task: TaskDescriptor = SettleMatchTaskDescriptor::new(
             wallet_id,
             handshake_state,
+            match_result,
             match_bundle,
             party0_proof,
             party1_proof,

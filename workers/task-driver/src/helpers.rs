@@ -11,7 +11,7 @@ use circuit_types::{
     },
     note::Note,
     order::Order,
-    r#match::OrderSettlementIndices,
+    r#match::{MatchResult, OrderSettlementIndices},
     SizedWallet,
 };
 use circuits::zk_circuits::{
@@ -75,13 +75,23 @@ pub fn transition_order_settling(order_id: OrderIdentifier, state: &State) -> Re
     Ok(())
 }
 
-/// Update an order's state to `Filled`
-pub fn transition_order_filled(order_id: OrderIdentifier, state: &State) -> Result<(), String> {
+/// Record the result of a match in the order's metadata
+pub fn record_order_fill(
+    order_id: OrderIdentifier,
+    match_res: &MatchResult,
+    state: &State,
+) -> Result<(), String> {
+    // Get the order metadata
     let mut metadata =
         state.get_order_metadata(&order_id)?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
-    metadata.state = OrderState::Filled;
-    state.update_order_metadata(metadata)?;
 
+    // Increment filled amount and transition state if the entire order has matched
+    metadata.filled += match_res.base_amount;
+    if metadata.data.amount == metadata.filled {
+        metadata.state = OrderState::Filled;
+    }
+
+    state.update_order_metadata(metadata)?;
     Ok(())
 }
 

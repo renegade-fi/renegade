@@ -14,6 +14,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::PARTY0;
 use async_trait::async_trait;
+use circuit_types::r#match::MatchResult;
 use circuit_types::SizedWalletShare;
 use common::types::proof_bundles::MatchBundle;
 use common::types::tasks::SettleMatchTaskDescriptor;
@@ -32,8 +33,7 @@ use crate::driver::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 
 use crate::helpers::{
-    find_merkle_path, transition_order_filled, transition_order_settling,
-    update_wallet_validity_proofs,
+    find_merkle_path, record_order_fill, transition_order_settling, update_wallet_validity_proofs,
 };
 
 /// The error message the contract emits when a nullifier has been used
@@ -154,6 +154,8 @@ pub struct SettleMatchTask {
     /// The state entry from the handshake manager that parameterizes the
     /// match process
     pub handshake_state: HandshakeState,
+    /// The match result from the matching engine
+    pub match_res: MatchResult,
     /// The proof that comes from the collaborative match-settle process
     pub match_bundle: MatchBundle,
     /// The validity proofs submitted by the first party
@@ -183,6 +185,7 @@ impl Task for SettleMatchTask {
             wallet_id,
             handshake_state,
             match_bundle,
+            match_res,
             party0_validity_proof,
             party1_validity_proof,
         } = descriptor;
@@ -190,6 +193,7 @@ impl Task for SettleMatchTask {
         Ok(Self {
             wallet_id,
             handshake_state,
+            match_res,
             match_bundle,
             party0_validity_proof,
             party1_validity_proof,
@@ -285,17 +289,17 @@ impl SettleMatchTask {
     /// Apply the match result to the local wallet, find the wallet's new
     /// Merkle opening, and update the global state
     async fn update_wallet_state(&self) -> Result<(), SettleMatchTaskError> {
-        // Find the wallet that was matched and the new private shares from its current
-        // reblind proof
+        // Find the local wallet that was matched
         let mut wallet = self.get_wallet()?;
-        let (private_shares, blinded_public_shares) = self.get_new_shares()?;
-        wallet.update_from_shares(&private_shares, &blinded_public_shares);
 
         // Transition the order state to filled if the new volume is zero
         let id = self.handshake_state.local_order_id;
-        if wallet.get_order(&id).map(|o| o.amount == 0).unwrap_or(false) {
-            transition_order_filled(id, &self.global_state).map_err(SettleMatchTaskError::State)?;
-        }
+        record_order_fill(id, &self.match_res, &self.global_state)
+            .map_err(SettleMatchTaskError::State)?;
+
+        // Update the shares of the wallet
+        let (private_shares, blinded_public_shares) = self.get_new_shares()?;
+        wallet.update_from_shares(&private_shares, &blinded_public_shares);
 
         // Cancel all orders on both nullifiers, await new validity proofs
         let party0_reblind_statement = &self.party0_validity_proof.reblind_proof.statement;

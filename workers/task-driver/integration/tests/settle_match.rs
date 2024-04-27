@@ -415,6 +415,7 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     let task = SettleMatchTaskDescriptor::new(
         buy_wallet.wallet_id,
         handshake_state,
+        match_res.clone(),
         match_settle_proof,
         get_first_order_proofs(&buy_wallet, state)?,
         get_first_order_proofs(&sell_wallet, state)?,
