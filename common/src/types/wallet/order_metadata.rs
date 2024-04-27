@@ -47,7 +47,7 @@ pub struct OrderMetadata {
 impl OrderMetadata {
     /// Create a new order metadata instance, defaults to `Created` state
     pub fn new(id: OrderIdentifier, order: Order) -> Self {
-        let created = get_current_time_millis() as u64;
+        let created = get_current_time_millis();
         Self { id, data: order, state: OrderState::Created, filled: 0, created }
     }
 }

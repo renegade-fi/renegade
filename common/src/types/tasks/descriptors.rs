@@ -1,7 +1,8 @@
 //! Defines task related types
 
 use circuit_types::{
-    fixed_point::FixedPoint, keychain::PublicSigningKey, note::Note, r#match::MatchResult,
+    fixed_point::FixedPoint, keychain::PublicSigningKey, note::Note, order::Order,
+    r#match::MatchResult, Amount,
 };
 use constants::Scalar;
 use ethers::core::types::Signature;
@@ -12,7 +13,7 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{
+use crate::types::{
     gossip::WrappedPeerId,
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -40,6 +41,8 @@ pub struct QueuedTask {
     pub state: QueuedTaskState,
     /// The task descriptor
     pub descriptor: TaskDescriptor,
+    /// The time at which the task was created
+    pub created_at: u64,
 }
 
 /// The state of a queued task
@@ -62,6 +65,10 @@ pub enum QueuedTaskState {
         /// Whether the task has committed or not
         committed: bool,
     },
+    /// The task is completed
+    Completed,
+    /// The task failed
+    Failed,
 }
 
 impl QueuedTaskState {
@@ -81,6 +88,8 @@ impl QueuedTaskState {
             QueuedTaskState::Queued => "Queued".to_string(),
             QueuedTaskState::Preemptive => "Running".to_string(),
             QueuedTaskState::Running { state, .. } => state.clone(),
+            QueuedTaskState::Completed => "Completed".to_string(),
+            QueuedTaskState::Failed => "Failed".to_string(),
         }
     }
 }
@@ -150,7 +159,7 @@ impl TaskDescriptor {
     pub fn display_description(&self) -> String {
         match self {
             TaskDescriptor::NewWallet(_) => "New Wallet".to_string(),
-            TaskDescriptor::UpdateWallet(args) => args.description.clone(),
+            TaskDescriptor::UpdateWallet(args) => args.description.display_description(),
             TaskDescriptor::LookupWallet(_) => "Lookup Wallet".to_string(),
             TaskDescriptor::SettleMatch(_) => "Settle Match".to_string(),
             TaskDescriptor::SettleMatchInternal(_) => "Settle Match".to_string(),
@@ -353,12 +362,58 @@ impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
     }
 }
 
+/// A type representing a description of an update wallet task
+///
+/// Differentiates between order vs balance updates, and holds fields for
+/// display
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum WalletUpdateType {
+    /// Deposit a balance
+    Deposit {
+        /// The deposited mint
+        mint: BigUint,
+        /// The amount deposited
+        amount: Amount,
+    },
+    /// Withdraw a balance
+    Withdraw {
+        /// The withdrawn mint
+        mint: BigUint,
+        /// The amount withdrawn
+        amount: Amount,
+    },
+    /// Place an order
+    PlaceOrder {
+        /// The order to place
+        order: Order,
+    },
+    /// Cancel an order
+    CancelOrder {
+        /// The order that was cancelled
+        order: Order,
+    },
+}
+
+impl WalletUpdateType {
+    /// Get a human-readable description of the wallet update type
+    pub fn display_description(&self) -> String {
+        match self {
+            WalletUpdateType::Deposit { .. } => "Deposit",
+            WalletUpdateType::Withdraw { .. } => "Withdraw",
+            WalletUpdateType::PlaceOrder { .. } => "Place order",
+            WalletUpdateType::CancelOrder { .. } => "Cancel order",
+        }
+        .to_string()
+    }
+}
+
 /// The task descriptor containing only the parameterization of the
 /// `UpdateWallet` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpdateWalletTaskDescriptor {
-    /// A human-readable description of the update
-    pub description: String,
+    /// A description of the update task, maintained for historical state
+    pub description: WalletUpdateType,
     /// The external transfer & auth data, if one exists
     pub transfer: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
@@ -371,10 +426,10 @@ pub struct UpdateWalletTaskDescriptor {
 }
 
 impl UpdateWalletTaskDescriptor {
-    /// Constructor
+    /// Base constructor
     #[allow(clippy::needless_pass_by_value)]
     pub fn new(
-        description: String,
+        description: WalletUpdateType,
         transfer_with_auth: Option<ExternalTransferWithAuth>,
         old_wallet: Wallet,
         new_wallet: Wallet,
@@ -397,6 +452,56 @@ impl UpdateWalletTaskDescriptor {
             new_wallet,
             wallet_update_signature,
         })
+    }
+
+    /// A new deposit
+    pub fn new_deposit(
+        transfer_with_auth: ExternalTransferWithAuth,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+    ) -> Result<Self, String> {
+        let transfer = &transfer_with_auth.external_transfer;
+        let desc =
+            WalletUpdateType::Deposit { mint: transfer.mint.clone(), amount: transfer.amount };
+
+        Self::new(desc, Some(transfer_with_auth), old_wallet, new_wallet, wallet_update_signature)
+    }
+
+    /// A new withdrawal
+    pub fn new_withdrawal(
+        transfer_with_auth: ExternalTransferWithAuth,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+    ) -> Result<Self, String> {
+        let transfer = &transfer_with_auth.external_transfer;
+        let desc =
+            WalletUpdateType::Withdraw { mint: transfer.mint.clone(), amount: transfer.amount };
+
+        Self::new(desc, Some(transfer_with_auth), old_wallet, new_wallet, wallet_update_signature)
+    }
+
+    /// A new create order
+    pub fn new_order(
+        order: Order,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+    ) -> Result<Self, String> {
+        let desc = WalletUpdateType::PlaceOrder { order };
+        Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
+    }
+
+    /// A new order cancellation
+    pub fn new_order_cancellation(
+        order: Order,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+    ) -> Result<Self, String> {
+        let desc = WalletUpdateType::CancelOrder { order };
+        Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 }
 
@@ -523,6 +628,7 @@ pub mod mocks {
     use ethers::core::utils::keccak256;
     use ethers::signers::Wallet as EthersWallet;
     use k256::ecdsa::SigningKey as K256SigningKey;
+    use util::get_current_time_millis;
 
     use crate::types::{
         gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet::Wallet,
@@ -554,6 +660,7 @@ pub mod mocks {
             executor: mock_peer().peer_id,
             state: QueuedTaskState::Queued,
             descriptor: mock_task_descriptor(queue_key),
+            created_at: get_current_time_millis(),
         }
     }
 
@@ -583,7 +690,7 @@ pub mod mocks {
 mod test {
     use constants::Scalar;
 
-    use crate::types::wallet_mocks::mock_empty_wallet;
+    use crate::types::wallet_mocks::{mock_empty_wallet, mock_order};
 
     use super::{
         mocks::gen_wallet_update_sig, NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
@@ -606,14 +713,8 @@ mod test {
         let mut wallet = mock_empty_wallet();
         wallet.blinded_public_shares.orders[0].amount += Scalar::one();
 
-        UpdateWalletTaskDescriptor::new(
-            "test".to_string(), // description
-            None,               // transfer
-            wallet.clone(),
-            wallet,
-            vec![],
-        )
-        .unwrap();
+        UpdateWalletTaskDescriptor::new_order(mock_order(), wallet.clone(), wallet, vec![])
+            .unwrap();
     }
 
     /// Tests creating an update wallet task with an invalid signatures
@@ -623,14 +724,7 @@ mod test {
         let wallet = mock_empty_wallet();
         let sig = vec![0; 64];
 
-        UpdateWalletTaskDescriptor::new(
-            "test".to_string(), // description
-            None,               // transfer
-            wallet.clone(),
-            wallet,
-            sig,
-        )
-        .unwrap();
+        UpdateWalletTaskDescriptor::new_order(mock_order(), wallet.clone(), wallet, sig).unwrap();
     }
 
     /// Tests creating a valid update wallet task
@@ -641,13 +735,6 @@ mod test {
         let key = wallet.key_chain.secret_keys.sk_root.as_ref().unwrap();
         let sig = gen_wallet_update_sig(&wallet, key);
 
-        UpdateWalletTaskDescriptor::new(
-            "test".to_string(), // description
-            None,               // transfer
-            wallet.clone(),
-            wallet,
-            sig,
-        )
-        .unwrap();
+        UpdateWalletTaskDescriptor::new_order(mock_order(), wallet.clone(), wallet, sig).unwrap();
     }
 }

@@ -127,7 +127,7 @@ mod test {
 
     /// Build a set of headers using the an expiration one second in the future
     fn build_headers(root_key: &SigningKey) -> HeaderMap {
-        let current_time = util::get_current_time_millis() as u64;
+        let current_time = util::get_current_time_millis();
         build_headers_with_expiration(current_time + 1_000, root_key)
     }
 
@@ -157,7 +157,7 @@ mod test {
     #[test]
     fn test_expired_sig() {
         let key: SigningKey = random_key();
-        let now = util::get_current_time_millis() as u64;
+        let now = util::get_current_time_millis();
         let headers = build_headers_with_expiration(now - 1, &key);
 
         let res = authenticate_wallet_request(&headers, MSG, &key.verifying_key().into());

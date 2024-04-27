@@ -22,6 +22,6 @@ pub fn get_current_time_seconds() -> u64 {
 }
 
 /// Returns the current unix timestamp in milliseconds, represented as u64
-pub fn get_current_time_millis() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_millis()
+pub fn get_current_time_millis() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_millis() as u64
 }

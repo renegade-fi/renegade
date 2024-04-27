@@ -373,12 +373,11 @@ impl TypedHandler for CreateOrderHandler {
         let new_order: Order = req.order.into();
 
         // Check that the timestamp is not too old, then add to the wallet
-        new_wallet.add_order(id, new_order).map_err(bad_request)?;
+        new_wallet.add_order(id, new_order.clone()).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor::new(
-            "Create Order".to_string(), // description
-            None,                       // transfer
+        let task = UpdateWalletTaskDescriptor::new_order(
+            new_order,
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -435,12 +434,11 @@ impl TypedHandler for UpdateOrderHandler {
             .orders
             .get_mut(&order_id)
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
-        *order = new_order;
+        *order = new_order.clone();
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor::new(
-            "Update Order".to_string(), // description
-            None,                       // transfer
+        let task = UpdateWalletTaskDescriptor::new_order(
+            new_order,
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -491,9 +489,8 @@ impl TypedHandler for CancelOrderHandler {
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor::new(
-            "Cancel Order".to_string(), // description
-            None,                       // transfer
+        let task = UpdateWalletTaskDescriptor::new_order_cancellation(
+            order.clone(),
             old_wallet,
             new_wallet,
             req.statement_sig,
@@ -638,9 +635,8 @@ impl TypedHandler for DepositBalanceHandler {
             },
         );
 
-        let task = UpdateWalletTaskDescriptor::new(
-            "Deposit".to_string(), // description
-            Some(deposit_with_auth),
+        let task = UpdateWalletTaskDescriptor::new_deposit(
+            deposit_with_auth,
             old_wallet,
             new_wallet,
             req.wallet_commitment_sig,
@@ -703,9 +699,8 @@ impl TypedHandler for WithdrawBalanceHandler {
             WithdrawalAuth { external_transfer_signature: req.external_transfer_sig },
         );
 
-        let task = UpdateWalletTaskDescriptor::new(
-            "Withdraw".to_string(), // description
-            Some(withdrawal_with_auth),
+        let task = UpdateWalletTaskDescriptor::new_withdrawal(
+            withdrawal_with_auth,
             old_wallet,
             new_wallet,
             req.wallet_commitment_sig,
