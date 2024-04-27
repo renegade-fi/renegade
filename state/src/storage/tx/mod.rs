@@ -12,6 +12,7 @@ pub mod order_book;
 pub mod order_history;
 pub mod peer_index;
 pub mod raft_log;
+pub mod task_history;
 pub mod task_queue;
 pub mod wallet_index;
 
@@ -22,7 +23,7 @@ use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, Write
 use crate::{
     CLUSTER_MEMBERSHIP_TABLE, MPC_PREPROCESSING_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE,
     ORDER_HISTORY_TABLE, ORDER_TO_WALLET_TABLE, PEER_INFO_TABLE, PRIORITIES_TABLE,
-    TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE, WALLETS_TABLE,
+    TASK_HISTORY_TABLE, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE, WALLETS_TABLE,
 };
 
 use self::raft_log::RAFT_METADATA_TABLE;
@@ -102,6 +103,7 @@ impl<'db> StateTxn<'db, RW> {
             WALLETS_TABLE,
             TASK_QUEUE_TABLE,
             TASK_TO_KEY_TABLE,
+            TASK_HISTORY_TABLE,
             MPC_PREPROCESSING_TABLE,
             NODE_METADATA_TABLE,
             RAFT_METADATA_TABLE,

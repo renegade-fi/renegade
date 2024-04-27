@@ -63,6 +63,8 @@ pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
 /// The name of the db table that maps tasks to their queue key
 pub(crate) const TASK_TO_KEY_TABLE: &str = "task-to-key";
+/// The name of the db table that stores historical task information
+pub(crate) const TASK_HISTORY_TABLE: &str = "task-history";
 
 /// The name of the db table that stores the offline phase values
 pub(crate) const MPC_PREPROCESSING_TABLE: &str = "mpc-preprocessing";

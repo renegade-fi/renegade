@@ -367,7 +367,6 @@ impl From<UpdateMerkleProofTaskDescriptor> for TaskDescriptor {
 /// Differentiates between order vs balance updates, and holds fields for
 /// display
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
 pub enum WalletUpdateType {
     /// Deposit a balance
     Deposit {
