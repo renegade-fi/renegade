@@ -24,7 +24,6 @@ pub struct HistoricalTask {
 /// Separated out from the task descriptors as the descriptors may contain
 /// runtime information irrelevant for storage
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub enum HistoricalTaskDescription {
     /// A new wallet was created
     NewWallet,
@@ -50,6 +49,32 @@ impl HistoricalTaskDescription {
             },
             TaskDescriptor::OfflineFee(_) => Some(Self::PayOfflineFee),
             _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "mocks")]
+pub mod historical_mocks {
+    //! Mock helpers for testing task history
+
+    use rand::{thread_rng, RngCore};
+
+    use crate::types::{
+        tasks::{QueuedTaskState, TaskIdentifier, WalletUpdateType},
+        wallet_mocks::mock_order,
+    };
+
+    use super::{HistoricalTask, HistoricalTaskDescription};
+
+    /// Return a mock historical task
+    pub fn mock_historical_task() -> HistoricalTask {
+        let mut rng = thread_rng();
+        let ty = WalletUpdateType::PlaceOrder { order: mock_order() };
+        HistoricalTask {
+            id: TaskIdentifier::new_v4(),
+            state: QueuedTaskState::Completed,
+            created_at: rng.next_u64(),
+            task_info: HistoricalTaskDescription::UpdateWallet(ty),
         }
     }
 }
