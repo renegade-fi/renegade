@@ -5,8 +5,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::helpers::{
-    enqueue_proof_job, transition_order_filled, transition_order_settling,
-    update_wallet_validity_proofs,
+    enqueue_proof_job, record_order_fill, transition_order_settling, update_wallet_validity_proofs,
 };
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::{driver::StateWrapper, helpers::find_merkle_path};
@@ -335,6 +334,12 @@ impl SettleMatchInternalTask {
         self.state.nullify_orders(nullifier1)?;
         self.state.nullify_orders(nullifier2)?;
 
+        // Transition the orders to the `Filled` state if necessary
+        record_order_fill(self.order_id1, &self.match_result, &self.state)
+            .map_err(SettleMatchInternalTaskError::State)?;
+        record_order_fill(self.order_id2, &self.match_result, &self.state)
+            .map_err(SettleMatchInternalTaskError::State)?;
+
         // Lookup the wallets that manage each order
         let mut wallet1 = self.find_wallet(&self.wallet_id1)?;
         let mut wallet2 = self.find_wallet(&self.wallet_id2)?;
@@ -349,10 +354,6 @@ impl SettleMatchInternalTask {
             &self.order2_validity_witness.reblind_witness.reblinded_wallet_private_shares;
         wallet1.update_from_shares(party0_private_shares, party0_public_shares);
         wallet2.update_from_shares(party1_private_shares, party1_public_shares);
-
-        // Transition the orders to the `Filled` state if necessary
-        self.maybe_transition_filled(&self.order_id1, &wallet1)?;
-        self.maybe_transition_filled(&self.order_id2, &wallet2)?;
 
         self.find_opening(&mut wallet1).await?;
         self.find_opening(&mut wallet2).await?;
@@ -409,22 +410,6 @@ impl SettleMatchInternalTask {
         self.state.get_wallet(wallet_id)?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })
-    }
-
-    /// Transition the order to the `Filled` state if the match completely fills
-    /// the order
-    fn maybe_transition_filled(
-        &self,
-        order_id: &OrderIdentifier,
-        wallet: &Wallet,
-    ) -> Result<(), SettleMatchInternalTaskError> {
-        let is_filled = wallet.get_order(order_id).map(|o| o.amount == 0).unwrap_or(false);
-        if is_filled {
-            transition_order_filled(*order_id, &self.state)
-                .map_err(SettleMatchInternalTaskError::State)?;
-        }
-
-        Ok(())
     }
 
     /// Get the witness and statement for `VALID MATCH SETTLE`

@@ -58,7 +58,7 @@ impl State {
 pub mod test {
     use std::cmp::Reverse;
 
-    use common::types::wallet::order_metadata::OrderState;
+    use common::types::{wallet::order_metadata::OrderState, wallet_mocks::mock_order};
     use itertools::Itertools;
     use rand::{seq::IteratorRandom, thread_rng, RngCore};
 
@@ -69,8 +69,10 @@ pub mod test {
     /// Get a random order metadata instance
     pub fn random_metadata() -> OrderMetadata {
         let mut rng = thread_rng();
+        let data = mock_order();
         OrderMetadata {
             id: OrderIdentifier::new_v4(),
+            data,
             state: OrderState::Created,
             filled: 0,
             created: rng.next_u64(),
@@ -81,7 +83,7 @@ pub mod test {
     pub fn setup_order_history(wallet_id: &WalletIdentifier, orders: &[OrderMetadata], db: &DB) {
         // Add orders to the history
         let tx = db.new_write_tx().unwrap();
-        orders.iter().for_each(|o| tx.push_order_history(wallet_id, *o).unwrap());
+        orders.iter().cloned().for_each(|o| tx.push_order_history(wallet_id, o).unwrap());
         let order_ids = orders.iter().map(|o| o.id).collect_vec();
         tx.index_orders(wallet_id, &order_ids).unwrap();
         tx.commit().unwrap();
@@ -105,7 +107,7 @@ pub mod test {
 
         // Read back a random order's metadata
         let idx = (0..orders.len()).choose(&mut thread_rng()).unwrap();
-        let meta = orders[idx];
+        let meta = orders[idx].clone();
         let found = state.get_order_metadata(&meta.id).unwrap().unwrap();
         assert_eq!(meta, found);
     }
@@ -122,11 +124,11 @@ pub mod test {
 
         // Modify a single order's metadata
         let idx = (0..orders.len()).choose(&mut thread_rng()).unwrap();
-        let mut meta = orders[idx];
+        let mut meta = orders[idx].clone();
         meta.filled += 1;
 
         // Update and retrieve the order's metadata
-        let waiter = state.update_order_metadata(meta).unwrap();
+        let waiter = state.update_order_metadata(meta.clone()).unwrap();
         waiter.await.unwrap();
         let fetched_meta = state.get_order_metadata(&meta.id).unwrap().unwrap();
         assert_eq!(meta, fetched_meta);

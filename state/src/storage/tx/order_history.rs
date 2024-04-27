@@ -116,7 +116,10 @@ impl<'db> StateTxn<'db, RW> {
 mod tests {
     use std::cmp::Reverse;
 
-    use common::types::wallet::order_metadata::{OrderMetadata, OrderState};
+    use common::types::{
+        wallet::order_metadata::{OrderMetadata, OrderState},
+        wallet_mocks::mock_order,
+    };
     use itertools::Itertools;
     use rand::{thread_rng, Rng, RngCore};
     use uuid::Uuid;
@@ -131,6 +134,7 @@ mod tests {
             state: OrderState::Created,
             filled: 0,
             created: rng.next_u64(),
+            data: mock_order(),
         }
     }
 
@@ -185,7 +189,7 @@ mod tests {
         // Choose a random order
         let mut rng = rand::thread_rng();
         let index = rng.gen_range(0..history.len());
-        let curr_order = history[index];
+        let curr_order = history[index].clone();
 
         // Check the current state of that order
         let tx = db.new_read_tx().unwrap();
@@ -197,7 +201,7 @@ mod tests {
         updated_order.filled = rng.gen();
 
         let tx = db.new_write_tx().unwrap();
-        tx.update_order_metadata(&wallet_id, updated_order).unwrap();
+        tx.update_order_metadata(&wallet_id, updated_order.clone()).unwrap();
         tx.commit().unwrap();
 
         // Get the updated order

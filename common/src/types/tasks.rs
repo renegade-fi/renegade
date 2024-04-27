@@ -295,6 +295,8 @@ pub struct SettleMatchTaskDescriptor {
     /// The state entry from the handshake manager that parameterizes the
     /// match process
     pub handshake_state: HandshakeState,
+    /// The match result from the matching engine
+    pub match_res: MatchResult,
     /// The proof that comes from the collaborative match-settle process
     pub match_bundle: MatchBundle,
     /// The validity proofs submitted by the first party
@@ -308,6 +310,7 @@ impl SettleMatchTaskDescriptor {
     pub fn new(
         wallet_id: WalletIdentifier,
         handshake_state: HandshakeState,
+        match_res: MatchResult,
         match_bundle: MatchBundle,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
@@ -315,6 +318,7 @@ impl SettleMatchTaskDescriptor {
         Ok(SettleMatchTaskDescriptor {
             wallet_id,
             handshake_state,
+            match_res,
             match_bundle,
             party0_validity_proof,
             party1_validity_proof,

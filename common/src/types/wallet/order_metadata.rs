@@ -1,6 +1,6 @@
 //! Order metadata for a wallet's orders
 
-use circuit_types::Amount;
+use circuit_types::{order::Order, Amount};
 use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
 
@@ -30,10 +30,12 @@ impl OrderState {
 }
 
 /// Metadata for an order in a wallet, possibly historical
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrderMetadata {
     /// The order ID
     pub id: OrderIdentifier,
+    /// The data of the order
+    pub data: Order,
     /// The order state
     pub state: OrderState,
     /// The amount that has been filled
@@ -44,8 +46,8 @@ pub struct OrderMetadata {
 
 impl OrderMetadata {
     /// Create a new order metadata instance, defaults to `Created` state
-    pub fn new(id: OrderIdentifier) -> Self {
+    pub fn new(id: OrderIdentifier, order: Order) -> Self {
         let created = get_current_time_millis() as u64;
-        Self { id, state: OrderState::Created, filled: 0, created }
+        Self { id, data: order, state: OrderState::Created, filled: 0, created }
     }
 }

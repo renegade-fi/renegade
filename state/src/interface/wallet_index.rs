@@ -106,7 +106,7 @@ mod test {
     use itertools::Itertools;
     use num_bigint::BigUint;
 
-    use crate::{order_metadata::test::setup_order_history, test_helpers::mock_state, State};
+    use crate::{order_history::test::setup_order_history, test_helpers::mock_state, State};
 
     /// Create a set of mock historical orders
     fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &State) {
@@ -116,6 +116,7 @@ mod test {
                 state: OrderState::Filled,
                 filled: 1,
                 created: 0,
+                data: mock_order(),
             })
             .collect_vec();
 
