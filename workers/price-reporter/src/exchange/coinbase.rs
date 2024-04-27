@@ -172,9 +172,10 @@ impl CoinbaseConnection {
             .map(|key| key.parse::<f64>().unwrap())
             .fold(f64::INFINITY, f64::min);
 
-        // Do not let the best offer be infinite as this gives an infinite midpoint
-        if best_offer == f64::INFINITY {
-            return Ok(Some(0.));
+        // If the best offer is infinite, or the best bid is 0, return None - we don't
+        // yet have enough data
+        if best_offer == f64::INFINITY || best_bid == 0. {
+            return Ok(None);
         }
 
         Ok(Some((best_bid + best_offer) / 2.))
