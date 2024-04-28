@@ -6,6 +6,7 @@ pub mod network;
 pub mod order_book;
 pub mod price_report;
 pub mod task;
+pub mod task_history;
 pub mod wallet;
 
 /// A ping response

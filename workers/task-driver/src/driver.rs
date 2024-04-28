@@ -298,13 +298,13 @@ impl TaskExecutor {
         preemptive_tasks.write().unwrap().insert(task_id);
 
         let res = task_fut.await;
-        if let Err(e) = res {
+        if let Err(e) = &res {
             error!("error running immediate task: {e:?}");
         }
 
         // Unpause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            state.resume_task_queue(wallet_id)?.await?;
+            state.resume_task_queue(wallet_id, res.is_ok())?;
         }
 
         // Remove from the preemptive tasks list
