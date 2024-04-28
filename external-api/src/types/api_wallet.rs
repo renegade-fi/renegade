@@ -1,8 +1,5 @@
-//! Defines API type definitions used in request/response messages
+//! API types for wallet information
 
-use std::collections::HashMap;
-
-use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
@@ -11,11 +8,7 @@ use circuit_types::{
     traits::BaseType,
     Amount, SizedWalletShare,
 };
-use common::types::{
-    gossip::PeerInfo as IndexedPeerInfo,
-    network_order::{NetworkOrder, NetworkOrderState},
-    wallet::{KeyChain, OrderIdentifier, PrivateKeyChain, Wallet},
-};
+use common::types::wallet::{KeyChain, OrderIdentifier, PrivateKeyChain, Wallet, WalletIdentifier};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
@@ -27,9 +20,7 @@ use util::hex::{
 };
 use uuid::Uuid;
 
-// --------------------
-// | Wallet API Types |
-// --------------------
+use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
 
 /// The wallet type, holds all balances, orders, metadata, and randomness
 /// for a trader
@@ -38,7 +29,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiWallet {
     /// Identifier
-    pub id: Uuid,
+    pub id: WalletIdentifier,
     /// The orders maintained by this wallet
     pub orders: Vec<ApiOrder>,
     /// The balances maintained by the wallet to cover orders
@@ -190,49 +181,6 @@ pub enum ApiOrderType {
     Limit,
 }
 
-// ------------------------
-// | Order Book API Types |
-// ------------------------
-
-/// The order book known to the local node, consisting of all opaque
-/// network orders being shopped around by peers
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OrderBook {
-    /// The list of known orders
-    pub orders: Vec<ApiNetworkOrder>,
-}
-
-/// An opaque order known to the local peer only by a few opaque identifiers
-/// possibly owned and known in the clear by the local peer as well
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApiNetworkOrder {
-    /// Identifier
-    pub id: Uuid,
-    /// The nullifier of the containing wallet's public secret shares
-    pub public_share_nullifier: BigUint,
-    /// Whether this order is managed by the local cluster
-    pub local: bool,
-    /// The cluster that manages this order
-    pub cluster: String,
-    /// The state of the order in the network
-    pub state: NetworkOrderState,
-    /// The timestamp that this order was first received at
-    pub timestamp: u64,
-}
-
-impl From<NetworkOrder> for ApiNetworkOrder {
-    fn from(order: NetworkOrder) -> Self {
-        ApiNetworkOrder {
-            id: order.id,
-            public_share_nullifier: scalar_to_biguint(&order.public_share_nullifier),
-            local: order.local,
-            cluster: order.cluster.to_string(),
-            state: order.state,
-            timestamp: order.timestamp,
-        }
-    }
-}
-
 /// A keychain API type that maintains all keys as hex strings, conversion to
 /// the runtime keychain type involves deserializing these keys into their
 /// native types
@@ -299,65 +247,5 @@ impl TryFrom<ApiKeychain> for KeyChain {
                 },
             },
         })
-    }
-}
-
-// ------------------------------
-// | P2P Network Info API Types |
-// ------------------------------
-
-/// The network topology
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Network {
-    /// Identifier, e.g. "goerli"
-    pub id: String,
-    /// The list of clusters known to the local peer
-    pub clusters: Vec<Cluster>,
-}
-
-/// Cast from a map of cluster ID to peer list to the `Cluster` API type
-impl From<HashMap<String, Vec<Peer>>> for Network {
-    fn from(cluster_membership: HashMap<String, Vec<Peer>>) -> Self {
-        let mut clusters = Vec::with_capacity(cluster_membership.len());
-        for (cluster_id, peers) in cluster_membership.into_iter() {
-            clusters.push(Cluster { id: cluster_id, peers });
-        }
-
-        Self {
-            // TODO: Make this not a constant
-            id: "goerli".to_string(),
-            clusters,
-        }
-    }
-}
-
-/// A cluster of peers, in the security model a cluster is assumed to be
-/// controlled by a single actor
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Cluster {
-    /// Identifier
-    pub id: String,
-    /// The list of peers known to be members of the cluster
-    pub peers: Vec<Peer>,
-}
-
-/// A peer in the network known to the local node
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Peer {
-    /// Identifier
-    pub id: String,
-    /// The ID of the cluster this peer belongs to
-    pub cluster_id: String,
-    /// The dialable, libp2p address of the peer
-    pub addr: String,
-}
-
-impl From<IndexedPeerInfo> for Peer {
-    fn from(peer_info: IndexedPeerInfo) -> Self {
-        Self {
-            id: peer_info.get_peer_id().to_string(),
-            cluster_id: peer_info.get_cluster_id().to_string(),
-            addr: peer_info.get_addr().to_string(),
-        }
     }
 }

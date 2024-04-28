@@ -18,5 +18,5 @@ util = { path = "../util" }
 itertools = { workspace = true }
 hex = "0.4"
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
