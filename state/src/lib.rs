@@ -105,7 +105,7 @@ pub enum StateTransition {
     /// Add a task to the task queue
     AppendTask { task: QueuedTask },
     /// Pop the top task from the task queue
-    PopTask { task_id: TaskIdentifier },
+    PopTask { task_id: TaskIdentifier, success: bool },
     /// Transition the state of the top task in the task queue
     TransitionTask { task_id: TaskIdentifier, state: QueuedTaskState },
     /// Preempt the given task queue

@@ -1,7 +1,7 @@
 //! Task queue state transition applicator methods
 
 use common::types::{
-    tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
+    tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::WalletIdentifier,
 };
 use external_api::{
@@ -54,7 +54,7 @@ impl StateApplicator {
 
     /// Apply a `PopTask` state transition
     #[instrument(skip_all, err, fields(task_id = %task_id))]
-    pub fn pop_task(&self, task_id: TaskIdentifier) -> Result<()> {
+    pub fn pop_task(&self, task_id: TaskIdentifier, success: bool) -> Result<()> {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
@@ -64,8 +64,12 @@ impl StateApplicator {
             return Err(StateApplicatorError::QueuePaused(key));
         }
 
-        // Pop the task from the queue
+        // Pop the task from the queue and add it to history
         let task = tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
+        if let Some(mut t) = HistoricalTask::from_queued_task(task.clone()) {
+            t.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
+            tx.append_task_to_history(&key, t)?;
+        }
 
         // If the queue is non-empty, start the next task
         let remaining_tasks = tx.get_queued_tasks(&key)?;
@@ -406,7 +410,7 @@ mod test {
 
         let task_id = enqueue_dummy_task(wallet_id, applicator.db());
 
-        applicator.pop_task(task_id).expect("Failed to pop task");
+        applicator.pop_task(task_id, true /* success */).expect("Failed to pop task");
 
         // Ensure the task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -441,7 +445,7 @@ mod test {
         applicator.append_task(&task2).unwrap();
 
         // Pop the first task
-        applicator.pop_task(task_id).unwrap();
+        applicator.pop_task(task_id, true /* success */).unwrap();
 
         // Ensure the first task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -481,7 +485,7 @@ mod test {
         applicator.append_task(&task2).unwrap();
 
         // Pop the first task
-        applicator.pop_task(task_id).unwrap();
+        applicator.pop_task(task_id, true /* success */).unwrap();
 
         // Ensure the first task was removed from the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -504,6 +508,36 @@ mod test {
         } else {
             panic!("Expected a Run task job");
         }
+    }
+
+    /// Test popping from a task queue and checking task history
+    #[test]
+    fn test_pop_and_check_history() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        let task_queue_key = TaskQueueKey::new_v4();
+
+        // Add two tasks: one successful, one failed
+        let task_id1 = enqueue_dummy_task(task_queue_key, applicator.db());
+        let task_id2 = enqueue_dummy_task(task_queue_key, applicator.db());
+        applicator.pop_task(task_id1, true /* success */).unwrap();
+        applicator.pop_task(task_id2, false /* success */).unwrap();
+
+        // Ensure the task was added to history
+        let tx = applicator.db().new_read_tx().unwrap();
+        let history = tx.get_task_history(&task_queue_key).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].id, task_id2);
+        assert_eq!(history[0].state, QueuedTaskState::Failed);
+        assert_eq!(history[1].id, task_id1);
+        assert_eq!(history[1].state, QueuedTaskState::Completed);
     }
 
     /// Test transitioning the state of the top task on the queue

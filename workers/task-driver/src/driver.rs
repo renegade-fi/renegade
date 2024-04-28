@@ -403,7 +403,7 @@ impl TaskExecutor {
         let res = Self::run_task_to_completion(&mut task, args).await;
 
         // Cleanup
-        let cleanup_res = task.cleanup().await;
+        let cleanup_res = task.cleanup(res.is_ok()).await;
         let combined_res = res.and(cleanup_res);
 
         // Notify any listeners that the task has completed

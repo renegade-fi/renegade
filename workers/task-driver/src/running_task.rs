@@ -107,7 +107,7 @@ impl<T: Task> RunnableTask<T> {
     }
 
     /// Cleanup the underlying task
-    pub async fn cleanup(&mut self) -> Result<(), TaskDriverError> {
+    pub async fn cleanup(&mut self, success: bool) -> Result<(), TaskDriverError> {
         // Do not propagate errors from cleanup, continue to cleanup
         if let Err(e) = self.task.cleanup().await {
             error!("error cleaning up task: {e:?}");
@@ -116,7 +116,7 @@ impl<T: Task> RunnableTask<T> {
         // Pop the task from the state
         // Preemptive tasks are not indexed, so no work needs to be done
         if !self.preemptive {
-            self.state.pop_task(self.task_id)?.await?;
+            self.state.pop_task(self.task_id, success)?.await?;
         }
 
         Ok(())

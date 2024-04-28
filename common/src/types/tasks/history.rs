@@ -3,7 +3,7 @@
 use circuit_types::r#match::MatchResult;
 use serde::{Deserialize, Serialize};
 
-use super::{QueuedTaskState, TaskDescriptor, TaskIdentifier, WalletUpdateType};
+use super::{QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, WalletUpdateType};
 
 /// A historical task executed by the task driver
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -17,6 +17,17 @@ pub struct HistoricalTask {
     /// The auxiliary information from the task descriptor that we keep in the
     /// history
     pub task_info: HistoricalTaskDescription,
+}
+
+impl HistoricalTask {
+    /// Create a new historical task from a `QueuedTask`
+    ///
+    /// Returns `None` for tasks that should not be stored in history
+    pub fn from_queued_task(task: QueuedTask) -> Option<Self> {
+        let desc = task.descriptor.clone();
+        let task_info = HistoricalTaskDescription::from_task_descriptor(&desc)?;
+        Some(Self { id: task.id, state: task.state, created_at: task.created_at, task_info })
+    }
 }
 
 /// A historical description of a task
