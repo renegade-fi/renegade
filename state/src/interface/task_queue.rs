@@ -111,10 +111,14 @@ impl State {
     }
 
     /// Pop a task from the queue
-    #[instrument(name = "propose_pop_task", skip_all, err, fields(task_id = %task_id))]
-    pub fn pop_task(&self, task_id: TaskIdentifier) -> Result<ProposalWaiter, StateError> {
+    #[instrument(name = "propose_pop_task", skip_all, err, fields(task_id = %task_id, success = %success))]
+    pub fn pop_task(
+        &self,
+        task_id: TaskIdentifier,
+        success: bool,
+    ) -> Result<ProposalWaiter, StateError> {
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::PopTask { task_id })
+        self.send_proposal(StateTransition::PopTask { task_id, success })
     }
 
     /// Transition the state of the top task in a queue
@@ -214,7 +218,7 @@ mod test {
         waiter.await.unwrap();
 
         // Pop the task from the queue
-        let waiter = state.pop_task(task_id).unwrap();
+        let waiter = state.pop_task(task_id, true /* success */).unwrap();
         waiter.await.unwrap();
 
         // Check that the task was removed

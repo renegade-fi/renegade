@@ -76,7 +76,7 @@ impl StateApplicator {
             },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
             StateTransition::AppendTask { task } => self.append_task(&task),
-            StateTransition::PopTask { task_id } => self.pop_task(task_id),
+            StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)
             },
