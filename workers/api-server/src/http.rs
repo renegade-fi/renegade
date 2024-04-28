@@ -11,6 +11,7 @@ use external_api::{
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
         task::{GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
+        task_history::TASK_HISTORY_ROUTE,
         wallet::{
             BACK_OF_QUEUE_WALLET_ROUTE, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
             DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
@@ -47,7 +48,7 @@ use self::{
     network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
     order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
     price_report::PriceReportHandler,
-    task::{GetTaskQueueHandler, GetTaskStatusHandler},
+    task::{GetTaskHistoryHandler, GetTaskQueueHandler, GetTaskStatusHandler},
     wallet::{
         CancelOrderHandler, CreateOrderHandler, CreateWalletHandler, DepositBalanceHandler,
         FindWalletHandler, GetBackOfQueueWalletHandler, GetBalanceByMintHandler,
@@ -223,6 +224,14 @@ impl HttpServer {
             GET_TASK_QUEUE_ROUTE.to_string(),
             true, // auth_required
             GetTaskQueueHandler::new(global_state.clone()),
+        );
+
+        // The "/wallet/:wallet_id/task-history" route
+        router.add_route(
+            &Method::GET,
+            TASK_HISTORY_ROUTE.to_string(),
+            true, // auth_required
+            GetTaskHistoryHandler::new(global_state.clone()),
         );
 
         // The "/wallet/:id" route

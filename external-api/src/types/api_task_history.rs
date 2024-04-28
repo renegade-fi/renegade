@@ -6,7 +6,10 @@
 
 use std::str::FromStr;
 
-use circuit_types::{order::Order, r#match::MatchResult};
+use circuit_types::{
+    order::{Order, OrderSide},
+    r#match::MatchResult,
+};
 use common::types::tasks::{
     HistoricalTask, HistoricalTaskDescription, QueuedTaskState, TaskIdentifier, WalletUpdateType,
 };
@@ -63,7 +66,7 @@ pub enum ApiHistoricalTaskDescription {
     /// An update to a wallet
     UpdateWallet(ApiWalletUpdateType),
     /// A match was settled
-    SettleMatch(MatchResult),
+    SettleMatch(ApiHistoricalMatch),
     /// A fee was paid
     PayOfflineFee,
 }
@@ -75,8 +78,34 @@ impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
             HistoricalTaskDescription::UpdateWallet(update) => {
                 Self::UpdateWallet(ApiWalletUpdateType::from(update))
             },
-            HistoricalTaskDescription::SettleMatch(match_result) => Self::SettleMatch(match_result),
+            HistoricalTaskDescription::SettleMatch(match_result) => {
+                Self::SettleMatch(match_result.into())
+            },
             HistoricalTaskDescription::PayOfflineFee => Self::PayOfflineFee,
+        }
+    }
+}
+
+/// A type representing a match in a historical task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiHistoricalMatch {
+    /// The base mint matched
+    pub base: BigUint,
+    /// The quote mint matched
+    pub quote: BigUint,
+    /// The volume matched
+    pub volume: Number,
+    /// The direction the local party
+    pub is_sell: bool,
+}
+
+impl From<MatchResult> for ApiHistoricalMatch {
+    fn from(value: MatchResult) -> Self {
+        Self {
+            base: value.base_mint,
+            quote: value.quote_mint,
+            volume: u128_to_number(value.base_amount),
+            is_sell: value.direction,
         }
     }
 }
@@ -104,14 +133,40 @@ pub enum ApiWalletUpdateType {
     },
     /// Place an order
     PlaceOrder {
-        /// The order to place
-        order: Order,
+        /// The order that was placed
+        #[serde(flatten)]
+        order: WalletUpdateOrder,
     },
     /// Cancel an order
     CancelOrder {
         /// The order that was cancelled
-        order: Order,
+        #[serde(flatten)]
+        order: WalletUpdateOrder,
     },
+}
+
+/// Represents an order in a wallet update type
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WalletUpdateOrder {
+    /// The mint of the base token
+    pub base: BigUint,
+    /// The mint of the quote token
+    pub quote: BigUint,
+    /// The side of the order
+    pub side: OrderSide,
+    /// The volume of the order
+    pub amount: Number,
+}
+
+impl From<Order> for WalletUpdateOrder {
+    fn from(value: Order) -> Self {
+        Self {
+            base: value.base_mint,
+            quote: value.quote_mint,
+            side: value.side,
+            amount: u128_to_number(value.amount),
+        }
+    }
 }
 
 impl From<WalletUpdateType> for ApiWalletUpdateType {
@@ -123,8 +178,12 @@ impl From<WalletUpdateType> for ApiWalletUpdateType {
             WalletUpdateType::Withdraw { mint, amount } => {
                 Self::Withdraw { mint, amount: u128_to_number(amount) }
             },
-            WalletUpdateType::PlaceOrder { order } => Self::PlaceOrder { order },
-            WalletUpdateType::CancelOrder { order } => Self::CancelOrder { order },
+            WalletUpdateType::PlaceOrder { order } => {
+                Self::PlaceOrder { order: WalletUpdateOrder::from(order) }
+            },
+            WalletUpdateType::CancelOrder { order } => {
+                Self::CancelOrder { order: WalletUpdateOrder::from(order) }
+            },
         }
     }
 }

@@ -6,22 +6,31 @@
 
 use async_trait::async_trait;
 use external_api::{
-    http::task::{ApiTaskStatus, GetTaskStatusResponse, TaskQueueListResponse},
+    http::{
+        task::{ApiTaskStatus, GetTaskStatusResponse, TaskQueueListResponse},
+        task_history::GetTaskHistoryResponse,
+    },
+    types::ApiHistoricalTask,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use state::State;
 
 use crate::{
-    error::{not_found, ApiServerError},
+    error::{bad_request, not_found, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
 use super::{parse_task_id_from_params, parse_wallet_id_from_params};
 
-// ------------------
-// | Error Messages |
-// ------------------
+// -------------
+// | Constants |
+// -------------
+
+/// The name of the URL query param for task history length
+const TASK_HISTORY_LEN_PARAM: &str = "task_history_len";
+/// The default length of the task history to return
+const DEFAULT_TASK_HISTORY_LEN: usize = 50;
 
 /// Error message displayed when a given task cannot be found
 const ERR_TASK_NOT_FOUND: &str = "task not found";
@@ -100,5 +109,48 @@ impl TypedHandler for GetTaskQueueHandler {
         let api_tasks: Vec<ApiTaskStatus> = tasks.into_iter().map(|t| t.into()).collect();
 
         Ok(TaskQueueListResponse { tasks: api_tasks })
+    }
+}
+
+/// Handler for the `/wallet/:wallet_id/task-history` route
+#[derive(Clone)]
+pub struct GetTaskHistoryHandler {
+    /// A reference to the global state
+    state: State,
+}
+
+impl GetTaskHistoryHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetTaskHistoryHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetTaskHistoryResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        mut query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Lookup the task status in the task driver's state
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let len = query_params
+            .remove(TASK_HISTORY_LEN_PARAM)
+            .map(|x| x.parse::<usize>())
+            .transpose()
+            .map_err(bad_request)?
+            .unwrap_or(DEFAULT_TASK_HISTORY_LEN);
+
+        // Get the historical and running tasks for a wallet
+        let tasks = self.state.get_task_history(len, &wallet_id).unwrap();
+        let api_tasks: Vec<ApiHistoricalTask> = tasks.into_iter().map(|t| t.into()).collect();
+
+        Ok(GetTaskHistoryResponse { tasks: api_tasks })
     }
 }

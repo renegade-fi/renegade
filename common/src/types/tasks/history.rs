@@ -1,9 +1,12 @@
 //! Types for task history storage
 
+use ark_mpc::PARTY1;
 use circuit_types::r#match::MatchResult;
 use serde::{Deserialize, Serialize};
 
-use super::{QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, WalletUpdateType};
+use super::{
+    QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey, WalletUpdateType,
+};
 
 /// A historical task executed by the task driver
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -23,9 +26,9 @@ impl HistoricalTask {
     /// Create a new historical task from a `QueuedTask`
     ///
     /// Returns `None` for tasks that should not be stored in history
-    pub fn from_queued_task(task: QueuedTask) -> Option<Self> {
+    pub fn from_queued_task(key: TaskQueueKey, task: QueuedTask) -> Option<Self> {
         let desc = task.descriptor.clone();
-        let task_info = HistoricalTaskDescription::from_task_descriptor(&desc)?;
+        let task_info = HistoricalTaskDescription::from_task_descriptor(key, &desc)?;
         Some(Self { id: task.id, state: task.state, created_at: task.created_at, task_info })
     }
 }
@@ -48,15 +51,29 @@ pub enum HistoricalTaskDescription {
 
 impl HistoricalTaskDescription {
     /// Create a historical task description from a task descriptor
-    pub fn from_task_descriptor(desc: &TaskDescriptor) -> Option<Self> {
+    pub fn from_task_descriptor(key: TaskQueueKey, desc: &TaskDescriptor) -> Option<Self> {
         match desc {
             TaskDescriptor::NewWallet(_) => Some(Self::NewWallet),
             TaskDescriptor::UpdateWallet(desc) => {
                 Some(Self::UpdateWallet(desc.description.clone()))
             },
-            TaskDescriptor::SettleMatch(desc) => Some(Self::SettleMatch(desc.match_res.clone())),
+            TaskDescriptor::SettleMatch(desc) => {
+                let mut match_res = desc.match_res.clone();
+                let was_party1 = desc.handshake_state.role.get_party_id() == PARTY1;
+
+                // Flip the direction if the local party was party1, so that the
+                // direction is consistent with the local party's perspective
+                let my_direction = was_party1 ^ desc.match_res.direction;
+                match_res.direction = my_direction;
+                Some(Self::SettleMatch(match_res))
+            },
             TaskDescriptor::SettleMatchInternal(desc) => {
-                Some(Self::SettleMatch(desc.match_result.clone()))
+                let mut match_res = desc.match_result.clone();
+                let was_party1 = key == desc.wallet_id2;
+
+                let my_direction = was_party1 ^ desc.match_result.direction;
+                match_res.direction = my_direction;
+                Some(Self::SettleMatch(match_res))
             },
             TaskDescriptor::OfflineFee(_) => Some(Self::PayOfflineFee),
             _ => None,

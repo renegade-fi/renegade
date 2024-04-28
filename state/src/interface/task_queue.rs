@@ -1,7 +1,7 @@
 //! The interface for interacting with the task queue
 
 use common::types::tasks::{
-    QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
+    HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
 };
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
@@ -34,6 +34,31 @@ impl State {
         tx.commit()?;
 
         Ok(tasks)
+    }
+
+    /// Get the list of all tasks (running an historical) up to a truncation
+    /// length
+    pub fn get_task_history(
+        &self,
+        len: usize,
+        key: &TaskQueueKey,
+    ) -> Result<Vec<HistoricalTask>, StateError> {
+        // Fetch running and historical tasks
+        let tx = self.db.new_read_tx()?;
+        let running = tx.get_queued_tasks(key)?;
+        let remaining = len.saturating_sub(running.len());
+        let historical = tx.get_truncated_task_history(remaining, key)?;
+        tx.commit()?;
+
+        // Convert running tasks and concatenate the lists
+        let converted = running
+            .into_iter()
+            .filter_map(|t| HistoricalTask::from_queued_task(*key, t))
+            .chain(historical)
+            .take(len)
+            .collect();
+
+        Ok(converted)
     }
 
     /// Get the task queue key that a task modifies
@@ -155,15 +180,23 @@ impl State {
 
     /// Resume a task queue
     #[instrument(name = "propose_resume_task_queue", skip_all, err, fields(queue_key = %key))]
-    pub fn resume_task_queue(&self, key: &TaskQueueKey) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::ResumeTaskQueue { key: *key })
+    pub fn resume_task_queue(
+        &self,
+        key: &TaskQueueKey,
+        success: bool,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::ResumeTaskQueue { key: *key, success })
     }
 }
 
 #[cfg(test)]
 mod test {
     use common::types::{
-        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskQueueKey},
+        tasks::{
+            mocks::{mock_queued_task, mock_task_descriptor},
+            QueuedTaskState, TaskQueueKey,
+        },
+        wallet::WalletIdentifier,
         wallet_mocks::mock_empty_wallet,
     };
 
@@ -288,5 +321,42 @@ mod test {
             .unwrap();
         waiter.await.unwrap();
         assert_eq!(state.current_committed_task(&key).unwrap(), Some(task_id));
+    }
+
+    /// Tests fetching task history
+    #[tokio::test]
+    async fn test_task_history() {
+        const N: usize = 10;
+        let state = mock_state();
+        let wallet_id = WalletIdentifier::new_v4();
+
+        // Add historical tasks
+        for _ in 0..N {
+            // First push to the queue then pop
+            let task = mock_task_descriptor(wallet_id);
+            let (task_id, waiter) = state.append_task(task).unwrap();
+            waiter.await.unwrap();
+
+            state.pop_task(task_id, true /* success */).unwrap().await.unwrap();
+        }
+
+        // Add a few running tasks
+        for _ in 0..N / 2 {
+            let task = mock_task_descriptor(wallet_id);
+            let (_, waiter) = state.append_task(task).unwrap();
+            waiter.await.unwrap();
+        }
+
+        // Fetch the task history
+        let history = state.get_task_history(N, &wallet_id).unwrap();
+        assert_eq!(history.len(), N);
+        assert!(matches!(history[0].state, QueuedTaskState::Running { .. }));
+        for task in history.iter().take(N / 2).skip(1) {
+            assert_eq!(task.state, QueuedTaskState::Queued);
+        }
+
+        for task in history.iter().skip(N / 2) {
+            assert!(matches!(task.state, QueuedTaskState::Completed));
+        }
     }
 }

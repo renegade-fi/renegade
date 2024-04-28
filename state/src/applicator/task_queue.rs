@@ -66,7 +66,7 @@ impl StateApplicator {
 
         // Pop the task from the queue and add it to history
         let task = tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
-        if let Some(mut t) = HistoricalTask::from_queued_task(task.clone()) {
+        if let Some(mut t) = HistoricalTask::from_queued_task(key, task.clone()) {
             t.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
             tx.append_task_to_history(&key, t)?;
         }
@@ -155,13 +155,17 @@ impl StateApplicator {
 
     /// Resume a task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn resume_task_queue(&self, key: TaskQueueKey) -> Result<()> {
+    pub fn resume_task_queue(&self, key: TaskQueueKey, success: bool) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         // Resume the queue, and pop the preemptive task that was added when the queue
         // was paused
         tx.resume_task_queue(&key)?;
-        tx.pop_task(&key)?;
+        let task = tx.pop_task(&key)?.expect("expected preemptive task");
+        if let Some(mut t) = HistoricalTask::from_queued_task(key, task) {
+            t.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
+            tx.append_task_to_history(&key, t)?;
+        }
 
         // Start running the first task if it exists
         let tasks = tx.get_queued_tasks(&key)?;
@@ -601,7 +605,7 @@ mod test {
         assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
-        applicator.resume_task_queue(task_queue_key).unwrap();
+        applicator.resume_task_queue(task_queue_key, true /* success */).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let task = tx.get_current_running_task(&task_queue_key).unwrap();
@@ -661,7 +665,7 @@ mod test {
         assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
-        applicator.resume_task_queue(task_queue_key).unwrap();
+        applicator.resume_task_queue(task_queue_key, true /* success */).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let task = tx.get_current_running_task(&task_queue_key).unwrap();
