@@ -75,7 +75,7 @@ impl StateApplicator {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
-            StateTransition::AppendTask { task } => self.append_task(&task),
+            StateTransition::AppendTask { task } => self.append_task(task),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)

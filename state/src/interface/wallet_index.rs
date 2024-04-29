@@ -17,6 +17,11 @@ impl State {
     // | Getters |
     // -----------
 
+    /// Whether the wallet exists
+    pub fn contains_wallet(&self, id: &WalletIdentifier) -> Result<bool, StateError> {
+        Ok(self.get_wallet(id)?.is_some())
+    }
+
     /// Get the wallet with the given id
     pub fn get_wallet(&self, id: &WalletIdentifier) -> Result<Option<Wallet>, StateError> {
         let tx = self.db.new_read_tx()?;

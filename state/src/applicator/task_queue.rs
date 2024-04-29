@@ -5,8 +5,9 @@ use common::types::{
     wallet::WalletIdentifier,
 };
 use external_api::{
-    bus_message::{task_topic, SystemBusMessage},
+    bus_message::{task_history_topic, task_topic, SystemBusMessage},
     http::task::ApiTaskStatus,
+    types::ApiHistoricalTask,
 };
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
 use libmdbx::TransactionKind;
@@ -34,22 +35,24 @@ impl StateApplicator {
 
     /// Apply an `AppendTask` state transition
     #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
-    pub fn append_task(&self, task: &QueuedTask) -> Result<()> {
+    pub fn append_task(&self, task: QueuedTask) -> Result<()> {
         let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
 
         // Index the task
         let previously_empty = tx.is_queue_empty(&queue_key)?;
-        tx.add_task(&queue_key, task)?;
+        tx.add_task(&queue_key, &task)?;
 
         // If the task queue was empty, transition the task to in progress and start it
         if previously_empty && !tx.is_queue_paused(&queue_key)? {
             // Start the task
             tx.transition_task(&queue_key, new_running_state())?;
-            self.maybe_start_task(task, &tx)?;
+            self.maybe_start_task(&task, &tx)?;
         }
 
-        Ok(tx.commit()?)
+        tx.commit()?;
+        self.publish_task_updates(queue_key, task);
+        Ok(())
     }
 
     /// Apply a `PopTask` state transition
@@ -65,9 +68,10 @@ impl StateApplicator {
         }
 
         // Pop the task from the queue and add it to history
-        let task = tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
-        if let Some(mut t) = HistoricalTask::from_queued_task(key, task.clone()) {
-            t.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
+        let mut task =
+            tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
+        task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
+        if let Some(t) = HistoricalTask::from_queued_task(task.clone(), key) {
             tx.append_task_to_history(&key, t)?;
         }
 
@@ -85,11 +89,7 @@ impl StateApplicator {
         tx.commit()?;
 
         // Publish a completed message to the system bus
-        let mut status = ApiTaskStatus::from(task);
-        status.state = "Completed".to_string();
-        self.system_bus()
-            .publish(task_topic(&task_id), SystemBusMessage::TaskStatusUpdate { status });
-
+        self.publish_task_updates(key, task);
         Ok(())
     }
 
@@ -113,13 +113,9 @@ impl StateApplicator {
         let task = tx.get_task(&task_id)?;
         tx.commit()?;
 
-        // Publish a state update to the bus
-        if let Some(task) = task {
-            let status: ApiTaskStatus = task.into();
-            self.system_bus()
-                .publish(task_topic(&task_id), SystemBusMessage::TaskStatusUpdate { status });
+        if let Some(t) = task {
+            self.publish_task_updates(key, t);
         }
-
         Ok(())
     }
 
@@ -150,7 +146,9 @@ impl StateApplicator {
         // Pause the queue
         tx.pause_task_queue(&key)?;
         tx.add_task_front(&key, &task)?;
-        Ok(tx.commit()?)
+        tx.commit()?;
+        self.publish_task_updates(key, task);
+        Ok(())
     }
 
     /// Resume a task queue
@@ -161,9 +159,9 @@ impl StateApplicator {
         // Resume the queue, and pop the preemptive task that was added when the queue
         // was paused
         tx.resume_task_queue(&key)?;
-        let task = tx.pop_task(&key)?.expect("expected preemptive task");
-        if let Some(mut t) = HistoricalTask::from_queued_task(key, task) {
-            t.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
+        let mut task = tx.pop_task(&key)?.expect("expected preemptive task");
+        task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
+        if let Some(t) = HistoricalTask::from_queued_task(task.clone(), key) {
             tx.append_task_to_history(&key, t)?;
         }
 
@@ -178,13 +176,36 @@ impl StateApplicator {
             // the task was previously running
             self.maybe_start_task(task, &tx)?;
         }
+        tx.commit()?;
 
-        Ok(tx.commit()?)
+        self.publish_task_updates(key, task);
+        Ok(())
     }
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// Publish system bus messages indicating a task has been updated
+    fn publish_task_updates(&self, key: TaskQueueKey, task: QueuedTask) {
+        let task_id = task.id;
+
+        // Publish a message for the individual task
+        let task_topic = task_topic(&task_id);
+        if self.system_bus().has_listeners(&task_topic) {
+            let status: ApiTaskStatus = task.clone().into();
+            self.system_bus().publish(task_topic, SystemBusMessage::TaskStatusUpdate { status });
+        }
+
+        // Publish a message for the key's task history
+        let history_topic = task_history_topic(&key);
+        if self.system_bus().has_listeners(&history_topic)
+            && let Some(t) = ApiHistoricalTask::from_queued_task(key, task)
+        {
+            self.system_bus()
+                .publish(history_topic, SystemBusMessage::TaskHistoryUpdate { task: t });
+        }
+    }
 
     /// Start a task if the current peer is the executor
     #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
@@ -312,7 +333,7 @@ mod test {
         task.executor = peer_id;
         let task_id = task.id;
 
-        applicator.append_task(&task).expect("Failed to append task");
+        applicator.append_task(task).expect("Failed to append task");
 
         // Check the task was added to the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -351,7 +372,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = WrappedPeerId::random(); // Assign a different executor
 
-        applicator.append_task(&task).expect("Failed to append task");
+        applicator.append_task(task).expect("Failed to append task");
 
         // Check the task was not started
         let tx = applicator.db().new_read_tx().unwrap();
@@ -380,7 +401,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_task(&task2).expect("Failed to append task");
+        applicator.append_task(task2.clone()).expect("Failed to append task");
 
         // Ensure that the second task is in the db's queue, not marked as running
         let tx = applicator.db().new_read_tx().unwrap();
@@ -446,7 +467,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = WrappedPeerId::random(); // Assign a different executor
-        applicator.append_task(&task2).unwrap();
+        applicator.append_task(task2.clone()).unwrap();
 
         // Pop the first task
         applicator.pop_task(task_id, true /* success */).unwrap();
@@ -486,7 +507,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_task(&task2).unwrap();
+        applicator.append_task(task2.clone()).unwrap();
 
         // Pop the first task
         applicator.pop_task(task_id, true /* success */).unwrap();
@@ -593,7 +614,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_task(&task).unwrap();
+        applicator.append_task(task.clone()).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
@@ -636,7 +657,7 @@ mod test {
         let mut task = mock_preemptive_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_task(&task).unwrap();
+        applicator.append_task(task.clone()).unwrap();
 
         // Start the task
         let tx = applicator.db().new_write_tx().unwrap();
