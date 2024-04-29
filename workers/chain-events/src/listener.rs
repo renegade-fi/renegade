@@ -2,13 +2,9 @@
 
 use std::thread::JoinHandle;
 
-use arbitrum_client::{
-    abi::{DarkpoolContractEvents, NullifierSpentFilter},
-    client::ArbitrumClient,
-    constants::{MERKLE_NODE_CHANGED_EVENT_NAME, NULLIFIER_SPENT_EVENT_NAME},
-};
+use arbitrum_client::{abi::NullifierSpentFilter, client::ArbitrumClient};
 use common::types::CancelChannel;
-use ethers::{prelude::StreamExt, types::Filter};
+use ethers::prelude::StreamExt;
 use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
     network_manager::NetworkManagerQueue,
@@ -16,7 +12,7 @@ use job_types::{
 };
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info};
 
 use super::error::OnChainEventListenerError;
 
@@ -87,13 +83,8 @@ impl OnChainEventListenerExecutor {
         info!("Starting on-chain event listener from current block {starting_block_number}");
 
         // Build a filtered stream on events that the chain-events worker listens for
-        let filter = Filter::default()
-            .events(vec![NULLIFIER_SPENT_EVENT_NAME, MERKLE_NODE_CHANGED_EVENT_NAME]);
-        let builder = self
-            .arbitrum_client()
-            .darkpool_contract
-            .event_with_filter::<DarkpoolContractEvents>(filter);
-        let mut event_stream = builder
+        let filter = self.arbitrum_client().darkpool_contract.event::<NullifierSpentFilter>();
+        let mut event_stream = filter
             .stream()
             .await
             .map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
@@ -101,30 +92,10 @@ impl OnChainEventListenerExecutor {
         // Listen for events in a loop
         while let Some(res) = event_stream.next().await {
             let event = res.map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
-            self.handle_event(event).await?;
+            self.handle_nullifier_spent(&event)?;
         }
 
         error!("on-chain event listener stream ended unexpectedly");
-        Ok(())
-    }
-
-    /// Handle an event from the contract
-    #[instrument(skip_all, err)]
-    async fn handle_event(
-        &self,
-        event: DarkpoolContractEvents,
-    ) -> Result<(), OnChainEventListenerError> {
-        // Dispatch based on key
-        match event {
-            DarkpoolContractEvents::NullifierSpentFilter(event) => {
-                self.handle_nullifier_spent(&event)?;
-            },
-            _ => {
-                // Simply log the error and ignore the event
-                warn!("chain listener received unexpected event type: {event}");
-            },
-        }
-
         Ok(())
     }
 

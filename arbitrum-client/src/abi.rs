@@ -26,7 +26,7 @@ abigen!(
         event WalletUpdated(uint256 indexed wallet_blinder_share)
         event MerkleOpeningNode(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
         event MerkleInsertion(uint128 indexed index, uint256 indexed value)
-        event NullifierSpent(uint256 nullifier)
+        event NullifierSpent(uint256 indexed nullifier)
     ]"#
 );
 
@@ -53,7 +53,7 @@ abigen!(
         event WalletUpdated(uint256 indexed wallet_blinder_share)
         event MerkleOpeningNode(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
         event MerkleInsertion(uint128 indexed index, uint256 indexed value)
-        event NullifierSpent(uint256 nullifier)
+        event NullifierSpent(uint256 indexed nullifier)
 
         function clearMerkle() external
     ]"#
