@@ -5,13 +5,13 @@
 // ------------------
 
 use async_trait::async_trait;
-use external_api::bus_message::{task_topic, SystemBusMessage};
+use external_api::bus_message::{task_history_topic, task_topic, SystemBusMessage};
 use state::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
     error::{not_found, ApiServerError},
-    http::parse_task_id_from_params,
+    http::{parse_task_id_from_params, parse_wallet_id_from_params},
     router::UrlParams,
 };
 
@@ -19,6 +19,8 @@ use super::handler::WebsocketTopicHandler;
 
 /// Error displayed when the given task cannot be found
 const ERR_TASK_MISSING: &str = "task not found";
+/// Error message displayed when a wallet cannot be found
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 
 // -----------
 // | Handler |
@@ -69,5 +71,53 @@ impl WebsocketTopicHandler for TaskStatusHandler {
 
     fn requires_wallet_auth(&self) -> bool {
         false
+    }
+}
+
+/// The handler that manages subscriptions to a task history stream
+#[derive(Clone)]
+pub struct TaskHistoryHandler {
+    /// A reference to the global state
+    state: State,
+    /// A reference to the system bus for subscriptions
+    system_bus: SystemBus<SystemBusMessage>,
+}
+
+impl TaskHistoryHandler {
+    /// Constructor
+    pub fn new(state: State, system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self { state, system_bus }
+    }
+}
+
+#[async_trait]
+impl WebsocketTopicHandler for TaskHistoryHandler {
+    async fn handle_subscribe_message(
+        &self,
+        _topic: String,
+        route_params: &UrlParams,
+    ) -> Result<TopicReader<SystemBusMessage>, ApiServerError> {
+        // Parse the wallet ID from the route params
+        let wallet_id = parse_wallet_id_from_params(route_params)?;
+
+        // Check that the wallet is valid
+        if !self.state.contains_wallet(&wallet_id)? {
+            return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
+        }
+
+        // Subscribe to the topic
+        Ok(self.system_bus.subscribe(task_history_topic(&wallet_id)))
+    }
+
+    async fn handle_unsubscribe_message(
+        &self,
+        _topic: String,
+        _route_params: &UrlParams,
+    ) -> Result<(), ApiServerError> {
+        Ok(())
+    }
+
+    fn requires_wallet_auth(&self) -> bool {
+        true
     }
 }

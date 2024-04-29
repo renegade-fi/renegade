@@ -11,7 +11,8 @@ use circuit_types::{
     r#match::MatchResult,
 };
 use common::types::tasks::{
-    HistoricalTask, HistoricalTaskDescription, QueuedTaskState, TaskIdentifier, WalletUpdateType,
+    HistoricalTask, HistoricalTaskDescription, QueuedTask, QueuedTaskState, TaskIdentifier,
+    TaskQueueKey, WalletUpdateType,
 };
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,15 @@ impl From<HistoricalTask> for ApiHistoricalTask {
             created_at: value.created_at,
             task_info: value.task_info.into(),
         }
+    }
+}
+
+impl ApiHistoricalTask {
+    /// Convert from a queued task
+    pub fn from_queued_task(key: TaskQueueKey, task: QueuedTask) -> Option<Self> {
+        let task_info =
+            HistoricalTaskDescription::from_task_descriptor(&task.descriptor, key)?.into();
+        Some(Self { id: task.id, state: task.state, created_at: task.created_at, task_info })
     }
 }
 

@@ -27,7 +27,7 @@ use self::{
     handler::{DefaultHandler, WebsocketTopicHandler},
     order_status::OrderStatusHandler,
     price_report::PriceReporterHandler,
-    task::TaskStatusHandler,
+    task::{TaskHistoryHandler, TaskStatusHandler},
     wallet::WalletTopicHandler,
 };
 
@@ -67,9 +67,11 @@ const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
 /// The order book topic, streams events about known network orders
 const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
 /// The network topic, streams events about network peers
-const NETWORK_INFO_TOPIC: &str = "/v0/network";
+const NETWORK_INFO_ROUTE: &str = "/v0/network";
 /// The task status topic, streams information about task statuses
-const TASK_STATUS_TOPIC: &str = "/v0/tasks/:task_id";
+const TASK_STATUS_ROUTE: &str = "/v0/tasks/:task_id";
+/// The task history topic, streams information about historical tasks
+const TASK_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/task-history";
 
 // --------------------
 // | Websocket Server |
@@ -155,7 +157,7 @@ impl WebsocketServer {
         // The "/v0/network" topic
         router
             .insert(
-                NETWORK_INFO_TOPIC,
+                NETWORK_INFO_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
                     false, // authenticated
                     NETWORK_TOPOLOGY_TOPIC.to_string(),
@@ -167,8 +169,19 @@ impl WebsocketServer {
         // The "/v0/task/:id" topic
         router
             .insert(
-                TASK_STATUS_TOPIC,
+                TASK_STATUS_ROUTE,
                 Box::new(TaskStatusHandler::new(
+                    config.global_state.clone(),
+                    config.system_bus.clone(),
+                )),
+            )
+            .unwrap();
+
+        // The "/v0/task_history/:wallet_id" route
+        router
+            .insert(
+                TASK_HISTORY_ROUTE,
+                Box::new(TaskHistoryHandler::new(
                     config.global_state.clone(),
                     config.system_bus.clone(),
                 )),

@@ -12,7 +12,10 @@ use common::types::{
 };
 use serde::Serialize;
 
-use crate::{http::task::ApiTaskStatus, types::ApiWallet};
+use crate::{
+    http::task::ApiTaskStatus,
+    types::{ApiHistoricalTask, ApiWallet},
+};
 
 // ----------------------------
 // | System Bus Message Types |
@@ -37,6 +40,11 @@ pub fn wallet_order_history_topic(wallet_id: &WalletIdentifier) -> String {
 /// Get the topic name for a given task
 pub fn task_topic(task_id: &TaskIdentifier) -> String {
     format!("task-updates-{}", task_id)
+}
+
+/// Get the task history topic name for a wallet
+pub fn task_history_topic(wallet_id: &WalletIdentifier) -> String {
+    format!("task-history-{}", wallet_id)
 }
 
 /// Get the topic name for a price report
@@ -124,6 +132,13 @@ pub enum SystemBusMessage {
     OrderMetadataUpdated {
         /// The new state of the order
         order: OrderMetadata,
+    },
+
+    // --- Task History Updates -- //
+    /// A message indicating an update to a task in the task history
+    TaskHistoryUpdate {
+        /// The new state of the task
+        task: ApiHistoricalTask,
     },
 }
 
