@@ -205,25 +205,21 @@ impl<'db> StateTxn<'db, RW> {
         self.write_order(&order)
     }
 
-    /// Cancel an order in the order book
-    pub fn cancel_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
-        let mut order = self.get_order_info_or_err(order_id)?;
-        order.state = NetworkOrderState::Cancelled;
-        order.validity_proof_witnesses = None;
-        order.validity_proofs = None;
-
-        self.write_order(&order)?;
-        self.remove_from_nullifier_set(order.public_share_nullifier, order_id)
+    /// Delete an order from the order book
+    pub fn delete_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+        self.inner().delete(ORDERS_TABLE, &order_key(order_id)).map(|_| ())
     }
 
     /// Nullify the orders indexed by the given nullifier
     pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StorageError> {
+        // Delete all orders
         let orders = self.get_orders_by_nullifier(nullifier)?;
         for order_id in orders {
-            self.cancel_order(&order_id)?;
+            self.delete_order(&order_id)?;
         }
 
-        Ok(())
+        // Delete the index for the nullifier
+        self.inner().delete(ORDERS_TABLE, &nullifier_key(nullifier)).map(|_| ())
     }
 
     /// Update the nullifier sets after a (potential) nullifier change
@@ -425,12 +421,17 @@ mod test {
 
         // Check that the orders are updated correctly
         let tx = db.new_read_tx().unwrap();
-        let stored_order = tx.get_order_info(&order1.id).unwrap().unwrap();
-        assert_eq!(stored_order.state, NetworkOrderState::Cancelled);
-        assert!(stored_order.validity_proofs.is_none());
+        let stored_order = tx.get_order_info(&order1.id).unwrap();
+        let orders_by_nullifier =
+            tx.get_orders_by_nullifier(order1.public_share_nullifier).unwrap();
+        assert!(stored_order.is_none());
+        assert!(orders_by_nullifier.is_empty());
 
         let stored_order = tx.get_order_info(&order2.id).unwrap().unwrap();
+        let orders_by_nullifier =
+            tx.get_orders_by_nullifier(order2.public_share_nullifier).unwrap();
         assert_eq!(stored_order, order2);
+        assert_eq!(orders_by_nullifier, vec![order2.id]);
     }
 
     /// Tests adding and removing local orders
