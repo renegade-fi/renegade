@@ -13,7 +13,9 @@ pub mod task_queue;
 pub mod wallet_index;
 
 use std::{
-    process::exit, sync::{Arc, RwLock}, thread
+    process::exit,
+    sync::{Arc, RwLock},
+    thread,
 };
 
 use ::raft::prelude::Config as RaftConfig;
@@ -26,8 +28,8 @@ use job_types::{
     task_driver::TaskDriverQueue,
 };
 use system_bus::SystemBus;
-use util::err_str;
 use tracing::error;
+use util::err_str;
 
 use crate::{
     replication::{
