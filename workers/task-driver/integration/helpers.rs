@@ -15,6 +15,7 @@ use common::{
     worker::Worker,
 };
 use constants::Scalar;
+use ethers::middleware::Middleware;
 use ethers::types::Address;
 use eyre::Result;
 use job_types::{
@@ -197,7 +198,7 @@ pub async fn authorize_transfer(
     let darkpool_address = AlloyAddress::from_slice(client.darkpool_contract.address().as_bytes());
 
     let eth_client = client.darkpool_contract.client(); // Assigned to avoid dropping
-    let signer = eth_client.signer();
+    let signer = eth_client.inner().signer();
 
     gen_transfer_with_auth(signer, pk_root, permit2_address, darkpool_address, chain_id, transfer)
 }
