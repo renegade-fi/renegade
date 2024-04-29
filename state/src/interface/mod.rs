@@ -13,8 +13,7 @@ pub mod task_queue;
 pub mod wallet_index;
 
 use std::{
-    sync::{Arc, RwLock},
-    thread,
+    process::exit, sync::{Arc, RwLock}, thread
 };
 
 use ::raft::prelude::Config as RaftConfig;
@@ -28,6 +27,7 @@ use job_types::{
 };
 use system_bus::SystemBus;
 use util::err_str;
+use tracing::error;
 
 use crate::{
     replication::{
@@ -158,8 +158,11 @@ impl State {
         // Start the raft in a new thread
         let raft = ReplicationNode::new_with_config(replication_config, raft_config)
             .map_err(StateError::Replication)?;
+
         thread::spawn(move || {
-            raft.run().expect("Raft node failed");
+            let e = raft.run().unwrap_err();
+            error!("Raft node exited with error: {:?}", e);
+            exit(1);
         });
 
         // Setup the node metadata from the config

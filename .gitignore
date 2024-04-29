@@ -2,6 +2,7 @@
 **/target
 **/build
 **/flamegraph.svg
+rustc-ice-*
 
 # Config
 **/no_commit
