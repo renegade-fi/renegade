@@ -23,7 +23,7 @@ use crate::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
         settleOnlineRelayerFeeCall, updateWalletCall,
     },
-    client::SignerHttpProvider,
+    client::MiddlewareStack,
     errors::ArbitrumClientError,
 };
 
@@ -43,7 +43,7 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 
 /// Sends a transaction, awaiting its confirmation and returning the receipt
 pub async fn send_tx(
-    tx: ContractCall<SignerHttpProvider, impl Detokenize>,
+    tx: ContractCall<MiddlewareStack, impl Detokenize>,
 ) -> Result<TransactionReceipt, ArbitrumClientError> {
     tx.send()
         .await

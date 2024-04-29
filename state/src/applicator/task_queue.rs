@@ -71,7 +71,7 @@ impl StateApplicator {
         let mut task =
             tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
-        if let Some(t) = HistoricalTask::from_queued_task(task.clone(), key) {
+        if let Some(t) = HistoricalTask::from_queued_task(key, task.clone()) {
             tx.append_task_to_history(&key, t)?;
         }
 
@@ -161,7 +161,7 @@ impl StateApplicator {
         tx.resume_task_queue(&key)?;
         let mut task = tx.pop_task(&key)?.expect("expected preemptive task");
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
-        if let Some(t) = HistoricalTask::from_queued_task(task.clone(), key) {
+        if let Some(t) = HistoricalTask::from_queued_task(key, task.clone()) {
             tx.append_task_to_history(&key, t)?;
         }
 
