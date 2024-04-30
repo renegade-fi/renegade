@@ -149,7 +149,10 @@ pub trait ExchangeConnection: Stream<Item = PriceStreamType> + Unpin + Send {
     }
 
     /// Check whether the exchange supports the given pair
-    async fn supports_pair(base_token: &Token, quote_token: &Token) -> Result<bool, ExchangeConnectionError>
+    async fn supports_pair(
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Result<bool, ExchangeConnectionError>
     where
         Self: Sized;
 }

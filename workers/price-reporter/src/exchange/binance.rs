@@ -151,14 +151,6 @@ impl ExchangeConnection for BinanceConnection {
     where
         Self: Sized,
     {
-        if !Self::supports_pair(&base_token, &quote_token).await? {
-            return Err(ExchangeConnectionError::UnsupportedPair(
-                base_token,
-                quote_token,
-                Exchange::Binance,
-            ));
-        }
-
         // Fetch an inital price report to setup the stream
         let initial_price_report =
             Self::fetch_price_report(base_token.clone(), quote_token.clone()).await?;
