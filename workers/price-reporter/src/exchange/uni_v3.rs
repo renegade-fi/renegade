@@ -386,4 +386,11 @@ impl ExchangeConnection for UniswapV3Connection {
 
         Ok(Self { price_stream: Box::new(price_stream) })
     }
+
+    async fn supports_pair(
+        _base_token: &Token,
+        _quote_token: &Token,
+    ) -> Result<bool, ExchangeConnectionError> {
+        unimplemented!()
+    }
 }

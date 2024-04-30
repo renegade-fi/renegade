@@ -142,10 +142,16 @@ pub trait ExchangeConnection: Stream<Item = PriceStreamType> + Unpin + Send {
     ) -> Result<Self, ExchangeConnectionError>
     where
         Self: Sized;
+
     /// Send a keepalive signal on the connection if necessary
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
         Ok(())
     }
+
+    /// Check whether the exchange supports the given pair
+    async fn supports_pair(base_token: &Token, quote_token: &Token) -> Result<bool, ExchangeConnectionError>
+    where
+        Self: Sized;
 }
 
 // -----------------------------

@@ -10,10 +10,11 @@ use async_trait::async_trait;
 use common::types::{exchange::Exchange, token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use lazy_static::lazy_static;
-use serde_json::json;
+use serde_json::{json, Value};
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
+use util::err_str;
 
 use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
 
@@ -28,6 +29,11 @@ use super::{
 // | Constants |
 // -------------
 
+/// The base URL for the Kraken websocket endpoint
+const KRAKEN_WS_BASE_URL: &str = "wss://ws.kraken.com";
+/// The base URL for the Kraken REST API
+const KRAKEN_REST_BASE_URL: &str = "https://api.kraken.com/0/public";
+
 /// The name of the events field in a Kraken WS message
 const KRAKEN_EVENT: &str = "event";
 /// The index of the price data in a Kraken WS message
@@ -38,6 +44,8 @@ const KRAKEN_BID_PRICE_INDEX: usize = 0;
 const KRAKEN_ASK_PRICE_INDEX: usize = 1;
 /// The timestamp of the price report from kraken
 const KRAKEN_PRICE_REPORT_TIMESTAMP_INDEX: usize = 2;
+/// The name of the error field in a Kraken API response
+const KRAKEN_ERROR: &str = "error";
 
 lazy_static! {
     static ref KRAKEN_MSG_IGNORE_LIST: HashSet<String> = {
@@ -65,7 +73,7 @@ pub struct KrakenConnection {
 impl KrakenConnection {
     /// Get the URL for the Kraken websocket endpoint
     fn websocket_url() -> Url {
-        String::from("wss://ws.kraken.com").parse().expect("Failed to parse Kraken websocket URL")
+        String::from(KRAKEN_WS_BASE_URL).parse().expect("Failed to parse Kraken websocket URL")
     }
 
     /// Parse a price report from a Kraken websocket message
@@ -160,5 +168,32 @@ impl ExchangeConnection for KrakenConnection {
 
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
         ws_ping(&mut self.write_stream).await
+    }
+
+    async fn supports_pair(
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Result<bool, ExchangeConnectionError> {
+        let base_ticker = base_token.get_exchange_ticker(Exchange::Kraken);
+        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Kraken);
+        let pair = format!("{}/{}", base_ticker, quote_ticker);
+
+        // Query the `AssetPairs` endpoint about the pair
+        let request_url = format!("{KRAKEN_REST_BASE_URL}/AssetPairs?pair={pair}");
+
+        let response = reqwest::get(request_url)
+            .await
+            .map_err(err_str!(ExchangeConnectionError::ConnectionHangup))?;
+
+        let res_json: Value =
+            response.json().await.map_err(err_str!(ExchangeConnectionError::InvalidMessage))?;
+
+        match &res_json[KRAKEN_ERROR] {
+            // No errors => Kraken supports the pair
+            Value::Array(errors) => Ok(errors.is_empty()),
+            _ => Err(ExchangeConnectionError::InvalidMessage(
+                "Invalid response from Kraken".to_string(),
+            )),
+        }
     }
 }
