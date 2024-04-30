@@ -246,6 +246,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
+        mutual_exclusion_list: args.match_mutual_exclusion_list,
         global_state: global_state.clone(),
         network_channel: network_sender.clone(),
         price_reporter_job_queue: price_reporter_worker_sender.clone(),

@@ -1,8 +1,11 @@
 //! Implements the `Worker` trait for the handshake manager
 
-use std::thread::{Builder, JoinHandle};
+use std::{
+    collections::HashSet,
+    thread::{Builder, JoinHandle},
+};
 
-use common::types::CancelChannel;
+use common::types::{wallet::WalletIdentifier, CancelChannel};
 use common::worker::Worker;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
@@ -25,6 +28,11 @@ use super::{error::HandshakeManagerError, manager::HandshakeManager};
 
 /// The config type for the handshake manager
 pub struct HandshakeManagerConfig {
+    /// The set of wallets to mutually exclude from matches
+    ///
+    /// I.e. any two wallets in this list will never be matched internally by
+    /// the node
+    pub mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The relayer-global state
     pub global_state: State,
     /// The channel on which to send outbound network requests
@@ -58,6 +66,7 @@ impl Worker for HandshakeManager {
             config.cancel_channel.clone(),
         );
         let executor = HandshakeExecutor::new(
+            config.mutual_exclusion_list.clone(),
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_reporter_job_queue.clone(),
