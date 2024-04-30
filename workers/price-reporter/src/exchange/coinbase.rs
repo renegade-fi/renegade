@@ -14,7 +14,7 @@ use serde_json::json;
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
-use util::get_current_time_seconds;
+use util::{err_str, get_current_time_seconds};
 
 use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
 
@@ -28,6 +28,11 @@ use super::{
 // -------------
 // | Constants |
 // -------------
+
+/// The base URL for the Coinbase websocket endpoint
+const COINBASE_WS_BASE_URL: &str = "wss://advanced-trade-ws.coinbase.com";
+/// The base URL for the Coinbase REST API
+const COINBASE_REST_BASE_URL: &str = "https://api.exchange.coinbase.com";
 
 /// The name of the events field in a Coinbase WS message
 const COINBASE_EVENTS: &str = "events";
@@ -82,7 +87,7 @@ impl Stream for CoinbaseConnection {
 impl CoinbaseConnection {
     /// Get the URL of the Coinbase websocket endpoint
     fn websocket_url() -> Url {
-        String::from("wss://advanced-trade-ws.coinbase.com").parse().unwrap()
+        String::from(COINBASE_WS_BASE_URL).parse().unwrap()
     }
 
     /// Construct the websocket subscription message with HMAC authentication
@@ -242,5 +247,24 @@ impl ExchangeConnection for CoinbaseConnection {
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
         // Send a ping message
         ws_ping(&mut self.write_stream).await
+    }
+
+    async fn supports_pair(
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Result<bool, ExchangeConnectionError> {
+        let base_ticker = base_token.get_exchange_ticker(Exchange::Coinbase);
+        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Coinbase);
+        let product_id = format!("{}-{}", base_ticker, quote_ticker);
+
+        // Query the `products` endpoint about the pair
+        let request_url = format!("{COINBASE_REST_BASE_URL}/products/{product_id}");
+
+        let response = reqwest::get(request_url)
+            .await
+            .map_err(err_str!(ExchangeConnectionError::ConnectionHangup))?;
+
+        // A successful response will only be sent if the pair is supported
+        Ok(response.status().is_success())
     }
 }

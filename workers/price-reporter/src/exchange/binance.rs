@@ -16,7 +16,7 @@ use serde_json::Value;
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
-use util::get_current_time_seconds;
+use util::{err_str, get_current_time_seconds};
 
 use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
 
@@ -30,6 +30,11 @@ use super::{
 // -------------
 // | Constants |
 // -------------
+
+/// The base URL for the Binance websocket endpoint
+const BINANCE_WS_BASE_URL: &str = "wss://stream.binance.com:443/ws";
+/// The base URL for the Binance REST API
+const BINANCE_REST_BASE_URL: &str = "https://api.binance.com/api/v3";
 
 /// The name of the midpoint bid price on an HTTP response
 const BINANCE_BID_PRICE: &str = "bidPrice";
@@ -61,7 +66,7 @@ impl BinanceConnection {
         let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
         let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
         Url::parse(&format!(
-            "wss://stream.binance.com:443/ws/{}{}@bookTicker",
+            "{BINANCE_WS_BASE_URL}/{}{}@bookTicker",
             base_ticker.to_lowercase(),
             quote_ticker.to_lowercase()
         ))
@@ -77,7 +82,7 @@ impl BinanceConnection {
         let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
         let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
         let request_url = format!(
-            "https://api.binance.com/api/v3/ticker/bookTicker?symbol={}{}",
+            "{BINANCE_REST_BASE_URL}/ticker/bookTicker?symbol={}{}",
             base_ticker, quote_ticker
         );
 
@@ -178,5 +183,24 @@ impl ExchangeConnection for BinanceConnection {
 
     async fn send_keepalive(&mut self) -> Result<(), ExchangeConnectionError> {
         ws_ping(&mut self.write_stream).await
+    }
+
+    async fn supports_pair(
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Result<bool, ExchangeConnectionError> {
+        let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
+        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
+        let symbol = format!("{}{}", base_ticker, quote_ticker);
+
+        // Query the `exchangeInfo` endpoint about the pair
+        let request_url = format!("{BINANCE_REST_BASE_URL}/exchangeInfo?symbol={symbol}");
+
+        let response = reqwest::get(request_url)
+            .await
+            .map_err(err_str!(ExchangeConnectionError::ConnectionHangup))?;
+
+        // A successful response will only be sent if the pair is supported
+        Ok(response.status().is_success())
     }
 }

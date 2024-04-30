@@ -8,10 +8,11 @@ use std::{
 use async_trait::async_trait;
 use common::types::{token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
-use serde_json::json;
+use serde_json::{json, Value};
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
+use util::err_str;
 
 use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
 
@@ -26,6 +27,11 @@ use super::{
 // -------------
 // | Constants |
 // -------------
+
+/// The base URL for the Okx websocket endpoint
+const OKX_WS_BASE_URL: &str = "wss://ws.okx.com:8443/ws/v5/public";
+/// The base URL for the Okx REST API
+const OKX_REST_BASE_URL: &str = "https://okx.com/api/v5/public";
 
 /// The event name for Okx status updates
 const OKX_EVENT: &str = "event";
@@ -64,9 +70,7 @@ pub struct OkxConnection {
 impl OkxConnection {
     /// Get the Okx websocket API URL
     fn websocket_url() -> Url {
-        String::from("wss://ws.okx.com:8443/ws/v5/public")
-            .parse()
-            .expect("Failed to parse Okx websocket URL")
+        String::from(OKX_WS_BASE_URL).parse().expect("Failed to parse Okx websocket URL")
     }
 
     /// Parse a price from an Okx websocket message
@@ -164,5 +168,33 @@ impl ExchangeConnection for OkxConnection {
             .send(Message::Text(String::from(OKX_PING_MESSAGE)))
             .await
             .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))
+    }
+
+    async fn supports_pair(
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Result<bool, ExchangeConnectionError> {
+        let base_ticker = base_token.get_exchange_ticker(Exchange::Okx);
+        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Okx);
+        let instrument = format!("{}-{}", base_ticker, quote_ticker);
+
+        // Query the `instruments` endpoint about the pair
+        let request_url =
+            format!("{OKX_REST_BASE_URL}/instruments/instType=SPOT&instId={instrument}");
+
+        let response = reqwest::get(request_url)
+            .await
+            .map_err(err_str!(ExchangeConnectionError::ConnectionHangup))?;
+
+        let res_json: Value =
+            response.json().await.map_err(err_str!(ExchangeConnectionError::InvalidMessage))?;
+
+        match &res_json[OKX_DATA] {
+            // Data is non-empty => Okx supports the pair
+            Value::Array(data) => Ok(!data.is_empty()),
+            _ => Err(ExchangeConnectionError::InvalidMessage(
+                "Invalid response from Okx".to_string(),
+            )),
+        }
     }
 }
