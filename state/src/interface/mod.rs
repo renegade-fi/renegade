@@ -14,12 +14,10 @@ pub mod wallet_index;
 
 use std::sync::{Arc, RwLock};
 
+use common::default_wrapper::default_option;
 use config::RelayerConfig;
 use external_api::bus_message::SystemBusMessage;
-use job_types::{
-    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
-    task_driver::TaskDriverQueue,
-};
+use job_types::network_manager::NetworkManagerQueue;
 use system_bus::SystemBus;
 use util::err_str;
 
@@ -30,8 +28,7 @@ use crate::{
             gossip::GossipRaftNetwork,
             traits::{RaftMessageReceiver, RaftNetwork},
         },
-        raft_node::{ProposalQueue, ProposalReceiver, ReplicationNodeConfig},
-        worker::DEFAULT_TICK_INTERVAL_MS,
+        raft_node::{ProposalQueue, ReplicationNodeConfig},
     },
     storage::db::{DbConfig, DB},
     Proposal, StateTransition,
@@ -99,49 +96,30 @@ impl State {
         Ok(self_)
     }
 
-    /// Constructs a configuration for the replication node using the network
-    /// manager to drive the raft network
-    pub fn gen_replication_config(
+    /// Fills in the configuration for the replication node with handles to
+    /// state-managed resources, using the network manager to drive the raft
+    /// network
+    pub fn fill_replication_config(
         &self,
-        relayer_config: RelayerConfig,
+        replication_config: &mut ReplicationNodeConfig<GossipRaftNetwork>,
         network_outbound: NetworkManagerQueue,
         raft_inbound: RaftMessageReceiver,
-        proposal_receiver: ProposalReceiver,
-        task_queue: TaskDriverQueue,
-        handshake_manager_queue: HandshakeManagerQueue,
-    ) -> ReplicationNodeConfig<GossipRaftNetwork> {
+    ) {
         let network =
             GossipRaftNetwork::new(network_outbound, raft_inbound, self.translation_map.clone());
 
-        self.gen_replication_config_with_network(
-            relayer_config,
-            network,
-            proposal_receiver,
-            task_queue,
-            handshake_manager_queue,
-        )
+        self.fill_replication_config_with_network(replication_config, network)
     }
 
-    /// Constructs a configuration for the replication node using the given
-    /// network
-    pub fn gen_replication_config_with_network<N: RaftNetwork>(
+    /// Fills in the configuration for the replication node with handles to
+    /// state-managed resources, using the given network
+    pub fn fill_replication_config_with_network<N: RaftNetwork>(
         &self,
-        relayer_config: RelayerConfig,
+        replication_config: &mut ReplicationNodeConfig<N>,
         network: N,
-        proposal_receiver: ProposalReceiver,
-        task_queue: TaskDriverQueue,
-        handshake_manager_queue: HandshakeManagerQueue,
-    ) -> ReplicationNodeConfig<N> {
-        ReplicationNodeConfig {
-            tick_period_ms: DEFAULT_TICK_INTERVAL_MS,
-            relayer_config,
-            proposal_receiver,
-            network,
-            task_queue,
-            handshake_manager_queue,
-            db: self.db.clone(),
-            system_bus: self.bus.clone(),
-        }
+    ) {
+        replication_config.db = default_option(self.db.clone());
+        replication_config.network = default_option(network);
     }
 
     // -------------------

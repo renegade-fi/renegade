@@ -153,12 +153,14 @@ pub mod test_helpers {
 
     use common::types::gossip::WrappedPeerId;
     use config::RelayerConfig;
+    use external_api::bus_message::SystemBusMessage;
     use job_types::{
         handshake_manager::{new_handshake_manager_queue, HandshakeManagerQueue},
         task_driver::{new_task_driver_queue, TaskDriverQueue},
     };
     use system_bus::SystemBus;
     use tempfile::tempdir;
+    use test_helpers::mocks::mock_cancel;
 
     use crate::{
         replication::{
@@ -166,7 +168,9 @@ pub mod test_helpers {
                 address_translation::PeerIdTranslationMap,
                 traits::{test_helpers::MockNetwork, RaftNetwork},
             },
-            raft_node::{new_raft_proposal_queue, ProposalReceiver, ReplicationNode},
+            raft_node::{
+                new_raft_proposal_queue, ProposalReceiver, ReplicationNode, ReplicationNodeConfig,
+            },
         },
         storage::db::{DbConfig, DB},
         State,
@@ -221,15 +225,19 @@ pub mod test_helpers {
         proposal_receiver: ProposalReceiver,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
+        system_bus: SystemBus<SystemBusMessage>,
     ) {
         let raft_config = mock_raft_config(&config);
-        let replication_config = state.gen_replication_config_with_network(
+        let cancel_channel = mock_cancel();
+        let mut replication_config = ReplicationNodeConfig::new(
             config,
-            network,
             proposal_receiver,
             task_queue,
             handshake_manager_queue,
+            system_bus,
+            cancel_channel,
         );
+        state.fill_replication_config_with_network(&mut replication_config, network);
 
         let raft_node = ReplicationNode::new_with_config(replication_config, &raft_config).unwrap();
 
@@ -254,7 +262,8 @@ pub mod test_helpers {
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
         let (proposal_sender, proposal_receiver) = new_raft_proposal_queue();
-        let state = State::new(&config, proposal_sender, SystemBus::new()).unwrap();
+        let system_bus = SystemBus::new();
+        let state = State::new(&config, proposal_sender, system_bus.clone()).unwrap();
 
         run_mock_replication_node(
             &state,
@@ -263,6 +272,7 @@ pub mod test_helpers {
             proposal_receiver,
             task_queue,
             handshake_manager_queue,
+            system_bus,
         );
 
         // Wait for a leader election before returning

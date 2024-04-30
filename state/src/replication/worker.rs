@@ -35,11 +35,30 @@ pub struct ReplicationNodeWorker<N: RaftNetwork> {
     /// executor thread.
     raft_node: Option<ReplicationNode<N>>,
     /// The handle to the raft node thread
-    raft_handle: Option<JoinHandle<ReplicationError>>,
+    raft_handle: Option<JoinHandle<ReplicationWorkerError>>,
+}
+
+/// The error type for the replication node worker
+#[derive(Debug)]
+pub enum ReplicationWorkerError {
+    /// An error setting up the raft node
+    Setup(String),
+    /// An error receiving a message on a channel
+    RecvError(String),
+    /// The worker was cancelled
+    Cancelled,
+    /// An error from the underlying Raft replication node
+    Replication(ReplicationError),
+}
+
+impl From<ReplicationError> for ReplicationWorkerError {
+    fn from(value: ReplicationError) -> Self {
+        Self::Replication(value)
+    }
 }
 
 impl<N: 'static + RaftNetwork + Send> Worker for ReplicationNodeWorker<N> {
-    type Error = ReplicationError;
+    type Error = ReplicationWorkerError;
     type WorkerConfig = ReplicationNodeConfig<N>;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
@@ -68,7 +87,7 @@ impl<N: 'static + RaftNetwork + Send> Worker for ReplicationNodeWorker<N> {
         let raft_handle = Builder::new()
             .name("raft-replication-node-executor".to_string())
             .spawn(move || raft_node.run().unwrap_err())
-            .map_err(err_str!(ReplicationError::Setup))?;
+            .map_err(err_str!(ReplicationWorkerError::Setup))?;
 
         self.raft_handle = Some(raft_handle);
         Ok(())

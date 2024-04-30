@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 # Used to enable mocks from other crates in tests
 all-tests = ["common/mocks"]
-mocks = ["dep:tempfile"]
+mocks = ["dep:tempfile", "dep:test-helpers"]
 
 [dependencies]
 
@@ -34,6 +34,7 @@ gossip-api = { path = "../gossip-api" }
 job-types = { path = "../workers/job-types" }
 system-bus = { path = "../system-bus" }
 util = { path = "../util" }
+test-helpers = { path = "../test-helpers", optional = true }
 
 # === Misc === #
 crossterm = "0.27"
@@ -57,3 +58,4 @@ num-bigint = "0.4"
 tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"
+test-helpers = { path = "../test-helpers" }

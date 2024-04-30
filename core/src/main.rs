@@ -33,7 +33,7 @@ use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use state::replication::raft_node::new_raft_proposal_queue;
+use state::replication::raft_node::{new_raft_proposal_queue, ReplicationNodeConfig};
 use state::replication::worker::ReplicationNodeWorker;
 use state::State;
 use state::{replication::network::traits::new_raft_message_queue, tui::StateTuiApp};
@@ -132,13 +132,19 @@ async fn main() -> Result<(), CoordinatorError> {
     }
 
     // Spawn the Raft replication node worker
-    let replication_config = global_state.gen_replication_config(
+    let (raft_cancel_sender, raft_cancel_receiver) = watch::channel(());
+    let mut replication_config = ReplicationNodeConfig::new(
         args.clone(),
-        network_sender.clone(),
-        raft_receiver,
         proposal_receiver,
         task_sender.clone(),
         handshake_worker_sender.clone(),
+        system_bus.clone(),
+        raft_cancel_receiver,
+    );
+    global_state.fill_replication_config(
+        &mut replication_config,
+        network_sender.clone(),
+        raft_receiver,
     );
     let mut raft_worker = ReplicationNodeWorker::new(replication_config)
         .expect("failed to build Raft replication node");
@@ -334,6 +340,8 @@ async fn main() -> Result<(), CoordinatorError> {
         loop {
             select! {
                 _ = raft_failure_receiver.recv() => {
+                    raft_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     raft_worker = recover_worker(raft_worker)?;
                 }
                 _ = task_driver_failure_receiver.recv() => {
@@ -385,6 +393,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Send cancel signals to all workers
     for cancel_channel in [
+        raft_cancel_sender,
         network_cancel_sender,
         gossip_cancel_sender,
         handshake_cancel_sender,

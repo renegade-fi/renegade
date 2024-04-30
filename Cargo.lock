@@ -7748,6 +7748,7 @@ dependencies = [
  "slog",
  "system-bus",
  "tempfile",
+ "test-helpers",
  "tokio",
  "tracing",
  "tracing-slog",

@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use common::{default_wrapper::DefaultOption, types::CancelChannel};
 use config::RelayerConfig;
 use crossbeam::channel::{
     unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
@@ -39,7 +40,11 @@ use crate::{
 };
 
 use super::{
-    error::ReplicationError, log_store::LogStore, network::traits::RaftNetwork, RaftPeerId,
+    error::ReplicationError,
+    log_store::LogStore,
+    network::traits::RaftNetwork,
+    worker::{ReplicationWorkerError, DEFAULT_TICK_INTERVAL_MS},
+    RaftPeerId,
 };
 
 // -------------
@@ -85,15 +90,43 @@ pub struct ReplicationNodeConfig<N: RaftNetwork> {
     /// proposals
     pub proposal_receiver: ProposalReceiver,
     /// A reference to the networking layer that backs the raft node
-    pub network: N,
+    pub network: DefaultOption<N>,
     /// A queue for the task driver, used by the applicator to start tasks
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
     pub handshake_manager_queue: HandshakeManagerQueue,
     /// A handle on the persistent storage layer underlying the raft node
-    pub db: Arc<DB>,
+    pub db: DefaultOption<Arc<DB>>,
     /// A handle to the system-global bus
     pub system_bus: SystemBus<SystemBusMessage>,
+    /// The channel on which the node may receive a signal to cancel the Raft
+    /// node
+    pub cancel_channel: CancelChannel,
+}
+
+impl<N: RaftNetwork> ReplicationNodeConfig<N> {
+    /// Create a new replication node config without the network and DB,
+    /// which must be filled in by the global state
+    pub fn new(
+        relayer_config: RelayerConfig,
+        proposal_receiver: ProposalReceiver,
+        task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
+        system_bus: SystemBus<SystemBusMessage>,
+        cancel_channel: CancelChannel,
+    ) -> Self {
+        Self {
+            tick_period_ms: DEFAULT_TICK_INTERVAL_MS,
+            relayer_config,
+            proposal_receiver,
+            network: None.into(),
+            task_queue,
+            handshake_manager_queue,
+            db: None.into(),
+            system_bus,
+            cancel_channel,
+        }
+    }
 }
 
 /// A raft node that replicates the relayer's state machine
@@ -113,6 +146,9 @@ pub struct ReplicationNode<N: RaftNetwork> {
     db: Arc<DB>,
     /// Maps proposal IDs to a response channel for the proposal
     proposal_responses: HashMap<Uuid, ProposalResultSender>,
+    /// The channel on which the node may receive a signal to cancel the Raft
+    /// node
+    cancel_channel: CancelChannel,
 }
 
 impl<N: RaftNetwork> ReplicationNode<N> {
@@ -126,11 +162,13 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// Creates a new replication node with a given raft config
     pub fn new_with_config(
-        config: ReplicationNodeConfig<N>,
+        mut config: ReplicationNodeConfig<N>,
         raft_config: &RaftConfig,
     ) -> Result<Self, ReplicationError> {
+        let db = config.db.take().take().unwrap();
+
         // Build the log store on top of the DB
-        let store = LogStore::new(config.db.clone())?;
+        let store = LogStore::new(db.clone())?;
         Self::setup_storage(raft_config.id, &store)?;
 
         // Build a state applicator to handle state transitions
@@ -139,7 +177,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             cluster_id: config.relayer_config.cluster_id,
             task_queue: config.task_queue,
             handshake_manager_queue: config.handshake_manager_queue,
-            db: config.db.clone(),
+            db: db.clone(),
             system_bus: config.system_bus,
         })
         .map_err(ReplicationError::Applicator)?;
@@ -156,9 +194,10 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             inner: node,
             applicator,
             proposal_queue: config.proposal_receiver,
-            network: config.network,
-            db: config.db,
+            network: config.network.take().take().unwrap(),
+            db,
             proposal_responses: HashMap::new(),
+            cancel_channel: config.cancel_channel,
         })
     }
 
@@ -191,7 +230,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
     /// The main loop of the raft consensus engine, we tick the state machine
     /// every `tick_period_ms` milliseconds
-    pub fn run(mut self) -> Result<(), ReplicationError> {
+    pub fn run(mut self) -> Result<(), ReplicationWorkerError> {
         let tick_interval = Duration::from_millis(self.tick_period_ms);
         let promotion_interval = Duration::from_millis(PROMOTION_INTERVAL_MS);
         let poll_interval = Duration::from_millis(RAFT_POLL_INTERVAL_MS);
@@ -201,6 +240,15 @@ impl<N: RaftNetwork> ReplicationNode<N> {
 
         loop {
             thread::sleep(poll_interval);
+
+            if self
+                .cancel_channel
+                .has_changed()
+                .map_err(err_str!(ReplicationWorkerError::RecvError))?
+            {
+                info!("Raft node cancelled, shutting down...");
+                return Err(ReplicationWorkerError::Cancelled);
+            }
 
             // Check for new proposals
             while let Some(Proposal { transition, response }) =
@@ -645,17 +693,19 @@ pub(crate) mod test_helpers {
         time::Duration,
     };
 
+    use common::default_wrapper::default_option;
     use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender};
     use job_types::{
         handshake_manager::new_handshake_manager_queue, task_driver::new_task_driver_queue,
     };
     use raft::prelude::Config as RaftConfig;
     use system_bus::SystemBus;
+    use test_helpers::mocks::mock_cancel;
 
     use crate::{
         replication::{
-            error::ReplicationError,
             network::traits::test_helpers::{MockNetwork, MockNetworkController},
+            worker::ReplicationWorkerError,
             RaftPeerId,
         },
         storage::db::DB,
@@ -669,7 +719,7 @@ pub(crate) mod test_helpers {
     /// well as references to their databases and proposal queues
     pub struct MockReplicationCluster {
         /// The handles of the nodes in the cluster
-        handles: Vec<JoinHandle<Result<(), ReplicationError>>>,
+        handles: Vec<JoinHandle<Result<(), ReplicationWorkerError>>>,
         /// The dbs of the nodes
         dbs: Vec<Arc<DB>>,
         /// The proposal senders of the nodes
@@ -827,6 +877,7 @@ pub(crate) mod test_helpers {
         network: MockNetwork,
         raft_config: &RaftConfig,
     ) -> ReplicationNode<MockNetwork> {
+        let cancel_channel = mock_cancel();
         let (task_queue, task_recv) = new_task_driver_queue();
         let (handshake_manager_queue, handshake_recv) = new_handshake_manager_queue();
         mem::forget(task_recv);
@@ -837,11 +888,12 @@ pub(crate) mod test_helpers {
                 tick_period_ms: 10,
                 relayer_config: Default::default(),
                 proposal_receiver: proposal_queue,
-                network,
+                network: default_option(network),
                 task_queue,
                 handshake_manager_queue,
-                db,
+                db: default_option(db),
                 system_bus: SystemBus::new(),
+                cancel_channel,
             },
             raft_config,
         )
@@ -852,7 +904,7 @@ pub(crate) mod test_helpers {
     pub fn spawn_node(
         id: RaftPeerId,
         node: ReplicationNode<MockNetwork>,
-    ) -> JoinHandle<Result<(), ReplicationError>> {
+    ) -> JoinHandle<Result<(), ReplicationWorkerError>> {
         Builder::new()
             .name(format!("node-{}", id))
             .spawn(move || {
@@ -871,15 +923,19 @@ pub(crate) mod test_helpers {
 mod test {
     use std::{sync::Arc, thread, time::Duration};
 
-    use common::types::{
-        wallet::{Wallet, WalletIdentifier},
-        wallet_mocks::mock_empty_wallet,
+    use common::{
+        default_wrapper::default_option,
+        types::{
+            wallet::{Wallet, WalletIdentifier},
+            wallet_mocks::mock_empty_wallet,
+        },
     };
     use crossbeam::channel::unbounded;
     use job_types::{
         handshake_manager::new_handshake_manager_queue, task_driver::new_task_driver_queue,
     };
     use rand::{thread_rng, Rng};
+    use tokio::sync::watch;
 
     use crate::{
         replication::{
@@ -906,6 +962,7 @@ mod test {
         let db = Arc::new(mock_db());
         let (_, net, _) = MockNetwork::new_duplex_conn();
 
+        let (_, cancel_channel) = watch::channel(());
         let (_, proposal_receiver) = unbounded();
         let (task_queue, _recv) = new_task_driver_queue();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
@@ -913,11 +970,12 @@ mod test {
             tick_period_ms: 10,
             relayer_config: Default::default(),
             proposal_receiver,
-            network: net,
+            network: default_option(net),
             task_queue,
             handshake_manager_queue,
-            db: db.clone(),
+            db: default_option(db),
             system_bus: Default::default(),
+            cancel_channel,
         };
         let _node = ReplicationNode::new(node_config).unwrap();
     }
