@@ -122,14 +122,6 @@ impl ExchangeConnection for OkxConnection {
     where
         Self: Sized,
     {
-        if !Self::supports_pair(&base_token, &quote_token).await? {
-            return Err(ExchangeConnectionError::UnsupportedPair(
-                base_token,
-                quote_token,
-                Exchange::Okx,
-            ));
-        }
-
         // Connect to the websocket
         let url = Self::websocket_url();
         let (mut write, read) = ws_connect(url).await?;

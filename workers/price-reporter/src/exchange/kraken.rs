@@ -126,14 +126,6 @@ impl ExchangeConnection for KrakenConnection {
     where
         Self: Sized,
     {
-        if !Self::supports_pair(&base_token, &quote_token).await? {
-            return Err(ExchangeConnectionError::UnsupportedPair(
-                base_token,
-                quote_token,
-                Exchange::Kraken,
-            ));
-        }
-
         // Connect to the websocket
         let url = Self::websocket_url();
         let (mut write, read) = ws_connect(url).await?;

@@ -16,7 +16,10 @@ use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::{err_str, get_current_time_seconds};
 
-use crate::{errors::ExchangeConnectionError, manager::exchange_lists_pair_tokens, worker::ExchangeConnectionsConfig};
+use crate::{
+    errors::ExchangeConnectionError, manager::exchange_lists_pair_tokens,
+    worker::ExchangeConnectionsConfig,
+};
 
 use super::{
     connection::{
@@ -194,14 +197,6 @@ impl ExchangeConnection for CoinbaseConnection {
         quote_token: Token,
         config: &ExchangeConnectionsConfig,
     ) -> Result<Self, ExchangeConnectionError> {
-        if !Self::supports_pair(&base_token, &quote_token).await? {
-            return Err(ExchangeConnectionError::UnsupportedPair(
-                base_token,
-                quote_token,
-                Exchange::Coinbase,
-            ));
-        }
-
         // Build the base websocket connection
         let url = Self::websocket_url();
         let (mut writer, read) = ws_connect(url).await?;
