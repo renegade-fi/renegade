@@ -298,21 +298,48 @@ impl SharedPriceStreamStates {
 // | HELPERS |
 // -----------
 
-/// Returns the set of supported exchanges on the pair
+/// Returns the set of exchanges that support both tokens in the pair.
+///
+/// Note: This does not mean that each exchange has a market for the pair,
+/// just that it separately lists both tokens.
 pub fn get_supported_exchanges(
     base_token: &Token,
     quote_token: &Token,
     config: &PriceReporterConfig,
 ) -> Vec<Exchange> {
+    // Get the exchanges that list both tokens, and filter out the ones that
+    // are not configured
+    let listing_exchanges = get_listing_exchanges(base_token, quote_token);
+    listing_exchanges
+        .into_iter()
+        .filter(|exchange| config.exchange_configured(*exchange))
+        .collect_vec()
+}
+
+/// Returns the list of exchanges that list both the base and quote tokens.
+///
+/// Note: This does not mean that each exchange has a market for the pair,
+/// just that it separately lists both tokens.
+pub fn get_listing_exchanges(base_token: &Token, quote_token: &Token) -> Vec<Exchange> {
     // Compute the intersection of the supported exchanges for each of the assets
-    // in the pair, filtering for those not configured
+    // in the pair
     let base_token_supported_exchanges = base_token.supported_exchanges();
     let quote_token_supported_exchanges = quote_token.supported_exchanges();
     base_token_supported_exchanges
         .intersection(&quote_token_supported_exchanges)
         .copied()
-        .filter(|exchange| config.exchange_configured(*exchange))
         .collect_vec()
+}
+
+/// Returns whether or not the given exchange lists both the tokens in the pair
+/// separately
+pub fn exchange_lists_pair_tokens(
+    exchange: Exchange,
+    base_token: &Token,
+    quote_token: &Token,
+) -> bool {
+    let listing_exchanges = get_listing_exchanges(base_token, quote_token);
+    listing_exchanges.contains(&exchange)
 }
 
 /// Computes the state of the price reporter for the given token pair,
