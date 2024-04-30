@@ -1,5 +1,7 @@
 //! Defines logic for running the internal matching engine on a given order
 
+use std::time::Duration;
+
 use circuit_types::{fixed_point::FixedPoint, order::Order};
 use common::types::{
     network_order::NetworkOrder,
@@ -72,7 +74,7 @@ impl HandshakeExecutor {
                 .global_state
                 .get_wallet_for_order(&order_id)?
                 .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
-            if other_wallet_id == wallet.wallet_id {
+            if !self.wallets_can_match(wallet.wallet_id, other_wallet_id) {
                 continue;
             }
 
@@ -172,12 +174,31 @@ impl HandshakeExecutor {
 
         // Await settlement, returning true to indicate a match was successfully
         // processed
+        // Allow the task driver to index the task before awaiting it
+        tokio::time::sleep(Duration::from_millis(100)).await;
         self.await_settlement_task(task_id).await.map(|_| true)
     }
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// Check if two wallets may match
+    fn wallets_can_match(&self, w1: WalletIdentifier, w2: WalletIdentifier) -> bool {
+        // Same wallet
+        if w1 == w2 {
+            return false;
+        }
+
+        // Wallets marked in the mutual exclusion list
+        let w1_in_list = self.mutual_exclusion_list.contains(&w1);
+        let w2_in_list = self.mutual_exclusion_list.contains(&w2);
+        if w1_in_list && w2_in_list {
+            return false;
+        }
+
+        true
+    }
 
     /// Fetch the execution price for an order
     async fn get_execution_price(

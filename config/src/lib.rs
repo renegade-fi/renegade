@@ -9,6 +9,7 @@ use colored::*;
 use common::types::{
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
+    wallet::WalletIdentifier,
 };
 use ed25519_dalek::{Digest, Keypair as DalekKeypair, Sha512, SignatureError};
 use ethers::{core::rand::thread_rng, signers::LocalWallet};
@@ -16,6 +17,7 @@ use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashSet,
     env, fs,
     net::{IpAddr, SocketAddr},
     str::FromStr,
@@ -60,6 +62,9 @@ struct Cli {
     /// Defaults to 20 basis points
     #[clap(long, value_parser, default_value = "0.002")]
     pub match_take_rate: f64,
+    /// The mutual exclusion list for matches, two wallets in this list will never be matched internally by the node
+    #[clap(long, value_parser, value_delimiter=' ', num_args=0..)]
+    pub match_mutual_exclusion_list: Vec<WalletIdentifier>,
 
     // -----------------------
     // | Environment Configs |
@@ -203,6 +208,9 @@ pub struct RelayerConfig {
     /// The take rate of this relayer on a managed match, i.e. the amount of the
     /// received asset that the relayer takes as a fee
     pub match_take_rate: FixedPoint,
+    /// The mutual exclusion list for matches, two wallets in this list will
+    /// never be matched internally by the node
+    pub match_mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
     pub price_reporter_url: Option<Url>,
@@ -307,6 +315,7 @@ impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
             match_take_rate: self.match_take_rate,
+            match_mutual_exclusion_list: self.match_mutual_exclusion_list.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
@@ -429,6 +438,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
 
     let mut config = RelayerConfig {
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
+        match_mutual_exclusion_list: cli_args.match_mutual_exclusion_list.into_iter().collect(),
         price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,

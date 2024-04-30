@@ -6,7 +6,7 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 
-use std::mem;
+use std::{collections::HashSet, mem};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
@@ -374,6 +374,7 @@ impl MockNodeController {
         let task_queue = self.task_queue.0.clone();
 
         let conf = HandshakeManagerConfig {
+            mutual_exclusion_list: HashSet::new(),
             global_state,
             network_channel,
             price_reporter_job_queue,

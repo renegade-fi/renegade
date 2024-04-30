@@ -16,7 +16,7 @@ use common::{
         proof_bundles::{MatchBundle, OrderValidityProofBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor, TaskIdentifier},
         token::Token,
-        wallet::OrderIdentifier,
+        wallet::{OrderIdentifier, WalletIdentifier},
         CancelChannel,
     },
 };
@@ -43,6 +43,7 @@ use rand::{seq::SliceRandom, thread_rng};
 use renegade_metrics::helpers::record_match_volume;
 use state::State;
 use std::{
+    collections::HashSet,
     thread::JoinHandle,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -106,6 +107,8 @@ pub struct HandshakeManager {
 /// Manages the threaded execution of the handshake protocol
 #[derive(Clone)]
 pub struct HandshakeExecutor {
+    /// The set of wallets to mutually exclude from matches
+    pub(crate) mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The cache used to mark order pairs as already matched
     pub(crate) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
@@ -133,6 +136,7 @@ impl HandshakeExecutor {
     /// Create a new protocol executor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        mutual_exclusion_list: HashSet<WalletIdentifier>,
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
         price_reporter_job_queue: PriceReporterQueue,
@@ -146,6 +150,7 @@ impl HandshakeExecutor {
         let handshake_state_index = HandshakeStateIndex::new(global_state.clone());
 
         Ok(Self {
+            mutual_exclusion_list,
             handshake_cache,
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
