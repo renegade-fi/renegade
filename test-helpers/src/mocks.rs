@@ -4,7 +4,6 @@ use std::mem;
 
 use common::types::{new_cancel_channel, CancelChannel};
 
-
 /// Create a cancel channel and forget the sender to avoid drops
 pub fn mock_cancel() -> CancelChannel {
     let (send, recv) = new_cancel_channel();
