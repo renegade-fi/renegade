@@ -67,9 +67,14 @@ pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &Sender<()>) {
         Builder::new()
             .name(watcher_name.clone())
             .spawn(move || {
-                #[allow(unused_must_use)]
-                let err = join_handle.join().unwrap();
-                error!("worker {worker_name} exited with error: {err:?}");
+                match join_handle.join() {
+                    Err(panic) => {
+                        error!("worker {worker_name} panicked with error: {panic:?}");
+                    },
+                    Ok(err) => {
+                        error!("worker {worker_name} exited with error: {err:?}");
+                    },
+                }
                 channel_clone.blocking_send(()).unwrap();
             })
             .unwrap();

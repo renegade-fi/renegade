@@ -149,20 +149,24 @@ impl From<StateTransition> for Proposal {
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
     //! Test helpers for the state crate
-    use std::{mem, time::Duration};
+    use std::{mem, thread, time::Duration};
 
     use common::types::gossip::WrappedPeerId;
     use config::RelayerConfig;
     use job_types::{
-        handshake_manager::new_handshake_manager_queue,
+        handshake_manager::{new_handshake_manager_queue, HandshakeManagerQueue},
         task_driver::{new_task_driver_queue, TaskDriverQueue},
     };
     use system_bus::SystemBus;
     use tempfile::tempdir;
 
     use crate::{
-        replication::network::{
-            address_translation::PeerIdTranslationMap, traits::test_helpers::MockNetwork,
+        replication::{
+            network::{
+                address_translation::PeerIdTranslationMap,
+                traits::{test_helpers::MockNetwork, RaftNetwork},
+            },
+            raft_node::{new_raft_proposal_queue, ProposalReceiver, ReplicationNode},
         },
         storage::db::{DbConfig, DB},
         State,
@@ -177,6 +181,11 @@ pub mod test_helpers {
     pub fn tmp_db_path() -> String {
         let tempdir = tempdir().unwrap();
         tempdir.path().to_str().unwrap().to_string()
+    }
+
+    /// Create a mock relayer config for testing
+    pub fn mock_relayer_config() -> RelayerConfig {
+        RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() }
     }
 
     /// Create a mock database in a temporary location
@@ -204,29 +213,57 @@ pub mod test_helpers {
         raft::Config { id: raft_id, election_tick: 10, ..Default::default() }
     }
 
+    /// Create and run a mock Raft replication node
+    pub fn run_mock_replication_node<N: 'static + RaftNetwork + Send>(
+        state: &State,
+        config: RelayerConfig,
+        network: N,
+        proposal_receiver: ProposalReceiver,
+        task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
+    ) {
+        let raft_config = mock_raft_config(&config);
+        let replication_config = state.gen_replication_config_with_network(
+            config,
+            network,
+            proposal_receiver,
+            task_queue,
+            handshake_manager_queue,
+        );
+
+        let raft_node = ReplicationNode::new_with_config(replication_config, &raft_config).unwrap();
+
+        thread::spawn(move || raft_node.run().unwrap());
+    }
+
     /// Create a mock state instance
     pub fn mock_state() -> State {
+        let config = mock_relayer_config();
+        mock_state_with_config(config)
+    }
+
+    /// Create a mock state instance with the given relayer config
+    pub fn mock_state_with_config(config: RelayerConfig) -> State {
         let (task_queue, recv) = new_task_driver_queue();
         mem::forget(recv);
-        mock_state_with_task_queue(task_queue)
+        mock_state_with_task_queue(task_queue, config)
     }
 
     /// Create a mock state instance with the given task queue
-    pub fn mock_state_with_task_queue(task_queue: TaskDriverQueue) -> State {
-        let config =
-            RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() };
-
+    pub fn mock_state_with_task_queue(task_queue: TaskDriverQueue, config: RelayerConfig) -> State {
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        let state = State::new_with_network(
-            &config,
-            &mock_raft_config(&config),
+        let (proposal_sender, proposal_receiver) = new_raft_proposal_queue();
+        let state = State::new(&config, proposal_sender, SystemBus::new()).unwrap();
+
+        run_mock_replication_node(
+            &state,
+            config,
             nets.remove(0),
+            proposal_receiver,
             task_queue,
             handshake_manager_queue,
-            SystemBus::new(),
-        )
-        .unwrap();
+        );
 
         // Wait for a leader election before returning
         sleep_ms(500);

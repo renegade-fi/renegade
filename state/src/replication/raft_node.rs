@@ -9,7 +9,9 @@ use std::{
 };
 
 use config::RelayerConfig;
-use crossbeam::channel::{Receiver as CrossbeamReceiver, TryRecvError};
+use crossbeam::channel::{
+    unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
+};
 use external_api::bus_message::SystemBusMessage;
 use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
 use protobuf::{Message, RepeatedField};
@@ -62,6 +64,16 @@ const ERR_PROPOSAL_RESPONSE: &str = "Failed to send proposal response";
 /// Error message emitted when an invalid ID is found in a proposal's context
 const ERR_INVALID_PROPOSAL_ID: &str = "Invalid proposal ID";
 
+/// A type alias for a queue of state transition proposals
+pub type ProposalQueue = CrossbeamSender<Proposal>;
+/// A type alias for a receiver of state transition proposals
+pub type ProposalReceiver = CrossbeamReceiver<Proposal>;
+
+/// Create a new raft proposal queue and receiver
+pub fn new_raft_proposal_queue() -> (ProposalQueue, ProposalReceiver) {
+    unbounded()
+}
+
 /// The config for the local replication node
 #[derive(Clone)]
 pub struct ReplicationNodeConfig<N: RaftNetwork> {
@@ -71,7 +83,7 @@ pub struct ReplicationNodeConfig<N: RaftNetwork> {
     pub relayer_config: RelayerConfig,
     /// A reference to the channel on which the replication node may receive
     /// proposals
-    pub proposal_queue: CrossbeamReceiver<Proposal>,
+    pub proposal_receiver: ProposalReceiver,
     /// A reference to the networking layer that backs the raft node
     pub network: N,
     /// A queue for the task driver, used by the applicator to start tasks
@@ -143,7 +155,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             tick_period_ms: config.tick_period_ms,
             inner: node,
             applicator,
-            proposal_queue: config.proposal_queue,
+            proposal_queue: config.proposal_receiver,
             network: config.network,
             db: config.db,
             proposal_responses: HashMap::new(),
@@ -824,7 +836,7 @@ pub(crate) mod test_helpers {
             ReplicationNodeConfig {
                 tick_period_ms: 10,
                 relayer_config: Default::default(),
-                proposal_queue,
+                proposal_receiver: proposal_queue,
                 network,
                 task_queue,
                 handshake_manager_queue,
@@ -900,7 +912,7 @@ mod test {
         let node_config = ReplicationNodeConfig {
             tick_period_ms: 10,
             relayer_config: Default::default(),
-            proposal_queue: proposal_receiver,
+            proposal_receiver,
             network: net,
             task_queue,
             handshake_manager_queue,

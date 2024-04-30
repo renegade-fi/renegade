@@ -33,6 +33,8 @@ use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
+use state::replication::raft_node::new_raft_proposal_queue;
+use state::replication::worker::ReplicationNodeWorker;
 use state::State;
 use state::{replication::network::traits::new_raft_message_queue, tui::StateTuiApp};
 use system_bus::SystemBus;
@@ -92,6 +94,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let system_bus = SystemBus::<SystemBusMessage>::new();
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (raft_sender, raft_receiver) = new_raft_message_queue();
+    let (proposal_sender, proposal_receiver) = new_raft_proposal_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = new_price_reporter_queue();
@@ -100,14 +103,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (task_sender, task_receiver) = new_task_driver_queue();
 
     // Construct a global state
-    let global_state = State::new(
-        network_sender.clone(),
-        raft_receiver,
-        &args,
-        task_sender.clone(),
-        handshake_worker_sender.clone(),
-        system_bus.clone(),
-    )?;
+    let global_state = State::new(&args, proposal_sender, system_bus.clone())?;
 
     // Configure logging and TUI
     if args.debug {
@@ -128,12 +124,27 @@ async fn main() -> Result<(), CoordinatorError> {
             args.datadog_enabled,
             args.otlp_enabled,
             args.metrics_enabled,
-            args.otlp_collector_url,
+            args.otlp_collector_url.clone(),
             &args.statsd_host,
             args.statsd_port,
         )
         .map_err(err_str!(CoordinatorError::Telemetry))?;
     }
+
+    // Spawn the Raft replication node worker
+    let replication_config = global_state.gen_replication_config(
+        args.clone(),
+        network_sender.clone(),
+        raft_receiver,
+        proposal_receiver,
+        task_sender.clone(),
+        handshake_worker_sender.clone(),
+    );
+    let mut raft_worker = ReplicationNodeWorker::new(replication_config)
+        .expect("failed to build Raft replication node");
+    raft_worker.start().expect("failed to start Raft replication node");
+    let (raft_failure_sender, mut raft_failure_receiver) = mpsc::channel(1 /* buffer_size */);
+    watch_worker::<ReplicationNodeWorker<_>>(&mut raft_worker, &raft_failure_sender);
 
     // Construct an arbitrum client that workers will use for submitting txs
     let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
@@ -322,6 +333,9 @@ async fn main() -> Result<(), CoordinatorError> {
     let recovery_loop = || async {
         loop {
             select! {
+                _ = raft_failure_receiver.recv() => {
+                    raft_worker = recover_worker(raft_worker)?;
+                }
                 _ = task_driver_failure_receiver.recv() => {
                     task_driver = recover_worker(task_driver)?;
                 }
