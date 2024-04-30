@@ -397,7 +397,6 @@ mod test {
         state.nullify_orders(order.public_share_nullifier).unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).unwrap().unwrap();
-        assert_eq!(stored_order.state, NetworkOrderState::Cancelled);
+        assert!(state.get_order(&order.id).unwrap().is_none());
     }
 }

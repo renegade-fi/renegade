@@ -7,6 +7,7 @@ pub mod error;
 pub mod log_store;
 pub mod network;
 pub mod raft_node;
+pub mod worker;
 
 /// The ID of a raft peer
 pub type RaftPeerId = u64;

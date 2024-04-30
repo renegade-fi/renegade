@@ -32,6 +32,8 @@ pub enum ReplicationError {
     SerializeValue(String),
     /// An error interacting with storage
     Storage(StorageError),
+    /// An error setting up the raft node
+    Setup(String),
 }
 
 impl Display for ReplicationError {
@@ -65,6 +67,7 @@ impl From<ReplicationError> for RaftError {
             ReplicationError::ProposalResponse(e) => {
                 RaftError::Io(IOError::new(IOErrorKind::Other, e))
             },
+            ReplicationError::Setup(e) => RaftError::ConfigInvalid(e),
         }
     }
 }

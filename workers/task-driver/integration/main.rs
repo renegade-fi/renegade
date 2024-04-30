@@ -29,7 +29,7 @@ use job_types::{
 };
 use proof_manager::mock::MockProofManager;
 use rand::thread_rng;
-use state::{test_helpers::mock_state_with_task_queue, State};
+use state::{test_helpers::{mock_relayer_config, mock_state_with_task_queue}, State};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -158,7 +158,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
 /// Create a global state mock for the `task-driver` integration tests
 fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
-    mock_state_with_task_queue(task_queue)
+    mock_state_with_task_queue(task_queue, mock_relayer_config())
 }
 
 /// Setup a mock `ArbitrumClient` for the integration tests

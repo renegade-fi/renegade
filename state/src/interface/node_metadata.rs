@@ -139,36 +139,14 @@ impl State {
 
 #[cfg(test)]
 mod test {
-    use config::RelayerConfig;
-    use job_types::{
-        handshake_manager::new_handshake_manager_queue, task_driver::new_task_driver_queue,
-    };
-    use system_bus::SystemBus;
-
-    use crate::{
-        replication::network::traits::test_helpers::MockNetwork, test_helpers::mock_raft_config,
-        State,
-    };
+    use crate::test_helpers::{mock_relayer_config, mock_state_with_config};
 
     /// Tests the node metadata setup from a mock config
     #[test]
     fn test_node_metadata() {
         // Build the state mock manually to use the generated config
-        let config = RelayerConfig::default();
-        let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
-        let (task_queue, _recv) = new_task_driver_queue();
-        let (handshake_queue, _recv) = new_handshake_manager_queue();
-        let bus = SystemBus::new();
-        let raft_config = mock_raft_config(&config);
-        let state = State::new_with_network(
-            &config,
-            &raft_config,
-            nets.remove(0),
-            task_queue,
-            handshake_queue,
-            bus,
-        )
-        .unwrap();
+        let config = mock_relayer_config();
+        let state = mock_state_with_config(config.clone());
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();
