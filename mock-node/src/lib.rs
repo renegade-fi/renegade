@@ -15,7 +15,7 @@ use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
     default_wrapper::{default_option, DefaultOption},
-    types::{new_cancel_channel, CancelChannel, Price},
+    types::Price,
     worker::Worker,
 };
 use config::RelayerConfig;
@@ -55,20 +55,19 @@ use proof_manager::{
 use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use state::{
-    replication::{network::traits::{new_raft_message_queue, RaftMessageQueue, RaftMessageReceiver}, raft_node::{new_raft_proposal_queue, ProposalQueue, ProposalReceiver}, worker::ReplicationNodeWorker},
+    replication::{
+        network::traits::{new_raft_message_queue, RaftMessageQueue, RaftMessageReceiver},
+        raft_node::{
+            new_raft_proposal_queue, ProposalQueue, ProposalReceiver, ReplicationNodeConfig,
+        },
+        worker::ReplicationNodeWorker,
+    },
     State,
 };
 use system_bus::SystemBus;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
+use test_helpers::mocks::mock_cancel;
 use tokio::runtime::Runtime as TokioRuntime;
-
-/// Create a cancel channel and forget the sender to avoid drops
-fn mock_cancel() -> CancelChannel {
-    let (send, recv) = new_cancel_channel();
-    mem::forget(send);
-
-    recv
-}
 
 /// The mock node struct, used to build testing nodes
 ///
@@ -268,23 +267,22 @@ impl MockNodeController {
         let task_sender = self.task_queue.0.clone();
         let handshake_queue = self.handshake_queue.0.clone();
         let bus = self.bus.clone();
+        let cancel_channel = mock_cancel();
 
-        let state = State::new(
-            &self.config,
-            proposal_sender,
-            bus,
-        )
-        .expect("Failed to create state instance");
+        let state = State::new(&self.config, proposal_sender, bus.clone())
+            .expect("Failed to create state instance");
 
         // Start the raft node
-        let replication_config = state.gen_replication_config(
+        let mut replication_config = ReplicationNodeConfig::new(
             self.config.clone(),
-            network_queue,
-            raft_receiver,
             proposal_receiver,
             task_sender,
             handshake_queue,
+            bus,
+            cancel_channel,
         );
+        state.fill_replication_config(&mut replication_config, network_queue, raft_receiver);
+
         let mut raft_worker = ReplicationNodeWorker::new(replication_config)
             .expect("failed to build Raft replication node");
         raft_worker.start().expect("failed to start Raft replication node");
