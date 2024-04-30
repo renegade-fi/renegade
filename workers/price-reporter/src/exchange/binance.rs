@@ -18,7 +18,10 @@ use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::{err_str, get_current_time_seconds};
 
-use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
+use crate::{
+    errors::ExchangeConnectionError, manager::exchange_lists_pair_tokens,
+    worker::ExchangeConnectionsConfig,
+};
 
 use super::{
     connection::{
@@ -148,6 +151,14 @@ impl ExchangeConnection for BinanceConnection {
     where
         Self: Sized,
     {
+        if !Self::supports_pair(&base_token, &quote_token).await? {
+            return Err(ExchangeConnectionError::UnsupportedPair(
+                base_token,
+                quote_token,
+                Exchange::Binance,
+            ));
+        }
+
         // Fetch an inital price report to setup the stream
         let initial_price_report =
             Self::fetch_price_report(base_token.clone(), quote_token.clone()).await?;
@@ -189,6 +200,10 @@ impl ExchangeConnection for BinanceConnection {
         base_token: &Token,
         quote_token: &Token,
     ) -> Result<bool, ExchangeConnectionError> {
+        if !exchange_lists_pair_tokens(Exchange::Binance, base_token, quote_token) {
+            return Ok(false);
+        }
+
         let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
         let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
         let symbol = format!("{}{}", base_ticker, quote_ticker);

@@ -14,7 +14,10 @@ use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::err_str;
 
-use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
+use crate::{
+    errors::ExchangeConnectionError, manager::exchange_lists_pair_tokens,
+    worker::ExchangeConnectionsConfig,
+};
 
 use super::{
     connection::{
@@ -119,6 +122,14 @@ impl ExchangeConnection for OkxConnection {
     where
         Self: Sized,
     {
+        if !Self::supports_pair(&base_token, &quote_token).await? {
+            return Err(ExchangeConnectionError::UnsupportedPair(
+                base_token,
+                quote_token,
+                Exchange::Okx,
+            ));
+        }
+
         // Connect to the websocket
         let url = Self::websocket_url();
         let (mut write, read) = ws_connect(url).await?;
@@ -174,13 +185,17 @@ impl ExchangeConnection for OkxConnection {
         base_token: &Token,
         quote_token: &Token,
     ) -> Result<bool, ExchangeConnectionError> {
+        if !exchange_lists_pair_tokens(Exchange::Okx, base_token, quote_token) {
+            return Ok(false);
+        }
+
         let base_ticker = base_token.get_exchange_ticker(Exchange::Okx);
         let quote_ticker = quote_token.get_exchange_ticker(Exchange::Okx);
         let instrument = format!("{}-{}", base_ticker, quote_ticker);
 
         // Query the `instruments` endpoint about the pair
         let request_url =
-            format!("{OKX_REST_BASE_URL}/instruments/instType=SPOT&instId={instrument}");
+            format!("{OKX_REST_BASE_URL}/instruments?instType=SPOT&instId={instrument}");
 
         let response = reqwest::get(request_url)
             .await

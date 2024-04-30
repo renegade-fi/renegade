@@ -54,6 +54,21 @@ pub async fn connect_exchange(
     })
 }
 
+/// Check if the given exchange supports the given pair
+pub async fn supports_pair(
+    exchange: &Exchange,
+    base_token: &Token,
+    quote_token: &Token,
+) -> Result<bool, ExchangeConnectionError> {
+    Ok(match exchange {
+        Exchange::Binance => BinanceConnection::supports_pair(base_token, quote_token).await?,
+        Exchange::Coinbase => CoinbaseConnection::supports_pair(base_token, quote_token).await?,
+        Exchange::Kraken => KrakenConnection::supports_pair(base_token, quote_token).await?,
+        Exchange::Okx => OkxConnection::supports_pair(base_token, quote_token).await?,
+        Exchange::UniswapV3 => UniswapV3Connection::supports_pair(base_token, quote_token).await?,
+    })
+}
+
 /// The type that a price stream should return
 pub type PriceStreamType = Result<Price, ExchangeConnectionError>;
 

@@ -16,7 +16,10 @@ use tungstenite::{Error as WsError, Message};
 use url::Url;
 use util::err_str;
 
-use crate::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
+use crate::{
+    errors::ExchangeConnectionError, manager::exchange_lists_pair_tokens,
+    worker::ExchangeConnectionsConfig,
+};
 
 use super::{
     connection::{
@@ -123,6 +126,14 @@ impl ExchangeConnection for KrakenConnection {
     where
         Self: Sized,
     {
+        if !Self::supports_pair(&base_token, &quote_token).await? {
+            return Err(ExchangeConnectionError::UnsupportedPair(
+                base_token,
+                quote_token,
+                Exchange::Kraken,
+            ));
+        }
+
         // Connect to the websocket
         let url = Self::websocket_url();
         let (mut write, read) = ws_connect(url).await?;
@@ -174,6 +185,10 @@ impl ExchangeConnection for KrakenConnection {
         base_token: &Token,
         quote_token: &Token,
     ) -> Result<bool, ExchangeConnectionError> {
+        if !exchange_lists_pair_tokens(Exchange::Kraken, base_token, quote_token) {
+            return Ok(false);
+        }
+
         let base_ticker = base_token.get_exchange_ticker(Exchange::Kraken);
         let quote_ticker = quote_token.get_exchange_ticker(Exchange::Kraken);
         let pair = format!("{}/{}", base_ticker, quote_ticker);

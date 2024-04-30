@@ -19,8 +19,8 @@ pub enum ExchangeConnectionError {
     /// The maximum retry count was exceeded while trying to re-establish
     /// an exchange connection
     MaxRetries(Exchange),
-    /// No exchanges support the given token pair
-    NoSupportedExchanges(Token, Token),
+    /// The given pair is not supported by the exchange
+    UnsupportedPair(Token, Token, Exchange),
     /// Error sending on the `write` end of the websocket
     SendError(String),
     /// Error saving the state of a price stream
