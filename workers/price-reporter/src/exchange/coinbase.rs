@@ -10,7 +10,10 @@ use async_trait::async_trait;
 use common::types::{token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use hmac_sha256::HMAC;
-use reqwest::{header::CONTENT_TYPE, Client};
+use reqwest::{
+    header::{CONTENT_TYPE, USER_AGENT},
+    Client,
+};
 use serde_json::json;
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
@@ -37,6 +40,8 @@ use super::{
 const COINBASE_WS_BASE_URL: &str = "wss://advanced-trade-ws.coinbase.com";
 /// The base URL for the Coinbase REST API
 const COINBASE_REST_BASE_URL: &str = "https://api.exchange.coinbase.com";
+/// The User-Agent header for Coinbase requests
+const CB_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 /// The name of the events field in a Coinbase WS message
 const COINBASE_EVENTS: &str = "events";
@@ -272,6 +277,7 @@ impl ExchangeConnection for CoinbaseConnection {
         let client = Client::new();
         let response = client
             .get(request_url)
+            .header(USER_AGENT, CB_USER_AGENT)
             .header(CONTENT_TYPE, "application/json")
             .send()
             .await
