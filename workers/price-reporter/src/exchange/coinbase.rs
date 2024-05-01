@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use common::types::{token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use hmac_sha256::HMAC;
+use reqwest::{header::CONTENT_TYPE, Client};
 use serde_json::json;
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
@@ -267,7 +268,12 @@ impl ExchangeConnection for CoinbaseConnection {
         // Query the `products` endpoint about the pair
         let request_url = format!("{COINBASE_REST_BASE_URL}/products/{product_id}");
 
-        let response = reqwest::get(request_url)
+        // TODO: Store client on price reporter somewhere to keep connections alive
+        let client = Client::new();
+        let response = client
+            .get(request_url)
+            .header(CONTENT_TYPE, "application/json")
+            .send()
             .await
             .map_err(err_str!(ExchangeConnectionError::ConnectionHangup))?;
 
