@@ -11,12 +11,12 @@ use circuit_types::{
     r#match::MatchResult,
 };
 use common::types::tasks::{
-    HistoricalTask, HistoricalTaskDescription, QueuedTask, QueuedTaskState, TaskIdentifier,
-    TaskQueueKey, WalletUpdateType,
+    HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,
+    WalletUpdateType,
 };
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use util::hex::biguint_to_hex_string;
 
 // -----------
 // | Helpers |
@@ -37,7 +37,7 @@ pub struct ApiHistoricalTask {
     /// The id of the task
     pub id: TaskIdentifier,
     /// The state of the task
-    pub state: QueuedTaskState,
+    pub state: String,
     /// The time the task was created
     pub created_at: u64,
     /// The axillary information that specifies the transformation the task took
@@ -48,7 +48,7 @@ impl From<HistoricalTask> for ApiHistoricalTask {
     fn from(value: HistoricalTask) -> Self {
         Self {
             id: value.id,
-            state: value.state,
+            state: value.state.display_description(),
             created_at: value.created_at,
             task_info: value.task_info.into(),
         }
@@ -60,7 +60,8 @@ impl ApiHistoricalTask {
     pub fn from_queued_task(key: TaskQueueKey, task: QueuedTask) -> Option<Self> {
         let task_info =
             HistoricalTaskDescription::from_task_descriptor(key, &task.descriptor)?.into();
-        Some(Self { id: task.id, state: task.state, created_at: task.created_at, task_info })
+        let state = task.state.display_description();
+        Some(Self { id: task.id, state, created_at: task.created_at, task_info })
     }
 }
 
@@ -100,9 +101,9 @@ impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiHistoricalMatch {
     /// The base mint matched
-    pub base: BigUint,
+    pub base: String,
     /// The quote mint matched
-    pub quote: BigUint,
+    pub quote: String,
     /// The volume matched
     pub volume: Number,
     /// The direction the local party
@@ -111,12 +112,10 @@ pub struct ApiHistoricalMatch {
 
 impl From<MatchResult> for ApiHistoricalMatch {
     fn from(value: MatchResult) -> Self {
-        Self {
-            base: value.base_mint,
-            quote: value.quote_mint,
-            volume: u128_to_number(value.base_amount),
-            is_sell: value.direction,
-        }
+        let base = biguint_to_hex_string(&value.base_mint);
+        let quote = biguint_to_hex_string(&value.quote_mint);
+        let volume = u128_to_number(value.base_amount);
+        Self { base, quote, volume, is_sell: value.direction }
     }
 }
 
@@ -130,14 +129,14 @@ pub enum ApiWalletUpdateType {
     /// Deposit a balance
     Deposit {
         /// The deposited mint
-        mint: BigUint,
+        mint: String,
         /// The amount deposited
         amount: Number,
     },
     /// Withdraw a balance
     Withdraw {
         /// The withdrawn mint
-        mint: BigUint,
+        mint: String,
         /// The amount withdrawn
         amount: Number,
     },
@@ -159,9 +158,9 @@ pub enum ApiWalletUpdateType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WalletUpdateOrder {
     /// The mint of the base token
-    pub base: BigUint,
+    pub base: String,
     /// The mint of the quote token
-    pub quote: BigUint,
+    pub quote: String,
     /// The side of the order
     pub side: OrderSide,
     /// The volume of the order
@@ -170,12 +169,10 @@ pub struct WalletUpdateOrder {
 
 impl From<Order> for WalletUpdateOrder {
     fn from(value: Order) -> Self {
-        Self {
-            base: value.base_mint,
-            quote: value.quote_mint,
-            side: value.side,
-            amount: u128_to_number(value.amount),
-        }
+        let base = biguint_to_hex_string(&value.base_mint);
+        let quote = biguint_to_hex_string(&value.quote_mint);
+        let amount = u128_to_number(value.amount);
+        Self { base, quote, side: value.side, amount }
     }
 }
 
@@ -183,10 +180,14 @@ impl From<WalletUpdateType> for ApiWalletUpdateType {
     fn from(value: WalletUpdateType) -> Self {
         match value {
             WalletUpdateType::Deposit { mint, amount } => {
-                Self::Deposit { mint, amount: u128_to_number(amount) }
+                let mint = biguint_to_hex_string(&mint);
+                let amount = u128_to_number(amount);
+                Self::Deposit { mint, amount }
             },
             WalletUpdateType::Withdraw { mint, amount } => {
-                Self::Withdraw { mint, amount: u128_to_number(amount) }
+                let mint = biguint_to_hex_string(&mint);
+                let amount = u128_to_number(amount);
+                Self::Withdraw { mint, amount }
             },
             WalletUpdateType::PlaceOrder { order } => {
                 Self::PlaceOrder { order: WalletUpdateOrder::from(order) }
