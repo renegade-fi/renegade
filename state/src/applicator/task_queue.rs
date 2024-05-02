@@ -51,7 +51,7 @@ impl StateApplicator {
         }
 
         tx.commit()?;
-        self.publish_task_updates(queue_key, task);
+        self.publish_task_updates(queue_key, &task);
         Ok(())
     }
 
@@ -89,7 +89,7 @@ impl StateApplicator {
         tx.commit()?;
 
         // Publish a completed message to the system bus
-        self.publish_task_updates(key, task);
+        self.publish_task_updates(key, &task);
         Ok(())
     }
 
@@ -114,7 +114,7 @@ impl StateApplicator {
         tx.commit()?;
 
         if let Some(t) = task {
-            self.publish_task_updates(key, t);
+            self.publish_task_updates(key, &t);
         }
         Ok(())
     }
@@ -147,7 +147,7 @@ impl StateApplicator {
         tx.pause_task_queue(&key)?;
         tx.add_task_front(&key, &task)?;
         tx.commit()?;
-        self.publish_task_updates(key, task);
+        self.publish_task_updates(key, &task);
         Ok(())
     }
 
@@ -178,7 +178,7 @@ impl StateApplicator {
         }
         tx.commit()?;
 
-        self.publish_task_updates(key, task);
+        self.publish_task_updates(key, &task);
         Ok(())
     }
 
@@ -187,7 +187,7 @@ impl StateApplicator {
     // -----------
 
     /// Publish system bus messages indicating a task has been updated
-    fn publish_task_updates(&self, key: TaskQueueKey, task: QueuedTask) {
+    fn publish_task_updates(&self, key: TaskQueueKey, task: &QueuedTask) {
         let task_id = task.id;
 
         // Publish a message for the individual task
