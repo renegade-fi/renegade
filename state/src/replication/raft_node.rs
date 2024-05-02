@@ -8,11 +8,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{default_wrapper::DefaultOption, types::CancelChannel};
+use common::types::CancelChannel;
 use config::RelayerConfig;
-use crossbeam::channel::{
-    unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender, TryRecvError,
-};
+use crossbeam::channel::{Receiver as CrossbeamReceiver, TryRecvError};
 use external_api::bus_message::SystemBusMessage;
 use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
 use protobuf::{Message, RepeatedField};
@@ -24,7 +22,6 @@ use raft::{
     },
     Config as RaftConfig, Error as RaftError, RawNode, StateRole, Storage, INVALID_ID,
 };
-use rand::{thread_rng, RngCore};
 use slog::Logger;
 use system_bus::SystemBus;
 use tracing::{debug, error, info};
@@ -40,11 +37,8 @@ use crate::{
 };
 
 use super::{
-    error::ReplicationError,
-    log_store::LogStore,
-    network::traits::RaftNetwork,
-    worker::{ReplicationWorkerError, DEFAULT_TICK_INTERVAL_MS},
-    RaftPeerId,
+    error::ReplicationError, log_store::LogStore, network::traits::RaftNetwork,
+    worker::ReplicationWorkerError, RaftPeerId,
 };
 
 // -------------
@@ -69,16 +63,6 @@ const ERR_PROPOSAL_RESPONSE: &str = "Failed to send proposal response";
 /// Error message emitted when an invalid ID is found in a proposal's context
 const ERR_INVALID_PROPOSAL_ID: &str = "Invalid proposal ID";
 
-/// A type alias for a queue of state transition proposals
-pub type ProposalQueue = CrossbeamSender<Proposal>;
-/// A type alias for a receiver of state transition proposals
-pub type ProposalReceiver = CrossbeamReceiver<Proposal>;
-
-/// Create a new raft proposal queue and receiver
-pub fn new_raft_proposal_queue() -> (ProposalQueue, ProposalReceiver) {
-    unbounded()
-}
-
 /// The config for the local replication node
 #[derive(Clone)]
 pub struct ReplicationNodeConfig<N: RaftNetwork> {
@@ -86,47 +70,24 @@ pub struct ReplicationNodeConfig<N: RaftNetwork> {
     pub tick_period_ms: u64,
     /// A copy of the relayer's config
     pub relayer_config: RelayerConfig,
+    /// The inner Raft node's configuration
+    pub raft_config: RaftConfig,
     /// A reference to the channel on which the replication node may receive
     /// proposals
-    pub proposal_receiver: ProposalReceiver,
+    pub proposal_receiver: CrossbeamReceiver<Proposal>,
     /// A reference to the networking layer that backs the raft node
-    pub network: DefaultOption<N>,
+    pub network: N,
     /// A queue for the task driver, used by the applicator to start tasks
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
     pub handshake_manager_queue: HandshakeManagerQueue,
     /// A handle on the persistent storage layer underlying the raft node
-    pub db: DefaultOption<Arc<DB>>,
+    pub db: Arc<DB>,
     /// A handle to the system-global bus
     pub system_bus: SystemBus<SystemBusMessage>,
     /// The channel on which the node may receive a signal to cancel the Raft
     /// node
     pub cancel_channel: CancelChannel,
-}
-
-impl<N: RaftNetwork> ReplicationNodeConfig<N> {
-    /// Create a new replication node config without the network and DB,
-    /// which must be filled in by the global state
-    pub fn new(
-        relayer_config: RelayerConfig,
-        proposal_receiver: ProposalReceiver,
-        task_queue: TaskDriverQueue,
-        handshake_manager_queue: HandshakeManagerQueue,
-        system_bus: SystemBus<SystemBusMessage>,
-        cancel_channel: CancelChannel,
-    ) -> Self {
-        Self {
-            tick_period_ms: DEFAULT_TICK_INTERVAL_MS,
-            relayer_config,
-            proposal_receiver,
-            network: None.into(),
-            task_queue,
-            handshake_manager_queue,
-            db: None.into(),
-            system_bus,
-            cancel_channel,
-        }
-    }
 }
 
 /// A raft node that replicates the relayer's state machine
@@ -154,22 +115,9 @@ pub struct ReplicationNode<N: RaftNetwork> {
 impl<N: RaftNetwork> ReplicationNode<N> {
     /// Creates a new replication node
     pub fn new(config: ReplicationNodeConfig<N>) -> Result<Self, ReplicationError> {
-        // TODO: Replace random node ID with the first 8 bytes of the local peer ID
-        let my_id = thread_rng().next_u64();
-
-        Self::new_with_config(config, &RaftConfig { id: my_id, ..Default::default() })
-    }
-
-    /// Creates a new replication node with a given raft config
-    pub fn new_with_config(
-        mut config: ReplicationNodeConfig<N>,
-        raft_config: &RaftConfig,
-    ) -> Result<Self, ReplicationError> {
-        let db = config.db.take().take().unwrap();
-
         // Build the log store on top of the DB
-        let store = LogStore::new(db.clone())?;
-        Self::setup_storage(raft_config.id, &store)?;
+        let store = LogStore::new(config.db.clone())?;
+        Self::setup_storage(config.raft_config.id, &store)?;
 
         // Build a state applicator to handle state transitions
         let applicator = StateApplicator::new(StateApplicatorConfig {
@@ -177,7 +125,7 @@ impl<N: RaftNetwork> ReplicationNode<N> {
             cluster_id: config.relayer_config.cluster_id,
             task_queue: config.task_queue,
             handshake_manager_queue: config.handshake_manager_queue,
-            db: db.clone(),
+            db: config.db.clone(),
             system_bus: config.system_bus,
         })
         .map_err(ReplicationError::Applicator)?;
@@ -187,15 +135,16 @@ impl<N: RaftNetwork> ReplicationNode<N> {
         let logger = Logger::root(tracing_drain, slog::o!());
 
         // Build raft node
-        let node = RawNode::new(raft_config, store, &logger).map_err(ReplicationError::Raft)?;
+        let node =
+            RawNode::new(&config.raft_config, store, &logger).map_err(ReplicationError::Raft)?;
 
         Ok(Self {
             tick_period_ms: config.tick_period_ms,
             inner: node,
             applicator,
             proposal_queue: config.proposal_receiver,
-            network: config.network.take().take().unwrap(),
-            db,
+            network: config.network,
+            db: config.db,
             proposal_responses: HashMap::new(),
             cancel_channel: config.cancel_channel,
         })
@@ -693,7 +642,6 @@ pub(crate) mod test_helpers {
         time::Duration,
     };
 
-    use common::default_wrapper::default_option;
     use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender};
     use job_types::{
         handshake_manager::new_handshake_manager_queue, task_driver::new_task_driver_queue,
@@ -834,7 +782,7 @@ pub(crate) mod test_helpers {
             db,
             proposal_queue,
             network,
-            &RaftConfig {
+            RaftConfig {
                 id,
                 election_tick: 20,
                 min_election_tick: 20,
@@ -859,7 +807,7 @@ pub(crate) mod test_helpers {
             // Build a raft node that has high tick frequency and low leader timeout intervals to
             // speed up tests. In unit tests there is no practical latency issue, so we can set the
             // timeouts to the minimum values they may validly take
-            &RaftConfig {
+            RaftConfig {
                 id,
                 election_tick: 2,
                 min_election_tick: 2,
@@ -875,7 +823,7 @@ pub(crate) mod test_helpers {
         db: Arc<DB>,
         proposal_queue: CrossbeamReceiver<Proposal>,
         network: MockNetwork,
-        raft_config: &RaftConfig,
+        raft_config: RaftConfig,
     ) -> ReplicationNode<MockNetwork> {
         let cancel_channel = mock_cancel();
         let (task_queue, task_recv) = new_task_driver_queue();
@@ -883,20 +831,18 @@ pub(crate) mod test_helpers {
         mem::forget(task_recv);
         mem::forget(handshake_recv);
 
-        ReplicationNode::new_with_config(
-            ReplicationNodeConfig {
-                tick_period_ms: 10,
-                relayer_config: Default::default(),
-                proposal_receiver: proposal_queue,
-                network: default_option(network),
-                task_queue,
-                handshake_manager_queue,
-                db: default_option(db),
-                system_bus: SystemBus::new(),
-                cancel_channel,
-            },
+        ReplicationNode::new(ReplicationNodeConfig {
+            tick_period_ms: 10,
+            relayer_config: Default::default(),
             raft_config,
-        )
+            proposal_receiver: proposal_queue,
+            network,
+            task_queue,
+            handshake_manager_queue,
+            db,
+            system_bus: SystemBus::new(),
+            cancel_channel,
+        })
         .unwrap()
     }
 
@@ -923,18 +869,16 @@ pub(crate) mod test_helpers {
 mod test {
     use std::{sync::Arc, thread, time::Duration};
 
-    use common::{
-        default_wrapper::default_option,
-        types::{
-            wallet::{Wallet, WalletIdentifier},
-            wallet_mocks::mock_empty_wallet,
-        },
+    use common::types::{
+        wallet::{Wallet, WalletIdentifier},
+        wallet_mocks::mock_empty_wallet,
     };
     use crossbeam::channel::unbounded;
     use job_types::{
         handshake_manager::new_handshake_manager_queue, task_driver::new_task_driver_queue,
     };
-    use rand::{thread_rng, Rng};
+    use raft::Config as RaftConfig;
+    use rand::{thread_rng, Rng, RngCore};
     use tokio::sync::watch;
 
     use crate::{
@@ -966,14 +910,19 @@ mod test {
         let (_, proposal_receiver) = unbounded();
         let (task_queue, _recv) = new_task_driver_queue();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+
+        let id = thread_rng().next_u64();
+        let raft_config = RaftConfig { id, ..Default::default() };
+
         let node_config = ReplicationNodeConfig {
             tick_period_ms: 10,
             relayer_config: Default::default(),
+            raft_config,
             proposal_receiver,
-            network: default_option(net),
+            network: net,
             task_queue,
             handshake_manager_queue,
-            db: default_option(db),
+            db,
             system_bus: Default::default(),
             cancel_channel,
         };

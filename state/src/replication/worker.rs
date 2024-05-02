@@ -2,30 +2,16 @@
 
 use std::thread::{Builder, JoinHandle};
 
-use ::raft::prelude::Config as RaftConfig;
-use common::{types::gossip::WrappedPeerId, worker::Worker};
-use config::RelayerConfig;
+use common::worker::Worker;
+
 use tracing::info;
 use util::err_str;
 
 use super::{
     error::ReplicationError,
-    network::{address_translation::PeerIdTranslationMap, traits::RaftNetwork},
+    network::traits::RaftNetwork,
     raft_node::{ReplicationNode, ReplicationNodeConfig},
 };
-
-// -------------
-// | CONSTANTS |
-// -------------
-
-/// The default tick interval for the raft node
-pub const DEFAULT_TICK_INTERVAL_MS: u64 = 10; // 10 milliseconds
-/// The default number of ticks between Raft heartbeats
-const DEFAULT_HEARTBEAT_TICKS: usize = 100; // 1 second at 10ms per tick
-/// The default lower bound on the number of ticks before a Raft election
-const DEFAULT_MIN_ELECTION_TICKS: usize = 1000; // 10 seconds at 10ms per tick
-/// The default upper bound on the number of ticks before a Raft election
-const DEFAULT_MAX_ELECTION_TICKS: usize = 1500; // 15 seconds at 10ms per tick
 
 /// Manages the Raft replication node thread
 pub struct ReplicationNodeWorker<N: RaftNetwork> {
@@ -62,8 +48,7 @@ impl<N: 'static + RaftNetwork + Send> Worker for ReplicationNodeWorker<N> {
     type WorkerConfig = ReplicationNodeConfig<N>;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        let raft_config = build_raft_config(&config.relayer_config);
-        let raft_node = Some(ReplicationNode::new_with_config(config, &raft_config)?);
+        let raft_node = Some(ReplicationNode::new(config)?);
 
         Ok(Self { raft_node, raft_handle: None })
     }
@@ -95,23 +80,5 @@ impl<N: 'static + RaftNetwork + Send> Worker for ReplicationNodeWorker<N> {
 
     fn cleanup(&mut self) -> Result<(), Self::Error> {
         unimplemented!()
-    }
-}
-
-// -----------
-// | HELPERS |
-// -----------
-
-/// Build the raft config for the node
-fn build_raft_config(relayer_config: &RelayerConfig) -> RaftConfig {
-    let peer_id = relayer_config.p2p_key.public().to_peer_id();
-    let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
-    RaftConfig {
-        id: raft_id,
-        heartbeat_tick: DEFAULT_HEARTBEAT_TICKS,
-        election_tick: DEFAULT_MIN_ELECTION_TICKS,
-        min_election_tick: DEFAULT_MIN_ELECTION_TICKS,
-        max_election_tick: DEFAULT_MAX_ELECTION_TICKS,
-        ..Default::default()
     }
 }

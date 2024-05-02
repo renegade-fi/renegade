@@ -35,23 +35,23 @@ impl StateApplicator {
 
     /// Apply an `AppendTask` state transition
     #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
-    pub fn append_task(&self, task: QueuedTask) -> Result<()> {
+    pub fn append_task(&self, task: &QueuedTask) -> Result<()> {
         let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
 
         // Index the task
         let previously_empty = tx.is_queue_empty(&queue_key)?;
-        tx.add_task(&queue_key, &task)?;
+        tx.add_task(&queue_key, task)?;
 
         // If the task queue was empty, transition the task to in progress and start it
         if previously_empty && !tx.is_queue_paused(&queue_key)? {
             // Start the task
             tx.transition_task(&queue_key, new_running_state())?;
-            self.maybe_start_task(&task, &tx)?;
+            self.maybe_start_task(task, &tx)?;
         }
 
         tx.commit()?;
-        self.publish_task_updates(queue_key, &task);
+        self.publish_task_updates(queue_key, task);
         Ok(())
     }
 
@@ -121,7 +121,7 @@ impl StateApplicator {
 
     /// Preempt the given task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn preempt_task_queue(&self, key: TaskQueueKey, task: QueuedTask) -> Result<()> {
+    pub fn preempt_task_queue(&self, key: TaskQueueKey, task: &QueuedTask) -> Result<()> {
         let tx = self.db().new_write_tx()?;
 
         // Stop any running tasks if possible
@@ -145,9 +145,9 @@ impl StateApplicator {
 
         // Pause the queue
         tx.pause_task_queue(&key)?;
-        tx.add_task_front(&key, &task)?;
+        tx.add_task_front(&key, task)?;
         tx.commit()?;
-        self.publish_task_updates(key, &task);
+        self.publish_task_updates(key, task);
         Ok(())
     }
 
@@ -333,7 +333,7 @@ mod test {
         task.executor = peer_id;
         let task_id = task.id;
 
-        applicator.append_task(task).expect("Failed to append task");
+        applicator.append_task(&task).expect("Failed to append task");
 
         // Check the task was added to the queue
         let tx = applicator.db().new_read_tx().unwrap();
@@ -372,7 +372,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = WrappedPeerId::random(); // Assign a different executor
 
-        applicator.append_task(task).expect("Failed to append task");
+        applicator.append_task(&task).expect("Failed to append task");
 
         // Check the task was not started
         let tx = applicator.db().new_read_tx().unwrap();
@@ -401,7 +401,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_task(task2.clone()).expect("Failed to append task");
+        applicator.append_task(&task2).expect("Failed to append task");
 
         // Ensure that the second task is in the db's queue, not marked as running
         let tx = applicator.db().new_read_tx().unwrap();
@@ -467,7 +467,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = WrappedPeerId::random(); // Assign a different executor
-        applicator.append_task(task2.clone()).unwrap();
+        applicator.append_task(&task2).unwrap();
 
         // Pop the first task
         applicator.pop_task(task_id, true /* success */).unwrap();
@@ -507,7 +507,7 @@ mod test {
         // Add another task via the applicator
         let mut task2 = mock_queued_task(task_queue_key);
         task2.executor = peer_id; // Assign the local executor
-        applicator.append_task(task2.clone()).unwrap();
+        applicator.append_task(&task2).unwrap();
 
         // Pop the first task
         applicator.pop_task(task_id, true /* success */).unwrap();
@@ -601,7 +601,7 @@ mod test {
 
         // Pause the queue
         let preemptive_task = mock_preemptive_task(task_queue_key);
-        applicator.preempt_task_queue(task_queue_key, preemptive_task).unwrap();
+        applicator.preempt_task_queue(task_queue_key, &preemptive_task).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
@@ -614,7 +614,7 @@ mod test {
         let mut task = mock_queued_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_task(task.clone()).unwrap();
+        applicator.append_task(&task).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
@@ -657,7 +657,7 @@ mod test {
         let mut task = mock_preemptive_task(task_queue_key);
         task.executor = peer_id;
         let task_id = task.id;
-        applicator.append_task(task.clone()).unwrap();
+        applicator.append_task(&task).unwrap();
 
         // Start the task
         let tx = applicator.db().new_write_tx().unwrap();
@@ -667,7 +667,7 @@ mod test {
 
         // Pause the queue
         let preemptive_task = mock_preemptive_task(task_queue_key);
-        applicator.preempt_task_queue(task_queue_key, preemptive_task).unwrap();
+        applicator.preempt_task_queue(task_queue_key, &preemptive_task).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
