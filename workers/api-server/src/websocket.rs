@@ -14,7 +14,7 @@ use system_bus::TopicReader;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
 use tokio_tungstenite::{accept_async, WebSocketStream};
-use tracing::{error, instrument};
+use tracing::info;
 use tungstenite::Message;
 
 use crate::{
@@ -217,7 +217,6 @@ impl WebsocketServer {
     ///
     /// Manages subscriptions to internal channels and dispatches
     /// subscribe/unsubscribe requests
-    #[instrument(skip_all, err)]
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ApiServerError> {
         // Accept the websocket upgrade and split into read/write streams
         let websocket_stream = accept_async(stream)
@@ -250,7 +249,7 @@ impl WebsocketServer {
                     match message {
                         Some(msg) => {
                             if let Err(e) = msg {
-                                error!("error handling websocket connection: {e}");
+                                info!("error handling websocket connection: {e}");
                                 return Err(ApiServerError::WebsocketServerFailure(e.to_string()));
                             }
 

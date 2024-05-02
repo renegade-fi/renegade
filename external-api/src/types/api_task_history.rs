@@ -57,7 +57,7 @@ impl From<HistoricalTask> for ApiHistoricalTask {
 
 impl ApiHistoricalTask {
     /// Convert from a queued task
-    pub fn from_queued_task(key: TaskQueueKey, task: QueuedTask) -> Option<Self> {
+    pub fn from_queued_task(key: TaskQueueKey, task: &QueuedTask) -> Option<Self> {
         let task_info =
             HistoricalTaskDescription::from_task_descriptor(key, &task.descriptor)?.into();
         let state = task.state.display_description();
