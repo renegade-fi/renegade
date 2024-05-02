@@ -149,28 +149,20 @@ impl From<StateTransition> for Proposal {
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
     //! Test helpers for the state crate
-    use std::{mem, thread, time::Duration};
+    use std::{mem, time::Duration};
 
     use common::types::gossip::WrappedPeerId;
     use config::RelayerConfig;
-    use external_api::bus_message::SystemBusMessage;
     use job_types::{
-        handshake_manager::{new_handshake_manager_queue, HandshakeManagerQueue},
+        handshake_manager::new_handshake_manager_queue,
         task_driver::{new_task_driver_queue, TaskDriverQueue},
     };
     use system_bus::SystemBus;
     use tempfile::tempdir;
-    use test_helpers::mocks::mock_cancel;
 
     use crate::{
-        replication::{
-            network::{
-                address_translation::PeerIdTranslationMap,
-                traits::{test_helpers::MockNetwork, RaftNetwork},
-            },
-            raft_node::{
-                new_raft_proposal_queue, ProposalReceiver, ReplicationNode, ReplicationNodeConfig,
-            },
+        replication::network::{
+            address_translation::PeerIdTranslationMap, traits::test_helpers::MockNetwork,
         },
         storage::db::{DbConfig, DB},
         State,
@@ -217,63 +209,38 @@ pub mod test_helpers {
         raft::Config { id: raft_id, election_tick: 10, ..Default::default() }
     }
 
-    /// Create and run a mock Raft replication node
-    pub fn run_mock_replication_node<N: 'static + RaftNetwork + Send>(
-        state: &State,
-        config: RelayerConfig,
-        network: N,
-        proposal_receiver: ProposalReceiver,
-        task_queue: TaskDriverQueue,
-        handshake_manager_queue: HandshakeManagerQueue,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) {
-        let raft_config = mock_raft_config(&config);
-        let cancel_channel = mock_cancel();
-        let mut replication_config = ReplicationNodeConfig::new(
-            config,
-            proposal_receiver,
-            task_queue,
-            handshake_manager_queue,
-            system_bus,
-            cancel_channel,
-        );
-        state.fill_replication_config_with_network(&mut replication_config, network);
-
-        let raft_node = ReplicationNode::new_with_config(replication_config, &raft_config).unwrap();
-
-        thread::spawn(move || raft_node.run().unwrap());
-    }
-
     /// Create a mock state instance
     pub fn mock_state() -> State {
         let config = mock_relayer_config();
-        mock_state_with_config(config)
+        mock_state_with_config(&config)
     }
 
     /// Create a mock state instance with the given relayer config
-    pub fn mock_state_with_config(config: RelayerConfig) -> State {
+    pub fn mock_state_with_config(config: &RelayerConfig) -> State {
         let (task_queue, recv) = new_task_driver_queue();
         mem::forget(recv);
         mock_state_with_task_queue(task_queue, config)
     }
 
     /// Create a mock state instance with the given task queue
-    pub fn mock_state_with_task_queue(task_queue: TaskDriverQueue, config: RelayerConfig) -> State {
+    pub fn mock_state_with_task_queue(
+        task_queue: TaskDriverQueue,
+        config: &RelayerConfig,
+    ) -> State {
         let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        let (proposal_sender, proposal_receiver) = new_raft_proposal_queue();
-        let system_bus = SystemBus::new();
-        let state = State::new(&config, proposal_sender, system_bus.clone()).unwrap();
-
-        run_mock_replication_node(
-            &state,
+        let (state, _, raft_cancel) = State::new_with_network(
             config,
+            mock_raft_config(config),
             nets.remove(0),
-            proposal_receiver,
             task_queue,
             handshake_manager_queue,
-            system_bus,
-        );
+            SystemBus::new(),
+        )
+        .unwrap();
+
+        // Forget the raft cancel channel so it doesn't get dropped
+        mem::forget(raft_cancel);
 
         // Wait for a leader election before returning
         sleep_ms(500);

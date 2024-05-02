@@ -55,13 +55,7 @@ use proof_manager::{
 use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use state::{
-    replication::{
-        network::traits::{new_raft_message_queue, RaftMessageQueue, RaftMessageReceiver},
-        raft_node::{
-            new_raft_proposal_queue, ProposalQueue, ProposalReceiver, ReplicationNodeConfig,
-        },
-        worker::ReplicationNodeWorker,
-    },
+    replication::network::traits::{new_raft_message_queue, RaftMessageQueue, RaftMessageReceiver},
     State,
 };
 use system_bus::SystemBus;
@@ -101,8 +95,6 @@ pub struct MockNodeController {
     network_queue: (NetworkManagerQueue, DefaultOption<NetworkManagerReceiver>),
     /// The raft message queue
     raft_queue: (RaftMessageQueue, DefaultOption<RaftMessageReceiver>),
-    /// The raft proposal queue
-    proposal_queue: (ProposalQueue, DefaultOption<ProposalReceiver>),
     /// The gossip message queue
     gossip_queue: (GossipServerQueue, DefaultOption<GossipServerReceiver>),
     /// The handshake manager's queue
@@ -122,7 +114,6 @@ impl MockNodeController {
         let bus = SystemBus::new();
         let (network_sender, network_recv) = new_network_manager_queue();
         let (raft_sender, raft_recv) = new_raft_message_queue();
-        let (proposal_sender, proposal_receiver) = new_raft_proposal_queue();
         let (gossip_sender, gossip_recv) = new_gossip_server_queue();
         let (handshake_send, handshake_recv) = new_handshake_manager_queue();
         let (price_sender, price_recv) = new_price_reporter_queue();
@@ -137,7 +128,6 @@ impl MockNodeController {
             state: None,
             network_queue: (network_sender, default_option(network_recv)),
             raft_queue: (raft_sender, default_option(raft_recv)),
-            proposal_queue: (proposal_sender, default_option(proposal_receiver)),
             gossip_queue: (gossip_sender, default_option(gossip_recv)),
             handshake_queue: (handshake_send, default_option(handshake_recv)),
             price_queue: (price_sender, default_option(price_recv)),
@@ -262,32 +252,25 @@ impl MockNodeController {
         // Create a global state instance
         let network_queue = self.network_queue.0.clone();
         let raft_receiver = self.raft_queue.1.take().unwrap();
-        let proposal_sender = self.proposal_queue.0.clone();
-        let proposal_receiver = self.proposal_queue.1.take().unwrap();
         let task_sender = self.task_queue.0.clone();
         let handshake_queue = self.handshake_queue.0.clone();
         let bus = self.bus.clone();
-        let cancel_channel = mock_cancel();
 
-        let state = State::new(&self.config, proposal_sender, bus.clone())
-            .expect("Failed to create state instance");
-
-        // Start the raft node
-        let mut replication_config = ReplicationNodeConfig::new(
-            self.config.clone(),
-            proposal_receiver,
+        let (state, _, raft_cancel) = State::new(
+            network_queue,
+            raft_receiver,
+            &self.config,
             task_sender,
             handshake_queue,
             bus,
-            cancel_channel,
-        );
-        state.fill_replication_config(&mut replication_config, network_queue, raft_receiver);
+        )
+        .expect("Failed to create state instance");
 
-        let mut raft_worker = ReplicationNodeWorker::new(replication_config)
-            .expect("failed to build Raft replication node");
-        raft_worker.start().expect("failed to start Raft replication node");
+        // Forget the raft cancel sender to avoid dropping it
+        mem::forget(raft_cancel);
 
         self.state = Some(state);
+
         self
     }
 

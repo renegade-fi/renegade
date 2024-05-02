@@ -146,7 +146,7 @@ mod test {
     fn test_node_metadata() {
         // Build the state mock manually to use the generated config
         let config = mock_relayer_config();
-        let state = mock_state_with_config(config.clone());
+        let state = mock_state_with_config(&config);
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();

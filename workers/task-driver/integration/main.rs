@@ -161,7 +161,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
 /// Create a global state mock for the `task-driver` integration tests
 fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
-    mock_state_with_task_queue(task_queue, mock_relayer_config())
+    mock_state_with_task_queue(task_queue, &mock_relayer_config())
 }
 
 /// Setup a mock `ArbitrumClient` for the integration tests

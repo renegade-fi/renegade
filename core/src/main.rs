@@ -33,7 +33,6 @@ use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use state::replication::raft_node::{new_raft_proposal_queue, ReplicationNodeConfig};
 use state::replication::worker::ReplicationNodeWorker;
 use state::State;
 use state::{replication::network::traits::new_raft_message_queue, tui::StateTuiApp};
@@ -84,6 +83,19 @@ async fn main() -> Result<(), CoordinatorError> {
         .expect("error blocking on config parse")
         .expect("error parsing command line args");
 
+    // Configure telemetry before all else so we don't lose any data
+    if !args.debug {
+        configure_telemetry(
+            args.datadog_enabled,
+            args.otlp_enabled,
+            args.metrics_enabled,
+            args.otlp_collector_url.clone(),
+            &args.statsd_host,
+            args.statsd_port,
+        )
+        .map_err(err_str!(CoordinatorError::Telemetry))?;
+    }
+
     info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
         VERSION, args.p2p_port, args.cluster_id
@@ -94,7 +106,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let system_bus = SystemBus::<SystemBusMessage>::new();
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (raft_sender, raft_receiver) = new_raft_message_queue();
-    let (proposal_sender, proposal_receiver) = new_raft_proposal_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = new_price_reporter_queue();
@@ -103,9 +114,17 @@ async fn main() -> Result<(), CoordinatorError> {
     let (task_sender, task_receiver) = new_task_driver_queue();
 
     // Construct a global state
-    let global_state = State::new(&args, proposal_sender, system_bus.clone())?;
+    let (global_state, mut raft_worker, raft_cancel_sender) = State::new(
+        network_sender.clone(),
+        raft_receiver,
+        &args,
+        task_sender.clone(),
+        handshake_worker_sender.clone(),
+        system_bus.clone(),
+    )?;
+    let (raft_failure_sender, mut raft_failure_receiver) = mpsc::channel(1 /* buffer_size */);
+    watch_worker::<ReplicationNodeWorker<_>>(&mut raft_worker, &raft_failure_sender);
 
-    // Configure logging and TUI
     if args.debug {
         // Build the TUI
         let tui = StateTuiApp::new(args.clone(), global_state.clone());
@@ -119,38 +138,7 @@ async fn main() -> Result<(), CoordinatorError> {
             }
             exit(0);
         });
-    } else {
-        configure_telemetry(
-            args.datadog_enabled,
-            args.otlp_enabled,
-            args.metrics_enabled,
-            args.otlp_collector_url.clone(),
-            &args.statsd_host,
-            args.statsd_port,
-        )
-        .map_err(err_str!(CoordinatorError::Telemetry))?;
     }
-
-    // Spawn the Raft replication node worker
-    let (raft_cancel_sender, raft_cancel_receiver) = watch::channel(());
-    let mut replication_config = ReplicationNodeConfig::new(
-        args.clone(),
-        proposal_receiver,
-        task_sender.clone(),
-        handshake_worker_sender.clone(),
-        system_bus.clone(),
-        raft_cancel_receiver,
-    );
-    global_state.fill_replication_config(
-        &mut replication_config,
-        network_sender.clone(),
-        raft_receiver,
-    );
-    let mut raft_worker = ReplicationNodeWorker::new(replication_config)
-        .expect("failed to build Raft replication node");
-    raft_worker.start().expect("failed to start Raft replication node");
-    let (raft_failure_sender, mut raft_failure_receiver) = mpsc::channel(1 /* buffer_size */);
-    watch_worker::<ReplicationNodeWorker<_>>(&mut raft_worker, &raft_failure_sender);
 
     // Construct an arbitrum client that workers will use for submitting txs
     let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {

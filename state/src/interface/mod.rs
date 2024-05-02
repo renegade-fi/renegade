@@ -14,11 +14,20 @@ pub mod wallet_index;
 
 use std::sync::{Arc, RwLock};
 
-use common::default_wrapper::default_option;
+use ::raft::prelude::Config as RaftConfig;
+use common::{
+    types::{gossip::WrappedPeerId, new_cancel_channel},
+    worker::Worker,
+};
 use config::RelayerConfig;
+use crossbeam::channel::{unbounded, Sender as UnboundedSender};
 use external_api::bus_message::SystemBusMessage;
-use job_types::network_manager::NetworkManagerQueue;
+use job_types::{
+    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
+    task_driver::TaskDriverQueue,
+};
 use system_bus::SystemBus;
+use tokio::sync::watch::Sender;
 use util::err_str;
 
 use crate::{
@@ -28,13 +37,26 @@ use crate::{
             gossip::GossipRaftNetwork,
             traits::{RaftMessageReceiver, RaftNetwork},
         },
-        raft_node::{ProposalQueue, ReplicationNodeConfig},
+        raft_node::ReplicationNodeConfig,
+        worker::ReplicationNodeWorker,
     },
     storage::db::{DbConfig, DB},
     Proposal, StateTransition,
 };
 
 use self::{error::StateError, notifications::ProposalWaiter};
+
+/// The default tick interval for the raft node
+const DEFAULT_TICK_INTERVAL_MS: u64 = 10; // 10 milliseconds
+/// The default number of ticks between Raft heartbeats
+const DEFAULT_HEARTBEAT_TICKS: usize = 100; // 1 second at 10ms per tick
+/// The default lower bound on the number of ticks before a Raft election
+const DEFAULT_MIN_ELECTION_TICKS: usize = 1000; // 10 seconds at 10ms per tick
+/// The default upper bound on the number of ticks before a Raft election
+const DEFAULT_MAX_ELECTION_TICKS: usize = 1500; // 15 seconds at 10ms per tick
+
+/// A type alias for a proposal queue of state transitions
+pub type ProposalQueue = UnboundedSender<Proposal>;
 
 // -------------------
 // | State Interface |
@@ -57,24 +79,64 @@ pub struct State {
 }
 
 impl State {
-    /// Create a new state handle using a `GossipRaftNetwork`
+    /// Create a new state object using a `GossipRaftNetwork`, returning the
+    /// handles to the state, Raft worker, and Raft cancel sender
     pub fn new(
+        network_outbound: NetworkManagerQueue,
+        raft_inbound: RaftMessageReceiver,
         config: &RelayerConfig,
-        proposal_send: ProposalQueue,
+        task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
-    ) -> Result<Self, StateError> {
+    ) -> Result<(Self, ReplicationNodeWorker<GossipRaftNetwork>, Sender<()>), StateError> {
         let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
+        let network = GossipRaftNetwork::new(network_outbound, raft_inbound, shared_map.clone());
 
-        Self::new_with_map(config, proposal_send, system_bus, shared_map)
+        // Build a raft config
+        let raft_config = Self::build_raft_config(config);
+        Self::new_with_network_and_map(
+            config,
+            raft_config,
+            network,
+            task_queue,
+            handshake_manager_queue,
+            system_bus,
+            shared_map,
+        )
+    }
+
+    /// Create a new state handle with a network specified, also returning
+    /// handles to the Raft worker & its cancel channel
+    pub fn new_with_network<N: 'static + RaftNetwork + Send>(
+        config: &RelayerConfig,
+        raft_config: RaftConfig,
+        network: N,
+        task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<(Self, ReplicationNodeWorker<N>, Sender<()>), StateError> {
+        let shared_map = Arc::new(RwLock::new(PeerIdTranslationMap::default()));
+        Self::new_with_network_and_map(
+            config,
+            raft_config,
+            network,
+            task_queue,
+            handshake_manager_queue,
+            system_bus,
+            shared_map,
+        )
     }
 
     /// The base constructor allowing for the variadic constructors above
-    fn new_with_map(
+    fn new_with_network_and_map<N: 'static + RaftNetwork + Send>(
         config: &RelayerConfig,
-        proposal_send: ProposalQueue,
+        raft_config: RaftConfig,
+        network: N,
+        task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         translation_map: SharedPeerIdTranslationMap,
-    ) -> Result<Self, StateError> {
+    ) -> Result<(Self, ReplicationNodeWorker<N>, Sender<()>), StateError> {
         // Open up the DB
         let db = DB::new(&DbConfig { path: config.db_path.clone() }).map_err(StateError::Db)?;
         let db = Arc::new(db);
@@ -83,6 +145,27 @@ impl State {
         let tx = db.new_write_tx()?;
         tx.setup_tables()?;
         tx.commit()?;
+
+        // Create a proposal queue and the raft config
+        let (proposal_send, proposal_receiver) = unbounded();
+        let (raft_cancel_sender, raft_cancel_receiver) = new_cancel_channel();
+        let replication_config = ReplicationNodeConfig {
+            tick_period_ms: DEFAULT_TICK_INTERVAL_MS,
+            relayer_config: config.clone(),
+            raft_config,
+            proposal_receiver,
+            network,
+            task_queue,
+            handshake_manager_queue,
+            db: db.clone(),
+            system_bus: system_bus.clone(),
+            cancel_channel: raft_cancel_receiver,
+        };
+
+        // Start the Raft worker
+        let mut raft_worker = ReplicationNodeWorker::new(replication_config)
+            .expect("failed to build Raft replication node");
+        raft_worker.start().expect("failed to start Raft replication node");
 
         // Setup the node metadata from the config
         let self_ = Self {
@@ -93,38 +176,26 @@ impl State {
             translation_map,
         };
         self_.setup_node_metadata(config)?;
-        Ok(self_)
-    }
-
-    /// Fills in the configuration for the replication node with handles to
-    /// state-managed resources, using the network manager to drive the raft
-    /// network
-    pub fn fill_replication_config(
-        &self,
-        replication_config: &mut ReplicationNodeConfig<GossipRaftNetwork>,
-        network_outbound: NetworkManagerQueue,
-        raft_inbound: RaftMessageReceiver,
-    ) {
-        let network =
-            GossipRaftNetwork::new(network_outbound, raft_inbound, self.translation_map.clone());
-
-        self.fill_replication_config_with_network(replication_config, network)
-    }
-
-    /// Fills in the configuration for the replication node with handles to
-    /// state-managed resources, using the given network
-    pub fn fill_replication_config_with_network<N: RaftNetwork>(
-        &self,
-        replication_config: &mut ReplicationNodeConfig<N>,
-        network: N,
-    ) {
-        replication_config.db = default_option(self.db.clone());
-        replication_config.network = default_option(network);
+        Ok((self_, raft_worker, raft_cancel_sender))
     }
 
     // -------------------
     // | Private Helpers |
     // -------------------
+
+    /// Build the raft config for the node
+    fn build_raft_config(relayer_config: &RelayerConfig) -> RaftConfig {
+        let peer_id = relayer_config.p2p_key.public().to_peer_id();
+        let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
+        RaftConfig {
+            id: raft_id,
+            heartbeat_tick: DEFAULT_HEARTBEAT_TICKS,
+            election_tick: DEFAULT_MIN_ELECTION_TICKS,
+            min_election_tick: DEFAULT_MIN_ELECTION_TICKS,
+            max_election_tick: DEFAULT_MAX_ELECTION_TICKS,
+            ..Default::default()
+        }
+    }
 
     /// Send a proposal to the raft node
     fn send_proposal(&self, transition: StateTransition) -> Result<ProposalWaiter, StateError> {
