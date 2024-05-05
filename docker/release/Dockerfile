@@ -43,9 +43,15 @@ FROM --platform=arm64 debian:bookworm-slim
 
 RUN apt-get update && \
     apt-get install -y libssl-dev && \
-    apt-get install -y ca-certificates
+    apt-get install -y ca-certificates && \
+    apt-get install -y awscli
 
 # Copy the binary from the build stage
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 
-ENTRYPOINT [ "/bin/renegade-relayer", "--config-file", "/config.toml" ]
+# Copy the bootloader script & make it executable
+COPY ./docker/release/bootloader.sh /bootloader.sh
+RUN chmod +x /bootloader.sh
+
+# Set the bootloader as the entrypoint
+ENTRYPOINT ["/bootloader.sh"]
