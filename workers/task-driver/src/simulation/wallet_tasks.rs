@@ -181,5 +181,7 @@ fn simulate_offline_fee_payment(
         balance.relayer_fee_balance = 0;
     }
 
+    wallet.reblind_wallet();
+
     Ok(())
 }
