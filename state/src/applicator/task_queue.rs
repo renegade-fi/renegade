@@ -176,6 +176,12 @@ impl StateApplicator {
             // the task was previously running
             self.maybe_start_task(task, &tx)?;
         }
+
+        // Possibly run the matching engine on the wallet
+        if Self::should_run_matching_engine(&tasks, &task, &tx)? {
+            self.run_matching_engine_on_wallet(key, &tx)?;
+        }
+
         tx.commit()?;
 
         self.publish_task_updates(key, &task);
