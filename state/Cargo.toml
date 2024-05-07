@@ -11,6 +11,7 @@ mocks = ["dep:tempfile", "dep:test-helpers"]
 [dependencies]
 
 # === Replication === #
+openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 raft = "0.7"
 
 # === Storage === #
