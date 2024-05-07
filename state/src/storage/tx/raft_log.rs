@@ -200,12 +200,13 @@ impl<'db> StateTxn<'db, RW> {
     }
 
     /// Append entries to the raft log
-    pub fn append_log_entries(&self, entries: Vec<LogValueType>) -> Result<(), StorageError> {
+    pub fn append_log_entries<I: IntoIterator<Item = Entry>>(
+        &self,
+        entries: I,
+    ) -> Result<(), StorageError> {
         let tx = self.inner();
-        let first_idx = self.last_raft_log_index()?.map(|idx| idx + 1).unwrap_or(0);
-        for (i, entry) in entries.into_iter().enumerate() {
-            let idx = first_idx + i as u64;
-            let key = lsn_to_key(idx);
+        for entry in entries.into_iter() {
+            let key = lsn_to_key(entry.log_id.index);
             tx.write(RAFT_LOGS_TABLE, &key, &entry)?;
         }
 
@@ -233,13 +234,11 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Purge all logs before the given index (inclusive)
     pub fn purge_logs(&self, index: u64) -> Result<(), StorageError> {
-        let idx_lsn = lsn_to_key(index);
-        let first_log = self.first_raft_log_index()?.unwrap_or(0);
-
-        // Purge the logs
         let mut log_cursor = self.logs_cursor()?;
+
+        let idx_lsn = lsn_to_key(index);
         log_cursor.seek(&idx_lsn)?;
-        for _ in first_log..=index {
+        while log_cursor.has_current()? {
             log_cursor.delete()?;
         }
 

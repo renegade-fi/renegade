@@ -52,6 +52,13 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         self
     }
 
+    /// Whether the item under the cursor exists, returns false when the cursor
+    /// is exhausted
+    pub fn has_current(&mut self) -> Result<bool, StorageError> {
+        let res = self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?;
+        Ok(res.is_some())
+    }
+
     /// Get the key/value at the current position
     ///
     /// Assumes that the cursor is positioned at a valid key/value pair for the
@@ -347,6 +354,44 @@ mod test {
         let last = cursor.get_current().unwrap();
 
         assert_eq!(last.unwrap(), ((N - 1).to_string(), N - 1));
+    }
+
+    /// Tests deleting the item under the cursor
+    #[test]
+    fn test_delete() {
+        let db = mock_db();
+        db.create_table(TEST_TABLE).unwrap();
+
+        let (k1, v1) = ("k1".to_string(), "v1".to_string());
+        let (k2, v2) = ("k2".to_string(), "v2".to_string());
+
+        // Insert a key/value pair
+        db.write(TEST_TABLE, &k1, &v1).unwrap();
+        db.write(TEST_TABLE, &k2, &v2).unwrap();
+
+        // Read the first key, it should be `Some`
+        let tx = db.new_raw_write_tx().unwrap();
+        let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
+        cursor.seek_first().unwrap();
+        let first = cursor.get_current().unwrap();
+        assert_eq!(first.unwrap(), (k1, v1));
+
+        // Delete the key
+        cursor.delete().unwrap();
+        let (k, v) = cursor.get_current().unwrap().unwrap();
+        assert_eq!(k, k2);
+        assert_eq!(v, v2);
+        tx.commit().unwrap();
+
+        // Start a new transaction
+        let tx = db.new_raw_read_tx().unwrap();
+        let mut cursor = tx.cursor::<String, String>(TEST_TABLE).unwrap();
+
+        // Read the first key, it should be (k2, v2)
+        cursor.seek_first().unwrap();
+        let first = cursor.get_current().unwrap().unwrap();
+
+        assert_eq!(first, (k2, v2));
     }
 
     /// Test the sorting of a cursor
