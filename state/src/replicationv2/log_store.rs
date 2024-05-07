@@ -141,11 +141,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     where
         I: IntoIterator<Item = Entry>,
     {
-        self.with_write_tx(|tx| {
-            let entries = entries.into_iter().collect();
-            tx.append_log_entries(entries)
-        })
-        .map_err(new_log_write_error)?;
+        self.with_write_tx(|tx| tx.append_log_entries(entries)).map_err(new_log_write_error)?;
 
         // Report success to the raft callback
         callback.log_io_completed(Ok(()));

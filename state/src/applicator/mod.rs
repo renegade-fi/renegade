@@ -54,7 +54,7 @@ pub struct StateApplicatorConfig {
 #[derive(Clone)]
 pub struct StateApplicator {
     /// The config for the applicator
-    config: StateApplicatorConfig,
+    pub(crate) config: StateApplicatorConfig,
 }
 
 impl StateApplicator {
@@ -107,7 +107,7 @@ impl StateApplicator {
 }
 
 #[cfg(test)]
-mod test_helpers {
+pub mod test_helpers {
     use std::{mem, str::FromStr, sync::Arc};
 
     use common::types::gossip::ClusterId;

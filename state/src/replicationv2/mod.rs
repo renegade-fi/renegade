@@ -5,6 +5,7 @@
 
 pub mod error;
 mod log_store;
+mod state_machine;
 
 use openraft::{EmptyNode, RaftTypeConfig};
 use std::io::Cursor;
@@ -24,3 +25,37 @@ openraft::declare_raft_types! (
 pub type Entry = <TypeConfig as RaftTypeConfig>::Entry;
 /// A type alias for the node id type
 pub type NodeId = <TypeConfig as RaftTypeConfig>::NodeId;
+/// A type alias for the node type
+pub type Node = <TypeConfig as RaftTypeConfig>::Node;
+/// A type alias for the snapshot data type
+pub type SnapshotData = <TypeConfig as RaftTypeConfig>::SnapshotData;
+
+#[cfg(test)]
+mod test {
+
+    use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
+
+    use crate::applicator::test_helpers::mock_applicator;
+
+    use super::{log_store::LogStore, state_machine::StateMachine, NodeId, TypeConfig};
+
+    /// A builder for the storage layer, used to fit into the `openraft` test
+    /// interface
+    struct StorageBuilder;
+    impl StoreBuilder<TypeConfig, LogStore, StateMachine> for StorageBuilder {
+        async fn build(&self) -> Result<((), LogStore, StateMachine), RaftStorageError<NodeId>> {
+            let app = mock_applicator();
+            let db = app.config.db.clone();
+            let store = LogStore::new(db);
+
+            Ok(((), store, StateMachine::new(app)))
+        }
+    }
+
+    /// Run the `openraft` test suite on our `RaftStateMachine` and
+    /// `RaftLogStore` impls
+    #[test]
+    fn test_openraft_suite() {
+        openraft::testing::Suite::test_all(StorageBuilder).unwrap();
+    }
+}
