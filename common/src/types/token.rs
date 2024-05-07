@@ -156,7 +156,7 @@ pub static TICKER_NAMES: &[(
     (
         USDC_TICKER,
         ExchangeTicker::Same,
-        ExchangeTicker::Same,
+        ExchangeTicker::Renamed("USD"),
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
