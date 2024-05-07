@@ -4,6 +4,7 @@ use std::{error::Error, fmt::Display};
 
 use bincode::Error as BincodeError;
 use libmdbx::Error as MdbxError;
+/// TODO: remove the above and rename to RaftStorageError
 use raft::{Error as RaftError, StorageError as RaftStorageError};
 
 /// The error type emitted by the storage layer

@@ -26,7 +26,7 @@ use crate::{
     TASK_HISTORY_TABLE, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE, WALLETS_TABLE,
 };
 
-use self::raft_log::RAFT_METADATA_TABLE;
+use self::raft_log::{RAFT_LOGS_TABLE, RAFT_METADATA_TABLE};
 
 use super::{
     cursor::DbCursor,
@@ -107,6 +107,7 @@ impl<'db> StateTxn<'db, RW> {
             MPC_PREPROCESSING_TABLE,
             NODE_METADATA_TABLE,
             RAFT_METADATA_TABLE,
+            RAFT_LOGS_TABLE,
         ]
         .iter()
         {
