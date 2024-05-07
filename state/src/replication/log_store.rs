@@ -76,11 +76,9 @@ impl LogStore {
     }
 
     /// Append entries to the log
+    #[allow(clippy::needless_pass_by_value)]
     pub fn append_log_entries(&self, entries: Vec<RaftEntry>) -> Result<(), ReplicationError> {
-        let tx = self.db.new_write_tx()?;
-        tx.append_log_entries(entries)?;
-
-        Ok(tx.commit()?)
+        todo!()
     }
 
     /// Apply a snapshot to the log store
@@ -95,13 +93,7 @@ impl LogStore {
 impl Storage for LogStore {
     /// Returns the initial raft state
     fn initial_state(&self) -> RaftResult<RaftState> {
-        // Read the hard state
-        let tx = self.db.new_read_tx()?;
-        let hard_state = tx.read_hard_state()?;
-        let conf_state = tx.read_conf_state()?;
-        tx.commit()?;
-
-        Ok(RaftState { hard_state, conf_state })
+        todo!()
     }
 
     /// Returns the log entries between two indices, capped at a max size
@@ -115,57 +107,12 @@ impl Storage for LogStore {
         max_size: impl Into<Option<u64>>,
         _context: GetEntriesContext,
     ) -> RaftResult<Vec<RaftEntry>> {
-        let tx = self.db.new_read_tx()?;
-        let mut cursor = tx.logs_cursor()?;
-
-        // Seek the cursor to the first entry in the range
-        cursor.seek_geq(&lsn_to_key(low)).map_err(RaftError::from)?;
-
-        let mut entries = Vec::new();
-        let mut remaining_space = max_size.into().map(|v| v as u32).unwrap_or(u32::MAX);
-
-        for record in cursor.into_iter().map(|entry| {
-            entry.map_err(RaftError::from).map(|(key, value)| (key, value.into_inner()))
-        }) {
-            let (key, entry) = record?;
-            let lsn = parse_lsn(&key).map_err(RaftError::from)?;
-
-            // If we've reached the end of the range, break
-            if lsn >= high {
-                break;
-            }
-
-            // If we've reached the max size, break
-            // Do not limit the size to zero entries
-            let size = entry.compute_size();
-            if !entries.is_empty() && size > remaining_space {
-                break;
-            }
-
-            // Otherwise, add the entry to the list and update the remaining space
-            entries.push(entry);
-            remaining_space = remaining_space.saturating_sub(size);
-        }
-
-        Ok(entries)
+        todo!()
     }
 
     /// Returns the term for a given index in the log
     fn term(&self, idx: u64) -> RaftResult<u64> {
-        let tx = self.db.new_read_tx()?;
-        match tx.read_log_entry(idx).map(|entry| entry.term) {
-            // Check the snapshot if not found
-            Err(StorageError::NotFound(_)) => {
-                if let Ok(snap) = self.snapshot(idx, UNUSED)
-                    && snap.get_metadata().get_index() == idx
-                {
-                    Ok(snap.get_metadata().get_term())
-                } else {
-                    Err(RaftError::Store(RaftStorageError::Unavailable))
-                }
-            },
-            res => res.map_err(RaftError::from),
-        }
+        todo!()
     }
 
     /// Returns the index of the first available entry in the log
@@ -208,32 +155,7 @@ impl Storage for LogStore {
     ///
     /// The `to` field indicates the peer this will be sent to, unused here
     fn snapshot(&self, request_index: u64, _to: u64) -> RaftResult<RaftSnapshot> {
-        let tx = self.db.new_read_tx()?;
-        let mut snap = RaftSnapshot::default();
-        let md = snap.mut_metadata();
-
-        // Read the snapshot metadata from the metadata table
-        let hard_state = tx.read_hard_state()?;
-        md.index = hard_state.commit;
-        md.term = hard_state.term;
-
-        let stored_metadata = tx.read_snapshot_metadata()?;
-        md.term = match md.index.cmp(&stored_metadata.index) {
-            Ordering::Equal => stored_metadata.term,
-            Ordering::Greater => tx.read_log_entry(md.index).map(|entry| entry.term)?,
-            Ordering::Less => {
-                return Err(RaftError::Store(RaftStorageError::SnapshotOutOfDate));
-            },
-        };
-
-        if md.index < request_index {
-            md.index = request_index;
-        }
-
-        let conf_state = tx.read_conf_state()?;
-        md.set_conf_state(conf_state);
-
-        Ok(snap)
+        todo!()
     }
 }
 
