@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 pub mod applicator;
 mod interface;
 pub mod replication;
+pub mod replicationv2;
 pub mod storage;
 pub mod tui;
 
