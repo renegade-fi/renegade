@@ -1,6 +1,11 @@
 //! Error types and conversions for the replication interface
+use std::{
+    error::Error,
+    fmt::Display,
+    io::{Error as IoError, ErrorKind as IoErrorKind},
+};
+
 use openraft::{ErrorSubject, ErrorVerb, LogId, RaftTypeConfig, StorageError as RaftStorageError};
-use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
 use crate::{applicator::error::StateApplicatorError, storage::error::StorageError};
 
@@ -30,3 +35,32 @@ pub fn new_apply_error(
     let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
     RaftStorageError::from_io_error(ErrorSubject::Apply(log_id), ErrorVerb::Write, io_err)
 }
+
+/// Convert a snapshot error to a raft error
+pub fn new_snapshot_error(
+    err: ReplicationV2Error,
+) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
+    let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
+    RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Write, io_err)
+}
+
+/// The error type emitted by the replication interface
+///
+/// TODO: Rename
+#[derive(Debug)]
+pub enum ReplicationV2Error {
+    /// An error occurred while snapshotting
+    Snapshot(String),
+    /// An error in storage
+    Storage(StorageError),
+}
+
+impl Display for ReplicationV2Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReplicationV2Error::Snapshot(e) => write!(f, "Snapshot error: {e}"),
+            ReplicationV2Error::Storage(e) => write!(f, "Storage error: {e}"),
+        }
+    }
+}
+impl Error for ReplicationV2Error {}

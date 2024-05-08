@@ -6,9 +6,26 @@ use openraft::{
     SnapshotMeta, StorageError as RaftStorageError, StoredMembership,
 };
 
-use crate::{applicator::StateApplicator, replicationv2::error::new_apply_error};
+use crate::{applicator::StateApplicator, replicationv2::error::new_apply_error, storage::db::DB};
 
-use super::{Entry, Node, NodeId, SnapshotData, TypeConfig};
+use super::{
+    error::new_snapshot_error, snapshot::take_db_snapshot, Entry, Node, NodeId, SnapshotData,
+    TypeConfig,
+};
+
+/// The config for the state machine
+#[derive(Clone, Debug)]
+pub struct StateMachineConfig {
+    /// The directory to place snapshots in
+    snapshot_out: String,
+}
+
+impl StateMachineConfig {
+    /// Constructor
+    pub fn new(snapshot_out: String) -> Self {
+        Self { snapshot_out }
+    }
+}
 
 /// The state machine for the raft node
 #[derive(Clone)]
@@ -17,20 +34,28 @@ pub struct StateMachine {
     last_applied_log: Option<LogId<NodeId>>,
     /// The last cluster membership config
     last_membership: StoredMembership<NodeId, Node>,
+    /// The config for the state machine
+    config: StateMachineConfig,
     /// The underlying applicator
     applicator: StateApplicator,
 }
 
 impl StateMachine {
     /// Constructor
-    pub fn new(applicator: StateApplicator) -> Self {
-        Self { last_applied_log: None, last_membership: Default::default(), applicator }
+    pub fn new(config: StateMachineConfig, applicator: StateApplicator) -> Self {
+        Self { last_applied_log: None, last_membership: Default::default(), config, applicator }
+    }
+
+    /// Get a handle on the DB of the state machine
+    pub fn db(&self) -> &DB {
+        self.applicator.db()
     }
 }
 
 impl RaftSnapshotBuilder<TypeConfig> for StateMachine {
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, RaftStorageError<NodeId>> {
-        todo!("implement snapshotting")
+        take_db_snapshot(&self.config.snapshot_out, self.db()).await.map_err(new_snapshot_error)?;
+        todo!("report the snapshot")
     }
 }
 
