@@ -7790,6 +7790,7 @@ dependencies = [
  "crossbeam",
  "crossterm 0.27.0",
  "external-api",
+ "flate2",
  "futures",
  "fxhash",
  "gossip-api",
