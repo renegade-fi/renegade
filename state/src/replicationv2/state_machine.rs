@@ -2,22 +2,19 @@
 //! to the state
 
 use openraft::{
-    storage::RaftStateMachine, EntryPayload, LogId, OptionalSend, RaftSnapshotBuilder, Snapshot,
-    SnapshotMeta, StorageError as RaftStorageError, StoredMembership,
+    storage::RaftStateMachine, EntryPayload, LogId, OptionalSend, Snapshot, SnapshotMeta,
+    StorageError as RaftStorageError, StoredMembership,
 };
 
 use crate::{applicator::StateApplicator, replicationv2::error::new_apply_error, storage::db::DB};
 
-use super::{
-    error::new_snapshot_error, snapshot::take_db_snapshot, Entry, Node, NodeId, SnapshotData,
-    TypeConfig,
-};
+use super::{Entry, Node, NodeId, SnapshotData, TypeConfig};
 
 /// The config for the state machine
 #[derive(Clone, Debug)]
 pub struct StateMachineConfig {
     /// The directory to place snapshots in
-    snapshot_out: String,
+    pub(crate) snapshot_out: String,
 }
 
 impl StateMachineConfig {
@@ -31,13 +28,13 @@ impl StateMachineConfig {
 #[derive(Clone)]
 pub struct StateMachine {
     /// The index of the last applied log
-    last_applied_log: Option<LogId<NodeId>>,
+    pub(crate) last_applied_log: Option<LogId<NodeId>>,
     /// The last cluster membership config
-    last_membership: StoredMembership<NodeId, Node>,
+    pub(crate) last_membership: StoredMembership<NodeId, Node>,
     /// The config for the state machine
-    config: StateMachineConfig,
+    pub(crate) config: StateMachineConfig,
     /// The underlying applicator
-    applicator: StateApplicator,
+    pub(crate) applicator: StateApplicator,
 }
 
 impl StateMachine {
@@ -50,12 +47,10 @@ impl StateMachine {
     pub fn db(&self) -> &DB {
         self.applicator.db()
     }
-}
 
-impl RaftSnapshotBuilder<TypeConfig> for StateMachine {
-    async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, RaftStorageError<NodeId>> {
-        take_db_snapshot(&self.config.snapshot_out, self.db()).await.map_err(new_snapshot_error)?;
-        todo!("report the snapshot")
+    /// Get the path at which snapshots are saved
+    pub fn snapshot_path(&self) -> &str {
+        &self.config.snapshot_out
     }
 }
 
