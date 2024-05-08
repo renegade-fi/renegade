@@ -96,7 +96,7 @@ impl StateApplicator {
     }
 
     /// Get a reference to the db
-    fn db(&self) -> &DB {
+    pub(crate) fn db(&self) -> &DB {
         &self.config.db
     }
 
