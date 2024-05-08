@@ -49,6 +49,8 @@ pub struct DbConfig {
 ///
 /// Contains a reference to an `mdbx` instance
 pub struct DB {
+    /// The path that the DB is open at
+    path: String,
     /// The underlying `mdbx` instance
     db: Database<WriteMap>,
 }
@@ -68,7 +70,12 @@ impl DB {
             .open(db_path)
             .map_err(StorageError::OpenDb)?;
 
-        Ok(Self { db })
+        Ok(Self { path: config.path.clone(), db })
+    }
+
+    /// Get the path that the DB is open at
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
     /// Create a new table in the database
