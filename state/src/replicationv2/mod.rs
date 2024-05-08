@@ -5,6 +5,7 @@
 
 pub mod error;
 mod log_store;
+mod snapshot;
 mod state_machine;
 
 use openraft::{EmptyNode, RaftTypeConfig};
@@ -37,7 +38,11 @@ mod test {
 
     use crate::applicator::test_helpers::mock_applicator;
 
-    use super::{log_store::LogStore, state_machine::StateMachine, NodeId, TypeConfig};
+    use super::{
+        log_store::LogStore,
+        state_machine::{StateMachine, StateMachineConfig},
+        NodeId, TypeConfig,
+    };
 
     /// A builder for the storage layer, used to fit into the `openraft` test
     /// interface
@@ -46,9 +51,10 @@ mod test {
         async fn build(&self) -> Result<((), LogStore, StateMachine), RaftStorageError<NodeId>> {
             let app = mock_applicator();
             let db = app.config.db.clone();
+            let state_config = StateMachineConfig::new(db.path().to_string());
             let store = LogStore::new(db);
 
-            Ok(((), store, StateMachine::new(app)))
+            Ok(((), store, StateMachine::new(state_config, app)))
         }
     }
 

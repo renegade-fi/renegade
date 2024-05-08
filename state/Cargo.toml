@@ -16,6 +16,7 @@ raft = "0.7"
 
 # === Storage === #
 bincode = "1.3"
+flate2 = "1.0"
 libmdbx = "0.3"
 protobuf = "2.0"
 serde = { workspace = true, features = ["derive"] }
