@@ -397,14 +397,18 @@ impl TaskExecutor {
         notifications: TaskNotificationMap,
     ) -> Result<(), TaskDriverError> {
         // Create the task
-        let mut task = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await?;
+        let combined_res =
+            match RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await {
+                Ok(mut task) => {
+                    // Run the task
+                    let res = Self::run_task_to_completion(&mut task, args).await;
 
-        // Run the task
-        let res = Self::run_task_to_completion(&mut task, args).await;
-
-        // Cleanup
-        let cleanup_res = task.cleanup(res.is_ok()).await;
-        let combined_res = res.and(cleanup_res);
+                    // Cleanup
+                    let cleanup_res = task.cleanup(res.is_ok()).await;
+                    res.and(cleanup_res)
+                },
+                Err(e) => Err(e),
+            };
 
         // Notify any listeners that the task has completed
         let str_res = combined_res.clone().map_err(|e| e.to_string());
