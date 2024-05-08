@@ -9,7 +9,6 @@ mod snapshot;
 mod state_machine;
 
 use openraft::{EmptyNode, RaftTypeConfig};
-use std::io::Cursor;
 
 use crate::StateTransition;
 
@@ -20,6 +19,7 @@ openraft::declare_raft_types! (
         D = StateTransition,
         R = (), // Response
         Node = EmptyNode,
+        SnapshotData = tokio::fs::File,
 );
 
 /// A type alias for entries in the raft log
@@ -30,6 +30,22 @@ pub type NodeId = <TypeConfig as RaftTypeConfig>::NodeId;
 pub type Node = <TypeConfig as RaftTypeConfig>::Node;
 /// A type alias for the snapshot data type
 pub type SnapshotData = <TypeConfig as RaftTypeConfig>::SnapshotData;
+
+#[cfg(test)]
+pub mod test_helpers {
+    use crate::applicator::test_helpers::mock_applicator;
+
+    use super::state_machine::{StateMachine, StateMachineConfig};
+
+    /// Create a mock state machine
+    pub fn mock_state_machine() -> StateMachine {
+        let app = mock_applicator();
+        let db = app.config.db.clone();
+        let state_config = StateMachineConfig::new(db.path().to_string());
+
+        StateMachine::new(state_config, app)
+    }
+}
 
 #[cfg(test)]
 mod test {
