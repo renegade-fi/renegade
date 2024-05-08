@@ -37,6 +37,8 @@ const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
 const ERR_WALLET_MISSING: &str = "wallet not found in global state";
 /// The wallet does not have a known Merkle proof attached
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
+/// The new wallet does not correspond to a valid reblinding of the old wallet
+const ERR_INVALID_REBLIND: &str = "new wallet is not a valid reblind of old wallet";
 
 // --------------
 // | Task State |
@@ -189,6 +191,16 @@ impl Task for UpdateWalletTask {
             .get_wallet(&descriptor.wallet_id)?
             .ok_or_else(|| UpdateWalletTaskError::Missing(ERR_WALLET_MISSING.to_string()))?;
 
+        // Check that the new wallet is properly reblinded from the old wallet.
+        // We do this here, as opposed to in the creation of the task descriptor, to
+        // ensure we are checking a reblind progression from the most recent
+        // wallet state. This is important, as an improperly-reblinded wallet
+        // can be successfully committed onchain, but future wallet lookup tasks
+        // will not return the most recent wallet state.
+        if !Self::check_reblind_progression(&old_wallet, &descriptor.new_wallet) {
+            return Err(UpdateWalletTaskError::InvalidShares(ERR_INVALID_REBLIND.to_string()));
+        }
+
         Ok(Self {
             transfer: descriptor.transfer,
             old_wallet,
@@ -331,6 +343,18 @@ impl UpdateWalletTask {
     // -----------
     // | Helpers |
     // -----------
+
+    /// Check that the wallet's blinder and private shares are the result of
+    /// applying a reblind to the old wallet
+    pub fn check_reblind_progression(old_wallet: &Wallet, new_wallet: &Wallet) -> bool {
+        let mut old_wallet_clone = old_wallet.clone();
+        old_wallet_clone.reblind_wallet();
+        let expected_private_shares = old_wallet_clone.private_shares;
+        let expected_blinder = old_wallet_clone.blinder;
+
+        new_wallet.private_shares == expected_private_shares
+            && new_wallet.blinder == expected_blinder
+    }
 
     /// Construct a witness and statement for `VALID WALLET UPDATE`
     fn get_witness_statement(

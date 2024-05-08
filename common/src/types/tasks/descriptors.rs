@@ -434,7 +434,7 @@ impl UpdateWalletTaskDescriptor {
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
     ) -> Result<Self, String> {
-        // Check that the new wallet is properly reblinded
+        // Check that the new wallet's shares are well formed
         if !new_wallet.check_wallet_shares() {
             return Err(INVALID_WALLET_SHARES.to_string());
         }
