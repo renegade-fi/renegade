@@ -87,6 +87,21 @@ impl DB {
         tx.commit()
     }
 
+    /// Drop a table from the database
+    ///
+    /// # Safety
+    ///
+    /// This method is marked unsafe as it permanently deletes a table from the
+    /// database, care should be taken by the caller to ensure this operation is
+    /// not taken erroneously
+    #[allow(unsafe_code)]
+    pub unsafe fn drop_table(&self, table_name: &str) -> Result<(), StorageError> {
+        let tx = self.new_raw_write_tx()?;
+        tx.drop_table(table_name)?;
+
+        tx.commit()
+    }
+
     /// Get a key from the database
     pub fn read<K: Key, V: Value>(
         &self,

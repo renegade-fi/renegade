@@ -18,7 +18,9 @@ pub mod wallet_index;
 
 use std::collections::VecDeque;
 
-use libmdbx::{Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW};
+use libmdbx::{
+    Error as MdbxError, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW,
+};
 
 use crate::{
     CLUSTER_MEMBERSHIP_TABLE, MPC_PREPROCESSING_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE,
@@ -313,6 +315,25 @@ impl<'db> DbTxn<'db, RW> {
             .create_table(Some(table_name), TableFlags::default())
             .map_err(StorageError::TxOp)
             .map(|_| ())
+    }
+
+    /// Drop a table from the database
+    ///
+    /// # Safety
+    ///
+    /// This method is marked unsafe as it permanently deletes a table from the
+    /// database, care should be taken by the caller to ensure this operation
+    /// is not taken erroneously
+    #[allow(unsafe_code)]
+    pub unsafe fn drop_table(&self, table_name: &str) -> Result<(), StorageError> {
+        let table = self.open_table(table_name);
+        let table = match table {
+            Ok(t) => t,
+            Err(StorageError::OpenTable(MdbxError::NotFound)) => return Ok(()),
+            Err(e) => return Err(e),
+        };
+
+        self.txn.drop_table(table).map_err(StorageError::TxOp)
     }
 
     /// Set a key in the database
