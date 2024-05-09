@@ -376,7 +376,7 @@ impl UpdateWalletTask {
         let new_wallet = &self.new_wallet;
         let new_private_share_commitment = self.new_wallet.get_private_share_commitment();
 
-        let transfer_index = self.get_transfer_idx();
+        let transfer_index = self.get_transfer_idx()?;
         let transfer = self.transfer.clone().map(|t| t.external_transfer).unwrap_or_default();
         let statement = SizedValidWalletUpdateStatement {
             old_shares_nullifier: old_wallet.get_wallet_nullifier(),
@@ -399,17 +399,16 @@ impl UpdateWalletTask {
     }
 
     /// Get the index that the transfer is applied to
-    fn get_transfer_idx(&self) -> usize {
+    fn get_transfer_idx(&self) -> Result<usize, UpdateWalletTaskError> {
         if let Some(transfer) = self.transfer.as_ref().map(|t| &t.external_transfer) {
             let mint = &transfer.mint;
-            let idx = match transfer.direction {
+            match transfer.direction {
                 ExternalTransferDirection::Deposit => self.new_wallet.get_balance_index(mint),
                 ExternalTransferDirection::Withdrawal => self.old_wallet.get_balance_index(mint),
-            };
-
-            idx.expect("transfer mint {mint:x} not found")
+            }
+            .ok_or(UpdateWalletTaskError::Missing(format!("transfer mint {mint:#x} not found")))
         } else {
-            0
+            Ok(0)
         }
     }
 }
