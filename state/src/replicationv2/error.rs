@@ -64,3 +64,9 @@ impl Display for ReplicationV2Error {
     }
 }
 impl Error for ReplicationV2Error {}
+
+impl From<StorageError> for ReplicationV2Error {
+    fn from(value: StorageError) -> Self {
+        ReplicationV2Error::Storage(value)
+    }
+}
