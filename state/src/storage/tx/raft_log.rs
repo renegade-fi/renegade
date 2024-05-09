@@ -230,11 +230,19 @@ impl<'db> StateTxn<'db, RW> {
     /// Purge all logs before the given index (inclusive)
     pub fn purge_logs(&self, index: u64) -> Result<(), StorageError> {
         let mut log_cursor = self.logs_cursor()?;
+        log_cursor.seek_first()?;
 
-        let idx_lsn = lsn_to_key(index);
-        log_cursor.seek(&idx_lsn)?;
-        while log_cursor.has_current()? {
-            log_cursor.delete()?;
+        loop {
+            let curr = match log_cursor.get_current()? {
+                Some((k, _)) => parse_lsn(&k).map_err(|_| StorageError::InvalidKey(k))?,
+                None => break,
+            };
+
+            if curr <= index {
+                log_cursor.delete()?;
+            } else {
+                break;
+            }
         }
 
         Ok(())
@@ -245,5 +253,92 @@ impl<'db> StateTxn<'db, RW> {
     /// TODO: Delete this
     pub fn apply_snapshot(&self, _snapshot: &RaftSnapshot) -> Result<(), StorageError> {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use openraft::{EntryPayload, LeaderId, LogId, RaftLogId};
+
+    use crate::{replicationv2::Entry, test_helpers::mock_db};
+
+    /// Get an empty log entry with the given index
+    fn empty_entry(idx: u64, term: u64, node_id: u64) -> Entry {
+        let leader_id = LeaderId::new(term, node_id);
+        let id = LogId::new(leader_id, idx);
+        Entry { log_id: id, payload: EntryPayload::Blank }
+    }
+
+    /// Tests purging logs
+    #[test]
+    fn test_purge_logs() {
+        const N: u64 = 10;
+        let db = mock_db();
+
+        // Add a few logs
+        let entries = (1..=N).map(|i| empty_entry(i, 1, 1));
+        let tx = db.new_write_tx().unwrap();
+        tx.append_log_entries(entries).unwrap();
+        tx.commit().unwrap();
+
+        // Get the logs
+        let tx = db.new_write_tx().unwrap();
+        for i in 1..=N {
+            let entry = tx.read_log_entry(i).unwrap();
+            assert!(entry.get_log_id().index == i);
+        }
+
+        // Purge the logs
+        tx.purge_logs(N / 2).unwrap();
+        tx.commit().unwrap();
+
+        // All logs <= N / 2 should be purged
+        let tx = db.new_read_tx().unwrap();
+        for i in 1..=N / 2 {
+            let entry = tx.read_log_entry(i);
+            assert!(entry.is_err());
+        }
+
+        for i in N / 2 + 1..=N {
+            let entry = tx.read_log_entry(i).unwrap();
+            assert!(entry.get_log_id().index == i);
+        }
+    }
+
+    /// Tests truncating logs
+    #[test]
+    fn test_truncate_logs() {
+        const N: u64 = 10;
+        let db = mock_db();
+
+        // Add a few logs
+        let entries = (1..=N).map(|i| empty_entry(i, 1, 1));
+        let tx = db.new_write_tx().unwrap();
+        tx.append_log_entries(entries).unwrap();
+        tx.commit().unwrap();
+
+        // Get the logs
+        let tx = db.new_write_tx().unwrap();
+        for i in 1..=N {
+            let entry = tx.read_log_entry(i).unwrap();
+            assert!(entry.get_log_id().index == i);
+        }
+
+        // Truncate the logs
+        tx.truncate_logs(N / 2).unwrap();
+        tx.commit().unwrap();
+
+        // All logs >= N / 2 should be truncated
+        let tx = db.new_read_tx().unwrap();
+        for i in 1..N / 2 {
+            let entry = tx.read_log_entry(i).unwrap();
+            assert_eq!(entry.get_log_id().index, i);
+        }
+
+        for i in N / 2..=N {
+            let entry = tx.read_log_entry(i);
+            assert!(entry.is_err());
+        }
     }
 }

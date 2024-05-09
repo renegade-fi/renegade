@@ -107,6 +107,7 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
         I: IntoIterator<Item = Entry> + OptionalSend,
         I::IntoIter: OptionalSend,
     {
+        let mut res = Vec::new();
         for entry in entries.into_iter() {
             let log_id = entry.log_id;
             self.last_applied_log = Some(log_id);
@@ -122,9 +123,13 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                         .map_err(|err| new_apply_error(log_id, err))?;
                 },
             }
+
+            // The consensus engine expects a response for each application, even though
+            // ours is empty
+            res.push(());
         }
 
-        Ok(vec![])
+        Ok(res)
     }
 
     async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
