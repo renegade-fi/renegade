@@ -1,14 +1,24 @@
 //! Defines the state machine for the raft node, responsible for applying logs
 //! to the state
 
+use std::{path::PathBuf, sync::Arc};
+
 use openraft::{
-    storage::RaftStateMachine, EntryPayload, LogId, OptionalSend, Snapshot, SnapshotMeta,
-    StorageError as RaftStorageError, StoredMembership,
+    storage::RaftStateMachine, EntryPayload, ErrorSubject, ErrorVerb, LogId, OptionalSend,
+    Snapshot, SnapshotMeta, StorageError as RaftStorageError, StoredMembership,
 };
+use tokio::fs::File;
+use util::{err_str, res_some};
 
 use crate::{applicator::StateApplicator, replicationv2::error::new_apply_error, storage::db::DB};
 
-use super::{Entry, Node, NodeId, SnapshotData, TypeConfig};
+use super::{
+    error::{new_log_read_error, new_snapshot_error, ReplicationV2Error},
+    Entry, Node, NodeId, SnapshotData, TypeConfig,
+};
+
+/// The snapshot file name
+const SNAPSHOT_FILE: &str = "snapshot.dat";
 
 /// The config for the state machine
 #[derive(Clone, Debug)]
@@ -48,9 +58,37 @@ impl StateMachine {
         self.applicator.db()
     }
 
-    /// Get the path at which snapshots are saved
-    pub fn snapshot_path(&self) -> &str {
+    /// Get an owned handle on the DB
+    pub fn db_owned(&self) -> Arc<DB> {
+        self.applicator.config.db.clone()
+    }
+
+    /// Get the directory at which snapshots are saved
+    pub fn snapshot_dir(&self) -> &str {
         &self.config.snapshot_out
+    }
+
+    /// Get the path of the snapshot file
+    pub fn snapshot_archive_path(&self) -> PathBuf {
+        PathBuf::from(self.snapshot_dir()).join(SNAPSHOT_FILE).with_extension("gz")
+    }
+
+    /// Get the path to place the snapshot data at
+    pub fn snapshot_data_path(&self) -> PathBuf {
+        PathBuf::from(self.snapshot_dir()).join(SNAPSHOT_FILE)
+    }
+
+    /// Open the file containing the snapshot
+    pub async fn open_snapshot_file(&self) -> Result<Option<File>, ReplicationV2Error> {
+        let snapshot_path = self.snapshot_archive_path();
+        if snapshot_path.exists() {
+            let file = tokio::fs::File::open(snapshot_path)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            Ok(Some(file))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -96,21 +134,40 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
     async fn begin_receiving_snapshot(
         &mut self,
     ) -> Result<Box<SnapshotData>, RaftStorageError<NodeId>> {
-        todo!("implement snapshotting")
+        // Remove the file if it already exists, we want a blank snapshot
+        let snapshot_path = self.snapshot_archive_path();
+        if snapshot_path.exists() {
+            tokio::fs::remove_file(&snapshot_path).await.map_err(|e| {
+                RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Delete, e)
+            })?;
+        }
+
+        // (Re)create it
+        let file = tokio::fs::File::create(snapshot_path).await.map_err(|e| {
+            RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Write, e)
+        })?;
+
+        Ok(Box::new(file))
     }
 
     async fn install_snapshot(
         &mut self,
-        _meta: &SnapshotMeta<NodeId, Node>,
-        _snapshot: Box<SnapshotData>,
+        meta: &SnapshotMeta<NodeId, Node>,
+        snapshot: Box<SnapshotData>,
     ) -> Result<(), RaftStorageError<NodeId>> {
-        todo!("implement snapshotting")
+        let snapshot = *snapshot;
+        let snap_db = self.open_snap_db_with_file(snapshot).await.map_err(new_snapshot_error)?;
+        self.update_from_snapshot(meta, snap_db).await.map_err(new_snapshot_error)
     }
 
     async fn get_current_snapshot(
         &mut self,
     ) -> Result<Option<Snapshot<TypeConfig>>, RaftStorageError<NodeId>> {
-        // TODO: Implement snapshotting
-        Ok(None)
+        let tx = self.db().new_read_tx().map_err(new_log_read_error)?;
+        let meta = res_some!(tx.get_snapshot_metadata().map_err(new_log_read_error)?);
+
+        // Open the snapshot file
+        let file = res_some!(self.open_snapshot_file().await.map_err(new_snapshot_error)?);
+        Ok(Some(Snapshot { meta, snapshot: Box::new(file) }))
     }
 }
