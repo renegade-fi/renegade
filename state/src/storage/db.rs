@@ -8,14 +8,14 @@ use std::{ops::Bound, path::Path};
 use libmdbx::{Database, Geometry, WriteMap, RO, RW};
 use serde::{Deserialize, Serialize};
 
+use crate::NUM_TABLES;
+
 use super::{
     error::StorageError,
     traits::{Key, Value},
     tx::{DbTxn, StateTxn},
 };
 
-/// The number of tables to open in the database
-const NUM_TABLES: usize = 15;
 /// The total maximum size of the DB in bytes
 const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 
@@ -43,6 +43,15 @@ pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
 pub struct DbConfig {
     /// The path to open the database at
     pub path: String,
+    /// The number of tables to allocate
+    pub num_tables: usize,
+}
+
+impl DbConfig {
+    /// Constructor
+    pub fn new_with_path(path: &str) -> Self {
+        Self { path: path.to_string(), num_tables: NUM_TABLES }
+    }
 }
 
 /// The persistent storage layer for the relayer's state machine
@@ -65,7 +74,7 @@ impl DB {
         };
 
         let db = Database::new()
-            .set_max_tables(NUM_TABLES)
+            .set_max_tables(config.num_tables)
             .set_geometry(db_geom)
             .open(db_path)
             .map_err(StorageError::OpenDb)?;
@@ -172,7 +181,6 @@ mod test {
     use std::{sync::Arc, thread};
 
     use serde::{Deserialize, Serialize};
-    use tempfile::tempdir;
 
     use crate::test_helpers::mock_db;
 
@@ -350,10 +358,7 @@ mod test {
     #[test]
     fn test_concurrent_updates() {
         // Create a mock DB and table
-        let tempdir = tempdir().unwrap();
-        let path = tempdir.path().to_str().unwrap().to_string();
-        let db = Arc::new(DB::new(&DbConfig { path: path.clone() }).unwrap());
-
+        let db = Arc::new(mock_db());
         db.create_table(TABLE_NAME).unwrap();
 
         // Write an initial value to the table
@@ -392,11 +397,7 @@ mod test {
     /// Tests recovering from a crash
     #[test]
     fn test_crash_recover() {
-        let tempdir = tempdir().unwrap();
-        let path = tempdir.path().to_str().unwrap().to_string();
-
-        // Create a mock DB and table
-        let db = DB::new(&DbConfig { path: path.clone() }).unwrap();
+        let db = Arc::new(mock_db());
 
         // Set a key
         let key = "test_key".to_string();
@@ -409,10 +410,11 @@ mod test {
 
         // Drop the db to simulate a crash
         db.sync().unwrap();
+        let path = db.path().to_string();
         drop(db);
 
         // Re-open the database at the same path and read the value
-        let db = DB::new(&DbConfig { path }).unwrap();
+        let db = Arc::new(DB::new(&DbConfig { path, num_tables: 1 }).unwrap());
 
         let tx = db.new_raw_read_tx().unwrap();
         let val: Option<TestValue> = tx.read(TABLE_NAME, &key).unwrap();

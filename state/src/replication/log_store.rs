@@ -2,20 +2,17 @@
 //! snapshots, metadata, etc in the storage layer -- concretely an embedded KV
 //! store
 
-use std::{cmp::Ordering, sync::Arc};
+use std::sync::Arc;
 
-use protobuf::Message;
 use raft::{
     eraftpb::{ConfState, HardState},
     prelude::{Entry as RaftEntry, Snapshot as RaftSnapshot},
     Error as RaftError, GetEntriesContext, RaftState, Result as RaftResult, Storage,
-    StorageError as RaftStorageError,
 };
 
-use crate::storage::{
-    db::DB,
-    error::StorageError,
-    tx::raft_log::{lsn_to_key, parse_lsn, RAFT_LOGS_TABLE, RAFT_METADATA_TABLE},
+use crate::{
+    storage::{db::DB, tx::raft_log::parse_lsn},
+    RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
 };
 
 use super::error::ReplicationError;

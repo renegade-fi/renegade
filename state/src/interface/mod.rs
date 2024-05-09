@@ -138,7 +138,8 @@ impl State {
         translation_map: SharedPeerIdTranslationMap,
     ) -> Result<(Self, ReplicationNodeWorker<N>, Sender<()>), StateError> {
         // Open up the DB
-        let db = DB::new(&DbConfig { path: config.db_path.clone() }).map_err(StateError::Db)?;
+        let db_config = DbConfig::new_with_path(&config.db_path);
+        let db = DB::new(&db_config).map_err(StateError::Db)?;
         let db = Arc::new(db);
 
         // Setup the tables in the DB

@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
+use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use openraft::{
@@ -12,9 +13,11 @@ use openraft::{
 };
 use util::{err_str, get_current_time_millis};
 
-use crate::storage::db::DbConfig;
-use crate::storage::{db::DB, tx::raft_log::RAFT_LOGS_TABLE};
-use crate::{CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE};
+use crate::storage::db::{DbConfig, DB};
+use crate::{
+    ALL_TABLES, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE, RAFT_LOGS_TABLE,
+    RAFT_METADATA_TABLE,
+};
 
 use super::error::{new_snapshot_error, ReplicationV2Error};
 use super::state_machine::StateMachine;
@@ -22,17 +25,24 @@ use super::{Node, NodeId, TypeConfig};
 
 /// The MDBX data file
 const MDBX_DATA_FILE: &str = "mdbx.dat";
-/// The snapshot file name
-const SNAPSHOT_FILE: &str = "snapshot.dat";
 /// Tables that should be excluded from the snapshot
 ///
 /// These are tables whose values are not set through consensus, are node
 /// specific, or otherwise contain volatile state not worth snapshotting
-const EXCLUDED_TABLES: &[&str] =
-    &[RAFT_LOGS_TABLE, PEER_INFO_TABLE, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE];
+const EXCLUDED_TABLES: &[&str] = &[
+    RAFT_LOGS_TABLE,
+    RAFT_METADATA_TABLE,
+    PEER_INFO_TABLE,
+    CLUSTER_MEMBERSHIP_TABLE,
+    NODE_METADATA_TABLE,
+];
 
 /// An error awaiting a blocking zip task
 const ERR_AWAIT_BUILD: &str = "error awaiting build task";
+/// An error occurred while awaiting the snapshot installation task
+const ERR_AWAIT_INSTALL: &str = "error awaiting snapshot installation task";
+/// Error converting an async file into a sync file
+const ERR_CONVERT_FILE: &str = "error converting file from async to sync";
 
 /// The completed snapshot
 #[derive(Clone, Debug)]
@@ -77,6 +87,10 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachine {
 }
 
 impl StateMachine {
+    // ----------------
+    // | Snapshotting |
+    // ----------------
+
     /// Take a snapshot of the DB
     pub(crate) async fn take_db_snapshot(&self) -> Result<SnapshotInfo, ReplicationV2Error> {
         let out_dir = &self.config.snapshot_out;
@@ -106,7 +120,7 @@ impl StateMachine {
     async fn make_data_copy(&self, out_dir: &str) -> Result<PathBuf, ReplicationV2Error> {
         let path = PathBuf::from(self.db().path());
         let data_path = path.join(MDBX_DATA_FILE);
-        let snapshot_path = PathBuf::from(out_dir).join(SNAPSHOT_FILE);
+        let snapshot_path = self.snapshot_data_path();
 
         // Make a copy of the data
         tokio::fs::copy(data_path, snapshot_path.clone())
@@ -129,7 +143,7 @@ impl StateMachine {
     /// it would cause errors to snapshot on the consumer side
     fn remove_excluded_tables(copy_path: &str) -> Result<(), ReplicationV2Error> {
         let path_str = copy_path.to_string();
-        let db_config = DbConfig { path: path_str };
+        let db_config = DbConfig::new_with_path(&path_str);
         let snapshot_db = DB::new(&db_config).map_err(ReplicationV2Error::Storage)?;
 
         for table in EXCLUDED_TABLES {
@@ -157,44 +171,110 @@ impl StateMachine {
         fs::remove_file(path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
         Ok(())
     }
+
+    // ----------------
+    // | Installation |
+    // ----------------
+
+    /// Unzip a snapshot and open a DB from the data
+    pub(crate) async fn open_snap_db(&self) -> Result<DB, ReplicationV2Error> {
+        // Open the file
+        let zip_path = self.snapshot_archive_path();
+        let file = tokio::fs::File::open(zip_path)
+            .await
+            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        self.open_snap_db_with_file(file).await
+    }
+
+    /// Open a snapshot DB from a given file
+    pub(crate) async fn open_snap_db_with_file(
+        &self,
+        file: tokio::fs::File,
+    ) -> Result<DB, ReplicationV2Error> {
+        // Unzip the snapshot
+        let dest_path = self.snapshot_data_path();
+        let db_path = dest_path.clone();
+        let std_file = file
+            .try_into_std()
+            .map_err(|_| ReplicationV2Error::Snapshot(ERR_CONVERT_FILE.to_string()))?;
+        let job = tokio::task::spawn_blocking(move || Self::unzip_data_file(&std_file, &dest_path));
+        job.await.map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_BUILD.to_string()))??;
+
+        // Open the DB
+        let path = db_path.to_str().unwrap().to_string();
+        let db_config = DbConfig::new_with_path(&path);
+        let db = DB::new(&db_config).map_err(ReplicationV2Error::Storage)?;
+
+        Ok(db)
+    }
+
+    /// Update the local DB using a snapshot DB
+    pub async fn update_from_snapshot(
+        &mut self,
+        meta: &SnapshotMeta<NodeId, Node>,
+        snapshot_db: DB,
+    ) -> Result<(), ReplicationV2Error> {
+        self.last_applied_log = meta.last_log_id;
+        self.last_membership = meta.last_membership.clone();
+
+        let db_clone = self.db_owned();
+        let jh = tokio::task::spawn_blocking(move || Self::copy_db_data(&snapshot_db, &db_clone));
+        jh.await.map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
+    }
+
+    /// Copy all data from one DB to another
+    pub(crate) fn copy_db_data(src: &DB, dest: &DB) -> Result<(), ReplicationV2Error> {
+        let src_tx = src.new_read_tx()?;
+        let dest_tx = dest.new_write_tx()?;
+        for table in ALL_TABLES.iter() {
+            if EXCLUDED_TABLES.contains(table) {
+                continue;
+            }
+
+            // Delete and create the table on the destination
+            #[allow(unsafe_code)]
+            unsafe { dest_tx.drop_table(table) }?;
+            dest_tx.create_table(table)?;
+
+            // Copy all keys and values
+            let src_cursor = src_tx.inner().cursor(table)?;
+            dest_tx.inner().copy_cursor_to_table(table, src_cursor)?;
+        }
+
+        dest_tx.commit()?;
+        src_tx.commit()?;
+        Ok(())
+    }
+
+    /// Unzip the given file to the given location
+    fn unzip_data_file(
+        data_file: &std::fs::File,
+        dest: &PathBuf,
+    ) -> Result<(), ReplicationV2Error> {
+        // Remove a preexisting data temp file if it exists
+        if dest.exists() {
+            fs::remove_file(dest).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        }
+        let mut dest_writer = File::create(dest).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+
+        // Unzip the data file into the dest file
+        let mut decoder = GzDecoder::new(data_file);
+        std::io::copy(&mut decoder, &mut dest_writer)
+            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use flate2::bufread::GzDecoder;
     use libmdbx::Error as MdbxError;
 
     use crate::{
         replicationv2::test_helpers::mock_state_machine, storage::error::StorageError,
-        test_helpers::tmp_db_path,
+        test_helpers::mock_db, WALLETS_TABLE,
     };
 
     use super::*;
-
-    /// Recover a data file from a snapshot archive
-    ///
-    /// Returns the location of the recovered data file
-    async fn recover_data_from_snapshot(snapshot_path: &str) -> String {
-        let snapshot_path = PathBuf::from(snapshot_path);
-        let snapshot_path = snapshot_path.join(SNAPSHOT_FILE).with_extension("gz");
-
-        let tmp_dir = PathBuf::from(tmp_db_path());
-        if !tmp_dir.exists() {
-            fs::create_dir_all(&tmp_dir).unwrap();
-        }
-
-        let out_path = tmp_dir.join(MDBX_DATA_FILE);
-        let mut out_file = File::create(out_path.clone()).unwrap();
-
-        // Load the snapshot and unzip it
-        let snapshot_file = File::open(snapshot_path).unwrap();
-        let snapshot_reader = BufReader::new(snapshot_file);
-        let mut snapshot_decoder = GzDecoder::new(snapshot_reader);
-        std::io::copy(&mut snapshot_decoder, &mut out_file).unwrap();
-
-        out_path.to_str().unwrap().to_string()
-    }
 
     /// Tests snapshotting and recovering a DB from a snapshot
     #[tokio::test]
@@ -203,7 +283,6 @@ mod tests {
         let (k, v) = ("key".to_string(), "value".to_string());
 
         let state_machine = mock_state_machine();
-        let snap_path = state_machine.snapshot_path();
 
         // Write to the DB
         let db = state_machine.db();
@@ -212,10 +291,7 @@ mod tests {
 
         // Take a snapshot then recover from it
         state_machine.take_db_snapshot().await.unwrap();
-        let new_data_file = recover_data_from_snapshot(snap_path).await;
-
-        // Check that the recovered DB contains the same data
-        let new_db = DB::new(&DbConfig { path: new_data_file }).unwrap();
+        let new_db = state_machine.open_snap_db().await.unwrap();
         let value: String = new_db.read(TABLE, &k).unwrap().unwrap();
 
         assert_eq!(value, v);
@@ -230,7 +306,6 @@ mod tests {
         let (k2, v2) = ("key2".to_string(), "value2".to_string());
 
         let state_machine = mock_state_machine();
-        let snap_path = state_machine.snapshot_path();
         let db = state_machine.db();
 
         // Write to the DB
@@ -241,14 +316,13 @@ mod tests {
 
         // Take a snapshot then recover from it
         state_machine.take_db_snapshot().await.unwrap();
-        let new_data_file = recover_data_from_snapshot(snap_path).await;
 
         // Check that the original table still contains the excluded value
         let value: String = db.read(EXCLUDED_TABLE, &k2).unwrap().unwrap();
         assert_eq!(value, v2);
 
         // Check that the recovered DB contains the same data minus the excluded table
-        let new_db = DB::new(&DbConfig { path: new_data_file }).unwrap();
+        let new_db = state_machine.open_snap_db().await.unwrap();
         let value1: String = new_db.read(DUMMY_TABLE, &k1).unwrap().unwrap();
         let v2_err: StorageError = new_db.read::<_, String>(EXCLUDED_TABLE, &k2).err().unwrap();
 
@@ -262,7 +336,6 @@ mod tests {
     async fn test_snapshot_overwrite() {
         const TABLE: &str = "test-table";
         let state_machine = mock_state_machine();
-        let snap_path = state_machine.snapshot_path();
         let db = state_machine.db();
 
         let (k, v1) = ("key".to_string(), "value".to_string());
@@ -278,10 +351,71 @@ mod tests {
         state_machine.take_db_snapshot().await.unwrap();
 
         // Recover the DB and verify that only the second value remains
-        let new_data_file = recover_data_from_snapshot(snap_path).await;
-        let new_db = DB::new(&DbConfig { path: new_data_file }).unwrap();
+        let new_db = state_machine.open_snap_db().await.unwrap();
         let value: String = new_db.read(TABLE, &k).unwrap().unwrap();
 
         assert_eq!(value, v2);
+    }
+
+    /// Tests the helper that directly copies a DB to another
+    #[tokio::test]
+    async fn test_copy_db() {
+        // One table is included in a snapshot copy operation, one is excluded
+        const INCLUDED_TABLE: &str = WALLETS_TABLE;
+        const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
+        let (k1, v1) = ("key1".to_string(), "value1".to_string());
+        let (k2, v2) = ("key2".to_string(), "value2".to_string());
+        let (k3, v3) = ("key3".to_string(), "value3".to_string());
+
+        let src_db = mock_db();
+        let dest_db = mock_db();
+
+        // Write (k1, v1) to the excluded table of src_db, (k2, v2) to the excluded
+        // table of dest_db, and (k3, v3) to the included table of src_db
+        src_db.write(EXCLUDED_TABLE, &k1, &v1).unwrap();
+        dest_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
+        src_db.write(INCLUDED_TABLE, &k3, &v3).unwrap();
+        dest_db.write(INCLUDED_TABLE, &k3, &"overwritten".to_string()).unwrap();
+
+        // Copy the contents of one db to another
+        StateMachine::copy_db_data(&src_db, &dest_db).unwrap();
+
+        // The destination should have (k3, v3) overwritten and (k2, v2) should remain.
+        // k1 should not be present
+        let dest_k1: Option<String> = dest_db.read(EXCLUDED_TABLE, &k1).unwrap();
+        let dest_k2: String = dest_db.read(EXCLUDED_TABLE, &k2).unwrap().unwrap();
+        let dest_k3: String = dest_db.read(INCLUDED_TABLE, &k3).unwrap().unwrap();
+
+        assert_eq!(dest_k1, None);
+        assert_eq!(dest_k2, v2);
+        assert_eq!(dest_k3, v3);
+    }
+
+    /// Tests applying a snapshot to the DB
+    #[tokio::test]
+    async fn test_apply_snapshot() {
+        const INCLUDED_TABLE: &str = WALLETS_TABLE;
+        const EXCLUDED_TABLE: &str = EXCLUDED_TABLES[0];
+        let (k1, v1) = ("key1".to_string(), "value1".to_string());
+        let (k2, v2) = ("key2".to_string(), "value2".to_string());
+
+        let mut state_machine = mock_state_machine();
+        let snapshot_db = mock_db();
+        let meta = SnapshotMeta::default();
+
+        // Write to the DB
+        snapshot_db.write(INCLUDED_TABLE, &k1, &v1).unwrap();
+        snapshot_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
+
+        // Apply the snapshot
+        state_machine.update_from_snapshot(&meta, snapshot_db).await.unwrap();
+
+        // Check that the snapshot was applied correctly; only k1 should be present
+        let sm_db = state_machine.db();
+        let value1: String = sm_db.read(INCLUDED_TABLE, &k1).unwrap().unwrap();
+        let value2: Option<String> = sm_db.read(EXCLUDED_TABLE, &k2).unwrap();
+
+        assert_eq!(value1, v1);
+        assert_eq!(value2, None);
     }
 }
