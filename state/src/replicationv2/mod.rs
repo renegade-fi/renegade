@@ -5,6 +5,7 @@
 
 pub mod error;
 mod log_store;
+mod network;
 mod snapshot;
 mod state_machine;
 
