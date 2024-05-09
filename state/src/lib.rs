@@ -40,6 +40,9 @@ pub use interface::*;
 // | Constants |
 // -------------
 
+/// The number of tables to open in the database
+const NUM_TABLES: usize = 14;
+
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
 
@@ -69,6 +72,28 @@ pub(crate) const TASK_HISTORY_TABLE: &str = "task-history";
 
 /// The name of the db table that stores the offline phase values
 pub(crate) const MPC_PREPROCESSING_TABLE: &str = "mpc-preprocessing";
+
+/// The name of the raft metadata table in the database
+pub const RAFT_METADATA_TABLE: &str = "raft-metadata";
+/// The name of the raft logs table in the database
+pub const RAFT_LOGS_TABLE: &str = "raft-logs";
+/// All tables in the database
+pub const ALL_TABLES: [&str; NUM_TABLES] = [
+    NODE_METADATA_TABLE,
+    PEER_INFO_TABLE,
+    CLUSTER_MEMBERSHIP_TABLE,
+    PRIORITIES_TABLE,
+    ORDERS_TABLE,
+    ORDER_HISTORY_TABLE,
+    ORDER_TO_WALLET_TABLE,
+    WALLETS_TABLE,
+    TASK_QUEUE_TABLE,
+    TASK_TO_KEY_TABLE,
+    TASK_HISTORY_TABLE,
+    MPC_PREPROCESSING_TABLE,
+    RAFT_METADATA_TABLE,
+    RAFT_LOGS_TABLE,
+];
 
 /// The `Proposal` type wraps a state transition and the channel on which to
 /// send the result of the proposal's application
@@ -189,7 +214,8 @@ pub mod test_helpers {
     pub fn mock_db() -> DB {
         // Open the DB
         let path = tmp_db_path();
-        let config = DbConfig { path: path.to_string() };
+        // Allocate a DB with more tables than needed
+        let config = DbConfig { path: path.to_string(), num_tables: 100 };
 
         let db = DB::new(&config).unwrap();
 
