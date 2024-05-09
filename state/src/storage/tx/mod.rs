@@ -22,13 +22,7 @@ use libmdbx::{
     Error as MdbxError, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW,
 };
 
-use crate::{
-    CLUSTER_MEMBERSHIP_TABLE, MPC_PREPROCESSING_TABLE, NODE_METADATA_TABLE, ORDERS_TABLE,
-    ORDER_HISTORY_TABLE, ORDER_TO_WALLET_TABLE, PEER_INFO_TABLE, PRIORITIES_TABLE,
-    TASK_HISTORY_TABLE, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE, WALLETS_TABLE,
-};
-
-use self::raft_log::{RAFT_LOGS_TABLE, RAFT_METADATA_TABLE};
+use crate::ALL_TABLES;
 
 use super::{
     cursor::DbCursor,
@@ -93,26 +87,21 @@ impl<'db> StateTxn<'db, RW> {
         self.inner.create_table(table_name)
     }
 
+    /// Drop a table in the database
+    ///
+    /// # Safety
+    ///
+    /// This method is marked unsafe as it permanently deletes a table from the
+    /// database, care should be taken by the caller to ensure this operation
+    /// is not taken erroneously
+    #[allow(unsafe_code)]
+    pub unsafe fn drop_table(&self, table_name: &str) -> Result<(), StorageError> {
+        self.inner().drop_table(table_name)
+    }
+
     /// Create the tables used by the state interface
     pub fn setup_tables(&self) -> Result<(), StorageError> {
-        for table in [
-            PEER_INFO_TABLE,
-            CLUSTER_MEMBERSHIP_TABLE,
-            PRIORITIES_TABLE,
-            ORDERS_TABLE,
-            ORDER_HISTORY_TABLE,
-            ORDER_TO_WALLET_TABLE,
-            WALLETS_TABLE,
-            TASK_QUEUE_TABLE,
-            TASK_TO_KEY_TABLE,
-            TASK_HISTORY_TABLE,
-            MPC_PREPROCESSING_TABLE,
-            NODE_METADATA_TABLE,
-            RAFT_METADATA_TABLE,
-            RAFT_LOGS_TABLE,
-        ]
-        .iter()
-        {
+        for table in ALL_TABLES.iter() {
             self.create_table(table)?;
         }
 
@@ -355,6 +344,20 @@ impl<'db> DbTxn<'db, RW> {
         // Delete the value
         let table = self.open_table(table_name)?;
         self.txn.del(&table, key_bytes, None /* data */).map_err(StorageError::TxOp)
+    }
+
+    /// Copy the contents of a cursor into a table
+    pub fn copy_cursor_to_table<T: TransactionKind>(
+        &self,
+        table_name: &str,
+        cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
+    ) -> Result<(), StorageError> {
+        for record in cursor.into_iter() {
+            let (k, v) = record?;
+            self.write(table_name, &k, &v)?;
+        }
+
+        Ok(())
     }
 
     // -----------

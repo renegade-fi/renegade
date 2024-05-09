@@ -1,16 +1,15 @@
 //! High level transaction interface for accessing the raft log
 
-use std::cmp;
-
 use libmdbx::{TransactionKind, RW};
-use openraft::{LogId, Vote};
-use raft::eraftpb::{ConfState, HardState, Snapshot as RaftSnapshot, SnapshotMetadata};
+use openraft::{LogId, SnapshotMeta, Vote};
+use raft::eraftpb::{ConfState, HardState, Snapshot as RaftSnapshot};
 use util::res_some;
 
 use crate::{
     replication::error::ReplicationError,
-    replicationv2::{Entry, NodeId},
+    replicationv2::{Entry, Node, NodeId},
     storage::{cursor::DbCursor, error::StorageError, ProtoStorageWrapper},
+    RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
 };
 
 use super::StateTxn;
@@ -18,11 +17,6 @@ use super::StateTxn;
 // -------------
 // | Constants |
 // -------------
-
-/// The name of the raft metadata table in the database
-pub const RAFT_METADATA_TABLE: &str = "raft-metadata";
-/// The name of the raft logs table in the database
-pub const RAFT_LOGS_TABLE: &str = "raft-logs";
 
 /// The name of the raft hard state key in the KV store
 ///
@@ -37,8 +31,6 @@ pub const LAST_PURGED_LOG_KEY: &str = "last-purged-raft-log";
 /// The key for the local node's vote in the current term
 pub const LAST_VOTE_KEY: &str = "last-vote";
 /// The name of the snapshot metadata key in the KV store
-///
-/// TODO: Delete this
 pub const SNAPSHOT_METADATA_KEY: &str = "snapshot-metadata";
 
 /// The error message used when a log entry cannot be found
@@ -80,6 +72,13 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get the local node's vote in the current term
     pub fn get_last_vote(&self) -> Result<Option<Vote<NodeId>>, StorageError> {
         self.inner().read(RAFT_METADATA_TABLE, &LAST_VOTE_KEY.to_string())
+    }
+
+    /// Get the metadata of the latest snapshot
+    pub fn get_snapshot_metadata(
+        &self,
+    ) -> Result<Option<SnapshotMeta<NodeId, Node>>, StorageError> {
+        self.inner().read(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string())
     }
 
     // --- Log Access --- //
@@ -146,18 +145,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         Ok(hard_state.into_inner())
     }
 
-    /// Read the snapshot metadata from storage
-    ///
-    /// TODO: Delete this
-    pub fn read_snapshot_metadata(&self) -> Result<SnapshotMetadata, StorageError> {
-        let stored_metadata: ProtoStorageWrapper<SnapshotMetadata> = self
-            .inner()
-            .read(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string())?
-            .unwrap_or_default();
-
-        Ok(stored_metadata.into_inner())
-    }
-
     /// A helper to construct a cursor over the logs
     pub fn logs_cursor(&self) -> Result<DbCursor<'_, T, LogKeyType, LogValueType>, StorageError> {
         self.inner().cursor(RAFT_LOGS_TABLE)
@@ -179,6 +166,14 @@ impl<'db> StateTxn<'db, RW> {
     /// Set the local node's vote in the current term
     pub fn set_last_vote(&self, vote: &Vote<NodeId>) -> Result<(), StorageError> {
         self.inner().write(RAFT_METADATA_TABLE, &LAST_VOTE_KEY.to_string(), vote)
+    }
+
+    /// Set the metadata of the latest snapshot
+    pub fn set_snapshot_metadata(
+        &self,
+        metadata: &SnapshotMeta<NodeId, Node>,
+    ) -> Result<(), StorageError> {
+        self.inner().write(RAFT_METADATA_TABLE, &SNAPSHOT_METADATA_KEY.to_string(), metadata)
     }
 
     // --- Log Access --- //
@@ -248,36 +243,7 @@ impl<'db> StateTxn<'db, RW> {
     /// Apply a snapshot to the log store
     ///
     /// TODO: Delete this
-    pub fn apply_snapshot(&self, snapshot: &RaftSnapshot) -> Result<(), StorageError> {
-        let tx = self.inner();
-        let meta = snapshot.get_metadata();
-
-        // Write the `ConfState` to the metadata table
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &CONF_STATE_KEY.to_string(),
-            &ProtoStorageWrapper(meta.get_conf_state().clone()),
-        )?;
-
-        // Write the `HardState` to the metadata table
-        let new_state: ProtoStorageWrapper<HardState> =
-            tx.read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())?.unwrap_or_default();
-        let mut new_state = new_state.into_inner();
-
-        new_state.set_term(cmp::max(new_state.get_term(), meta.get_term()));
-        new_state.set_commit(meta.index);
-
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &HARD_STATE_KEY.to_string(),
-            &ProtoStorageWrapper(new_state),
-        )?;
-
-        // Write the snapshot metadata
-        tx.write(
-            RAFT_METADATA_TABLE,
-            &SNAPSHOT_METADATA_KEY.to_string(),
-            &ProtoStorageWrapper(snapshot.get_metadata().clone()),
-        )
+    pub fn apply_snapshot(&self, _snapshot: &RaftSnapshot) -> Result<(), StorageError> {
+        unimplemented!()
     }
 }
