@@ -82,6 +82,8 @@ impl RaftSnapshotBuilder<TypeConfig> for StateMachine {
             RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Read, err)
         })?;
 
+        // Store the metadata and return
+        self.write_snapshot_metadata(&meta).map_err(new_snapshot_error)?;
         Ok(Snapshot { meta, snapshot: Box::new(snapshot_file) })
     }
 }
@@ -91,23 +93,33 @@ impl StateMachine {
     // | Snapshotting |
     // ----------------
 
+    /// Write the metadata for a snapshot
+    fn write_snapshot_metadata(
+        &self,
+        meta: &SnapshotMeta<NodeId, Node>,
+    ) -> Result<(), ReplicationV2Error> {
+        let tx = self.db().new_write_tx().map_err(ReplicationV2Error::Storage)?;
+        tx.set_snapshot_metadata(meta)?;
+        tx.commit().map_err(ReplicationV2Error::Storage)?;
+
+        Ok(())
+    }
+
     /// Take a snapshot of the DB
     pub(crate) async fn take_db_snapshot(&self) -> Result<SnapshotInfo, ReplicationV2Error> {
-        let out_dir = &self.config.snapshot_out;
-
         // Start a tx to prevent writers from modifying the DB while copying
         let tx = self.db().new_read_tx().map_err(ReplicationV2Error::Storage)?;
-        let snapshot_path = self.make_data_copy(out_dir).await?;
+        let snapshot_path = self.make_data_copy().await?;
         tx.commit().map_err(ReplicationV2Error::Storage)?;
 
         // Build the snapshot
-        let location = snapshot_path.clone();
         let build_task = tokio::task::spawn_blocking(move || Self::build_snapshot(&snapshot_path));
         build_task
             .await
             .map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_BUILD.to_string()))??;
 
         // Create the snapshot info
+        let location = self.snapshot_archive_path();
         let last_log = self.last_applied_log;
         let membership = self.last_membership.clone();
         let timestamp = get_current_time_millis();
@@ -117,7 +129,7 @@ impl StateMachine {
     /// Copy the data file of the DB
     ///
     /// Returns the location at which the data was copied
-    async fn make_data_copy(&self, out_dir: &str) -> Result<PathBuf, ReplicationV2Error> {
+    async fn make_data_copy(&self) -> Result<PathBuf, ReplicationV2Error> {
         let path = PathBuf::from(self.db().path());
         let data_path = path.join(MDBX_DATA_FILE);
         let snapshot_path = self.snapshot_data_path();
@@ -177,6 +189,7 @@ impl StateMachine {
     // ----------------
 
     /// Unzip a snapshot and open a DB from the data
+    #[allow(unused)]
     pub(crate) async fn open_snap_db(&self) -> Result<DB, ReplicationV2Error> {
         // Open the file
         let zip_path = self.snapshot_archive_path();
