@@ -89,12 +89,16 @@ impl RaftLogReader<TypeConfig> for LogStore {
         &mut self,
         range: RB,
     ) -> Result<Vec<Entry>, RaftStorageError<NodeId>> {
+        let (low, high) = parse_low_high(range);
+        if low > high {
+            return Ok(Vec::new());
+        }
+
         self.with_read_tx(|tx| {
             let mut log_cursor = tx.logs_cursor()?;
-            let (low, high) = parse_low_high(range);
 
             // Read the range
-            let mut res = Vec::with_capacity((high - low) as usize);
+            let mut res = Vec::new();
             log_cursor.seek(&lsn_to_key(low))?;
             for record in log_cursor.into_iter() {
                 let (key, entry) = record?;
@@ -119,8 +123,12 @@ impl RaftLogStorage<TypeConfig> for LogStore {
         self.with_read_tx(|tx| {
             let last_purged_log_id = tx.get_last_purged_log_id()?;
             let last_log = tx.last_raft_log()?.map(|(_, entry)| entry.log_id);
+            let last_log_id = match last_log {
+                Some(x) => Some(x),
+                None => last_purged_log_id,
+            };
 
-            Ok(LogState { last_log_id: last_log, last_purged_log_id })
+            Ok(LogState { last_log_id, last_purged_log_id })
         })
         .map_err(new_log_read_error)
     }
@@ -155,7 +163,11 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
     /// Purge all logs before the given id (inclusive)
     async fn purge(&mut self, log_id: LogId<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
-        self.with_write_tx(|tx| tx.purge_logs(log_id.index)).map_err(new_log_write_error)
+        self.with_write_tx(|tx| {
+            tx.purge_logs(log_id.index)?;
+            tx.set_last_purged_log_id(&log_id)
+        })
+        .map_err(new_log_write_error)
     }
 
     async fn get_log_reader(&mut self) -> Self::LogReader {
