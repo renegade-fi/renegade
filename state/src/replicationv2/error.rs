@@ -49,6 +49,10 @@ pub fn new_snapshot_error(
 /// TODO: Rename
 #[derive(Debug)]
 pub enum ReplicationV2Error {
+    /// An error proposing a state transition
+    Proposal(String),
+    /// An error setting up a raft
+    RaftSetup(String),
     /// An error occurred while snapshotting
     Snapshot(String),
     /// An error in storage
@@ -58,6 +62,8 @@ pub enum ReplicationV2Error {
 impl Display for ReplicationV2Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ReplicationV2Error::Proposal(e) => write!(f, "Proposal error: {e}"),
+            ReplicationV2Error::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
             ReplicationV2Error::Snapshot(e) => write!(f, "Snapshot error: {e}"),
             ReplicationV2Error::Storage(e) => write!(f, "Storage error: {e}"),
         }

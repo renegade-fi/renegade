@@ -1,12 +1,7 @@
 //! Mock networking implementation for testing
 
-use openraft::error::{InstallSnapshotError, RPCError, RaftError};
-use openraft::network::RPCOption;
-use openraft::raft::{
-    AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest, InstallSnapshotResponse,
-    VoteRequest, VoteResponse,
-};
-use openraft::{RaftNetwork, RaftNetworkFactory};
+use openraft::error::{RPCError, RaftError};
+use openraft::RaftNetworkFactory;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
@@ -14,7 +9,7 @@ use tokio::sync::oneshot::{
 
 use crate::replicationv2::{Node, NodeId, TypeConfig};
 
-use super::{RaftRequest, RaftResponse};
+use super::{P2PRaftNetwork, P2PRaftNetworkWrapper, RaftRequest, RaftResponse};
 
 /// The sender type for the response queue
 pub type ResponseSender = OneshotSender<RaftResponse>;
@@ -65,44 +60,26 @@ impl MockNetworkNode {
 }
 
 impl RaftNetworkFactory<TypeConfig> for MockNetworkNode {
-    type Network = Self;
+    type Network = P2PRaftNetworkWrapper<Self>;
 
     // Fill in the target and return a clone of `self`
     async fn new_client(&mut self, target: NodeId, _node: &Node) -> Self::Network {
         let mut clone = self.clone();
         clone.target = target;
-        clone
+        P2PRaftNetworkWrapper::new(clone)
     }
 }
 
-impl RaftNetwork<TypeConfig> for MockNetworkNode {
-    async fn append_entries(
-        &mut self,
-        rpc: AppendEntriesRequest<TypeConfig>,
-        _option: RPCOption,
-    ) -> Result<AppendEntriesResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        let resp = self.send_rpc(RaftRequest::AppendEntries(rpc)).await.unwrap();
-        Ok(resp.into_append_entries())
+impl P2PRaftNetwork for MockNetworkNode {
+    fn target(&self) -> NodeId {
+        self.target
     }
 
-    async fn install_snapshot(
+    async fn send_request(
         &mut self,
-        rpc: InstallSnapshotRequest<TypeConfig>,
-        _option: RPCOption,
-    ) -> Result<
-        InstallSnapshotResponse<NodeId>,
-        RPCError<NodeId, Node, RaftError<NodeId, InstallSnapshotError>>,
-    > {
-        let resp = self.send_rpc(RaftRequest::InstallSnapshot(rpc)).await.unwrap();
-        Ok(resp.into_install_snapshot())
-    }
-
-    async fn vote(
-        &mut self,
-        rpc: VoteRequest<NodeId>,
-        _option: RPCOption,
-    ) -> Result<VoteResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        let resp = self.send_rpc(RaftRequest::Vote(rpc)).await.unwrap();
-        Ok(resp.into_vote())
+        _target: NodeId,
+        request: RaftRequest,
+    ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
+        self.send_rpc(request).await
     }
 }
