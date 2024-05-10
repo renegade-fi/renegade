@@ -9,7 +9,7 @@ mod network;
 mod snapshot;
 mod state_machine;
 
-use openraft::{EmptyNode, RaftTypeConfig};
+use openraft::{EmptyNode, Raft as RaftInner, RaftTypeConfig};
 
 use crate::StateTransition;
 
@@ -17,7 +17,7 @@ use crate::StateTransition;
 openraft::declare_raft_types! (
     /// The type config for the raft
     pub TypeConfig:
-        D = StateTransition,
+        D = Box<StateTransition>,
         R = (), // Response
         Node = EmptyNode,
         SnapshotData = tokio::fs::File,
@@ -31,33 +31,186 @@ pub type NodeId = <TypeConfig as RaftTypeConfig>::NodeId;
 pub type Node = <TypeConfig as RaftTypeConfig>::Node;
 /// A type alias for the snapshot data type
 pub type SnapshotData = <TypeConfig as RaftTypeConfig>::SnapshotData;
+/// A raft using our type config
+pub type Raft = RaftInner<TypeConfig>;
 
 #[cfg(test)]
 pub mod test_helpers {
-    use crate::applicator::test_helpers::mock_applicator;
+    use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
-    use super::state_machine::{StateMachine, StateMachineConfig};
+    use futures::stream::StreamExt;
+    use openraft::Config as RaftConfig;
+    use tokio_stream::{wrappers::UnboundedReceiverStream, StreamMap};
+
+    use crate::{applicator::test_helpers::mock_applicator, storage::db::DB};
+
+    use super::{
+        log_store::LogStore,
+        network::{
+            mock::{new_switch_queue, MockNetworkNode, SwitchReceiver},
+            RaftRequest, RaftResponse,
+        },
+        state_machine::{StateMachine, StateMachineConfig},
+        NodeId, Raft,
+    };
+
+    /// The timeout which mock rafts wait for leader election
+    const WAIT_FOR_ELECTION: u64 = 100; // 100 ms
 
     /// Create a mock state machine
     pub fn mock_state_machine() -> StateMachine {
-        let app = mock_applicator();
-        let db = app.config.db.clone();
-        let state_config = StateMachineConfig::new(db.path().to_string());
+        let (sm, _) = mock_state_and_log();
+        sm
+    }
 
-        StateMachine::new(state_config, app)
+    /// Create a mock state machine and log store
+    pub fn mock_state_and_log() -> (StateMachine, LogStore) {
+        let applicator = mock_applicator();
+        let db = applicator.config.db.clone();
+        let sm_config = StateMachineConfig::new(db.path().to_string());
+        let sm = StateMachine::new(sm_config, applicator);
+        let log = LogStore::new(db);
+
+        (sm, log)
+    }
+
+    /// Get the config for a mock raft
+    pub fn mock_raft_config() -> RaftConfig {
+        // All timeouts in ms
+        RaftConfig {
+            cluster_name: "mock-cluster".to_string(),
+            election_timeout_min: 10,
+            election_timeout_max: 15,
+            heartbeat_interval: 5,
+            ..Default::default()
+        }
+    }
+
+    /// A mock raft node created by the `MockRaft`
+    #[derive(Clone)]
+    pub struct MockRaftNode {
+        /// The raft
+        raft: Raft,
+        /// The db of the raft
+        db: Arc<DB>,
+    }
+
+    impl MockRaftNode {
+        /// Constructor
+        pub fn new(raft: Raft, db: Arc<DB>) -> Self {
+            Self { raft, db }
+        }
+        /// Get the raft
+        pub fn get_raft(&self) -> &Raft {
+            &self.raft
+        }
+
+        /// Get the db
+        pub fn get_db(&self) -> &DB {
+            &self.db
+        }
+    }
+
+    /// A network switch in between rafts
+    pub struct MockRaft {
+        /// The receivers from network nodes in the raft
+        receivers: Vec<SwitchReceiver>,
+        /// The rafts in the network
+        rafts: Vec<Raft>,
+    }
+
+    impl MockRaft {
+        /// Create a mock raft with a single node
+        pub async fn create_singleton_raft() -> MockRaftNode {
+            let rafts = Self::create_raft(1).await;
+            rafts[0].clone()
+        }
+
+        /// Create a mock raft network with `n_nodes` nodes and return the rafts
+        /// in use
+        pub async fn create_raft(n_nodes: usize) -> Vec<MockRaftNode> {
+            let mut receivers = Vec::with_capacity(n_nodes);
+            let mut nodes = Vec::with_capacity(n_nodes);
+            let config = Arc::new(mock_raft_config());
+            let node_ids: BTreeSet<NodeId> = (0..n_nodes as u64).collect();
+
+            for i in 0..n_nodes as u64 {
+                let (send, recv) = new_switch_queue();
+                receivers.push(recv);
+
+                let mock_net = MockNetworkNode::new(send);
+                let (sm, log) = mock_state_and_log();
+                let db = log.db.clone();
+                let raft = Raft::new(i, config.clone(), mock_net, log, sm).await.unwrap();
+                raft.initialize(node_ids.clone()).await.unwrap();
+                nodes.push(MockRaftNode::new(raft, db));
+            }
+
+            // Spawn a thread to manage the network switch
+            let rafts = nodes.iter().cloned().map(|n| n.raft).collect();
+            let this = Self { receivers, rafts };
+            tokio::spawn(this.run());
+            tokio::time::sleep(Duration::from_millis(WAIT_FOR_ELECTION)).await;
+
+            nodes
+        }
+
+        /// The event loop for the network switch
+        async fn run(mut self) {
+            let mut stream_map = StreamMap::new();
+            for (i, receiver) in self.receivers.drain(..).enumerate() {
+                let stream = UnboundedReceiverStream::new(receiver);
+                stream_map.insert(i, stream);
+            }
+
+            loop {
+                let (_from, (to, req, chan)) = stream_map.next().await.unwrap();
+                let resp = self.forward_req(to as usize, req).await;
+                let _ = chan.send(resp);
+            }
+        }
+
+        /// Forward a request to the receiver's raft
+        ///
+        /// This method panics on errors in the receiver at the moment, this is
+        /// okay for tests, but the main implementation should handle failures
+        async fn forward_req(&self, to: usize, req: RaftRequest) -> RaftResponse {
+            let raft = &self.rafts[to];
+            match req {
+                RaftRequest::AppendEntries(req) => {
+                    let resp = raft.append_entries(req).await.unwrap();
+                    RaftResponse::AppendEntries(resp)
+                },
+                RaftRequest::InstallSnapshot(req) => {
+                    let resp = raft.install_snapshot(req).await.unwrap();
+                    RaftResponse::InstallSnapshot(resp)
+                },
+                RaftRequest::Vote(req) => {
+                    let resp = raft.vote(req).await.unwrap();
+                    RaftResponse::Vote(resp)
+                },
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
 
-    use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
+    use std::time::Duration;
 
-    use crate::applicator::test_helpers::mock_applicator;
+    use common::types::wallet_mocks::mock_empty_wallet;
+    use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
+    use rand::{seq::IteratorRandom, thread_rng};
+    use tracing::Level;
+    use util::telemetry::{setup_system_logger, LevelFilter};
+
+    use crate::StateTransition;
 
     use super::{
         log_store::LogStore,
-        state_machine::{StateMachine, StateMachineConfig},
+        state_machine::StateMachine,
+        test_helpers::{mock_state_and_log, MockRaft},
         NodeId, TypeConfig,
     };
 
@@ -66,12 +219,8 @@ mod test {
     struct StorageBuilder;
     impl StoreBuilder<TypeConfig, LogStore, StateMachine> for StorageBuilder {
         async fn build(&self) -> Result<((), LogStore, StateMachine), RaftStorageError<NodeId>> {
-            let app = mock_applicator();
-            let db = app.config.db.clone();
-            let state_config = StateMachineConfig::new(db.path().to_string());
-            let store = LogStore::new(db);
-
-            Ok(((), store, StateMachine::new(state_config, app)))
+            let (sm, log) = mock_state_and_log();
+            Ok(((), log, sm))
         }
     }
 
@@ -80,5 +229,49 @@ mod test {
     #[test]
     fn test_openraft_suite() {
         openraft::testing::Suite::test_all(StorageBuilder).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_raft_singleton() {
+        let node = MockRaft::create_singleton_raft().await;
+        let wallet = mock_empty_wallet();
+
+        // Propose a new wallet to the raft
+        let id = wallet.wallet_id;
+        node.get_raft()
+            .client_write(Box::new(StateTransition::AddWallet { wallet }))
+            .await
+            .unwrap();
+
+        let tx = node.get_db().new_read_tx().unwrap();
+        let wallet = tx.get_wallet(&id).unwrap();
+        assert!(wallet.is_some());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 10)]
+    async fn test_simple_raft_cluster() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
+
+        // Setup a raft
+        let nodes = MockRaft::create_raft(N).await;
+        let leader = nodes[0].get_raft().current_leader().await;
+        let leader = match leader {
+            Some(leader) => leader,
+            None => panic!("no leader in raft"),
+        };
+
+        // Propose a wallet to the leader
+        let target_raft = &nodes[leader as usize].get_raft();
+        let wallet = mock_empty_wallet();
+        let wallet_id = wallet.wallet_id;
+        target_raft.client_write(Box::new(StateTransition::AddWallet { wallet })).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check a random node's DB to ensure the wallet exists
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let tx = nodes[nid].get_db().new_read_tx().unwrap();
+        let wallet = tx.get_wallet(&wallet_id).unwrap();
+        assert!(wallet.is_some());
     }
 }
