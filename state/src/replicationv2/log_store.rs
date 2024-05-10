@@ -50,7 +50,7 @@ fn parse_low_high<B: RangeBounds<u64>>(bound: B) -> (u64, u64) {
 #[derive(Clone)]
 pub struct LogStore {
     /// The handle to the DB
-    db: Arc<DB>,
+    pub(crate) db: Arc<DB>,
 }
 
 impl LogStore {
