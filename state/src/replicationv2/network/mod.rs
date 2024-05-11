@@ -4,8 +4,6 @@ mod address_translation;
 #[cfg(test)]
 pub mod mock;
 
-use std::{fmt::Display, marker::PhantomData};
-
 use openraft::{
     add_async_trait,
     error::{InstallSnapshotError, RPCError, RaftError, RemoteError},
@@ -14,9 +12,11 @@ use openraft::{
         AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest,
         InstallSnapshotResponse, VoteRequest, VoteResponse,
     },
-    RaftNetwork, RaftNetworkFactory, RaftTypeConfig,
+    RaftNetwork, RaftNetworkFactory,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::StateTransition;
 
 use super::{Node, NodeId, TypeConfig};
 
@@ -33,11 +33,15 @@ pub enum RaftRequest {
     InstallSnapshot(InstallSnapshotRequest<TypeConfig>),
     /// A request to vote
     Vote(VoteRequest<NodeId>),
+    /// A proposal forwarded to the leader
+    ForwardedProposal(StateTransition),
 }
 
 /// The response type a raft node may send to another
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RaftResponse {
+    /// A simple ack when no data must be returned
+    Ack,
     /// A response to an append entries request
     AppendEntries(AppendEntriesResponse<NodeId>),
     /// A response to an install snapshot request
@@ -89,7 +93,7 @@ pub trait P2PRaftNetwork: 'static + Sync + Send {
     fn target(&self) -> NodeId;
     /// Send an request to the target node
     async fn send_request(
-        &mut self,
+        &self,
         target: NodeId,
         request: RaftRequest,
     ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>>;
