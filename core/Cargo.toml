@@ -36,7 +36,7 @@ util = { path = "../util" }
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }
 ethers = { workspace = true }
-lazy_static = "1.4"
+lazy_static = { workspace = true }
 tracing = { workspace = true }
 opentelemetry = { version = "0.21", default-features = false, features = [
     "trace",

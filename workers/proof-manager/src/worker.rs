@@ -40,8 +40,6 @@ impl Worker for ProofManager {
     where
         Self: Sized,
     {
-        // TODO: Initialize pkeys/vkeys for all circuits
-
         // Build a thread pool for the worker
         let proof_generation_thread_pool = ThreadPoolBuilder::new()
             .thread_name(|i| format!("{}-{}", WORKER_THREAD_PREFIX, i))

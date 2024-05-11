@@ -35,7 +35,7 @@ renegade-crypto = { path = "../renegade-crypto" }
 # === Misc === #
 byteorder = "1.5"
 itertools = "0.10"
-lazy_static = "1.4"
+lazy_static = { workspace = true }
 serde = { workspace = true, features = ["serde_derive"] }
 serde_json = "1.0"
 

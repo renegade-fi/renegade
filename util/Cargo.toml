@@ -54,4 +54,4 @@ metrics-exporter-statsd = "0.7"
 metrics-tracing-context = "0.15"
 
 [dev-dependencies]
-lazy_static = "1.4"
+lazy_static = { workspace = true }
