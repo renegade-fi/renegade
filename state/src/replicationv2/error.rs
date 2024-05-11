@@ -53,6 +53,8 @@ pub enum ReplicationV2Error {
     Proposal(String),
     /// An error setting up a raft
     RaftSetup(String),
+    /// An error tearing down a raft
+    RaftTeardown(String),
     /// An error occurred while snapshotting
     Snapshot(String),
     /// An error in storage
@@ -64,6 +66,7 @@ impl Display for ReplicationV2Error {
         match self {
             ReplicationV2Error::Proposal(e) => write!(f, "Proposal error: {e}"),
             ReplicationV2Error::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
+            ReplicationV2Error::RaftTeardown(e) => write!(f, "Raft teardown error: {e}"),
             ReplicationV2Error::Snapshot(e) => write!(f, "Snapshot error: {e}"),
             ReplicationV2Error::Storage(e) => write!(f, "Storage error: {e}"),
         }
