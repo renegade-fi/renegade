@@ -17,6 +17,10 @@ use super::{
 
 /// The name of the main worker thread
 const MAIN_THREAD_NAME: &str = "proof-generation-main";
+/// The name prefix for worker threads
+const WORKER_THREAD_PREFIX: &str = "proof-generation-worker";
+/// The stack size for worker threads
+const WORKER_STACK_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 
 /// The configuration of the manager, used to hold work queues and tunables
 #[derive(Clone, Debug)]
@@ -36,8 +40,12 @@ impl Worker for ProofManager {
     where
         Self: Sized,
     {
+        // TODO: Initialize pkeys/vkeys for all circuits
+
         // Build a thread pool for the worker
         let proof_generation_thread_pool = ThreadPoolBuilder::new()
+            .thread_name(|i| format!("{}-{}", WORKER_THREAD_PREFIX, i))
+            .stack_size(WORKER_STACK_SIZE)
             .num_threads(PROOF_GENERATION_N_THREADS)
             .build()
             .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
