@@ -4,6 +4,7 @@
 
 use std::{sync::Arc, thread::JoinHandle};
 
+use circuit_types::traits::{setup_preprocessed_keys, SingleProverCircuit};
 use circuits::{
     singleprover_prove_with_hint,
     zk_circuits::{
@@ -38,12 +39,14 @@ use common::types::{proof_bundles::ProofBundle, CancelChannel};
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
 use tracing::{error, info, info_span, instrument};
+use util::err_str;
 
 use super::error::ProofManagerError;
 
 // -------------
 // | Constants |
 // -------------
+
 /// Error message when sending a proof response fails
 const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
 /// The number of threads to allocate towards the proof generation worker pool
@@ -76,6 +79,9 @@ impl ProofManager {
         thread_pool: Arc<ThreadPool>,
         cancel_channel: CancelChannel,
     ) -> Result<(), ProofManagerError> {
+        // Preprocess the circuits
+        ProofManager::preprocess_circuits()?;
+
         loop {
             // Check the cancel channel before blocking on a job
             if cancel_channel
@@ -146,6 +152,35 @@ impl ProofManager {
         job.response_channel
             .send(proof_bundle)
             .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
+    }
+
+    /// Initialize the proving key/verification key & circuit layout caches for
+    /// all of the circuits
+    pub(crate) fn preprocess_circuits() -> Result<(), ProofManagerError> {
+        // Set up the proving & verification keys for all of the circuits
+        setup_preprocessed_keys::<SizedValidWalletCreate>();
+        setup_preprocessed_keys::<SizedValidWalletUpdate>();
+        setup_preprocessed_keys::<SizedValidCommitments>();
+        setup_preprocessed_keys::<SizedValidReblind>();
+        setup_preprocessed_keys::<SizedValidMatchSettle>();
+        setup_preprocessed_keys::<SizedValidRelayerFeeSettlement>();
+        setup_preprocessed_keys::<SizedValidOfflineFeeSettlement>();
+        setup_preprocessed_keys::<SizedValidFeeRedemption>();
+
+        // Set up layouts for all of the circuits
+        SizedValidWalletCreate::get_circuit_layout().map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidWalletUpdate::get_circuit_layout().map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidCommitments::get_circuit_layout().map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidReblind::get_circuit_layout().map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidMatchSettle::get_circuit_layout().map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidRelayerFeeSettlement::get_circuit_layout()
+            .map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidOfflineFeeSettlement::get_circuit_layout()
+            .map_err(err_str!(ProofManagerError::Setup))?;
+        SizedValidFeeRedemption::get_circuit_layout()
+            .map_err(err_str!(ProofManagerError::Setup))?;
+
+        Ok(())
     }
 
     /// Create a proof of `VALID WALLET CREATE`

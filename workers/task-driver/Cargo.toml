@@ -60,7 +60,7 @@ colored = "2"
 eyre = { workspace = true }
 inventory = "0.3"
 
-lazy_static = "1.4"
+lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }

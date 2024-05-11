@@ -40,7 +40,7 @@ test-helpers = { path = "../test-helpers", optional = true }
 crossterm = "0.27"
 itertools = "0.10"
 fxhash = "0.2"
-lazy_static = "1.4.0"
+lazy_static = { workspace = true }
 libp2p = { workspace = true }
 rand = "0.8"
 serde_json = "1.0"

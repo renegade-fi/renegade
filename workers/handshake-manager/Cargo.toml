@@ -33,7 +33,7 @@ renegade-metrics = { path = "../../renegade-metrics" }
 # === Misc Dependencies === #
 ark-serialize = "0.4"
 itertools = "0.11"
-lazy_static = "1.4"
+lazy_static = { workspace = true }
 lru = "0.11"
 portpicker = "0.1"
 rand = { workspace = true }
@@ -47,7 +47,7 @@ colored = "2"
 eyre = { workspace = true }
 inventory = "0.3"
 
-lazy_static = "1.4"
+lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }

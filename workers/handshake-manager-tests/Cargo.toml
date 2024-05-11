@@ -33,7 +33,7 @@ util = { path = "../../util" }
 ark-mpc = { workspace = true }
 base64 = "0.13"
 ethers = { workspace = true }
-lazy_static = "1.4"
+lazy_static = { workspace = true }
 tracing = { workspace = true }
 num-bigint = "0.4"
 rand = { workspace = true }
