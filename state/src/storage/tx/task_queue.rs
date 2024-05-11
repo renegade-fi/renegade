@@ -116,6 +116,20 @@ impl<'db> StateTxn<'db, RW> {
         Ok(res)
     }
 
+    /// Clear the task queue, returning the tasks that were in it
+    pub fn clear_task_queue(&self, key: &TaskQueueKey) -> Result<Vec<QueuedTask>, StorageError> {
+        let tasks: Vec<QueuedTask> = self.read_task_deque(key)?.into();
+        for task in &tasks {
+            // Remove the mapping from the task to the queue key
+            self.inner().delete(TASK_TO_KEY_TABLE, &task.id)?;
+        }
+
+        // Remove all the tasks from the queue
+        self.clear_queue::<_, QueuedTask>(TASK_QUEUE_TABLE, key)?;
+
+        Ok(tasks)
+    }
+
     /// Transition the state of the top task in the queue
     pub fn transition_task(
         &self,
@@ -146,7 +160,9 @@ impl<'db> StateTxn<'db, RW> {
 
 #[cfg(test)]
 mod test {
-    use common::types::tasks::{mocks::mock_queued_task, QueuedTaskState, TaskQueueKey};
+    use common::types::tasks::{
+        mocks::mock_queued_task, QueuedTask, QueuedTaskState, TaskQueueKey,
+    };
 
     use crate::{test_helpers::mock_db, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE};
 
@@ -345,5 +361,43 @@ mod test {
         let paused = tx.is_queue_paused(&key).unwrap();
         tx.commit().unwrap();
         assert!(!paused);
+    }
+
+    /// Tests clearing the task queue
+    #[test]
+    fn test_clear_queue() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_QUEUE_TABLE).unwrap();
+
+        // Add a few tasks to the queue
+        let key = TaskQueueKey::new_v4();
+        let n = 10;
+
+        let tasks: Vec<QueuedTask> = (0..n).map(|_| mock_queued_task(key)).collect();
+
+        let tx = db.new_write_tx().unwrap();
+        for task in &tasks {
+            tx.add_task(&key, task).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Clear the task queue
+        let tx = db.new_write_tx().unwrap();
+        let cleared_tasks = tx.clear_task_queue(&key).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the right tasks were cleared,
+        // and that their states are "failed"
+        assert_eq!(cleared_tasks.len(), n);
+        for (task, cleared_task) in tasks.iter().zip(cleared_tasks.iter()) {
+            assert_eq!(task.id, cleared_task.id);
+        }
+
+        // Check the queue is empty
+        let tx = db.new_read_tx().unwrap();
+        let tasks = tx.get_queued_tasks(&key).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(tasks.len(), 0);
     }
 }
