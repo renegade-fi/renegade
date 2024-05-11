@@ -45,18 +45,6 @@ impl MockNetworkNode {
     pub fn new(sender: SwitchSender) -> Self {
         Self { target: 0, switch_sender: sender }
     }
-
-    /// Send an RPC to the switch
-    pub async fn send_rpc(
-        &mut self,
-        rpc: RaftRequest,
-    ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        let (send, recv) = new_response_queue();
-        self.switch_sender.send((self.target, rpc, send)).expect("channel closed");
-
-        let resp = recv.await.unwrap();
-        Ok(resp)
-    }
 }
 
 impl RaftNetworkFactory<TypeConfig> for MockNetworkNode {
@@ -76,10 +64,14 @@ impl P2PRaftNetwork for MockNetworkNode {
     }
 
     async fn send_request(
-        &mut self,
-        _target: NodeId,
+        &self,
+        target: NodeId,
         request: RaftRequest,
     ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        self.send_rpc(request).await
+        let (send, recv) = new_response_queue();
+        self.switch_sender.send((target, request, send)).expect("channel closed");
+
+        let resp = recv.await.unwrap();
+        Ok(resp)
     }
 }

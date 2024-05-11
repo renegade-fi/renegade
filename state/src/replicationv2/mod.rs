@@ -53,7 +53,7 @@ pub mod test_helpers {
         },
         raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
-        NodeId, Raft,
+        NodeId,
     };
 
     /// The timeout which mock rafts wait for leader election
@@ -127,7 +127,7 @@ pub mod test_helpers {
         /// The receivers from network nodes in the raft
         receivers: Vec<SwitchReceiver>,
         /// The rafts in the network
-        rafts: Vec<Raft>,
+        rafts: Vec<RaftClient<MockNetworkNode>>,
     }
 
     impl MockRaft {
@@ -160,7 +160,7 @@ pub mod test_helpers {
             }
 
             // Spawn a thread to manage the network switch
-            let rafts = nodes.iter().cloned().map(|n| n.get_client().raft().clone()).collect();
+            let rafts = nodes.iter().map(|n| n.get_client().clone()).collect_vec();
             let this = Self { receivers, rafts };
             tokio::spawn(this.run());
             tokio::time::sleep(Duration::from_millis(WAIT_FOR_ELECTION)).await;
@@ -178,8 +178,11 @@ pub mod test_helpers {
 
             loop {
                 let (_from, (to, req, chan)) = stream_map.next().await.unwrap();
-                let resp = self.forward_req(to as usize, req).await;
-                let _ = chan.send(resp);
+                let client = self.rafts[to as usize].clone();
+                tokio::spawn(async {
+                    let resp = Self::forward_req(client, req).await;
+                    chan.send(resp)
+                });
             }
         }
 
@@ -187,20 +190,26 @@ pub mod test_helpers {
         ///
         /// This method panics on errors in the receiver at the moment, this is
         /// okay for tests, but the main implementation should handle failures
-        async fn forward_req(&self, to: usize, req: RaftRequest) -> RaftResponse {
-            let raft = &self.rafts[to];
+        async fn forward_req(
+            client: RaftClient<MockNetworkNode>,
+            req: RaftRequest,
+        ) -> RaftResponse {
             match req {
                 RaftRequest::AppendEntries(req) => {
-                    let resp = raft.append_entries(req).await.unwrap();
+                    let resp = client.raft().append_entries(req).await.unwrap();
                     RaftResponse::AppendEntries(resp)
                 },
                 RaftRequest::InstallSnapshot(req) => {
-                    let resp = raft.install_snapshot(req).await.unwrap();
+                    let resp = client.raft().install_snapshot(req).await.unwrap();
                     RaftResponse::InstallSnapshot(Ok(resp))
                 },
                 RaftRequest::Vote(req) => {
-                    let resp = raft.vote(req).await.unwrap();
+                    let resp = client.raft().vote(req).await.unwrap();
                     RaftResponse::Vote(resp)
+                },
+                RaftRequest::ForwardedProposal(update) => {
+                    client.propose_transition(update).await.unwrap();
+                    RaftResponse::Ack
                 },
             }
         }
@@ -256,8 +265,9 @@ mod test {
         assert!(wallet.is_some());
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn test_simple_raft_cluster() {
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn test_simple_raft__propose_leader() {
         const N: usize = 5;
         let mut rng = thread_rng();
 
@@ -271,6 +281,34 @@ mod test {
 
         // Propose a wallet to the leader
         let target_raft = &nodes[leader as usize].get_client();
+        let wallet = mock_empty_wallet();
+        let wallet_id = wallet.wallet_id;
+        target_raft.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check a random node's DB to ensure the wallet exists
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let tx = nodes[nid].get_db().new_read_tx().unwrap();
+        let wallet = tx.get_wallet(&wallet_id).unwrap();
+        assert!(wallet.is_some());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 5)]
+    #[allow(non_snake_case)]
+    async fn test_simple_raft__propose_random() {
+        const N: usize = 5;
+        let mut rng = thread_rng();
+
+        // Setup a raft
+        let nodes = MockRaft::create_raft(N).await;
+        let leader = nodes[0].get_client().leader().await;
+        if leader.is_none() {
+            panic!("no leader in raft");
+        }
+
+        // Propose a wallet update to a random node
+        let nid = (0..N).choose(&mut rng).unwrap();
+        let target_raft = nodes[nid].get_client();
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
         target_raft.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
