@@ -1,6 +1,6 @@
 //! Mock networking implementation for testing
 
-use openraft::error::{RPCError, RaftError};
+use openraft::error::{RPCError, RaftError, Unreachable};
 use openraft::RaftNetworkFactory;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot::{
@@ -71,7 +71,6 @@ impl P2PRaftNetwork for MockNetworkNode {
         let (send, recv) = new_response_queue();
         self.switch_sender.send((target, request, send)).expect("channel closed");
 
-        let resp = recv.await.unwrap();
-        Ok(resp)
+        recv.await.map_err(|e| RPCError::Unreachable(Unreachable::new(&e)))
     }
 }
