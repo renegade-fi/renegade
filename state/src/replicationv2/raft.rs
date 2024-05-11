@@ -5,16 +5,12 @@ use std::{collections::BTreeSet, sync::Arc};
 use openraft::{Config as RaftConfig, RaftNetworkFactory};
 use util::err_str;
 
-use crate::{
-    applicator::{StateApplicator, StateApplicatorConfig},
-    storage::db::DB,
-    StateTransition,
-};
+use crate::{applicator::StateApplicator, storage::db::DB, StateTransition};
 
 use super::{
     error::ReplicationV2Error,
     log_store::LogStore,
-    network::{P2PRaftNetwork, P2PRaftNetworkWrapper},
+    network::{P2PRaftNetwork, RaftRequest},
     state_machine::{StateMachine, StateMachineConfig},
     NodeId, Raft, TypeConfig,
 };
@@ -27,6 +23,9 @@ const DEFAULT_HEARTBEAT_INTERVAL: u64 = 1000; // 1 second
 const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10000; // 10 seconds
 /// The default election timeout max
 const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15000; // 15 seconds
+
+/// Error message emitted when there is no known leader
+const ERR_NO_LEADER: &str = "no leader";
 
 /// The config for the raft client
 #[derive(Clone)]
@@ -60,14 +59,16 @@ impl Default for RaftClientConfig {
 
 /// A client interface to the raft
 #[derive(Clone)]
-pub struct RaftClient<N: RaftNetworkFactory<TypeConfig>> {
+pub struct RaftClient<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> {
+    /// The client's config
+    config: RaftClientConfig,
     /// The inner raft
     raft: Raft,
     /// The network to use for the raft client
     net: N,
 }
 
-impl<N: RaftNetworkFactory<TypeConfig> + Clone> RaftClient<N> {
+impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
     /// Create a new raft client
     pub async fn new(
         config: RaftClientConfig,
@@ -76,7 +77,7 @@ impl<N: RaftNetworkFactory<TypeConfig> + Clone> RaftClient<N> {
         applicator: StateApplicator,
     ) -> Result<Self, ReplicationV2Error> {
         let raft_config = Arc::new(RaftConfig {
-            cluster_name: config.cluster_name,
+            cluster_name: config.cluster_name.clone(),
             heartbeat_interval: config.heartbeat_interval,
             election_timeout_min: config.election_timeout_min,
             election_timeout_max: config.election_timeout_max,
@@ -92,7 +93,7 @@ impl<N: RaftNetworkFactory<TypeConfig> + Clone> RaftClient<N> {
             .map_err(err_str!(ReplicationV2Error::RaftSetup))?;
 
         // Initialize the raft
-        let mut initial_nodes = config.initial_nodes;
+        let mut initial_nodes = config.initial_nodes.clone();
         if !initial_nodes.contains(&config.id) {
             initial_nodes.push(config.id);
         }
@@ -100,12 +101,17 @@ impl<N: RaftNetworkFactory<TypeConfig> + Clone> RaftClient<N> {
         let members = initial_nodes.iter().copied().collect::<BTreeSet<_>>();
         raft.initialize(members).await.map_err(err_str!(ReplicationV2Error::RaftSetup))?;
 
-        Ok(Self { raft, net })
+        Ok(Self { config, raft, net })
     }
 
     /// Get the inner raft
     pub fn raft(&self) -> &Raft {
         &self.raft
+    }
+
+    /// Get the node ID of the local raft
+    pub fn node_id(&self) -> NodeId {
+        self.config.id
     }
 
     /// Get the current leader
@@ -118,6 +124,22 @@ impl<N: RaftNetworkFactory<TypeConfig> + Clone> RaftClient<N> {
         &self,
         update: StateTransition,
     ) -> Result<(), ReplicationV2Error> {
+        // If the current node is not the leader, forward to the leader
+        let leader = self
+            .leader()
+            .await
+            .ok_or_else(|| ReplicationV2Error::Proposal(ERR_NO_LEADER.to_string()))?;
+        if leader != self.node_id() {
+            let msg = RaftRequest::ForwardedProposal(update);
+            self.net
+                .send_request(leader, msg)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+
+            return Ok(());
+        }
+
+        // Otherwise handle the proposal locally on the leader
         self.raft
             .client_write(Box::new(update))
             .await
