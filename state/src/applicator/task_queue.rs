@@ -10,7 +10,7 @@ use external_api::{
     types::ApiHistoricalTask,
 };
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
-use libmdbx::TransactionKind;
+use libmdbx::{TransactionKind, RW};
 use tracing::{error, instrument, warn};
 use util::err_str;
 
@@ -71,8 +71,12 @@ impl StateApplicator {
         let mut task =
             tx.pop_task(&key)?.ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
-        if let Some(t) = HistoricalTask::from_queued_task(key, task.clone()) {
-            tx.append_task_to_history(&key, t)?;
+        Self::maybe_append_historical_task(key, task.clone(), &tx)?;
+
+        // If the task failed, clear the rest of the queue, as subsequent tasks will
+        // likely have invalid state
+        if !success {
+            self.clear_task_queue(key, &tx)?;
         }
 
         // If the queue is non-empty, start the next task
@@ -161,8 +165,12 @@ impl StateApplicator {
         tx.resume_task_queue(&key)?;
         let mut task = tx.pop_task(&key)?.expect("expected preemptive task");
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
-        if let Some(t) = HistoricalTask::from_queued_task(key, task.clone()) {
-            tx.append_task_to_history(&key, t)?;
+        Self::maybe_append_historical_task(key, task.clone(), &tx)?;
+
+        // If the task failed, clear the rest of the queue, as subsequent tasks will
+        // likely have invalid state
+        if !success {
+            self.clear_task_queue(key, &tx)?;
         }
 
         // Start running the first task if it exists
@@ -276,6 +284,35 @@ impl StateApplicator {
                     error!("error enqueueing internal matching engine job for order {order_id}");
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    /// Append a task to the task history if it should be stored
+    fn maybe_append_historical_task(
+        key: TaskQueueKey,
+        task: QueuedTask,
+        tx: &StateTxn<'_, RW>,
+    ) -> Result<()> {
+        if let Some(t) = HistoricalTask::from_queued_task(key, task) {
+            tx.append_task_to_history(&key, t)?;
+        }
+
+        Ok(())
+    }
+
+    /// Clear all tasks from a task queue, recording them historically as
+    /// "failed"
+    fn clear_task_queue(&self, key: TaskQueueKey, tx: &StateTxn<'_, RW>) -> Result<()> {
+        // Remove all tasks from queue in storage
+        let cleared_tasks = tx.clear_task_queue(&key)?;
+
+        // Mark all tasks as failed, append to history, and publish updates
+        for mut task in cleared_tasks {
+            task.state = QueuedTaskState::Failed;
+            Self::maybe_append_historical_task(key, task.clone(), tx)?;
+            self.publish_task_updates(key, &task);
         }
 
         Ok(())

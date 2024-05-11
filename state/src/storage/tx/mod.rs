@@ -222,6 +222,17 @@ impl<'db> StateTxn<'db, RW> {
 
         Ok(value)
     }
+
+    /// Clear a queue
+    ///
+    /// Assumes the underlying queue is represented by a `VecDeque`
+    pub(crate) fn clear_queue<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+    ) -> Result<(), StorageError> {
+        self.write_queue(table_name, key, &VecDeque::<V>::new())
+    }
 }
 
 // -------------------------
