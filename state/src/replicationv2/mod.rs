@@ -12,13 +12,13 @@ mod state_machine;
 
 use openraft::{EmptyNode, Raft as RaftInner, RaftTypeConfig};
 
-use crate::StateTransition;
+use crate::Proposal;
 
 // Declare the types config for the raft
 openraft::declare_raft_types! (
     /// The type config for the raft
     pub TypeConfig:
-        D = Box<StateTransition>,
+        D = Proposal,
         R = (), // Response
         Node = EmptyNode,
         SnapshotData = tokio::fs::File,
@@ -46,7 +46,10 @@ pub mod test_helpers {
     use common::{new_async_shared, AsyncShared};
     use itertools::Itertools;
 
-    use crate::{applicator::test_helpers::mock_applicator, storage::db::DB};
+    use crate::{
+        applicator::test_helpers::mock_applicator, notifications::OpenNotifications,
+        storage::db::DB,
+    };
 
     use super::{
         log_store::LogStore,
@@ -77,7 +80,8 @@ pub mod test_helpers {
         let applicator = mock_applicator();
         let db = applicator.config.db.clone();
         let sm_config = StateMachineConfig::new(db.path().to_string());
-        let sm = StateMachine::new(sm_config, applicator);
+        let notifications = OpenNotifications::new();
+        let sm = StateMachine::new(sm_config, notifications, applicator);
         let log = LogStore::new(db);
 
         (sm, log)
@@ -164,8 +168,10 @@ pub mod test_helpers {
                 let db = applicator.config.db.clone();
                 let mut conf = config.clone();
                 conf.id = i;
-
-                let client = RaftClient::new(conf, db.clone(), mock_net, applicator).await.unwrap();
+                let notifications = OpenNotifications::new();
+                let client = RaftClient::new(conf, db.clone(), mock_net, notifications, applicator)
+                    .await
+                    .unwrap();
                 nodes.insert(i, MockRaftNode::new(client, db));
             }
 
@@ -229,8 +235,11 @@ pub mod test_helpers {
             let mock_net = MockNetworkNode::new(self.sender.clone());
             let applicator = mock_applicator();
             let db = applicator.config.db.clone();
+            let notifications = OpenNotifications::new();
 
-            let client = RaftClient::new(config, db.clone(), mock_net, applicator).await.unwrap();
+            let client = RaftClient::new(config, db.clone(), mock_net, notifications, applicator)
+                .await
+                .unwrap();
             let node = MockRaftNode::new(client, db);
             self.rafts.write().await.insert(nid, node);
         }
@@ -256,7 +265,7 @@ mod test {
     use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
     use rand::{seq::IteratorRandom, thread_rng};
 
-    use crate::StateTransition;
+    use crate::{Proposal, StateTransition};
 
     use super::{
         log_store::LogStore,
@@ -291,7 +300,8 @@ mod test {
         // Propose a new wallet to the raft
         let id = wallet.wallet_id;
         let client = node.get_client(0).await;
-        client.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet });
+        client.propose_transition(update).await.unwrap();
 
         let db = node.get_db(0).await;
         let tx = db.new_read_tx().unwrap();
@@ -318,7 +328,8 @@ mod test {
         let target_raft = &nodes.get_client(leader).await;
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
-        target_raft.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet });
+        target_raft.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check a random node's DB to ensure the wallet exists
@@ -349,7 +360,8 @@ mod test {
         let target_raft = nodes.get_client(nid as NodeId).await;
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
-        target_raft.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet });
+        target_raft.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check a random node's DB to ensure the wallet exists
@@ -371,7 +383,8 @@ mod test {
         let client = raft.get_client(0).await;
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet });
+        client.propose_transition(update).await.unwrap();
 
         // Add a new node
         let new_nid = 2;
@@ -391,7 +404,8 @@ mod test {
         client.promote_learner(new_nid).await.unwrap();
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet });
+        client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check the DB of either node
@@ -424,7 +438,8 @@ mod test {
         // Propose a new state transition
         let new_wallet = mock_empty_wallet();
         let new_wallet_id = new_wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet: new_wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet: new_wallet });
+        client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check the DB of the new node
@@ -461,7 +476,8 @@ mod test {
         // saved in the DB
         let new_wallet = mock_empty_wallet();
         let new_wallet_id = new_wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet: new_wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet: new_wallet });
+        client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         for i in 0..N {
@@ -495,7 +511,8 @@ mod test {
         // Propose a new wallet, ensure that consensus is reached
         let new_wallet = mock_empty_wallet();
         let new_wallet_id = new_wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet: new_wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet: new_wallet });
+        client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let db = raft.get_db(client_id).await;
@@ -527,7 +544,8 @@ mod test {
         // Propose a new wallet, ensure that consensus is reached
         let new_wallet = mock_empty_wallet();
         let new_wallet_id = new_wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet: new_wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet: new_wallet });
+        client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check the DB of the non-leader
@@ -559,7 +577,8 @@ mod test {
         // Propose a state transition and ensure consensus is reached
         let new_wallet = mock_empty_wallet();
         let new_wallet_id = new_wallet.wallet_id;
-        client.propose_transition(StateTransition::AddWallet { wallet: new_wallet }).await.unwrap();
+        let update = Proposal::from(StateTransition::AddWallet { wallet: new_wallet });
+        client.propose_transition(update).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check either of the remaining nodes' DBs
