@@ -22,15 +22,15 @@ use rand::{
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
-    StateTransition,
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
+    storage::error::StorageError, State, StateHandle, StateTransition,
 };
 
 /// The error message emitted when a caller attempts to add a local order
 /// directly
 const ERR_LOCAL_ORDER: &str = "local order should be updated through a wallet update";
 
-impl State {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
@@ -275,13 +275,14 @@ impl State {
     }
 
     /// Add a validity proof and witness to an order managed by the local node
-    pub fn add_local_order_validity_bundle(
+    pub async fn add_local_order_validity_bundle(
         &self,
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AddOrderValidityBundle { order_id, proof, witness })
+            .await
     }
 
     /// Nullify all orders on the given nullifier
@@ -303,9 +304,9 @@ mod test {
     use crate::test_helpers::mock_state;
 
     /// Test adding an order to the state
-    #[test]
-    fn test_add_order() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_add_order() {
+        let state = mock_state().await;
 
         let order = dummy_network_order();
         state.add_order(order.clone()).unwrap();
@@ -316,9 +317,9 @@ mod test {
     }
 
     /// Tests the `get_orders_batch` method with missing orders
-    #[test]
-    fn test_get_orders_batch() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_get_orders_batch() {
+        let state = mock_state().await;
 
         // Create two orders and only add one
         let order1 = dummy_network_order();
@@ -334,9 +335,9 @@ mod test {
     }
 
     /// Tests getting the missing orders
-    #[test]
-    fn test_get_missing_orders() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_get_missing_orders() {
+        let state = mock_state().await;
 
         // Create three orders and only add one
         let order1 = dummy_network_order();
@@ -359,9 +360,9 @@ mod test {
     }
 
     /// Test adding a validity proof to an order
-    #[test]
-    fn test_add_order_validity_proof() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_add_order_validity_proof() {
+        let state = mock_state().await;
 
         let order = dummy_network_order();
         state.add_order(order.clone()).unwrap();
@@ -381,9 +382,9 @@ mod test {
     }
 
     /// Tests nullifying an order
-    #[test]
-    fn test_nullify_order() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_nullify_order() {
+        let state = mock_state().await;
 
         let order = dummy_network_order();
         state.add_order(order.clone()).unwrap();
