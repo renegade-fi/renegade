@@ -10,7 +10,10 @@ use openraft::{
 use tokio::fs::File;
 use util::{err_str, res_some};
 
-use crate::{applicator::StateApplicator, replicationv2::error::new_apply_error, storage::db::DB};
+use crate::{
+    applicator::StateApplicator, error::StateError, notifications::OpenNotifications,
+    replicationv2::error::new_apply_error, storage::db::DB, Proposal,
+};
 
 use super::{
     error::{new_log_read_error, new_snapshot_error, ReplicationV2Error},
@@ -43,14 +46,26 @@ pub struct StateMachine {
     pub(crate) last_membership: StoredMembership<NodeId, Node>,
     /// The config for the state machine
     pub(crate) config: StateMachineConfig,
+    /// The set of open notifications on the state machine
+    pub(crate) notifications: OpenNotifications,
     /// The underlying applicator
     pub(crate) applicator: StateApplicator,
 }
 
 impl StateMachine {
     /// Constructor
-    pub fn new(config: StateMachineConfig, applicator: StateApplicator) -> Self {
-        Self { last_applied_log: None, last_membership: Default::default(), config, applicator }
+    pub fn new(
+        config: StateMachineConfig,
+        notifications: OpenNotifications,
+        applicator: StateApplicator,
+    ) -> Self {
+        Self {
+            last_applied_log: None,
+            last_membership: Default::default(),
+            config,
+            notifications,
+            applicator,
+        }
     }
 
     /// Get a handle on the DB of the state machine
@@ -117,10 +132,17 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                 EntryPayload::Membership(membership) => {
                     self.last_membership = StoredMembership::new(Some(log_id), membership);
                 },
-                EntryPayload::Normal(transition) => {
-                    self.applicator
-                        .handle_state_transition(transition)
-                        .map_err(|err| new_apply_error(log_id, err))?;
+                EntryPayload::Normal(proposal) => {
+                    let Proposal { id, transition } = proposal;
+                    let res = self.applicator.handle_state_transition(transition);
+
+                    // Make a copy of the error before notifying the client
+                    let err_str = res.as_ref().err().map(|e| e.to_string());
+                    self.notifications.notify(id, res.map_err(StateError::Applicator)).await;
+
+                    if let Some(s) = err_str {
+                        return Err(new_apply_error(log_id, s));
+                    }
                 },
             }
 
@@ -174,5 +196,35 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
         // Open the snapshot file
         let file = res_some!(self.open_snapshot_file().await.map_err(new_snapshot_error)?);
         Ok(Some(Snapshot { meta, snapshot: Box::new(file) }))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use common::types::wallet_mocks::mock_empty_wallet;
+    use openraft::{storage::RaftStateMachine, Entry, EntryPayload, LeaderId, LogId};
+
+    use crate::{replicationv2::test_helpers::mock_state_machine, Proposal, StateTransition};
+
+    /// Tests applying a log with a waiter on the state
+    #[tokio::test]
+    async fn test_await_application() {
+        let mut sm = mock_state_machine();
+        let notifs = sm.notifications.clone();
+
+        // Add a proposal and await its notification
+        let wallet = mock_empty_wallet();
+        let prop = Proposal::from(StateTransition::AddWallet { wallet });
+        let rx = notifs.register_notification(prop.id).await;
+
+        // Append a log with this proposal
+        let leader_id = LeaderId::new(1 /* term */, 1 /* node */);
+        let log_id = LogId::new(leader_id, 1 /* index */);
+        let entry = Entry { log_id, payload: EntryPayload::Normal(prop) };
+        sm.apply(vec![entry]).await.unwrap();
+
+        // Await the notification
+        let res = rx.await.unwrap();
+        assert!(res.is_ok());
     }
 }

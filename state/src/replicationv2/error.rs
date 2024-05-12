@@ -7,7 +7,7 @@ use std::{
 
 use openraft::{ErrorSubject, ErrorVerb, LogId, RaftTypeConfig, StorageError as RaftStorageError};
 
-use crate::{applicator::error::StateApplicatorError, storage::error::StorageError};
+use crate::storage::error::StorageError;
 
 use super::{NodeId, TypeConfig};
 
@@ -30,9 +30,9 @@ pub fn new_log_write_error(
 /// Convert an error applying a log into a raft error
 pub fn new_apply_error(
     log_id: LogId<NodeId>,
-    err: StateApplicatorError,
+    err: String,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
-    let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
+    let io_err = IoError::new(IoErrorKind::Other, err);
     RaftStorageError::from_io_error(ErrorSubject::Apply(log_id), ErrorVerb::Write, io_err)
 }
 

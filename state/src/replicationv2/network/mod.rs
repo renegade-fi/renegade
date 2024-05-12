@@ -16,7 +16,7 @@ use openraft::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::StateTransition;
+use crate::Proposal;
 
 use super::{Node, NodeId, TypeConfig};
 
@@ -34,7 +34,7 @@ pub enum RaftRequest {
     /// A request to vote
     Vote(VoteRequest<NodeId>),
     /// A proposal forwarded to the leader
-    ForwardedProposal(StateTransition),
+    ForwardedProposal(Proposal),
 }
 
 /// The response type a raft node may send to another

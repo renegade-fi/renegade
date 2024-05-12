@@ -5,7 +5,12 @@ use std::{collections::BTreeSet, sync::Arc};
 use openraft::{ChangeMembers, Config as RaftConfig, EmptyNode, RaftNetworkFactory};
 use util::err_str;
 
-use crate::{applicator::StateApplicator, storage::db::DB, StateTransition};
+use crate::{
+    applicator::StateApplicator,
+    notifications::{OpenNotifications, ProposalId},
+    storage::db::DB,
+    Proposal, StateTransition,
+};
 
 use super::{
     error::ReplicationV2Error,
@@ -80,6 +85,7 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
         config: RaftClientConfig,
         db: Arc<DB>,
         net: N,
+        notifications: OpenNotifications,
         applicator: StateApplicator,
     ) -> Result<Self, ReplicationV2Error> {
         let raft_config = Arc::new(RaftConfig {
@@ -92,7 +98,7 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
 
         // Create the raft
         let sm_config = StateMachineConfig::new(db.path().to_string());
-        let sm = StateMachine::new(sm_config, applicator);
+        let sm = StateMachine::new(sm_config, notifications, applicator);
         let log_store = LogStore::new(db.clone());
         let raft = Raft::new(config.id, raft_config, net.clone(), log_store, sm)
             .await
@@ -137,10 +143,7 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
     // -------------
 
     /// Propose an update to the raft
-    pub async fn propose_transition(
-        &self,
-        update: StateTransition,
-    ) -> Result<(), ReplicationV2Error> {
+    pub async fn propose_transition(&self, update: Proposal) -> Result<(), ReplicationV2Error> {
         // If the current node is not the leader, forward to the leader
         let leader = self
             .leader()
@@ -156,13 +159,13 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
             return Ok(());
         }
 
-        match update {
-            StateTransition::AddRaftLearner { peer_id } => self.handle_add_learner(peer_id).await,
-            StateTransition::AddRaftVoter { peer_id } => self.handle_add_voter(peer_id).await,
-            StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(peer_id).await,
-            t => self
+        match update.transition.as_ref() {
+            StateTransition::AddRaftLearner { peer_id } => self.handle_add_learner(*peer_id).await,
+            StateTransition::AddRaftVoter { peer_id } => self.handle_add_voter(*peer_id).await,
+            StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(*peer_id).await,
+            _ => self
                 .raft()
-                .client_write(Box::new(t))
+                .client_write(update)
                 .await
                 .map_err(err_str!(ReplicationV2Error::Proposal))
                 .map(|_| ()),
@@ -203,20 +206,23 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
     // ----------------------
 
     /// Add a learner to the cluster
-    pub async fn add_learner(&self, learner: NodeId) -> Result<(), ReplicationV2Error> {
-        let transition = StateTransition::AddRaftLearner { peer_id: learner };
-        self.propose_transition(transition).await
+    pub async fn add_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::AddRaftLearner { peer_id: learner });
+        let id = proposal.id;
+        self.propose_transition(proposal).await.map(|_| id)
     }
 
     /// Promote a learner to a voter
-    pub async fn promote_learner(&self, learner: NodeId) -> Result<(), ReplicationV2Error> {
-        let transition = StateTransition::AddRaftVoter { peer_id: learner };
-        self.propose_transition(transition).await
+    pub async fn promote_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::AddRaftVoter { peer_id: learner });
+        let id = proposal.id;
+        self.propose_transition(proposal).await.map(|_| id)
     }
 
     /// Remove a peer from the raft
-    pub async fn remove_peer(&self, peer: NodeId) -> Result<(), ReplicationV2Error> {
-        let transition = StateTransition::RemoveRaftPeer { peer_id: peer };
-        self.propose_transition(transition).await
+    pub async fn remove_peer(&self, peer: NodeId) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::RemoveRaftPeer { peer_id: peer });
+        let id = proposal.id;
+        self.propose_transition(proposal).await.map(|_| id)
     }
 }
