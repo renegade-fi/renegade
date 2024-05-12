@@ -185,9 +185,23 @@ impl<T: P2PRaftNetwork> RaftNetwork<TypeConfig> for P2PRaftNetworkWrapper<T> {
 
 /// The network shim
 #[derive(Clone)]
-pub struct Network {}
+pub struct GossipNetwork {}
 
-impl RaftNetworkFactory<TypeConfig> for Network {
+impl P2PRaftNetwork for GossipNetwork {
+    fn target(&self) -> NodeId {
+        todo!()
+    }
+
+    async fn send_request(
+        &self,
+        target: NodeId,
+        request: RaftRequest,
+    ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
+        todo!()
+    }
+}
+
+impl RaftNetworkFactory<TypeConfig> for GossipNetwork {
     type Network = Self;
 
     async fn new_client(&mut self, _target: NodeId, _node: &Node) -> Self::Network {
@@ -195,7 +209,7 @@ impl RaftNetworkFactory<TypeConfig> for Network {
     }
 }
 
-impl RaftNetwork<TypeConfig> for Network {
+impl RaftNetwork<TypeConfig> for GossipNetwork {
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<TypeConfig>,

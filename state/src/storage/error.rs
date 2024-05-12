@@ -4,8 +4,6 @@ use std::{error::Error, fmt::Display};
 
 use bincode::Error as BincodeError;
 use libmdbx::Error as MdbxError;
-/// TODO: remove the above and rename to RaftStorageError
-use raft::{Error as RaftError, StorageError as RaftStorageError};
 
 /// The error type emitted by the storage layer
 #[derive(Debug)]
@@ -41,9 +39,3 @@ impl Display for StorageError {
 }
 
 impl Error for StorageError {}
-
-impl From<StorageError> for RaftError {
-    fn from(value: StorageError) -> Self {
-        RaftError::Store(RaftStorageError::Other(Box::new(value)))
-    }
-}

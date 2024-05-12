@@ -5,9 +5,12 @@ use common::types::{
     mpc_preprocessing::{PairwiseOfflineSetup, PreprocessingSlice},
 };
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential, State,
+    StateHandle, StateTransition,
+};
 
-impl State {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
@@ -26,16 +29,16 @@ impl State {
     // -----------
 
     /// Add values to the preprocessing store
-    pub fn append_preprocessing_values(
+    pub async fn append_preprocessing_values(
         &self,
         cluster: ClusterId,
         values: PairwiseOfflineSetup,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::AddMpcPreprocessingValues { cluster, values })
+        self.send_proposal(StateTransition::AddMpcPreprocessingValues { cluster, values }).await
     }
 
     /// Pop a set of values for consumption by the caller
-    pub fn consume_preprocessing_values(
+    pub async fn consume_preprocessing_values(
         &self,
         cluster: ClusterId,
         request: PreprocessingSlice,
@@ -47,6 +50,7 @@ impl State {
             cluster,
             request,
         })
+        .await
     }
 }
 
@@ -65,12 +69,13 @@ mod test {
 
     #[tokio::test]
     async fn test_add_prep_values() {
-        let state = mock_state();
+        let state = mock_state().await;
         let cluster = ClusterId::from_str("test").unwrap();
 
         // One of each type
         let prep = mock_prep_values(1, 1, 1, 1, 1);
-        state.append_preprocessing_values(cluster.clone(), prep).unwrap().await.unwrap();
+        let waiter = state.append_preprocessing_values(cluster.clone(), prep).await.unwrap();
+        waiter.await.unwrap();
 
         // Check the size of the preprocessing store
         let size = state.get_mpc_prep_size(&cluster).unwrap();
@@ -83,16 +88,16 @@ mod test {
 
     #[tokio::test]
     async fn test_consume_prep_values() {
-        let state = mock_state();
+        let state = mock_state().await;
         let cluster = ClusterId::from_str("test").unwrap();
 
         // Add prep values to the state, one of each type
         let prep = mock_prep_values(1, 1, 1, 1, 1);
-        let _ = state.append_preprocessing_values(cluster.clone(), prep).unwrap().await.unwrap();
+        let _ = state.append_preprocessing_values(cluster.clone(), prep).await.unwrap().await;
 
         let request = PreprocessingSlice { num_inverse_pairs: 1, ..Default::default() };
-        let prep: PairwiseOfflineSetup =
-            state.consume_preprocessing_values(cluster, request).unwrap().await.unwrap().into();
+        let waiter = state.consume_preprocessing_values(cluster, request).await.unwrap();
+        let prep: PairwiseOfflineSetup = waiter.await.unwrap().into();
 
         let vals = prep.values;
         assert_eq!(vals.random_bits.len(), 0);

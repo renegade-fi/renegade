@@ -10,9 +10,12 @@ use common::types::{
 };
 use util::res_some;
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential, State,
+    StateHandle, StateTransition,
+};
 
-impl State {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
@@ -82,14 +85,14 @@ impl State {
     // -----------
 
     /// Propose a new wallet to be added to the index
-    pub fn new_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
+    pub async fn new_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
         assert!(wallet.orders.is_empty(), "use `update-wallet` for non-empty wallets");
-        self.send_proposal(StateTransition::AddWallet { wallet })
+        self.send_proposal(StateTransition::AddWallet { wallet }).await
     }
 
     /// Update a wallet in the index
-    pub fn update_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::UpdateWallet { wallet })
+    pub async fn update_wallet(&self, wallet: Wallet) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateWallet { wallet }).await
     }
 }
 
@@ -111,10 +114,13 @@ mod test {
     use itertools::Itertools;
     use num_bigint::BigUint;
 
-    use crate::{order_history::test::setup_order_history, test_helpers::mock_state, State};
+    use crate::{
+        order_history::test::setup_order_history,
+        test_helpers::{mock_state, MockState},
+    };
 
     /// Create a set of mock historical orders
-    fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &State) {
+    fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &MockState) {
         let history = (0..n)
             .map(|_| OrderMetadata {
                 id: OrderIdentifier::new_v4(),
@@ -132,7 +138,7 @@ mod test {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_order_history__new_wallet() {
-        let state = mock_state();
+        let state = mock_state().await;
 
         let mut wallet = mock_empty_wallet();
         let order = mock_order();
@@ -140,10 +146,11 @@ mod test {
         wallet.add_order(order_id, order.clone()).unwrap();
 
         // Add the wallet to state
-        state.update_wallet(wallet.clone()).unwrap().await.unwrap();
+        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+        waiter.await.unwrap();
 
         // Check the order history for a wallet
-        let history = state.get_order_history(10 /* len */, &wallet.wallet_id).unwrap();
+        let history = state.get_order_history(10, &wallet.wallet_id).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, order_id);
         assert_eq!(history[0].state, OrderState::Created);
@@ -154,27 +161,30 @@ mod test {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_order_history__existing_order() {
-        let state = mock_state();
+        let state = mock_state().await;
         let mut wallet = mock_empty_wallet();
         let order = mock_order();
         let order_id = OrderIdentifier::new_v4();
         wallet.add_order(order_id, order.clone()).unwrap();
 
         // Update the wallet
-        state.update_wallet(wallet.clone()).unwrap().await.unwrap();
+        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+        waiter.await.unwrap();
 
         // Mark the order's state in the history as `Matching`, simulating an order that
         // now has validity proofs ready for match
         let mut meta = state.get_order_metadata(&order_id).unwrap().unwrap();
         meta.state = OrderState::Matching;
-        state.update_order_metadata(meta).unwrap().await.unwrap();
+        let waiter = state.update_order_metadata(meta).await.unwrap();
+        waiter.await.unwrap();
 
         // Update the wallet
         wallet.add_balance(Balance::new_from_mint(BigUint::from(1u8))).unwrap();
-        state.update_wallet(wallet.clone()).unwrap().await.unwrap();
+        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+        waiter.await.unwrap();
 
         // Check the order history
-        let history = state.get_order_history(10 /* len */, &wallet.wallet_id).unwrap();
+        let history = state.get_order_history(10, &wallet.wallet_id).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, order_id);
         // The order should now be back in the `Created` state, awaiting new proofs
@@ -187,7 +197,7 @@ mod test {
     #[allow(non_snake_case)]
     async fn test_order_history__cancel_replace() {
         const N: usize = 100;
-        let state = mock_state();
+        let state = mock_state().await;
         let mut wallet = mock_empty_wallet();
 
         // Setup a longer mock order history of filled orders
@@ -199,7 +209,8 @@ mod test {
         wallet.add_order(order_id, order).unwrap();
 
         // Update the wallet
-        state.update_wallet(wallet.clone()).unwrap().await.unwrap();
+        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+        waiter.await.unwrap();
 
         // Now remove this order and add another
         wallet.remove_order(&order_id).unwrap();
@@ -208,11 +219,12 @@ mod test {
         wallet.add_order(order_id2, order).unwrap();
 
         // Update the wallet
-        state.update_wallet(wallet.clone()).unwrap().await.unwrap();
+        let waiter = state.update_wallet(wallet.clone()).await.unwrap();
+        waiter.await.unwrap();
 
         // Now fetch history, it should contain one order in the `Created` state
-        // another in the `Cancelled` state and
-        let history = state.get_order_history(10 /* len */, &wallet.wallet_id).unwrap();
+        // and another in the `Cancelled` state
+        let history = state.get_order_history(10, &wallet.wallet_id).unwrap();
         assert_eq!(history.len(), 10);
         assert_eq!(history[0].id, order_id2);
         assert_eq!(history[0].state, OrderState::Created);
