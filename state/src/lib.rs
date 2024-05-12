@@ -22,19 +22,20 @@ use common::types::{
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
 };
-use interface::notifications::ProposalResultSender;
-use replication::RaftPeerId;
+use notifications::ProposalId;
+use replicationv2::NodeId;
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
 mod interface;
-pub mod replication;
+pub mod notifications;
 pub mod replicationv2;
 pub mod storage;
-pub mod tui;
+// pub mod tui;
 
 /// Re-export the state interface
 pub use interface::*;
+use uuid::Uuid;
 
 // -------------
 // | Constants |
@@ -95,14 +96,13 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     RAFT_LOGS_TABLE,
 ];
 
-/// The `Proposal` type wraps a state transition and the channel on which to
-/// send the result of the proposal's application
-#[derive(Debug)]
+/// The proposal submitted to the state machine
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proposal {
-    /// The state transition to propose
-    pub transition: StateTransition,
-    /// The channel on which to send the result of the proposal's application
-    pub response: ProposalResultSender,
+    /// The ID of the proposal
+    id: ProposalId,
+    /// The state transition to apply
+    transition: Box<StateTransition>,
 }
 
 /// The `StateTransitionType` encapsulates all possible state transitions,
@@ -153,18 +153,17 @@ pub enum StateTransition {
 
     // --- Raft --- //
     /// Add a raft learner to the cluster
-    AddRaftLearner { peer_id: RaftPeerId },
+    AddRaftLearner { peer_id: NodeId },
     /// Add a raft peer to the local consensus cluster
-    AddRaftPeer { peer_id: RaftPeerId },
+    AddRaftVoter { peer_id: NodeId },
     /// Remove a raft peer from the local consensus cluster
-    RemoveRaftPeer { peer_id: RaftPeerId },
+    RemoveRaftPeer { peer_id: NodeId },
 }
 
 impl From<StateTransition> for Proposal {
     fn from(transition: StateTransition) -> Self {
-        // Create a channel that no worker will ever receive on
-        let (response, _recv) = tokio::sync::oneshot::channel();
-        Self { transition, response }
+        let transition = Box::new(transition);
+        Self { id: Uuid::new_v4(), transition }
     }
 }
 
@@ -187,12 +186,17 @@ pub mod test_helpers {
     use tempfile::tempdir;
 
     use crate::{
-        replication::network::{
-            address_translation::PeerIdTranslationMap, traits::test_helpers::MockNetwork,
+        replicationv2::{
+            network::{address_translation::PeerIdTranslationMap, mock::MockNetworkNode},
+            raft::RaftClientConfig,
+            test_helpers::MockRaft,
         },
         storage::db::{DbConfig, DB},
         State,
     };
+
+    /// The state type using the default generics
+    pub type MockState = State<MockNetworkNode>;
 
     /// Sleep for the given number of ms
     pub fn sleep_ms(ms: u64) {
@@ -230,47 +234,42 @@ pub mod test_helpers {
     /// Create a mock raft config for testing
     ///
     /// We set the timeouts very low to speed up leader election
-    pub fn mock_raft_config(relayer_config: &RelayerConfig) -> raft::Config {
+    pub fn mock_raft_config(relayer_config: &RelayerConfig) -> RaftClientConfig {
         let peer_id = relayer_config.p2p_key.public().to_peer_id();
-        let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
-        raft::Config { id: raft_id, election_tick: 10, ..Default::default() }
+        let id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
+        RaftClientConfig { id, init: true, ..Default::default() }
     }
 
     /// Create a mock state instance
-    pub fn mock_state() -> State {
+    pub async fn mock_state() -> MockState {
         let config = mock_relayer_config();
-        mock_state_with_config(&config)
+        mock_state_with_config(&config).await
     }
 
     /// Create a mock state instance with the given relayer config
-    pub fn mock_state_with_config(config: &RelayerConfig) -> State {
+    pub async fn mock_state_with_config(config: &RelayerConfig) -> MockState {
         let (task_queue, recv) = new_task_driver_queue();
         mem::forget(recv);
-        mock_state_with_task_queue(task_queue, config)
+        mock_state_with_task_queue(task_queue, config).await
     }
 
     /// Create a mock state instance with the given task queue
-    pub fn mock_state_with_task_queue(
+    pub async fn mock_state_with_task_queue(
         task_queue: TaskDriverQueue,
         config: &RelayerConfig,
-    ) -> State {
-        let (_controller, mut nets) = MockNetwork::new_n_way_mesh(1 /* n_nodes */);
+    ) -> MockState {
+        let raft = MockRaft::create_raft(1 /* n_nodes */).await;
+        let net = raft.get_client(0).await.network();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        let (state, _, raft_cancel) = State::new_with_network(
+        State::new_with_network(
             config,
             mock_raft_config(config),
-            nets.remove(0),
+            net,
             task_queue,
             handshake_manager_queue,
             SystemBus::new(),
         )
-        .unwrap();
-
-        // Forget the raft cancel channel so it doesn't get dropped
-        mem::forget(raft_cancel);
-
-        // Wait for a leader election before returning
-        sleep_ms(500);
-        state
+        .await
+        .unwrap()
     }
 }

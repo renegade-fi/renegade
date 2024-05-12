@@ -132,6 +132,9 @@ struct Cli {
     /// The path at which to open up the database
     #[clap(long, value_parser, default_value = "./relayer_state.db")]
     pub db_path: String,
+    /// The path at which to save raft snapshots
+    #[clap(long, value_parser, default_value = "./raft_snapshots")]
+    pub raft_snapshot_path: String,
     /// The maximum staleness (number of newer roots observed) to allow on Merkle proofs for 
     /// managed wallets. After this threshold is exceeded, the Merkle proof will be updated
     #[clap(long, value_parser, default_value = "100")]
@@ -254,6 +257,8 @@ pub struct RelayerConfig {
     pub p2p_key: Keypair,
     /// The path at which to open up the database
     pub db_path: String,
+    /// The path at which to save raft snapshots
+    pub raft_snapshot_path: String,
     /// The maximum staleness (number of newer roots observed) to allow on
     /// Merkle proofs for managed wallets. After this threshold is exceeded,
     /// the Merkle proof will be updated
@@ -325,6 +330,7 @@ impl Clone for RelayerConfig {
             websocket_port: self.websocket_port,
             p2p_key: self.p2p_key.clone(),
             db_path: self.db_path.clone(),
+            raft_snapshot_path: self.raft_snapshot_path.clone(),
             max_merkle_staleness: self.max_merkle_staleness,
             allow_local: self.allow_local,
             bind_addr: self.bind_addr,
@@ -450,6 +456,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         max_merkle_staleness: cli_args.max_merkle_staleness,
         p2p_key,
         db_path: cli_args.db_path,
+        raft_snapshot_path: cli_args.raft_snapshot_path,
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
         disable_price_reporter: cli_args.disable_price_reporter,
