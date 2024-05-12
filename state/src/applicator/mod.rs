@@ -27,6 +27,10 @@ pub mod wallet_index;
 /// A type alias for the result type given by the applicator
 pub(crate) type Result<T> = std::result::Result<T, StateApplicatorError>;
 
+// --------------
+// | Applicator |
+// --------------
+
 /// The config for the state applicator
 #[derive(Clone)]
 pub struct StateApplicatorConfig {
@@ -66,9 +70,9 @@ impl StateApplicator {
     /// Handle a state transition
     pub fn handle_state_transition(
         &self,
-        transition: StateTransition,
+        transition: Box<StateTransition>,
     ) -> Result<ApplicatorReturnType> {
-        match transition {
+        match *transition {
             StateTransition::AddWallet { wallet } => self.add_wallet(&wallet),
             StateTransition::UpdateWallet { wallet } => self.update_wallet(&wallet),
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
@@ -106,8 +110,9 @@ impl StateApplicator {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
+    //! Test helpers for mock state applicator
     use std::{mem, str::FromStr, sync::Arc};
 
     use common::types::gossip::ClusterId;
