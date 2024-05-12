@@ -1,7 +1,7 @@
 //! Networking implement that shims between the consensus engine and the gossip
 //! layer
-mod address_translation;
-#[cfg(test)]
+pub mod address_translation;
+#[cfg(any(test, feature = "mocks"))]
 pub mod mock;
 
 use openraft::{

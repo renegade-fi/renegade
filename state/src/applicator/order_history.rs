@@ -1,11 +1,14 @@
 //! Applicator handlers for order metadata updates
 
-use crate::{order_history::ERR_MISSING_WALLET, storage::tx::StateTxn};
+use crate::storage::tx::StateTxn;
 
 use super::{error::StateApplicatorError, StateApplicator};
 use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
 use libmdbx::RW;
+
+/// Error emitted when a wallet cannot be found for an order
+const ERR_MISSING_WALLET: &str = "wallet not found";
 
 impl StateApplicator {
     /// Handle an update to an order's metadata
