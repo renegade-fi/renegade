@@ -7782,6 +7782,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bincode",
  "circuit-types",
  "common",
@@ -7802,8 +7803,6 @@ dependencies = [
  "multiaddr",
  "num-bigint",
  "openraft",
- "protobuf",
- "raft",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -7812,6 +7811,7 @@ dependencies = [
  "tempfile",
  "test-helpers",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-slog",
  "tui",

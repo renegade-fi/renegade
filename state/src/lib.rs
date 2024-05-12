@@ -23,7 +23,7 @@ use common::types::{
     wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
 };
 use notifications::ProposalId;
-use replicationv2::NodeId;
+use replicationv2::{network::GossipNetwork, NodeId};
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
@@ -31,7 +31,7 @@ mod interface;
 pub mod notifications;
 pub mod replicationv2;
 pub mod storage;
-// pub mod tui;
+pub mod tui;
 
 /// Re-export the state interface
 pub use interface::*;
@@ -40,6 +40,9 @@ use uuid::Uuid;
 // -------------
 // | Constants |
 // -------------
+
+/// The state type with default generics attached
+pub type State = StateHandle<GossipNetwork>;
 
 /// The number of tables to open in the database
 const NUM_TABLES: usize = 14;
@@ -192,11 +195,11 @@ pub mod test_helpers {
             test_helpers::MockRaft,
         },
         storage::db::{DbConfig, DB},
-        State,
+        StateHandle,
     };
 
     /// The state type using the default generics
-    pub type MockState = State<MockNetworkNode>;
+    pub type MockState = StateHandle<MockNetworkNode>;
 
     /// Sleep for the given number of ms
     pub fn sleep_ms(ms: u64) {
@@ -261,7 +264,7 @@ pub mod test_helpers {
         let raft = MockRaft::create_raft(1 /* n_nodes */).await;
         let net = raft.get_client(0).await.network();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        State::new_with_network(
+        MockState::new_with_network(
             config,
             mock_raft_config(config),
             net,

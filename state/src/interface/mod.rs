@@ -2,13 +2,12 @@
 //! proposing state transitions and reading from state
 
 pub mod error;
-// pub mod mpc_preprocessing;
+pub mod mpc_preprocessing;
 pub mod node_metadata;
-// pub mod order_book;
-// pub mod order_history;
-// pub mod peer_index;
-// pub mod raft;
-// pub mod task_queue;
+pub mod order_book;
+pub mod order_history;
+pub mod peer_index;
+pub mod task_queue;
 pub mod wallet_index;
 
 use std::sync::Arc;
@@ -51,7 +50,7 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 /// A handle on the state that allows workers throughout the node to acces the
 /// replication and durability primitives backing the state machine
 #[derive(Clone)]
-pub struct State<N: NetworkEssential> {
+pub struct StateHandle<N: NetworkEssential> {
     /// Whether or not the node allows local peers when adding to the peer index
     allow_local: bool,
     /// A handle on the database
@@ -64,7 +63,7 @@ pub struct State<N: NetworkEssential> {
     raft: RaftClient<N>,
 }
 
-impl<N: NetworkEssential> State<N> {
+impl<N: NetworkEssential> StateHandle<N> {
     /// The base constructor allowing for the variadic constructors above
     pub async fn new_with_network(
         config: &RelayerConfig,

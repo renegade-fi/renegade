@@ -9,9 +9,12 @@ use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use util::res_some;
 
-use crate::{error::StateError, replicationv2::raft::NetworkEssential, State, NODE_METADATA_TABLE};
+use crate::{
+    error::StateError, replicationv2::raft::NetworkEssential, State, StateHandle,
+    NODE_METADATA_TABLE,
+};
 
-impl<N: NetworkEssential> State<N> {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
