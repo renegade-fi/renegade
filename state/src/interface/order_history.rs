@@ -4,14 +4,14 @@ use common::types::wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wall
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
-    StateTransition,
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
+    storage::error::StorageError, State, StateHandle, StateTransition,
 };
 
 /// The error message emitted when a wallet cannot be found for an order
 pub const ERR_MISSING_WALLET: &str = "Wallet not found for order";
 
-impl State {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
@@ -49,8 +49,11 @@ impl State {
     // -----------
 
     /// Update the state of an order in a wallet
-    pub fn update_order_metadata(&self, meta: OrderMetadata) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::UpdateOrderMetadata { meta })
+    pub async fn update_order_metadata(
+        &self,
+        meta: OrderMetadata,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::UpdateOrderMetadata { meta }).await
     }
 }
 
@@ -90,10 +93,10 @@ pub mod test {
     }
 
     /// Tests updating order history and metadata
-    #[test]
-    fn test_order_history() {
+    #[tokio::test]
+    async fn test_order_history() {
         const N: usize = 100;
-        let state = mock_state();
+        let state = mock_state().await;
         let mut orders = (0..N).map(|_| random_metadata()).collect_vec();
         let wallet_id = WalletIdentifier::new_v4();
 
@@ -116,7 +119,7 @@ pub mod test {
     #[tokio::test]
     async fn test_update_order_metadata() {
         const N: usize = 100;
-        let state = mock_state();
+        let state = mock_state().await;
         let orders = (0..N).map(|_| random_metadata()).collect_vec();
         let wallet_id = WalletIdentifier::new_v4();
 
@@ -128,7 +131,7 @@ pub mod test {
         meta.filled += 1;
 
         // Update and retrieve the order's metadata
-        let waiter = state.update_order_metadata(meta.clone()).unwrap();
+        let waiter = state.update_order_metadata(meta.clone()).await.unwrap();
         waiter.await.unwrap();
         let fetched_meta = state.get_order_metadata(&meta.id).unwrap().unwrap();
         assert_eq!(meta, fetched_meta);

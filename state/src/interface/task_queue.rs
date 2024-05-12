@@ -6,9 +6,12 @@ use common::types::tasks::{
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential, State,
+    StateHandle, StateTransition,
+};
 
-impl State {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
@@ -113,7 +116,7 @@ impl State {
 
     /// Append a task to the queue
     #[instrument(name = "propose_append_task", skip_all, err, fields(task_id, task = %task.display_description()))]
-    pub fn append_task(
+    pub async fn append_task(
         &self,
         task: TaskDescriptor,
     ) -> Result<(TaskIdentifier, ProposalWaiter), StateError> {
@@ -131,34 +134,34 @@ impl State {
         };
 
         // Propose the task to the task queue
-        let waiter = self.send_proposal(StateTransition::AppendTask { task })?;
+        let waiter = self.send_proposal(StateTransition::AppendTask { task }).await?;
         Ok((id, waiter))
     }
 
     /// Pop a task from the queue
     #[instrument(name = "propose_pop_task", skip_all, err, fields(task_id = %task_id, success = %success))]
-    pub fn pop_task(
+    pub async fn pop_task(
         &self,
         task_id: TaskIdentifier,
         success: bool,
     ) -> Result<ProposalWaiter, StateError> {
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::PopTask { task_id, success })
+        self.send_proposal(StateTransition::PopTask { task_id, success }).await
     }
 
     /// Transition the state of the top task in a queue
-    pub fn transition_task(
+    pub async fn transition_task(
         &self,
         task_id: TaskIdentifier,
         state: QueuedTaskState,
     ) -> Result<ProposalWaiter, StateError> {
         // Propose the task to the task queue
-        self.send_proposal(StateTransition::TransitionTask { task_id, state })
+        self.send_proposal(StateTransition::TransitionTask { task_id, state }).await
     }
 
     /// Pause a task queue placing the given task at the front of the queue
     #[instrument(name = "propose_preempt_task_queue", skip_all, err, fields(task_id, task = %task.display_description()))]
-    pub fn pause_task_queue(
+    pub async fn pause_task_queue(
         &self,
         key: &TaskQueueKey,
         task_id: TaskIdentifier,
@@ -175,17 +178,17 @@ impl State {
             created_at: get_current_time_millis(),
         };
 
-        self.send_proposal(StateTransition::PreemptTaskQueue { key: *key, task })
+        self.send_proposal(StateTransition::PreemptTaskQueue { key: *key, task }).await
     }
 
     /// Resume a task queue
     #[instrument(name = "propose_resume_task_queue", skip_all, err, fields(queue_key = %key))]
-    pub fn resume_task_queue(
+    pub async fn resume_task_queue(
         &self,
         key: &TaskQueueKey,
         success: bool,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::ResumeTaskQueue { key: *key, success })
+        self.send_proposal(StateTransition::ResumeTaskQueue { key: *key, success }).await
     }
 }
 
@@ -203,9 +206,9 @@ mod test {
     use crate::test_helpers::mock_state;
 
     /// Tests getter methods on an empty queue
-    #[test]
-    fn test_empty_queue() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_empty_queue() {
+        let state = mock_state().await;
 
         let key = TaskQueueKey::new_v4();
         assert_eq!(state.get_task_queue_len(&key).unwrap(), 0);
@@ -215,13 +218,13 @@ mod test {
     /// Tests appending to an empty queue
     #[tokio::test]
     async fn test_append() {
-        let state = mock_state();
+        let state = mock_state().await;
 
         // Propose a task to the queue
         let key = TaskQueueKey::new_v4();
         let task = mock_queued_task(key).descriptor;
 
-        let (task_id, waiter) = state.append_task(task).unwrap();
+        let (task_id, waiter) = state.append_task(task).await.unwrap();
         waiter.await.unwrap();
 
         // Check that the task was added
@@ -238,20 +241,21 @@ mod test {
     /// Tests popping from a queue
     #[tokio::test]
     async fn test_pop() {
-        let state = mock_state();
+        let state = mock_state().await;
 
         // Add a wallet that the task may reference
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
-        state.new_wallet(wallet).unwrap().await.unwrap();
+        let waiter = state.new_wallet(wallet).await.unwrap();
+        waiter.await.unwrap();
 
         // Propose a task to the queue
         let task = mock_queued_task(wallet_id).descriptor;
-        let (task_id, waiter) = state.append_task(task).unwrap();
+        let (task_id, waiter) = state.append_task(task).await.unwrap();
         waiter.await.unwrap();
 
         // Pop the task from the queue
-        let waiter = state.pop_task(task_id, true /* success */).unwrap();
+        let waiter = state.pop_task(task_id, true /* success */).await.unwrap();
         waiter.await.unwrap();
 
         // Check that the task was removed
@@ -261,13 +265,13 @@ mod test {
     /// Tests transitioning the state of a task
     #[tokio::test]
     async fn test_transition() {
-        let state = mock_state();
+        let state = mock_state().await;
 
         // Propose a new task to the queue
         let key = TaskQueueKey::new_v4();
         let task = mock_queued_task(key).descriptor;
 
-        let (task_id, waiter) = state.append_task(task).unwrap();
+        let (task_id, waiter) = state.append_task(task).await.unwrap();
         waiter.await.unwrap();
 
         // Transition the task to a new state
@@ -276,6 +280,7 @@ mod test {
                 task_id,
                 QueuedTaskState::Running { state: "Test".to_string(), committed: false },
             )
+            .await
             .unwrap();
         waiter.await.unwrap();
 
@@ -290,13 +295,13 @@ mod test {
     /// Tests the `has_committed_task` method
     #[tokio::test]
     async fn test_has_committed_task() {
-        let state = mock_state();
+        let state = mock_state().await;
 
         // Add a task
         let key = TaskQueueKey::new_v4();
         let task = mock_queued_task(key).descriptor;
 
-        let (task_id, waiter) = state.append_task(task).unwrap();
+        let (task_id, waiter) = state.append_task(task).await.unwrap();
         waiter.await.unwrap();
 
         // Check that the queue has no committed task
@@ -308,6 +313,7 @@ mod test {
                 task_id,
                 QueuedTaskState::Running { state: "Running".to_string(), committed: false },
             )
+            .await
             .unwrap();
         waiter.await.unwrap();
         assert!(state.current_committed_task(&key).unwrap().is_none());
@@ -318,6 +324,7 @@ mod test {
                 task_id,
                 QueuedTaskState::Running { state: "Running".to_string(), committed: true },
             )
+            .await
             .unwrap();
         waiter.await.unwrap();
         assert_eq!(state.current_committed_task(&key).unwrap(), Some(task_id));
@@ -327,23 +334,24 @@ mod test {
     #[tokio::test]
     async fn test_task_history() {
         const N: usize = 10;
-        let state = mock_state();
+        let state = mock_state().await;
         let wallet_id = WalletIdentifier::new_v4();
 
         // Add historical tasks
         for _ in 0..N {
             // First push to the queue then pop
             let task = mock_task_descriptor(wallet_id);
-            let (task_id, waiter) = state.append_task(task).unwrap();
+            let (task_id, waiter) = state.append_task(task).await.unwrap();
             waiter.await.unwrap();
 
-            state.pop_task(task_id, true /* success */).unwrap().await.unwrap();
+            let waiter = state.pop_task(task_id, true /* success */).await.unwrap();
+            waiter.await.unwrap();
         }
 
         // Add a few running tasks
         for _ in 0..N / 2 {
             let task = mock_task_descriptor(wallet_id);
-            let (_, waiter) = state.append_task(task).unwrap();
+            let (_, waiter) = state.append_task(task).await.unwrap();
             waiter.await.unwrap();
         }
 
