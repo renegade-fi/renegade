@@ -12,13 +12,11 @@ mocks = ["dep:tempfile", "dep:test-helpers"]
 
 # === Replication === #
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
-raft = "0.7"
 
 # === Storage === #
 bincode = "1.3"
 flate2 = "1.0"
 libmdbx = "0.3"
-protobuf = "2.0"
 serde = { workspace = true, features = ["derive"] }
 
 # === Messaging + Concurrency === #
@@ -39,6 +37,7 @@ util = { path = "../util" }
 test-helpers = { path = "../test-helpers", optional = true }
 
 # === Misc === #
+async-trait = "0.1"
 crossterm = "0.27"
 itertools = "0.10"
 fxhash = "0.2"
@@ -61,3 +60,4 @@ tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"
 test-helpers = { path = "../test-helpers" }
+tokio-stream = "0.1"

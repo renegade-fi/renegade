@@ -3,11 +3,16 @@
 use core::fmt::Display;
 use std::error::Error;
 
-use crate::{replication::error::ReplicationError, storage::error::StorageError};
+use crate::{
+    applicator::error::StateApplicatorError, replicationv2::error::ReplicationV2Error,
+    storage::error::StorageError,
+};
 
 /// The state error type
 #[derive(Debug)]
 pub enum StateError {
+    /// An error in the state applicator
+    Applicator(StateApplicatorError),
     /// A database error
     Db(StorageError),
     /// Invalid state update passed to the interface
@@ -15,7 +20,7 @@ pub enum StateError {
     /// An error sending a proposal to the replication layer
     Proposal(String),
     /// An error in the replication substrate
-    Replication(ReplicationError),
+    Replication(ReplicationV2Error),
 }
 
 impl Display for StateError {
@@ -38,8 +43,8 @@ impl From<StateError> for String {
     }
 }
 
-impl From<ReplicationError> for StateError {
-    fn from(e: ReplicationError) -> Self {
+impl From<ReplicationV2Error> for StateError {
+    fn from(e: ReplicationV2Error) -> Self {
         StateError::Replication(e)
     }
 }

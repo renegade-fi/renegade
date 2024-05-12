@@ -2,13 +2,11 @@
 
 use libmdbx::{TransactionKind, RW};
 use openraft::{LogId, SnapshotMeta, Vote};
-use raft::eraftpb::{ConfState, HardState, Snapshot as RaftSnapshot};
 use util::res_some;
 
 use crate::{
-    replication::error::ReplicationError,
     replicationv2::{Entry, Node, NodeId},
-    storage::{cursor::DbCursor, error::StorageError, ProtoStorageWrapper},
+    storage::{cursor::DbCursor, error::StorageError},
     RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
 };
 
@@ -18,14 +16,6 @@ use super::StateTxn;
 // | Constants |
 // -------------
 
-/// The name of the raft hard state key in the KV store
-///
-/// TODO: Delete this
-pub const HARD_STATE_KEY: &str = "hard-state";
-/// The name of the raft conf state key in the KV store
-///
-/// TODO: Delete this
-pub const CONF_STATE_KEY: &str = "conf-state";
 /// The key for the last purged log
 pub const LAST_PURGED_LOG_KEY: &str = "last-purged-raft-log";
 /// The key for the local node's vote in the current term
@@ -43,8 +33,8 @@ const ERR_NO_LAST_LOG: &str = "No last log found";
 // -----------
 
 /// Parse a raft LSN from a string
-pub fn parse_lsn(s: &str) -> Result<u64, ReplicationError> {
-    s.parse::<u64>().map_err(|_| ReplicationError::ParseValue(s.to_string()))
+pub fn parse_lsn(s: &str) -> Result<u64, StorageError> {
+    s.parse::<u64>().map_err(|_| StorageError::InvalidKey(s.to_string()))
 }
 
 /// Format a raft LSN as a string
@@ -120,31 +110,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
             .ok_or_else(|| StorageError::NotFound(ERR_LOG_NOT_FOUND.to_string()))
     }
 
-    /// Read the `ConfState` of the raft from storage
-    ///
-    /// TODO: Delete this
-    pub fn read_conf_state(&self) -> Result<ConfState, StorageError> {
-        let conf_state: ProtoStorageWrapper<ConfState> = self
-            .inner()
-            .read(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string())
-            .map_err(StorageError::from)?
-            .unwrap_or_default();
-
-        Ok(conf_state.into_inner())
-    }
-
-    /// Read the `HardState` of the raft from storage
-    ///
-    /// TODO: Delete this
-    pub fn read_hard_state(&self) -> Result<HardState, StorageError> {
-        let hard_state: ProtoStorageWrapper<HardState> = self
-            .inner()
-            .read(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string())?
-            .unwrap_or_default();
-
-        Ok(hard_state.into_inner())
-    }
-
     /// A helper to construct a cursor over the logs
     pub fn logs_cursor(&self) -> Result<DbCursor<'_, T, LogKeyType, LogValueType>, StorageError> {
         self.inner().cursor(RAFT_LOGS_TABLE)
@@ -177,22 +142,6 @@ impl<'db> StateTxn<'db, RW> {
     }
 
     // --- Log Access --- //
-
-    /// Apply a config change to the log store
-    ///
-    /// TODO: Delete this
-    pub fn apply_config_state(&self, change: ConfState) -> Result<(), StorageError> {
-        let value = ProtoStorageWrapper(change);
-        self.inner().write(RAFT_METADATA_TABLE, &CONF_STATE_KEY.to_string(), &value)
-    }
-
-    /// Apply a hard state to the log store
-    ///
-    /// TODO: Delete this
-    pub fn apply_hard_state(&self, state: HardState) -> Result<(), StorageError> {
-        let value = ProtoStorageWrapper(state);
-        self.inner().write(RAFT_METADATA_TABLE, &HARD_STATE_KEY.to_string(), &value)
-    }
 
     /// Append entries to the raft log
     pub fn append_log_entries<I: IntoIterator<Item = Entry>>(
@@ -246,13 +195,6 @@ impl<'db> StateTxn<'db, RW> {
         }
 
         Ok(())
-    }
-
-    /// Apply a snapshot to the log store
-    ///
-    /// TODO: Delete this
-    pub fn apply_snapshot(&self, _snapshot: &RaftSnapshot) -> Result<(), StorageError> {
-        unimplemented!()
     }
 }
 

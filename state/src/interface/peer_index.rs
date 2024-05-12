@@ -12,9 +12,13 @@ use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
 
-use crate::{error::StateError, State};
+use crate::{
+    error::StateError,
+    replicationv2::{network::address_translation::PeerIdTranslationMap, raft::NetworkEssential},
+    State, StateHandle,
+};
 
-impl State {
+impl<N: NetworkEssential> StateHandle<N> {
     // -----------
     // | Getters |
     // -----------
@@ -114,12 +118,12 @@ impl State {
     // -----------
 
     /// Add a peer to the peer index
-    pub fn add_peer(&self, peer: PeerInfo) -> Result<(), StateError> {
-        self.add_peer_batch(vec![peer])
+    pub async fn add_peer(&self, peer: PeerInfo) -> Result<(), StateError> {
+        self.add_peer_batch(vec![peer]).await
     }
 
     /// Add a batch of peers to the index
-    pub fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
+    pub async fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
         // Index each peer
         let tx = self.db.new_write_tx()?;
         for mut peer in peers.into_iter() {
@@ -138,7 +142,8 @@ impl State {
             // If the peer belongs in the same cluster, add it to the raft group
             let my_cluster_id = tx.get_cluster_id()?;
             if peer.cluster_id == my_cluster_id {
-                self.add_raft_learner(peer.peer_id)?;
+                let raft_id = PeerIdTranslationMap::get_raft_id(&peer.peer_id);
+                self.raft.add_learner(raft_id).await?;
             }
 
             self.bus
@@ -150,13 +155,14 @@ impl State {
     }
 
     /// Remove a peer that has been expired
-    pub fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<(), StateError> {
+    pub async fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<(), StateError> {
         let tx = self.db.new_write_tx()?;
         let my_cluster = tx.get_cluster_id()?;
         if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
             // If the peer is in the same cluster, remove it from the raft group
             if peer_info.cluster_id == my_cluster {
-                self.remove_raft_peer(peer_id)?;
+                let raft_id = PeerIdTranslationMap::get_raft_id(&peer_id);
+                self.raft.remove_peer(raft_id).await?;
             }
 
             tx.remove_from_cluster(&peer_id, &peer_info.cluster_id)?;
@@ -195,9 +201,9 @@ mod test {
     use crate::test_helpers::mock_state;
 
     /// Tests adding a peer to the peer index
-    #[test]
-    fn test_add_peer() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_add_peer() {
+        let state = mock_state().await;
         let peer1 = mock_peer();
         let mut peer2 = mock_peer();
         let mut peer3 = mock_peer();
@@ -206,9 +212,9 @@ mod test {
         peer3.cluster_id = peer1.cluster_id.clone();
 
         // Add the peers
-        state.add_peer(peer1.clone()).unwrap();
-        state.add_peer(peer2.clone()).unwrap();
-        state.add_peer(peer3.clone()).unwrap();
+        state.add_peer(peer1.clone()).await.unwrap();
+        state.add_peer(peer2.clone()).await.unwrap();
+        state.add_peer(peer3.clone()).await.unwrap();
 
         // Check that the first peer was added
         let peer_info = state.get_peer_info(&peer1.peer_id).unwrap().unwrap();
@@ -231,9 +237,9 @@ mod test {
     }
 
     /// Tests removing a peer from the state
-    #[test]
-    fn test_remove_peer() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_remove_peer() {
+        let state = mock_state().await;
         let peer1 = mock_peer();
         let mut peer2 = mock_peer();
         let mut peer3 = mock_peer();
@@ -242,12 +248,12 @@ mod test {
         peer3.cluster_id = peer1.cluster_id.clone();
 
         // Add the peers
-        state.add_peer(peer1.clone()).unwrap();
-        state.add_peer(peer2.clone()).unwrap();
-        state.add_peer(peer3.clone()).unwrap();
+        state.add_peer(peer1.clone()).await.unwrap();
+        state.add_peer(peer2.clone()).await.unwrap();
+        state.add_peer(peer3.clone()).await.unwrap();
 
         // Remove a peer
-        state.remove_peer(peer1.peer_id).unwrap();
+        state.remove_peer(peer1.peer_id).await.unwrap();
 
         // Check that the peer was removed
         let peer_info = state.get_peer_info(&peer1.peer_id).unwrap();
@@ -270,15 +276,15 @@ mod test {
     }
 
     /// Tests the `get_missing_peers` method
-    #[test]
-    fn test_get_missing_peers() {
-        let state = mock_state();
+    #[tokio::test]
+    async fn test_get_missing_peers() {
+        let state = mock_state().await;
         let peer1 = mock_peer();
         let peer2 = mock_peer();
         let peer3 = mock_peer();
 
         // Add the peer
-        state.add_peer(peer1.clone()).unwrap();
+        state.add_peer(peer1.clone()).await.unwrap();
 
         // Check that the missing peers are returned
         let mut missing_peers =
