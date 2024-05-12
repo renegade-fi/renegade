@@ -5,18 +5,13 @@ use std::{collections::BTreeSet, sync::Arc};
 use openraft::{ChangeMembers, Config as RaftConfig, EmptyNode, RaftNetworkFactory};
 use util::err_str;
 
-use crate::{
-    applicator::StateApplicator,
-    notifications::{OpenNotifications, ProposalId},
-    storage::db::DB,
-    Proposal, StateTransition,
-};
+use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
 
 use super::{
     error::ReplicationV2Error,
     log_store::LogStore,
     network::{P2PRaftNetwork, RaftRequest},
-    state_machine::{StateMachine, StateMachineConfig},
+    state_machine::StateMachine,
     NodeId, Raft, TypeConfig,
 };
 
@@ -31,6 +26,11 @@ const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15000; // 15 seconds
 
 /// Error message emitted when there is no known leader
 const ERR_NO_LEADER: &str = "no leader";
+
+/// Marker trait to simplify raft client trait bounds
+#[rustfmt::skip]
+pub trait NetworkEssential: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone {}
+impl<T: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> NetworkEssential for T {}
 
 /// The config for the raft client
 #[derive(Clone)]
@@ -70,7 +70,7 @@ impl Default for RaftClientConfig {
 
 /// A client interface to the raft
 #[derive(Clone)]
-pub struct RaftClient<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> {
+pub struct RaftClient<N: NetworkEssential> {
     /// The client's config
     config: RaftClientConfig,
     /// The inner raft
@@ -79,14 +79,13 @@ pub struct RaftClient<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone
     net: N,
 }
 
-impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
+impl<N: NetworkEssential> RaftClient<N> {
     /// Create a new raft client
     pub async fn new(
         config: RaftClientConfig,
         db: Arc<DB>,
         net: N,
-        notifications: OpenNotifications,
-        applicator: StateApplicator,
+        state_machine: StateMachine,
     ) -> Result<Self, ReplicationV2Error> {
         let raft_config = Arc::new(RaftConfig {
             cluster_name: config.cluster_name.clone(),
@@ -97,10 +96,8 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
         });
 
         // Create the raft
-        let sm_config = StateMachineConfig::new(db.path().to_string());
-        let sm = StateMachine::new(sm_config, notifications, applicator);
         let log_store = LogStore::new(db.clone());
-        let raft = Raft::new(config.id, raft_config, net.clone(), log_store, sm)
+        let raft = Raft::new(config.id, raft_config, net.clone(), log_store, state_machine)
             .await
             .map_err(err_str!(ReplicationV2Error::RaftSetup))?;
 
@@ -121,6 +118,12 @@ impl<N: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> RaftClient<N> {
     /// Get the inner raft
     pub fn raft(&self) -> &Raft {
         &self.raft
+    }
+
+    /// Get a handle to the network implementation
+    #[cfg(any(test, feature = "mocks"))]
+    pub(crate) fn network(&self) -> N {
+        self.net.clone()
     }
 
     /// Get the node ID of the local raft

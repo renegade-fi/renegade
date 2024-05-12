@@ -9,9 +9,9 @@ use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use util::res_some;
 
-use crate::{error::StateError, State, NODE_METADATA_TABLE};
+use crate::{error::StateError, replicationv2::raft::NetworkEssential, State, NODE_METADATA_TABLE};
 
-impl State {
+impl<N: NetworkEssential> State<N> {
     // -----------
     // | Getters |
     // -----------
@@ -142,11 +142,11 @@ mod test {
     use crate::test_helpers::{mock_relayer_config, mock_state_with_config};
 
     /// Tests the node metadata setup from a mock config
-    #[test]
-    fn test_node_metadata() {
+    #[tokio::test]
+    async fn test_node_metadata() {
         // Build the state mock manually to use the generated config
         let config = mock_relayer_config();
-        let state = mock_state_with_config(&config);
+        let state = mock_state_with_config(&config).await;
 
         // Check the metadata fields
         let peer_id = state.get_peer_id().unwrap();

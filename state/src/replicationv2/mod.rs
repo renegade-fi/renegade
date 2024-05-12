@@ -5,10 +5,10 @@
 
 pub mod error;
 mod log_store;
-mod network;
+pub(crate) mod network;
 pub mod raft;
 mod snapshot;
-mod state_machine;
+pub(crate) mod state_machine;
 
 use openraft::{EmptyNode, Raft as RaftInner, RaftTypeConfig};
 
@@ -39,8 +39,9 @@ pub type Raft = RaftInner<TypeConfig>;
 // | Mock Raft |
 // -------------
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
+    //! Test helpers for mocking rafts
     use std::{collections::HashMap, sync::Arc, time::Duration};
 
     use common::{new_async_shared, AsyncShared};
@@ -163,15 +164,19 @@ pub mod test_helpers {
             config.init = true;
 
             for i in 0..n_nodes as u64 {
+                // Setup the config
+                let mut conf = config.clone();
+                conf.id = i;
+
+                // Setup the raft dependencies
                 let mock_net = MockNetworkNode::new(send.clone());
                 let applicator = mock_applicator();
                 let db = applicator.config.db.clone();
-                let mut conf = config.clone();
-                conf.id = i;
                 let notifications = OpenNotifications::new();
-                let client = RaftClient::new(conf, db.clone(), mock_net, notifications, applicator)
-                    .await
-                    .unwrap();
+                let sm_conf = StateMachineConfig::new(db.path().to_string());
+                let sm = StateMachine::new(sm_conf, notifications, applicator);
+
+                let client = RaftClient::new(conf, db.clone(), mock_net, sm).await.unwrap();
                 nodes.insert(i, MockRaftNode::new(client, db));
             }
 
@@ -230,16 +235,19 @@ pub mod test_helpers {
 
         /// Add a node to the network, does not propose a state transition
         pub async fn add_node(&self, nid: NodeId) {
+            // Setup a config
             let mut config = mock_raft_config(vec![nid]);
             config.id = nid;
+
+            // Setup the raft dependencies
             let mock_net = MockNetworkNode::new(self.sender.clone());
             let applicator = mock_applicator();
             let db = applicator.config.db.clone();
             let notifications = OpenNotifications::new();
+            let sm_conf = StateMachineConfig::new(db.path().to_string());
+            let sm = StateMachine::new(sm_conf, notifications, applicator);
 
-            let client = RaftClient::new(config, db.clone(), mock_net, notifications, applicator)
-                .await
-                .unwrap();
+            let client = RaftClient::new(config, db.clone(), mock_net, sm).await.unwrap();
             let node = MockRaftNode::new(client, db);
             self.rafts.write().await.insert(nid, node);
         }
