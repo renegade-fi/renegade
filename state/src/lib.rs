@@ -23,7 +23,7 @@ use common::types::{
     wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
 };
 use notifications::ProposalId;
-use replicationv2::{network::GossipNetwork, NodeId};
+use replicationv2::{network::gossip::GossipNetwork, NodeId, RaftNode};
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
@@ -156,7 +156,7 @@ pub enum StateTransition {
 
     // --- Raft --- //
     /// Add a raft learner to the cluster
-    AddRaftLearner { peer_id: NodeId },
+    AddRaftLearner { peer_id: NodeId, info: RaftNode },
     /// Add a raft peer to the local consensus cluster
     AddRaftVoter { peer_id: NodeId },
     /// Remove a raft peer from the local consensus cluster
@@ -190,8 +190,7 @@ pub mod test_helpers {
 
     use crate::{
         replicationv2::{
-            network::{address_translation::PeerIdTranslationMap, mock::MockNetworkNode},
-            raft::RaftClientConfig,
+            get_raft_id, network::mock::MockNetworkNode, raft::RaftClientConfig,
             test_helpers::MockRaft,
         },
         storage::db::{DbConfig, DB},
@@ -239,7 +238,7 @@ pub mod test_helpers {
     /// We set the timeouts very low to speed up leader election
     pub fn mock_raft_config(relayer_config: &RelayerConfig) -> RaftClientConfig {
         let peer_id = relayer_config.p2p_key.public().to_peer_id();
-        let id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
+        let id = get_raft_id(&WrappedPeerId(peer_id));
         RaftClientConfig { id, init: true, ..Default::default() }
     }
 
