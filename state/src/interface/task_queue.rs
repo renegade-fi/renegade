@@ -7,7 +7,7 @@ use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential, State,
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
     StateHandle, StateTransition,
 };
 
@@ -17,97 +17,107 @@ impl<N: NetworkEssential> StateHandle<N> {
     // -----------
 
     /// Whether or not the task queue contains a specific task
-    pub fn contains_task(&self, task_id: &TaskIdentifier) -> Result<bool, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let key = self.get_task_queue_key(task_id)?;
-        tx.commit()?;
-
+    pub async fn contains_task(&self, task_id: &TaskIdentifier) -> Result<bool, StateError> {
+        let key = self.get_task_queue_key(task_id).await?;
         Ok(key.is_some())
     }
 
     /// Get the length of the task queue
-    pub fn get_task_queue_len(&self, key: &TaskQueueKey) -> Result<usize, StateError> {
-        self.get_queued_tasks(key).map(|tasks| tasks.len())
+    pub async fn get_task_queue_len(&self, key: &TaskQueueKey) -> Result<usize, StateError> {
+        let key = *key;
+        self.with_read_tx(move |tx| {
+            let tasks = tx.get_queued_tasks(&key)?;
+            Ok(tasks.len())
+        })
+        .await
     }
 
     /// Get the list of tasks
-    pub fn get_queued_tasks(&self, key: &TaskQueueKey) -> Result<Vec<QueuedTask>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let tasks = tx.get_queued_tasks(key)?;
-        tx.commit()?;
-
-        Ok(tasks)
+    pub async fn get_queued_tasks(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<Vec<QueuedTask>, StateError> {
+        let key = *key;
+        self.with_read_tx(move |tx| {
+            let tasks = tx.get_queued_tasks(&key)?;
+            Ok(tasks)
+        })
+        .await
     }
 
     /// Get the list of all tasks (running an historical) up to a truncation
     /// length
-    pub fn get_task_history(
+    pub async fn get_task_history(
         &self,
         len: usize,
         key: &TaskQueueKey,
     ) -> Result<Vec<HistoricalTask>, StateError> {
-        // Fetch running and historical tasks
-        let tx = self.db.new_read_tx()?;
-        let running = tx.get_queued_tasks(key)?;
-        let remaining = len.saturating_sub(running.len());
-        let historical = tx.get_truncated_task_history(remaining, key)?;
-        tx.commit()?;
-
-        // Convert running tasks and concatenate the lists
-        let converted = running
-            .into_iter()
-            .filter_map(|t| HistoricalTask::from_queued_task(*key, t))
-            .chain(historical)
-            .take(len)
-            .collect();
-
-        Ok(converted)
+        let key = *key;
+        self.with_read_tx(move |tx| {
+            let running = tx.get_queued_tasks(&key)?;
+            let remaining = len.saturating_sub(running.len());
+            let historical = tx.get_truncated_task_history(remaining, &key)?;
+            Ok(running
+                .into_iter()
+                .filter_map(|t| HistoricalTask::from_queued_task(key, t))
+                .chain(historical)
+                .take(len)
+                .collect())
+        })
+        .await
     }
 
     /// Get the task queue key that a task modifies
-    pub fn get_task_queue_key(
+    pub async fn get_task_queue_key(
         &self,
         task_id: &TaskIdentifier,
     ) -> Result<Option<TaskQueueKey>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let key = tx.get_queue_key_for_task(task_id)?;
-        tx.commit()?;
-
-        Ok(key)
+        let task_id = *task_id;
+        self.with_read_tx(move |tx| {
+            let key = tx.get_queue_key_for_task(&task_id)?;
+            Ok(key)
+        })
+        .await
     }
 
     /// Get a task by ID
-    pub fn get_task(&self, task_id: &TaskIdentifier) -> Result<Option<QueuedTask>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let task = tx.get_task(task_id)?;
-        tx.commit()?;
-
-        Ok(task)
+    pub async fn get_task(
+        &self,
+        task_id: &TaskIdentifier,
+    ) -> Result<Option<QueuedTask>, StateError> {
+        let task_id = *task_id;
+        self.with_read_tx(move |tx| {
+            let task = tx.get_task(&task_id)?;
+            Ok(task)
+        })
+        .await
     }
 
     /// Get the status of a task
-    pub fn get_task_status(
+    pub async fn get_task_status(
         &self,
         task_id: &TaskIdentifier,
     ) -> Result<Option<QueuedTaskState>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let status = tx.get_task(task_id)?;
-        tx.commit()?;
-
-        Ok(status.map(|x| x.state))
+        let task_id = *task_id;
+        self.with_read_tx(move |tx| {
+            let status = tx.get_task(&task_id)?;
+            Ok(status.map(|x| x.state))
+        })
+        .await
     }
 
     /// Returns the current running task for a queue if it exists and has
     /// already committed
-    pub fn current_committed_task(
+    pub async fn current_committed_task(
         &self,
         key: &TaskQueueKey,
     ) -> Result<Option<TaskIdentifier>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let running = tx.get_current_running_task(key)?;
-        tx.commit()?;
-
-        Ok(running.filter(|x| x.state.is_committed()).map(|x| x.id))
+        let key = *key;
+        self.with_read_tx(move |tx| {
+            let running = tx.get_current_running_task(&key)?;
+            Ok(running.filter(|x| x.state.is_committed()).map(|x| x.id))
+        })
+        .await
     }
 
     // -----------
@@ -124,7 +134,7 @@ impl<N: NetworkEssential> StateHandle<N> {
         let id = TaskIdentifier::new_v4();
         backfill_trace_field("task_id", id.to_string());
 
-        let self_id = self.get_peer_id()?;
+        let self_id = self.get_peer_id().await?;
         let task = QueuedTask {
             id,
             state: QueuedTaskState::Queued,
@@ -169,7 +179,7 @@ impl<N: NetworkEssential> StateHandle<N> {
     ) -> Result<ProposalWaiter, StateError> {
         // Pick a task ID and create a task from the description
         backfill_trace_field("task_id", task_id.to_string());
-        let self_id = self.get_peer_id()?;
+        let self_id = self.get_peer_id().await?;
         let task = QueuedTask {
             id: task_id,
             state: QueuedTaskState::Preemptive,
@@ -211,8 +221,8 @@ mod test {
         let state = mock_state().await;
 
         let key = TaskQueueKey::new_v4();
-        assert_eq!(state.get_task_queue_len(&key).unwrap(), 0);
-        assert!(state.get_queued_tasks(&key).unwrap().is_empty());
+        assert_eq!(state.get_task_queue_len(&key).await.unwrap(), 0);
+        assert!(state.get_queued_tasks(&key).await.unwrap().is_empty());
     }
 
     /// Tests appending to an empty queue
@@ -228,14 +238,14 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was added
-        assert_eq!(state.get_task_queue_len(&key).unwrap(), 1);
+        assert_eq!(state.get_task_queue_len(&key).await.unwrap(), 1);
 
-        let tasks = state.get_queued_tasks(&key).unwrap();
+        let tasks = state.get_queued_tasks(&key).await.unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, task_id);
         assert!(matches!(tasks[0].state, QueuedTaskState::Running { .. })); // Should be started
 
-        assert!(state.get_task(&task_id).unwrap().is_some());
+        assert!(state.get_task(&task_id).await.unwrap().is_some());
     }
 
     /// Tests popping from a queue
@@ -259,7 +269,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was removed
-        assert_eq!(state.get_task_queue_len(&wallet_id).unwrap(), 0);
+        assert_eq!(state.get_task_queue_len(&wallet_id).await.unwrap(), 0);
     }
 
     /// Tests transitioning the state of a task
@@ -285,7 +295,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was transitioned
-        let task = state.get_task(&task_id).unwrap().unwrap();
+        let task = state.get_task(&task_id).await.unwrap().unwrap();
         assert_eq!(
             task.state,
             QueuedTaskState::Running { state: "Test".to_string(), committed: false }
@@ -305,7 +315,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the queue has no committed task
-        assert!(state.current_committed_task(&key).unwrap().is_none());
+        assert!(state.current_committed_task(&key).await.unwrap().is_none());
 
         // Transition the task to running and check again
         let waiter = state
@@ -316,7 +326,7 @@ mod test {
             .await
             .unwrap();
         waiter.await.unwrap();
-        assert!(state.current_committed_task(&key).unwrap().is_none());
+        assert!(state.current_committed_task(&key).await.unwrap().is_none());
 
         // Transition the task to committed and check again
         let waiter = state
@@ -327,7 +337,7 @@ mod test {
             .await
             .unwrap();
         waiter.await.unwrap();
-        assert_eq!(state.current_committed_task(&key).unwrap(), Some(task_id));
+        assert_eq!(state.current_committed_task(&key).await.unwrap(), Some(task_id));
     }
 
     /// Tests fetching task history
@@ -356,7 +366,7 @@ mod test {
         }
 
         // Fetch the task history
-        let history = state.get_task_history(N, &wallet_id).unwrap();
+        let history = state.get_task_history(N, &wallet_id).await.unwrap();
         assert_eq!(history.len(), N);
         assert!(matches!(history[0].state, QueuedTaskState::Running { .. }));
         for task in history.iter().take(N / 2).skip(1) {

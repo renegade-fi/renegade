@@ -11,7 +11,7 @@ use common::types::{
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential, State,
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
     StateHandle, StateTransition,
 };
 
@@ -21,63 +21,70 @@ impl<N: NetworkEssential> StateHandle<N> {
     // -----------
 
     /// Whether the wallet exists
-    pub fn contains_wallet(&self, id: &WalletIdentifier) -> Result<bool, StateError> {
-        Ok(self.get_wallet(id)?.is_some())
+    pub async fn contains_wallet(&self, id: &WalletIdentifier) -> Result<bool, StateError> {
+        Ok(self.get_wallet(id).await?.is_some())
     }
 
     /// Get the wallet with the given id
-    pub fn get_wallet(&self, id: &WalletIdentifier) -> Result<Option<Wallet>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let wallet = tx.get_wallet(id)?;
-        tx.commit()?;
-
-        Ok(wallet)
+    pub async fn get_wallet(&self, id: &WalletIdentifier) -> Result<Option<Wallet>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let wallet = tx.get_wallet(&id)?;
+            Ok(wallet)
+        })
+        .await
     }
 
     /// Get the wallet and the tasks in the queue for the wallet
     ///
     /// Defined here to manage these in a single tx
-    pub fn get_wallet_and_tasks(
+    pub async fn get_wallet_and_tasks(
         &self,
         id: &WalletIdentifier,
     ) -> Result<Option<(Wallet, Vec<QueuedTask>)>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let wallet = res_some!(tx.get_wallet(id)?);
-        let tasks = tx.get_queued_tasks(id)?;
-        tx.commit()?;
-
-        Ok(Some((wallet, tasks)))
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let wallet = res_some!(tx.get_wallet(&id)?);
+            let tasks = tx.get_queued_tasks(&id)?;
+            Ok(Some((wallet, tasks)))
+        })
+        .await
     }
 
     /// Get the plaintext order for a locally managed order ID
-    pub fn get_managed_order(&self, id: &OrderIdentifier) -> Result<Option<Order>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let wallet_id = res_some!(tx.get_wallet_for_order(id)?);
-        let wallet = res_some!(tx.get_wallet(&wallet_id)?);
-        tx.commit()?;
-
-        Ok(wallet.orders.get(id).cloned())
+    pub async fn get_managed_order(
+        &self,
+        id: &OrderIdentifier,
+    ) -> Result<Option<Order>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let wallet_id = res_some!(tx.get_wallet_for_order(&id)?);
+            let wallet = res_some!(tx.get_wallet(&wallet_id)?);
+            Ok(wallet.orders.get(&id).cloned())
+        })
+        .await
     }
 
     /// Get the wallet that contains the given order ID
-    pub fn get_wallet_for_order(
+    pub async fn get_wallet_for_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<WalletIdentifier>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let wallet_id = tx.get_wallet_for_order(order_id)?;
-        tx.commit()?;
-
-        Ok(wallet_id)
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let wallet_id = tx.get_wallet_for_order(&oid)?;
+            Ok(wallet_id)
+        })
+        .await
     }
 
     /// Get the ids of all wallets managed by the local relayer
-    pub fn get_all_wallets(&self) -> Result<Vec<Wallet>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let wallets = tx.get_all_wallets()?;
-        tx.commit()?;
-
-        Ok(wallets)
+    pub async fn get_all_wallets(&self) -> Result<Vec<Wallet>, StateError> {
+        self.with_read_tx(move |tx| {
+            let wallets = tx.get_all_wallets()?;
+            Ok(wallets)
+        })
+        .await
     }
 
     // -----------
@@ -150,7 +157,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check the order history for a wallet
-        let history = state.get_order_history(10, &wallet.wallet_id).unwrap();
+        let history = state.get_order_history(10, &wallet.wallet_id).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, order_id);
         assert_eq!(history[0].state, OrderState::Created);
@@ -173,7 +180,7 @@ mod test {
 
         // Mark the order's state in the history as `Matching`, simulating an order that
         // now has validity proofs ready for match
-        let mut meta = state.get_order_metadata(&order_id).unwrap().unwrap();
+        let mut meta = state.get_order_metadata(&order_id).await.unwrap().unwrap();
         meta.state = OrderState::Matching;
         let waiter = state.update_order_metadata(meta).await.unwrap();
         waiter.await.unwrap();
@@ -184,7 +191,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check the order history
-        let history = state.get_order_history(10, &wallet.wallet_id).unwrap();
+        let history = state.get_order_history(10, &wallet.wallet_id).await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, order_id);
         // The order should now be back in the `Created` state, awaiting new proofs
@@ -224,7 +231,7 @@ mod test {
 
         // Now fetch history, it should contain one order in the `Created` state
         // and another in the `Cancelled` state
-        let history = state.get_order_history(10, &wallet.wallet_id).unwrap();
+        let history = state.get_order_history(10, &wallet.wallet_id).await.unwrap();
         assert_eq!(history.len(), 10);
         assert_eq!(history[0].id, order_id2);
         assert_eq!(history[0].state, OrderState::Created);
