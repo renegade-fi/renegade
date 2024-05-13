@@ -23,7 +23,7 @@ use util::res_some;
 
 use crate::{
     error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    storage::error::StorageError, State, StateHandle, StateTransition,
+    storage::error::StorageError, StateHandle, StateTransition,
 };
 
 /// The error message emitted when a caller attempts to add a local order
@@ -36,193 +36,210 @@ impl<N: NetworkEssential> StateHandle<N> {
     // -----------
 
     /// Returns whether or not the state contains a given order
-    pub fn contains_order(&self, order_id: &OrderIdentifier) -> Result<bool, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let contains = tx.contains_order(order_id)?;
-        tx.commit()?;
-
-        Ok(contains)
+    pub async fn contains_order(&self, order_id: &OrderIdentifier) -> Result<bool, StateError> {
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let contains = tx.contains_order(&oid)?;
+            Ok(contains)
+        })
+        .await
     }
 
     /// Get an order
-    pub fn get_order(
+    pub async fn get_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<NetworkOrder>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let info = tx.get_order_info(order_id)?;
-        tx.commit()?;
-
-        Ok(info)
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let info = tx.get_order_info(&oid)?;
+            Ok(info)
+        })
+        .await
     }
 
     /// Get a batch of orders
     ///
     /// Returns `None` for the orders that are not in the state
-    pub fn get_orders_batch(
+    pub async fn get_orders_batch(
         &self,
         order_ids: &[OrderIdentifier],
     ) -> Result<Vec<Option<NetworkOrder>>, StateError> {
-        let tx = self.db.new_read_tx()?;
-
-        let mut orders = Vec::with_capacity(order_ids.len());
-        for id in order_ids.iter() {
-            orders.push(tx.get_order_info(id)?);
-        }
-
-        tx.commit()?;
-        Ok(orders)
+        let order_ids = order_ids.to_vec();
+        self.with_read_tx(move |tx| {
+            let mut orders = Vec::with_capacity(order_ids.len());
+            for id in order_ids.iter() {
+                orders.push(tx.get_order_info(id)?);
+            }
+            Ok(orders)
+        })
+        .await
     }
 
     /// Get the nullifier for an order
-    pub fn get_nullifier_for_order(
+    pub async fn get_nullifier_for_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<Nullifier>, StateError> {
-        let order = self.get_order(order_id)?;
-        Ok(order.map(|o| o.public_share_nullifier))
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let order = tx.get_order_info(&oid)?;
+            Ok(order.map(|o| o.public_share_nullifier))
+        })
+        .await
     }
 
     /// Get the validity proofs for an order
-    pub fn get_validity_proofs(
+    pub async fn get_validity_proofs(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<OrderValidityProofBundle>, StateError> {
-        let order = self.get_order(order_id)?;
-        Ok(order.and_then(|o| o.validity_proofs))
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let order = tx.get_order_info(&oid)?;
+            Ok(order.and_then(|o| o.validity_proofs))
+        })
+        .await
     }
 
     /// Get the validity proof witness for an order
-    pub fn get_validity_proof_witness(
+    pub async fn get_validity_proof_witness(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<OrderValidityWitnessBundle>, StateError> {
-        let order = self.get_order(order_id)?;
-        Ok(order.and_then(|o| o.validity_proof_witnesses))
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let order = tx.get_order_info(&oid)?;
+            Ok(order.and_then(|o| o.validity_proof_witnesses))
+        })
+        .await
     }
 
     /// Return whether the given order is ready for a match
-    pub fn order_ready_for_match(&self, order_id: &OrderIdentifier) -> Result<bool, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let info = tx.get_order_info(order_id)?.ok_or(StateError::Db(StorageError::NotFound(
-            format!("order {order_id} not found in state"),
-        )))?;
-        tx.commit()?;
-
-        Ok(info.ready_for_match())
+    pub async fn order_ready_for_match(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<bool, StateError> {
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let info = tx.get_order_info(&oid)?.ok_or(StateError::Db(StorageError::NotFound(
+                format!("order {oid} not found in state"),
+            )))?;
+            Ok(info.ready_for_match())
+        })
+        .await
     }
 
     /// Get all known orders in the book
-    pub fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let orders = tx.get_all_orders()?;
-        tx.commit()?;
-
-        Ok(orders)
+    pub async fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StateError> {
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_all_orders()?;
+            Ok(orders)
+        })
+        .await
     }
 
     // --- Heartbeat --- //
 
     /// Given a list of order IDs, return the subset that are not in the state
-    pub fn get_missing_orders(
+    pub async fn get_missing_orders(
         &self,
         order_ids: &[OrderIdentifier],
     ) -> Result<Vec<OrderIdentifier>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let mut missing = Vec::new();
-        for id in order_ids.iter() {
-            if !tx.contains_order(id)? {
-                missing.push(*id);
+        let oids = order_ids.to_vec();
+        self.with_read_tx(move |tx| {
+            let mut missing = Vec::new();
+            for id in oids.iter() {
+                if !tx.contains_order(id)? {
+                    missing.push(*id);
+                }
             }
-        }
-        tx.commit()?;
-
-        Ok(missing)
+            Ok(missing)
+        })
+        .await
     }
 
     // --- Match --- //
 
     /// Sample a peer in the cluster managing an order
-    pub fn get_peer_managing_order(
+    pub async fn get_peer_managing_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<WrappedPeerId>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let order = res_some!(tx.get_order_info(order_id)?);
-        let peers = tx.get_cluster_peers(&order.cluster)?;
-        tx.commit()?;
-
-        // Sample a peer
-        let mut rng = thread_rng();
-        let peer = peers.choose(&mut rng).cloned();
-        Ok(peer)
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let order = res_some!(tx.get_order_info(&oid)?);
+            let peers = tx.get_cluster_peers(&order.cluster)?;
+            Ok(peers.choose(&mut thread_rng()).cloned())
+        })
+        .await
     }
 
     /// Get a list of order IDs that are locally managed and ready for match
     ///
     /// TODO: Optimize this if necessary, possibly by caching this list
-    pub fn get_locally_matchable_orders(&self) -> Result<Vec<OrderIdentifier>, StateError> {
-        let tx = self.db.new_read_tx()?;
+    pub async fn get_locally_matchable_orders(&self) -> Result<Vec<OrderIdentifier>, StateError> {
+        self.with_read_tx(|tx| {
+            // Get all the local orders
+            let local_order_ids = tx.get_local_orders()?;
 
-        // Get all the local orders
-        let local_order_ids = tx.get_local_orders()?;
+            let mut res = Vec::new();
+            for id in local_order_ids.into_iter() {
+                if let Some(info) = tx.get_order_info(&id)? {
+                    // Check that there are no tasks in the queue for the containing wallet
+                    // This avoids unnecessary preemptions or possible dropped matches
+                    let wallet_id = match tx.get_wallet_for_order(&info.id)? {
+                        None => continue,
+                        Some(wallet) => wallet,
+                    };
 
-        let mut res = Vec::new();
-        for id in local_order_ids.into_iter() {
-            if let Some(info) = tx.get_order_info(&id)? {
-                // Check that there are no tasks in the queue for the containing wallet
-                // This avoids unnecessary preemptions or possible dropped matches
-                let wallet_id = match tx.get_wallet_for_order(&info.id)? {
-                    None => continue,
-                    Some(wallet) => wallet,
-                };
+                    if !tx.is_queue_empty(&wallet_id)? || tx.is_queue_paused(&wallet_id)? {
+                        continue;
+                    }
 
-                if !tx.is_queue_empty(&wallet_id)? || tx.is_queue_paused(&wallet_id)? {
-                    continue;
-                }
-
-                // Check that the order itself is ready for a match
-                if info.ready_for_match() {
-                    res.push(id);
+                    // Check that the order itself is ready for a match
+                    if info.ready_for_match() {
+                        res.push(id);
+                    }
                 }
             }
-        }
 
-        tx.commit()?;
-        Ok(res)
+            Ok(res)
+        })
+        .await
     }
 
     /// Choose an order to handshake with according to their priorities
     ///
     /// TODO: Optimize this method if necessary
-    pub fn choose_handshake_order(&self) -> Result<Option<OrderIdentifier>, StateError> {
-        let tx = self.db.new_read_tx()?;
+    pub async fn choose_handshake_order(&self) -> Result<Option<OrderIdentifier>, StateError> {
+        self.with_read_tx(|tx| {
+            // Get all orders and filter by those that are not managed internally and ready
+            // for match
+            let mut all_orders = tx.get_all_orders()?;
 
-        // Get all orders and filter by those that are not managed internally and ready
-        // for match
-        let mut all_orders = tx.get_all_orders()?;
+            let my_cluster = tx.get_cluster_id()?;
+            all_orders.retain(|o| o.cluster != my_cluster && o.ready_for_match());
 
-        let my_cluster = tx.get_cluster_id()?;
-        all_orders.retain(|o| o.cluster != my_cluster && o.ready_for_match());
+            // Get the priorities of each order
+            let mut priorities = Vec::with_capacity(all_orders.len());
+            for order in all_orders.iter().map(|o| o.id) {
+                let priority = tx.get_order_priority(&order)?;
+                priorities.push(priority.get_effective_priority());
+            }
 
-        // Get the priorities of each order
-        let mut priorities = Vec::with_capacity(all_orders.len());
-        for order in all_orders.iter().map(|o| o.id) {
-            let priority = tx.get_order_priority(&order)?;
-            priorities.push(priority.get_effective_priority());
-        }
-        tx.commit()?;
+            // Sample a random priority-weighted order from the result
+            if priorities.is_empty() {
+                return Ok(None);
+            }
 
-        // Sample a random priority-weighted order from the result
-        if priorities.is_empty() {
-            return Ok(None);
-        }
+            let mut rng = thread_rng();
+            let distribution = WeightedIndex::new(&priorities).unwrap();
+            let sampled = all_orders.get(distribution.sample(&mut rng)).unwrap();
 
-        let mut rng = thread_rng();
-        let distribution = WeightedIndex::new(&priorities).unwrap();
-        let sampled = all_orders.get(distribution.sample(&mut rng)).unwrap();
-
-        Ok(Some(sampled.id))
+            Ok(Some(sampled.id))
+        })
+        .await
     }
 
     // -----------
@@ -230,49 +247,51 @@ impl<N: NetworkEssential> StateHandle<N> {
     // -----------
 
     /// Add an order to the book
-    pub fn add_order(&self, mut order: NetworkOrder) -> Result<(), StateError> {
-        let tx = self.db.new_write_tx()?;
+    pub async fn add_order(&self, mut order: NetworkOrder) -> Result<(), StateError> {
+        self.with_write_tx(move |tx| {
+            // Local orders should be added to the state through a wallet update written to
+            // the raft log
+            let cluster_id = tx.get_cluster_id()?;
+            let is_local = order.cluster == cluster_id;
+            if is_local {
+                return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
+            }
 
-        // Local orders should be added to the state through a wallet update written to
-        // the raft log
-        let cluster_id = tx.get_cluster_id()?;
-        let is_local = order.cluster == cluster_id;
-        if is_local {
-            return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
-        }
+            // Add the local order to the state
+            order.local = false;
+            tx.write_order_priority(&order)?;
+            tx.write_order(&order)?;
+            tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?;
 
-        // Add the local order to the state
-        order.local = false;
-        tx.write_order_priority(&order)?;
-        tx.write_order(&order)?;
-        tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?;
-
-        Ok(tx.commit()?)
+            Ok(())
+        })
+        .await
     }
 
     /// Add a validity proof to an order
-    pub fn add_order_validity_proof(
+    pub async fn add_order_validity_proof(
         &self,
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
     ) -> Result<(), StateError> {
-        let tx = self.db.new_write_tx()?;
-        tx.attach_validity_proof(&order_id, proof)?;
+        let bus = self.bus.clone();
+        self.with_write_tx(move |tx| {
+            tx.attach_validity_proof(&order_id, proof)?;
 
-        // Read back the order and check if it is local, if so, abort
-        let order = tx.get_order_info(&order_id)?.unwrap();
-        if order.local {
-            return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
-        }
+            // Read back the order and check if it is local, if so, abort
+            let order = tx.get_order_info(&order_id)?.unwrap();
+            if order.local {
+                return Err(StateError::InvalidUpdate(ERR_LOCAL_ORDER.to_string()));
+            }
 
-        tx.commit()?;
-
-        // Push a notification to the system bus
-        self.bus.publish(
-            ORDER_STATE_CHANGE_TOPIC.to_string(),
-            SystemBusMessage::OrderStateChange { order },
-        );
-        Ok(())
+            // Push a notification to the system bus
+            bus.publish(
+                ORDER_STATE_CHANGE_TOPIC.to_string(),
+                SystemBusMessage::OrderStateChange { order },
+            );
+            Ok(())
+        })
+        .await
     }
 
     /// Add a validity proof and witness to an order managed by the local node
@@ -287,11 +306,12 @@ impl<N: NetworkEssential> StateHandle<N> {
     }
 
     /// Nullify all orders on the given nullifier
-    pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
-        let tx = self.db.new_write_tx()?;
-        tx.nullify_orders(nullifier)?;
-
-        Ok(tx.commit()?)
+    pub async fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
+        self.with_write_tx(move |tx| {
+            tx.nullify_orders(nullifier)?;
+            Ok(())
+        })
+        .await
     }
 }
 
@@ -310,10 +330,10 @@ mod test {
         let state = mock_state().await;
 
         let order = dummy_network_order();
-        state.add_order(order.clone()).unwrap();
+        state.add_order(order.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).unwrap();
+        let stored_order = state.get_order(&order.id).await.unwrap();
         assert_eq!(stored_order, Some(order));
     }
 
@@ -326,10 +346,10 @@ mod test {
         let order1 = dummy_network_order();
         let order2 = dummy_network_order();
 
-        state.add_order(order1.clone()).unwrap();
+        state.add_order(order1.clone()).await.unwrap();
 
         // Get the orders in a batch call
-        let res = state.get_orders_batch(&[order1.id, order2.id]).unwrap();
+        let res = state.get_orders_batch(&[order1.id, order2.id]).await.unwrap();
         assert_eq!(res.len(), 2);
         assert_eq!(res[0], Some(order1));
         assert_eq!(res[1], None);
@@ -345,14 +365,15 @@ mod test {
         let order2 = dummy_network_order();
         let order3 = dummy_network_order();
 
-        state.add_order(order1.clone()).unwrap();
+        state.add_order(order1.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order1.id).unwrap();
+        let stored_order = state.get_order(&order1.id).await.unwrap();
         assert_eq!(stored_order.unwrap(), order1);
 
         // Get the missing orders
-        let mut missing = state.get_missing_orders(&[order1.id, order2.id, order3.id]).unwrap();
+        let mut missing =
+            state.get_missing_orders(&[order1.id, order2.id, order3.id]).await.unwrap();
         missing.sort();
         let mut expected = vec![order2.id, order3.id];
         expected.sort();
@@ -366,18 +387,18 @@ mod test {
         let state = mock_state().await;
 
         let order = dummy_network_order();
-        state.add_order(order.clone()).unwrap();
+        state.add_order(order.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).unwrap();
+        let stored_order = state.get_order(&order.id).await.unwrap();
         assert_eq!(stored_order, Some(order.clone()));
 
         // Add a validity proof to the order
         let proof = dummy_validity_proof_bundle();
-        state.add_order_validity_proof(order.id, proof).unwrap();
+        state.add_order_validity_proof(order.id, proof).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).unwrap().unwrap();
+        let stored_order = state.get_order(&order.id).await.unwrap().unwrap();
         assert_eq!(stored_order.state, NetworkOrderState::Verified);
         assert!(stored_order.validity_proofs.is_some());
     }
@@ -388,16 +409,16 @@ mod test {
         let state = mock_state().await;
 
         let order = dummy_network_order();
-        state.add_order(order.clone()).unwrap();
+        state.add_order(order.clone()).await.unwrap();
 
         // Check for the order in the state
-        let stored_order = state.get_order(&order.id).unwrap();
+        let stored_order = state.get_order(&order.id).await.unwrap();
         assert_eq!(stored_order, Some(order.clone()));
 
         // Nullify the order
-        state.nullify_orders(order.public_share_nullifier).unwrap();
+        state.nullify_orders(order.public_share_nullifier).await.unwrap();
 
         // Check for the order in the state
-        assert!(state.get_order(&order.id).unwrap().is_none());
+        assert!(state.get_order(&order.id).await.unwrap().is_none());
     }
 }

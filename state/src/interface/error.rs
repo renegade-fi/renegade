@@ -21,6 +21,8 @@ pub enum StateError {
     Proposal(String),
     /// An error in the replication substrate
     Replication(ReplicationV2Error),
+    /// An error awaiting a runtime task
+    Runtime(String),
 }
 
 impl Display for StateError {
