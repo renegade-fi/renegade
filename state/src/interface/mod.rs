@@ -25,7 +25,7 @@ use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
     notifications::{OpenNotifications, ProposalWaiter},
     replicationv2::{
-        network::address_translation::PeerIdTranslationMap,
+        get_raft_id,
         raft::{NetworkEssential, RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
     },
@@ -125,7 +125,7 @@ impl<N: NetworkEssential> StateHandle<N> {
     /// Build the raft config for the node
     fn build_raft_config(relayer_config: &RelayerConfig) -> RaftClientConfig {
         let peer_id = relayer_config.p2p_key.public().to_peer_id();
-        let raft_id = PeerIdTranslationMap::get_raft_id(&WrappedPeerId(peer_id));
+        let raft_id = get_raft_id(&WrappedPeerId(peer_id));
 
         RaftClientConfig {
             id: raft_id,
