@@ -3,19 +3,18 @@
 use common::types::gossip::WrappedPeerId;
 use gossip_api::{
     request_response::{
-        raft::RaftMessage, AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest,
-        GossipResponse,
+        AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest, GossipResponse,
     },
     GossipDestination,
 };
-use job_types::gossip_server::GossipServerJob;
+use job_types::{gossip_server::GossipServerJob, network_manager::NetworkResponseChannel};
 use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use libp2p::PeerId;
 use util::err_str;
 
 use crate::error::NetworkManagerError;
 
-use super::NetworkManagerExecutor;
+use super::{behavior::BehaviorJob, NetworkManagerExecutor};
 
 impl NetworkManagerExecutor {
     // -----------
@@ -24,7 +23,7 @@ impl NetworkManagerExecutor {
 
     /// Handle an incoming message from the network's request/response protocol
     pub(super) fn handle_inbound_request_response_message(
-        &mut self,
+        &self,
         peer: PeerId,
         message: RequestResponseMessage<AuthenticatedGossipRequest, AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
@@ -71,7 +70,7 @@ impl NetworkManagerExecutor {
 
     /// Handle an internally routed request
     fn handle_internal_request(
-        &mut self,
+        &self,
         req: GossipRequest,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
@@ -86,14 +85,11 @@ impl NetworkManagerExecutor {
 
     /// Handle a raft message
     fn handle_raft_message(
-        &mut self,
-        msg: RaftMessage,
+        &self,
+        msg_buf: Vec<u8>,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
-        self.raft_queue.send(msg).map_err(err_str!(NetworkManagerError::EnqueueJob))?;
-
-        // Send back an ack
-        self.handle_outbound_resp(GossipResponse::Ack, chan)
+        todo!()
     }
 
     /// Handle an internally routed response
@@ -113,31 +109,25 @@ impl NetworkManagerExecutor {
 
     /// Handle an outbound request
     pub(crate) fn handle_outbound_req(
-        &mut self,
+        &self,
         peer: PeerId,
         req: GossipRequest,
+        chan: Option<NetworkResponseChannel>,
     ) -> Result<(), NetworkManagerError> {
         // Authenticate the request
         let authenticate_req = AuthenticatedGossipRequest::new_with_body(req, &self.cluster_key)?;
-        self.swarm.behaviour_mut().request_response.send_request(&peer, authenticate_req);
-
-        Ok(())
+        self.send_behavior(BehaviorJob::SendReq(peer, authenticate_req, chan))
     }
 
     /// Handle an outbound response
     pub(crate) fn handle_outbound_resp(
-        &mut self,
+        &self,
         resp: GossipResponse,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
         // Authenticate the response
         let authenticate_resp =
             AuthenticatedGossipResponse::new_with_body(resp, &self.cluster_key)?;
-
-        self.swarm
-            .behaviour_mut()
-            .request_response
-            .send_response(chan, authenticate_resp)
-            .map_err(|_| NetworkManagerError::Network("error sending response".to_string()))
+        self.send_behavior(BehaviorJob::SendResp(chan, authenticate_resp))
     }
 }
