@@ -1,5 +1,7 @@
 //! Defines pubsub message handlers
 
+use std::sync::atomic::Ordering;
+
 use gossip_api::{
     pubsub::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
@@ -13,38 +15,32 @@ use util::err_str;
 
 use crate::error::NetworkManagerError;
 
-use super::{BufferedPubsubMessage, NetworkManagerExecutor};
+use super::{behavior::BehaviorJob, BufferedPubsubMessage, NetworkManagerExecutor};
 
 impl NetworkManagerExecutor {
     /// Forward an outbound pubsub message to the network
-    pub(super) fn forward_outbound_pubsub(
-        &mut self,
+    pub(super) async fn forward_outbound_pubsub(
+        &self,
         topic: String,
         message: PubsubMessage,
     ) -> Result<(), NetworkManagerError> {
         // If the gossip server has not warmed up the local node into the network,
         // buffer the pubsub message for forwarding after the warmup
-        if !self.warmup_finished {
-            self.warmup_buffer.push(BufferedPubsubMessage { topic, message });
+        if !self.warmup_finished.load(Ordering::Relaxed) {
+            let mut buf = self.warmup_buffer.write().await;
+            buf.push(BufferedPubsubMessage { topic, message });
             return Ok(());
         }
 
         // If we require a signature on the message attach one
         let req_body = AuthenticatedPubsubMessage::new_with_body(message, &self.cluster_key)?;
-
-        // Forward to the network
         let topic = Sha256Topic::new(topic);
-        self.swarm
-            .behaviour_mut()
-            .pubsub
-            .publish(topic, req_body)
-            .map_err(|err| NetworkManagerError::Network(err.to_string()))?;
-        Ok(())
+        self.send_behavior(BehaviorJob::SendPubsub(topic, req_body))
     }
 
     /// Handle an incoming network request for a pubsub message
     pub(super) fn handle_inbound_pubsub_message(
-        &mut self,
+        &self,
         message: GossipsubMessage,
     ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types and verify auth
