@@ -5,11 +5,14 @@ use std::{
     io::{Error as IoError, ErrorKind as IoErrorKind},
 };
 
-use openraft::{ErrorSubject, ErrorVerb, LogId, RaftTypeConfig, StorageError as RaftStorageError};
+use openraft::{
+    error::{NetworkError, RPCError, RaftError},
+    ErrorSubject, ErrorVerb, LogId, RaftTypeConfig, StorageError as RaftStorageError,
+};
 
 use crate::storage::error::StorageError;
 
-use super::{NodeId, TypeConfig};
+use super::{Node, NodeId, TypeConfig};
 
 /// Convert a storage error reading logs into a raft error
 pub fn new_log_read_error(
@@ -44,11 +47,19 @@ pub fn new_snapshot_error(
     RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Write, io_err)
 }
 
+/// Convert a replication error into a networking error
+#[allow(clippy::needless_pass_by_value)]
+pub fn new_network_error(err: ReplicationV2Error) -> RPCError<NodeId, Node, RaftError<NodeId>> {
+    RPCError::Network(NetworkError::new(&err))
+}
+
 /// The error type emitted by the replication interface
 ///
 /// TODO: Rename
 #[derive(Debug)]
 pub enum ReplicationV2Error {
+    /// An error deserializing a raft response
+    Deserialize(String),
     /// An error proposing a state transition
     Proposal(String),
     /// An error setting up a raft
@@ -64,6 +75,7 @@ pub enum ReplicationV2Error {
 impl Display for ReplicationV2Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ReplicationV2Error::Deserialize(e) => write!(f, "Deserialization error: {e}"),
             ReplicationV2Error::Proposal(e) => write!(f, "Proposal error: {e}"),
             ReplicationV2Error::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
             ReplicationV2Error::RaftTeardown(e) => write!(f, "Raft teardown error: {e}"),
