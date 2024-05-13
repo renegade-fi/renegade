@@ -15,7 +15,7 @@ use util::runtime::block_current;
 
 use crate::{
     error::StateError,
-    replicationv2::{network::address_translation::PeerIdTranslationMap, raft::NetworkEssential},
+    replicationv2::{get_raft_id, raft::NetworkEssential, RaftNode},
     StateHandle,
 };
 
@@ -156,8 +156,9 @@ impl<N: NetworkEssential> StateHandle<N> {
                 // If the peer belongs in the same cluster, add it to the raft group
                 let my_cluster_id = tx.get_cluster_id()?;
                 if peer.cluster_id == my_cluster_id {
-                    let raft_id = PeerIdTranslationMap::get_raft_id(&peer.peer_id);
-                    block_current(this.raft.add_learner(raft_id))?;
+                    let raft_id = get_raft_id(&peer.peer_id);
+                    let info = RaftNode::new(peer.peer_id);
+                    block_current(this.raft.add_learner(raft_id, info))?;
                 }
 
                 this.bus.publish(
@@ -178,7 +179,7 @@ impl<N: NetworkEssential> StateHandle<N> {
             if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
                 // If the peer is in the same cluster, remove it from the raft group
                 if peer_info.cluster_id == my_cluster {
-                    let raft_id = PeerIdTranslationMap::get_raft_id(&peer_id);
+                    let raft_id = get_raft_id(&peer_id);
                     block_current(this.raft.remove_peer(raft_id))?;
                 }
 

@@ -7,8 +7,9 @@ use gossip_api::{
 };
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
-use tokio::sync::mpsc::{
-    unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender},
+    oneshot::{channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender},
 };
 use uuid::Uuid;
 
@@ -16,10 +17,20 @@ use uuid::Uuid;
 pub type NetworkManagerQueue = TokioSender<NetworkManagerJob>;
 /// The task queue receiver type for the network manager
 pub type NetworkManagerReceiver = TokioReceiver<NetworkManagerJob>;
+/// The channel type on which the network manager forwards a response to a
+/// particular request
+pub type NetworkResponseSender = OneshotSender<GossipResponse>;
+/// The channel type a worker may receive a message response from the network
+/// manager
+pub type NetworkResponseReceiver = OneshotReceiver<GossipResponse>;
 
 /// Create a new network manager queue and receiver
 pub fn new_network_manager_queue() -> (NetworkManagerQueue, NetworkManagerReceiver) {
     unbounded_channel()
+}
+/// Create a new response channel for a request
+pub fn new_response_channel() -> (NetworkResponseSender, NetworkResponseReceiver) {
+    oneshot_channel()
 }
 
 /// The job type for the network manager
@@ -30,7 +41,10 @@ pub enum NetworkManagerJob {
     /// The first field is the topic, the second is the message body
     Pubsub(String, PubsubMessage),
     /// Send a gossip request
-    Request(WrappedPeerId, GossipRequest),
+    ///
+    /// Optionally, the sending worker may specify a channel to receive the
+    /// corresponding gossip response on
+    Request(WrappedPeerId, GossipRequest, Option<NetworkResponseSender>),
     /// Send a gossip response
     Response(GossipResponse, ResponseChannel<AuthenticatedGossipResponse>),
     /// An internal networking directive
@@ -45,7 +59,16 @@ impl NetworkManagerJob {
 
     /// Construct a new gossip request
     pub fn request(peer_id: WrappedPeerId, request: GossipRequest) -> Self {
-        Self::Request(peer_id, request)
+        Self::Request(peer_id, request, None)
+    }
+
+    /// Construct a new gossip request with a response channel
+    pub fn request_with_response(
+        peer_id: WrappedPeerId,
+        request: GossipRequest,
+    ) -> (Self, NetworkResponseReceiver) {
+        let (send, recv) = new_response_channel();
+        (Self::Request(peer_id, request, Some(send)), recv)
     }
 
     /// Construct a new gossip response

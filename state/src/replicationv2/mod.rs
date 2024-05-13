@@ -10,7 +10,10 @@ pub mod raft;
 mod snapshot;
 pub(crate) mod state_machine;
 
-use openraft::{EmptyNode, Raft as RaftInner, RaftTypeConfig};
+use common::types::gossip::WrappedPeerId;
+use fxhash::hash64 as fxhash64;
+use openraft::{Raft as RaftInner, RaftTypeConfig};
+use serde::{Deserialize, Serialize};
 
 use crate::Proposal;
 
@@ -20,7 +23,7 @@ openraft::declare_raft_types! (
     pub TypeConfig:
         D = Proposal,
         R = (), // Response
-        Node = EmptyNode,
+        Node = RaftNode,
         SnapshotData = tokio::fs::File,
 );
 
@@ -34,6 +37,28 @@ pub type Node = <TypeConfig as RaftTypeConfig>::Node;
 pub type SnapshotData = <TypeConfig as RaftTypeConfig>::SnapshotData;
 /// A raft using our type config
 pub type Raft = RaftInner<TypeConfig>;
+
+/// The node type for the raft, stores the peer ID associated with the node
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct RaftNode {
+    /// The peer ID associated with the node
+    peer_id: WrappedPeerId,
+}
+
+impl RaftNode {
+    /// Constructor
+    pub fn new(peer_id: WrappedPeerId) -> Self {
+        Self { peer_id }
+    }
+}
+
+/// Translate a peer ID to a raft ID
+///
+/// We hash the underlying peer ID (a mulltihash of the public key) to get a
+/// raft peer ID
+pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
+    fxhash64(&peer_id)
+}
 
 // -------------
 // | Mock Raft |
@@ -273,7 +298,7 @@ mod test {
     use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
     use rand::{seq::IteratorRandom, thread_rng};
 
-    use crate::{Proposal, StateTransition};
+    use crate::{replicationv2::RaftNode, Proposal, StateTransition};
 
     use super::{
         log_store::LogStore,
@@ -399,7 +424,7 @@ mod test {
         raft.add_node(new_nid).await;
 
         // Add the node as a learner
-        client.add_learner(new_nid).await.unwrap();
+        client.add_learner(new_nid, RaftNode::default()).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check the DB of the new node
@@ -439,7 +464,7 @@ mod test {
         // Add a new node as a learner
         let new_nid = N as u64 + 1;
         raft.add_node(new_nid).await;
-        client.add_learner(new_nid).await.unwrap();
+        client.add_learner(new_nid, RaftNode::default()).await.unwrap();
         client.promote_learner(new_nid).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -476,7 +501,7 @@ mod test {
         for i in 1..N {
             let new_nid = i as u64;
             raft.add_node(new_nid).await;
-            client.add_learner(new_nid).await.unwrap();
+            client.add_learner(new_nid, RaftNode::default()).await.unwrap();
             client.promote_learner(new_nid).await.unwrap();
         }
 
