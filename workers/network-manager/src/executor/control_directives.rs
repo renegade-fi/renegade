@@ -1,7 +1,7 @@
 //! Defines handlers for network manager control directives, which are messages
 //! that correspond to some action in the NetworkManager itself
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::atomic::Ordering};
 
 use ark_mpc::network::QuicTwoPartyNet;
 use common::types::handshake::ConnectionRole;
@@ -11,15 +11,18 @@ use job_types::{
     network_manager::NetworkManagerControlSignal,
 };
 use libp2p::PeerId;
-use libp2p_core::{Endpoint, Multiaddr};
-use libp2p_swarm::{ConnectionId, NetworkBehaviour};
-use tracing::{error, info, warn};
-use util::networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr};
+use libp2p_core::Multiaddr;
+use tokio::sync::oneshot;
+use tracing::{info, warn};
+use util::{
+    err_str,
+    networking::{is_dialable_addr, is_dialable_multiaddr, multiaddr_to_socketaddr},
+};
 use uuid::Uuid;
 
 use crate::error::NetworkManagerError;
 
-use super::{NetworkManagerExecutor, ERR_BROKER_MPC_NET, ERR_NO_KNOWN_ADDR};
+use super::{behavior::BehaviorJob, NetworkManagerExecutor, ERR_BROKER_MPC_NET, ERR_NO_KNOWN_ADDR};
 
 impl NetworkManagerExecutor {
     /// Handles a message from another worker module that explicitly directs the
@@ -27,8 +30,8 @@ impl NetworkManagerExecutor {
     ///
     /// The end destination of these messages is not a network peer, but the
     /// local network manager itself
-    pub(super) fn handle_control_directive(
-        &mut self,
+    pub(super) async fn handle_control_directive(
+        &self,
         command: NetworkManagerControlSignal,
     ) -> Result<(), NetworkManagerError> {
         match command {
@@ -52,7 +55,7 @@ impl NetworkManagerExecutor {
             // gives the gossip server some time to discover new addresses before
             // publishing to the network.
             NetworkManagerControlSignal::GossipWarmupComplete => {
-                self.handle_gossip_warmup_complete()
+                self.handle_gossip_warmup_complete().await
             },
 
             // Build an MPC net for the given peers to communicate over
@@ -62,46 +65,50 @@ impl NetworkManagerExecutor {
                 peer_port,
                 local_port,
                 local_role,
-            } => self.handle_broker_mpc_net_request(
-                peer_id.inner(),
-                request_id,
-                peer_port,
-                local_port,
-                local_role,
-            ),
+            } => {
+                self.handle_broker_mpc_net_request(
+                    peer_id.inner(),
+                    request_id,
+                    peer_port,
+                    local_port,
+                    local_role,
+                )
+                .await
+            },
         }
     }
 
     /// Handle a new address added to the peer index
-    fn handle_new_addr(&mut self, peer_id: PeerId, addr: Multiaddr) {
+    fn handle_new_addr(&self, peer_id: PeerId, addr: Multiaddr) -> Result<(), NetworkManagerError> {
         // If we cannot parse the address or it is not dialable, skip indexing
         if !is_dialable_multiaddr(&addr, self.allow_local) {
             info!("skipping local addr {addr:?}");
-            return;
+            return Ok(());
         }
 
-        self.swarm.behaviour_mut().kademlia_dht.add_address(&peer_id, addr);
+        self.send_behavior(BehaviorJob::AddAddress(peer_id, addr))
     }
 
     /// Handle removing a peer from the DHT
-    fn handle_peer_expired(&mut self, peer_id: &PeerId) {
-        self.swarm.behaviour_mut().kademlia_dht.remove_peer(peer_id);
+    fn handle_peer_expired(&self, peer_id: &PeerId) -> Result<(), NetworkManagerError> {
+        self.send_behavior(BehaviorJob::RemovePeer(*peer_id))
     }
 
     /// Handle a complete gossip warmup
-    fn handle_gossip_warmup_complete(&mut self) -> Result<(), NetworkManagerError> {
-        self.warmup_finished = true;
+    async fn handle_gossip_warmup_complete(&self) -> Result<(), NetworkManagerError> {
+        self.warmup_finished.store(true, Ordering::Relaxed);
         // Forward all buffered messages to the network
-        for buffered_message in self.warmup_buffer.drain(..).collect_vec() {
-            self.forward_outbound_pubsub(buffered_message.topic, buffered_message.message)?;
+        let mut buf = self.warmup_buffer.write().await;
+        for buffered_message in buf.drain(..).collect_vec() {
+            self.forward_outbound_pubsub(buffered_message.topic, buffered_message.message).await?;
         }
 
         Ok(())
     }
 
     /// Handle a request to broker an MPC net between the local and remote peer
-    fn handle_broker_mpc_net_request(
-        &mut self,
+    async fn handle_broker_mpc_net_request(
+        &self,
         peer_id: PeerId,
         request_id: Uuid,
         peer_port: u16,
@@ -109,16 +116,9 @@ impl NetworkManagerExecutor {
         local_role: ConnectionRole,
     ) -> Result<(), NetworkManagerError> {
         // Get the known addresses for the peer
-        let known_peer_addrs = self
-            .swarm
-            .behaviour_mut()
-            .handle_pending_outbound_connection(
-                ConnectionId::new_unchecked(0),
-                Some(peer_id),
-                &[],
-                Endpoint::Dialer,
-            )
-            .map_err(|_| NetworkManagerError::Network(ERR_NO_KNOWN_ADDR.to_string()))?;
+        let (send, recv) = oneshot::channel();
+        self.send_behavior(BehaviorJob::LookupAddr(peer_id, send));
+        let known_peer_addrs = recv.await.map_err(|e| err_str!(NetworkManagerError::LookupAddr))?;
 
         // If we have no known addresses for the peer, return an error
         if known_peer_addrs.is_empty() {
@@ -129,23 +129,16 @@ impl NetworkManagerExecutor {
         // the handshake manager's brokerage request
         let allow_local = self.allow_local;
         let handshake_queue_clone = self.handshake_work_queue.clone();
-        tokio::spawn(async move {
-            if let Err(e) = Self::broker_mpc_net(
-                allow_local,
-                request_id,
-                peer_port,
-                local_port,
-                local_role,
-                known_peer_addrs,
-                handshake_queue_clone,
-            )
-            .await
-            {
-                error!("error brokering MPC network: {e}");
-            }
-        });
-
-        Ok(())
+        Self::broker_mpc_net(
+            allow_local,
+            request_id,
+            peer_port,
+            local_port,
+            local_role,
+            known_peer_addrs,
+            handshake_queue_clone,
+        )
+        .await
     }
 
     /// Broker an MPC net between the local and remote peer using the given

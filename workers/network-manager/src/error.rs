@@ -14,8 +14,12 @@ pub enum NetworkManagerError {
     Cancelled(String),
     /// Error forwarding a job from the network layer to a worker
     EnqueueJob(String),
+    /// Error looking up dialable addresses for a peer
+    LookupAddr(String),
     /// An error with the underlying network operation
     Network(String),
+    /// An error sending a response to an internal request
+    SendInternal(String),
     /// An error while setting up the network manager
     SetupError(String),
     /// An error serializing or deserializing a message

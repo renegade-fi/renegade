@@ -1,24 +1,26 @@
 //! Defines handlers for the Identify protocol
 
+use std::sync::atomic::Ordering;
+
 use job_types::gossip_server::GossipServerJob;
 use libp2p::identify::Event as IdentifyEvent;
 use libp2p_core::multiaddr::Protocol;
 use tracing::{error, info};
 
-use crate::{error::NetworkManagerError, manager::replace_port};
+use crate::{error::NetworkManagerError, executor::replace_port};
 
 use super::NetworkManagerExecutor;
 
 impl NetworkManagerExecutor {
     /// Handle a message from the Identify protocol
-    pub(super) fn handle_identify_event(
-        &mut self,
+    pub async fn handle_identify_event(
+        &self,
         event: IdentifyEvent,
     ) -> Result<(), NetworkManagerError> {
         // Update the local peer's public IP address if it has not already been
         // discovered
         if let IdentifyEvent::Received { info, .. } = event {
-            if !self.discovered_identity {
+            if !self.discovered_identity.load(Ordering::Relaxed) {
                 // Replace the port if the discovered NAT port is incorrect
                 let mut local_addr = info.observed_addr;
                 replace_port(&mut local_addr, self.p2p_port);
@@ -28,12 +30,12 @@ impl NetworkManagerExecutor {
 
                 // Update the addr in the global state
                 info!("discovered local peer's public IP: {:?}", local_addr);
-                self.global_state.update_local_peer_addr(local_addr)?;
-                self.discovered_identity = true;
+                self.global_state.update_local_peer_addr(local_addr).await?;
+                self.discovered_identity.store(true, Ordering::Relaxed);
 
                 // Optimistically broadcast the discovered identity to the network via
                 // the heartbeat sub-protocol
-                for peer in self.global_state.get_all_peers_ids(false /* include_self */)? {
+                for peer in self.global_state.get_all_peers_ids(false /* include_self */).await? {
                     if let Err(e) =
                         self.gossip_work_queue.send(GossipServerJob::ExecuteHeartbeat(peer))
                     {
