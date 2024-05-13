@@ -5,7 +5,7 @@ use util::res_some;
 
 use crate::{
     error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    storage::error::StorageError, State, StateHandle, StateTransition,
+    storage::error::StorageError, StateHandle, StateTransition,
 };
 
 /// The error message emitted when a wallet cannot be found for an order
@@ -17,31 +17,33 @@ impl<N: NetworkEssential> StateHandle<N> {
     // -----------
 
     /// Get the metadata for an order
-    pub fn get_order_metadata(
+    pub async fn get_order_metadata(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<OrderMetadata>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let wallet_id = tx
-            .get_wallet_for_order(order_id)?
-            .ok_or(StateError::Db(StorageError::NotFound(ERR_MISSING_WALLET.to_string())))?;
-        let md = res_some!(tx.get_order_metadata(wallet_id, *order_id)?);
-        tx.commit()?;
-
-        Ok(Some(md))
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let wallet_id = tx
+                .get_wallet_for_order(&oid)?
+                .ok_or(StateError::Db(StorageError::NotFound(ERR_MISSING_WALLET.to_string())))?;
+            let md = res_some!(tx.get_order_metadata(wallet_id, oid)?);
+            Ok(Some(md))
+        })
+        .await
     }
 
     /// Get a truncated history of the wallet's orders
-    pub fn get_order_history(
+    pub async fn get_order_history(
         &self,
         n: usize,
         wallet_id: &WalletIdentifier,
     ) -> Result<Vec<OrderMetadata>, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let orders = tx.get_order_history_truncated(n, wallet_id)?;
-        tx.commit()?;
-
-        Ok(orders)
+        let wallet_id = *wallet_id;
+        self.with_read_tx(move |tx| {
+            let orders = tx.get_order_history_truncated(n, &wallet_id)?;
+            Ok(orders)
+        })
+        .await
     }
 
     // -----------
@@ -105,13 +107,13 @@ pub mod test {
 
         // Get back the order history
         let n = 10;
-        let history = state.get_order_history(n, &wallet_id).unwrap();
+        let history = state.get_order_history(n, &wallet_id).await.unwrap();
         assert_eq!(orders[..n], history);
 
         // Read back a random order's metadata
         let idx = (0..orders.len()).choose(&mut thread_rng()).unwrap();
         let meta = orders[idx].clone();
-        let found = state.get_order_metadata(&meta.id).unwrap().unwrap();
+        let found = state.get_order_metadata(&meta.id).await.unwrap().unwrap();
         assert_eq!(meta, found);
     }
 
@@ -133,7 +135,7 @@ pub mod test {
         // Update and retrieve the order's metadata
         let waiter = state.update_order_metadata(meta.clone()).await.unwrap();
         waiter.await.unwrap();
-        let fetched_meta = state.get_order_metadata(&meta.id).unwrap().unwrap();
+        let fetched_meta = state.get_order_metadata(&meta.id).await.unwrap().unwrap();
         assert_eq!(meta, fetched_meta);
     }
 }
