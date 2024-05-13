@@ -6,7 +6,7 @@ use common::types::{
 };
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential, State,
+    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
     StateHandle, StateTransition,
 };
 
@@ -16,12 +16,16 @@ impl<N: NetworkEssential> StateHandle<N> {
     // -----------
 
     /// Get the size of available preprocessing values
-    pub fn get_mpc_prep_size(&self, cluster: &ClusterId) -> Result<PreprocessingSlice, StateError> {
-        let tx = self.db.new_read_tx()?;
-        let size = tx.get_mpc_prep_size(cluster)?.unwrap_or_default();
-        tx.commit()?;
-
-        Ok(size)
+    pub async fn get_mpc_prep_size(
+        &self,
+        cluster: &ClusterId,
+    ) -> Result<PreprocessingSlice, StateError> {
+        let cluster = cluster.clone();
+        self.with_read_tx(move |tx| {
+            let size = tx.get_mpc_prep_size(&cluster)?.unwrap_or_default();
+            Ok(size)
+        })
+        .await
     }
 
     // -----------
@@ -44,7 +48,7 @@ impl<N: NetworkEssential> StateHandle<N> {
         request: PreprocessingSlice,
     ) -> Result<ProposalWaiter, StateError> {
         // Use self as recipient
-        let recipient = self.get_peer_id()?;
+        let recipient = self.get_peer_id().await?;
         self.send_proposal(StateTransition::ConsumePreprocessingValues {
             recipient,
             cluster,
@@ -78,7 +82,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check the size of the preprocessing store
-        let size = state.get_mpc_prep_size(&cluster).unwrap();
+        let size = state.get_mpc_prep_size(&cluster).await.unwrap();
         assert_eq!(size.num_bits, 1);
         assert_eq!(size.num_values, 1);
         assert_eq!(size.num_inverse_pairs, 1);

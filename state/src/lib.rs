@@ -261,7 +261,7 @@ pub mod test_helpers {
         task_queue: TaskDriverQueue,
         config: &RelayerConfig,
     ) -> MockState {
-        let raft = MockRaft::create_raft(1 /* n_nodes */).await;
+        let raft = MockRaft::create_raft(2 /* n_nodes */).await;
         let net = raft.get_client(0).await.network();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
         MockState::new_with_network(

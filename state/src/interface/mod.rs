@@ -17,7 +17,9 @@ use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
+use libmdbx::{RO, RW};
 use system_bus::SystemBus;
+use util::err_str;
 
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
@@ -27,7 +29,10 @@ use crate::{
         raft::{NetworkEssential, RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
     },
-    storage::db::{DbConfig, DB},
+    storage::{
+        db::{DbConfig, DB},
+        tx::StateTxn,
+    },
     Proposal, StateTransition,
 };
 
@@ -64,6 +69,10 @@ pub struct StateHandle<N: NetworkEssential> {
 }
 
 impl<N: NetworkEssential> StateHandle<N> {
+    // ----------------
+    // | Constructors |
+    // ----------------
+
     /// The base constructor allowing for the variadic constructors above
     pub async fn new_with_network(
         config: &RelayerConfig,
@@ -105,7 +114,7 @@ impl<N: NetworkEssential> StateHandle<N> {
         // Setup the node metadata from the config
         let this =
             Self { allow_local: config.allow_local, db, bus: system_bus, notifications, raft };
-        this.setup_node_metadata(config)?;
+        this.setup_node_metadata(config).await?;
         Ok(this)
     }
 
@@ -126,6 +135,48 @@ impl<N: NetworkEssential> StateHandle<N> {
             election_timeout_max: DEFAULT_MAX_ELECTION_MS,
             ..Default::default()
         }
+    }
+
+    /// Run the given callback with a read tx scoped in on a blocking thread
+    ///
+    /// This allows us to give an async client interface that will not
+    /// excessively block async callers. MDBX operations may occasionally block
+    /// for a long time, so we want to avoid blocking async worker threads
+    pub async fn with_read_tx<F, T>(&self, f: F) -> Result<T, StateError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&StateTxn<'_, RO>) -> Result<T, StateError> + Send + 'static,
+    {
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || {
+            let tx = db.new_read_tx()?;
+            let res = f(&tx)?;
+            tx.commit()?;
+            Ok(res)
+        })
+        .await
+        .map_err(err_str!(StateError::Runtime))?
+    }
+
+    /// Run the given callback with a write tx scoped in on a blocking thread
+    ///
+    /// This allows us to give an async client interface that will not
+    /// excessively block async callers. MDBX operations may occasionally block
+    /// for a long time, so we want to avoid blocking async worker threads
+    pub async fn with_write_tx<F, T>(&self, f: F) -> Result<T, StateError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&StateTxn<'_, RW>) -> Result<T, StateError> + Send + 'static,
+    {
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || {
+            let tx = db.new_write_tx()?;
+            let res = f(&tx)?;
+            tx.commit()?;
+            Ok(res)
+        })
+        .await
+        .map_err(err_str!(StateError::Runtime))?
     }
 
     /// Send a proposal to the raft node
@@ -158,7 +209,7 @@ mod test {
 
         // Check for the wallet in the state
         let expected_wallet = wallet.clone();
-        let actual_wallet = state.get_wallet(&wallet.wallet_id).unwrap().unwrap();
+        let actual_wallet = state.get_wallet(&wallet.wallet_id).await.unwrap().unwrap();
         assert_eq!(expected_wallet, actual_wallet);
     }
 }
