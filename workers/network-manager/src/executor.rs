@@ -1,41 +1,38 @@
 //! The network manager handles lower level interaction with the p2p network
+mod behavior;
 mod control_directives;
 mod identify;
 mod pubsub;
 mod request_response;
 
 use common::{
-    default_wrapper::DefaultWrapper,
-    types::{
-        gossip::{ClusterId, PeerInfo, WrappedPeerId},
-        CancelChannel,
-    },
+    default_wrapper::{DefaultOption, DefaultWrapper},
+    new_async_shared,
+    types::{gossip::WrappedPeerId, CancelChannel},
+    AsyncShared,
 };
 use ed25519_dalek::Keypair as SigKeypair;
 use futures::StreamExt;
-use gossip_api::pubsub::{orderbook::ORDER_BOOK_TOPIC, PubsubMessage};
+use gossip_api::pubsub::PubsubMessage;
 use job_types::{
     gossip_server::GossipServerQueue,
     handshake_manager::HandshakeManagerQueue,
     network_manager::{NetworkManagerJob, NetworkManagerReceiver},
 };
 use libp2p::{
-    gossipsub::{Event as GossipsubEvent, Sha256Topic},
-    identity::Keypair,
-    multiaddr::Protocol,
-    request_response::Event as RequestResponseEvent,
-    swarm::SwarmEvent,
-    Multiaddr, Swarm,
+    gossipsub::Event as GossipsubEvent, multiaddr::Protocol,
+    request_response::Event as RequestResponseEvent, swarm::SwarmEvent, Multiaddr, Swarm,
 };
-use state::{replication::network::traits::RaftMessageQueue, State};
-use tracing::info;
+use state::State;
+use tracing::{error, info};
 
-use std::thread::JoinHandle;
+use std::sync::{atomic::AtomicBool, Arc};
+
+use self::behavior::{new_behavior_queue, BehaviorReceiver, BehaviorSender};
 
 use super::{
     composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},
     error::NetworkManagerError,
-    worker::NetworkManagerConfig,
 };
 
 /// Occurs when a peer cannot be dialed because their address is not indexed in
@@ -70,66 +67,6 @@ pub fn replace_port(multiaddr: &mut Multiaddr, port: u16) {
     }
 }
 
-// -----------
-// | Manager |
-// -----------
-
-/// Groups logic around monitoring and requesting the network
-pub struct NetworkManager {
-    /// The config passed from the coordinator thread
-    pub(super) config: NetworkManagerConfig,
-    /// The peerId of the locally running node
-    pub local_peer_id: WrappedPeerId,
-    /// The multiaddr of the local peer
-    pub local_addr: Multiaddr,
-    /// The cluster ID of the local peer
-    pub(crate) cluster_id: ClusterId,
-    /// The public key of the local peer
-    pub(super) local_keypair: Keypair,
-    /// The join handle of the executor loop
-    pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
-}
-
-/// The NetworkManager handles both incoming and outbound messages to the p2p
-/// network It accepts events from workers elsewhere in the relayer that are to
-/// be propagated out to the network; as well as listening on the network for
-/// messages from other peers.
-impl NetworkManager {
-    /// Setup global state after peer_id and address have been assigned
-    pub fn update_global_state_after_startup(&self) -> Result<(), NetworkManagerError> {
-        // Add self to peer info index
-        self.config.global_state.add_peer(PeerInfo::new_with_cluster_secret_key(
-            self.local_peer_id,
-            self.cluster_id.clone(),
-            self.local_addr.clone(),
-            self.config.cluster_keypair.as_ref().unwrap(),
-        ))?;
-
-        Ok(())
-    }
-
-    /// Setup pubsub subscriptions for the network manager
-    pub fn setup_pubsub_subscriptions(
-        &self,
-        swarm: &mut Swarm<ComposedNetworkBehavior>,
-    ) -> Result<(), NetworkManagerError> {
-        for topic in [
-            self.cluster_id.get_management_topic(), // Cluster management for local cluster
-            ORDER_BOOK_TOPIC.to_string(),           // Network order book management
-        ]
-        .iter()
-        {
-            swarm
-                .behaviour_mut()
-                .pubsub
-                .subscribe(&Sha256Topic::new(topic))
-                .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
-        }
-
-        Ok(())
-    }
-}
-
 // ------------
 // | Executor |
 // ------------
@@ -149,31 +86,34 @@ struct BufferedPubsubMessage {
 /// This allows the thread to take ownership of the executor object and perform
 /// object-oriented operations while allowing the network manager ownership to
 /// be held by the coordinator thread
+#[derive(Clone)]
 pub(super) struct NetworkManagerExecutor {
     /// The local port listened on
     p2p_port: u16,
     /// The peer ID of the local node
     local_peer_id: WrappedPeerId,
     /// The local cluster's keypair, used to sign and authenticate requests
-    cluster_key: SigKeypair,
+    cluster_key: Arc<SigKeypair>,
     /// Whether or not to allow peer discovery on the local node
     allow_local: bool,
     /// Whether the network manager has discovered the local peer's public,
     /// dialable address via `Identify` already
-    discovered_identity: bool,
+    discovered_identity: Arc<AtomicBool>,
     /// Whether or not the warmup period has already elapsed
-    warmup_finished: bool,
+    warmup_finished: Arc<AtomicBool>,
     /// The messages buffered during the warmup period
-    warmup_buffer: Vec<BufferedPubsubMessage>,
-    /// The underlying swarm that manages low level network behavior
-    swarm: Swarm<ComposedNetworkBehavior>,
+    warmup_buffer: AsyncShared<Vec<BufferedPubsubMessage>>,
+    /// The behavior channel receiver, used to sequence access to the underlying
+    /// swarm
+    behavior_rx: DefaultOption<BehaviorReceiver>,
+    /// The behavior channel sender, used to send behaviors directly to the
+    /// swarm from within the network manager's job handlers
+    behavior_tx: BehaviorSender,
     /// The channel to receive outbound requests on from other workers
     ///
     /// The runtime driver thread takes ownership of this channel via `take` in
     /// the execution loop
-    job_channel: DefaultWrapper<Option<NetworkManagerReceiver>>,
-    /// The queue to forward raft messages onto
-    raft_queue: RaftMessageQueue,
+    job_channel: DefaultOption<NetworkManagerReceiver>,
     /// The sender for the gossip server's work queue
     gossip_work_queue: GossipServerQueue,
     /// The sender for the handshake manager's work queue
@@ -193,25 +133,24 @@ impl NetworkManagerExecutor {
         local_peer_id: WrappedPeerId,
         allow_local: bool,
         cluster_key: SigKeypair,
-        swarm: Swarm<ComposedNetworkBehavior>,
         job_channel: NetworkManagerReceiver,
-        raft_queue: RaftMessageQueue,
         gossip_work_queue: GossipServerQueue,
         handshake_work_queue: HandshakeManagerQueue,
         global_state: State,
         cancel: CancelChannel,
     ) -> Self {
+        let (behavior_tx, behavior_rx) = new_behavior_queue();
         Self {
             p2p_port,
             local_peer_id,
             allow_local,
-            cluster_key,
-            discovered_identity: false,
-            warmup_finished: false,
-            warmup_buffer: Vec::new(),
-            swarm,
+            cluster_key: Arc::new(cluster_key),
+            discovered_identity: Arc::new(AtomicBool::new(false)),
+            warmup_finished: Arc::new(AtomicBool::new(false)),
+            warmup_buffer: new_async_shared(Vec::new()),
+            behavior_rx: DefaultWrapper::new(Some(behavior_rx)),
+            behavior_tx,
             job_channel: DefaultWrapper::new(Some(job_channel)),
-            raft_queue,
             gossip_work_queue,
             handshake_work_queue,
             global_state,
@@ -225,30 +164,45 @@ impl NetworkManagerExecutor {
     ///         handler threads
     ///      2. Events from workers to be sent over the network
     /// It handles these in the tokio select! macro below
-    pub async fn executor_loop(mut self) -> NetworkManagerError {
+    pub async fn executor_loop(
+        mut self,
+        mut swarm: Swarm<ComposedNetworkBehavior>,
+    ) -> NetworkManagerError {
         info!("Starting executor loop for network manager...");
         let mut cancel_channel = self.cancel.take().unwrap();
         let mut job_channel = self.job_channel.take().unwrap();
+        let mut behavior_channel = self.behavior_rx.take().unwrap();
 
         loop {
             tokio::select! {
-                // Handle network requests from worker components of the relayer
-                Some(job) = job_channel.recv() => {
-                    // Forward the message
-                    if let Err(err) = self.handle_job(job) {
-                        info!("Error sending outbound message: {}", err);
+                // Handle behavior requests from inside the worker
+                Some(behavior_request) = behavior_channel.recv() => {
+                    if let Err(err) = self.handle_behavior_job(behavior_request, &mut swarm).await {
+                        error!("Error handling behavior job: {err}");
                     }
                 },
 
+                // Handle network requests from worker components of the relayer
+                Some(job) = job_channel.recv() => {
+                    // Forward the message
+                    let this = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = this.handle_job(job).await {
+                            error!("Error sending outbound message: {err}");
+                        }
+                    });
+                },
+
                 // Handle network events and dispatch
-                event = self.swarm.select_next_some() => {
+                event = swarm.select_next_some() => {
                     match event {
                         SwarmEvent::Behaviour(event) => {
-                            if let Err(err) = self.handle_inbound_message(
-                                event,
-                            ) {
-                                info!("error in network manager: {:?}", err);
-                            }
+                            let this = self.clone();
+                            tokio::spawn(async move {
+                                if let Err(err) = this.handle_inbound_message(event).await {
+                                    info!("error in network manager: {:?}", err);
+                                }
+                            });
                         },
                         SwarmEvent::NewListenAddr { address, .. } => {
                             info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
@@ -267,8 +221,8 @@ impl NetworkManagerExecutor {
     }
 
     /// Handles a network event from the relayer's protocol
-    fn handle_inbound_message(
-        &mut self,
+    async fn handle_inbound_message(
+        &self,
         message: ComposedProtocolEvent,
     ) -> Result<(), NetworkManagerError> {
         match message {
@@ -288,17 +242,19 @@ impl NetworkManagerExecutor {
             },
             // KAD events do nothing for now, routing tables are automatically updated by libp2p
             ComposedProtocolEvent::Kademlia(_) => Ok(()),
-            ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e),
+            ComposedProtocolEvent::Identify(e) => self.handle_identify_event(e).await,
         }
     }
 
     /// Handle a job originating from elsewhere in the local node
-    fn handle_job(&mut self, job: NetworkManagerJob) -> Result<(), NetworkManagerError> {
+    async fn handle_job(&self, job: NetworkManagerJob) -> Result<(), NetworkManagerError> {
         match job {
-            NetworkManagerJob::Pubsub(topic, msg) => self.forward_outbound_pubsub(topic, msg),
-            NetworkManagerJob::Request(peer, req) => self.handle_outbound_req(peer.inner(), req),
+            NetworkManagerJob::Pubsub(topic, msg) => self.forward_outbound_pubsub(topic, msg).await,
+            NetworkManagerJob::Request(peer, req, chan) => {
+                self.handle_outbound_req(peer.inner(), req, chan)
+            },
             NetworkManagerJob::Response(resp, chan) => self.handle_outbound_resp(resp, chan),
-            NetworkManagerJob::Internal(cmd) => self.handle_control_directive(cmd),
+            NetworkManagerJob::Internal(cmd) => self.handle_control_directive(cmd).await,
         }
     }
 }

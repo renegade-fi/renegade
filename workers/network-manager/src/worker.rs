@@ -3,15 +3,19 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::{Builder, JoinHandle};
 
-use common::types::gossip::{ClusterId, PeerInfo};
+use common::default_wrapper::DefaultOption;
+use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
+use gossip_api::pubsub::orderbook::ORDER_BOOK_TOPIC;
 use job_types::gossip_server::GossipServerQueue;
 use job_types::handshake_manager::HandshakeManagerQueue;
 use job_types::network_manager::NetworkManagerReceiver;
-use state::replication::network::traits::RaftMessageQueue;
+use libp2p::gossipsub::Sha256Topic;
+use libp2p::identity::Keypair as LibP2PKeypair;
+use libp2p::Swarm;
 use state::State;
 use system_bus::SystemBus;
 
@@ -22,19 +26,20 @@ use libp2p_core::Transport;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::info;
+use util::runtime::block_current;
 
 use crate::composed_protocol::ComposedNetworkBehavior;
 
 use super::{
-    composed_protocol::ProtocolVersion,
-    error::NetworkManagerError,
-    manager::{NetworkManager, NetworkManagerExecutor},
+    composed_protocol::ProtocolVersion, error::NetworkManagerError,
+    executor::NetworkManagerExecutor,
 };
 
 /// The number of threads backing the network
 const NETWORK_MANAGER_N_THREADS: usize = 3;
 
 /// The worker configuration for the network manager
+#[derive(Clone)]
 pub struct NetworkManagerConfig {
     /// The port to listen for inbound traffic on
     pub port: u16,
@@ -46,7 +51,7 @@ pub struct NetworkManagerConfig {
     pub allow_local: bool,
     /// The cluster keypair, wrapped in an option to allow the worker thread to
     /// take ownership of the keypair
-    pub cluster_keypair: Option<Keypair>,
+    pub cluster_keypair: DefaultOption<Keypair>,
     /// The known public addr that the local node is listening behind, if one
     /// exists
     pub known_public_addr: Option<SocketAddr>,
@@ -55,9 +60,7 @@ pub struct NetworkManagerConfig {
     /// This is wrapped in an option to allow the worker thread to take
     /// ownership of the work queue once it is started. The coordinator
     /// will be left with `None` after this happens
-    pub send_channel: Option<NetworkManagerReceiver>,
-    /// The queue to send raft messages from the network manager
-    pub raft_queue: RaftMessageQueue,
+    pub send_channel: DefaultOption<NetworkManagerReceiver>,
     /// The work queue to forward inbound heartbeat requests to
     pub gossip_work_queue: GossipServerQueue,
     /// The work queue to forward inbound handshake requests to
@@ -71,13 +74,80 @@ pub struct NetworkManagerConfig {
     pub cancel_channel: CancelChannel,
 }
 
+// -----------
+// | Manager |
+// -----------
+
+/// Groups logic around monitoring and requesting the network
+pub struct NetworkManager {
+    /// The config passed from the coordinator thread
+    pub(super) config: NetworkManagerConfig,
+    /// The peerId of the locally running node
+    pub local_peer_id: WrappedPeerId,
+    /// The multiaddr of the local peer
+    pub local_addr: Multiaddr,
+    /// The cluster ID of the local peer
+    pub(crate) cluster_id: ClusterId,
+    /// The public key of the local peer
+    pub(super) local_keypair: LibP2PKeypair,
+    /// The join handle of the executor loop
+    pub(super) thread_handle: Option<JoinHandle<NetworkManagerError>>,
+}
+
+/// The NetworkManager handles both incoming and outbound messages to the p2p
+/// network It accepts events from workers elsewhere in the relayer that are to
+/// be propagated out to the network; as well as listening on the network for
+/// messages from other peers.
+impl NetworkManager {
+    /// Setup global state after peer_id and address have been assigned
+    pub async fn update_global_state_after_startup(&self) -> Result<(), NetworkManagerError> {
+        // Add self to peer info index
+        self.config
+            .global_state
+            .add_peer(PeerInfo::new_with_cluster_secret_key(
+                self.local_peer_id,
+                self.cluster_id.clone(),
+                self.local_addr.clone(),
+                self.config.cluster_keypair.as_ref().unwrap(),
+            ))
+            .await?;
+
+        Ok(())
+    }
+
+    /// Setup pubsub subscriptions for the network manager
+    pub fn setup_pubsub_subscriptions(
+        &self,
+        swarm: &mut Swarm<ComposedNetworkBehavior>,
+    ) -> Result<(), NetworkManagerError> {
+        for topic in [
+            self.cluster_id.get_management_topic(), // Cluster management for local cluster
+            ORDER_BOOK_TOPIC.to_string(),           // Network order book management
+        ]
+        .iter()
+        {
+            swarm
+                .behaviour_mut()
+                .pubsub
+                .subscribe(&Sha256Topic::new(topic))
+                .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
+        }
+
+        Ok(())
+    }
+}
+
+// ----------
+// | Worker |
+// ----------
+
 impl Worker for NetworkManager {
     type WorkerConfig = NetworkManagerConfig;
     type Error = NetworkManagerError;
 
     fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        let local_peer_id = config.global_state.get_peer_id()?;
-        let local_keypair = config.global_state.get_node_keypair()?;
+        let local_peer_id = block_current(config.global_state.get_peer_id())?;
+        let local_keypair = block_current(config.global_state.get_node_keypair())?;
 
         // If the local node is given a known dialable addr for itself at startup,
         // construct the local addr directly, otherwise set it to the canonical
@@ -103,7 +173,7 @@ impl Worker for NetworkManager {
             local_addr.clone(),
             config.cluster_keypair.as_ref().unwrap(),
         );
-        config.global_state.set_local_peer_info(info)?;
+        block_current(config.global_state.set_local_peer_info(info))?;
 
         Ok(Self {
             cluster_id: config.cluster_id.clone(),
@@ -151,7 +221,7 @@ impl Worker for NetworkManager {
         )?;
 
         // Add any bootstrap addresses to the peer info table
-        let peer_index = self.config.global_state.get_peer_info_map()?;
+        let peer_index = block_current(self.config.clone().global_state.get_peer_info_map())?;
         for (peer_id, peer_info) in peer_index.iter() {
             info!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
             behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
@@ -164,7 +234,7 @@ impl Worker for NetworkManager {
         swarm.listen_on(addr).map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
-        self.update_global_state_after_startup()?;
+        block_current(self.update_global_state_after_startup())?;
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;
 
@@ -174,9 +244,7 @@ impl Worker for NetworkManager {
             self.local_peer_id,
             self.config.allow_local,
             self.config.cluster_keypair.take().unwrap(),
-            swarm,
             self.config.send_channel.take().unwrap(),
-            self.config.raft_queue.clone(),
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),
             self.config.global_state.clone(),
@@ -194,7 +262,7 @@ impl Worker for NetworkManager {
                     .expect("building a runtime to the network manager failed");
 
                 // Block on this to execute the future in a separate thread
-                runtime.block_on(executor.executor_loop())
+                runtime.block_on(executor.executor_loop(swarm))
             })
             .map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
