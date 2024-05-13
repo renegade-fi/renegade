@@ -1,6 +1,6 @@
 //! Networking implement that shims between the consensus engine and the gossip
 //! layer
-pub mod address_translation;
+pub mod gossip;
 #[cfg(any(test, feature = "mocks"))]
 pub mod mock;
 
@@ -12,7 +12,7 @@ use openraft::{
         AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest,
         InstallSnapshotResponse, VoteRequest, VoteResponse,
     },
-    RaftNetwork, RaftNetworkFactory,
+    RaftNetwork,
 };
 use serde::{Deserialize, Serialize};
 
@@ -180,60 +180,5 @@ impl<T: P2PRaftNetwork> RaftNetwork<TypeConfig> for P2PRaftNetworkWrapper<T> {
         let target = self.inner().target();
         let req = RaftRequest::Vote(rpc);
         self.inner.send_request(target, req).await.map(|resp| resp.into_vote())
-    }
-}
-
-/// The network shim
-#[derive(Clone)]
-pub struct GossipNetwork {}
-
-impl P2PRaftNetwork for GossipNetwork {
-    fn target(&self) -> NodeId {
-        todo!()
-    }
-
-    async fn send_request(
-        &self,
-        target: NodeId,
-        request: RaftRequest,
-    ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        todo!()
-    }
-}
-
-impl RaftNetworkFactory<TypeConfig> for GossipNetwork {
-    type Network = Self;
-
-    async fn new_client(&mut self, _target: NodeId, _node: &Node) -> Self::Network {
-        self.clone()
-    }
-}
-
-impl RaftNetwork<TypeConfig> for GossipNetwork {
-    async fn append_entries(
-        &mut self,
-        rpc: AppendEntriesRequest<TypeConfig>,
-        option: RPCOption,
-    ) -> Result<AppendEntriesResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        todo!()
-    }
-
-    async fn install_snapshot(
-        &mut self,
-        rpc: InstallSnapshotRequest<TypeConfig>,
-        option: RPCOption,
-    ) -> Result<
-        InstallSnapshotResponse<NodeId>,
-        RPCError<NodeId, Node, RaftError<NodeId, InstallSnapshotError>>,
-    > {
-        unimplemented!()
-    }
-
-    async fn vote(
-        &mut self,
-        rpc: VoteRequest<NodeId>,
-        option: RPCOption,
-    ) -> Result<VoteResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        unimplemented!()
     }
 }

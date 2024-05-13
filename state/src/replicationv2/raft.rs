@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use openraft::{ChangeMembers, Config as RaftConfig, EmptyNode, RaftNetworkFactory};
+use openraft::{ChangeMembers, Config as RaftConfig, RaftNetworkFactory};
 use util::err_str;
 
 use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
@@ -12,7 +12,7 @@ use super::{
     log_store::LogStore,
     network::{P2PRaftNetwork, RaftRequest},
     state_machine::StateMachine,
-    NodeId, Raft, TypeConfig,
+    NodeId, Raft, RaftNode, TypeConfig,
 };
 
 /// The default cluster name
@@ -163,7 +163,9 @@ impl<N: NetworkEssential> RaftClient<N> {
         }
 
         match update.transition.as_ref() {
-            StateTransition::AddRaftLearner { peer_id } => self.handle_add_learner(*peer_id).await,
+            StateTransition::AddRaftLearner { peer_id, info } => {
+                self.handle_add_learner(*peer_id, *info).await
+            },
             StateTransition::AddRaftVoter { peer_id } => self.handle_add_voter(*peer_id).await,
             StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(*peer_id).await,
             _ => self
@@ -176,9 +178,13 @@ impl<N: NetworkEssential> RaftClient<N> {
     }
 
     /// Handle a proposal to add a learner
-    async fn handle_add_learner(&self, peer_id: NodeId) -> Result<(), ReplicationV2Error> {
+    async fn handle_add_learner(
+        &self,
+        peer_id: NodeId,
+        info: RaftNode,
+    ) -> Result<(), ReplicationV2Error> {
         self.raft()
-            .add_learner(peer_id, EmptyNode {}, false /* blocking */)
+            .add_learner(peer_id, info, false /* blocking */)
             .await
             .map_err(err_str!(ReplicationV2Error::Proposal))
             .map(|_| ())
@@ -209,8 +215,12 @@ impl<N: NetworkEssential> RaftClient<N> {
     // ----------------------
 
     /// Add a learner to the cluster
-    pub async fn add_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationV2Error> {
-        let proposal = Proposal::from(StateTransition::AddRaftLearner { peer_id: learner });
+    pub async fn add_learner(
+        &self,
+        learner: NodeId,
+        info: RaftNode,
+    ) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::AddRaftLearner { peer_id: learner, info });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
