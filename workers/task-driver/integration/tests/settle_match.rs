@@ -96,7 +96,7 @@ async fn setup_wallet_with_order_balance(
     test_args: IntegrationTestArgs,
 ) -> Result<(Wallet, Scalar, Scalar)> {
     let mut rng = thread_rng();
-    let managing_cluster = test_args.state.get_fee_decryption_key()?.public_key();
+    let managing_cluster = test_args.state.get_fee_decryption_key().await?.public_key();
 
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
@@ -153,8 +153,8 @@ async fn setup_match_result(
     // public and private shares to the reblinded and augmented shares; as would
     // happen before a real match
     let state = &test_args.state;
-    let witness1 = get_first_order_witness(&wallet1, state)?;
-    let witness2 = get_first_order_witness(&wallet2, state)?;
+    let witness1 = get_first_order_witness(&wallet1, state).await?;
+    let witness2 = get_first_order_witness(&wallet2, state).await?;
 
     wallet1.private_shares = witness1.reblind_witness.reblinded_wallet_private_shares.clone();
     wallet1.blinded_public_shares = witness1.commitment_witness.augmented_public_shares.clone();
@@ -167,18 +167,26 @@ async fn setup_match_result(
 }
 
 /// Get the validity proof bundle for the first order in a given wallet
-fn get_first_order_proofs(wallet: &Wallet, state: &State) -> Result<OrderValidityProofBundle> {
+async fn get_first_order_proofs(
+    wallet: &Wallet,
+    state: &State,
+) -> Result<OrderValidityProofBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
-        .get_validity_proofs(&order_id)?
+        .get_validity_proofs(&order_id)
+        .await?
         .ok_or_else(|| eyre!("Order validity proof bundle not found"))
 }
 
 /// Get the validity proof witness for the first order in a given wallet
-fn get_first_order_witness(wallet: &Wallet, state: &State) -> Result<OrderValidityWitnessBundle> {
+async fn get_first_order_witness(
+    wallet: &Wallet,
+    state: &State,
+) -> Result<OrderValidityWitnessBundle> {
     let order_id = wallet.orders.first().unwrap().0;
     state
-        .get_validity_proof_witness(&order_id)?
+        .get_validity_proof_witness(&order_id)
+        .await?
         .ok_or_else(|| eyre!("Order validity witness bundle not found"))
 }
 
@@ -304,8 +312,10 @@ async fn verify_settlement(
     // 2. Lookup the wallet in global state, verify that this matches the expected
     // Do not check the blinder, it's too clumsy to track the blinder through the
     // multiple updates in our mock
-    let new_wallet =
-        state.get_wallet(&wallet.wallet_id)?.ok_or_else(|| eyre!("wallet not found in state"))?;
+    let new_wallet = state
+        .get_wallet(&wallet.wallet_id)
+        .await?
+        .ok_or_else(|| eyre!("wallet not found in state"))?;
     wallet.blinder = new_wallet.blinder;
 
     let circuit_wallet1: SizedWallet = wallet.clone().into();
@@ -325,7 +335,7 @@ async fn verify_fees_paid(wallet: &Wallet, test_args: &IntegrationTestArgs) -> R
 
     // Check the wallet in state, verify that no fees remain
     let state = &test_args.state;
-    let wallet = state.get_wallet(&id)?.ok_or(eyre!("wallet not found in state"))?;
+    let wallet = state.get_wallet(&id).await?.ok_or(eyre!("wallet not found in state"))?;
     for balance in wallet.balances.values() {
         assert_true_result!(balance.fees().total() == 0)?;
     }
@@ -360,10 +370,10 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
         sell_wallet.wallet_id,
         order_id1,
         order_id2,
-        get_first_order_proofs(&buy_wallet, state)?,
-        get_first_order_witness(&buy_wallet, state)?,
-        get_first_order_proofs(&sell_wallet, state)?,
-        get_first_order_witness(&sell_wallet, state)?,
+        get_first_order_proofs(&buy_wallet, state).await?,
+        get_first_order_witness(&buy_wallet, state).await?,
+        get_first_order_proofs(&sell_wallet, state).await?,
+        get_first_order_witness(&sell_wallet, state).await?,
         match_res.clone(),
     )
     .unwrap();
@@ -417,8 +427,8 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
         handshake_state,
         match_res.clone(),
         match_settle_proof,
-        get_first_order_proofs(&buy_wallet, state)?,
-        get_first_order_proofs(&sell_wallet, state)?,
+        get_first_order_proofs(&buy_wallet, state).await?,
+        get_first_order_proofs(&sell_wallet, state).await?,
     )
     .unwrap();
 

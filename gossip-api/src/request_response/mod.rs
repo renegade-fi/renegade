@@ -9,13 +9,11 @@ use self::{
     handshake::HandshakeMessage,
     heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
     orderbook::{OrderInfoRequest, OrderInfoResponse},
-    raft::RaftMessage,
 };
 
 pub mod handshake;
 pub mod heartbeat;
 pub mod orderbook;
-pub mod raft;
 
 // -----------------
 // | Request Types |
@@ -79,7 +77,11 @@ pub enum GossipRequest {
 
     // --- Raft Consensus --- //
     /// A raft message from a peer
-    Raft(RaftMessage),
+    ///
+    /// We (de)serialize at the raft networking layer and pass an opaque byte
+    /// buffer here to avoid pulling in `state` dependencies to the `gossip-api`
+    /// package
+    Raft(Vec<u8>),
 
     // --- Order Book --- //
     /// A request for order information from a peer
@@ -181,6 +183,12 @@ pub enum GossipResponse {
     PeerInfo(PeerInfoResponse),
     /// A response to a request for order information
     OrderInfo(OrderInfoResponse),
+    /// A response to a raft message
+    ///
+    /// We (de)serialize at the raft networking layer and pass an opaque byte
+    /// buffer here to avoid pulling in `state` dependencies to the `gossip-api`
+    /// package
+    Raft(Vec<u8>),
 }
 
 impl GossipResponse {
@@ -195,6 +203,7 @@ impl GossipResponse {
             GossipResponse::Handshake { .. } => false,
             GossipResponse::OrderInfo(..) => false,
             GossipResponse::PeerInfo(..) => false,
+            GossipResponse::Raft(..) => true,
         }
     }
 
@@ -206,6 +215,7 @@ impl GossipResponse {
             GossipResponse::PeerInfo(..) => GossipDestination::GossipServer,
             GossipResponse::OrderInfo(..) => GossipDestination::GossipServer,
             GossipResponse::Handshake { .. } => GossipDestination::HandshakeManager,
+            GossipResponse::Raft(..) => GossipDestination::NetworkManager,
         }
     }
 }

@@ -1,6 +1,4 @@
 //! Defines a state machine and tracking mechanism for in-flight handshakes
-// TODO: Remove this lint allowance
-#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -64,10 +62,12 @@ impl HandshakeStateIndex {
         // Lookup the public share nullifiers for the order
         let state = &self.global_state;
         let local_nullifier = state
-            .get_nullifier_for_order(&local_order_id)?
+            .get_nullifier_for_order(&local_order_id)
+            .await?
             .ok_or_else(|| HandshakeManagerError::State(ERR_NULLIFIER_MISSING.to_string()))?;
         let peer_nullifier = state
-            .get_nullifier_for_order(&peer_order_id)?
+            .get_nullifier_for_order(&peer_order_id)
+            .await?
             .ok_or_else(|| HandshakeManagerError::State(ERR_NULLIFIER_MISSING.to_string()))?;
 
         // Index by request ID

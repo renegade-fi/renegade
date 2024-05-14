@@ -53,9 +53,9 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        let heartbeat_message = self.global_state.construct_heartbeat()?;
+        let heartbeat_message = self.global_state.construct_heartbeat().await?;
         let msg = GossipRequest::Heartbeat(heartbeat_message);
-        let job = NetworkManagerJob::Request(recipient_peer_id, msg);
+        let job = NetworkManagerJob::request(recipient_peer_id, msg);
 
         self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
         self.maybe_expire_peer(recipient_peer_id).await
@@ -66,42 +66,42 @@ impl GossipProtocolExecutor {
     // ---------------------
 
     /// Handle a heartbeat message from a peer
-    pub fn handle_heartbeat(
+    pub async fn handle_heartbeat(
         &self,
         peer: &WrappedPeerId,
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
         // Record the heartbeat
-        self.record_heartbeat(peer)?;
+        self.record_heartbeat(peer).await?;
 
         // Merge the peer and order info from the heartbeat into the local state
-        self.request_missing_orders(peer, message)?;
-        self.request_missing_peers(peer, message)
+        self.request_missing_orders(peer, message).await?;
+        self.request_missing_peers(peer, message).await
     }
 
     /// Request any missing orders in the heartbeat message from the given peer
-    fn request_missing_orders(
+    async fn request_missing_orders(
         &self,
         peer: &WrappedPeerId,
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
-        let missing_orders = self.global_state.get_missing_orders(&message.known_orders)?;
+        let missing_orders = self.global_state.get_missing_orders(&message.known_orders).await?;
         let req = GossipRequest::OrderInfo(OrderInfoRequest { order_ids: missing_orders });
         self.network_channel
-            .send(NetworkManagerJob::Request(*peer, req))
+            .send(NetworkManagerJob::request(*peer, req))
             .map_err(err_str!(GossipError::SendMessage))
     }
 
     /// Request any missing peer info from the given peer
-    fn request_missing_peers(
+    async fn request_missing_peers(
         &self,
         peer: &WrappedPeerId,
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
-        let missing_peers = self.global_state.get_missing_peers(&message.known_peers)?;
+        let missing_peers = self.global_state.get_missing_peers(&message.known_peers).await?;
         let req = GossipRequest::PeerInfo(PeerInfoRequest { peer_ids: missing_peers });
         self.network_channel
-            .send(NetworkManagerJob::Request(*peer, req))
+            .send(NetworkManagerJob::request(*peer, req))
             .map_err(err_str!(GossipError::SendMessage))
     }
 
@@ -112,7 +112,7 @@ impl GossipProtocolExecutor {
     /// Expires peers that have timed out due to consecutive failed heartbeats
     async fn maybe_expire_peer(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
         // Find the peer's info in global state
-        let peer_info = self.global_state.get_peer_info(&peer_id)?;
+        let peer_info = self.global_state.get_peer_info(&peer_id).await?;
         if peer_info.is_none() {
             info!("could not find info for peer {peer_id:?}");
             return Ok(());
@@ -120,7 +120,7 @@ impl GossipProtocolExecutor {
         let peer_info = peer_info.unwrap();
 
         // Expire cluster peers sooner than non-cluster peers
-        let cluster_id = self.global_state.get_cluster_id()?;
+        let cluster_id = self.global_state.get_cluster_id().await?;
         let same_cluster = peer_info.get_cluster_id() == cluster_id;
 
         let now = get_current_time_seconds();
@@ -135,7 +135,7 @@ impl GossipProtocolExecutor {
 
         // Remove expired peer from global state & DHT
         info!("Expiring peer {peer_id}");
-        self.global_state.remove_peer(peer_id)?;
+        self.global_state.remove_peer(peer_id).await?;
         self.network_channel
             .send(NetworkManagerJob::internal(NetworkManagerControlSignal::PeerExpired { peer_id }))
             .map_err(err_str!(GossipError::SendMessage))?;
@@ -154,12 +154,15 @@ impl GossipProtocolExecutor {
     }
 
     /// Records a successful heartbeat
-    pub(super) fn record_heartbeat(&self, peer_id: &WrappedPeerId) -> Result<(), GossipError> {
-        Ok(self.global_state.record_heartbeat(peer_id)?)
+    pub(super) async fn record_heartbeat(
+        &self,
+        peer_id: &WrappedPeerId,
+    ) -> Result<(), GossipError> {
+        Ok(self.global_state.record_heartbeat(peer_id).await?)
     }
 
     /// Build a heartbeat message
-    pub fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
-        Ok(self.global_state.construct_heartbeat()?)
+    pub async fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
+        Ok(self.global_state.construct_heartbeat().await?)
     }
 }

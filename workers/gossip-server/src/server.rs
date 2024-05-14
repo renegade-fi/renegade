@@ -64,7 +64,7 @@ impl GossipServer {
     /// Bootstraps the local node into the network by syncing state with known
     /// bootstrap peers and then advertising the local node's presence to the
     /// cluster
-    pub fn bootstrap_into_network(&self) -> Result<(), GossipError> {
+    pub async fn bootstrap_into_network(&self) -> Result<(), GossipError> {
         // Bootstrap into the network in two steps:
         //  1. Forward all bootstrap addresses to the network manager so it may dial
         //     them
@@ -84,7 +84,7 @@ impl GossipServer {
 
         // 2. Send bootstrap requests to all known peers
         let my_id = self.config.local_peer_id;
-        let my_info = self.state().get_peer_info(&my_id)?.unwrap();
+        let my_info = self.state().get_peer_info(&my_id).await?.unwrap();
         let req = GossipRequest::Bootstrap(BootstrapRequest { peer_info: my_info });
         for (peer_id, _) in self.config.bootstrap_servers.iter() {
             let req = NetworkManagerJob::request(*peer_id, req.clone());
@@ -92,7 +92,7 @@ impl GossipServer {
         }
 
         // 3. Send heartbeats to all known peers to sync state
-        let peer_ids = self.state().get_all_peers_ids(false /* include_self */)?;
+        let peer_ids = self.state().get_all_peers_ids(false /* include_self */).await?;
         for peer in peer_ids.into_iter() {
             self.config
                 .job_sender
@@ -254,11 +254,11 @@ impl GossipProtocolExecutor {
         match req {
             GossipRequest::Bootstrap(req) => self.handle_bootstrap_req(req).await,
             GossipRequest::Heartbeat(req) => {
-                self.handle_heartbeat(&peer, &req)?;
+                self.handle_heartbeat(&peer, &req).await?;
                 Ok(GossipResponse::Ack)
             },
-            GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids),
-            GossipRequest::OrderInfo(req) => self.handle_order_info_request(&req.order_ids),
+            GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids).await,
+            GossipRequest::OrderInfo(req) => self.handle_order_info_request(&req.order_ids).await,
             req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
         }
     }
@@ -270,7 +270,7 @@ impl GossipProtocolExecutor {
         resp: GossipResponse,
     ) -> Result<(), GossipError> {
         match resp {
-            GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, &resp),
+            GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, &resp).await,
             GossipResponse::OrderInfo(resp) => {
                 self.handle_order_info_response(resp.order_info).await
             },

@@ -2,6 +2,7 @@
 
 use std::{thread, time::Duration};
 
+use futures::executor::block_on;
 use job_types::gossip_server::{GossipServerJob, GossipServerQueue};
 use state::State;
 
@@ -75,15 +76,15 @@ impl HeartbeatTimer {
         wait_period: Duration,
         global_state: State,
     ) -> Result<(), GossipError> {
-        let local_peer_id = global_state.get_peer_id()?;
-        let cluster_id = global_state.get_cluster_id()?;
+        let local_peer_id = block_on(global_state.get_peer_id())?;
+        let cluster_id = block_on(global_state.get_cluster_id())?;
 
         loop {
             // Get all peers in the local peer's cluster
             let peers = if intra_cluster {
-                global_state.get_cluster_peers(&cluster_id)?
+                block_on(global_state.get_cluster_peers(&cluster_id))?
             } else {
-                global_state.get_non_cluster_peers(&cluster_id)?
+                block_on(global_state.get_non_cluster_peers(&cluster_id))?
             };
 
             let wait_time =

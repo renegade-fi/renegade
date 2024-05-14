@@ -186,7 +186,8 @@ impl Task for UpdateWalletTask {
         // Pull in the most recent version of the `old_wallet`
         let old_wallet = ctx
             .state
-            .get_wallet(&descriptor.wallet_id)?
+            .get_wallet(&descriptor.wallet_id)
+            .await?
             .ok_or_else(|| UpdateWalletTaskError::Missing(ERR_WALLET_MISSING.to_string()))?;
 
         Ok(Self {
@@ -310,7 +311,8 @@ impl UpdateWalletTask {
 
         // After the state is finalized on-chain, re-index the wallet in the global
         // state
-        self.global_state.update_wallet(self.new_wallet.clone())?.await?;
+        let waiter = self.global_state.update_wallet(self.new_wallet.clone()).await?;
+        waiter.await?;
         Ok(())
     }
 

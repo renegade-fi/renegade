@@ -57,7 +57,7 @@ impl TypedHandler for GetNetworkTopologyHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch all peer info
-        let peers = self.global_state.get_peer_info_map()?;
+        let peers = self.global_state.get_peer_info_map().await?;
 
         // Gather by cluster
         let mut peers_by_cluster: HashMap<String, Vec<Peer>> = HashMap::with_capacity(peers.len());
@@ -100,7 +100,7 @@ impl TypedHandler for GetClusterInfoHandler {
         let cluster_id = parse_cluster_id_from_params(&params)?;
 
         // For simplicity, fetch all peer info and filter by cluster
-        let peers = self.global_state.get_peer_info_map()?;
+        let peers = self.global_state.get_peer_info_map().await?;
         let peers: Vec<Peer> = peers
             .into_iter()
             .filter(|(_, peer_info)| peer_info.get_cluster_id().eq(&cluster_id))
@@ -138,7 +138,7 @@ impl TypedHandler for GetPeerInfoHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let peer_id = parse_peer_id_from_params(&params)?;
-        if let Some(info) = self.global_state.get_peer_info(&peer_id)? {
+        if let Some(info) = self.global_state.get_peer_info(&peer_id).await? {
             Ok(GetPeerInfoResponse { peer: info.into() })
         } else {
             Err(not_found(ERR_PEER_NOT_FOUND.to_string()))
