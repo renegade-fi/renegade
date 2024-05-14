@@ -214,7 +214,8 @@ impl UpdateMerkleProofTask {
         self.wallet.merkle_staleness.store(0, Ordering::Relaxed);
 
         // Update the global state
-        self.global_state.update_wallet(self.wallet.clone())?.await?;
+        let waiter = self.global_state.update_wallet(self.wallet.clone()).await?;
+        waiter.await?;
         Ok(())
     }
 

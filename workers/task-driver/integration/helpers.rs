@@ -25,7 +25,7 @@ use job_types::{
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
-use state::State;
+use state::test_helpers::MockState;
 use system_bus::SystemBus;
 use task_driver::{
     driver::RuntimeArgs,
@@ -70,7 +70,7 @@ pub(crate) async fn lookup_wallet_and_check_result(
 
     // Check the global state for the wallet and verify that it was correctly
     // recovered
-    let state_wallet = state.get_wallet(&wallet_id)?.unwrap();
+    let state_wallet = state.get_wallet(&wallet_id).await?.unwrap();
 
     // Compare the secret shares directly
     assert_eq_result!(state_wallet.blinded_public_shares, expected_wallet.blinded_public_shares)?;
@@ -83,7 +83,7 @@ pub(crate) async fn await_task(
     test_args: &IntegrationTestArgs,
 ) -> Result<()> {
     // Wait for the task to be queued
-    let (task_id, waiter) = test_args.state.append_task(task)?;
+    let (task_id, waiter) = test_args.state.append_task(task).await?;
     waiter.await?;
 
     let (rx, job) = new_task_notification(task_id);
@@ -116,7 +116,7 @@ pub(crate) async fn await_wallet_task_queue_flush(
     let state = &test_args.state;
 
     // Await the task queue to flush if there are any tasks
-    let tasks = state.get_queued_tasks(&wallet_id)?;
+    let tasks = state.get_queued_tasks(&wallet_id).await?;
     if let Some(task_id) = tasks.last().map(|t| t.id) {
         let (recv, job) = new_task_notification(task_id);
         test_args.task_queue.send(job)?;
@@ -146,7 +146,7 @@ pub(crate) async fn setup_initial_wallet(
     lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args).await?;
 
     // Read the wallet from the global state so that order IDs match
-    *wallet = test_args.state.get_wallet(&wallet.wallet_id)?.unwrap();
+    *wallet = test_args.state.get_wallet(&wallet.wallet_id).await?.unwrap();
     Ok(())
 }
 
@@ -180,8 +180,9 @@ pub(crate) async fn setup_relayer_wallet(test_args: &IntegrationTestArgs) -> Res
     let state = &test_args.state;
     let (wallet, _, _) = new_wallet_in_darkpool(&test_args.arbitrum_client).await?;
 
-    state.set_local_relayer_wallet_id(wallet.wallet_id)?;
-    state.update_wallet(wallet).unwrap().await.unwrap();
+    state.set_local_relayer_wallet_id(wallet.wallet_id).await?;
+    let waiter = state.update_wallet(wallet).await?;
+    waiter.await?;
 
     Ok(())
 }
@@ -213,7 +214,7 @@ pub fn new_mock_task_driver(
     arbitrum_client: ArbitrumClient,
     network_queue: NetworkManagerQueue,
     proof_queue: ProofManagerQueue,
-    state: State,
+    state: MockState,
 ) {
     let bus = SystemBus::new();
     // Set a runtime config with fast failure

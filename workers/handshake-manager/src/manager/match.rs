@@ -122,7 +122,8 @@ impl HandshakeExecutor {
         // values in `VALID MATCH MPC`
         let proof_witnesses = self
             .global_state
-            .get_validity_proof_witness(&handshake_state.local_order_id)?
+            .get_validity_proof_witness(&handshake_state.local_order_id)
+            .await?
             .ok_or_else(|| {
                 HandshakeManagerError::State(
                     "missing validity proof witness, cannot link proofs".to_string(),

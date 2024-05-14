@@ -5,6 +5,7 @@ use common::default_wrapper::DefaultWrapper;
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
+use futures::executor::block_on;
 use job_types::gossip_server::{GossipServerQueue, GossipServerReceiver};
 use job_types::network_manager::NetworkManagerQueue;
 use libp2p::Multiaddr;
@@ -94,7 +95,7 @@ impl Worker for GossipServer {
         self.protocol_executor_handle = Some(executor_handle);
 
         // Bootstrap the local peer into the gossip network
-        self.bootstrap_into_network()?;
+        block_on(self.bootstrap_into_network())?;
 
         Ok(())
     }

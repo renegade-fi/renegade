@@ -29,10 +29,7 @@ use job_types::{
 };
 use proof_manager::mock::MockProofManager;
 use rand::thread_rng;
-use state::{
-    test_helpers::{mock_relayer_config, mock_state_with_task_queue},
-    State,
-};
+use state::test_helpers::{mock_relayer_config, mock_state_with_task_queue, MockState};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -44,7 +41,7 @@ use util::{
         parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
         DUMMY_ERC20_1_CONTRACT_KEY, PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
     },
-    runtime::block_on_result,
+    runtime::block_current,
     telemetry::LevelFilter,
 };
 
@@ -96,7 +93,7 @@ struct IntegrationTestArgs {
     /// Held here to avoid closing the channel on `Drop`
     _network_receiver: Arc<NetworkManagerReceiver>,
     /// A reference to the global state of the mock proof manager
-    state: State,
+    state: MockState,
     /// The job queue for the mock proof manager
     proof_job_queue: CrossbeamSender<ProofManagerJob>,
     /// The task driver queue used to enqueue tasks
@@ -121,7 +118,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
         // Create a mock state instance and a task driver
         let (task_queue, task_recv) = new_task_driver_queue();
-        let state = setup_global_state_mock(task_queue.clone());
+        let state = block_current(setup_global_state_mock(task_queue.clone()));
 
         // Start a task driver
         new_mock_task_driver(
@@ -160,8 +157,8 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 /// Create a global state mock for the `task-driver` integration tests
-fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
-    mock_state_with_task_queue(task_queue, &mock_relayer_config())
+async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> MockState {
+    mock_state_with_task_queue(task_queue, &mock_relayer_config()).await
 }
 
 /// Setup a mock `ArbitrumClient` for the integration tests
@@ -172,7 +169,7 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
             .unwrap();
 
     // Build a client that references the darkpool
-    block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
+    block_current(ArbitrumClient::new(ArbitrumClientConfig {
         chain: Chain::Devnet,
         darkpool_addr,
         arb_priv_key,

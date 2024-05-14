@@ -327,7 +327,7 @@ impl WebsocketServer {
 
                 // Validate auth
                 if route_handler.requires_wallet_auth() {
-                    self.authenticate_subscription(&params, &message)?;
+                    self.authenticate_subscription(&params, &message).await?;
                 }
 
                 // Register the topic subscription in the system bus and in the stream
@@ -373,7 +373,7 @@ impl WebsocketServer {
     }
 
     /// Authenticate a request by verifying a signature of the body by `sk_root`
-    fn authenticate_subscription(
+    async fn authenticate_subscription(
         &self,
         params: &UrlParams,
         message: &ClientWebsocketMessage,
@@ -387,7 +387,8 @@ impl WebsocketServer {
         let wallet = self
             .config
             .global_state
-            .get_wallet(&wallet_id)?
+            .get_wallet(&wallet_id)
+            .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
         let pk_root = wallet.key_chain.public_keys.pk_root;
 

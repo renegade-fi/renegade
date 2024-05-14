@@ -16,12 +16,11 @@ use common::{
     },
     Shared,
 };
-use futures::Future;
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use serde::Serialize;
 use state::State;
-use tokio::runtime::{Builder as TokioRuntimeBuilder, Runtime as TokioRuntime};
-use tracing::{error, info, info_span, instrument, warn, Instrument};
+use tokio::runtime::Builder as TokioRuntimeBuilder;
+use tracing::{error, info, instrument, warn};
 
 use crate::{
     error::TaskDriverError,
@@ -67,11 +66,10 @@ const TASK_NOT_FOUND_ERROR: &str = "task not found";
 type TaskNotificationMap = Shared<HashMap<TaskIdentifier, Vec<TaskNotificationSender>>>;
 
 /// Drives tasks to completion
+#[derive(Clone)]
 pub struct TaskExecutor {
     /// The queue on which to receive tasks
     task_queue: TaskDriverReceiver,
-    /// The runtime to spawn tasks onto
-    runtime: TokioRuntime,
     /// The runtime config, contains information on how tasks should be run
     runtime_config: RuntimeArgs,
     /// The task context passed to each task, used to inject dependencies
@@ -118,15 +116,6 @@ impl Default for RuntimeArgs {
 impl TaskExecutor {
     /// Constructor
     pub fn new(config: TaskDriverConfig) -> Self {
-        // Build a runtime
-        let runtime = TokioRuntimeBuilder::new_multi_thread()
-            .enable_all()
-            .worker_threads(TASK_DRIVER_N_THREADS)
-            .thread_stack_size(DRIVER_THREAD_STACK_SIZE)
-            .thread_name(TASK_DRIVER_THREAD_NAME)
-            .build()
-            .expect("error building task driver runtime");
-
         let task_context = TaskContext {
             arbitrum_client: config.arbitrum_client,
             network_queue: config.network_queue,
@@ -137,7 +126,6 @@ impl TaskExecutor {
 
         Self {
             task_queue: config.task_queue,
-            runtime,
             runtime_config: config.runtime_config,
             task_context,
             preemptive_tasks: new_shared(HashSet::new()),
@@ -174,57 +162,51 @@ impl TaskExecutor {
     pub fn run(self) -> Result<(), TaskDriverError> {
         info!("starting task executor loop");
         let queue = &self.task_queue;
+        // Build a runtime
+        let runtime = TokioRuntimeBuilder::new_multi_thread()
+            .enable_all()
+            .worker_threads(TASK_DRIVER_N_THREADS)
+            .thread_stack_size(DRIVER_THREAD_STACK_SIZE)
+            .thread_name(TASK_DRIVER_THREAD_NAME)
+            .build()
+            .expect("error building task driver runtime");
 
         loop {
             // Pull a job from the queue
             let job = queue.recv().map_err(|_| TaskDriverError::JobQueueClosed)?;
-            let res = match job {
-                TaskDriverJob::Run(task) => {
-                    let fut = self.create_task_future(
-                        false, // immediate
-                        task.id,
-                        task.descriptor.clone(),
-                    );
-                    self.runtime.spawn(
-                        async move {
-                            let res = fut.await;
-                            if let Err(e) = res {
-                                error!("error running task: {e:?}");
-                            }
-                        }
-                        .instrument(info_span!(
-                            "task",
-                            task_id = %task.id,
-                            task = %task.descriptor.display_description(),
-                            queue_key = %task.descriptor.queue_key(),
-                        )),
-                    );
+            let this = self.clone();
+            runtime.spawn(async move {
+                if let Err(e) = this.handle_job(job).await {
+                    error!("error handling job: {e:?}");
+                }
+            });
+        }
+    }
 
-                    Ok(())
-                },
-                TaskDriverJob::RunImmediate { wallet_ids, task_id, task } => {
-                    self.handle_run_immediate(wallet_ids, task_id, task)
-                },
-                TaskDriverJob::Notify { task_id, channel } => {
-                    self.handle_notification_request(task_id, channel)
-                },
-            };
-
-            if let Err(e) = res {
-                error!("error handling task job: {e:?}");
-            }
+    /// Handle a job sent to the task driver
+    async fn handle_job(&self, job: TaskDriverJob) -> Result<(), TaskDriverError> {
+        match job {
+            TaskDriverJob::Run(task) => {
+                self.start_task(false /* immediate */, task.id, task.descriptor).await
+            },
+            TaskDriverJob::RunImmediate { wallet_ids, task_id, task } => {
+                self.handle_run_immediate(wallet_ids, task_id, task).await
+            },
+            TaskDriverJob::Notify { task_id, channel } => {
+                self.handle_notification_request(task_id, channel).await
+            },
         }
     }
 
     /// Handle a notification request
     #[instrument(skip_all, err, fields(task_id = %task_id))]
-    fn handle_notification_request(
+    async fn handle_notification_request(
         &self,
         task_id: TaskIdentifier,
         channel: TaskNotificationSender,
     ) -> Result<(), TaskDriverError> {
         // Check that the task exists
-        if !self.state().contains_task(&task_id)? && !self.is_preemptive_task(&task_id) {
+        if !self.state().contains_task(&task_id).await? && !self.is_preemptive_task(&task_id) {
             warn!("got task notification request for non-existent task {task_id:?}");
             let _ = channel.send(Err(TASK_NOT_FOUND_ERROR.to_string()));
             return Ok(());
@@ -239,7 +221,7 @@ impl TaskExecutor {
 
     /// Handle a request to run a task immediately
     #[instrument(skip_all, err, fields(task_id = %task_id, wallet_ids = ?wallet_ids))]
-    pub fn handle_run_immediate(
+    async fn handle_run_immediate(
         &self,
         wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
@@ -247,7 +229,7 @@ impl TaskExecutor {
     ) -> Result<(), TaskDriverError> {
         // Check if any non-preemptable tasks conflict with this task before pausing
         for wallet_id in wallet_ids.iter() {
-            if let Some(conflicting_task) = self.state().current_committed_task(wallet_id)? {
+            if let Some(conflicting_task) = self.state().current_committed_task(wallet_id).await? {
                 error!(
                     "task preemption conflicts with committed task {conflicting_task:?}, aborting..."
                 );
@@ -256,23 +238,7 @@ impl TaskExecutor {
             }
         }
 
-        let task_clone = task.clone();
-        let task_fut = self.create_task_future(true /* immediate */, task_id, task_clone);
-        let preemptive_tasks = self.preemptive_tasks.clone();
-        let state = self.state().clone();
-        self.runtime.spawn(
-            Self::start_preemptive_task(
-                wallet_ids,
-                task_id,
-                task,
-                state,
-                preemptive_tasks,
-                task_fut,
-            )
-            .instrument(info_span!("task", task_id = %task_id)),
-        );
-
-        Ok(())
+        self.start_preemptive_task(wallet_ids, task_id, task).await
     }
 
     // ------------------
@@ -281,107 +247,78 @@ impl TaskExecutor {
 
     /// Start the given task, preempting the queues of the given wallets
     async fn start_preemptive_task(
+        &self,
         wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
-        state: State,
-        preemptive_tasks: Shared<HashSet<TaskIdentifier>>,
-        task_fut: impl Future<Output = Result<(), TaskDriverError>>,
     ) -> Result<(), TaskDriverError> {
         // Pause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            state.pause_task_queue(wallet_id, task_id, task.clone())?.await?;
+            self.state().pause_task_queue(wallet_id, task_id, task.clone()).await?;
         }
 
         // Add the task to the preemptive tasks list so that notification requests can
         // be registered for it
-        preemptive_tasks.write().unwrap().insert(task_id);
+        self.preemptive_tasks.write().unwrap().insert(task_id);
 
-        let res = task_fut.await;
+        let res = self.start_task(true /* immediate */, task_id, task).await;
         if let Err(e) = &res {
             error!("error running immediate task: {e:?}");
         }
 
         // Unpause the queues for the affected local wallets
         for wallet_id in wallet_ids.iter() {
-            state.resume_task_queue(wallet_id, res.is_ok())?;
+            self.state().resume_task_queue(wallet_id, res.is_ok()).await?;
         }
 
         // Remove from the preemptive tasks list
-        preemptive_tasks.write().unwrap().remove(&task_id);
-
+        self.preemptive_tasks.write().unwrap().remove(&task_id);
         Ok(())
-    }
-
-    /// Get the future for a task execution
-    fn create_task_future(
-        &self,
-        immediate: bool,
-        task_id: TaskIdentifier,
-        descriptor: TaskDescriptor,
-    ) -> impl Future<Output = Result<(), TaskDriverError>> {
-        // Collect the arguments then spawn
-        let ctx = self.task_context();
-        let args = self.runtime_config;
-        let task_notifications = self.task_notifications.clone();
-
-        Self::start_task(immediate, task_id, descriptor, ctx, args, task_notifications)
     }
 
     /// Spawn a new task in the driver
     ///
     /// Returns the success of the task
+
+    #[instrument(name = "task", skip_all, err, fields(
+        task_id = %id,
+        task = %task.display_description(),
+        queue_key = %task.queue_key(),
+    ))]
     async fn start_task(
+        &self,
         immediate: bool,
         id: TaskIdentifier,
         task: TaskDescriptor,
-        ctx: TaskContext,
-        args: RuntimeArgs,
-        notif: TaskNotificationMap,
     ) -> Result<(), TaskDriverError> {
         // Construct the task from the descriptor
         match task {
             TaskDescriptor::NewWallet(desc) => {
-                Self::start_task_helper::<NewWalletTask>(immediate, id, desc, ctx, args, notif)
-                    .await
+                self.start_task_helper::<NewWalletTask>(immediate, id, desc).await
             },
             TaskDescriptor::LookupWallet(desc) => {
-                Self::start_task_helper::<LookupWalletTask>(immediate, id, desc, ctx, args, notif)
-                    .await
+                self.start_task_helper::<LookupWalletTask>(immediate, id, desc).await
             },
             TaskDescriptor::OfflineFee(desc) => {
-                Self::start_task_helper::<PayOfflineFeeTask>(immediate, id, desc, ctx, args, notif)
-                    .await
+                self.start_task_helper::<PayOfflineFeeTask>(immediate, id, desc).await
             },
             TaskDescriptor::RelayerFee(desc) => {
-                Self::start_task_helper::<PayRelayerFeeTask>(immediate, id, desc, ctx, args, notif)
-                    .await
+                self.start_task_helper::<PayRelayerFeeTask>(immediate, id, desc).await
             },
             TaskDescriptor::RedeemRelayerFee(desc) => {
-                Self::start_task_helper::<RedeemRelayerFeeTask>(
-                    immediate, id, desc, ctx, args, notif,
-                )
-                .await
+                self.start_task_helper::<RedeemRelayerFeeTask>(immediate, id, desc).await
             },
             TaskDescriptor::UpdateWallet(desc) => {
-                Self::start_task_helper::<UpdateWalletTask>(immediate, id, desc, ctx, args, notif)
-                    .await
+                self.start_task_helper::<UpdateWalletTask>(immediate, id, desc).await
             },
             TaskDescriptor::SettleMatch(desc) => {
-                Self::start_task_helper::<SettleMatchTask>(immediate, id, desc, ctx, args, notif)
-                    .await
+                self.start_task_helper::<SettleMatchTask>(immediate, id, desc).await
             },
             TaskDescriptor::SettleMatchInternal(desc) => {
-                Self::start_task_helper::<SettleMatchInternalTask>(
-                    immediate, id, desc, ctx, args, notif,
-                )
-                .await
+                self.start_task_helper::<SettleMatchInternalTask>(immediate, id, desc).await
             },
             TaskDescriptor::UpdateMerkleProof(desc) => {
-                Self::start_task_helper::<UpdateMerkleProofTask>(
-                    immediate, id, desc, ctx, args, notif,
-                )
-                .await
+                self.start_task_helper::<UpdateMerkleProofTask>(immediate, id, desc).await
             },
         }
     }
@@ -389,13 +326,16 @@ impl TaskExecutor {
     /// A helper for the `start_task` method that has generics specified at call
     /// time
     async fn start_task_helper<T: Task>(
+        &self,
         immediate: bool,
         id: TaskIdentifier,
         descriptor: T::Descriptor,
-        ctx: TaskContext,
-        args: RuntimeArgs,
-        notifications: TaskNotificationMap,
     ) -> Result<(), TaskDriverError> {
+        // Collect the arguments then spawn
+        let ctx = self.task_context();
+        let args = self.runtime_config;
+        let notifications = self.task_notifications.clone();
+
         // Create the task
         let combined_res =
             match RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await {

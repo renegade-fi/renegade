@@ -51,7 +51,7 @@ impl WebsocketTopicHandler for WalletTopicHandler {
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 
         // If the wallet doesn't exist, throw an error
-        if self.global_state.get_wallet(&wallet_id)?.is_none() {
+        if self.global_state.get_wallet(&wallet_id).await?.is_none() {
             return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         }
 
