@@ -48,7 +48,7 @@ async fn setup_trader_wallet(
     let state = &test_args.state;
 
     // Read the local relayer's decryption key from the state to manage the wallet
-    let decryption_key = state.get_fee_decryption_key().unwrap();
+    let decryption_key = state.get_fee_decryption_key().await.unwrap();
 
     // Create a wallet in the darkpool with a non-zero fee
     let mut wallet = mock_empty_wallet();
@@ -64,8 +64,9 @@ async fn setup_trader_wallet(
 /// Set the local node's wallet in the global state
 async fn set_local_relayer_wallet(wallet: Wallet, args: &IntegrationTestArgs) {
     let state = &args.state;
-    state.set_local_relayer_wallet_id(wallet.wallet_id).unwrap();
-    state.update_wallet(wallet).unwrap().await.unwrap();
+    state.set_local_relayer_wallet_id(wallet.wallet_id).await.unwrap();
+    let waiter = state.update_wallet(wallet).await.unwrap();
+    waiter.await.unwrap();
 }
 
 /// Check a wallet in both the global state and by looking it up on-chain
@@ -76,7 +77,8 @@ async fn check_result_wallet(
     args: &IntegrationTestArgs,
 ) -> Result<()> {
     let state = &args.state;
-    let wallet = state.get_wallet(&expected.wallet_id)?.ok_or_else(|| eyre!("wallet not found"))?;
+    let wallet =
+        state.get_wallet(&expected.wallet_id).await?.ok_or_else(|| eyre!("wallet not found"))?;
 
     // We only compare the public and private shares, other metadata fields on the
     // wallets may differ

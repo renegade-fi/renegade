@@ -66,7 +66,7 @@ impl TypedHandler for GetTaskStatusHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Lookup the task status in the task driver's state
         let task_id = parse_task_id_from_params(&params)?;
-        let task_status = self.state.get_task(&task_id)?;
+        let task_status = self.state.get_task(&task_id).await?;
 
         if let Some(status) = task_status {
             let status: ApiTaskStatus = status.into();
@@ -105,7 +105,7 @@ impl TypedHandler for GetTaskQueueHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup all tasks from global state
-        let tasks = self.state.get_queued_tasks(&wallet_id)?;
+        let tasks = self.state.get_queued_tasks(&wallet_id).await?;
         let api_tasks: Vec<ApiTaskStatus> = tasks.into_iter().map(|t| t.into()).collect();
 
         Ok(TaskQueueListResponse { tasks: api_tasks })
@@ -148,7 +148,7 @@ impl TypedHandler for GetTaskHistoryHandler {
             .unwrap_or(DEFAULT_TASK_HISTORY_LEN);
 
         // Get the historical and running tasks for a wallet
-        let tasks = self.state.get_task_history(len, &wallet_id).unwrap();
+        let tasks = self.state.get_task_history(len, &wallet_id).await?;
         let api_tasks: Vec<ApiHistoricalTask> = tasks.into_iter().map(|t| t.into()).collect();
 
         Ok(GetTaskHistoryResponse { tasks: api_tasks })

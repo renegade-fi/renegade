@@ -22,11 +22,11 @@ impl GossipProtocolExecutor {
     // --------------------
 
     /// Handles a request for peer info
-    pub fn handle_peer_info_req(
+    pub async fn handle_peer_info_req(
         &self,
         peers: Vec<WrappedPeerId>,
     ) -> Result<GossipResponse, GossipError> {
-        let peer_info = self.global_state.get_peer_info_map()?;
+        let peer_info = self.global_state.get_peer_info_map().await?;
 
         let mut res = Vec::new();
         for peer in peers {
@@ -46,7 +46,7 @@ impl GossipProtocolExecutor {
     ) -> Result<GossipResponse, GossipError> {
         // Add the peer to the index
         self.add_new_peers(vec![req.peer_info]).await?;
-        let resp = self.build_heartbeat()?;
+        let resp = self.build_heartbeat().await?;
 
         Ok(GossipResponse::Heartbeat(resp))
     }
@@ -106,7 +106,7 @@ impl GossipProtocolExecutor {
         // Add all filtered peers to the network manager's address table
         self.add_new_addrs(&filtered_peers)?;
         // Add all filtered peers to the global peer index
-        self.global_state.add_peer_batch(filtered_peers.clone())?;
+        self.global_state.add_peer_batch(filtered_peers.clone()).await?;
 
         record_num_peers_metrics(&self.global_state);
 

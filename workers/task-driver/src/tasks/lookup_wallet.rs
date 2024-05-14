@@ -253,7 +253,8 @@ impl LookupWalletTask {
             .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
         wallet.merkle_proof = Some(authentication_path);
 
-        self.global_state.update_wallet(wallet.clone())?.await?;
+        let waiter = self.global_state.update_wallet(wallet.clone()).await?;
+        waiter.await?;
         self.wallet = Some(wallet);
 
         Ok(())

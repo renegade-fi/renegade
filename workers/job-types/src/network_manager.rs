@@ -19,7 +19,7 @@ pub type NetworkManagerQueue = TokioSender<NetworkManagerJob>;
 pub type NetworkManagerReceiver = TokioReceiver<NetworkManagerJob>;
 /// The channel type on which the network manager forwards a response to a
 /// particular request
-pub type NetworkResponseSender = OneshotSender<GossipResponse>;
+pub type NetworkResponseChannel = OneshotSender<GossipResponse>;
 /// The channel type a worker may receive a message response from the network
 /// manager
 pub type NetworkResponseReceiver = OneshotReceiver<GossipResponse>;
@@ -29,7 +29,7 @@ pub fn new_network_manager_queue() -> (NetworkManagerQueue, NetworkManagerReceiv
     unbounded_channel()
 }
 /// Create a new response channel for a request
-pub fn new_response_channel() -> (NetworkResponseSender, NetworkResponseReceiver) {
+pub fn new_response_channel() -> (NetworkResponseChannel, NetworkResponseReceiver) {
     oneshot_channel()
 }
 
@@ -44,7 +44,7 @@ pub enum NetworkManagerJob {
     ///
     /// Optionally, the sending worker may specify a channel to receive the
     /// corresponding gossip response on
-    Request(WrappedPeerId, GossipRequest, Option<NetworkResponseSender>),
+    Request(WrappedPeerId, GossipRequest, Option<NetworkResponseChannel>),
     /// Send a gossip response
     Response(GossipResponse, ResponseChannel<AuthenticatedGossipResponse>),
     /// An internal networking directive

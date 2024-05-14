@@ -81,7 +81,7 @@ pub(crate) async fn execute_wallet_update(
     await_task(task.into(), &test_args).await?;
 
     // Fetch the updated wallet from state
-    test_args.state.get_wallet(&id)?.ok_or_else(|| eyre::eyre!("Wallet not found in state"))
+    test_args.state.get_wallet(&id).await?.ok_or_else(|| eyre::eyre!("Wallet not found in state"))
 }
 
 /// Execute a wallet update, then lookup the new wallet from on-chain state and

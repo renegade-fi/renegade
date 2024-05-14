@@ -263,6 +263,7 @@ impl SettleMatchTask {
     async fn submit_match(&self) -> Result<(), SettleMatchTaskError> {
         // Place the local order in the `SubmittingMatch` state
         transition_order_settling(self.handshake_state.local_order_id, &self.global_state)
+            .await
             .map_err(SettleMatchTaskError::State)?;
 
         let tx_submit_res = self
@@ -290,22 +291,27 @@ impl SettleMatchTask {
     /// Merkle opening, and update the global state
     async fn update_wallet_state(&self) -> Result<(), SettleMatchTaskError> {
         // Find the local wallet that was matched
-        let mut wallet = self.get_wallet()?;
+        let mut wallet = self.get_wallet().await?;
 
         // Transition the order state to filled if the new volume is zero
         let id = self.handshake_state.local_order_id;
         record_order_fill(id, &self.match_res, &self.global_state)
+            .await
             .map_err(SettleMatchTaskError::State)?;
 
         // Update the shares of the wallet
-        let (private_shares, blinded_public_shares) = self.get_new_shares()?;
+        let (private_shares, blinded_public_shares) = self.get_new_shares().await?;
         wallet.update_from_shares(&private_shares, &blinded_public_shares);
 
         // Cancel all orders on both nullifiers, await new validity proofs
         let party0_reblind_statement = &self.party0_validity_proof.reblind_proof.statement;
         let party1_reblind_statement = &self.party1_validity_proof.reblind_proof.statement;
-        self.global_state.nullify_orders(party0_reblind_statement.original_shares_nullifier)?;
-        self.global_state.nullify_orders(party1_reblind_statement.original_shares_nullifier)?;
+        self.global_state
+            .nullify_orders(party0_reblind_statement.original_shares_nullifier)
+            .await?;
+        self.global_state
+            .nullify_orders(party1_reblind_statement.original_shares_nullifier)
+            .await?;
 
         // Find the wallet's new Merkle opening
         let opening = find_merkle_path(&wallet, &self.arbitrum_client)
@@ -314,13 +320,14 @@ impl SettleMatchTask {
         wallet.merkle_proof = Some(opening);
 
         // Index the updated wallet in global state
-        self.global_state.update_wallet(wallet)?.await?;
+        let waiter = self.global_state.update_wallet(wallet).await?;
+        waiter.await?;
         Ok(())
     }
 
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
-        let wallet = self.global_state.get_wallet(&self.wallet_id)?.unwrap();
+        let wallet = self.global_state.get_wallet(&self.wallet_id).await?.unwrap();
         update_wallet_validity_proofs(
             &wallet,
             self.proof_queue.clone(),
@@ -336,19 +343,22 @@ impl SettleMatchTask {
     // -----------
 
     /// Get the wallet that this settlement task is operating on
-    fn get_wallet(&self) -> Result<Wallet, SettleMatchTaskError> {
+    async fn get_wallet(&self) -> Result<Wallet, SettleMatchTaskError> {
         self.global_state
-            .get_wallet(&self.wallet_id)?
+            .get_wallet(&self.wallet_id)
+            .await?
             .ok_or_else(|| SettleMatchTaskError::State(ERR_WALLET_NOT_FOUND.to_string()))
     }
 
     /// Get the new private and blinded public shares for the wallet after
     /// update
-    fn get_new_shares(&self) -> Result<(SizedWalletShare, SizedWalletShare), SettleMatchTaskError> {
+    async fn get_new_shares(
+        &self,
+    ) -> Result<(SizedWalletShare, SizedWalletShare), SettleMatchTaskError> {
         // Fetch private shares from the validity proof's witness
         let order_id = self.handshake_state.local_order_id;
         let validity_witness =
-            self.global_state.get_validity_proof_witness(&order_id)?.ok_or_else(|| {
+            self.global_state.get_validity_proof_witness(&order_id).await?.ok_or_else(|| {
                 SettleMatchTaskError::Missing(ERR_VALIDITY_WITNESS_NOT_FOUND.to_string())
             })?;
 

@@ -92,7 +92,7 @@ impl OnChainEventListenerExecutor {
         // Listen for events in a loop
         while let Some(res) = event_stream.next().await {
             let event = res.map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
-            self.handle_nullifier_spent(&event)?;
+            self.handle_nullifier_spent(&event).await?;
         }
 
         error!("on-chain event listener stream ended unexpectedly");
@@ -100,7 +100,7 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Handle a nullifier spent event
-    fn handle_nullifier_spent(
+    async fn handle_nullifier_spent(
         &self,
         event: &NullifierSpentFilter,
     ) -> Result<(), OnChainEventListenerError> {
@@ -112,8 +112,7 @@ impl OnChainEventListenerExecutor {
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
         // Nullify any orders that used this nullifier in their validity proof
-        self.config.global_state.nullify_orders(nullifier)?;
-
+        self.config.global_state.nullify_orders(nullifier).await?;
         Ok(())
     }
 }

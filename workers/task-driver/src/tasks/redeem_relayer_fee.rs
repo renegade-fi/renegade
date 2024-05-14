@@ -166,6 +166,7 @@ impl Task for RedeemRelayerFeeTask {
         let state = &ctx.state;
         let old_wallet = state
             .get_wallet(&descriptor.wallet_id)
+            .await
             .map_err(err_str!(RedeemRelayerFeeError::State))?
             .ok_or(RedeemRelayerFeeError::State(ERR_WALLET_NOT_FOUND.to_string()))?;
 
@@ -253,7 +254,7 @@ impl RedeemRelayerFeeTask {
     /// Generate a proof of `VALID RELAYER FEE REDEMPTION` for the relayer's
     /// wallet
     async fn generate_proof(&mut self) -> Result<(), RedeemRelayerFeeError> {
-        let (statement, witness) = self.get_witness_statement()?;
+        let (statement, witness) = self.get_witness_statement().await?;
         let job = ProofJob::ValidFeeRedemption { witness, statement };
         let proof = enqueue_proof_job(job, &self.proof_queue)
             .map_err(err_str!(RedeemRelayerFeeError::ProofGeneration))?;
@@ -289,7 +290,8 @@ impl RedeemRelayerFeeTask {
             .map_err(err_str!(RedeemRelayerFeeError::Arbitrum))?;
         self.new_wallet.merkle_proof = Some(opening);
 
-        self.state.update_wallet(self.new_wallet.clone())?.await?;
+        let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
+        waiter.await?;
         Ok(())
     }
 
@@ -308,7 +310,7 @@ impl RedeemRelayerFeeTask {
     }
 
     /// Get the witness and statement for the proof of `VALID FEE REDEMPTION`
-    fn get_witness_statement(
+    async fn get_witness_statement(
         &self,
     ) -> Result<
         (SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness),
@@ -328,8 +330,11 @@ impl RedeemRelayerFeeTask {
             .ok_or(RedeemRelayerFeeError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
         let note_opening = self.note_opening.clone().unwrap();
 
-        let recipient_key =
-            self.state.get_fee_decryption_key().map_err(err_str!(RedeemRelayerFeeError::State))?;
+        let recipient_key = self
+            .state
+            .get_fee_decryption_key()
+            .await
+            .map_err(err_str!(RedeemRelayerFeeError::State))?;
         let receive_index = self.new_wallet.get_balance_index(&self.note.mint).unwrap();
 
         let statement = SizedValidFeeRedemptionStatement {

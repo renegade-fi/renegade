@@ -54,7 +54,7 @@ impl TypedHandler for GetNetworkOrdersHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch all orders from state and convert to api type
-        let all_orders = self.global_state.get_all_orders()?;
+        let all_orders = self.global_state.get_all_orders().await?;
         let orders = all_orders.into_iter().map(Into::into).collect_vec();
 
         Ok(GetNetworkOrdersResponse { orders })
@@ -88,7 +88,7 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
-        if let Some(order) = self.global_state.get_order(&order_id)? {
+        if let Some(order) = self.global_state.get_order(&order_id).await? {
             Ok(GetNetworkOrderByIdResponse { order: order.into() })
         } else {
             Err(not_found(ERR_ORDER_NOT_FOUND.to_string()))
