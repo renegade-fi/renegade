@@ -37,13 +37,13 @@ impl NetworkManagerExecutor {
         match command {
             // Register a new peer in the distributed routing tables
             NetworkManagerControlSignal::NewAddr { peer_id, address } => {
-                self.handle_new_addr(peer_id.inner(), address);
+                self.handle_new_addr(peer_id.inner(), address)?;
                 Ok(())
             },
 
             // Remove a peer from the distributed routing tables
             NetworkManagerControlSignal::PeerExpired { peer_id } => {
-                self.handle_peer_expired(&peer_id.inner());
+                self.handle_peer_expired(&peer_id.inner())?;
                 Ok(())
             },
 
@@ -117,8 +117,8 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         // Get the known addresses for the peer
         let (send, recv) = oneshot::channel();
-        self.send_behavior(BehaviorJob::LookupAddr(peer_id, send));
-        let known_peer_addrs = recv.await.map_err(|e| err_str!(NetworkManagerError::LookupAddr))?;
+        self.send_behavior(BehaviorJob::LookupAddr(peer_id, send))?;
+        let known_peer_addrs = recv.await.map_err(err_str!(NetworkManagerError::LookupAddr))?;
 
         // If we have no known addresses for the peer, return an error
         if known_peer_addrs.is_empty() {

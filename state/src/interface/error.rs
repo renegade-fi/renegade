@@ -23,6 +23,8 @@ pub enum StateError {
     Replication(ReplicationV2Error),
     /// An error awaiting a runtime task
     Runtime(String),
+    /// An error deserializing a message
+    Serde(String),
 }
 
 impl Display for StateError {
