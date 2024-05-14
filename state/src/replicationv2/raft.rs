@@ -10,7 +10,7 @@ use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransitio
 use super::{
     error::ReplicationV2Error,
     log_store::LogStore,
-    network::{P2PRaftNetwork, RaftRequest},
+    network::{P2PRaftNetwork, RaftRequest, RaftResponse},
     state_machine::StateMachine,
     NodeId, Raft, RaftNode, TypeConfig,
 };
@@ -208,6 +208,35 @@ impl<N: NetworkEssential> RaftClient<N> {
             .await
             .map_err(err_str!(ReplicationV2Error::Proposal))
             .map(|_| ())
+    }
+
+    // ---------------------
+    // | External Messages |
+    // ---------------------
+
+    /// Handle a raft request from a peer
+    pub(crate) async fn handle_raft_request(
+        &self,
+        req: RaftRequest,
+    ) -> Result<RaftResponse, ReplicationV2Error> {
+        match req {
+            RaftRequest::AppendEntries(req) => {
+                let res = self.raft().append_entries(req).await?;
+                Ok(RaftResponse::AppendEntries(res))
+            },
+            RaftRequest::Vote(req) => {
+                let res = self.raft().vote(req).await?;
+                Ok(RaftResponse::Vote(res))
+            },
+            RaftRequest::InstallSnapshot(req) => {
+                let res = self.raft().install_snapshot(req).await?;
+                Ok(RaftResponse::InstallSnapshot(Ok(res)))
+            },
+            RaftRequest::ForwardedProposal(req) => {
+                self.propose_transition(req).await?;
+                Ok(RaftResponse::Ack)
+            },
+        }
     }
 
     // ----------------------

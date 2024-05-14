@@ -70,7 +70,11 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         match job {
             BehaviorJob::SendReq(peer_id, req, chan) => {
-                let _rid = swarm.behaviour_mut().request_response.send_request(&peer_id, req);
+                let rid = swarm.behaviour_mut().request_response.send_request(&peer_id, req);
+                if let Some(chan) = chan {
+                    self.response_waiters.insert(rid, chan).await;
+                }
+
                 Ok(())
             },
             BehaviorJob::SendResp(channel, resp) => swarm
@@ -78,10 +82,12 @@ impl NetworkManagerExecutor {
                 .request_response
                 .send_response(channel, resp)
                 .map_err(|_| NetworkManagerError::Network(ERR_SEND_RESPONSE.to_string())),
-            BehaviorJob::SendPubsub(topic, msg) => {
-                swarm.behaviour_mut().pubsub.publish(topic, msg);
-                Ok(())
-            },
+            BehaviorJob::SendPubsub(topic, msg) => swarm
+                .behaviour_mut()
+                .pubsub
+                .publish(topic, msg)
+                .map(|_| ())
+                .map_err(err_str!(NetworkManagerError::Network)),
             BehaviorJob::AddAddress(peer_id, addr) => {
                 swarm.behaviour_mut().kademlia_dht.add_address(&peer_id, addr);
                 Ok(())

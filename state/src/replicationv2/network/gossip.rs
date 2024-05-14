@@ -4,9 +4,10 @@
 use gossip_api::request_response::{GossipRequest, GossipResponse};
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
 use openraft::{
-    error::{RPCError, RaftError},
+    error::{NetworkError, RPCError, RaftError},
     RaftNetworkFactory,
 };
+use util::err_str;
 
 use crate::replicationv2::{
     error::{new_network_error, ReplicationV2Error},
@@ -44,7 +45,8 @@ impl GossipNetwork {
             },
         };
 
-        let raft_resp = bincode::deserialize(&resp_bytes).unwrap();
+        let raft_resp =
+            bincode::deserialize(&resp_bytes).map_err(err_str!(ReplicationV2Error::Deserialize))?;
         Ok(raft_resp)
     }
 }
@@ -60,7 +62,8 @@ impl P2PRaftNetwork for GossipNetwork {
         request: RaftRequest,
     ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
         // We serialize in the raft layer to avoid the `gossip-api` depending on `state`
-        let ser = bincode::serialize(&request).unwrap();
+        let ser =
+            bincode::serialize(&request).map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
         let req = GossipRequest::Raft(ser);
 
         // Send a network manager job
