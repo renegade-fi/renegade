@@ -41,7 +41,7 @@ impl WebsocketTopicHandler for OrderStatusHandler {
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 
         // If the wallet doesn't exist, throw an error
-        if self.state.get_wallet(&wallet_id)?.is_none() {
+        if self.state.get_wallet(&wallet_id).await?.is_none() {
             return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         }
 

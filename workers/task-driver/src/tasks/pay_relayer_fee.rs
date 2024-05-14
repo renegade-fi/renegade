@@ -166,10 +166,12 @@ impl Task for PayRelayerFeeTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let state = &ctx.state;
         let sender_wallet = state
-            .get_wallet(&descriptor.wallet_id)?
+            .get_wallet(&descriptor.wallet_id)
+            .await?
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
         let recipient_wallet = state
-            .get_local_relayer_wallet()?
+            .get_local_relayer_wallet()
+            .await?
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
 
         let (new_sender_wallet, new_recipient_wallet) =
@@ -250,7 +252,7 @@ impl Task for PayRelayerFeeTask {
 impl PayRelayerFeeTask {
     /// Generate a proof of `VALID RELAYER FEE SETTLEMENT` for the balance
     async fn generate_proof(&mut self) -> Result<(), PayRelayerFeeTaskError> {
-        let (witness, statement) = self.get_witness_statement()?;
+        let (witness, statement) = self.get_witness_statement().await?;
         let job = ProofJob::ValidRelayerFeeSettlement { witness, statement };
 
         let proof_recv = enqueue_proof_job(job, &self.proof_queue)
@@ -293,8 +295,10 @@ impl PayRelayerFeeTask {
             .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))?;
         self.new_recipient_wallet.merkle_proof = Some(recipient_opening);
 
-        self.state.update_wallet(self.new_sender_wallet.clone())?.await?;
-        self.state.update_wallet(self.new_recipient_wallet.clone())?.await?;
+        let waiter1 = self.state.update_wallet(self.new_sender_wallet.clone()).await?;
+        let waiter2 = self.state.update_wallet(self.new_recipient_wallet.clone()).await?;
+        waiter1.await?;
+        waiter2.await?;
         Ok(())
     }
 
@@ -319,7 +323,7 @@ impl PayRelayerFeeTask {
 
     /// Create a witness and statement for a proof of `VALID RELAYER FEE
     /// SETTLEMENT`
-    fn get_witness_statement(
+    async fn get_witness_statement(
         &self,
     ) -> Result<
         (SizedValidRelayerFeeSettlementWitness, SizedValidRelayerFeeSettlementStatement),
@@ -348,7 +352,7 @@ impl PayRelayerFeeTask {
             .clone()
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
 
-        let recipient_decryption_key = self.state.get_fee_decryption_key()?;
+        let recipient_decryption_key = self.state.get_fee_decryption_key().await?;
         let sender_balance_index = sender_wallet.get_balance_index(&self.mint).unwrap();
         let recipient_balance_index = new_recipient_wallet.get_balance_index(&self.mint).unwrap();
 

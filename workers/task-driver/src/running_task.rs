@@ -98,7 +98,7 @@ impl<T: Task> RunnableTask<T> {
         // or if the task is completed, then await consensus before continuing
         let is_commit = new_state.is_committing();
         let is_completed = new_state.completed();
-        let waiter = self.state.transition_task(task_id, new_state.into())?;
+        let waiter = self.state.transition_task(task_id, new_state.into()).await?;
         if is_commit || is_completed {
             waiter.await?;
         }
@@ -116,7 +116,8 @@ impl<T: Task> RunnableTask<T> {
         // Pop the task from the state
         // Preemptive tasks are not indexed, so no work needs to be done
         if !self.preemptive {
-            self.state.pop_task(self.task_id, success)?.await?;
+            let waiter = self.state.pop_task(self.task_id, success).await?;
+            waiter.await?;
         }
 
         Ok(())

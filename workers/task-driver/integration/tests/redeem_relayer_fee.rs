@@ -46,7 +46,7 @@ async fn setup_trader_wallet(test_args: &IntegrationTestArgs) -> Result<(Balance
     wallet.add_balance(bal.clone()).unwrap();
 
     // Set the managing cluster of the wallet to the local relayer
-    let key = test_args.state.get_fee_decryption_key().unwrap().public_key();
+    let key = test_args.state.get_fee_decryption_key().await.unwrap().public_key();
     wallet.managing_cluster = key;
 
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, test_args).await?;
@@ -72,11 +72,11 @@ async fn test_auto_redeem_relayer_fee(test_args: IntegrationTestArgs) -> Result<
     await_task(descriptor.into(), &test_args).await?;
 
     // Await for the relayer's queue to flush
-    let relayer_wallet_id = state.get_relayer_wallet_id()?.unwrap();
+    let relayer_wallet_id = state.get_relayer_wallet_id().await?;
     await_wallet_task_queue_flush(relayer_wallet_id, &test_args).await?;
 
     // Check that the relayer has redeemed the fee
-    let wallet = state.get_wallet(&relayer_wallet_id)?.unwrap();
+    let wallet = state.get_wallet(&relayer_wallet_id).await?.unwrap();
     let new_bal = wallet.get_balance(&bal.mint).ok_or(eyre!("redeem balance not found"))?.clone();
 
     let expected_balance = Balance::new_from_mint_and_amount(bal.mint, bal.relayer_fee_balance);

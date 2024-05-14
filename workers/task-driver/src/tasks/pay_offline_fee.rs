@@ -170,7 +170,8 @@ impl Task for PayOfflineFeeTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let old_wallet = ctx
             .state
-            .get_wallet(&descriptor.wallet_id)?
+            .get_wallet(&descriptor.wallet_id)
+            .await?
             .ok_or_else(|| PayOfflineFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
 
         // Construct the new wallet
@@ -281,12 +282,14 @@ impl PayOfflineFeeTask {
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // Update the global state to include the new wallet
-        self.state.update_wallet(self.new_wallet.clone())?.await?;
+        let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
+        waiter.await?;
 
         // If this was a relayer fee payment, enqueue a job for the relayer to redeem
         // the fee
         if !self.is_protocol_fee {
             enqueue_relayer_redeem_job(self.note.clone(), &self.state)
+                .await
                 .map_err(PayOfflineFeeTaskError::State)?;
         }
 

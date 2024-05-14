@@ -66,24 +66,27 @@ const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
 // ----------------
 
 /// Update an order's state to `SettlingMatch`
-pub fn transition_order_settling(order_id: OrderIdentifier, state: &State) -> Result<(), String> {
+pub async fn transition_order_settling(
+    order_id: OrderIdentifier,
+    state: &State,
+) -> Result<(), String> {
     let mut metadata =
-        state.get_order_metadata(&order_id)?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
+        state.get_order_metadata(&order_id).await?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
     metadata.state = OrderState::SettlingMatch;
-    state.update_order_metadata(metadata)?;
+    state.update_order_metadata(metadata).await?;
 
     Ok(())
 }
 
 /// Record the result of a match in the order's metadata
-pub fn record_order_fill(
+pub async fn record_order_fill(
     order_id: OrderIdentifier,
     match_res: &MatchResult,
     state: &State,
 ) -> Result<(), String> {
     // Get the order metadata
     let mut metadata =
-        state.get_order_metadata(&order_id)?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
+        state.get_order_metadata(&order_id).await?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
 
     // Increment filled amount and transition state if the entire order has matched
     metadata.filled += match_res.base_amount;
@@ -91,7 +94,7 @@ pub fn record_order_fill(
         metadata.state = OrderState::Filled;
     }
 
-    state.update_order_metadata(metadata)?;
+    state.update_order_metadata(metadata).await?;
     Ok(())
 }
 
@@ -368,14 +371,15 @@ async fn link_and_store_proofs(
         commitment_linking_hint: Arc::new(comms_link_hint.clone()),
     };
 
-    global_state
-        .add_local_order_validity_bundle(*order_id, proof_bundle.clone(), witness_bundle)?
+    let waiter = global_state
+        .add_local_order_validity_bundle(*order_id, proof_bundle.clone(), witness_bundle)
         .await?;
+    waiter.await?;
 
     // Gossip the updated proofs to the network
     let message = PubsubMessage::Orderbook(OrderBookManagementMessage::OrderProofUpdated {
         order_id: *order_id,
-        cluster: global_state.get_cluster_id()?,
+        cluster: global_state.get_cluster_id().await?,
         proof_bundle,
     });
 
@@ -384,10 +388,10 @@ async fn link_and_store_proofs(
 }
 
 /// Enqueue a job to redeem a relayer fee into the relayer's wallet
-pub(crate) fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
-    let relayer_wallet_id = state.get_relayer_wallet_id()?.ok_or("relayer wallet not found")?;
+pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
+    let relayer_wallet_id = state.get_relayer_wallet_id().await?;
     let descriptor =
         RedeemRelayerFeeTaskDescriptor::new(relayer_wallet_id, note).expect("infallible");
 
-    state.append_task(descriptor.into()).map_err(|e| e.to_string()).map(|_| ())
+    state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())
 }

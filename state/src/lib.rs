@@ -23,7 +23,9 @@ use common::types::{
     wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
 };
 use notifications::ProposalId;
-use replicationv2::{network::gossip::GossipNetwork, NodeId, RaftNode};
+#[cfg(not(feature = "mocks"))]
+use replicationv2::network::gossip::GossipNetwork;
+use replicationv2::{NodeId, RaftNode};
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
@@ -35,6 +37,7 @@ pub mod tui;
 
 /// Re-export the state interface
 pub use interface::*;
+use test_helpers::MockState;
 use uuid::Uuid;
 
 // -------------
@@ -42,7 +45,11 @@ use uuid::Uuid;
 // -------------
 
 /// The state type with default generics attached
+#[cfg(not(feature = "mocks"))]
 pub type State = StateHandle<GossipNetwork>;
+/// The state type with default generics attached
+#[cfg(feature = "mocks")]
+pub type State = MockState;
 
 /// The number of tables to open in the database
 const NUM_TABLES: usize = 14;

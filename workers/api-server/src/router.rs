@@ -320,7 +320,8 @@ impl Router {
         // Lookup the wallet in the global state
         let wallet = self
             .global_state
-            .get_wallet(&wallet_id)?
+            .get_wallet(&wallet_id)
+            .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         // Get the request bytes

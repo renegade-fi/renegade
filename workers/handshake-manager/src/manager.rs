@@ -278,11 +278,13 @@ impl HandshakeExecutor {
                 let (party0_proof, party1_proof) = {
                     let local_validity_proof = self
                         .global_state
-                        .get_validity_proofs(&order_state.local_order_id)?
+                        .get_validity_proofs(&order_state.local_order_id)
+                        .await?
                         .ok_or_else(|| HandshakeManagerError::State(ERR_NO_PROOF.to_string()))?;
                     let remote_validity_proof = self
                         .global_state
-                        .get_validity_proofs(&order_state.peer_order_id)?
+                        .get_validity_proofs(&order_state.peer_order_id)
+                        .await?
                         .ok_or_else(|| HandshakeManagerError::State(ERR_NO_PROOF.to_string()))?;
 
                     match order_state.role {
@@ -335,13 +337,14 @@ impl HandshakeExecutor {
     ///
     /// This involves both converting the address into an Eth mainnet analog
     /// and casting this to a `Token`
-    fn token_pair_for_order(
+    async fn token_pair_for_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<(Token, Token), HandshakeManagerError> {
         let order = self
             .global_state
-            .get_managed_order(order_id)?
+            .get_managed_order(order_id)
+            .await?
             .ok_or_else(|| HandshakeManagerError::State(format!("order_id: {order_id:?}")))?;
 
         Ok((
@@ -392,8 +395,9 @@ impl HandshakeExecutor {
         let locked_handshake_cache = self.handshake_cache.read().await;
 
         // Shuffle the locally managed orders to avoid always matching the same order
+        let mut local_verified_orders =
+            self.global_state.get_locally_matchable_orders().await.ok()?;
         let mut rng = thread_rng();
-        let mut local_verified_orders = self.global_state.get_locally_matchable_orders().ok()?;
         local_verified_orders.shuffle(&mut rng);
 
         // Choose the first order that isn't cached
@@ -425,7 +429,7 @@ impl HandshakeExecutor {
 
         // Update the state of the handshake in the completed state
         self.handshake_state_index.completed(&request_id).await;
-        self.publish_completion_messages(state.local_order_id, state.peer_order_id)?;
+        self.publish_completion_messages(state.local_order_id, state.peer_order_id).await?;
 
         // Record the volume of the match
         record_match_volume(match_result);
@@ -435,7 +439,7 @@ impl HandshakeExecutor {
 
     /// Publish a cache sync message to the cluster and a local event indicating
     /// that a handshake has completed
-    fn publish_completion_messages(
+    async fn publish_completion_messages(
         &self,
         local_order_id: OrderIdentifier,
         peer_order_id: OrderIdentifier,
@@ -443,7 +447,7 @@ impl HandshakeExecutor {
         // Send a message to cluster peers indicating that the local peer has completed
         // a match. Cluster peers should cache the matched order pair as
         // completed and not initiate matches on this pair going forward
-        let cluster_id = self.global_state.get_cluster_id().unwrap();
+        let cluster_id = self.global_state.get_cluster_id().await.unwrap();
         let topic = cluster_id.get_management_topic();
         let message = PubsubMessage::Cluster(ClusterManagementMessage {
             cluster_id,
@@ -480,7 +484,8 @@ impl HandshakeExecutor {
         // Enqueue a task to settle the match
         let wallet_id = self
             .global_state
-            .get_wallet_for_order(&handshake_state.local_order_id)?
+            .get_wallet_for_order(&handshake_state.local_order_id)
+            .await?
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
 
         let task: TaskDescriptor = SettleMatchTaskDescriptor::new(

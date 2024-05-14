@@ -51,13 +51,14 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
 
 /// Find the wallet in global state and apply any tasks to its state
-fn find_wallet_for_update(
+async fn find_wallet_for_update(
     wallet_id: WalletIdentifier,
     state: &State,
 ) -> Result<Wallet, ApiServerError> {
     // Find the wallet and tasks
     let (mut wallet, tasks) = state
-        .get_wallet_and_tasks(&wallet_id)?
+        .get_wallet_and_tasks(&wallet_id)
+        .await?
         .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
     // Apply tasks to the wallet
@@ -71,7 +72,7 @@ async fn append_task_and_await(
     task: TaskDescriptor,
     state: &State,
 ) -> Result<TaskIdentifier, ApiServerError> {
-    let (task_id, waiter) = state.append_task(task)?;
+    let (task_id, waiter) = state.append_task(task).await?;
     waiter.await.map_err(err_str!(internal_error))?;
 
     Ok(task_id)
@@ -118,7 +119,8 @@ impl TypedHandler for GetWalletHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let wallet = self
             .state
-            .get_wallet(&wallet_id)?
+            .get_wallet(&wallet_id)
+            .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         Ok(GetWalletResponse { wallet: wallet.into() })
@@ -152,7 +154,7 @@ impl TypedHandler for GetBackOfQueueWalletHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch the wallet and its tasks from state
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
         Ok(GetWalletResponse { wallet: wallet.into() })
     }
 }
@@ -183,8 +185,8 @@ impl TypedHandler for CreateWalletHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Overwrite the managing cluster and the match fee with the configured values
-        let relayer_key = self.state.get_fee_decryption_key()?.public_key();
-        let relayer_take_rate = self.state.get_relayer_take_rate()?;
+        let relayer_key = self.state.get_fee_decryption_key().await?.public_key();
+        let relayer_take_rate = self.state.get_relayer_take_rate().await?;
         req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
         req.wallet.match_fee = relayer_take_rate;
 
@@ -287,7 +289,8 @@ impl TypedHandler for GetOrdersHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mut wallet = self
             .state
-            .get_wallet(&wallet_id)?
+            .get_wallet(&wallet_id)
+            .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         wallet.remove_default_elements();
@@ -328,7 +331,8 @@ impl TypedHandler for GetOrderByIdHandler {
         // Find the wallet in global state and use its keys to authenticate the request
         let wallet = self
             .state
-            .get_wallet(&wallet_id)?
+            .get_wallet(&wallet_id)
+            .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         if let Some(order) = wallet.orders.get(&order_id).cloned() {
@@ -368,7 +372,7 @@ impl TypedHandler for CreateOrderHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         let new_order: Order = req.order.into();
 
@@ -419,7 +423,7 @@ impl TypedHandler for UpdateOrderHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
 
         // Pop the old order and replace it with a new one
         let mut new_wallet = old_wallet.clone();
@@ -480,7 +484,7 @@ impl TypedHandler for CancelOrderHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
 
         // Remove the order from the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -534,7 +538,7 @@ impl TypedHandler for GetBalancesHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        if let Some(mut wallet) = self.state.get_wallet(&wallet_id)? {
+        if let Some(mut wallet) = self.state.get_wallet(&wallet_id).await? {
             // Filter out the default balances used to pad the wallet to the circuit size
             wallet.remove_default_elements();
             let balances = wallet.get_balances_list().to_vec();
@@ -575,7 +579,7 @@ impl TypedHandler for GetBalanceByMintHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let mint = parse_mint_from_params(&params)?;
 
-        if let Some(wallet) = self.state.get_wallet(&wallet_id)? {
+        if let Some(wallet) = self.state.get_wallet(&wallet_id).await? {
             let balance =
                 wallet.get_balance(&mint).cloned().unwrap_or_else(|| Balance::new_from_mint(mint));
             Ok(GetBalanceByMintResponse { balance })
@@ -614,7 +618,7 @@ impl TypedHandler for DepositBalanceHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the old wallet by id
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
 
         // Apply the balance update to the old wallet to get the new wallet
         let mut new_wallet = old_wallet.clone();
@@ -679,7 +683,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         let mint = parse_mint_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
 
         // Check that fees are paid for the wallet
@@ -744,7 +748,7 @@ impl TypedHandler for PayFeesHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let wallet = find_wallet_for_update(wallet_id, &self.state)?;
+        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
 
         // Pay all fees in the wallet
         let mut tasks = Vec::new();
@@ -806,7 +810,7 @@ impl TypedHandler for GetOrderHistoryHandler {
             .map_err(bad_request)?
             .unwrap_or(DEFAULT_ORDER_HISTORY_LEN);
 
-        let orders = self.state.get_order_history(len, &wallet_id).map_err(internal_error)?;
+        let orders = self.state.get_order_history(len, &wallet_id).await.map_err(internal_error)?;
         Ok(GetOrderHistoryResponse { orders })
     }
 }
