@@ -32,7 +32,7 @@ use test_helpers::{
 };
 use util::{
     arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
-    runtime::block_on_result,
+    runtime::block_current,
     telemetry::LevelFilter,
 };
 
@@ -113,7 +113,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         // function signature of `From`, which is assumed to be implemented in
         // the integration test harness
         let arb_priv_key = LocalWallet::from_str(&test_args.private_key).unwrap();
-        let client = block_on_result(ArbitrumClient::new(ArbitrumClientConfig {
+        let client = block_current(ArbitrumClient::new(ArbitrumClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
             arb_priv_key,

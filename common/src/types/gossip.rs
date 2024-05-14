@@ -3,9 +3,14 @@
 //! Groups the types used to represent the gossip network primitives
 
 use derivative::Derivative;
-use ed25519_dalek::{Digest, Keypair, PublicKey, Sha512, Signature, SignatureError};
+use ed25519_dalek::{
+    Digest, Keypair, PublicKey, Sha512, Signature, SignatureError, SECRET_KEY_LENGTH,
+};
 use libp2p::{Multiaddr, PeerId};
-use libp2p_identity::ParseError as PeerIdParseError;
+use libp2p_identity::{
+    ed25519::Keypair as LibP2PKeypair, ed25519::SecretKey as LibP2PSecretKey,
+    ParseError as PeerIdParseError,
+};
 use serde::{
     de::{Error as SerdeErr, Visitor},
     Deserialize, Serialize,
@@ -142,6 +147,15 @@ impl WrappedPeerId {
     /// Get the underlying peer ID
     pub fn inner(&self) -> PeerId {
         self.0
+    }
+}
+
+impl Default for WrappedPeerId {
+    fn default() -> Self {
+        let skey = LibP2PSecretKey::try_from_bytes(&mut vec![0; SECRET_KEY_LENGTH]).unwrap();
+        let keypair = LibP2PKeypair::from(skey);
+        let peer_id = PeerId::from_public_key(&keypair.public().into());
+        Self(peer_id)
     }
 }
 

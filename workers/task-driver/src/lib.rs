@@ -35,7 +35,7 @@ pub async fn await_task(
     task_queue: TaskDriverQueue,
 ) -> Result<(), String> {
     // Wait for the task to be queued
-    let (task_id, waiter) = state.append_task(task)?;
+    let (task_id, waiter) = state.append_task(task).await?;
     waiter.await?;
 
     let (rx, job) = new_task_notification(task_id);

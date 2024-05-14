@@ -160,7 +160,7 @@ impl HandshakeExecutor {
     ) -> Result<bool, HandshakeManagerError> {
         // Find the price of the asset pair that the local party's order is on in the
         // peer's proposed prices list
-        let (base, quote) = self.token_pair_for_order(my_order_id)?;
+        let (base, quote) = self.token_pair_for_order(my_order_id).await?;
         let proposed_price = proposed_prices.find_pair(&base, &quote);
         if proposed_price.is_none() {
             return Ok(false);

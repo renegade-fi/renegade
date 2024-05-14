@@ -61,8 +61,10 @@ async fn test_pay_offline_fees(test_args: IntegrationTestArgs) -> Result<()> {
     expected_wallet.get_balance_mut(&bal.mint).unwrap().protocol_fee_balance = 0;
     expected_wallet.reblind_wallet();
 
-    let wallet =
-        state.get_wallet(&wallet.wallet_id)?.ok_or_else(|| eyre!("wallet not found in state"))?;
+    let wallet = state
+        .get_wallet(&wallet.wallet_id)
+        .await?
+        .ok_or_else(|| eyre!("wallet not found in state"))?;
 
     // We only compare the public and private shares, other metadata fields on the
     // wallets may differ
@@ -83,8 +85,10 @@ async fn test_pay_offline_fees(test_args: IntegrationTestArgs) -> Result<()> {
     expected_wallet.get_balance_mut(&bal.mint).unwrap().relayer_fee_balance = 0;
     expected_wallet.reblind_wallet();
 
-    let wallet =
-        state.get_wallet(&wallet.wallet_id)?.ok_or_else(|| eyre!("wallet not found in state"))?;
+    let wallet = state
+        .get_wallet(&wallet.wallet_id)
+        .await?
+        .ok_or_else(|| eyre!("wallet not found in state"))?;
 
     // We only compare the public and private shares, other metadata fields on the
     // wallets may differ

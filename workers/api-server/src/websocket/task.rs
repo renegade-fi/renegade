@@ -53,7 +53,7 @@ impl WebsocketTopicHandler for TaskStatusHandler {
         let task_id = parse_task_id_from_params(route_params)?;
 
         // Check that the task is valid
-        if !self.state.contains_task(&task_id)? {
+        if !self.state.contains_task(&task_id).await? {
             return Err(not_found(ERR_TASK_MISSING.to_string()));
         }
 
@@ -101,7 +101,7 @@ impl WebsocketTopicHandler for TaskHistoryHandler {
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 
         // Check that the wallet is valid
-        if !self.state.contains_wallet(&wallet_id)? {
+        if !self.state.contains_wallet(&wallet_id).await? {
             return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         }
 
