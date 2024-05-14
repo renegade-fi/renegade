@@ -28,6 +28,8 @@ use tracing::{error, info};
 
 use std::sync::{atomic::AtomicBool, Arc};
 
+use crate::waiters::ResponseWaiters;
+
 use self::behavior::{new_behavior_queue, BehaviorReceiver, BehaviorSender};
 
 use super::{
@@ -103,6 +105,8 @@ pub(super) struct NetworkManagerExecutor {
     warmup_finished: Arc<AtomicBool>,
     /// The messages buffered during the warmup period
     warmup_buffer: AsyncShared<Vec<BufferedPubsubMessage>>,
+    /// The waiters on outbound requests
+    response_waiters: ResponseWaiters,
     /// The behavior channel receiver, used to sequence access to the underlying
     /// swarm
     behavior_rx: DefaultOption<BehaviorReceiver>,
@@ -148,6 +152,7 @@ impl NetworkManagerExecutor {
             discovered_identity: Arc::new(AtomicBool::new(false)),
             warmup_finished: Arc::new(AtomicBool::new(false)),
             warmup_buffer: new_async_shared(Vec::new()),
+            response_waiters: ResponseWaiters::new(),
             behavior_rx: DefaultWrapper::new(Some(behavior_rx)),
             behavior_tx,
             job_channel: DefaultWrapper::new(Some(job_channel)),
@@ -228,7 +233,7 @@ impl NetworkManagerExecutor {
         match message {
             ComposedProtocolEvent::RequestResponse(request_response) => {
                 if let RequestResponseEvent::Message { peer, message, .. } = request_response {
-                    self.handle_inbound_request_response_message(peer, message)?;
+                    self.handle_inbound_request_response_message(peer, message).await?;
                 }
 
                 Ok(())

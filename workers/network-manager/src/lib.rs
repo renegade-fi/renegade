@@ -11,4 +11,5 @@
 mod composed_protocol;
 pub mod error;
 pub mod executor;
+pub mod waiters;
 pub mod worker;

@@ -1,7 +1,7 @@
 //! Error types and conversions for the replication interface
 use std::{
     error::Error,
-    fmt::Display,
+    fmt::{Debug, Display},
     io::{Error as IoError, ErrorKind as IoErrorKind},
 };
 
@@ -62,6 +62,8 @@ pub enum ReplicationV2Error {
     Deserialize(String),
     /// An error proposing a state transition
     Proposal(String),
+    /// A generic raft error
+    Raft(String),
     /// An error setting up a raft
     RaftSetup(String),
     /// An error tearing down a raft
@@ -77,6 +79,7 @@ impl Display for ReplicationV2Error {
         match self {
             ReplicationV2Error::Deserialize(e) => write!(f, "Deserialization error: {e}"),
             ReplicationV2Error::Proposal(e) => write!(f, "Proposal error: {e}"),
+            ReplicationV2Error::Raft(e) => write!(f, "Raft error: {e}"),
             ReplicationV2Error::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
             ReplicationV2Error::RaftTeardown(e) => write!(f, "Raft teardown error: {e}"),
             ReplicationV2Error::Snapshot(e) => write!(f, "Snapshot error: {e}"),
@@ -89,5 +92,11 @@ impl Error for ReplicationV2Error {}
 impl From<StorageError> for ReplicationV2Error {
     fn from(value: StorageError) -> Self {
         ReplicationV2Error::Storage(value)
+    }
+}
+
+impl<E: Debug> From<RaftError<NodeId, E>> for ReplicationV2Error {
+    fn from(value: RaftError<NodeId, E>) -> Self {
+        ReplicationV2Error::Raft(format!("{value:?}"))
     }
 }

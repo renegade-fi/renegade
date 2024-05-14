@@ -15,8 +15,9 @@ use openraft::{
     RaftNetwork,
 };
 use serde::{Deserialize, Serialize};
+use util::err_str;
 
-use crate::Proposal;
+use crate::{error::StateError, Proposal};
 
 use super::{Node, NodeId, TypeConfig};
 
@@ -51,6 +52,11 @@ pub enum RaftResponse {
 }
 
 impl RaftResponse {
+    /// Serialize a raft response to bytes
+    pub fn to_bytes(&self) -> Result<Vec<u8>, StateError> {
+        bincode::serialize(self).map_err(err_str!(StateError::Serde))
+    }
+
     /// Convert the response to an append entries request
     pub fn into_append_entries(self) -> AppendEntriesResponse<NodeId> {
         match self {
