@@ -7,6 +7,7 @@ pub mod node_metadata;
 pub mod order_book;
 pub mod order_history;
 pub mod peer_index;
+pub mod raft;
 pub mod task_queue;
 pub mod wallet_index;
 
