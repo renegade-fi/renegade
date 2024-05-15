@@ -1,5 +1,6 @@
 //! Defines task related types
 
+use ark_ff::{BigInteger, PrimeField};
 use circuit_types::{
     fixed_point::FixedPoint, keychain::PublicSigningKey, note::Note, order::Order,
     r#match::MatchResult, Amount,
@@ -607,7 +608,7 @@ pub fn verify_wallet_update_signature(
 
     // Serialize the commitment, matches the contract's serialization here:
     //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
-    let comm_bytes = new_wallet_comm.to_biguint().to_bytes_be();
+    let comm_bytes = new_wallet_comm.inner().into_bigint().to_bytes_be();
     let digest = keccak256(comm_bytes);
 
     // Verify the signature
