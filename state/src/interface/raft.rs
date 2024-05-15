@@ -4,14 +4,11 @@ use util::err_str;
 
 use crate::{
     error::StateError,
-    replicationv2::{
-        network::{RaftRequest, RaftResponse},
-        raft::NetworkEssential,
-    },
-    StateHandle,
+    replicationv2::network::{RaftRequest, RaftResponse},
+    State,
 };
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     /// Handle a raft request from a peer
     ///
     /// We (de)serialize at the raft layer to avoid dependency leak

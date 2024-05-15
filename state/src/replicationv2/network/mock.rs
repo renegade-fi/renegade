@@ -1,15 +1,15 @@
 //! Mock networking implementation for testing
 
+use async_trait::async_trait;
 use openraft::error::{RPCError, RaftError, Unreachable};
-use openraft::RaftNetworkFactory;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
 };
 
-use crate::replicationv2::{Node, NodeId, TypeConfig};
+use crate::replicationv2::{Node, NodeId};
 
-use super::{P2PRaftNetwork, P2PRaftNetworkWrapper, RaftRequest, RaftResponse};
+use super::{P2PNetworkFactory, P2PRaftNetwork, P2PRaftNetworkWrapper, RaftRequest, RaftResponse};
 
 /// The sender type for the response queue
 pub type ResponseSender = OneshotSender<RaftResponse>;
@@ -47,17 +47,16 @@ impl MockNetworkNode {
     }
 }
 
-impl RaftNetworkFactory<TypeConfig> for MockNetworkNode {
-    type Network = P2PRaftNetworkWrapper<Self>;
-
-    // Fill in the target and return a clone of `self`
-    async fn new_client(&mut self, target: NodeId, _node: &Node) -> Self::Network {
+impl P2PNetworkFactory for MockNetworkNode {
+    fn new_p2p_client(&self, target: NodeId, _target_info: Node) -> P2PRaftNetworkWrapper {
         let mut clone = self.clone();
         clone.target = target;
+
         P2PRaftNetworkWrapper::new(clone)
     }
 }
 
+#[async_trait]
 impl P2PRaftNetwork for MockNetworkNode {
     fn target(&self) -> NodeId {
         self.target

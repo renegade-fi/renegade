@@ -6,12 +6,9 @@ use common::types::tasks::{
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
 
-use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    StateHandle, StateTransition,
-};
+use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // -----------
     // | Getters |
     // -----------

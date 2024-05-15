@@ -10,7 +10,9 @@ use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransitio
 use super::{
     error::ReplicationV2Error,
     log_store::LogStore,
-    network::{P2PRaftNetwork, RaftRequest, RaftResponse},
+    network::{
+        P2PNetworkFactory, P2PNetworkFactoryWrapper, P2PRaftNetwork, RaftRequest, RaftResponse,
+    },
     state_machine::StateMachine,
     NodeId, Raft, RaftNode, TypeConfig,
 };
@@ -70,21 +72,21 @@ impl Default for RaftClientConfig {
 
 /// A client interface to the raft
 #[derive(Clone)]
-pub struct RaftClient<N: NetworkEssential> {
+pub struct RaftClient {
     /// The client's config
     config: RaftClientConfig,
     /// The inner raft
     raft: Raft,
     /// The network to use for the raft client
-    net: N,
+    network_factory: P2PNetworkFactoryWrapper,
 }
 
-impl<N: NetworkEssential> RaftClient<N> {
+impl RaftClient {
     /// Create a new raft client
-    pub async fn new(
+    pub async fn new<N: P2PNetworkFactory>(
         config: RaftClientConfig,
         db: Arc<DB>,
-        net: N,
+        net_factory: N,
         state_machine: StateMachine,
     ) -> Result<Self, ReplicationV2Error> {
         let raft_config = Arc::new(RaftConfig {
@@ -96,8 +98,9 @@ impl<N: NetworkEssential> RaftClient<N> {
         });
 
         // Create the raft
+        let p2p_factory = P2PNetworkFactoryWrapper::new(net_factory);
         let log_store = LogStore::new(db.clone());
-        let raft = Raft::new(config.id, raft_config, net.clone(), log_store, state_machine)
+        let raft = Raft::new(config.id, raft_config, p2p_factory.clone(), log_store, state_machine)
             .await
             .map_err(err_str!(ReplicationV2Error::RaftSetup))?;
 
@@ -112,18 +115,12 @@ impl<N: NetworkEssential> RaftClient<N> {
             raft.initialize(members).await.map_err(err_str!(ReplicationV2Error::RaftSetup))?;
         }
 
-        Ok(Self { config, raft, net })
+        Ok(Self { config, raft, network_factory: p2p_factory })
     }
 
     /// Get the inner raft
     pub fn raft(&self) -> &Raft {
         &self.raft
-    }
-
-    /// Get a handle to the network implementation
-    #[cfg(any(test, feature = "mocks"))]
-    pub(crate) fn network(&self) -> N {
-        self.net.clone()
     }
 
     /// Get the node ID of the local raft
@@ -134,6 +131,18 @@ impl<N: NetworkEssential> RaftClient<N> {
     /// Get the current leader
     pub async fn leader(&self) -> Option<NodeId> {
         self.raft.current_leader().await
+    }
+
+    /// Get the node info an ID for the current leader
+    pub fn leader_info(&self) -> Option<(NodeId, RaftNode)> {
+        let metrics = self.raft.metrics();
+        let metrics_ref = metrics.borrow();
+        let membership = metrics_ref.membership_config.membership();
+
+        // `expect` is safe, if `leader_nid` is `Some`; membership must contain leader
+        let leader_nid = metrics_ref.current_leader?;
+        let leader_info = *membership.get_node(&leader_nid).expect("leader info not found");
+        Some((leader_nid, leader_info))
     }
 
     /// Shutdown the raft
@@ -148,17 +157,19 @@ impl<N: NetworkEssential> RaftClient<N> {
     /// Propose an update to the raft
     pub async fn propose_transition(&self, update: Proposal) -> Result<(), ReplicationV2Error> {
         // If the current node is not the leader, forward to the leader
-        let leader = self
-            .leader()
-            .await
+        let (leader_nid, leader_info) = self
+            .leader_info()
             .ok_or_else(|| ReplicationV2Error::Proposal(ERR_NO_LEADER.to_string()))?;
-        if leader != self.node_id() {
+
+        if leader_nid != self.node_id() {
+            // Get a client to the leader's raft
+            let net = self.network_factory.new_p2p_client(leader_nid, leader_info);
+
+            // Send a message
             let msg = RaftRequest::ForwardedProposal(update);
-            self.net
-                .send_request(leader, msg)
+            net.send_request(leader_nid, msg)
                 .await
                 .map_err(err_str!(ReplicationV2Error::Proposal))?;
-
             return Ok(());
         }
 

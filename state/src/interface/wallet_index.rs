@@ -10,12 +10,9 @@ use common::types::{
 };
 use util::res_some;
 
-use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    StateHandle, StateTransition,
-};
+use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // -----------
     // | Getters |
     // -----------
@@ -121,13 +118,10 @@ mod test {
     use itertools::Itertools;
     use num_bigint::BigUint;
 
-    use crate::{
-        order_history::test::setup_order_history,
-        test_helpers::{mock_state, MockState},
-    };
+    use crate::{order_history::test::setup_order_history, test_helpers::mock_state, State};
 
     /// Create a set of mock historical orders
-    fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &MockState) {
+    fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &State) {
         let history = (0..n)
             .map(|_| OrderMetadata {
                 id: OrderIdentifier::new_v4(),
