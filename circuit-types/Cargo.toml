@@ -24,7 +24,7 @@ num-bigint = { version = "0.4", features = ["rand", "serde"] }
 rand = "0.8"
 
 # === Async + Runtime === #
-async-trait = "0.1"
+async-trait = { workspace = true }
 futures = { workspace = true }
 
 # === Workspace Crates === #

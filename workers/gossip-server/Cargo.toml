@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 # === Async + Concurrency === #
+async-trait = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
 

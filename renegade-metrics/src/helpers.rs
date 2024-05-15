@@ -5,7 +5,7 @@ use common::types::{token::Token, transfer_auth::ExternalTransferWithAuth};
 use num_bigint::BigUint;
 use state::{error::StateError, State};
 use tracing::error;
-use util::{hex::biguint_to_hex_string, runtime::block_current};
+use util::hex::biguint_to_hex_string;
 
 use crate::labels::{
     ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
@@ -68,17 +68,17 @@ pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
 }
 
 /// Get the number of local and remote peers the cluster is connected to
-fn get_num_peers(state: &State) -> Result<(usize, usize), StateError> {
-    let cluster_id = block_current(state.get_cluster_id())?;
-    let num_local_peers = block_current(state.get_cluster_peers(&cluster_id))?.len();
-    let num_remote_peers = block_current(state.get_non_cluster_peers(&cluster_id))?.len();
+async fn get_num_peers(state: &State) -> Result<(usize, usize), StateError> {
+    let cluster_id = state.get_cluster_id().await?;
+    let num_local_peers = state.get_cluster_peers(&cluster_id).await?.len();
+    let num_remote_peers = state.get_non_cluster_peers(&cluster_id).await?.len();
 
     Ok((num_local_peers, num_remote_peers))
 }
 
 /// Record the number of local and remote peers the cluster is connected to
-pub fn record_num_peers_metrics(state: &State) {
-    let (num_local_peers, num_remote_peers) = match get_num_peers(state) {
+pub async fn record_num_peers_metrics(state: &State) {
+    let (num_local_peers, num_remote_peers) = match get_num_peers(state).await {
         Ok(peers) => peers,
         Err(e) => {
             error!("Error getting number of peers: {}", e);

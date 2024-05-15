@@ -37,7 +37,7 @@ util = { path = "../util" }
 test-helpers = { path = "../test-helpers", optional = true }
 
 # === Misc === #
-async-trait = "0.1"
+async-trait = { workspace = true }
 crossterm = "0.27"
 itertools = "0.10"
 fxhash = "0.2"

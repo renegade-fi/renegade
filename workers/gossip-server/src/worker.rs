@@ -1,6 +1,7 @@
 //! Implements the `Worker` trait for the GossipServer
 
 use arbitrum_client::client::ArbitrumClient;
+use async_trait::async_trait;
 use common::default_wrapper::DefaultWrapper;
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
@@ -45,11 +46,12 @@ pub struct GossipServerConfig {
     pub cancel_channel: CancelChannel,
 }
 
+#[async_trait]
 impl Worker for GossipServer {
     type WorkerConfig = GossipServerConfig;
     type Error = GossipError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         Ok(Self { config, protocol_executor_handle: None })
     }
 

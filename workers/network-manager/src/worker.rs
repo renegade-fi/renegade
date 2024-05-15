@@ -3,12 +3,14 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::thread::{Builder, JoinHandle};
 
+use async_trait::async_trait;
 use common::default_wrapper::DefaultOption;
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
+use futures::executor::block_on;
 use gossip_api::pubsub::orderbook::ORDER_BOOK_TOPIC;
 use job_types::gossip_server::GossipServerQueue;
 use job_types::handshake_manager::HandshakeManagerQueue;
@@ -26,7 +28,6 @@ use libp2p_core::Transport;
 use libp2p_swarm::SwarmBuilder;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::info;
-use util::runtime::block_current;
 
 use crate::composed_protocol::ComposedNetworkBehavior;
 
@@ -141,13 +142,14 @@ impl NetworkManager {
 // | Worker |
 // ----------
 
+#[async_trait]
 impl Worker for NetworkManager {
     type WorkerConfig = NetworkManagerConfig;
     type Error = NetworkManagerError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        let local_peer_id = block_current(config.global_state.get_peer_id())?;
-        let local_keypair = block_current(config.global_state.get_node_keypair())?;
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
+        let local_peer_id = config.global_state.get_peer_id().await?;
+        let local_keypair = config.global_state.get_node_keypair().await?;
 
         // If the local node is given a known dialable addr for itself at startup,
         // construct the local addr directly, otherwise set it to the canonical
@@ -173,7 +175,7 @@ impl Worker for NetworkManager {
             local_addr.clone(),
             config.cluster_keypair.as_ref().unwrap(),
         );
-        block_current(config.global_state.set_local_peer_info(info))?;
+        config.global_state.set_local_peer_info(info).await?;
 
         Ok(Self {
             cluster_id: config.cluster_id.clone(),
@@ -221,7 +223,7 @@ impl Worker for NetworkManager {
         )?;
 
         // Add any bootstrap addresses to the peer info table
-        let peer_index = block_current(self.config.clone().global_state.get_peer_info_map())?;
+        let peer_index = block_on(self.config.clone().global_state.get_peer_info_map())?;
         for (peer_id, peer_info) in peer_index.iter() {
             info!("Adding {:?}: {} to routing table...", peer_id, peer_info.get_addr());
             behavior.kademlia_dht.add_address(peer_id, peer_info.get_addr());
@@ -234,7 +236,7 @@ impl Worker for NetworkManager {
         swarm.listen_on(addr).map_err(|err| NetworkManagerError::SetupError(err.to_string()))?;
 
         // After assigning address and peer ID, update the global state
-        block_current(self.update_global_state_after_startup())?;
+        block_on(self.update_global_state_after_startup())?;
         // Subscribe to all relevant topics
         self.setup_pubsub_subscriptions(&mut swarm)?;
 

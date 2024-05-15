@@ -24,7 +24,7 @@ use libp2p::{
     request_response::Event as RequestResponseEvent, swarm::SwarmEvent, Multiaddr, Swarm,
 };
 use state::State;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use std::sync::{atomic::AtomicBool, Arc};
 
@@ -213,7 +213,7 @@ impl NetworkManagerExecutor {
                             info!("Listening on {}/p2p/{}\n", address, self.local_peer_id);
                         },
                         // This catchall may be enabled for fine-grained libp2p introspection
-                        x => { info!("Unhandled swarm event: {:?}", x) }
+                        x => { debug!("Unhandled swarm event: {:?}", x) }
                     }
                 }
 
