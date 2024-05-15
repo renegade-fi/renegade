@@ -87,7 +87,7 @@ pub mod test_helpers {
         },
         raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
-        NodeId,
+        NodeId, RaftNode,
     };
 
     /// The timeout which mock rafts wait for leader election
@@ -117,6 +117,10 @@ pub mod test_helpers {
 
     /// Get the config for a mock raft
     pub fn mock_raft_config(initial_nodes: Vec<NodeId>) -> RaftClientConfig {
+        // Use mock peer ids for each node
+        let initial_nodes =
+            initial_nodes.into_iter().map(|nid| (nid, RaftNode::default())).collect();
+
         // All timeouts in ms
         RaftClientConfig {
             cluster_name: "mock-cluster".to_string(),
@@ -146,6 +150,7 @@ pub mod test_helpers {
         pub fn new(client: RaftClient, db: Arc<DB>) -> Self {
             Self { client, db }
         }
+
         /// Get the raft
         pub fn get_client(&self) -> &RaftClient {
             &self.client
@@ -155,6 +160,11 @@ pub mod test_helpers {
         pub fn get_db(&self) -> &DB {
             &self.db
         }
+
+        /// Clone the db
+        pub fn clone_db(&self) -> Arc<DB> {
+            self.db.clone()
+        }
     }
 
     /// A network switch in between rafts
@@ -162,7 +172,7 @@ pub mod test_helpers {
         /// A copy of the sender to the switch
         sender: SwitchSender,
         /// The rafts in the network
-        rafts: AsyncShared<HashMap<NodeId, MockRaftNode>>,
+        pub(crate) rafts: AsyncShared<HashMap<NodeId, MockRaftNode>>,
     }
 
     impl MockRaft {
@@ -178,7 +188,7 @@ pub mod test_helpers {
 
         /// Create a mock raft with a single node
         pub async fn create_singleton_raft() -> Self {
-            Self::create_raft(1).await
+            Self::create_raft(1, true).await
         }
 
         /// Create a new network client instance
@@ -186,14 +196,19 @@ pub mod test_helpers {
             MockNetworkNode::new(self.sender.clone())
         }
 
+        /// Create an initialized raft with `n` nodes
+        pub async fn create_initialized_raft(n_nodes: usize) -> Self {
+            Self::create_raft(n_nodes, true /* init */).await
+        }
+
         /// Create a mock raft network with `n_nodes` nodes and return the rafts
         /// in use
-        pub async fn create_raft(n_nodes: usize) -> Self {
+        pub async fn create_raft(n_nodes: usize, init: bool) -> Self {
             let (send, recv) = new_switch_queue();
             let mut nodes = HashMap::new();
             let node_ids = (0..n_nodes as u64).collect_vec();
             let mut config = mock_raft_config(node_ids);
-            config.init = true;
+            config.init = init;
 
             for i in 0..n_nodes as u64 {
                 // Setup the config
@@ -354,7 +369,7 @@ mod test {
         let mut rng = thread_rng();
 
         // Setup a raft
-        let nodes = MockRaft::create_raft(N).await;
+        let nodes = MockRaft::create_initialized_raft(N).await;
         let leader = nodes.get_client(0).await.leader().await;
         let leader = match leader {
             Some(leader) => leader,
@@ -386,7 +401,7 @@ mod test {
         let mut rng = thread_rng();
 
         // Setup a raft
-        let nodes = MockRaft::create_raft(N).await;
+        let nodes = MockRaft::create_initialized_raft(N).await;
         let leader = nodes.get_client(0).await.leader().await;
         if leader.is_none() {
             panic!("no leader in raft");
@@ -429,7 +444,6 @@ mod test {
 
         // Add the node as a learner
         client.add_learner(new_nid, RaftNode::default()).await.unwrap();
-        tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Check the DB of the new node
         let db = raft.get_db(new_nid).await;
@@ -461,7 +475,7 @@ mod test {
         let mut rng = thread_rng();
 
         // Create a cluster of size N
-        let raft = MockRaft::create_raft(N).await;
+        let raft = MockRaft::create_initialized_raft(N).await;
         let nid = (0..N).choose(&mut rng).unwrap();
         let client = raft.get_client(nid as NodeId).await;
 
@@ -533,7 +547,7 @@ mod test {
         let mut rng = thread_rng();
 
         // Create a singleton raft
-        let raft = MockRaft::create_raft(N as usize).await;
+        let raft = MockRaft::create_initialized_raft(N as usize).await;
 
         // Remove a node from the cluster
         let removed_nid = (0..N).choose(&mut rng).unwrap();
@@ -564,7 +578,7 @@ mod test {
         const N: u64 = 5;
 
         // Create a cluster of size N
-        let raft = MockRaft::create_raft(N as usize).await;
+        let raft = MockRaft::create_initialized_raft(N as usize).await;
         let client = raft.get_client(0).await;
 
         // Remove the leader from the cluster
@@ -600,7 +614,7 @@ mod test {
         let mut rng = thread_rng();
 
         // Create a cluster of size N
-        let raft = MockRaft::create_raft(N).await;
+        let raft = MockRaft::create_initialized_raft(N).await;
         let client = raft.get_client(0).await;
 
         // Remove nodes until we have a cluster of size SCALE_TO

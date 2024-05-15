@@ -22,4 +22,5 @@ state = { path = "../../state" }
 
 # === Misc Dependencies === #
 lazy_static = { workspace = true }
+async-trait = { workspace = true }
 tracing = { workspace = true }

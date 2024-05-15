@@ -1298,6 +1298,7 @@ name = "chain-events"
 version = "0.1.0"
 dependencies = [
  "arbitrum-client",
+ "async-trait",
  "circuit-types",
  "common",
  "crossbeam",
@@ -1614,6 +1615,7 @@ dependencies = [
  "ark-ec",
  "ark-mpc",
  "ark-poly",
+ "async-trait",
  "base64 0.13.1",
  "bimap",
  "circuit-types",
@@ -3233,6 +3235,7 @@ name = "gossip-server"
 version = "0.1.0"
 dependencies = [
  "arbitrum-client",
+ "async-trait",
  "circuit-types",
  "circuits",
  "common",
@@ -3351,6 +3354,7 @@ dependencies = [
  "arbitrum-client",
  "ark-mpc",
  "ark-serialize 0.4.2",
+ "async-trait",
  "circuit-types",
  "circuits",
  "clap 4.5.4",
@@ -4890,6 +4894,7 @@ dependencies = [
  "task-driver",
  "test-helpers",
  "tokio",
+ "util",
 ]
 
 [[package]]
@@ -6181,6 +6186,7 @@ name = "proof-manager"
 version = "0.1.0"
 dependencies = [
  "ark-mpc",
+ "async-trait",
  "circuit-types",
  "circuits",
  "common",

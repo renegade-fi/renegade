@@ -5,6 +5,7 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
+use async_trait::async_trait;
 use common::types::{wallet::WalletIdentifier, CancelChannel};
 use common::worker::Worker;
 use external_api::bus_message::SystemBusMessage;
@@ -53,11 +54,12 @@ pub struct HandshakeManagerConfig {
     pub cancel_channel: CancelChannel,
 }
 
+#[async_trait]
 impl Worker for HandshakeManager {
     type WorkerConfig = HandshakeManagerConfig;
     type Error = HandshakeManagerError;
 
-    fn new(mut config: Self::WorkerConfig) -> Result<Self, Self::Error> {
+    async fn new(mut config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         // Start a timer thread, periodically asks workers to begin handshakes with
         // peers
         let scheduler = HandshakeScheduler::new(

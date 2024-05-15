@@ -108,7 +108,7 @@ impl GossipProtocolExecutor {
         // Add all filtered peers to the global peer index
         self.global_state.add_peer_batch(filtered_peers.clone()).await?;
 
-        record_num_peers_metrics(&self.global_state);
+        record_num_peers_metrics(&self.global_state).await;
 
         Ok(())
     }

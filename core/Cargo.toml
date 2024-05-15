@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2018"
 default-run = "renegade-relayer"
 
-[features]
-debug-tui = []
-
 [dependencies]
 # === Runtime + Async === #
 crossbeam = { workspace = true }
@@ -28,7 +25,7 @@ job-types = { path = "../workers/job-types" }
 network-manager = { path = "../workers/network-manager" }
 price-reporter = { path = "../workers/price-reporter" }
 proof-manager = { path = "../workers/proof-manager" }
-state = { path = "../state", features = ["mocks"] }
+state = { path = "../state" }
 system-bus = { path = "../system-bus" }
 task-driver = { path = "../workers/task-driver" }
 util = { path = "../util" }

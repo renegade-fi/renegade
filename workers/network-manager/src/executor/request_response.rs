@@ -56,7 +56,7 @@ impl NetworkManagerExecutor {
                 response.verify_cluster_auth(&self.cluster_key.public)?;
                 let body = response.body;
                 if let Some(chan) = self.response_waiters.pop(request_id).await {
-                    if chan.send(body.clone()).is_err() {
+                    if !chan.is_closed() && chan.send(body.clone()).is_err() {
                         error!("error sending response notification for request: {request_id}");
                     }
                 }

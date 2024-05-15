@@ -25,7 +25,7 @@ pub(crate) async fn allocate_wallet(wallet: &mut Wallet, args: &IntegrationTestA
     lookup_wallet(blinder_seed, share_seed, wallet, args).await?;
 
     // Finally read the wallet from state into the mutable reference
-    *wallet = state.get_wallet(&wallet.wallet_id)?.unwrap();
+    *wallet = state.get_wallet(&wallet.wallet_id).await?.unwrap();
     Ok(())
 }
 
@@ -45,7 +45,7 @@ pub(crate) async fn lookup_wallet(
         blinder_seed,
         key_chain: wallet.key_chain.clone(),
     };
-    let (id, waiter) = state.append_task(task.into())?;
+    let (id, waiter) = state.append_task(task.into()).await?;
     waiter.await?;
 
     // Enqueue a notification with the driver
