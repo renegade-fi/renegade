@@ -1,5 +1,6 @@
 //! The relayer worker implementation for the event listener
 
+use async_trait::async_trait;
 use common::worker::Worker;
 use std::thread::{Builder, JoinHandle};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -10,11 +11,12 @@ use super::{
     listener::{OnChainEventListener, OnChainEventListenerConfig, OnChainEventListenerExecutor},
 };
 
+#[async_trait]
 impl Worker for OnChainEventListener {
     type WorkerConfig = OnChainEventListenerConfig;
     type Error = OnChainEventListenerError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {

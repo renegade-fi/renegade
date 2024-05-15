@@ -6,6 +6,7 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
+use async_trait::async_trait;
 use common::{types::CancelChannel, worker::Worker};
 use job_types::proof_manager::ProofManagerReceiver;
 use rayon::ThreadPoolBuilder;
@@ -29,11 +30,12 @@ pub struct ProofManagerConfig {
     pub cancel_channel: CancelChannel,
 }
 
+#[async_trait]
 impl Worker for ProofManager {
     type WorkerConfig = ProofManagerConfig;
     type Error = ProofManagerError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {

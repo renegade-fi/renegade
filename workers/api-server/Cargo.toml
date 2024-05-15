@@ -37,7 +37,7 @@ task-driver = { path = "../task-driver" }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #
-async-trait = "0.1.60"
+async-trait = { workspace = true }
 base64 = "0.21"
 itertools = "0.11"
 serde = { workspace = true }

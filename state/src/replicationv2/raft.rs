@@ -1,6 +1,9 @@
 //! Wraps the inner raft in a client interface that handles requests and waiters
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use openraft::{ChangeMembers, Config as RaftConfig, RaftNetworkFactory};
 use util::err_str;
@@ -53,7 +56,7 @@ pub struct RaftClientConfig {
     /// The maximum election timeout in milliseconds
     pub election_timeout_max: u64,
     /// The nodes to initialize the membership with
-    pub initial_nodes: Vec<NodeId>,
+    pub initial_nodes: Vec<(NodeId, RaftNode)>,
 }
 
 impl Default for RaftClientConfig {
@@ -106,12 +109,8 @@ impl RaftClient {
 
         // Initialize the raft
         if config.init {
-            let mut initial_nodes = config.initial_nodes.clone();
-            if !initial_nodes.contains(&config.id) {
-                initial_nodes.push(config.id);
-            }
-
-            let members = initial_nodes.iter().copied().collect::<BTreeSet<_>>();
+            let initial_nodes = config.initial_nodes.clone();
+            let members = initial_nodes.into_iter().collect::<BTreeMap<_, _>>();
             raft.initialize(members).await.map_err(err_str!(ReplicationV2Error::RaftSetup))?;
         }
 

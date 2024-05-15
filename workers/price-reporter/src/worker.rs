@@ -1,6 +1,7 @@
 //! Defines the Worker logic for the PriceReporterManger, which simply
 //! dispatches jobs to the PriceReporterExecutor.
 
+use async_trait::async_trait;
 use common::{
     default_wrapper::DefaultOption,
     types::{exchange::Exchange, CancelChannel},
@@ -82,11 +83,12 @@ impl PriceReporterConfig {
     }
 }
 
+#[async_trait]
 impl Worker for PriceReporter {
     type WorkerConfig = PriceReporterConfig;
     type Error = PriceReporterError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
         Ok(Self { config, manager_executor_handle: None })
     }
 

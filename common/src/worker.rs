@@ -6,11 +6,13 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
+use async_trait::async_trait;
 use tokio::sync::mpsc::Sender;
 use tracing::error;
 
 /// The Worker trait abstracts over worker functionality with a series of
 /// callbacks that allow a worker to be started, cleaned up, and restarted
+#[async_trait]
 pub trait Worker {
     /// The configuration needed to spawn the implementing worker
     type WorkerConfig;
@@ -18,7 +20,7 @@ pub trait Worker {
     type Error: 'static + Send + Debug;
 
     /// Create a new instance of the implementing worker
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
     where
         Self: Sized;
 

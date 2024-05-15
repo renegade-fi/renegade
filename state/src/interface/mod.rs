@@ -13,7 +13,6 @@ pub mod wallet_index;
 
 use std::sync::Arc;
 
-use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
 use external_api::bus_message::SystemBusMessage;
@@ -33,6 +32,7 @@ use crate::{
         network::{gossip::GossipNetwork, P2PNetworkFactory},
         raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
+        RaftNode,
     },
     storage::{
         db::{DbConfig, DB},
@@ -62,15 +62,15 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 #[derive(Clone)]
 pub struct State {
     /// Whether or not the node allows local peers when adding to the peer index
-    allow_local: bool,
+    pub(crate) allow_local: bool,
     /// A handle on the database
-    db: Arc<DB>,
+    pub(crate) db: Arc<DB>,
     /// The system bus for sending notifications to other workers
-    bus: SystemBus<SystemBusMessage>,
+    pub(crate) bus: SystemBus<SystemBusMessage>,
     /// The notifications map
-    notifications: OpenNotifications,
+    pub(crate) notifications: OpenNotifications,
     /// The raft client
-    raft: RaftClient,
+    pub(crate) raft: RaftClient,
 }
 
 impl State {
@@ -150,15 +150,17 @@ impl State {
 
     /// Build the raft config for the node
     fn build_raft_config(relayer_config: &RelayerConfig) -> RaftClientConfig {
-        let peer_id = relayer_config.p2p_key.public().to_peer_id();
-        let raft_id = get_raft_id(&WrappedPeerId(peer_id));
+        let peer_id = relayer_config.peer_id();
+        let raft_id = get_raft_id(&peer_id);
+        let initial_nodes = vec![(raft_id, RaftNode::new(peer_id))];
 
         RaftClientConfig {
             id: raft_id,
-            init: true,
+            init: relayer_config.assume_raft_leader,
             heartbeat_interval: DEFAULT_HEARTBEAT_MS,
             election_timeout_min: DEFAULT_MIN_ELECTION_MS,
             election_timeout_max: DEFAULT_MAX_ELECTION_MS,
+            initial_nodes,
             ..Default::default()
         }
     }
@@ -206,7 +208,7 @@ impl State {
     }
 
     /// Send a proposal to the raft node
-    async fn send_proposal(
+    pub(crate) async fn send_proposal(
         &self,
         transition: StateTransition,
     ) -> Result<ProposalWaiter, StateError> {

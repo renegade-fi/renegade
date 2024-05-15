@@ -52,7 +52,9 @@ impl OpenNotifications {
     /// Notify a listener that a proposal has been applied
     pub async fn notify(&self, id: ProposalId, result: ProposalReturnType) {
         if let Some(sender) = self.map.write().await.remove(&id) {
-            sender.send(result).unwrap();
+            if !sender.is_closed() {
+                let _ = sender.send(result);
+            }
         }
     }
 
