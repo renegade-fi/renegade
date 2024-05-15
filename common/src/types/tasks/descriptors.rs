@@ -1,11 +1,11 @@
 //! Defines task related types
 
-use ark_ff::{BigInteger, PrimeField};
 use circuit_types::{
     fixed_point::FixedPoint, keychain::PublicSigningKey, note::Note, order::Order,
     r#match::MatchResult, Amount,
 };
 use constants::Scalar;
+use contracts_common::custom_serde::BytesSerializable;
 use ethers::core::types::Signature;
 use ethers::core::utils::keccak256;
 use ethers::utils::public_key_to_address;
@@ -606,9 +606,9 @@ pub fn verify_wallet_update_signature(
     let key: K256VerifyingKey = key.into();
     let new_wallet_comm = wallet.get_wallet_share_commitment();
 
-    // Serialize the commitment, matches the contract's serialization here:
+    // Serialize the commitment, uses the contract's serialization here:
     //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
-    let comm_bytes = new_wallet_comm.inner().into_bigint().to_bytes_be();
+    let comm_bytes = new_wallet_comm.inner().serialize_to_bytes();
     let digest = keccak256(comm_bytes);
 
     // Verify the signature

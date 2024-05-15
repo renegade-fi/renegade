@@ -20,7 +20,6 @@ mocks = [
 ark-mpc = { workspace = true }
 ark-ec = { version = "0.4", optional = true }
 ark-poly = { version = "0.4", optional = true }
-ark-ff = "0.4.0"
 
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
@@ -46,6 +45,9 @@ circuit-types = { path = "../circuit-types" }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 util = { path = "../util" }
+
+# === Contracts Repo Dependencies === #
+contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
 
 # === Misc Dependencies === #
 base64 = { version = "0.13" }
