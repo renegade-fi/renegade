@@ -15,11 +15,11 @@ use util::runtime::block_current;
 
 use crate::{
     error::StateError,
-    replicationv2::{get_raft_id, raft::NetworkEssential, RaftNode},
-    StateHandle,
+    replicationv2::{get_raft_id, RaftNode},
+    State,
 };
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // -----------
     // | Getters |
     // -----------

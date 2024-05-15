@@ -4,15 +4,17 @@ pub mod gossip;
 #[cfg(any(test, feature = "mocks"))]
 pub mod mock;
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use openraft::{
-    add_async_trait,
     error::{InstallSnapshotError, RPCError, RaftError, RemoteError},
     network::RPCOption,
     raft::{
         AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest,
         InstallSnapshotResponse, VoteRequest, VoteResponse,
     },
-    RaftNetwork,
+    RaftNetwork, RaftNetworkFactory,
 };
 use serde::{Deserialize, Serialize};
 use util::err_str;
@@ -88,12 +90,24 @@ impl RaftResponse {
 // | Networking Implementation |
 // -----------------------------
 
+/// In the following code, we wrap each of the `openraft` networking traits in
+/// our own traits and containers for two reasons:
+/// 1. Using our own traits allows us to define default implementations on our
+///    containers, meaning that our networking impls must only implement a
+///    thinner trait, e.g. `P2PRaftNetwork`.
+/// 2. Using our own containers lets us dynamically dispatch networking calls.
+///    This prevents a network impl generic from coloring our trait interfaces
+///    and containing interfaces. In this end this lets the `State` object be
+///    defined non-generically, which is desired
+
+// --- Networking --- //
+
 /// A generalization of the raft network trait that specifically allows for
 /// point-to-point communication
 ///
 /// We implement the general raft network trait for all types that fit this
 /// signature by simply calling out to the p2p implementation
-#[add_async_trait]
+#[async_trait]
 pub trait P2PRaftNetwork: 'static + Sync + Send {
     /// The target this client is sending requests to
     fn target(&self) -> NodeId;
@@ -106,37 +120,42 @@ pub trait P2PRaftNetwork: 'static + Sync + Send {
 }
 
 /// A wrapper around the p2p raft network that allows for a default
-/// `RaftNetwork` implementation
-#[derive(Clone)]
-pub struct P2PRaftNetworkWrapper<T: P2PRaftNetwork> {
+/// `RaftNetwork` implementation and to hide generics from higher level
+/// interfaces
+pub struct P2PRaftNetworkWrapper {
     /// The inner p2p network
-    inner: T,
+    inner: Box<dyn P2PRaftNetwork + Send + Sync>,
 }
 
-impl<T: P2PRaftNetwork> P2PRaftNetworkWrapper<T> {
-    /// Create a new wrapper around the p2p network
-    pub fn new(inner: T) -> Self {
-        Self { inner }
-    }
-
-    /// Get the inner p2p network
-    pub fn inner(&self) -> &T {
-        &self.inner
-    }
-
-    /// Get a mutable reference to the inner p2p network
-    pub fn inner_mut(&mut self) -> &mut T {
-        &mut self.inner
+impl P2PRaftNetworkWrapper {
+    /// Constructor
+    pub fn new<N: P2PRaftNetwork>(inner: N) -> Self {
+        Self { inner: Box::new(inner) }
     }
 }
 
-impl<T: P2PRaftNetwork> RaftNetwork<TypeConfig> for P2PRaftNetworkWrapper<T> {
+#[async_trait]
+impl P2PRaftNetwork for P2PRaftNetworkWrapper {
+    fn target(&self) -> NodeId {
+        self.inner.target()
+    }
+
+    async fn send_request(
+        &self,
+        target: NodeId,
+        request: RaftRequest,
+    ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
+        self.inner.send_request(target, request).await
+    }
+}
+
+impl RaftNetwork<TypeConfig> for P2PRaftNetworkWrapper {
     async fn append_entries(
         &mut self,
         rpc: AppendEntriesRequest<TypeConfig>,
         _option: RPCOption,
     ) -> Result<AppendEntriesResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        let target = self.inner().target();
+        let target = self.inner.target();
         let req = RaftRequest::AppendEntries(rpc);
         self.inner.send_request(target, req).await.map(|resp| resp.into_append_entries())
     }
@@ -149,7 +168,7 @@ impl<T: P2PRaftNetwork> RaftNetwork<TypeConfig> for P2PRaftNetworkWrapper<T> {
         InstallSnapshotResponse<NodeId>,
         RPCError<NodeId, Node, RaftError<NodeId, InstallSnapshotError>>,
     > {
-        let target = self.inner().target();
+        let target = self.inner.target();
         let req = RaftRequest::InstallSnapshot(rpc);
         let res =
             self.inner.send_request(target, req).await.map(|resp| resp.into_install_snapshot());
@@ -183,8 +202,48 @@ impl<T: P2PRaftNetwork> RaftNetwork<TypeConfig> for P2PRaftNetworkWrapper<T> {
         rpc: VoteRequest<NodeId>,
         _option: RPCOption,
     ) -> Result<VoteResponse<NodeId>, RPCError<NodeId, Node, RaftError<NodeId>>> {
-        let target = self.inner().target();
+        let target = self.inner.target();
         let req = RaftRequest::Vote(rpc);
         self.inner.send_request(target, req).await.map(|resp| resp.into_vote())
+    }
+}
+
+// --- Factory --- //
+
+/// A wrapper trait for the `openraft` network factory
+///
+/// We define this trait to allow for p2p specific implementation as well as to
+/// enable use as a trait object
+pub trait P2PNetworkFactory: Send + Sync + 'static {
+    /// Create a new p2p client
+    fn new_p2p_client(&self, target: NodeId, target_info: Node) -> P2PRaftNetworkWrapper;
+}
+
+/// A wrapper type allowing for default implementations of the network factory
+/// traits, particularly the foreign `RaftNetworkFactory` trait
+#[derive(Clone)]
+pub struct P2PNetworkFactoryWrapper {
+    /// The inner factory implementation
+    inner: Arc<dyn P2PNetworkFactory>,
+}
+
+impl P2PNetworkFactoryWrapper {
+    /// Constructor
+    pub fn new<F: P2PNetworkFactory>(factory: F) -> Self {
+        Self { inner: Arc::new(factory) }
+    }
+}
+
+impl P2PNetworkFactory for P2PNetworkFactoryWrapper {
+    fn new_p2p_client(&self, target: NodeId, target_info: Node) -> P2PRaftNetworkWrapper {
+        self.inner.new_p2p_client(target, target_info)
+    }
+}
+
+impl RaftNetworkFactory<TypeConfig> for P2PNetworkFactoryWrapper {
+    type Network = P2PRaftNetworkWrapper;
+
+    async fn new_client(&mut self, target: NodeId, target_info: &Node) -> Self::Network {
+        self.inner.new_p2p_client(target, *target_info)
     }
 }

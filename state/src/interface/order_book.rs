@@ -22,15 +22,15 @@ use rand::{
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    storage::error::StorageError, StateHandle, StateTransition,
+    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
+    StateTransition,
 };
 
 /// The error message emitted when a caller attempts to add a local order
 /// directly
 const ERR_LOCAL_ORDER: &str = "local order should be updated through a wallet update";
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // -----------
     // | Getters |
     // -----------
