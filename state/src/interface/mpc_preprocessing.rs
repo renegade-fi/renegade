@@ -5,12 +5,9 @@ use common::types::{
     mpc_preprocessing::{PairwiseOfflineSetup, PreprocessingSlice},
 };
 
-use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    StateHandle, StateTransition,
-};
+use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // -----------
     // | Getters |
     // -----------

@@ -4,14 +4,14 @@ use common::types::wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wall
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, replicationv2::raft::NetworkEssential,
-    storage::error::StorageError, StateHandle, StateTransition,
+    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
+    StateTransition,
 };
 
 /// The error message emitted when a wallet cannot be found for an order
 pub const ERR_MISSING_WALLET: &str = "Wallet not found for order";
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // -----------
     // | Getters |
     // -----------

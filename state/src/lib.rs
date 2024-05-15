@@ -37,19 +37,11 @@ pub mod tui;
 
 /// Re-export the state interface
 pub use interface::*;
-use test_helpers::MockState;
 use uuid::Uuid;
 
 // -------------
 // | Constants |
 // -------------
-
-/// The state type with default generics attached
-#[cfg(not(feature = "mocks"))]
-pub type State = StateHandle<GossipNetwork>;
-/// The state type with default generics attached
-#[cfg(feature = "mocks")]
-pub type State = MockState;
 
 /// The number of tables to open in the database
 const NUM_TABLES: usize = 14;
@@ -196,16 +188,10 @@ pub mod test_helpers {
     use tempfile::tempdir;
 
     use crate::{
-        replicationv2::{
-            get_raft_id, network::mock::MockNetworkNode, raft::RaftClientConfig,
-            test_helpers::MockRaft,
-        },
+        replicationv2::{get_raft_id, raft::RaftClientConfig, test_helpers::MockRaft},
         storage::db::{DbConfig, DB},
-        StateHandle,
+        State,
     };
-
-    /// The state type using the default generics
-    pub type MockState = StateHandle<MockNetworkNode>;
 
     /// Sleep for the given number of ms
     pub fn sleep_ms(ms: u64) {
@@ -250,13 +236,13 @@ pub mod test_helpers {
     }
 
     /// Create a mock state instance
-    pub async fn mock_state() -> MockState {
+    pub async fn mock_state() -> State {
         let config = mock_relayer_config();
         mock_state_with_config(&config).await
     }
 
     /// Create a mock state instance with the given relayer config
-    pub async fn mock_state_with_config(config: &RelayerConfig) -> MockState {
+    pub async fn mock_state_with_config(config: &RelayerConfig) -> State {
         let (task_queue, recv) = new_task_driver_queue();
         mem::forget(recv);
         mock_state_with_task_queue(task_queue, config).await
@@ -266,11 +252,11 @@ pub mod test_helpers {
     pub async fn mock_state_with_task_queue(
         task_queue: TaskDriverQueue,
         config: &RelayerConfig,
-    ) -> MockState {
+    ) -> State {
         let raft = MockRaft::create_raft(2 /* n_nodes */).await;
-        let net = raft.get_client(0).await.network();
+        let net = raft.new_network_client();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        MockState::new_with_network(
+        State::new_with_network(
             config,
             mock_raft_config(config),
             net,

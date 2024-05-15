@@ -17,7 +17,10 @@ use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
 use external_api::bus_message::SystemBusMessage;
-use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
+use job_types::{
+    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
+    task_driver::TaskDriverQueue,
+};
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
 use util::err_str;
@@ -27,7 +30,8 @@ use crate::{
     notifications::{OpenNotifications, ProposalWaiter},
     replicationv2::{
         get_raft_id,
-        raft::{NetworkEssential, RaftClient, RaftClientConfig},
+        network::{gossip::GossipNetwork, P2PNetworkFactory},
+        raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
     },
     storage::{
@@ -53,10 +57,10 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 // | State Interface |
 // -------------------
 
-/// A handle on the state that allows workers throughout the node to acces the
+/// A handle on the state that allows workers throughout the node to access the
 /// replication and durability primitives backing the state machine
 #[derive(Clone)]
-pub struct StateHandle<N: NetworkEssential> {
+pub struct State {
     /// Whether or not the node allows local peers when adding to the peer index
     allow_local: bool,
     /// A handle on the database
@@ -66,16 +70,37 @@ pub struct StateHandle<N: NetworkEssential> {
     /// The notifications map
     notifications: OpenNotifications,
     /// The raft client
-    raft: RaftClient<N>,
+    raft: RaftClient,
 }
 
-impl<N: NetworkEssential> StateHandle<N> {
+impl State {
     // ----------------
     // | Constructors |
     // ----------------
 
+    /// Construct a new default state handle using the `GossipNetwork`
+    pub async fn new(
+        config: &RelayerConfig,
+        network_queue: NetworkManagerQueue,
+        task_queue: TaskDriverQueue,
+        handshake_manager_queue: HandshakeManagerQueue,
+        system_bus: SystemBus<SystemBusMessage>,
+    ) -> Result<Self, StateError> {
+        let raft_config = Self::build_raft_config(config);
+        let net = GossipNetwork::empty(network_queue);
+        Self::new_with_network(
+            config,
+            raft_config,
+            net,
+            task_queue,
+            handshake_manager_queue,
+            system_bus,
+        )
+        .await
+    }
+
     /// The base constructor allowing for the variadic constructors above
-    pub async fn new_with_network(
+    pub async fn new_with_network<N: P2PNetworkFactory>(
         config: &RelayerConfig,
         raft_config: RaftClientConfig,
         network: N,
