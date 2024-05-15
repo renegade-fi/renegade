@@ -1,20 +1,18 @@
 //! Gossip networking interface, acts as a shim between raft and our gossip
 //! layer
 
+use async_trait::async_trait;
 use gossip_api::request_response::{GossipRequest, GossipResponse};
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
-use openraft::{
-    error::{NetworkError, RPCError, RaftError},
-    RaftNetworkFactory,
-};
+use openraft::error::{NetworkError, RPCError, RaftError};
 use util::err_str;
 
 use crate::replicationv2::{
     error::{new_network_error, ReplicationV2Error},
-    Node, NodeId, TypeConfig,
+    Node, NodeId,
 };
 
-use super::{P2PRaftNetwork, P2PRaftNetworkWrapper, RaftRequest, RaftResponse};
+use super::{P2PNetworkFactory, P2PRaftNetwork, P2PRaftNetworkWrapper, RaftRequest, RaftResponse};
 
 /// The error message emitted when a response type is invalid
 const ERR_INVALID_RESPONSE: &str = "invalid response type from raft peer";
@@ -36,6 +34,11 @@ impl GossipNetwork {
         Self { target, target_info, network_sender }
     }
 
+    /// Construct a new `GossipNetwork` instance without target specified
+    pub fn empty(network_sender: NetworkManagerQueue) -> Self {
+        Self { target: NodeId::default(), target_info: Node::default(), network_sender }
+    }
+
     /// Convert a gossip response into a raft response
     fn to_raft_response(resp: GossipResponse) -> Result<RaftResponse, ReplicationV2Error> {
         let resp_bytes = match resp {
@@ -51,6 +54,7 @@ impl GossipNetwork {
     }
 }
 
+#[async_trait]
 impl P2PRaftNetwork for GossipNetwork {
     fn target(&self) -> NodeId {
         self.target
@@ -77,13 +81,12 @@ impl P2PRaftNetwork for GossipNetwork {
     }
 }
 
-impl RaftNetworkFactory<TypeConfig> for GossipNetwork {
-    type Network = P2PRaftNetworkWrapper<Self>;
+impl P2PNetworkFactory for GossipNetwork {
+    fn new_p2p_client(&self, target: NodeId, target_info: Node) -> P2PRaftNetworkWrapper {
+        let mut clone = self.clone();
+        clone.target = target;
+        clone.target_info = target_info;
 
-    async fn new_client(&mut self, target: NodeId, node: &Node) -> Self::Network {
-        let mut this = self.clone();
-        this.target = target;
-        this.target_info = *node;
-        P2PRaftNetworkWrapper::new(this)
+        P2PRaftNetworkWrapper::new(clone)
     }
 }

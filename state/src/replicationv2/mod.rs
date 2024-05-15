@@ -10,6 +10,8 @@ pub mod raft;
 mod snapshot;
 pub(crate) mod state_machine;
 
+pub use network::gossip::GossipNetwork;
+
 use common::types::gossip::WrappedPeerId;
 use fxhash::hash64 as fxhash64;
 use openraft::{Raft as RaftInner, RaftTypeConfig};
@@ -134,18 +136,18 @@ pub mod test_helpers {
     #[derive(Clone)]
     pub struct MockRaftNode {
         /// The raft
-        client: RaftClient<MockNetworkNode>,
+        client: RaftClient,
         /// The db of the raft
         db: Arc<DB>,
     }
 
     impl MockRaftNode {
         /// Constructor
-        pub fn new(client: RaftClient<MockNetworkNode>, db: Arc<DB>) -> Self {
+        pub fn new(client: RaftClient, db: Arc<DB>) -> Self {
             Self { client, db }
         }
         /// Get the raft
-        pub fn get_client(&self) -> &RaftClient<MockNetworkNode> {
+        pub fn get_client(&self) -> &RaftClient {
             &self.client
         }
 
@@ -165,7 +167,7 @@ pub mod test_helpers {
 
     impl MockRaft {
         /// Get a reference to the ith client
-        pub async fn get_client(&self, i: NodeId) -> RaftClient<MockNetworkNode> {
+        pub async fn get_client(&self, i: NodeId) -> RaftClient {
             self.rafts.read().await[&i].get_client().clone()
         }
 
@@ -177,6 +179,11 @@ pub mod test_helpers {
         /// Create a mock raft with a single node
         pub async fn create_singleton_raft() -> Self {
             Self::create_raft(1).await
+        }
+
+        /// Create a new network client instance
+        pub fn new_network_client(&self) -> MockNetworkNode {
+            MockNetworkNode::new(self.sender.clone())
         }
 
         /// Create a mock raft network with `n_nodes` nodes and return the rafts
@@ -234,10 +241,7 @@ pub mod test_helpers {
         ///
         /// This method panics on errors in the receiver at the moment, this is
         /// okay for tests, but the main implementation should handle failures
-        async fn forward_req(
-            client: RaftClient<MockNetworkNode>,
-            req: RaftRequest,
-        ) -> RaftResponse {
+        async fn forward_req(client: RaftClient, req: RaftRequest) -> RaftResponse {
             match req {
                 RaftRequest::AppendEntries(req) => {
                     let resp = client.raft().append_entries(req).await.unwrap();
