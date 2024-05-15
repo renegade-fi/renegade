@@ -148,7 +148,7 @@ impl GossipProtocolExecutor {
         let mut locked_expiry_cache = self.peer_expiry_cache.write().await;
         locked_expiry_cache.put(peer_id, now);
 
-        record_num_peers_metrics(&self.global_state);
+        record_num_peers_metrics(&self.global_state).await;
 
         Ok(())
     }

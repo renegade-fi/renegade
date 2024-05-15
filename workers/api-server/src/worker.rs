@@ -1,5 +1,6 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
+use async_trait::async_trait;
 use common::{types::CancelChannel, worker::Worker};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
@@ -59,11 +60,12 @@ pub struct ApiServerConfig {
     pub cancel_channel: CancelChannel,
 }
 
+#[async_trait]
 impl Worker for ApiServer {
     type WorkerConfig = ApiServerConfig;
     type Error = ApiServerError;
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {

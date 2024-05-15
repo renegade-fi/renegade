@@ -29,7 +29,10 @@ use job_types::{
 };
 use proof_manager::mock::MockProofManager;
 use rand::thread_rng;
-use state::test_helpers::{mock_relayer_config, mock_state_with_task_queue, MockState};
+use state::{
+    test_helpers::{mock_relayer_config, mock_state_with_task_queue},
+    State,
+};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -93,7 +96,7 @@ struct IntegrationTestArgs {
     /// Held here to avoid closing the channel on `Drop`
     _network_receiver: Arc<NetworkManagerReceiver>,
     /// A reference to the global state of the mock proof manager
-    state: MockState,
+    state: State,
     /// The job queue for the mock proof manager
     proof_job_queue: CrossbeamSender<ProofManagerJob>,
     /// The task driver queue used to enqueue tasks
@@ -157,7 +160,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 /// Create a global state mock for the `task-driver` integration tests
-async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> MockState {
+async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
     mock_state_with_task_queue(task_queue, &mock_relayer_config()).await
 }
 

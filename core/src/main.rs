@@ -21,6 +21,7 @@ use arbitrum_client::{
     constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
 };
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
+use common::default_wrapper::default_option;
 use common::worker::{watch_worker, Worker};
 use constants::VERSION;
 use external_api::bus_message::SystemBusMessage;
@@ -32,13 +33,12 @@ use job_types::network_manager::new_network_manager_queue;
 use job_types::price_reporter::new_price_reporter_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
-use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
+use network_manager::{worker::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use state::replication::worker::ReplicationNodeWorker;
+use state::tui::StateTuiApp;
 use state::State;
-use state::{replication::network::traits::new_raft_message_queue, tui::StateTuiApp};
 use system_bus::SystemBus;
 
 use error::CoordinatorError;
@@ -108,7 +108,6 @@ async fn main() -> Result<(), CoordinatorError> {
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
     let (network_sender, network_receiver) = new_network_manager_queue();
-    let (raft_sender, raft_receiver) = new_raft_message_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
     let (price_reporter_worker_sender, price_reporter_worker_receiver) = new_price_reporter_queue();
@@ -117,16 +116,14 @@ async fn main() -> Result<(), CoordinatorError> {
     let (task_sender, task_receiver) = new_task_driver_queue();
 
     // Construct a global state
-    let (global_state, mut raft_worker, raft_cancel_sender) = State::new(
-        network_sender.clone(),
-        raft_receiver,
+    let global_state = State::new(
         &args,
+        network_sender.clone(),
         task_sender.clone(),
         handshake_worker_sender.clone(),
         system_bus.clone(),
-    )?;
-    let (raft_failure_sender, mut raft_failure_receiver) = mpsc::channel(1 /* buffer_size */);
-    watch_worker::<ReplicationNodeWorker<_>>(&mut raft_worker, &raft_failure_sender);
+    )
+    .await?;
 
     if args.debug {
         // Build the TUI
@@ -181,7 +178,8 @@ async fn main() -> Result<(), CoordinatorError> {
         system_bus.clone(),
         global_state.clone(),
     );
-    let mut task_driver = TaskDriver::new(task_driver_config).expect("failed to build task driver");
+    let mut task_driver =
+        TaskDriver::new(task_driver_config).await.expect("failed to build task driver");
     task_driver.start().expect("failed to start task driver");
 
     let (task_driver_failure_sender, mut task_driver_failure_receiver) =
@@ -194,6 +192,7 @@ async fn main() -> Result<(), CoordinatorError> {
         job_queue: proof_generation_worker_receiver,
         cancel_channel: proof_manager_cancel_receiver,
     })
+    .await
     .expect("failed to build proof generation module");
     proof_manager.start().expect("failed to start proof generation module");
     let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
@@ -208,9 +207,8 @@ async fn main() -> Result<(), CoordinatorError> {
         known_public_addr: args.public_ip,
         allow_local: args.allow_local,
         cluster_id: args.cluster_id.clone(),
-        cluster_keypair: Some(args.cluster_keypair),
-        send_channel: Some(network_receiver),
-        raft_queue: raft_sender,
+        cluster_keypair: default_option(args.cluster_keypair),
+        send_channel: default_option(network_receiver),
         gossip_work_queue: gossip_worker_sender.clone(),
         handshake_work_queue: handshake_worker_sender.clone(),
         global_state: global_state.clone(),
@@ -218,7 +216,7 @@ async fn main() -> Result<(), CoordinatorError> {
         cancel_channel: network_cancel_receiver,
     };
     let mut network_manager =
-        NetworkManager::new(network_manager_config).expect("failed to build network manager");
+        NetworkManager::new(network_manager_config).await.expect("failed to build network manager");
     network_manager.start().expect("failed to start network manager");
 
     let (network_failure_sender, mut network_failure_receiver) =
@@ -239,6 +237,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender: network_sender.clone(),
         cancel_channel: gossip_cancel_receiver,
     })
+    .await
     .expect("failed to build gossip server");
     gossip_server.start().expect("failed to start gossip server");
     let (gossip_failure_sender, mut gossip_failure_receiver) =
@@ -276,6 +275,7 @@ async fn main() -> Result<(), CoordinatorError> {
         system_bus: system_bus.clone(),
         cancel_channel: handshake_cancel_receiver,
     })
+    .await
     .expect("failed to build handshake manager");
     handshake_manager.start().expect("failed to start handshake manager");
     let (handshake_failure_sender, mut handshake_failure_receiver) =
@@ -297,6 +297,7 @@ async fn main() -> Result<(), CoordinatorError> {
         disabled: args.disable_price_reporter,
         disabled_exchanges: args.disabled_exchanges,
     })
+    .await
     .expect("failed to build price reporter manager");
     price_reporter_manager.start().expect("failed to start price reporter manager");
     let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
@@ -314,6 +315,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender: network_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
     })
+    .await
     .expect("failed to build on-chain event listener");
     chain_listener.start().expect("failed to start on-chain event listener");
     let (chain_listener_failure_sender, mut chain_listener_failure_receiver) =
@@ -332,6 +334,7 @@ async fn main() -> Result<(), CoordinatorError> {
         proof_generation_work_queue: proof_generation_worker_sender,
         cancel_channel: api_cancel_receiver,
     })
+    .await
     .expect("failed to build api server");
     api_server.start().expect("failed to start api server");
     let (api_failure_sender, mut api_failure_receiver) = mpsc::channel(1 /* buffer_size */);
@@ -342,11 +345,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let recovery_loop = || async {
         loop {
             select! {
-                _ = raft_failure_receiver.recv() => {
-                    raft_cancel_sender.send(())
-                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
-                    raft_worker = recover_worker(raft_worker)?;
-                }
                 _ = task_driver_failure_receiver.recv() => {
                     task_driver = recover_worker(task_driver)?;
                 }
@@ -396,7 +394,6 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Send cancel signals to all workers
     for cancel_channel in [
-        raft_cancel_sender,
         network_cancel_sender,
         gossip_cancel_sender,
         handshake_cancel_sender,

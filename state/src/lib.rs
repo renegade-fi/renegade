@@ -178,19 +178,25 @@ pub mod test_helpers {
     //! Test helpers for the state crate
     use std::{mem, time::Duration};
 
-    use common::types::gossip::WrappedPeerId;
     use config::RelayerConfig;
     use job_types::{
         handshake_manager::new_handshake_manager_queue,
         task_driver::{new_task_driver_queue, TaskDriverQueue},
     };
+    use libp2p::identity::Keypair;
     use system_bus::SystemBus;
     use tempfile::tempdir;
 
     use crate::{
-        replicationv2::{get_raft_id, raft::RaftClientConfig, test_helpers::MockRaft},
+        notifications::OpenNotifications,
+        replicationv2::{
+            get_raft_id,
+            raft::RaftClientConfig,
+            test_helpers::{MockRaft, MockRaftNode},
+            RaftNode,
+        },
         storage::db::{DbConfig, DB},
-        State,
+        State, StateTransition,
     };
 
     /// Sleep for the given number of ms
@@ -230,9 +236,18 @@ pub mod test_helpers {
     ///
     /// We set the timeouts very low to speed up leader election
     pub fn mock_raft_config(relayer_config: &RelayerConfig) -> RaftClientConfig {
-        let peer_id = relayer_config.p2p_key.public().to_peer_id();
-        let id = get_raft_id(&WrappedPeerId(peer_id));
-        RaftClientConfig { id, init: true, ..Default::default() }
+        let peer_id = relayer_config.peer_id();
+        let id = get_raft_id(&peer_id);
+        let initial_nodes = vec![(id, RaftNode::new(peer_id))];
+        RaftClientConfig {
+            id,
+            election_timeout_min: 10,
+            election_timeout_max: 15,
+            heartbeat_interval: 5,
+            init: true,
+            initial_nodes,
+            ..Default::default()
+        }
     }
 
     /// Create a mock state instance
@@ -253,10 +268,10 @@ pub mod test_helpers {
         task_queue: TaskDriverQueue,
         config: &RelayerConfig,
     ) -> State {
-        let raft = MockRaft::create_raft(2 /* n_nodes */).await;
+        let raft = MockRaft::create_raft(2 /* n_nodes */, false /* init */).await;
         let net = raft.new_network_client();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
-        State::new_with_network(
+        let state = State::new_with_network(
             config,
             mock_raft_config(config),
             net,
@@ -265,6 +280,45 @@ pub mod test_helpers {
             SystemBus::new(),
         )
         .await
-        .unwrap()
+        .unwrap();
+
+        // Add all nodes as voters
+        for (id, node) in raft.rafts.read().await.iter() {
+            // Configure the follower's DB
+            configure_follower(node).await;
+
+            // Add the node as a learner
+            let info = RaftNode::default();
+            let prop = StateTransition::AddRaftLearner { peer_id: *id, info };
+            state.send_proposal(prop).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+
+            // Add the node as a voter
+            let prop = StateTransition::AddRaftVoter { peer_id: *id };
+            state.send_proposal(prop).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        state
+    }
+
+    /// Configure the database of a mock raft follower to be properly setup for
+    /// use as a state peer
+    async fn configure_follower(node: &MockRaftNode) {
+        // Create a mock state handle and run node metadata setup on it to modify the
+        // underlying DB
+        let client = node.get_client().clone();
+        let db = node.clone_db();
+        let state = State {
+            allow_local: true,
+            db,
+            raft: client,
+            bus: SystemBus::new(),
+            notifications: OpenNotifications::new(),
+        };
+
+        // Configure the node
+        let config = RelayerConfig { p2p_key: Keypair::generate_ed25519(), ..Default::default() };
+        state.setup_node_metadata(&config).await.unwrap();
     }
 }

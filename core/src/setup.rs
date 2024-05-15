@@ -41,7 +41,7 @@ pub async fn node_setup(
 
     // TODO: remove this once we have a more fleshed
     // out startup flow
-    tokio::time::sleep(Duration::from_secs(15)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     // Setup the contract constants
     fetch_contract_constants(client).await?;
@@ -81,7 +81,10 @@ async fn setup_relayer_wallet(
 
     // Set the node metadata entry for the relayer's wallet
     let wallet_id = derive_wallet_id(key).map_err(err_str!(CoordinatorError::Setup))?;
-    state.set_local_relayer_wallet_id(wallet_id).map_err(err_str!(CoordinatorError::Setup))?;
+    state
+        .set_local_relayer_wallet_id(wallet_id)
+        .await
+        .map_err(err_str!(CoordinatorError::Setup))?;
 
     // Attempt to find the wallet on-chain
     if find_wallet_onchain(

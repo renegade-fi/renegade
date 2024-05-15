@@ -25,7 +25,7 @@ use job_types::{
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
-use state::test_helpers::MockState;
+use state::State;
 use system_bus::SystemBus;
 use task_driver::{
     driver::RuntimeArgs,
@@ -38,6 +38,7 @@ use test_helpers::{
         transfer_auth::gen_transfer_with_auth,
     },
 };
+use util::runtime::block_current;
 
 use crate::IntegrationTestArgs;
 
@@ -214,7 +215,7 @@ pub fn new_mock_task_driver(
     arbitrum_client: ArbitrumClient,
     network_queue: NetworkManagerQueue,
     proof_queue: ProofManagerQueue,
-    state: MockState,
+    state: State,
 ) {
     let bus = SystemBus::new();
     // Set a runtime config with fast failure
@@ -237,6 +238,6 @@ pub fn new_mock_task_driver(
     };
 
     // Start the driver
-    let mut driver = TaskDriver::new(config).unwrap();
+    let mut driver = block_current(TaskDriver::new(config)).unwrap();
     driver.start().unwrap();
 }

@@ -100,8 +100,7 @@ impl State {
 
     /// Setup the node metadata table from a relayer config
     pub async fn setup_node_metadata(&self, config: &RelayerConfig) -> Result<(), StateError> {
-        let keypair = config.p2p_key.clone();
-        let peer_id = WrappedPeerId(keypair.public().to_peer_id());
+        let peer_id = config.peer_id();
         let cluster_id = config.cluster_id.clone();
         let p2p_key = config.p2p_key.clone();
         let fee_decryption_key = config.fee_decryption_key;

@@ -24,6 +24,7 @@ use common::{
 use config::RelayerConfig;
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
+use futures::Future;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::{
@@ -46,7 +47,7 @@ use job_types::{
     task_driver::{new_task_driver_queue, TaskDriverJob, TaskDriverQueue, TaskDriverReceiver},
 };
 use libp2p::Multiaddr;
-use network_manager::{manager::NetworkManager, worker::NetworkManagerConfig};
+use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
     manager::PriceReporter,
     mock::{setup_mock_token_remap, MockPriceReporter},
@@ -57,14 +58,23 @@ use proof_manager::{
 };
 use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
-use state::{
-    replication::network::traits::{new_raft_message_queue, RaftMessageQueue, RaftMessageReceiver},
-    State,
-};
+use state::State;
 use system_bus::SystemBus;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use test_helpers::mocks::mock_cancel;
 use tokio::runtime::Runtime as TokioRuntime;
+
+/// A helper that creates a dummy runtime and blocks a task on it
+///
+/// We use this to give a synchronous mock node api, which emits a convenient
+/// builder pattern
+fn run_fut<F>(fut: F) -> F::Output
+where
+    F: Future,
+{
+    let rt = TokioRuntime::new().expect("Failed to create tokio runtime");
+    rt.block_on(fut)
+}
 
 /// The mock node struct, used to build testing nodes
 ///
@@ -96,8 +106,6 @@ pub struct MockNodeController {
     // --- Worker Queues --- //
     /// The network manager's queue
     network_queue: (NetworkManagerQueue, DefaultOption<NetworkManagerReceiver>),
-    /// The raft message queue
-    raft_queue: (RaftMessageQueue, DefaultOption<RaftMessageReceiver>),
     /// The gossip message queue
     gossip_queue: (GossipServerQueue, DefaultOption<GossipServerReceiver>),
     /// The handshake manager's queue
@@ -116,7 +124,6 @@ impl MockNodeController {
     pub fn new(config: RelayerConfig) -> Self {
         let bus = SystemBus::new();
         let (network_sender, network_recv) = new_network_manager_queue();
-        let (raft_sender, raft_recv) = new_raft_message_queue();
         let (gossip_sender, gossip_recv) = new_gossip_server_queue();
         let (handshake_send, handshake_recv) = new_handshake_manager_queue();
         let (price_sender, price_recv) = new_price_reporter_queue();
@@ -130,7 +137,6 @@ impl MockNodeController {
             bus,
             state: None,
             network_queue: (network_sender, default_option(network_recv)),
-            raft_queue: (raft_sender, default_option(raft_recv)),
             gossip_queue: (gossip_sender, default_option(gossip_recv)),
             handshake_queue: (handshake_send, default_option(handshake_recv)),
             price_queue: (price_sender, default_option(price_recv)),
@@ -243,9 +249,7 @@ impl MockNodeController {
         };
 
         // Expects to be running in a Tokio runtime
-        let rt = TokioRuntime::new().expect("Failed to create tokio runtime");
-        let client =
-            rt.block_on(ArbitrumClient::new(conf)).expect("Failed to create arbitrum client");
+        let client = run_fut(ArbitrumClient::new(conf)).expect("Failed to create arbitrum client");
         self.arbitrum_client = Some(client);
 
         self
@@ -255,26 +259,15 @@ impl MockNodeController {
     pub fn with_state(mut self) -> Self {
         // Create a global state instance
         let network_queue = self.network_queue.0.clone();
-        let raft_receiver = self.raft_queue.1.take().unwrap();
         let task_sender = self.task_queue.0.clone();
         let handshake_queue = self.handshake_queue.0.clone();
         let bus = self.bus.clone();
 
-        let (state, _, raft_cancel) = State::new(
-            network_queue,
-            raft_receiver,
-            &self.config,
-            task_sender,
-            handshake_queue,
-            bus,
-        )
-        .expect("Failed to create state instance");
-
-        // Forget the raft cancel sender to avoid dropping it
-        mem::forget(raft_cancel);
+        let state =
+            run_fut(State::new(&self.config, network_queue, task_sender, handshake_queue, bus))
+                .expect("Failed to create state instance");
 
         self.state = Some(state);
-
         self
     }
 
@@ -296,7 +289,7 @@ impl MockNodeController {
             bus,
             state,
         );
-        let mut driver = TaskDriver::new(conf).expect("Failed to create task driver");
+        let mut driver = run_fut(TaskDriver::new(conf)).expect("Failed to create task driver");
         driver.start().expect("Failed to start task driver");
 
         self
@@ -306,7 +299,6 @@ impl MockNodeController {
     pub fn with_network_manager(mut self) -> Self {
         let config = &self.config;
         let network_recv = self.network_queue.1.take().unwrap();
-        let raft_sender = self.raft_queue.0.clone();
         let gossip_sender = self.gossip_queue.0.clone();
         let handshake_send = self.handshake_queue.0.clone();
         let cancel_channel = mock_cancel();
@@ -317,21 +309,20 @@ impl MockNodeController {
             known_public_addr: config.public_ip,
             allow_local: config.allow_local,
             cluster_id: config.cluster_id.clone(),
-            cluster_keypair: Some(self.clone_cluster_key()),
-            send_channel: Some(network_recv),
-            raft_queue: raft_sender,
+            cluster_keypair: default_option(self.clone_cluster_key()),
+            send_channel: default_option(network_recv),
             gossip_work_queue: gossip_sender,
             handshake_work_queue: handshake_send,
             system_bus: self.bus.clone(),
             global_state: self.state.clone().expect("State not initialized"),
             cancel_channel,
         };
-        let mut manager = NetworkManager::new(conf).expect("Failed to create network manager");
+        let mut manager =
+            run_fut(NetworkManager::new(conf)).expect("Failed to create network manager");
         manager.start().expect("Failed to start network manager");
 
         // Set the local addr after the manager binds to it
         self.local_addr = manager.local_addr;
-
         self
     }
 
@@ -339,7 +330,7 @@ impl MockNodeController {
     pub fn with_gossip_server(mut self) -> Self {
         let config = &self.config;
         let state = self.state.clone().expect("State not initialized");
-        let local_peer_id = state.get_peer_id().expect("Failed to get peer id");
+        let local_peer_id = run_fut(state.get_peer_id()).expect("Failed to get peer id");
         let arbitrum_client =
             self.arbitrum_client.clone().expect("Arbitrum client not initialized");
 
@@ -359,7 +350,7 @@ impl MockNodeController {
             network_sender,
             cancel_channel: mock_cancel(),
         };
-        let mut server = GossipServer::new(conf).expect("Failed to create gossip server");
+        let mut server = run_fut(GossipServer::new(conf)).expect("Failed to create gossip server");
         server.start().expect("Failed to start gossip server");
 
         self
@@ -387,7 +378,8 @@ impl MockNodeController {
             system_bus,
             cancel_channel,
         };
-        let mut manager = HandshakeManager::new(conf).expect("Failed to create handshake manager");
+        let mut manager =
+            run_fut(HandshakeManager::new(conf)).expect("Failed to create handshake manager");
         manager.start().expect("Failed to start handshake manager");
 
         self
@@ -413,7 +405,8 @@ impl MockNodeController {
             system_bus,
             cancel_channel,
         };
-        let mut reporter = PriceReporter::new(conf).expect("Failed to create price reporter");
+        let mut reporter =
+            run_fut(PriceReporter::new(conf)).expect("Failed to create price reporter");
         reporter.start().expect("Failed to start price reporter");
 
         self
@@ -427,7 +420,6 @@ impl MockNodeController {
 
         // Setup a mock token map
         setup_mock_token_remap();
-
         self
     }
 
@@ -452,8 +444,8 @@ impl MockNodeController {
             cancel_channel,
         };
 
-        let mut listener =
-            OnChainEventListener::new(conf).expect("Failed to create chain event listener");
+        let mut listener = run_fut(OnChainEventListener::new(conf))
+            .expect("Failed to create chain event listener");
         listener.start().expect("Failed to start chain event listener");
 
         self
@@ -480,12 +472,11 @@ impl MockNodeController {
             cancel_channel,
         };
 
-        let mut server = ApiServer::new(conf).expect("Failed to create API server");
+        let mut server = run_fut(ApiServer::new(conf)).expect("Failed to create API server");
         server.start().expect("Failed to start API server");
 
         // Forget the server to avoid dropping it and its runtime
         mem::forget(server);
-
         self
     }
 
@@ -496,7 +487,7 @@ impl MockNodeController {
 
         let conf = ProofManagerConfig { job_queue, cancel_channel };
 
-        let mut manager = ProofManager::new(conf).expect("Failed to create proof manager");
+        let mut manager = run_fut(ProofManager::new(conf)).expect("Failed to create proof manager");
         manager.start().expect("Failed to start proof manager");
 
         self
@@ -517,6 +508,7 @@ mod test {
     use config::RelayerConfig;
     use external_api::{http::PingResponse, EmptyRequestResponse};
     use reqwest::Method;
+    use state::test_helpers::tmp_db_path;
     use test_helpers::arbitrum::get_devnet_key;
 
     use crate::MockNodeController;
@@ -524,9 +516,12 @@ mod test {
     /// Tests a simple constructor of the mock node
     #[test]
     fn test_ping_mock() {
+        let db_path = tmp_db_path();
         let conf = RelayerConfig {
             rpc_url: Some("http://localhost:1234".to_string()),
             arbitrum_private_key: get_devnet_key(),
+            raft_snapshot_path: db_path.clone(),
+            db_path,
             ..Default::default()
         };
 

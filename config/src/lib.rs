@@ -135,6 +135,10 @@ struct Cli {
     /// The path at which to save raft snapshots
     #[clap(long, value_parser, default_value = "./raft_snapshots")]
     pub raft_snapshot_path: String,
+    /// Whether or not to assume the node is a leader of a new cluster at
+    /// startup
+    #[clap(long, value_parser, default_value = "false")]
+    pub assume_raft_leader: bool,
     /// The maximum staleness (number of newer roots observed) to allow on Merkle proofs for 
     /// managed wallets. After this threshold is exceeded, the Merkle proof will be updated
     #[clap(long, value_parser, default_value = "100")]
@@ -259,6 +263,9 @@ pub struct RelayerConfig {
     pub db_path: String,
     /// The path at which to save raft snapshots
     pub raft_snapshot_path: String,
+    /// Whether or not to assume the node is a leader of a new cluster at
+    /// startup
+    pub assume_raft_leader: bool,
     /// The maximum staleness (number of newer roots observed) to allow on
     /// Merkle proofs for managed wallets. After this threshold is exceeded,
     /// the Merkle proof will be updated
@@ -306,6 +313,13 @@ pub struct RelayerConfig {
     pub statsd_port: u16,
 }
 
+impl RelayerConfig {
+    /// Get the peer ID associated with the p2p key
+    pub fn peer_id(&self) -> WrappedPeerId {
+        WrappedPeerId(self.p2p_key.public().to_peer_id())
+    }
+}
+
 impl Default for RelayerConfig {
     fn default() -> Self {
         // Parse a dummy set of command line args and convert this to a config
@@ -331,6 +345,7 @@ impl Clone for RelayerConfig {
             p2p_key: self.p2p_key.clone(),
             db_path: self.db_path.clone(),
             raft_snapshot_path: self.raft_snapshot_path.clone(),
+            assume_raft_leader: self.assume_raft_leader,
             max_merkle_staleness: self.max_merkle_staleness,
             allow_local: self.allow_local,
             bind_addr: self.bind_addr,
@@ -457,6 +472,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         p2p_key,
         db_path: cli_args.db_path,
         raft_snapshot_path: cli_args.raft_snapshot_path,
+        assume_raft_leader: cli_args.assume_raft_leader,
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
         disable_price_reporter: cli_args.disable_price_reporter,
