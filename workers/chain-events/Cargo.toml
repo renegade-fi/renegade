@@ -21,5 +21,6 @@ job-types = { path = "../job-types" }
 state = { path = "../../state" }
 
 # === Misc Dependencies === #
+async-trait = { workspace = true }
 lazy_static = "1.4"
 tracing = { workspace = true }

@@ -3,6 +3,7 @@
 use std::thread::{self, JoinHandle};
 
 use arbitrum_client::client::ArbitrumClient;
+use async_trait::async_trait;
 use common::{default_wrapper::DefaultOption, worker::Worker};
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
@@ -73,6 +74,7 @@ pub struct TaskDriver {
     handle: Option<JoinHandle<TaskDriverError>>,
 }
 
+#[async_trait]
 impl Worker for TaskDriver {
     type Error = TaskDriverError;
     type WorkerConfig = TaskDriverConfig;
@@ -81,7 +83,7 @@ impl Worker for TaskDriver {
         "task-driver".to_string()
     }
 
-    fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
+    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {

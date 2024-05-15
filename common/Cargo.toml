@@ -33,6 +33,7 @@ num-traits = "0.2"
 signature = "2.0"
 
 # === Runtime + Networking === #
+async-trait = { workspace = true }
 crossbeam = { workspace = true }
 libp2p = { workspace = true }
 libp2p-identity = { workspace = true }

@@ -29,6 +29,7 @@ state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }
 task-driver = { path = "../workers/task-driver" }
 test-helpers = { path = "../test-helpers" }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }

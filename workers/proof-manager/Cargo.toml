@@ -12,6 +12,7 @@ ark-mpc = { workspace = true }
 mpc-plonk = { workspace = true }
 
 # === Runtime + Threading === #
+async-trait = { workspace = true }
 crossbeam = { workspace = true }
 rayon = { version = "1.5.3" }
 tokio = { workspace = true }

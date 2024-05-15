@@ -137,38 +137,51 @@ impl State {
 
     /// Add a batch of peers to the index
     pub async fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
-        // Index each peer
+        // Index each peer, and return those that should be added as raft learners to
+        // the local node's raft
         let this = self.clone();
-        self.with_write_tx(move |tx| {
-            for mut peer in peers.into_iter() {
-                // Parse the peer info and mark a successful heartbeat
-                peer.successful_heartbeat();
+        let learners = self
+            .with_write_tx(move |tx| {
+                let my_id = tx.get_peer_id()?;
+                let mut learners = Vec::new();
+                for mut peer in peers.into_iter() {
+                    let is_me = peer.peer_id == my_id;
 
-                // Do not index the peer if the given address is not dialable
-                if !peer.is_dialable(this.allow_local) {
-                    continue;
+                    // Parse the peer info and mark a successful heartbeat
+                    peer.successful_heartbeat();
+
+                    // Do not index the peer if the given address is not dialable
+                    if !peer.is_dialable(this.allow_local) {
+                        continue;
+                    }
+
+                    // Add the peer to the store
+                    tx.write_peer(&peer)?;
+                    tx.add_to_cluster(&peer.peer_id, &peer.cluster_id)?;
+
+                    // If the peer belongs in the same cluster, add it to the raft group
+                    let my_cluster_id = tx.get_cluster_id()?;
+                    if peer.cluster_id == my_cluster_id && !is_me {
+                        let raft_id = get_raft_id(&peer.peer_id);
+                        let info = RaftNode::new(peer.peer_id);
+                        learners.push((raft_id, info));
+                    }
+
+                    this.bus.publish(
+                        NETWORK_TOPOLOGY_TOPIC.to_string(),
+                        SystemBusMessage::NewPeer { peer },
+                    );
                 }
 
-                // Add the peer to the store
-                tx.write_peer(&peer)?;
-                tx.add_to_cluster(&peer.peer_id, &peer.cluster_id)?;
+                Ok(learners)
+            })
+            .await?;
 
-                // If the peer belongs in the same cluster, add it to the raft group
-                let my_cluster_id = tx.get_cluster_id()?;
-                if peer.cluster_id == my_cluster_id {
-                    let raft_id = get_raft_id(&peer.peer_id);
-                    let info = RaftNode::new(peer.peer_id);
-                    block_current(this.raft.add_learner(raft_id, info))?;
-                }
+        for (raft_id, info) in learners.into_iter() {
+            this.raft.add_learner(raft_id, info).await?;
+        }
 
-                this.bus.publish(
-                    NETWORK_TOPOLOGY_TOPIC.to_string(),
-                    SystemBusMessage::NewPeer { peer },
-                );
-            }
-            Ok(())
-        })
-        .await
+        Ok(())
     }
 
     /// Remove a peer that has been expired

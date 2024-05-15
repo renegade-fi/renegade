@@ -11,7 +11,7 @@ mocks = ["bimap"]
 hmac-sha256 = "1.1"
 
 # === Async + Runtime === #
-async-trait = "0.1"
+async-trait = { workspace = true }
 futures = { workspace = true }
 futures-util = "0.3"
 tokio = { workspace = true }
