@@ -10,7 +10,10 @@ use std::{error::Error, fmt::Display, time::Duration};
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::types::tasks::NodeStartupTaskDescriptor;
-use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
+use job_types::{
+    network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
+    proof_manager::ProofManagerQueue,
+};
 use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::{info, instrument};
@@ -23,6 +26,9 @@ use crate::{
 /// The name of the node startup task
 const NODE_STARTUP_TASK_NAME: &str = "node-startup";
 
+/// Error sending a job to another worker
+const ERR_SEND_JOB: &str = "error sending job";
+
 /// Defines the state of the node startup task
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NodeStartupTaskState {
@@ -30,6 +36,10 @@ pub enum NodeStartupTaskState {
     Pending,
     /// The task is waiting for the gossip layer to warm up
     GossipWarmup,
+    /// Initialize a new raft
+    InitializeRaft,
+    /// Join an existing raft
+    JoinRaft,
     /// The task is completed
     Completed,
 }
@@ -49,6 +59,8 @@ impl Display for NodeStartupTaskState {
         match self {
             Self::Pending => write!(f, "Pending"),
             Self::GossipWarmup => write!(f, "Gossip Warmup"),
+            Self::InitializeRaft => write!(f, "Initialize Raft"),
+            Self::JoinRaft => write!(f, "Join Raft"),
             Self::Completed => write!(f, "Completed"),
         }
     }
@@ -76,6 +88,8 @@ impl From<NodeStartupTaskState> for StateWrapper {
 /// The error type for the node startup task
 #[derive(Clone, Debug)]
 pub enum NodeStartupTaskError {
+    /// An error sending a job to another worker
+    Enqueue(String),
     /// An error interacting with global state
     State(String),
 }
@@ -112,7 +126,7 @@ pub struct NodeStartupTask {
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
-    pub global_state: State,
+    pub state: State,
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task
@@ -130,7 +144,7 @@ impl Task for NodeStartupTask {
             gossip_warmup_ms: descriptor.gossip_warmup_ms,
             arbitrum_client: ctx.arbitrum_client,
             network_sender: ctx.network_queue,
-            global_state: ctx.state,
+            state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
             task_state: NodeStartupTaskState::Pending,
         })
@@ -149,6 +163,14 @@ impl Task for NodeStartupTask {
             },
             NodeStartupTaskState::GossipWarmup => {
                 // Wait for the gossip layer to warm up
+                self.warmup_gossip().await?;
+            },
+            NodeStartupTaskState::InitializeRaft => {
+                self.initialize_raft().await?;
+                self.task_state = NodeStartupTaskState::Completed;
+            },
+            NodeStartupTaskState::JoinRaft => {
+                self.join_raft().await?;
                 self.task_state = NodeStartupTaskState::Completed;
             },
             NodeStartupTaskState::Completed => {
@@ -157,6 +179,11 @@ impl Task for NodeStartupTask {
         }
 
         Ok(())
+    }
+
+    // The node startup task never goes through the task queue
+    fn bypass_task_queue(&self) -> bool {
+        true
     }
 
     fn completed(&self) -> bool {
@@ -183,6 +210,40 @@ impl NodeStartupTask {
         let wait_time = Duration::from_millis(self.gossip_warmup_ms);
         tokio::time::sleep(wait_time).await;
 
+        // Indicate to the network manager that warmup is complete
+        let msg = NetworkManagerJob::internal(NetworkManagerControlSignal::GossipWarmupComplete);
+        self.network_sender
+            .send(msg)
+            .map_err(|_| NodeStartupTaskError::Enqueue(ERR_SEND_JOB.to_string()))?;
+
+        // After warmup, check for an existing raft cluster
+        if self.state.is_raft_initialized() {
+            self.task_state = NodeStartupTaskState::JoinRaft;
+        } else {
+            self.task_state = NodeStartupTaskState::InitializeRaft;
+        }
+
+        Ok(())
+    }
+
+    /// Initialize a new raft cluster
+    async fn initialize_raft(&self) -> Result<(), NodeStartupTaskError> {
+        // Get the list of other peers in the cluster
+        let my_cluster = self.state.get_cluster_id().await?;
+        let peers = self.state.get_cluster_peers(&my_cluster).await?;
+
+        info!("initializing raft with {} peers", peers.len());
+        self.state.initialize_raft(peers).await?;
+        Ok(())
+    }
+
+    /// Manage the process to join an existing raft cluster
+    ///
+    /// TODO: Implement snapshot & promotion requests if joining an existing
+    /// cluster
+    #[allow(clippy::unused_async)]
+    async fn join_raft(&self) -> Result<(), NodeStartupTaskError> {
+        println!("joining raft cluster");
         Ok(())
     }
 }
