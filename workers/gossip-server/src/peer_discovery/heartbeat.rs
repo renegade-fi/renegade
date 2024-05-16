@@ -26,7 +26,7 @@ pub const CLUSTER_HEARTBEAT_INTERVAL_MS: u64 = 3_000; // 3 seconds
 pub const HEARTBEAT_FAILURE_MS: u64 = 20_000; // 20 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed; for cluster peers
-pub const CLUSTER_HEARTBEAT_FAILURE_MS: u64 = 7_000; // 7 seconds
+pub const CLUSTER_HEARTBEAT_FAILURE_MS: u64 = 10_000; // 10 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
 pub(crate) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 30_000; // 30 seconds
