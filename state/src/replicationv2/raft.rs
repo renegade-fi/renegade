@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use openraft::{ChangeMembers, Config as RaftConfig, RaftNetworkFactory};
+use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftNetworkFactory};
 use util::err_str;
 
 use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
@@ -17,7 +17,7 @@ use super::{
         P2PNetworkFactory, P2PNetworkFactoryWrapper, P2PRaftNetwork, RaftRequest, RaftResponse,
     },
     state_machine::StateMachine,
-    NodeId, Raft, RaftNode, TypeConfig,
+    Node, NodeId, Raft, RaftNode, TypeConfig,
 };
 
 /// The default cluster name
@@ -130,6 +130,22 @@ impl RaftClient {
     /// Get the current leader
     pub async fn leader(&self) -> Option<NodeId> {
         self.raft.current_leader().await
+    }
+
+    /// Whether the raft is initialized
+    ///
+    /// This is equivalent to whether the raft has non-empty voters list. A
+    /// non-empty set of voters implies a leader exists or will soon be elected
+    pub fn is_initialized(&self) -> bool {
+        let members = self.membership();
+        members.voter_ids().count() > 0
+    }
+
+    /// Get the membership of the cluster
+    pub fn membership(&self) -> Membership<NodeId, Node> {
+        let metrics = self.raft.metrics();
+        let metrics_ref = metrics.borrow();
+        metrics_ref.membership_config.membership().clone()
     }
 
     /// Get the node info an ID for the current leader
@@ -252,6 +268,14 @@ impl RaftClient {
     // ----------------------
     // | Cluster Membership |
     // ----------------------
+
+    /// Initialize the raft with a new set of peers
+    pub async fn initialize(
+        &self,
+        peers: BTreeMap<NodeId, RaftNode>,
+    ) -> Result<(), ReplicationV2Error> {
+        self.raft().initialize(peers).await.map_err(err_str!(ReplicationV2Error::RaftSetup))
+    }
 
     /// Add a learner to the cluster
     pub async fn add_learner(

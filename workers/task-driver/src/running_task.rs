@@ -63,6 +63,12 @@ impl<T: Task> RunnableTask<T> {
         self.task.state().into()
     }
 
+    /// `true` if the task does not need to update the task queue during state
+    /// transitions or cleanup
+    pub fn bypass_task_queue(&self) -> bool {
+        self.task.bypass_task_queue() || self.preemptive
+    }
+
     /// Step the underlying task, returns whether the driver should continue or
     /// abort. `Ok(true)` means successful step, `Ok(false)` means that the task
     /// step failed and should be retried, an error should be aborted
@@ -90,7 +96,7 @@ impl<T: Task> RunnableTask<T> {
         info!("task {name}({task_id:?}) transitioning to state {new_state}");
 
         // Preemptive tasks need not update state in the consensus engine
-        if self.preemptive {
+        if self.bypass_task_queue() {
             return Ok(());
         }
 
@@ -115,7 +121,7 @@ impl<T: Task> RunnableTask<T> {
 
         // Pop the task from the state
         // Preemptive tasks are not indexed, so no work needs to be done
-        if !self.preemptive {
+        if !self.bypass_task_queue() {
             let waiter = self.state.pop_task(self.task_id, success).await?;
             waiter.await?;
         }
