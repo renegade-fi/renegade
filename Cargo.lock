@@ -1621,6 +1621,7 @@ dependencies = [
  "circuit-types",
  "circuits",
  "constants",
+ "contracts-common",
  "crossbeam",
  "derivative",
  "ecdsa",
