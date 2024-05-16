@@ -28,6 +28,7 @@ use crate::{
     tasks::{
         create_new_wallet::{NewWalletTask, NewWalletTaskState},
         lookup_wallet::{LookupWalletTask, LookupWalletTaskState},
+        node_startup::{NodeStartupTask, NodeStartupTaskState},
         pay_offline_fee::{PayOfflineFeeTask, PayOfflineFeeTaskState},
         pay_relayer_fee::{PayRelayerFeeTask, PayRelayerFeeTaskState},
         redeem_relayer_fee::{RedeemRelayerFeeTask, RedeemRelayerFeeTaskState},
@@ -292,7 +293,7 @@ impl TaskExecutor {
         task: TaskDescriptor,
     ) -> Result<(), TaskDriverError> {
         // Construct the task from the descriptor
-        match task {
+        let res = match task {
             TaskDescriptor::NewWallet(desc) => {
                 self.start_task_helper::<NewWalletTask>(immediate, id, desc).await
             },
@@ -320,7 +321,18 @@ impl TaskExecutor {
             TaskDescriptor::UpdateMerkleProof(desc) => {
                 self.start_task_helper::<UpdateMerkleProofTask>(immediate, id, desc).await
             },
+            TaskDescriptor::NodeStartup(desc) => {
+                self.start_task_helper::<NodeStartupTask>(immediate, id, desc).await
+            },
+        };
+
+        // Notify any listeners that the task has completed
+        let str_res = res.clone().map_err(|e| e.to_string());
+        for sender in self.task_notifications.write().unwrap().remove(&id).unwrap_or_default() {
+            let _ = sender.send(str_res.clone());
         }
+
+        res
     }
 
     /// A helper for the `start_task` method that has generics specified at call
@@ -334,29 +346,14 @@ impl TaskExecutor {
         // Collect the arguments then spawn
         let ctx = self.task_context();
         let args = self.runtime_config;
-        let notifications = self.task_notifications.clone();
 
-        // Create the task
-        let combined_res =
-            match RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await {
-                Ok(mut task) => {
-                    // Run the task
-                    let res = Self::run_task_to_completion(&mut task, args).await;
+        // Create and run the task
+        let mut task = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await?;
+        let res = Self::run_task_to_completion(&mut task, args).await;
 
-                    // Cleanup
-                    let cleanup_res = task.cleanup(res.is_ok()).await;
-                    res.and(cleanup_res)
-                },
-                Err(e) => Err(e),
-            };
-
-        // Notify any listeners that the task has completed
-        let str_res = combined_res.clone().map_err(|e| e.to_string());
-        for sender in notifications.write().unwrap().remove(&id).unwrap_or_default() {
-            let _ = sender.send(str_res.clone());
-        }
-
-        combined_res
+        // Cleanup
+        let cleanup_res = task.cleanup(res.is_ok()).await;
+        res.and(cleanup_res)
     }
 
     /// Run a task to completion
@@ -424,6 +421,8 @@ pub enum StateWrapper {
     UpdateMerkleProof(UpdateMerkleProofTaskState),
     /// The state object for the update wallet task
     UpdateWallet(UpdateWalletTaskState),
+    /// The state object for the node startup task
+    NodeStartup(NodeStartupTaskState),
 }
 
 impl StateWrapper {
@@ -439,6 +438,7 @@ impl StateWrapper {
             StateWrapper::SettleMatchInternal(state) => state.committed(),
             StateWrapper::UpdateWallet(state) => state.committed(),
             StateWrapper::UpdateMerkleProof(state) => state.committed(),
+            StateWrapper::NodeStartup(state) => state.committed(),
         }
     }
 
@@ -461,6 +461,7 @@ impl StateWrapper {
             StateWrapper::UpdateMerkleProof(state) => {
                 state == &UpdateMerkleProofTaskState::commit_point()
             },
+            StateWrapper::NodeStartup(state) => state == &NodeStartupTaskState::commit_point(),
         }
     }
 
@@ -476,6 +477,7 @@ impl StateWrapper {
             StateWrapper::SettleMatchInternal(state) => state.completed(),
             StateWrapper::UpdateWallet(state) => state.completed(),
             StateWrapper::UpdateMerkleProof(state) => state.completed(),
+            StateWrapper::NodeStartup(state) => state.completed(),
         }
     }
 }
@@ -492,6 +494,7 @@ impl Display for StateWrapper {
             StateWrapper::SettleMatchInternal(state) => state.to_string(),
             StateWrapper::UpdateWallet(state) => state.to_string(),
             StateWrapper::UpdateMerkleProof(state) => state.to_string(),
+            StateWrapper::NodeStartup(state) => state.to_string(),
         };
         write!(f, "{out}")
     }
