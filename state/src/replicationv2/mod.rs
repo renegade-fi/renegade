@@ -44,7 +44,7 @@ pub type Raft = RaftInner<TypeConfig>;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct RaftNode {
     /// The peer ID associated with the node
-    peer_id: WrappedPeerId,
+    pub(crate) peer_id: WrappedPeerId,
 }
 
 impl RaftNode {

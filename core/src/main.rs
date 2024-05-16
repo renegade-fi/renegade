@@ -85,6 +85,7 @@ async fn main() -> Result<(), CoordinatorError> {
         .await
         .expect("error blocking on config parse")
         .expect("error parsing command line args");
+    let setup_config = args.clone();
 
     // Configure telemetry before all else so we don't lose any data
     if !args.debug {
@@ -246,19 +247,10 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Setup the relayer wallet once the task driver, proof manager, and gossip
     // server are running
-
-    // TODO(@joey): This will be a more involved task when implementing raft
-    // snapshots, state sync, etc
     let chain_id =
         arbitrum_client.chain_id().await.map_err(err_str!(CoordinatorError::Arbitrum))?;
-    node_setup(
-        &args.arbitrum_private_key,
-        chain_id,
-        task_sender.clone(),
-        &arbitrum_client,
-        &global_state,
-    )
-    .await?;
+    node_setup(&setup_config, chain_id, task_sender.clone(), &arbitrum_client, &global_state)
+        .await?;
 
     // --- Workers Setup Phase --- //
 

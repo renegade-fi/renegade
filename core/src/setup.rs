@@ -7,7 +7,10 @@ use std::time::Duration;
 
 use arbitrum_client::client::ArbitrumClient;
 use common::types::{
-    tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor},
+    tasks::{
+        LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor, QueuedTask,
+        QueuedTaskState, TaskDescriptor,
+    },
     wallet::{
         derivation::{
             derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
@@ -15,39 +18,48 @@ use common::types::{
         KeyChain, Wallet, WalletIdentifier,
     },
 };
+use config::RelayerConfig;
 use constants::Scalar;
 use ethers::signers::LocalWallet;
-use job_types::task_driver::TaskDriverQueue;
+use job_types::task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue};
 use state::State;
 use task_driver::{await_task, tasks::lookup_wallet::ERR_WALLET_NOT_FOUND};
 use tracing::info;
 use util::{
     arbitrum::{PROTOCOL_FEE, PROTOCOL_PUBKEY},
-    err_str,
+    err_str, get_current_time_millis,
 };
 
 use crate::error::CoordinatorError;
 
+/// An error sending a task to the task driver
+const ERR_SENDING_STARTUP_TASK: &str = "error sending startup task to task driver";
+
 /// Run the setup logic for the relayer
 pub async fn node_setup(
-    key: &LocalWallet,
-    chain_id: u64,
+    config: &RelayerConfig,
+    _chain_id: u64,
     task_queue: TaskDriverQueue,
-    client: &ArbitrumClient,
-    state: &State,
+    _client: &ArbitrumClient,
+    _state: &State,
 ) -> Result<(), CoordinatorError> {
-    // Wait for raft to stabilize, this must be at least the length of the max
-    // election timeout
+    // Start the node setup task and await its completion
+    let desc = NodeStartupTaskDescriptor::new(config.gossip_warmup);
+    let id = desc.id;
+    task_queue
+        .send(TaskDriverJob::RunImmediate { task_id: id, wallet_ids: vec![], task: desc.into() })
+        .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
 
-    // TODO: remove this once we have a more fleshed
-    // out startup flow
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    // Setup the contract constants
-    fetch_contract_constants(client).await?;
-    // Setup the local node's wallet
-    setup_relayer_wallet(key, chain_id, task_queue, state).await
+    // Wait for the task driver to index the task then request a notification
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let (recv, job) = new_task_notification(id);
+    task_queue
+        .send(job)
+        .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
+    recv.await.unwrap().map_err(err_str!(CoordinatorError::Setup))
 }
+
+// TODO: Delete the following code once the setup task is complete
 
 /// Parameterize local constants by pulling them from the contract's storage
 ///
