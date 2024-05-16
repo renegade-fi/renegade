@@ -10,10 +10,7 @@ use common::{types::CancelChannel, worker::Worker};
 use job_types::proof_manager::ProofManagerReceiver;
 use rayon::ThreadPoolBuilder;
 
-use super::{
-    error::ProofManagerError,
-    proof_manager::{ProofManager, PROOF_GENERATION_N_THREADS},
-};
+use super::{error::ProofManagerError, proof_manager::ProofManager};
 
 /// The name of the main worker thread
 const MAIN_THREAD_NAME: &str = "proof-generation-main";
@@ -44,7 +41,6 @@ impl Worker for ProofManager {
         let proof_generation_thread_pool = ThreadPoolBuilder::new()
             .thread_name(|i| format!("{}-{}", WORKER_THREAD_PREFIX, i))
             .stack_size(WORKER_STACK_SIZE)
-            .num_threads(PROOF_GENERATION_N_THREADS)
             .build()
             .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
 

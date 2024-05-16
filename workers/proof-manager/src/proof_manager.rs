@@ -49,8 +49,6 @@ use super::error::ProofManagerError;
 
 /// Error message when sending a proof response fails
 const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
-/// The number of threads to allocate towards the proof generation worker pool
-pub(crate) const PROOF_GENERATION_N_THREADS: usize = 10;
 
 // --------------------
 // | Proof Generation |
@@ -97,7 +95,7 @@ impl ProofManager {
                 .recv()
                 .map_err(|err| ProofManagerError::JobQueueClosed(err.to_string()))?;
 
-            thread_pool.spawn(move || {
+            thread_pool.spawn_fifo(move || {
                 let _span = info_span!("handle_proof_job").entered();
                 if let Err(e) = Self::handle_proof_job(job) {
                     error!("Error handling proof manager job: {}", e)
