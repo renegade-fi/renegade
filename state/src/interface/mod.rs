@@ -156,7 +156,7 @@ impl State {
 
         RaftClientConfig {
             id: raft_id,
-            init: relayer_config.assume_raft_leader,
+            init: relayer_config.assume_leader,
             heartbeat_interval: DEFAULT_HEARTBEAT_MS,
             election_timeout_min: DEFAULT_MIN_ELECTION_MS,
             election_timeout_max: DEFAULT_MAX_ELECTION_MS,

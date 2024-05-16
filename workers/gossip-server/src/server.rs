@@ -21,11 +21,7 @@ use job_types::{
 };
 use lru::LruCache;
 use state::State;
-use std::{
-    num::NonZeroUsize,
-    thread::{self, Builder, JoinHandle},
-    time::Duration,
-};
+use std::{num::NonZeroUsize, thread::JoinHandle};
 use tracing::{error, info};
 use util::err_str;
 
@@ -40,9 +36,6 @@ use super::{errors::GossipError, worker::GossipServerConfig};
 pub(super) const GOSSIP_EXECUTOR_N_THREADS: usize = 5;
 /// The number of threads backing the blocking thread pool of the executor
 pub(super) const GOSSIP_EXECUTOR_N_BLOCKING_THREADS: usize = 5;
-/// The amount of time to wait for the node to find peers before sending
-/// pubsub messages associated with setup
-const PUBSUB_WARMUP_TIME_MS: u64 = 5_000; // 5 seconds
 
 /// Type alias for a shared LRU cache
 pub(super) type SharedLRUCache = AsyncShared<LruCache<WrappedPeerId, u64>>;
@@ -99,36 +92,6 @@ impl GossipServer {
                 .send(GossipServerJob::ExecuteHeartbeat(peer))
                 .map_err(err_str!(GossipError::SendMessage))?;
         }
-
-        // Finally, warmup the network then send a cluster join message
-        self.warmup_then_join_cluster()
-    }
-
-    /// Enqueues a pubsub message to join the local peer's cluster, then spawns
-    /// a timer that allows the network manager to warm up pubsub
-    /// connections
-    ///
-    /// Once this timer expires, the timer thread enqueues a management
-    /// directive in the network manager to release buffered pubsub messages
-    /// onto the network.
-    ///
-    /// This is done to allow the network manager to gossip about network
-    /// structure and graft a pubsub mesh before attempting to publish
-    fn warmup_then_join_cluster(&self) -> Result<(), GossipError> {
-        // Copy items so they may be moved into the spawned thread
-        let network_sender_copy = self.config.network_sender.clone();
-        // Spawn a thread to wait on a timeout and then signal to the network manager
-        // that it may flush the pubsub buffer
-        Builder::new()
-            .name("gossip-warmup-timer".to_string())
-            .spawn(move || {
-                // Wait for the network to warmup
-                thread::sleep(Duration::from_millis(PUBSUB_WARMUP_TIME_MS));
-                let cmd =
-                    NetworkManagerJob::internal(NetworkManagerControlSignal::GossipWarmupComplete);
-                network_sender_copy.send(cmd).unwrap();
-            })
-            .map_err(err_str!(GossipError::ServerSetup))?;
 
         Ok(())
     }

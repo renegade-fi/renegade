@@ -50,6 +50,13 @@ pub trait Task: Send + Sized {
     }
     /// Get a displayable name for the task
     fn name(&self) -> String;
+    /// Whether or not updates to this task should bypass the task queue
+    ///
+    /// Defined on this trait to allow maximally granular control over which
+    /// tasks bypass the task queue in the future
+    fn bypass_task_queue(&self) -> bool {
+        false
+    }
     /// Take a step in the task, steps should represent largely async behavior
     async fn step(&mut self) -> Result<(), Self::Error>;
     /// A cleanup step that is run in the event of a task failure
