@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::applicator::error::StateApplicatorError;
 
-use super::{Result, StateApplicator};
+use super::{return_type::ApplicatorReturnType, Result, StateApplicator};
 
 // -------------
 // | Constants |
@@ -74,7 +74,7 @@ impl StateApplicator {
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
-    ) -> Result<()> {
+    ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 
         tx.attach_validity_proof(&order_id, proof)?;
@@ -103,7 +103,7 @@ impl StateApplicator {
             ORDER_STATE_CHANGE_TOPIC.to_string(),
             SystemBusMessage::OrderStateChange { order: order_info },
         );
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 }
 
