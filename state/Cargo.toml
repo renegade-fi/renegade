@@ -33,6 +33,7 @@ external-api = { path = "../external-api" }
 gossip-api = { path = "../gossip-api" }
 job-types = { path = "../workers/job-types" }
 system-bus = { path = "../system-bus" }
+system-clock = { path = "../system-clock" }
 util = { path = "../util" }
 test-helpers = { path = "../test-helpers", optional = true }
 
