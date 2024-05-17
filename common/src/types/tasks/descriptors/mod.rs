@@ -20,7 +20,7 @@ pub use update_wallet::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::gossip::WrappedPeerId;
+use crate::types::{gossip::WrappedPeerId, wallet::WalletIdentifier};
 
 /// The error message returned when a wallet's shares are invalid
 const INVALID_WALLET_SHARES: &str = "invalid wallet shares";
@@ -139,9 +139,23 @@ impl TaskDescriptor {
         }
     }
 
+    /// Returns the IDs of the wallets affected by the task
+    pub fn affected_wallets(&self) -> Vec<WalletIdentifier> {
+        match self {
+            TaskDescriptor::NewWallet(task) => vec![task.wallet.wallet_id],
+            TaskDescriptor::LookupWallet(task) => vec![task.wallet_id],
+            TaskDescriptor::OfflineFee(task) => vec![task.wallet_id],
+            TaskDescriptor::RelayerFee(task) => vec![task.wallet_id],
+            TaskDescriptor::RedeemRelayerFee(task) => vec![task.wallet_id],
+            TaskDescriptor::SettleMatch(task) => vec![task.wallet_id],
+            TaskDescriptor::SettleMatchInternal(task) => vec![task.wallet_id1, task.wallet_id2],
+            TaskDescriptor::UpdateMerkleProof(task) => vec![task.wallet.wallet_id],
+            TaskDescriptor::UpdateWallet(task) => vec![task.wallet_id],
+            TaskDescriptor::NodeStartup(_) => vec![],
+        }
+    }
+
     /// Returns whether the task is a wallet task
-    ///
-    /// Currently all tasks are wallet tasks
     pub fn is_wallet_task(&self) -> bool {
         match self {
             TaskDescriptor::NewWallet(_)
