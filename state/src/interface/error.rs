@@ -3,6 +3,8 @@
 use core::fmt::Display;
 use std::error::Error;
 
+use system_clock::SystemClockError;
+
 use crate::{
     applicator::error::StateApplicatorError, replicationv2::error::ReplicationV2Error,
     storage::error::StorageError,
@@ -13,6 +15,8 @@ use crate::{
 pub enum StateError {
     /// An error in the state applicator
     Applicator(StateApplicatorError),
+    /// An error with the system clock
+    Clock(SystemClockError),
     /// A database error
     Db(StorageError),
     /// Invalid state update passed to the interface
