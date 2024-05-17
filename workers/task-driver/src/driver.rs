@@ -285,7 +285,7 @@ impl TaskExecutor {
     #[instrument(name = "task", skip_all, err, fields(
         task_id = %id,
         task = %task.display_description(),
-        queue_key = %task.queue_key(),
+        wallet_ids = ?task.affected_wallets(),
     ))]
     async fn start_task(
         &self,
