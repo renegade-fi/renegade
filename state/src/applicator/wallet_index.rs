@@ -13,7 +13,9 @@ use libmdbx::RW;
 
 use crate::storage::tx::StateTxn;
 
-use super::{error::StateApplicatorError, Result, StateApplicator};
+use super::{
+    error::StateApplicatorError, return_type::ApplicatorReturnType, Result, StateApplicator,
+};
 
 /// Error message emitted when metadata for an order is not found
 const ERR_NO_METADATA: &str = "metadata not found for order";
@@ -27,7 +29,7 @@ impl StateApplicator {
     ///
     /// This may happen, for example, when a new wallet is created by
     /// a user on one cluster node, and the others must replicate it
-    pub fn add_wallet(&self, wallet: &Wallet) -> Result<()> {
+    pub fn add_wallet(&self, wallet: &Wallet) -> Result<ApplicatorReturnType> {
         // Add the wallet to the wallet indices
         let tx = self.db().new_write_tx()?;
         tx.write_wallet(wallet)?;
@@ -40,7 +42,7 @@ impl StateApplicator {
             SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
         );
 
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Update a wallet in the state
@@ -52,7 +54,7 @@ impl StateApplicator {
     /// on-chain before this method is called. That is, we maintain the
     /// invariant that the state stored by this module is valid -- but
     /// possibly stale -- contract state
-    pub fn update_wallet(&self, wallet: &Wallet) -> Result<()> {
+    pub fn update_wallet(&self, wallet: &Wallet) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 
         // Index the orders in the wallet
@@ -69,7 +71,7 @@ impl StateApplicator {
             SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
         );
 
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     // -----------
