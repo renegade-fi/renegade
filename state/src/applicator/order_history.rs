@@ -2,7 +2,7 @@
 
 use crate::storage::tx::StateTxn;
 
-use super::{error::StateApplicatorError, StateApplicator};
+use super::{error::StateApplicatorError, return_type::ApplicatorReturnType, StateApplicator};
 use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
 use libmdbx::RW;
@@ -12,13 +12,16 @@ const ERR_MISSING_WALLET: &str = "wallet not found";
 
 impl StateApplicator {
     /// Handle an update to an order's metadata
-    pub fn update_order_metadata(&self, meta: OrderMetadata) -> Result<(), StateApplicatorError> {
+    pub fn update_order_metadata(
+        &self,
+        meta: OrderMetadata,
+    ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         // Update the state
         let tx = self.db().new_write_tx()?;
         self.update_order_metadata_with_tx(meta, &tx)?;
         tx.commit()?;
 
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Update the state of an order's metadata given a transaction

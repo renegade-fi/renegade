@@ -13,12 +13,12 @@ impl StateApplicator {
         &self,
         cluster: &ClusterId,
         value: &PairwiseOfflineSetup,
-    ) -> Result<(), StateApplicatorError> {
+    ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
         tx.append_mpc_prep_values(cluster, value)?;
         tx.commit()?;
 
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Consume values from the preprocessing state for a given cluster
