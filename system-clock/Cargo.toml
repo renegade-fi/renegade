@@ -1,0 +1,15 @@
+[package]
+name = "system-clock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Runtime Dependencies === #
+tokio = { workspace = true }
+tokio-cron-scheduler = "0.10"
+
+# === Workspace Dependencies === #
+util = { path = "../util" }
+
+# === Misc Dependencies === #
+tracing = { workspace = true }
