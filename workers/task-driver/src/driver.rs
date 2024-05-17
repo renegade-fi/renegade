@@ -121,6 +121,7 @@ impl TaskExecutor {
             arbitrum_client: config.arbitrum_client,
             network_queue: config.network_queue,
             proof_queue: config.proof_queue,
+            task_queue: config.task_queue_sender,
             state: config.state,
             bus: config.system_bus.clone(),
         };

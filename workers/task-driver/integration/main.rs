@@ -126,6 +126,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         // Start a task driver
         new_mock_task_driver(
             task_recv,
+            task_queue.clone(),
             arbitrum_client.clone(),
             network_sender,
             proof_job_queue.clone(),

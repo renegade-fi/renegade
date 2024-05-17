@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use common::{default_wrapper::DefaultOption, worker::Worker};
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
-    network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue,
-    task_driver::TaskDriverReceiver,
+    network_manager::NetworkManagerQueue,
+    proof_manager::ProofManagerQueue,
+    task_driver::{TaskDriverQueue, TaskDriverReceiver},
 };
 use state::State;
 use system_bus::SystemBus;
@@ -28,6 +29,10 @@ pub struct TaskDriverConfig {
     pub runtime_config: RuntimeArgs,
     /// The queue on which to receive tasks
     pub task_queue: TaskDriverReceiver,
+    /// The sender to the task driver's queue
+    ///
+    /// For recursive job enqueues
+    pub task_queue_sender: TaskDriverQueue,
     /// The arbitrum client used by the system
     pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
@@ -44,6 +49,7 @@ impl TaskDriverConfig {
     /// Create a new config with default values
     pub fn new(
         task_queue: TaskDriverReceiver,
+        task_queue_sender: TaskDriverQueue,
         arbitrum_client: ArbitrumClient,
         network_queue: NetworkManagerQueue,
         proof_queue: ProofManagerQueue,
@@ -53,6 +59,7 @@ impl TaskDriverConfig {
         Self {
             runtime_config: Default::default(),
             task_queue,
+            task_queue_sender,
             arbitrum_client,
             network_queue,
             proof_queue,
