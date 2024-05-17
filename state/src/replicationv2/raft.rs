@@ -345,7 +345,7 @@ impl RaftClient {
             let lag = my_log.saturating_sub(latest_log.index);
             if lag < self.config.learner_promotion_threshold {
                 info!("promoting {learner} to voter");
-                self.promote_learner(learner).await.unwrap();
+                self.promote_learner(learner).await?;
             }
         }
 
