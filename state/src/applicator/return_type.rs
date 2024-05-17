@@ -8,14 +8,18 @@
 
 use common::types::mpc_preprocessing::PairwiseOfflineSetup;
 
+use super::error::StateApplicatorError;
+
 /// The return type from the Applicator
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ApplicatorReturnType {
     /// A set of MPC preprocessing values that are ready to be used
     MpcPrep(PairwiseOfflineSetup),
     /// No return value
     None,
+    /// The application of the proposal failed in an expected manner
+    Rejected(StateApplicatorError),
 }
 
 // Downcasting conversions

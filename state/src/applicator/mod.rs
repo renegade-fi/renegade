@@ -92,11 +92,10 @@ impl StateApplicator {
                 self.add_preprocessing_values(&cluster, &values)
             },
             StateTransition::ConsumePreprocessingValues { recipient, cluster, request } => {
-                return self.consume_preprocessing_values(recipient, &cluster, &request);
+                self.consume_preprocessing_values(recipient, &cluster, &request)
             },
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
-        .map(|_| ApplicatorReturnType::None)
     }
 
     /// Get a reference to the db

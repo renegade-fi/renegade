@@ -11,8 +11,12 @@ use tokio::fs::File;
 use util::{err_str, res_some};
 
 use crate::{
-    applicator::StateApplicator, error::StateError, notifications::OpenNotifications,
-    replicationv2::error::new_apply_error, storage::db::DB, Proposal,
+    applicator::{return_type::ApplicatorReturnType, StateApplicator},
+    error::StateError,
+    notifications::OpenNotifications,
+    replicationv2::error::new_apply_error,
+    storage::db::DB,
+    Proposal,
 };
 
 use super::{
@@ -136,12 +140,19 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                     let Proposal { id, transition } = proposal;
                     let res = self.applicator.handle_state_transition(transition);
 
-                    // Make a copy of the error before notifying the client
-                    let err_str = res.as_ref().err().map(|e| e.to_string());
-                    self.notifications.notify(id, res.map_err(StateError::Applicator)).await;
-
-                    if let Some(s) = err_str {
-                        return Err(new_apply_error(log_id, s));
+                    match res {
+                        Ok(ApplicatorReturnType::Rejected(err)) => {
+                            // If the state machine rejected the state transition, notify the client
+                            self.notifications.notify(id, Err(StateError::Applicator(err))).await;
+                        },
+                        Err(err) => {
+                            // If the state machine failed to apply the state transition, notify the
+                            // client & propagate the error
+                            let err_str = err.to_string();
+                            self.notifications.notify(id, Err(StateError::Applicator(err))).await;
+                            return Err(new_apply_error(log_id, err_str));
+                        },
+                        _ => {},
                     }
                 },
             }

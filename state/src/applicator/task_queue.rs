@@ -16,7 +16,9 @@ use util::err_str;
 
 use crate::storage::tx::StateTxn;
 
-use super::{error::StateApplicatorError, Result, StateApplicator};
+use super::{
+    error::StateApplicatorError, return_type::ApplicatorReturnType, Result, StateApplicator,
+};
 
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
@@ -35,7 +37,7 @@ impl StateApplicator {
 
     /// Apply an `AppendTask` state transition
     #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
-    pub fn append_task(&self, task: &QueuedTask) -> Result<()> {
+    pub fn append_task(&self, task: &QueuedTask) -> Result<ApplicatorReturnType> {
         let queue_key = task.descriptor.queue_key();
         let tx = self.db().new_write_tx()?;
 
@@ -52,19 +54,19 @@ impl StateApplicator {
 
         tx.commit()?;
         self.publish_task_updates(queue_key, task);
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Apply a `PopTask` state transition
     #[instrument(skip_all, err, fields(task_id = %task_id))]
-    pub fn pop_task(&self, task_id: TaskIdentifier, success: bool) -> Result<()> {
+    pub fn pop_task(&self, task_id: TaskIdentifier, success: bool) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
         if tx.is_queue_paused(&key)? {
-            return Err(StateApplicatorError::QueuePaused(key));
+            return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::QueuePaused(key)));
         }
 
         // Pop the task from the queue and add it to history
@@ -94,7 +96,7 @@ impl StateApplicator {
 
         // Publish a completed message to the system bus
         self.publish_task_updates(key, &task);
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Transition the state of the top task on the queue
@@ -103,14 +105,14 @@ impl StateApplicator {
         &self,
         task_id: TaskIdentifier,
         state: QueuedTaskState,
-    ) -> Result<()> {
+    ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
         if tx.is_queue_paused(&key)? {
-            return Err(StateApplicatorError::QueuePaused(key));
+            return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::QueuePaused(key)));
         }
 
         tx.transition_task(&key, state)?;
@@ -120,12 +122,16 @@ impl StateApplicator {
         if let Some(t) = task {
             self.publish_task_updates(key, &t);
         }
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Preempt the given task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn preempt_task_queue(&self, key: TaskQueueKey, task: &QueuedTask) -> Result<()> {
+    pub fn preempt_task_queue(
+        &self,
+        key: TaskQueueKey,
+        task: &QueuedTask,
+    ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 
         // Stop any running tasks if possible
@@ -133,7 +139,7 @@ impl StateApplicator {
         if let Some(task) = current_running_task {
             if task.state.is_committed() {
                 error!("cannot preempt committed task: {}", task.id);
-                return Err(StateApplicatorError::Preemption);
+                return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::Preemption));
             }
 
             // Otherwise transition the task to queued
@@ -144,7 +150,7 @@ impl StateApplicator {
         // If the queue is already paused, a preemptive task is already
         // running, with which we should not conflict
         if tx.is_queue_paused(&key)? {
-            return Err(StateApplicatorError::Preemption);
+            return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::Preemption));
         }
 
         // Pause the queue
@@ -152,12 +158,16 @@ impl StateApplicator {
         tx.add_task_front(&key, task)?;
         tx.commit()?;
         self.publish_task_updates(key, task);
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     /// Resume a task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn resume_task_queue(&self, key: TaskQueueKey, success: bool) -> Result<()> {
+    pub fn resume_task_queue(
+        &self,
+        key: TaskQueueKey,
+        success: bool,
+    ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 
         // Resume the queue, and pop the preemptive task that was added when the queue
@@ -193,7 +203,7 @@ impl StateApplicator {
         tx.commit()?;
 
         self.publish_task_updates(key, &task);
-        Ok(())
+        Ok(ApplicatorReturnType::None)
     }
 
     // -----------
