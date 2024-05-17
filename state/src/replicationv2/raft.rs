@@ -5,7 +5,8 @@ use std::{
     sync::Arc,
 };
 
-use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftNetworkFactory};
+use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics};
+use tracing::info;
 use util::err_str;
 
 use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
@@ -17,7 +18,7 @@ use super::{
         P2PNetworkFactory, P2PNetworkFactoryWrapper, P2PRaftNetwork, RaftRequest, RaftResponse,
     },
     state_machine::StateMachine,
-    Node, NodeId, Raft, RaftNode, TypeConfig,
+    Node, NodeId, Raft, RaftNode,
 };
 
 /// The default cluster name
@@ -28,14 +29,11 @@ const DEFAULT_HEARTBEAT_INTERVAL: u64 = 1000; // 1 second
 const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10000; // 10 seconds
 /// The default election timeout max
 const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15000; // 15 seconds
+/// The default log lag threshold for promoting learners
+const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
 
 /// Error message emitted when there is no known leader
 const ERR_NO_LEADER: &str = "no leader";
-
-/// Marker trait to simplify raft client trait bounds
-#[rustfmt::skip]
-pub trait NetworkEssential: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone {}
-impl<T: RaftNetworkFactory<TypeConfig> + P2PRaftNetwork + Clone> NetworkEssential for T {}
 
 /// The config for the raft client
 #[derive(Clone)]
@@ -55,6 +53,8 @@ pub struct RaftClientConfig {
     pub election_timeout_min: u64,
     /// The maximum election timeout in milliseconds
     pub election_timeout_max: u64,
+    /// The length of a learner's log lag before being promoted to a follower
+    pub learner_promotion_threshold: u64,
     /// The nodes to initialize the membership with
     pub initial_nodes: Vec<(NodeId, RaftNode)>,
 }
@@ -68,6 +68,7 @@ impl Default for RaftClientConfig {
             heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
             election_timeout_min: DEFAULT_ELECTION_TIMEOUT_MIN,
             election_timeout_max: DEFAULT_ELECTION_TIMEOUT_MAX,
+            learner_promotion_threshold: DEFAULT_LEARNER_PROMOTION_THRESHOLD,
             initial_nodes: vec![],
         }
     }
@@ -141,23 +142,35 @@ impl RaftClient {
         members.voter_ids().count() > 0
     }
 
+    /// Get a copy of the raft metrics
+    pub fn metrics(&self) -> RaftMetrics<NodeId, Node> {
+        self.raft.metrics().borrow().clone()
+    }
+
     /// Get the membership of the cluster
-    pub fn membership(&self) -> Membership<NodeId, Node> {
-        let metrics = self.raft.metrics();
-        let metrics_ref = metrics.borrow();
-        metrics_ref.membership_config.membership().clone()
+    fn membership(&self) -> Membership<NodeId, Node> {
+        let metrics = self.metrics();
+        metrics.membership_config.membership().clone()
     }
 
     /// Get the node info an ID for the current leader
-    pub fn leader_info(&self) -> Option<(NodeId, RaftNode)> {
-        let metrics = self.raft.metrics();
-        let metrics_ref = metrics.borrow();
-        let membership = metrics_ref.membership_config.membership();
+    fn leader_info(&self) -> Option<(NodeId, RaftNode)> {
+        let metrics = self.metrics();
+        let leader_nid = metrics.current_leader?;
+        let leader_info = *metrics
+            .membership_config
+            .membership()
+            .get_node(&leader_nid)
+            // `expect` is safe, if `leader_nid` is `Some`; membership must contain leader
+            .expect("leader info not found");
 
-        // `expect` is safe, if `leader_nid` is `Some`; membership must contain leader
-        let leader_nid = metrics_ref.current_leader?;
-        let leader_info = *membership.get_node(&leader_nid).expect("leader info not found");
         Some((leader_nid, leader_info))
+    }
+
+    /// Get the ids of the learners in the raft
+    fn learners(&self) -> Vec<NodeId> {
+        let metrics = self.metrics();
+        metrics.membership_config.membership().learner_ids().collect()
     }
 
     /// Shutdown the raft
@@ -300,5 +313,42 @@ impl RaftClient {
         let proposal = Proposal::from(StateTransition::RemoveRaftPeer { peer_id: peer });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
+    }
+
+    /// Try promoting all learners if the current node is the leader
+    pub async fn try_promote_learners(&self) -> Result<(), ReplicationV2Error> {
+        let leader = self.leader().await.unwrap_or(0 /* invalid id */);
+        if leader != self.node_id() {
+            return Ok(());
+        }
+
+        // Check all learners replication progress
+        let learners = self.learners();
+        if self.learners().is_empty() {
+            return Ok(());
+        }
+
+        let metrics = self.metrics();
+        let my_log = metrics.last_applied.map(|l| l.index).unwrap_or(0);
+        let replication_info = &match metrics.replication {
+            Some(rep) => rep,
+            // If there is no replication info the local node may have lost leadership
+            None => return Ok(()),
+        };
+
+        for learner in learners {
+            let latest_log = match replication_info.get(&learner).cloned().flatten() {
+                Some(rep) => rep,
+                None => continue,
+            };
+
+            let lag = my_log.saturating_sub(latest_log.index);
+            if lag < self.config.learner_promotion_threshold {
+                info!("promoting {learner} to voter");
+                self.promote_learner(learner).await.unwrap();
+            }
+        }
+
+        Ok(())
     }
 }

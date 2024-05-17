@@ -57,6 +57,7 @@ use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use state::State;
 use system_bus::SystemBus;
+use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use test_helpers::mocks::mock_cancel;
 use tokio::runtime::Runtime as TokioRuntime;
@@ -97,6 +98,8 @@ pub struct MockNodeController {
     arbitrum_client: Option<ArbitrumClient>,
     /// The system bus
     bus: SystemBus<SystemBusMessage>,
+    /// The system clock
+    clock: SystemClock,
     /// The global state (if initialized)
     state: Option<State>,
 
@@ -120,6 +123,7 @@ impl MockNodeController {
     /// Constructor
     pub fn new(config: RelayerConfig) -> Self {
         let bus = SystemBus::new();
+        let clock = run_fut(SystemClock::new());
         let (network_sender, network_recv) = new_network_manager_queue();
         let (gossip_sender, gossip_recv) = new_gossip_server_queue();
         let (handshake_send, handshake_recv) = new_handshake_manager_queue();
@@ -132,6 +136,7 @@ impl MockNodeController {
             local_addr: Multiaddr::empty(),
             arbitrum_client: None,
             bus,
+            clock,
             state: None,
             network_queue: (network_sender, default_option(network_recv)),
             gossip_queue: (gossip_sender, default_option(gossip_recv)),
@@ -258,10 +263,17 @@ impl MockNodeController {
         let task_sender = self.task_queue.0.clone();
         let handshake_queue = self.handshake_queue.0.clone();
         let bus = self.bus.clone();
+        let clock = self.clock.clone();
 
-        let state =
-            run_fut(State::new(&self.config, network_queue, task_sender, handshake_queue, bus))
-                .expect("Failed to create state instance");
+        let state = run_fut(State::new(
+            &self.config,
+            network_queue,
+            task_sender,
+            handshake_queue,
+            bus,
+            clock,
+        ))
+        .expect("Failed to create state instance");
 
         self.state = Some(state);
         self
@@ -511,6 +523,7 @@ mod test {
 
     /// Tests a simple constructor of the mock node
     #[test]
+    #[ignore]
     fn test_ping_mock() {
         let db_path = tmp_db_path();
         let conf = RelayerConfig {

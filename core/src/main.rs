@@ -39,6 +39,7 @@ use state::State;
 use system_bus::SystemBus;
 
 use error::CoordinatorError;
+use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::{
     select,
@@ -105,6 +106,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
     let system_bus = SystemBus::<SystemBusMessage>::new();
+    let system_clock = SystemClock::new().await;
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
@@ -120,6 +122,7 @@ async fn main() -> Result<(), CoordinatorError> {
         task_sender.clone(),
         handshake_worker_sender.clone(),
         system_bus.clone(),
+        system_clock,
     )
     .await?;
 

@@ -27,6 +27,7 @@ price-reporter = { path = "../workers/price-reporter", features = ["mocks"] }
 proof-manager = { path = "../workers/proof-manager", features = ["mocks"] }
 state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }
+system-clock = { path = "../system-clock" }
 task-driver = { path = "../workers/task-driver" }
 test-helpers = { path = "../test-helpers" }
 util = { path = "../util" }

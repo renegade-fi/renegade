@@ -185,6 +185,7 @@ pub mod test_helpers {
     };
     use libp2p::identity::Keypair;
     use system_bus::SystemBus;
+    use system_clock::SystemClock;
     use tempfile::tempdir;
 
     use crate::{
@@ -278,6 +279,7 @@ pub mod test_helpers {
             task_queue,
             handshake_manager_queue,
             SystemBus::new(),
+            SystemClock::new().await,
         )
         .await
         .unwrap();
