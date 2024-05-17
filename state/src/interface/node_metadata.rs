@@ -3,7 +3,7 @@
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use common::types::{
     gossip::{ClusterId, PeerInfo, WrappedPeerId},
-    wallet::{Wallet, WalletIdentifier},
+    wallet::{derivation::derive_wallet_id, Wallet, WalletIdentifier},
 };
 use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
@@ -105,6 +105,8 @@ impl State {
         let p2p_key = config.p2p_key.clone();
         let fee_decryption_key = config.fee_decryption_key;
         let match_take_rate = config.match_take_rate;
+        let relayer_wallet_id =
+            derive_wallet_id(&config.arbitrum_private_key).map_err(StateError::InvalidUpdate)?;
 
         self.with_write_tx(move |tx| {
             tx.create_table(NODE_METADATA_TABLE)?;
@@ -113,6 +115,7 @@ impl State {
             tx.set_node_keypair(&p2p_key)?;
             tx.set_fee_decryption_key(&fee_decryption_key)?;
             tx.set_relayer_take_rate(&match_take_rate)?;
+            tx.set_local_node_wallet(relayer_wallet_id)?;
 
             Ok(())
         })
