@@ -21,7 +21,7 @@ use eyre::Result;
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
-    task_driver::{new_task_notification, TaskDriverJob, TaskDriverReceiver},
+    task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue, TaskDriverReceiver},
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
@@ -212,6 +212,7 @@ pub async fn authorize_transfer(
 /// Create a new mock `TaskDriver`
 pub fn new_mock_task_driver(
     task_queue: TaskDriverReceiver,
+    task_queue_sender: TaskDriverQueue,
     arbitrum_client: ArbitrumClient,
     network_queue: NetworkManagerQueue,
     proof_queue: ProofManagerQueue,
@@ -229,6 +230,7 @@ pub fn new_mock_task_driver(
 
     let config = TaskDriverConfig {
         task_queue,
+        task_queue_sender,
         runtime_config,
         system_bus: bus,
         arbitrum_client,

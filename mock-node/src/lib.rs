@@ -286,6 +286,7 @@ impl MockNodeController {
     /// Add a task driver to the mock node
     pub fn with_task_driver(mut self) -> Self {
         let task_queue = self.task_queue.1.take().unwrap();
+        let task_sender = self.task_queue.0.clone();
         let arbitrum_client =
             self.arbitrum_client.clone().expect("Arbitrum client not initialized");
         let network_queue = self.network_queue.0.clone();
@@ -295,6 +296,7 @@ impl MockNodeController {
 
         let conf = TaskDriverConfig::new(
             task_queue,
+            task_sender,
             arbitrum_client,
             network_queue,
             proof_queue,

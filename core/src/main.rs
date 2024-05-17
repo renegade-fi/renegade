@@ -176,6 +176,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // that are common among workers
     let task_driver_config = TaskDriverConfig::new(
         task_receiver,
+        task_sender.clone(),
         arbitrum_client.clone(),
         network_sender.clone(),
         proof_generation_worker_sender.clone(),
@@ -248,12 +249,11 @@ async fn main() -> Result<(), CoordinatorError> {
         mpsc::channel(1 /* buffer size */);
     watch_worker::<GossipServer>(&mut gossip_server, &gossip_failure_sender);
 
-    // Setup the relayer wallet once the task driver, proof manager, and gossip
-    // server are running
-    let chain_id =
-        arbitrum_client.chain_id().await.map_err(err_str!(CoordinatorError::Arbitrum))?;
-    node_setup(&setup_config, chain_id, task_sender.clone(), &arbitrum_client, &global_state)
-        .await?;
+    // Once the minimal set of workers are running, run the setup task
+    //
+    // This task bootstraps the relayer into a correct raft and sets up the
+    // relayer's wallet
+    node_setup(&setup_config, task_sender.clone()).await?;
 
     // --- Workers Setup Phase --- //
 
