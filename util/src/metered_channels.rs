@@ -8,16 +8,17 @@ pub const QUEUE_LENGTH_METRIC: &str = "queue_length";
 
 /// A wrapper around an [`UnboundedReceiver`] which records the message queue
 /// length when a message is received.
+#[derive(Debug)]
 pub struct MeteredUnboundedReceiver<T> {
     /// The inner receiver
     inner: UnboundedReceiver<T>,
     /// The name of the channel
-    name: String,
+    name: &'static str,
 }
 
 impl<T> MeteredUnboundedReceiver<T> {
     /// Create a new metered receiver with the given name
-    pub fn new(inner: UnboundedReceiver<T>, name: String) -> Self {
+    pub fn new(inner: UnboundedReceiver<T>, name: &'static str) -> Self {
         Self { inner, name }
     }
 
