@@ -4,15 +4,19 @@ use common::types::{
     tasks::{QueuedTask, TaskDescriptor, TaskIdentifier},
     wallet::WalletIdentifier,
 };
-use crossbeam::channel::{Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
+use crossbeam::channel::Sender as CrossbeamSender;
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
 };
+use util::metered_channels::MeteredCrossbeamReceiver;
+
+/// The name of the task driver queue, used to label queue length metrics
+const TASK_DRIVER_QUEUE_NAME: &str = "task_driver";
 
 /// The queue sender type to send jobs to the task driver
 pub type TaskDriverQueue = CrossbeamSender<TaskDriverJob>;
 /// The queue receiver type to receive jobs for the task driver
-pub type TaskDriverReceiver = CrossbeamReceiver<TaskDriverJob>;
+pub type TaskDriverReceiver = MeteredCrossbeamReceiver<TaskDriverJob>;
 /// The sender type of a task notification channel
 pub type TaskNotificationSender = OneshotSender<Result<(), String>>;
 /// The receiver type of a task notification channel
@@ -20,7 +24,8 @@ pub type TaskNotificationReceiver = OneshotReceiver<Result<(), String>>;
 
 /// Create a new task driver queue
 pub fn new_task_driver_queue() -> (TaskDriverQueue, TaskDriverReceiver) {
-    crossbeam::channel::unbounded()
+    let (send, recv) = crossbeam::channel::unbounded();
+    (send, MeteredCrossbeamReceiver::new(recv, TASK_DRIVER_QUEUE_NAME))
 }
 
 /// Create a new notification channel and job for the task driver
