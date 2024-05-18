@@ -35,10 +35,13 @@ jobs:
         uses: docker/build-push-action@v5
         env:
           IMAGE: ${{ steps.login-ecr.outputs.registry }}/relayer-${{ github.ref_name }}
+          CARGO_FEATURES: ${{ github.ref_name == 'dev' && 'metered-channels' || 'default' }}
         with:
           platforms: linux/arm64
           context: .
           file: ./docker/release/Dockerfile
+          build-args: |
+            CARGO_FEATURES=${{ env.CARGO_FEATURES }}
           push: true
           tags: ${{ env.IMAGE }}:${{ github.sha }},${{ env.IMAGE }}:latest
           cache-from: type=gha

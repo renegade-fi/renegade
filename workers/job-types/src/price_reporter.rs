@@ -1,9 +1,6 @@
 //! Defines all possible jobs for the PriceReporter.
 use common::types::{exchange::PriceReporterState, token::Token};
-use tokio::sync::mpsc::{
-    unbounded_channel,
-    UnboundedSender as TokioUnboundedSender,
-};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioUnboundedSender};
 use tokio::sync::oneshot::Sender as TokioSender;
 use util::metered_channels::MeteredTokioReceiver;
 
