@@ -19,12 +19,12 @@ use arbitrum_client::{
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS};
-use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
+use crossbeam::channel::Sender as CrossbeamSender;
 use ethers::signers::LocalWallet;
 use helpers::new_mock_task_driver;
 use job_types::{
     network_manager::{new_network_manager_queue, NetworkManagerReceiver},
-    proof_manager::ProofManagerJob,
+    proof_manager::{new_proof_manager_queue, ProofManagerJob},
     task_driver::{new_task_driver_queue, TaskDriverQueue},
 };
 use proof_manager::mock::MockProofManager;
@@ -112,7 +112,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         let (network_sender, network_receiver) = new_network_manager_queue();
 
         // Create a mock proof generation module
-        let (proof_job_queue, job_receiver) = unbounded();
+        let (proof_job_queue, job_receiver) = new_proof_manager_queue();
         MockProofManager::start(job_receiver);
 
         // Create a mock arbitrum client

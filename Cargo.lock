@@ -8798,6 +8798,7 @@ dependencies = [
  "chrono",
  "circuit-types",
  "constants",
+ "crossbeam",
  "eyre",
  "futures",
  "hex 0.4.3",

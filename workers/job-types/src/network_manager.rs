@@ -11,7 +11,7 @@ use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedSender as TokioSender},
     oneshot::{channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender},
 };
-use util::metered_channels::MeteredUnboundedReceiver;
+use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
 /// The name of the network manager queue, used to label queue length metrics
@@ -20,7 +20,7 @@ const NETWORK_MANAGER_QUEUE_NAME: &str = "network_manager";
 /// The task queue type for the network manager
 pub type NetworkManagerQueue = TokioSender<NetworkManagerJob>;
 /// The task queue receiver type for the network manager
-pub type NetworkManagerReceiver = MeteredUnboundedReceiver<NetworkManagerJob>;
+pub type NetworkManagerReceiver = MeteredTokioReceiver<NetworkManagerJob>;
 /// The channel type on which the network manager forwards a response to a
 /// particular request
 pub type NetworkResponseChannel = OneshotSender<GossipResponse>;
@@ -31,7 +31,7 @@ pub type NetworkResponseReceiver = OneshotReceiver<GossipResponse>;
 /// Create a new network manager queue and receiver
 pub fn new_network_manager_queue() -> (NetworkManagerQueue, NetworkManagerReceiver) {
     let (send, recv) = unbounded_channel();
-    (send, MeteredUnboundedReceiver::new(recv, NETWORK_MANAGER_QUEUE_NAME))
+    (send, MeteredTokioReceiver::new(recv, NETWORK_MANAGER_QUEUE_NAME))
 }
 /// Create a new response channel for a request
 pub fn new_response_channel() -> (NetworkResponseChannel, NetworkResponseReceiver) {
