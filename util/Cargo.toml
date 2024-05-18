@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 mocks = []
+metered-channels = []
 
 [dependencies]
 # === Arithmetic === #
