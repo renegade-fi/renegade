@@ -20,6 +20,7 @@ libp2p = { workspace = true }
 # === Runtime === #
 futures = { workspace = true }
 tokio = { workspace = true }
+crossbeam = { workspace = true }
 
 # === Workspace Dependencies === #
 circuit-types = { path = "../circuit-types" }

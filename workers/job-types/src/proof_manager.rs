@@ -19,17 +19,22 @@ use circuits::zk_circuits::{
     valid_wallet_update::{SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness},
 };
 use common::types::proof_bundles::ProofBundle;
-use crossbeam::channel::{unbounded, Receiver as CrossbeamReceiver, Sender as CrossbeamSender};
+use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use tokio::sync::oneshot::Sender;
+use util::metered_channels::MeteredCrossbeamReceiver;
+
+/// The name of the proof manager queue, used to label queue length metrics
+const PROOF_MANAGER_QUEUE_NAME: &str = "proof_manager";
 
 /// The queue type for the proof manager
 pub type ProofManagerQueue = CrossbeamSender<ProofManagerJob>;
 /// The receiver type for the proof manager
-pub type ProofManagerReceiver = CrossbeamReceiver<ProofManagerJob>;
+pub type ProofManagerReceiver = MeteredCrossbeamReceiver<ProofManagerJob>;
 
 /// Create a new proof manager queue and receiver
 pub fn new_proof_manager_queue() -> (ProofManagerQueue, ProofManagerReceiver) {
-    unbounded()
+    let (send, recv) = unbounded();
+    (send, MeteredCrossbeamReceiver::new(recv, PROOF_MANAGER_QUEUE_NAME))
 }
 
 // -------------
