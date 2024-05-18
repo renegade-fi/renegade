@@ -3,9 +3,10 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
+    time::Duration,
 };
 
-use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics};
+use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tracing::info;
 use util::err_str;
 
@@ -31,6 +32,13 @@ const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10000; // 10 seconds
 const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15000; // 15 seconds
 /// The default log lag threshold for promoting learners
 const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
+/// The amount of time to await promotion before timing out
+///
+/// Set to two minutes; giving enough time to receive snapshots and catch up to
+/// logs
+const DEFAULT_PROMOTION_TIMEOUT_MS: u64 = 2 * 60 * 1000;
+/// The amount of time to await a leader election before timing out
+const DEFAULT_LEADER_ELECTION_TIMEOUT_MS: u64 = 30_000; // 30 seconds
 
 /// Error message emitted when there is no known leader
 const ERR_NO_LEADER: &str = "no leader";
@@ -154,7 +162,7 @@ impl RaftClient {
     }
 
     /// Get the node info an ID for the current leader
-    fn leader_info(&self) -> Option<(NodeId, RaftNode)> {
+    pub(crate) fn leader_info(&self) -> Option<(NodeId, RaftNode)> {
         let metrics = self.metrics();
         let leader_nid = metrics.current_leader?;
         let leader_info = *metrics
@@ -176,6 +184,32 @@ impl RaftClient {
     /// Shutdown the raft
     pub async fn shutdown(&self) -> Result<(), ReplicationV2Error> {
         self.raft.shutdown().await.map_err(err_str!(ReplicationV2Error::RaftTeardown))
+    }
+
+    // -------------------
+    // | Wait Conditions |
+    // -------------------
+
+    /// Await the promotion of the local peer to a voter
+    pub async fn await_promotion(&self) -> Result<(), ReplicationV2Error> {
+        let timeout = Duration::from_millis(DEFAULT_PROMOTION_TIMEOUT_MS);
+        self.raft
+            .wait(Some(timeout))
+            .state(ServerState::Follower, "local-node-promotion")
+            .await
+            .map_err(err_str!(ReplicationV2Error::Raft))
+            .map(|_| ())
+    }
+
+    /// Await the election of a leader in the raft
+    pub async fn await_leader_election(&self) -> Result<(), ReplicationV2Error> {
+        let timeout = Duration::from_millis(DEFAULT_LEADER_ELECTION_TIMEOUT_MS);
+        self.raft
+            .wait(Some(timeout))
+            .metrics(|metrics| metrics.current_leader.is_some(), "leader-election")
+            .await
+            .map_err(err_str!(ReplicationV2Error::Raft))
+            .map(|_| ())
     }
 
     // -------------
