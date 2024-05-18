@@ -4107,6 +4107,7 @@ dependencies = [
  "libp2p",
  "libp2p-core",
  "tokio",
+ "util",
  "uuid 1.8.0",
 ]
 

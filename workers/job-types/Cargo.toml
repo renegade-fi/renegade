@@ -17,6 +17,7 @@ circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
 gossip-api = { path = "../../gossip-api" }
+util = { path = "../../util" }
 
 # === Misc === #
 crossbeam = { workspace = true }
