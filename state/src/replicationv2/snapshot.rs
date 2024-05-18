@@ -130,6 +130,9 @@ impl StateMachine {
     ///
     /// Returns the location at which the data was copied
     async fn make_data_copy(&self) -> Result<PathBuf, ReplicationV2Error> {
+        // Create the directory if it doesn't exist
+        self.create_snapshot_dir().await?;
+
         let path = PathBuf::from(self.db().path());
         let data_path = path.join(MDBX_DATA_FILE);
         let snapshot_path = self.snapshot_data_path();
@@ -280,6 +283,7 @@ impl StateMachine {
 
 #[cfg(test)]
 mod tests {
+    use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
     use libmdbx::Error as MdbxError;
 
     use crate::{
@@ -379,6 +383,9 @@ mod tests {
         let (k1, v1) = ("key1".to_string(), "value1".to_string());
         let (k2, v2) = ("key2".to_string(), "value2".to_string());
         let (k3, v3) = ("key3".to_string(), "value3".to_string());
+        // Test a more complicated value
+        let wallet = mock_empty_wallet();
+        let (k4, v4) = ("key4".to_string(), wallet.clone());
 
         let src_db = mock_db();
         let dest_db = mock_db();
@@ -389,6 +396,7 @@ mod tests {
         dest_db.write(EXCLUDED_TABLE, &k2, &v2).unwrap();
         src_db.write(INCLUDED_TABLE, &k3, &v3).unwrap();
         dest_db.write(INCLUDED_TABLE, &k3, &"overwritten".to_string()).unwrap();
+        src_db.write(INCLUDED_TABLE, &k4, &v4).unwrap();
 
         // Copy the contents of one db to another
         StateMachine::copy_db_data(&src_db, &dest_db).unwrap();
@@ -398,10 +406,12 @@ mod tests {
         let dest_k1: Option<String> = dest_db.read(EXCLUDED_TABLE, &k1).unwrap();
         let dest_k2: String = dest_db.read(EXCLUDED_TABLE, &k2).unwrap().unwrap();
         let dest_k3: String = dest_db.read(INCLUDED_TABLE, &k3).unwrap().unwrap();
+        let dest_k4: Wallet = dest_db.read(INCLUDED_TABLE, &k4).unwrap().unwrap();
 
         assert_eq!(dest_k1, None);
         assert_eq!(dest_k2, v2);
         assert_eq!(dest_k3, v3);
+        assert_eq!(dest_k4, v4);
     }
 
     /// Tests applying a snapshot to the DB

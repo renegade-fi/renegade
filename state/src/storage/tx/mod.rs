@@ -350,11 +350,11 @@ impl<'db> DbTxn<'db, RW> {
     pub fn copy_cursor_to_table<T: TransactionKind>(
         &self,
         table_name: &str,
-        cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
+        mut cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
     ) -> Result<(), StorageError> {
-        for record in cursor.into_iter() {
-            let (k, v) = record?;
-            self.write(table_name, &k, &v)?;
+        while !cursor.seek_next()? {
+            let (k, v) = cursor.get_current_raw()?.unwrap();
+            self.write_raw(table_name, &k, &v)?;
         }
 
         Ok(())
@@ -379,6 +379,17 @@ impl<'db> DbTxn<'db, RW> {
         self.txn
             .put(&table, key_bytes, value_bytes, WriteFlags::default())
             .map_err(StorageError::TxOp)
+    }
+
+    /// Write a raw (expressed as bytes) key value pair to the database
+    pub(crate) fn write_raw(
+        &self,
+        table_name: &str,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), StorageError> {
+        let table = self.open_table(table_name)?;
+        self.txn.put(&table, key, value, WriteFlags::default()).map_err(StorageError::TxOp)
     }
 }
 

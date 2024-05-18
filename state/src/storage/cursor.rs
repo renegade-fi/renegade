@@ -71,6 +71,11 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         }
     }
 
+    /// Get the key/value at the current position position without deserializing
+    pub fn get_current_raw(&mut self) -> Result<Option<(CowBuffer, CowBuffer)>, StorageError> {
+        self.inner.get_current::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)
+    }
+
     /// Position the cursor at the next key value pair
     ///
     /// Returns `true` if the cursor has reached the end of the table

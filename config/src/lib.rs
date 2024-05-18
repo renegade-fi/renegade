@@ -452,7 +452,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
-    // Parse the price reporter URL, if ther is one
+    // Parse the price reporter URL, if there is one
     let price_reporter_url = cli_args
         .price_reporter_url
         .map(|url| Url::parse(&url).expect("Invalid price reporter URL"));
