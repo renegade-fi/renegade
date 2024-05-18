@@ -11,7 +11,10 @@
 use std::{collections::HashSet, mem};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
-use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
+use arbitrum_client::{
+    client::{ArbitrumClient, ArbitrumClientConfig},
+    constants::BLOCK_POLLING_INTERVAL_MS,
+};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
     default_wrapper::{default_option, DefaultOption},
@@ -236,6 +239,7 @@ impl MockNodeController {
             chain: self.config.chain_id,
             rpc_url: self.config.rpc_url.clone().unwrap(),
             arb_priv_key: self.config.arbitrum_private_key.clone(),
+            block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
         };
 
         // Expects to be running in a Tokio runtime

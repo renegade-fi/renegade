@@ -53,6 +53,10 @@ pub const SELECTOR_LEN: usize = 4;
 pub const WALLET_UPDATED_EVENT_NAME: &str = "WalletUpdated";
 /// The abi signature for the `NullifierSpent` event
 pub const NULLIFIER_SPENT_EVENT_NAME: &str = "NullifierSpent";
+/// The interval at which to poll for pending transactions
+pub const BLOCK_POLLING_INTERVAL_MS: u64 = 100;
+/// The interval at which to poll for event filters
+pub const EVENT_FILTER_POLLING_INTERVAL_MS: u64 = 7000;
 
 lazy_static! {
     // ------------------------
