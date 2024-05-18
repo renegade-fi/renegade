@@ -143,6 +143,7 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                     match res {
                         Ok(ApplicatorReturnType::Rejected(err)) => {
                             // If the state machine rejected the state transition, notify the client
+                            // with an error state
                             self.notifications.notify(id, Err(StateError::Applicator(err))).await;
                         },
                         Err(err) => {
@@ -152,7 +153,11 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                             self.notifications.notify(id, Err(StateError::Applicator(err))).await;
                             return Err(new_apply_error(log_id, err_str));
                         },
-                        _ => {},
+                        res => {
+                            self.notifications
+                                .notify(id, res.map_err(StateError::Applicator))
+                                .await;
+                        },
                     }
                 },
             }
