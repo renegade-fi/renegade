@@ -16,7 +16,10 @@ mod setup;
 use std::{process::exit, thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
-use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
+use arbitrum_client::{
+    client::{ArbitrumClient, ArbitrumClientConfig},
+    constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
+};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{watch_worker, Worker};
 use constants::VERSION;
@@ -144,8 +147,20 @@ async fn main() -> Result<(), CoordinatorError> {
     let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
+        rpc_url: args.rpc_url.clone().unwrap(),
+        arb_priv_key: args.arbitrum_private_key.clone(),
+        block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
+    })
+    .await
+    .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
+
+    // Construct an arbitrum client for the on-chain event listener worker
+    let chain_listener_arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
+        darkpool_addr: args.contract_address.clone(),
+        chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
         arb_priv_key: args.arbitrum_private_key.clone(),
+        block_polling_interval_ms: EVENT_FILTER_POLLING_INTERVAL_MS,
     })
     .await
     .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
@@ -292,7 +307,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
         max_root_staleness: args.max_merkle_staleness,
-        arbitrum_client: arbitrum_client.clone(),
+        arbitrum_client: chain_listener_arbitrum_client,
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender.clone(),

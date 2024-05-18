@@ -1,7 +1,7 @@
 //! The definition of the Arbitrum client, which holds the configuration
 //! details, along with a lower-level handle for the darkpool smart contract
 
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use alloy_primitives::ChainId;
 use constants::{DEVNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
@@ -38,6 +38,8 @@ pub struct ArbitrumClientConfig {
     pub rpc_url: String,
     /// The private key of the account to use for signing transactions
     pub arb_priv_key: LocalWallet,
+    /// The interval at which to poll for event filters and pending transactions
+    pub block_polling_interval_ms: u64,
 }
 
 /// A type alias for the RPC client, which is an ethers middleware stack that
@@ -59,8 +61,10 @@ impl ArbitrumClientConfig {
     /// Constructs an RPC client capable of signing transactions from the
     /// configuration
     async fn get_rpc_client(&self) -> Result<Arc<MiddlewareStack>, ArbitrumClientConfigError> {
-        let provider = Provider::<Http>::try_from(&self.rpc_url)
+        let mut provider = Provider::<Http>::try_from(&self.rpc_url)
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
+
+        provider.set_interval(Duration::from_millis(self.block_polling_interval_ms));
 
         let chain_id = provider
             .get_chainid()
