@@ -1,19 +1,24 @@
 //! Defines all possible jobs for the PriceReporter.
 use common::types::{exchange::PriceReporterState, token::Token};
 use tokio::sync::mpsc::{
-    unbounded_channel, UnboundedReceiver as TokioUnboundedReceiver,
+    unbounded_channel,
     UnboundedSender as TokioUnboundedSender,
 };
 use tokio::sync::oneshot::Sender as TokioSender;
+use util::metered_channels::MeteredUnboundedReceiver;
+
+/// The name of the price reporter queue, used to label queue length metrics
+const PRICE_REPORTER_QUEUE_NAME: &str = "price_reporter";
 
 /// The queue type for the price reporter
 pub type PriceReporterQueue = TokioUnboundedSender<PriceReporterJob>;
 /// The queue receiver type for the price reporter
-pub type PriceReporterReceiver = TokioUnboundedReceiver<PriceReporterJob>;
+pub type PriceReporterReceiver = MeteredUnboundedReceiver<PriceReporterJob>;
 
 /// Create a new price reporter queue and receiver
 pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver) {
-    unbounded_channel()
+    let (send, recv) = unbounded_channel();
+    (send, MeteredUnboundedReceiver::new(recv, PRICE_REPORTER_QUEUE_NAME))
 }
 
 /// All possible jobs that the PriceReporter accepts.

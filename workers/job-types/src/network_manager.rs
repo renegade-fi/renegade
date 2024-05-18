@@ -8,15 +8,19 @@ use gossip_api::{
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
 use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender},
+    mpsc::{unbounded_channel, UnboundedSender as TokioSender},
     oneshot::{channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender},
 };
+use util::metered_channels::MeteredUnboundedReceiver;
 use uuid::Uuid;
+
+/// The name of the network manager queue, used to label queue length metrics
+const NETWORK_MANAGER_QUEUE_NAME: &str = "network_manager";
 
 /// The task queue type for the network manager
 pub type NetworkManagerQueue = TokioSender<NetworkManagerJob>;
 /// The task queue receiver type for the network manager
-pub type NetworkManagerReceiver = TokioReceiver<NetworkManagerJob>;
+pub type NetworkManagerReceiver = MeteredUnboundedReceiver<NetworkManagerJob>;
 /// The channel type on which the network manager forwards a response to a
 /// particular request
 pub type NetworkResponseChannel = OneshotSender<GossipResponse>;
@@ -26,7 +30,8 @@ pub type NetworkResponseReceiver = OneshotReceiver<GossipResponse>;
 
 /// Create a new network manager queue and receiver
 pub fn new_network_manager_queue() -> (NetworkManagerQueue, NetworkManagerReceiver) {
-    unbounded_channel()
+    let (send, recv) = unbounded_channel();
+    (send, MeteredUnboundedReceiver::new(recv, NETWORK_MANAGER_QUEUE_NAME))
 }
 /// Create a new response channel for a request
 pub fn new_response_channel() -> (NetworkResponseChannel, NetworkResponseReceiver) {
