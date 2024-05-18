@@ -23,7 +23,7 @@ use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use ethers::signers::LocalWallet;
 use helpers::new_mock_task_driver;
 use job_types::{
-    network_manager::NetworkManagerReceiver,
+    network_manager::{new_network_manager_queue, NetworkManagerReceiver},
     proof_manager::ProofManagerJob,
     task_driver::{new_task_driver_queue, TaskDriverQueue},
 };
@@ -38,7 +38,6 @@ use test_helpers::{
     integration_test_main,
     types::TestVerbosity,
 };
-use tokio::sync::mpsc::unbounded_channel;
 use util::{
     arbitrum::{
         parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
@@ -110,7 +109,7 @@ struct IntegrationTestArgs {
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(test_args: CliArgs) -> Self {
         // Create a mock network sender and receiver
-        let (network_sender, network_receiver) = unbounded_channel();
+        let (network_sender, network_receiver) = new_network_manager_queue();
 
         // Create a mock proof generation module
         let (proof_job_queue, job_receiver) = unbounded();
