@@ -15,6 +15,7 @@ pub mod matching_engine;
 pub mod networking;
 pub mod runtime;
 pub mod telemetry;
+pub mod metered_channels;
 
 /// Returns the current unix timestamp in seconds, represented as u64
 pub fn get_current_time_seconds() -> u64 {
