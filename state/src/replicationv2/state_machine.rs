@@ -83,18 +83,30 @@ impl StateMachine {
     }
 
     /// Get the directory at which snapshots are saved
-    pub fn snapshot_dir(&self) -> &str {
-        &self.config.snapshot_out
+    pub fn snapshot_dir(&self) -> PathBuf {
+        PathBuf::from(&self.config.snapshot_out)
     }
 
     /// Get the path of the snapshot file
     pub fn snapshot_archive_path(&self) -> PathBuf {
-        PathBuf::from(self.snapshot_dir()).join(SNAPSHOT_FILE).with_extension("gz")
+        self.snapshot_dir().join(SNAPSHOT_FILE).with_extension("gz")
     }
 
     /// Get the path to place the snapshot data at
     pub fn snapshot_data_path(&self) -> PathBuf {
-        PathBuf::from(self.snapshot_dir()).join(SNAPSHOT_FILE)
+        self.snapshot_dir().join(SNAPSHOT_FILE)
+    }
+
+    /// Create the snapshot directory if it doesn't exist
+    pub async fn create_snapshot_dir(&self) -> Result<(), ReplicationV2Error> {
+        let snap_dir = self.snapshot_dir();
+        if !snap_dir.exists() {
+            tokio::fs::create_dir_all(&snap_dir)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        }
+
+        Ok(())
     }
 
     /// Open the file containing the snapshot
@@ -186,6 +198,7 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
         }
 
         // (Re)create it
+        self.create_snapshot_dir().await.map_err(new_snapshot_error)?;
         let file = tokio::fs::File::create(snapshot_path).await.map_err(|e| {
             RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Write, e)
         })?;
@@ -196,10 +209,9 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
     async fn install_snapshot(
         &mut self,
         meta: &SnapshotMeta<NodeId, Node>,
-        snapshot: Box<SnapshotData>,
+        _snapshot: Box<SnapshotData>,
     ) -> Result<(), RaftStorageError<NodeId>> {
-        let snapshot = *snapshot;
-        let snap_db = self.open_snap_db_with_file(snapshot).await.map_err(new_snapshot_error)?;
+        let snap_db = self.open_snap_db().await.map_err(new_snapshot_error)?;
         self.update_from_snapshot(meta, snap_db).await.map_err(new_snapshot_error)
     }
 
