@@ -309,6 +309,11 @@ impl NodeStartupTask {
         info!("initializing raft with {} peers", peers.len());
         self.state.initialize_raft(peers).await?;
 
+        // Await election of a leader
+        info!("awaiting leader election");
+        self.state.await_leader().await.map_err(err_str!(NodeStartupTaskError::State))?;
+        info!("leader elected: {}", self.state.get_leader().unwrap());
+
         Ok(())
     }
 
@@ -346,12 +351,15 @@ impl NodeStartupTask {
     }
 
     /// Manage the process to join an existing raft cluster
-    ///
-    /// TODO: Implement snapshot & promotion requests if joining an existing
-    /// cluster
     #[allow(clippy::unused_async)]
     async fn join_raft(&self) -> Result<(), NodeStartupTaskError> {
         info!("joining raft cluster");
+
+        // Wait for promotion to a voter
+        info!("awaiting promotion to voter");
+        self.state.await_promotion().await.map_err(err_str!(NodeStartupTaskError::State))?;
+        info!("promoted to voter");
+
         Ok(())
     }
 

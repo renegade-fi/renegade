@@ -16,12 +16,20 @@ use crate::{
 };
 
 impl State {
-    // --- Raft Control --- //
+    // --- Raft State --- //
 
     /// Whether the raft is initialized (has non-empty voters)
     pub fn is_raft_initialized(&self) -> bool {
         self.raft.is_initialized()
     }
+
+    /// Get the leader of the raft
+    pub fn get_leader(&self) -> Option<WrappedPeerId> {
+        let (_raft_id, info) = self.raft.leader_info()?;
+        Some(info.peer_id)
+    }
+
+    // --- Raft Control --- //
 
     /// Initialize a new raft with the given set of peers
     pub async fn initialize_raft(&self, peers: Vec<WrappedPeerId>) -> Result<(), StateError> {
@@ -33,6 +41,16 @@ impl State {
         }
 
         self.raft.initialize(node_info).await.map_err(StateError::Replication)
+    }
+
+    /// Await promotion of the local node to a voter
+    pub async fn await_promotion(&self) -> Result<(), StateError> {
+        self.raft.await_promotion().await.map_err(StateError::Replication)
+    }
+
+    /// Await a leader to be elected
+    pub async fn await_leader(&self) -> Result<(), StateError> {
+        self.raft.await_leader_election().await.map_err(StateError::Replication)
     }
 
     // --- Networking --- //
