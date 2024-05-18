@@ -13,7 +13,9 @@ pub const QUEUE_LENGTH_METRIC: &str = "queue_length";
 pub struct MeteredTokioReceiver<T> {
     /// The inner receiver
     inner: UnboundedReceiver<T>,
+
     /// The name of the channel
+    #[cfg_attr(not(feature = "metered-channels"), allow(dead_code))]
     name: &'static str,
 }
 
@@ -52,9 +54,9 @@ impl<T> MeteredCrossbeamReceiver<T> {
         Self { inner, name }
     }
 
-    /// Get a reference to the inner receiver
-    pub fn inner(&self) -> &Receiver<T> {
-        &self.inner
+    /// Check if the channel is empty
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
     }
 
     /// Receive a message from the channel, recording the queue length
@@ -72,9 +74,6 @@ impl<T> MeteredCrossbeamReceiver<T> {
 
 impl<T> Clone for MeteredCrossbeamReceiver<T> {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            name: self.name,
-        }
+        Self { inner: self.inner.clone(), name: self.name }
     }
 }

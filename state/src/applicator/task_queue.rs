@@ -401,7 +401,7 @@ mod test {
         ); // should be started
 
         // Check the task was started
-        assert!(!task_recv.inner().is_empty());
+        assert!(!task_recv.is_empty());
         let task = task_recv.recv().unwrap();
 
         if let TaskDriverJob::Run(queued_task) = task {
@@ -433,7 +433,7 @@ mod test {
         tx.commit().unwrap();
 
         assert_eq!(tasks.len(), 1);
-        assert!(task_recv.inner().is_empty());
+        assert!(task_recv.is_empty());
     }
 
     /// Tests the case in which a task is added to a non-empty queue
@@ -466,7 +466,7 @@ mod test {
         assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Ensure that the task queue is empty (no task is marked as running)
-        assert!(task_recv.inner().is_empty());
+        assert!(task_recv.is_empty());
     }
 
     /// Test popping from a task queue of length one
@@ -498,7 +498,7 @@ mod test {
         assert_eq!(tasks.len(), 0);
 
         // Ensure no task was started
-        assert!(task_recv.inner().is_empty());
+        assert!(task_recv.is_empty());
     }
 
     /// Tests popping from a queue of length two in which the local peer is not
@@ -538,7 +538,7 @@ mod test {
         ); // should be started
 
         // Ensure no task was started
-        assert!(task_recv.inner().is_empty());
+        assert!(task_recv.is_empty());
     }
 
     /// Tests popping from a queue of length two in which the local peer is the
@@ -578,7 +578,7 @@ mod test {
         ); // should be started
 
         // Ensure the second task was started
-        assert!(!task_recv.inner().is_empty());
+        assert!(!task_recv.is_empty());
         let task = task_recv.recv().unwrap();
 
         if let TaskDriverJob::Run(queued_task) = task {
@@ -673,7 +673,7 @@ mod test {
         let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
         tx.commit().unwrap();
 
-        assert!(task_recv.inner().is_empty());
+        assert!(task_recv.is_empty());
         assert_eq!(tasks.len(), 2); // Includes the preemptive task
         assert_eq!(tasks[0].state, QueuedTaskState::Preemptive);
         assert_eq!(tasks[1].state, QueuedTaskState::Queued);
@@ -686,7 +686,7 @@ mod test {
         tx.commit().unwrap();
         assert_eq!(task.unwrap().id, task_id);
 
-        assert!(!task_recv.inner().is_empty());
+        assert!(!task_recv.is_empty());
 
         let task = task_recv.recv().unwrap();
         if let TaskDriverJob::Run(queued_task) = task {
@@ -748,7 +748,7 @@ mod test {
         assert!(task.is_some());
         assert_eq!(task.unwrap().id, task_id);
 
-        assert!(!task_recv.inner().is_empty());
+        assert!(!task_recv.is_empty());
         let job = task_recv.recv().unwrap();
         if let TaskDriverJob::Run(queued_task) = job {
             assert_eq!(queued_task.id, task_id);
