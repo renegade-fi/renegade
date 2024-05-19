@@ -178,6 +178,7 @@ pub mod test_helpers {
     //! Test helpers for the state crate
     use std::{mem, time::Duration};
 
+    use common::worker::new_worker_failure_channel;
     use config::RelayerConfig;
     use job_types::{
         handshake_manager::new_handshake_manager_queue,
@@ -272,6 +273,7 @@ pub mod test_helpers {
         let raft = MockRaft::create_raft(2 /* n_nodes */, false /* init */).await;
         let net = raft.new_network_client();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        let (failure_send, _failure_recv) = new_worker_failure_channel();
         let state = State::new_with_network(
             config,
             mock_raft_config(config),
@@ -280,6 +282,7 @@ pub mod test_helpers {
             handshake_manager_queue,
             SystemBus::new(),
             SystemClock::new().await,
+            failure_send,
         )
         .await
         .unwrap();

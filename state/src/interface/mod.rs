@@ -13,6 +13,7 @@ pub mod wallet_index;
 
 use std::{sync::Arc, time::Duration};
 
+use common::worker::WorkerFailureSender;
 use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
 use external_api::bus_message::SystemBusMessage;
@@ -23,6 +24,7 @@ use job_types::{
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
+use tracing::error;
 use util::err_str;
 
 use crate::{
@@ -45,13 +47,15 @@ use crate::{
 use self::error::StateError;
 
 /// The default number of ticks between Raft heartbeats
-const DEFAULT_HEARTBEAT_MS: u64 = 1000; // 1 second
+const DEFAULT_HEARTBEAT_MS: u64 = 1_000; // 1 second
 /// The default lower bound on the number of ticks before a Raft election
-const DEFAULT_MIN_ELECTION_MS: u64 = 10000; // 10 seconds
+const DEFAULT_MIN_ELECTION_MS: u64 = 10_000; // 10 seconds
 /// The default upper bound on the number of ticks before a Raft election
-const DEFAULT_MAX_ELECTION_MS: u64 = 15000; // 15 seconds
+const DEFAULT_MAX_ELECTION_MS: u64 = 15_000; // 15 seconds
 /// The frequency with which to attempt learner promotion
-const LEARNER_PROMOTION_MS: u64 = 5000; // 5 seconds
+const LEARNER_PROMOTION_MS: u64 = 5_000; // 5 seconds
+/// The frequency with which to check for raft core panics
+const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -89,6 +93,7 @@ impl State {
         handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         system_clock: SystemClock,
+        failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
         let raft_config = Self::build_raft_config(config);
         let net = GossipNetwork::empty(network_queue);
@@ -100,11 +105,13 @@ impl State {
             handshake_manager_queue,
             system_bus,
             system_clock,
+            failure_send,
         )
         .await
     }
 
     /// The base constructor allowing for the variadic constructors above
+    #[allow(clippy::too_many_arguments)]
     pub async fn new_with_network<N: P2PNetworkFactory>(
         config: &RelayerConfig,
         raft_config: RaftClientConfig,
@@ -113,6 +120,7 @@ impl State {
         handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         system_clock: SystemClock,
+        failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
         // Open up the DB
         let db_config = DbConfig::new_with_path(&config.db_path);
@@ -147,7 +155,8 @@ impl State {
         let this =
             Self { allow_local: config.allow_local, db, bus: system_bus, notifications, raft };
         this.setup_node_metadata(config).await?;
-        this.setup_learner_promotion_timer(system_clock).await?;
+        this.setup_learner_promotion_timer(&system_clock).await?;
+        this.setup_core_panic_timer(&system_clock, failure_send).await?;
 
         Ok(this)
     }
@@ -173,7 +182,7 @@ impl State {
     }
 
     /// Setup a timer in the system clock to promote learners
-    async fn setup_learner_promotion_timer(&self, clock: SystemClock) -> Result<(), StateError> {
+    async fn setup_learner_promotion_timer(&self, clock: &SystemClock) -> Result<(), StateError> {
         let duration = Duration::from_millis(LEARNER_PROMOTION_MS);
         let name = "learner-promotion-loop".to_string();
         let client = self.raft.clone();
@@ -181,6 +190,32 @@ impl State {
             .add_async_timer(name, duration, move || {
                 let client = client.clone();
                 async move { client.try_promote_learners().await.map_err(|e| e.to_string()) }
+            })
+            .await
+            .map_err(StateError::Clock)
+    }
+
+    /// Setup a timer to check for core panics
+    async fn setup_core_panic_timer(
+        &self,
+        clock: &SystemClock,
+        failure_send: WorkerFailureSender,
+    ) -> Result<(), StateError> {
+        let duration = Duration::from_millis(PANIC_CHECK_MS);
+        let name = "raft-panic-check-loop".to_string();
+        let client = self.raft.clone();
+        clock
+            .add_async_timer(name, duration, move || {
+                let client = client.clone();
+                let chan = failure_send.clone();
+                async move {
+                    if client.raft_core_panicked().await {
+                        error!("raft core panicked, sending failure signal");
+                        chan.send(()).await.expect("could not send state failure signal");
+                    }
+
+                    Ok(())
+                }
             })
             .await
             .map_err(StateError::Clock)

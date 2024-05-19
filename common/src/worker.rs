@@ -7,8 +7,17 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::error;
+
+/// A channel for sending worker failures
+pub type WorkerFailureSender = Sender<()>;
+/// A channel for receiving worker failures
+pub type WorkerFailureReceiver = Receiver<()>;
+/// Create a new worker failure channel
+pub fn new_worker_failure_channel() -> (WorkerFailureSender, WorkerFailureReceiver) {
+    channel(1 /* buffer */)
+}
 
 /// The Worker trait abstracts over worker functionality with a series of
 /// callbacks that allow a worker to be started, cleaned up, and restarted
@@ -60,7 +69,7 @@ pub trait Worker {
 ///
 /// A worker may have more than one join handle in the case that it spawns
 /// multiple sub-worker threads. Each will be individually watched
-pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &Sender<()>) {
+pub fn watch_worker<W: Worker>(worker: &mut W, failure_channel: &WorkerFailureSender) {
     let watcher_name = format!("{}-watcher", worker.name());
     for join_handle in worker.join() {
         let worker_name = worker.name();
