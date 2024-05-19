@@ -16,7 +16,7 @@ use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
     default_wrapper::{default_option, DefaultOption},
     types::Price,
-    worker::Worker,
+    worker::{new_worker_failure_channel, Worker},
 };
 use config::RelayerConfig;
 use ed25519_dalek::Keypair;
@@ -264,6 +264,7 @@ impl MockNodeController {
         let handshake_queue = self.handshake_queue.0.clone();
         let bus = self.bus.clone();
         let clock = self.clock.clone();
+        let (failure_send, failure_recv) = new_worker_failure_channel();
 
         let state = run_fut(State::new(
             &self.config,
@@ -272,8 +273,10 @@ impl MockNodeController {
             handshake_queue,
             bus,
             clock,
+            failure_send,
         ))
         .expect("Failed to create state instance");
+        std::mem::forget(failure_recv); // forget to avoid closing
 
         self.state = Some(state);
         self

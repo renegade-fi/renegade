@@ -19,7 +19,7 @@ use api_server::worker::{ApiServer, ApiServerConfig};
 use arbitrum_client::client::{ArbitrumClient, ArbitrumClientConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::default_wrapper::default_option;
-use common::worker::{watch_worker, Worker};
+use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use constants::VERSION;
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
@@ -41,10 +41,7 @@ use system_bus::SystemBus;
 use error::CoordinatorError;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
-use tokio::{
-    select,
-    sync::{mpsc, watch},
-};
+use tokio::{select, sync::watch};
 use tracing::info;
 use util::{err_str, telemetry::configure_telemetry};
 
@@ -116,6 +113,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (task_sender, task_receiver) = new_task_driver_queue();
 
     // Construct a global state
+    let (state_failure_send, mut state_failure_recv) = new_worker_failure_channel();
     let global_state = State::new(
         &args,
         network_sender.clone(),
@@ -123,6 +121,7 @@ async fn main() -> Result<(), CoordinatorError> {
         handshake_worker_sender.clone(),
         system_bus.clone(),
         system_clock,
+        state_failure_send,
     )
     .await?;
 
@@ -173,7 +172,7 @@ async fn main() -> Result<(), CoordinatorError> {
     task_driver.start().expect("failed to start task driver");
 
     let (task_driver_failure_sender, mut task_driver_failure_receiver) =
-        mpsc::channel(1 /* buffer_size */);
+        new_worker_failure_channel();
     watch_worker::<TaskDriver>(&mut task_driver, &task_driver_failure_sender);
 
     // Start the proof generation module
@@ -186,7 +185,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .expect("failed to build proof generation module");
     proof_manager.start().expect("failed to start proof generation module");
     let (proof_manager_failure_sender, mut proof_manager_failure_receiver) =
-        mpsc::channel(1 /* buffer_size */);
+        new_worker_failure_channel();
     watch_worker::<ProofManager>(&mut proof_manager, &proof_manager_failure_sender);
 
     // Start the network manager
@@ -209,8 +208,7 @@ async fn main() -> Result<(), CoordinatorError> {
         NetworkManager::new(network_manager_config).await.expect("failed to build network manager");
     network_manager.start().expect("failed to start network manager");
 
-    let (network_failure_sender, mut network_failure_receiver) =
-        mpsc::channel(1 /* buffer size */);
+    let (network_failure_sender, mut network_failure_receiver) = new_worker_failure_channel();
     watch_worker::<NetworkManager>(&mut network_manager, &network_failure_sender);
 
     // Start the gossip server
@@ -230,8 +228,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .await
     .expect("failed to build gossip server");
     gossip_server.start().expect("failed to start gossip server");
-    let (gossip_failure_sender, mut gossip_failure_receiver) =
-        mpsc::channel(1 /* buffer size */);
+    let (gossip_failure_sender, mut gossip_failure_receiver) = new_worker_failure_channel();
     watch_worker::<GossipServer>(&mut gossip_server, &gossip_failure_sender);
 
     // Once the minimal set of workers are running, run the setup task
@@ -258,8 +255,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .await
     .expect("failed to build handshake manager");
     handshake_manager.start().expect("failed to start handshake manager");
-    let (handshake_failure_sender, mut handshake_failure_receiver) =
-        mpsc::channel(1 /* buffer size */);
+    let (handshake_failure_sender, mut handshake_failure_receiver) = new_worker_failure_channel();
     watch_worker::<HandshakeManager>(&mut handshake_manager, &handshake_failure_sender);
 
     // Start the price reporter manager
@@ -281,7 +277,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .expect("failed to build price reporter manager");
     price_reporter_manager.start().expect("failed to start price reporter manager");
     let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
-        mpsc::channel(1 /* buffer size */);
+        new_worker_failure_channel();
     watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
 
     // Start the on-chain event listener
@@ -299,7 +295,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .expect("failed to build on-chain event listener");
     chain_listener.start().expect("failed to start on-chain event listener");
     let (chain_listener_failure_sender, mut chain_listener_failure_receiver) =
-        mpsc::channel(1 /* buffer_size */);
+        new_worker_failure_channel();
     watch_worker::<OnChainEventListener>(&mut chain_listener, &chain_listener_failure_sender);
 
     // Start the API server
@@ -317,7 +313,7 @@ async fn main() -> Result<(), CoordinatorError> {
     .await
     .expect("failed to build api server");
     api_server.start().expect("failed to start api server");
-    let (api_failure_sender, mut api_failure_receiver) = mpsc::channel(1 /* buffer_size */);
+    let (api_failure_sender, mut api_failure_receiver) = new_worker_failure_channel();
     watch_worker::<ApiServer>(&mut api_server, &api_failure_sender);
 
     // Await module termination, and send a cancel signal for any modules that
@@ -325,6 +321,9 @@ async fn main() -> Result<(), CoordinatorError> {
     let recovery_loop = || async {
         loop {
             select! {
+                _ = state_failure_recv.recv() => {
+                    return Err(CoordinatorError::State("state submodule failed".to_string()));
+                },
                 _ = task_driver_failure_receiver.recv() => {
                     task_driver = recover_worker(task_driver)?;
                 }

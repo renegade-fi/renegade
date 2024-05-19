@@ -181,6 +181,14 @@ impl RaftClient {
         metrics.membership_config.membership().learner_ids().collect()
     }
 
+    /// Check for a panic in the raft core
+    ///
+    /// Returns `true` if the raft core panicked
+    pub async fn raft_core_panicked(&self) -> bool {
+        // The raft state method will return a `Fatal` error iff the core panicked
+        self.raft.with_raft_state(|_| ()).await.is_err()
+    }
+
     /// Shutdown the raft
     pub async fn shutdown(&self) -> Result<(), ReplicationV2Error> {
         self.raft.shutdown().await.map_err(err_str!(ReplicationV2Error::RaftTeardown))
