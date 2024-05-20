@@ -59,8 +59,8 @@ struct Cli {
     /// The take rate of this relayer on a managed match, i.e. the amount of the received asset 
     /// that the relayer takes as a fee
     /// 
-    /// Defaults to 20 basis points
-    #[clap(long, value_parser, default_value = "0.002")]
+    /// Defaults to 8 basis points
+    #[clap(long, value_parser, default_value = "0.0008")]
     pub match_take_rate: f64,
     /// The mutual exclusion list for matches, two wallets in this list will never be matched internally by the node
     #[clap(long, value_parser, value_delimiter=' ', num_args=0..)]
