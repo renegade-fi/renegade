@@ -5,7 +5,7 @@ use openraft::{LogId, SnapshotMeta, Vote};
 use util::res_some;
 
 use crate::{
-    replicationv2::{Entry, Node, NodeId},
+    replication::{Entry, Node, NodeId},
     storage::{cursor::DbCursor, error::StorageError},
     RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
 };
@@ -203,7 +203,7 @@ mod test {
 
     use openraft::{EntryPayload, LeaderId, LogId, RaftLogId};
 
-    use crate::{replicationv2::Entry, test_helpers::mock_db};
+    use crate::{replication::Entry, test_helpers::mock_db};
 
     /// Get an empty log entry with the given index
     fn empty_entry(idx: u64, term: u64, node_id: u64) -> Entry {

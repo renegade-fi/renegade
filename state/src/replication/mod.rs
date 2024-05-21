@@ -317,7 +317,7 @@ mod test {
     use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
     use rand::{seq::IteratorRandom, thread_rng};
 
-    use crate::{replicationv2::RaftNode, Proposal, StateTransition};
+    use crate::{replication::RaftNode, Proposal, StateTransition};
 
     use super::{
         log_store::LogStore,

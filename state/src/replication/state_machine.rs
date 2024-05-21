@@ -14,7 +14,7 @@ use crate::{
     applicator::{return_type::ApplicatorReturnType, StateApplicator},
     error::StateError,
     notifications::OpenNotifications,
-    replicationv2::error::new_apply_error,
+    replication::error::new_apply_error,
     storage::db::DB,
     Proposal,
 };
@@ -232,7 +232,7 @@ mod test {
     use common::types::wallet_mocks::mock_empty_wallet;
     use openraft::{storage::RaftStateMachine, Entry, EntryPayload, LeaderId, LogId};
 
-    use crate::{replicationv2::test_helpers::mock_state_machine, Proposal, StateTransition};
+    use crate::{replication::test_helpers::mock_state_machine, Proposal, StateTransition};
 
     /// Tests applying a log with a waiter on the state
     #[tokio::test]
