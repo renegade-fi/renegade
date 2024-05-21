@@ -6,7 +6,7 @@ use std::error::Error;
 use system_clock::SystemClockError;
 
 use crate::{
-    applicator::error::StateApplicatorError, replicationv2::error::ReplicationV2Error,
+    applicator::error::StateApplicatorError, replication::error::ReplicationV2Error,
     storage::error::StorageError,
 };
 

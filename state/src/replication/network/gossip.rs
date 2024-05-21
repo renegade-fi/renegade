@@ -7,7 +7,7 @@ use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
 use openraft::error::{NetworkError, RPCError, RaftError};
 use util::err_str;
 
-use crate::replicationv2::{
+use crate::replication::{
     error::{new_network_error, ReplicationV2Error},
     Node, NodeId,
 };

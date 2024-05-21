@@ -30,7 +30,7 @@ use util::err_str;
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
     notifications::{OpenNotifications, ProposalWaiter},
-    replicationv2::{
+    replication::{
         get_raft_id,
         network::{gossip::GossipNetwork, P2PNetworkFactory},
         raft::{RaftClient, RaftClientConfig},

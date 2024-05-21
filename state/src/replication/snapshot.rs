@@ -287,7 +287,7 @@ mod tests {
     use libmdbx::Error as MdbxError;
 
     use crate::{
-        replicationv2::test_helpers::mock_state_machine, storage::error::StorageError,
+        replication::test_helpers::mock_state_machine, storage::error::StorageError,
         test_helpers::mock_db, WALLETS_TABLE,
     };
 
