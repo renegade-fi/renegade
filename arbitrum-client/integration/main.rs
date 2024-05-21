@@ -118,6 +118,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             darkpool_addr,
             arb_priv_key,
             rpc_url: test_args.rpc_url,
+            block_polling_interval_ms: 100,
         }))
         .unwrap();
 

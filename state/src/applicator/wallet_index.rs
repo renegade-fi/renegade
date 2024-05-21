@@ -117,7 +117,6 @@ impl StateApplicator {
             tx.mark_order_local(&id)?;
             tx.write_order_priority(&net_order)?;
             tx.write_order(&net_order)?;
-            tx.update_order_nullifier_set(&id, nullifier)?;
         }
 
         Ok(())

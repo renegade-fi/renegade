@@ -177,6 +177,7 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
         darkpool_addr,
         arb_priv_key,
         rpc_url: test_args.devnet_url.clone(),
+        block_polling_interval_ms: 100,
     }))
     .unwrap()
 }

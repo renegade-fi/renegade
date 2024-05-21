@@ -24,7 +24,8 @@ pub enum PriceReporterJob {
     /// If using the external executor, this will send a subscription request
     /// for the pair across all exchanges.
     ///
-    /// If using the native executor, this will create and start a new PriceReporter for the pair.
+    /// If using the native executor, this will create and start a new
+    /// PriceReporter for the pair.
     ///
     /// If the PriceReporter does not yet exist, spawn it and begin publication
     /// to the global system bus. If the PriceReporter already exists and id
