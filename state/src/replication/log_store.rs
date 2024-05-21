@@ -12,7 +12,7 @@ use openraft::storage::LogFlushed;
 use openraft::{storage::RaftLogStorage, RaftLogReader};
 use openraft::{LogId, LogState, StorageError as RaftStorageError, Vote};
 
-use crate::replicationv2::error::new_log_read_error;
+use crate::replication::error::new_log_read_error;
 use crate::storage::db::DB;
 use crate::storage::error::StorageError;
 use crate::storage::tx::raft_log::{lsn_to_key, parse_lsn};

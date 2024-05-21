@@ -24,14 +24,14 @@ use common::types::{
 };
 use notifications::ProposalId;
 #[cfg(not(feature = "mocks"))]
-use replicationv2::network::gossip::GossipNetwork;
-use replicationv2::{NodeId, RaftNode};
+use replication::network::gossip::GossipNetwork;
+use replication::{NodeId, RaftNode};
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
 mod interface;
 pub mod notifications;
-pub mod replicationv2;
+pub mod replication;
 pub mod storage;
 pub mod tui;
 
@@ -191,7 +191,7 @@ pub mod test_helpers {
 
     use crate::{
         notifications::OpenNotifications,
-        replicationv2::{
+        replication::{
             get_raft_id,
             raft::RaftClientConfig,
             test_helpers::{MockRaft, MockRaftNode},

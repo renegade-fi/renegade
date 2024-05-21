@@ -15,7 +15,7 @@ use util::runtime::block_current;
 
 use crate::{
     error::StateError,
-    replicationv2::{get_raft_id, RaftNode},
+    replication::{get_raft_id, RaftNode},
     State,
 };
 

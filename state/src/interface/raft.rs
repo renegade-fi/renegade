@@ -7,7 +7,7 @@ use util::err_str;
 
 use crate::{
     error::StateError,
-    replicationv2::{
+    replication::{
         get_raft_id,
         network::{RaftRequest, RaftResponse},
         Node, NodeId, RaftNode,

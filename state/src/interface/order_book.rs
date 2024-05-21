@@ -261,7 +261,6 @@ impl State {
             order.local = false;
             tx.write_order_priority(&order)?;
             tx.write_order(&order)?;
-            tx.update_order_nullifier_set(&order.id, order.public_share_nullifier)?;
 
             Ok(())
         })
