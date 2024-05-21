@@ -28,7 +28,7 @@ pub async fn node_setup(
         .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
 
     // Wait for the task driver to index the task then request a notification
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
     let (recv, job) = new_task_notification(id);
     task_queue
         .send(job)

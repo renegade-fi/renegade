@@ -8,8 +8,6 @@
 
 use common::types::mpc_preprocessing::PairwiseOfflineSetup;
 
-use super::error::StateApplicatorError;
-
 /// The return type from the Applicator
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -18,8 +16,6 @@ pub enum ApplicatorReturnType {
     MpcPrep(PairwiseOfflineSetup),
     /// No return value
     None,
-    /// The application of the proposal failed in an expected manner
-    Rejected(StateApplicatorError),
 }
 
 // Downcasting conversions

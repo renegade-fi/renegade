@@ -25,6 +25,26 @@ const PENDING_STATE: &str = "Pending";
 /// Error emitted when a key cannot be found for a task
 const ERR_NO_KEY: &str = "key not found for task";
 
+// -----------
+// | Helpers |
+// -----------
+
+/// Error message emitted when a task queue is already paused
+fn already_paused(id: TaskQueueKey) -> String {
+    format!("task queue {id} already paused")
+}
+
+/// Error message emitted when the applicator attempts to preempt a conflicting
+/// committed task
+fn already_committed(id: TaskQueueKey) -> String {
+    format!("cannot preempt committed task on queue: {id}")
+}
+
+/// Error message emitted when a task queue is paused
+fn queue_paused(id: TaskQueueKey) -> String {
+    format!("task queue {id} is paused")
+}
+
 /// Construct the running state for a newly started task
 fn new_running_state() -> QueuedTaskState {
     QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false }
@@ -66,7 +86,7 @@ impl StateApplicator {
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
         if tx.is_queue_paused(&key)? {
-            return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::QueuePaused(key)));
+            return Err(StateApplicatorError::Rejected(queue_paused(key)));
         }
 
         // Pop the task from the queue and add it to history
@@ -112,7 +132,7 @@ impl StateApplicator {
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
         if tx.is_queue_paused(&key)? {
-            return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::QueuePaused(key)));
+            return Err(StateApplicatorError::Rejected(already_paused(key)));
         }
 
         tx.transition_task(&key, state)?;
@@ -125,21 +145,39 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
+    /// Preempt all queues on a given task
+    ///
+    /// Multiple queues may be preempted at once to give "all or none" locking
+    /// semantics to the caller
+    pub fn preempt_task_queues(
+        &self,
+        keys: &[TaskQueueKey],
+        task: &QueuedTask,
+    ) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+        for key in keys.iter() {
+            self.preempt_task_queue(*key, task, &tx)?;
+        }
+
+        tx.commit()?;
+        Ok(ApplicatorReturnType::None)
+    }
+
     /// Preempt the given task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
     pub fn preempt_task_queue(
         &self,
         key: TaskQueueKey,
         task: &QueuedTask,
+        tx: &StateTxn<'_, RW>,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
-
         // Stop any running tasks if possible
         let current_running_task = tx.get_current_running_task(&key)?;
         if let Some(task) = current_running_task {
             if task.state.is_committed() {
                 error!("cannot preempt committed task: {}", task.id);
-                return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::Preemption));
+                let err_msg = already_committed(key);
+                return Err(StateApplicatorError::Rejected(err_msg));
             }
 
             // Otherwise transition the task to queued
@@ -150,14 +188,27 @@ impl StateApplicator {
         // If the queue is already paused, a preemptive task is already
         // running, with which we should not conflict
         if tx.is_queue_paused(&key)? {
-            return Ok(ApplicatorReturnType::Rejected(StateApplicatorError::Preemption));
+            return Err(StateApplicatorError::Rejected(already_paused(key)));
         }
 
         // Pause the queue
         tx.pause_task_queue(&key)?;
         tx.add_task_front(&key, task)?;
-        tx.commit()?;
         self.publish_task_updates(key, task);
+        Ok(ApplicatorReturnType::None)
+    }
+
+    /// Resume multiple task queues
+    pub fn resume_task_queues(
+        &self,
+        keys: &[TaskQueueKey],
+        success: bool,
+    ) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+        for key in keys.iter() {
+            self.resume_task_queue(*key, success, &tx)?;
+        }
+        tx.commit()?;
         Ok(ApplicatorReturnType::None)
     }
 
@@ -167,20 +218,19 @@ impl StateApplicator {
         &self,
         key: TaskQueueKey,
         success: bool,
+        tx: &StateTxn<'_, RW>,
     ) -> Result<ApplicatorReturnType> {
-        let tx = self.db().new_write_tx()?;
-
         // Resume the queue, and pop the preemptive task that was added when the queue
         // was paused
         tx.resume_task_queue(&key)?;
         let mut task = tx.pop_task(&key)?.expect("expected preemptive task");
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
-        Self::maybe_append_historical_task(key, task.clone(), &tx)?;
+        Self::maybe_append_historical_task(key, task.clone(), tx)?;
 
         // If the task failed, clear the rest of the queue, as subsequent tasks will
         // likely have invalid state
         if !success {
-            self.clear_task_queue(key, &tx)?;
+            self.clear_task_queue(key, tx)?;
         }
 
         // Start running the first task if it exists
@@ -192,15 +242,13 @@ impl StateApplicator {
 
             // This will resume the task as if it is starting anew, regardless of whether
             // the task was previously running
-            self.maybe_start_task(task, &tx)?;
+            self.maybe_start_task(task, tx)?;
         }
 
         // Possibly run the matching engine on the wallet
-        if Self::should_run_matching_engine(&tasks, &task, &tx)? {
-            self.run_matching_engine_on_wallet(key, &tx)?;
+        if Self::should_run_matching_engine(&tasks, &task, tx)? {
+            self.run_matching_engine_on_wallet(key, tx)?;
         }
-
-        tx.commit()?;
 
         self.publish_task_updates(key, &task);
         Ok(ApplicatorReturnType::None)
@@ -342,7 +390,10 @@ mod test {
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
 
     use crate::{
-        applicator::{task_queue::PENDING_STATE, test_helpers::mock_applicator_with_task_queue},
+        applicator::{
+            error::StateApplicatorError, task_queue::PENDING_STATE,
+            test_helpers::mock_applicator_with_task_queue,
+        },
         storage::db::DB,
     };
 
@@ -654,7 +705,7 @@ mod test {
 
         // Pause the queue
         let preemptive_task = mock_preemptive_task(task_queue_key);
-        applicator.preempt_task_queue(task_queue_key, &preemptive_task).unwrap();
+        applicator.preempt_task_queues(&[task_queue_key], &preemptive_task).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
@@ -679,7 +730,7 @@ mod test {
         assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
-        applicator.resume_task_queue(task_queue_key, true /* success */).unwrap();
+        applicator.resume_task_queues(&[task_queue_key], true /* success */).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let task = tx.get_current_running_task(&task_queue_key).unwrap();
@@ -720,7 +771,7 @@ mod test {
 
         // Pause the queue
         let preemptive_task = mock_preemptive_task(task_queue_key);
-        applicator.preempt_task_queue(task_queue_key, &preemptive_task).unwrap();
+        applicator.preempt_task_queues(&[task_queue_key], &preemptive_task).unwrap();
 
         // Ensure the queue was paused
         let tx = applicator.db().new_read_tx().unwrap();
@@ -739,7 +790,7 @@ mod test {
         assert_eq!(tasks[1].state, QueuedTaskState::Queued);
 
         // Resume the queue and ensure the task is started
-        applicator.resume_task_queue(task_queue_key, true /* success */).unwrap();
+        applicator.resume_task_queues(&[task_queue_key], true /* success */).unwrap();
 
         let tx = applicator.db().new_read_tx().unwrap();
         let task = tx.get_current_running_task(&task_queue_key).unwrap();
@@ -755,5 +806,104 @@ mod test {
         } else {
             panic!("Expected a Run task job");
         }
+    }
+
+    /// Tests preempting and resuming multiple task queues successfully
+    #[test]
+    fn test_preempt_resume_multiple() {
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        let queue_key1 = TaskQueueKey::new_v4();
+        let queue_key2 = TaskQueueKey::new_v4();
+
+        // Add a task to the second queue and begin running it
+        let mut task = mock_preemptive_task(queue_key2);
+        task.executor = peer_id;
+        let task_id = task.id;
+        applicator.append_task(&task).unwrap();
+
+        // Start the task
+        let tx = applicator.db().new_write_tx().unwrap();
+        let state = QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false };
+        tx.transition_task(&queue_key2, state).unwrap();
+        tx.commit().unwrap();
+
+        // Preempt both queues
+        let preemptive_task = mock_preemptive_task(queue_key1);
+        applicator.preempt_task_queues(&[queue_key1, queue_key2], &preemptive_task).unwrap();
+
+        // Ensure both queues are paused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused1 = tx.is_queue_paused(&queue_key1).unwrap();
+        let is_paused2 = tx.is_queue_paused(&queue_key2).unwrap();
+        tx.commit().unwrap();
+
+        assert!(is_paused1);
+        assert!(is_paused2);
+
+        // Ensure the existing task was transitioned to queued
+        let tx = applicator.db().new_read_tx().unwrap();
+        let tasks = tx.get_queued_tasks(&queue_key2).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(tasks.len(), 2); // Includes the preemptive task
+        assert_eq!(tasks[0].state, QueuedTaskState::Preemptive);
+        assert_eq!(tasks[1].state, QueuedTaskState::Queued);
+
+        // Resume both queues
+        applicator.resume_task_queues(&[queue_key1, queue_key2], true /* success */).unwrap();
+
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task = tx.get_current_running_task(&queue_key2).unwrap();
+        tx.commit().unwrap();
+
+        assert!(task.is_some());
+        assert_eq!(task.unwrap().id, task_id);
+
+        assert!(!task_recv.is_empty());
+        let job = task_recv.recv().unwrap();
+        if let TaskDriverJob::Run(queued_task) = job {
+            assert_eq!(queued_task.id, task_id);
+        } else {
+            panic!("Expected a Run task job");
+        }
+    }
+
+    /// Test the case in which preempting one queue of multiple fails
+    #[test]
+    fn test_preempt_multiple_fail() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        let queue_key1 = TaskQueueKey::new_v4();
+        let queue_key2 = TaskQueueKey::new_v4();
+
+        // Add a preemptive task to the first queue
+        let task = mock_preemptive_task(queue_key1);
+        applicator.preempt_task_queues(&[queue_key1], &task).unwrap();
+
+        // Try to preempt both task queues
+        let new_task = mock_preemptive_task(queue_key2);
+        let result = applicator.preempt_task_queues(&[queue_key1, queue_key2], &new_task);
+        assert!(matches!(result, Err(StateApplicatorError::Rejected(..))));
+
+        // Verify that the task that _did_ have an existing preemptive task is still
+        // paused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused1 = tx.is_queue_paused(&queue_key1).unwrap();
+        tx.commit().unwrap();
+        assert!(is_paused1);
+
+        // Verify that the task queue that did not originally have a preemptive task in
+        // it remains unpaused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused2 = tx.is_queue_paused(&queue_key2).unwrap();
+        tx.commit().unwrap();
+        assert!(!is_paused2);
     }
 }

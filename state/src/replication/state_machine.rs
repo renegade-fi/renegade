@@ -11,7 +11,7 @@ use tokio::fs::File;
 use util::{err_str, res_some};
 
 use crate::{
-    applicator::{return_type::ApplicatorReturnType, StateApplicator},
+    applicator::{error::StateApplicatorError, StateApplicator},
     error::StateError,
     notifications::OpenNotifications,
     replication::error::new_apply_error,
@@ -153,10 +153,12 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                     let res = self.applicator.handle_state_transition(transition);
 
                     match res {
-                        Ok(ApplicatorReturnType::Rejected(err)) => {
+                        Err(StateApplicatorError::Rejected(msg)) => {
                             // If the state machine rejected the state transition, notify the client
                             // with an error state
-                            self.notifications.notify(id, Err(StateError::Applicator(err))).await;
+                            self.notifications
+                                .notify(id, Err(StateError::TransitionRejected(msg)))
+                                .await;
                         },
                         Err(err) => {
                             // If the state machine failed to apply the state transition, notify the

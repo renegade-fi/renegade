@@ -84,9 +84,11 @@ impl StateApplicator {
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)
             },
-            StateTransition::PreemptTaskQueue { key, task } => self.preempt_task_queue(key, &task),
-            StateTransition::ResumeTaskQueue { key, success } => {
-                self.resume_task_queue(key, success)
+            StateTransition::PreemptTaskQueues { keys, task } => {
+                self.preempt_task_queues(&keys, &task)
+            },
+            StateTransition::ResumeTaskQueues { keys, success } => {
+                self.resume_task_queues(&keys, success)
             },
             StateTransition::AddMpcPreprocessingValues { cluster, values } => {
                 self.add_preprocessing_values(&cluster, &values)

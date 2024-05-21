@@ -29,6 +29,8 @@ pub enum StateError {
     Runtime(String),
     /// An error deserializing a message
     Serde(String),
+    /// A state transition was rejected
+    TransitionRejected(String),
 }
 
 impl Display for StateError {

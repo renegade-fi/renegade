@@ -13,6 +13,11 @@ pub enum StateApplicatorError {
     EnqueueTask(String),
     /// Missing keys in the database necessary for a tx
     MissingEntry(&'static str),
+    /// An error indicating a state transition has been rejected
+    ///
+    /// This error will be sent directly to the listeners on a proposal and not
+    /// forwarded to the raft core
+    Rejected(String),
     /// An error interacting with storage
     Storage(StorageError),
     /// A task queue is empty when it should not be
