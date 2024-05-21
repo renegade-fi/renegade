@@ -272,7 +272,7 @@ fn find_or_augment_balance(
                 .balances
                 .iter()
                 .enumerate()
-                .find(|(_ind, balance)| balance.mint.eq(&BigUint::from(0u8)))
+                .find(|(_ind, balance)| balance.is_zero())
                 .map(|(ind, _balance)| ind)?;
 
             wallet.balances[empty_balance_ind] = Balance::new_from_mint(mint.clone());
