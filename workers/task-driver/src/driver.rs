@@ -255,8 +255,12 @@ impl TaskExecutor {
         task: TaskDescriptor,
     ) -> Result<(), TaskDriverError> {
         // Pause the queues for the affected local wallets
-        for wallet_id in wallet_ids.iter() {
-            self.state().pause_task_queue(wallet_id, task_id, task.clone()).await?;
+        if !wallet_ids.is_empty() {
+            let waiter = self
+                .state()
+                .pause_multiple_task_queues(wallet_ids.clone(), task_id, task.clone())
+                .await?;
+            waiter.await?;
         }
 
         // Add the task to the preemptive tasks list so that notification requests can
@@ -268,12 +272,12 @@ impl TaskExecutor {
             error!("error running immediate task: {e:?}");
         }
 
-        // Unpause the queues for the affected local wallets
-        for wallet_id in wallet_ids.iter() {
-            self.state().resume_task_queue(wallet_id, res.is_ok()).await?;
+        // Unpause the queues for the affected local wallets and remove
+        // from the preemptive tasks list
+        if !wallet_ids.is_empty() {
+            self.state().resume_multiple_task_queues(wallet_ids, res.is_ok()).await?;
         }
 
-        // Remove from the preemptive tasks list
         self.preemptive_tasks.write().unwrap().remove(&task_id);
         Ok(())
     }

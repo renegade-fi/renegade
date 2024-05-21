@@ -167,15 +167,24 @@ impl State {
     }
 
     /// Pause a task queue placing the given task at the front of the queue
-    #[instrument(name = "propose_preempt_task_queue", skip_all, err, fields(task_id, task = %task.display_description()))]
     pub async fn pause_task_queue(
         &self,
         key: &TaskQueueKey,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
     ) -> Result<ProposalWaiter, StateError> {
-        // Pick a task ID and create a task from the description
-        backfill_trace_field("task_id", task_id.to_string());
+        self.pause_multiple_task_queues(vec![*key], task_id, task).await
+    }
+
+    /// Pause multiple task queues, placing the given task at the front of each
+    /// queue
+    #[instrument(name = "propose_preempt_task_queues", skip_all, err, fields(queue_keys = ?keys, task_id = %task_id, task = %task.display_description()))]
+    pub async fn pause_multiple_task_queues(
+        &self,
+        keys: Vec<TaskQueueKey>,
+        task_id: TaskIdentifier,
+        task: TaskDescriptor,
+    ) -> Result<ProposalWaiter, StateError> {
         let self_id = self.get_peer_id().await?;
         let task = QueuedTask {
             id: task_id,
@@ -185,17 +194,26 @@ impl State {
             created_at: get_current_time_millis(),
         };
 
-        self.send_proposal(StateTransition::PreemptTaskQueue { key: *key, task }).await
+        self.send_proposal(StateTransition::PreemptTaskQueues { keys, task }).await
     }
 
     /// Resume a task queue
-    #[instrument(name = "propose_resume_task_queue", skip_all, err, fields(queue_key = %key))]
     pub async fn resume_task_queue(
         &self,
         key: &TaskQueueKey,
         success: bool,
     ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::ResumeTaskQueue { key: *key, success }).await
+        self.resume_multiple_task_queues(vec![*key], success).await
+    }
+
+    /// Resume multiple task queues
+    #[instrument(name = "propose_resume_task_queues", skip_all, err, fields(queue_keys = ?keys))]
+    pub async fn resume_multiple_task_queues(
+        &self,
+        keys: Vec<TaskQueueKey>,
+        success: bool,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::ResumeTaskQueues { keys, success }).await
     }
 }
 
