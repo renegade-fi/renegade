@@ -17,8 +17,10 @@ use crate::{
 
 use super::StateTxn;
 
-/// Error emitted when an order is not found in the book
-const ERR_ORDER_NOT_FOUND: &str = "Order not found";
+/// Create an order not found error
+fn order_not_found(id: &OrderIdentifier) -> StorageError {
+    StorageError::NotFound(format!("Order not found: {id}"))
+}
 
 // -----------
 // | Helpers |
@@ -78,9 +80,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         order_id: &OrderIdentifier,
     ) -> Result<OrderPriority, StorageError> {
         // Lookup the order info
-        let info = self
-            .get_order_info(order_id)?
-            .ok_or_else(|| StorageError::NotFound(ERR_ORDER_NOT_FOUND.to_string()))?;
+        let info = self.get_order_info(order_id)?.ok_or_else(|| order_not_found(order_id))?;
 
         let cluster_priority = self.get_cluster_priority(&info.cluster)?;
         let order_priority =
@@ -129,8 +129,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<NetworkOrder, StorageError> {
-        self.get_order_info(order_id)?
-            .ok_or(StorageError::NotFound(ERR_ORDER_NOT_FOUND.to_string()))
+        self.get_order_info(order_id)?.ok_or(order_not_found(order_id))
     }
 
     /// Get the priority of a cluster
@@ -150,6 +149,9 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Add an order to the order book
     pub fn write_order(&self, order: &NetworkOrder) -> Result<(), StorageError> {
+        // First, update the nullifier -> order mapping
+        self.update_order_nullifier_set(&order.id, order.public_share_nullifier)?;
+
         let key = order_key(&order.id);
 
         // The `NetworkOrder` type skips the validity proof witnesses when serializing
