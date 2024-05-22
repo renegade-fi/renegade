@@ -205,7 +205,7 @@ impl NetworkManagerExecutor {
                             let this = self.clone();
                             tokio::spawn(async move {
                                 if let Err(err) = this.handle_inbound_message(event).await {
-                                    info!("error in network manager: {:?}", err);
+                                    error!("error in network manager: {:?}", err);
                                 }
                             });
                         },

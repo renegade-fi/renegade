@@ -92,6 +92,11 @@ impl HeartbeatTimer {
             let wait_time =
                 if peers.is_empty() { wait_period } else { wait_period / (peers.len() as u32) };
 
+            // If there is only one peer (self), sleep the whole wait period
+            if peers.len() <= 1 {
+                thread::sleep(wait_time);
+            }
+
             for peer in peers.into_iter().filter(|peer| peer != &local_peer_id) {
                 if let Err(err) = job_queue.send(GossipServerJob::ExecuteHeartbeat(peer)) {
                     return Err(GossipError::TimerFailed(err.to_string()));

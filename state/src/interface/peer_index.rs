@@ -11,7 +11,6 @@ use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
-use util::runtime::block_current;
 
 use crate::{
     error::StateError,
@@ -192,28 +191,33 @@ impl State {
     /// Remove a peer that has been expired
     pub async fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<(), StateError> {
         let this = self.clone();
-        self.with_write_tx(move |tx| {
-            let my_cluster = tx.get_cluster_id()?;
-            if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
-                // If the peer is in the same cluster, remove it from the raft group
-                if peer_info.cluster_id == my_cluster {
-                    let raft_id = get_raft_id(&peer_id);
-                    block_current(this.raft.remove_peer(raft_id))?;
+        let is_cluster_peer = self
+            .with_write_tx(move |tx| {
+                let mut is_cluster_peer = false;
+                let my_cluster = tx.get_cluster_id()?;
+                if let Some(peer_info) = tx.get_peer_info(&peer_id)? {
+                    // If the peer is in the same cluster, it must be removed from the raft
+                    is_cluster_peer = peer_info.cluster_id == my_cluster;
+                    tx.remove_from_cluster(&peer_id, &peer_info.cluster_id)?;
+                    tx.remove_peer(&peer_id)?;
                 }
 
-                tx.remove_from_cluster(&peer_id, &peer_info.cluster_id)?;
-                tx.remove_peer(&peer_id)?;
-            }
+                // Commit and send a message to the bus
+                this.bus.publish(
+                    NETWORK_TOPOLOGY_TOPIC.to_string(),
+                    SystemBusMessage::PeerExpired { peer: peer_id },
+                );
 
-            // Commit and send a message to the bus
-            this.bus.publish(
-                NETWORK_TOPOLOGY_TOPIC.to_string(),
-                SystemBusMessage::PeerExpired { peer: peer_id },
-            );
+                Ok(is_cluster_peer)
+            })
+            .await?;
 
-            Ok(())
-        })
-        .await
+        if is_cluster_peer {
+            let raft_id = get_raft_id(&peer_id);
+            this.raft.remove_peer(raft_id).await?;
+        }
+
+        Ok(())
     }
 
     /// Record a successful heartbeat on a peer
