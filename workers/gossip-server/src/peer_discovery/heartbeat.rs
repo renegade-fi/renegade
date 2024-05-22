@@ -134,7 +134,7 @@ impl GossipProtocolExecutor {
         }
 
         // Remove expired peer from global state & DHT
-        info!("Expiring peer {peer_id}");
+        info!("Expiring peer {peer_id} last heartbeat was {last_heartbeat} seconds ago");
         self.global_state.remove_peer(peer_id).await?;
         self.network_channel
             .send(NetworkManagerJob::internal(NetworkManagerControlSignal::PeerExpired { peer_id }))
