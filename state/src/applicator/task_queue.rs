@@ -24,6 +24,10 @@ use super::{
 const PENDING_STATE: &str = "Pending";
 /// Error emitted when a key cannot be found for a task
 const ERR_NO_KEY: &str = "key not found for task";
+/// Metric describing the number of tasks in a task queue
+const TASK_QUEUE_LENGTH_METRIC: &str = "task_queue_length";
+/// Metric tag for the key of a task queue
+const QUEUE_KEY_METRIC_TAG: &str = "queue_key";
 
 // -----------
 // | Helpers |
@@ -50,6 +54,20 @@ fn new_running_state() -> QueuedTaskState {
     QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false }
 }
 
+/// Record the length of a task queue
+fn record_task_queue_length<T: TransactionKind>(key: &TaskQueueKey, tx: &StateTxn<'_, T>) {
+    let task_queue_length = match tx.get_queued_tasks(key) {
+        Ok(tasks) => tasks.len(),
+        Err(e) => {
+            error!("Error getting task queue length: {}", e);
+            return;
+        },
+    };
+
+    metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
+        .set(task_queue_length as f64);
+}
+
 impl StateApplicator {
     // ---------------------
     // | State Transitions |
@@ -71,6 +89,8 @@ impl StateApplicator {
             tx.transition_task(&queue_key, new_running_state())?;
             self.maybe_start_task(task, &tx)?;
         }
+
+        record_task_queue_length(&queue_key, &tx);
 
         tx.commit()?;
         self.publish_task_updates(queue_key, task);
@@ -112,6 +132,9 @@ impl StateApplicator {
             // Run the matching engine on all orders that are ready
             self.run_matching_engine_on_wallet(key, &tx)?;
         }
+
+        record_task_queue_length(&key, &tx);
+
         tx.commit()?;
 
         // Publish a completed message to the system bus
@@ -195,6 +218,7 @@ impl StateApplicator {
         tx.pause_task_queue(&key)?;
         tx.add_task_front(&key, task)?;
         self.publish_task_updates(key, task);
+        record_task_queue_length(&key, tx);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -251,6 +275,7 @@ impl StateApplicator {
         }
 
         self.publish_task_updates(key, &task);
+        record_task_queue_length(&key, tx);
         Ok(ApplicatorReturnType::None)
     }
 

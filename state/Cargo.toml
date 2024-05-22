@@ -53,6 +53,7 @@ tracing-slog = "0.2"
 tui = "0.19"
 tui-logger = "0.8"
 uuid = "1.1.2"
+metrics = { workspace = true }
 
 [dev-dependencies]
 multiaddr = "0.17"
