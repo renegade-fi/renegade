@@ -36,8 +36,10 @@ pub struct ArbitrumClientConfig {
     pub chain: Chain,
     /// HTTP-addressable RPC endpoint for the client to connect to
     pub rpc_url: String,
-    /// The private key of the account to use for signing transactions
-    pub arb_priv_key: LocalWallet,
+    /// The private keys of the accounts to use for signing transactions.
+    /// Multiple keys can be provided to mitigate nonce contention across a node
+    /// / cluster.
+    pub arb_priv_keys: Vec<LocalWallet>,
     /// The interval at which to poll for event filters and pending transactions
     pub block_polling_interval_ms: u64,
 }
@@ -58,9 +60,9 @@ impl ArbitrumClientConfig {
         }
     }
 
-    /// Constructs an RPC client capable of signing transactions from the
+    /// Constructs RPC clients capable of signing transactions from the
     /// configuration
-    async fn get_rpc_client(&self) -> Result<Arc<MiddlewareStack>, ArbitrumClientConfigError> {
+    async fn get_accounts(&self) -> Result<Vec<Arc<MiddlewareStack>>, ArbitrumClientConfigError> {
         let mut provider = Provider::<Http>::try_from(&self.rpc_url)
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?;
 
@@ -72,16 +74,18 @@ impl ArbitrumClientConfig {
             .map_err(|e| ArbitrumClientConfigError::RpcClientInitialization(e.to_string()))?
             .as_u64();
 
-        // Build the middleware stack
-        let wallet = self.arb_priv_key.clone().with_chain_id(chain_id);
-        let addr = wallet.address();
-        let middleware = provider
-            .wrap_into(|p| SignerMiddleware::new(p, wallet))
-            .wrap_into(|p| NonceManagerMiddleware::new(p, addr));
+        // Build the RPC clients
+        let accounts = self
+            .arb_priv_keys
+            .iter()
+            .map(|wallet| {
+                let account = wallet.clone().with_chain_id(chain_id);
+                let addr = account.address();
+                Arc::new(provider.clone().with_signer(account).nonce_manager(addr))
+            })
+            .collect();
 
-        let rpc_client = Arc::new(middleware);
-
-        Ok(rpc_client)
+        Ok(accounts)
     }
 
     /// Parses the darkpool proxy address from the configuration,
@@ -90,26 +94,15 @@ impl ArbitrumClientConfig {
         Address::from_str(&self.darkpool_addr)
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
     }
-
-    /// Constructs a [`DarkpoolContract`] instance from the configuration,
-    /// which provides strongly-typed, RPC-client-aware bindings for the
-    /// darkpool contract methods.
-    pub async fn construct_contract_instance(
-        &self,
-    ) -> Result<DarkpoolContract<MiddlewareStack>, ArbitrumClientConfigError> {
-        let rpc_client = self.get_rpc_client().await?;
-        let contract_address = self.get_darkpool_address()?;
-        let instance = DarkpoolContract::new(contract_address, rpc_client);
-        Ok(instance)
-    }
 }
 
 /// The Arbitrum client, which provides a higher-level interface to the darkpool
 /// contract for Renegade-specific access patterns.
 #[derive(Clone)]
 pub struct ArbitrumClient {
-    /// The darkpool contract instance, used to make calls to the darkpool
-    pub darkpool_contract: DarkpoolContract<MiddlewareStack>,
+    /// A list of darkpool contract clients, each configured with a different
+    /// Arbitrum account as the signer
+    darkpool_clients: Vec<DarkpoolContract<MiddlewareStack>>,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,
 }
@@ -117,15 +110,44 @@ pub struct ArbitrumClient {
 impl ArbitrumClient {
     /// Constructs a new Arbitrum client from the given configuration
     pub async fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
-        let darkpool_contract = config.construct_contract_instance().await?;
+        let darkpool_address = config.get_darkpool_address()?;
+        let darkpool_clients = config
+            .get_accounts()
+            .await?
+            .into_iter()
+            .map(|account| DarkpoolContract::new(darkpool_address, account))
+            .collect();
         let deploy_block = config.get_deploy_block();
 
-        Ok(Self { darkpool_contract, deploy_block })
+        Ok(Self { darkpool_clients, deploy_block })
     }
 
-    /// Get a reference to the underlying RPC client
+    /// Get a darkpool contract client
+    pub fn get_darkpool_client(&self) -> DarkpoolContract<MiddlewareStack> {
+        #[cfg(feature = "rand")]
+        {
+            use rand::{seq::SliceRandom, thread_rng};
+            self.darkpool_clients
+                .choose(&mut thread_rng())
+                .expect("no darkpool clients configured")
+                .clone()
+        }
+
+        #[cfg(not(feature = "rand"))]
+        {
+            // We generally always want to select a Darkpool contract client randomly, but
+            // the contracts repo also imports the `arbitrum_client` crate, and
+            // it must compile to WASM. The `rand` crate does not compile to
+            // WASM, but the contracts repo only uses the conversion utilites
+            // defined in this crate, so we make this no-op fallback to prevent compilation
+            // errors in the contracts repo.
+            unimplemented!()
+        }
+    }
+
+    /// Get a reference to some underlying RPC client
     pub fn client(&self) -> Arc<MiddlewareStack> {
-        self.darkpool_contract.client()
+        self.get_darkpool_client().client()
     }
 
     /// Get the chain ID
@@ -135,11 +157,6 @@ impl ArbitrumClient {
             .await
             .map_err(err_str!(ArbitrumClientError::Rpc))
             .map(|id| id.as_u64())
-    }
-
-    /// Get the address of the wallet used for signing transactions
-    pub fn wallet_address(&self) -> Address {
-        self.client().inner().address()
     }
 
     /// Get the current Stylus block number

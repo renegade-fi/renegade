@@ -21,7 +21,7 @@ pub async fn node_setup(
     task_queue: TaskDriverQueue,
 ) -> Result<(), CoordinatorError> {
     // Start the node setup task and await its completion
-    let desc = NodeStartupTaskDescriptor::new(config.gossip_warmup, &config.arbitrum_private_key);
+    let desc = NodeStartupTaskDescriptor::new(config.gossip_warmup, config.relayer_arbitrum_key());
     let id = desc.id;
     task_queue
         .send(TaskDriverJob::RunImmediate { task_id: id, wallet_ids: vec![], task: desc.into() })

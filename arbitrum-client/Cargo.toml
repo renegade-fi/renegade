@@ -9,6 +9,7 @@ integration = [
     "circuits/test_helpers",
     "common/mocks",
 ]
+rand = ["dep:rand"]
 
 [[test]]
 name = "integration"
@@ -48,6 +49,7 @@ postcard = { version = "1", features = ["alloc"] }
 itertools = "0.12"
 lazy_static = { workspace = true }
 tracing = { workspace = true }
+rand = { workspace = true, optional = true }
 
 # === Contracts Repo Dependencies === #
 contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
@@ -61,5 +63,4 @@ json = "0.12"
 tokio = { workspace = true }
 colored = "2"
 inventory = "0.3"
-rand = { workspace = true }
 mpc-plonk = { workspace = true }

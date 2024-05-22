@@ -51,10 +51,10 @@ impl ArbitrumClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, ArbitrumClientError> {
-        let events = self
-            .darkpool_contract
+        let darkpool_client = self.get_darkpool_client();
+        let events = darkpool_client
             .event::<WalletUpdatedFilter>()
-            .address(self.darkpool_contract.address().into())
+            .address(darkpool_client.address().into())
             .topic1(scalar_to_u256(&public_blinder_share))
             .from_block(self.deploy_block)
             .query_with_meta()
@@ -81,7 +81,7 @@ impl ArbitrumClient {
         let (index, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
         let leaf_index = BigUint::from(index);
         let tx: TransactionReceipt = self
-            .darkpool_contract
+            .get_darkpool_client()
             .client()
             .get_transaction_receipt(tx)
             .await
@@ -157,9 +157,9 @@ impl ArbitrumClient {
         commitment: Scalar,
     ) -> Result<(u128, TxHash), ArbitrumClientError> {
         let events = self
-            .darkpool_contract
+            .get_darkpool_client()
             .event::<MerkleInsertionFilter>()
-            .address(self.darkpool_contract.address().into())
+            .address(self.get_darkpool_client().address().into())
             .topic2(scalar_to_u256(&commitment))
             .from_block(self.deploy_block)
             .query_with_meta()
@@ -186,7 +186,7 @@ impl ArbitrumClient {
             .ok_or(ArbitrumClientError::BlinderNotFound)?;
 
         let tx = self
-            .darkpool_contract
+            .get_darkpool_client()
             .client()
             .get_transaction(tx_hash)
             .await

@@ -116,7 +116,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         let client = block_current(ArbitrumClient::new(ArbitrumClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
-            arb_priv_key,
+            arb_priv_keys: vec![arb_priv_key],
             rpc_url: test_args.rpc_url,
             block_polling_interval_ms: 100,
         }))

@@ -105,8 +105,9 @@ impl State {
         let p2p_key = config.p2p_key.clone();
         let fee_decryption_key = config.fee_decryption_key;
         let match_take_rate = config.match_take_rate;
+
         let relayer_wallet_id =
-            derive_wallet_id(&config.arbitrum_private_key).map_err(StateError::InvalidUpdate)?;
+            derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
 
         self.with_write_tx(move |tx| {
             tx.create_table(NODE_METADATA_TABLE)?;

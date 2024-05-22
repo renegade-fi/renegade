@@ -83,7 +83,7 @@ impl OnChainEventListenerExecutor {
         info!("Starting on-chain event listener from current block {starting_block_number}");
 
         // Build a filtered stream on events that the chain-events worker listens for
-        let filter = self.arbitrum_client().darkpool_contract.event::<NullifierSpentFilter>();
+        let filter = self.arbitrum_client().get_darkpool_client().event::<NullifierSpentFilter>();
         let mut event_stream = filter
             .stream()
             .await
