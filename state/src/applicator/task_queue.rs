@@ -55,17 +55,21 @@ fn new_running_state() -> QueuedTaskState {
 }
 
 /// Record the length of a task queue
+#[inline]
 fn record_task_queue_length<T: TransactionKind>(key: &TaskQueueKey, tx: &StateTxn<'_, T>) {
-    let task_queue_length = match tx.get_queued_tasks(key) {
-        Ok(tasks) => tasks.len(),
-        Err(e) => {
-            error!("Error getting task queue length: {}", e);
-            return;
-        },
-    };
+    #[cfg(feature = "task-queue-len")]
+    {
+        let task_queue_length = match tx.get_queued_tasks(key) {
+            Ok(tasks) => tasks.len(),
+            Err(e) => {
+                error!("Error getting task queue length: {}", e);
+                return;
+            },
+        };
 
-    metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
-        .set(task_queue_length as f64);
+        metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
+            .set(task_queue_length as f64);
+    }
 }
 
 impl StateApplicator {
