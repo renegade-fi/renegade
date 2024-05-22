@@ -164,9 +164,10 @@ impl Worker for NetworkManager {
             .unwrap_or_else(|| Protocol::Ip4(Ipv4Addr::new(0, 0, 0, 0)));
 
         let local_addr = Multiaddr::empty()
-            .with(Protocol::P2p(local_peer_id.0.into()))
-            .with(Protocol::Tcp(config.port))
-            .with(ip_protoc);
+            .with(ip_protoc)
+            .with(Protocol::Udp(config.port))
+            .with(Protocol::QuicV1)
+            .with(Protocol::P2p(local_peer_id.0.into()));
 
         // Write the local peer's info to the global state once we know the bind addr
         let info = PeerInfo::new_with_cluster_secret_key(
