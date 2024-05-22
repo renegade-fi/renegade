@@ -20,7 +20,7 @@ use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS};
 use crossbeam::channel::Sender as CrossbeamSender;
-use ethers::signers::LocalWallet;
+use ethers::{middleware::Middleware, signers::{LocalWallet, Signer}, types::Address};
 use helpers::new_mock_task_driver;
 use job_types::{
     network_manager::{new_network_manager_queue, NetworkManagerReceiver},
@@ -159,6 +159,14 @@ impl From<CliArgs> for IntegrationTestArgs {
     }
 }
 
+impl IntegrationTestArgs {
+    /// Get the address of the (assumed to be only) Arbitrum account
+    /// with which the relayer is configured
+    pub fn wallet_address(&self) -> Address {
+        self.arbitrum_client.client().inner().signer().address()
+    }
+}
+
 /// Create a global state mock for the `task-driver` integration tests
 async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
     mock_state_with_task_queue(task_queue, &mock_relayer_config()).await
@@ -175,7 +183,7 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
     block_current(ArbitrumClient::new(ArbitrumClientConfig {
         chain: Chain::Devnet,
         darkpool_addr,
-        arb_priv_key,
+        arb_priv_keys: vec![arb_priv_key],
         rpc_url: test_args.devnet_url.clone(),
         block_polling_interval_ms: 100,
     }))

@@ -169,11 +169,12 @@ struct Cli {
     /// The HTTP addressable Arbitrum JSON-RPC node
     #[clap(long = "rpc-url", value_parser)]
     pub rpc_url: Option<String>,
-    /// The Arbitrum private key used to send transactions
+    /// The Arbitrum private keys used to send transactions.
+    /// Multiple keys can be provided to mitigate nonce contention across a node / cluster.
     /// 
     /// Defaults to the devnet pre-funded key
-    #[clap(long = "arbitrum-pkey", value_parser, default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659")]
-    pub arbitrum_private_key: String,
+    #[clap(long = "arbitrum-pkeys", value_parser, default_values_t = ["0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659".to_string()])]
+    pub arbitrum_private_keys: Vec<String>,
     /// The key used to decrypt fee payments
     #[clap(long = "fee-decryption-key", value_parser)]
     pub fee_decryption_key: Option<String>,
@@ -289,8 +290,8 @@ pub struct RelayerConfig {
     pub coinbase_api_secret: Option<String>,
     /// The HTTP addressable Arbitrum JSON-RPC node
     pub rpc_url: Option<String>,
-    /// The Arbitrum private key used to send transactions
-    pub arbitrum_private_key: LocalWallet,
+    /// The Arbitrum private keys used to send transactions
+    pub arbitrum_private_keys: Vec<LocalWallet>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
     /// The decryption key used to settle managed match fees
@@ -317,6 +318,11 @@ impl RelayerConfig {
     /// Get the peer ID associated with the p2p key
     pub fn peer_id(&self) -> WrappedPeerId {
         WrappedPeerId(self.p2p_key.public().to_peer_id())
+    }
+
+    /// Get the Arbitrum private key from which the relayer's wallet is derived
+    pub fn relayer_arbitrum_key(&self) -> &LocalWallet {
+        self.arbitrum_private_keys.first().expect("no arbitrum private keys configured")
     }
 }
 
@@ -357,7 +363,7 @@ impl Clone for RelayerConfig {
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),
             rpc_url: self.rpc_url.clone(),
-            arbitrum_private_key: self.arbitrum_private_key.clone(),
+            arbitrum_private_keys: self.arbitrum_private_keys.clone(),
             fee_decryption_key: self.fee_decryption_key,
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
@@ -428,8 +434,11 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
     };
 
     // Parse the local relayer's arbitrum wallet from the cli
-    let arbitrum_private_key =
-        LocalWallet::from_str(&cli_args.arbitrum_private_key).map_err(|e| e.to_string())?;
+    let arbitrum_private_keys = cli_args
+        .arbitrum_private_keys
+        .iter()
+        .map(|k| LocalWallet::from_str(k).map_err(|e| e.to_string()))
+        .collect::<Result<Vec<_>, _>>()?;
     let fee_decryption_key = parse_decryption_key(cli_args.fee_decryption_key)?;
 
     // Parse the p2p keypair or generate one
@@ -482,7 +491,7 @@ fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
         rpc_url: cli_args.rpc_url,
-        arbitrum_private_key,
+        arbitrum_private_keys,
         fee_decryption_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,

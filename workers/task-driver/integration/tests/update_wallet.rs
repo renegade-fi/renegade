@@ -113,8 +113,7 @@ pub fn new_deposit(
     amount: Amount,
     test_args: &IntegrationTestArgs,
 ) -> ExternalTransfer {
-    let client = &test_args.arbitrum_client;
-    let account_addr = biguint_from_address(client.wallet_address());
+    let account_addr = biguint_from_address(test_args.wallet_address());
     ExternalTransfer { mint, amount, direction: ExternalTransferDirection::Deposit, account_addr }
 }
 
@@ -124,8 +123,7 @@ pub fn new_withdrawal(
     amount: Amount,
     test_args: &IntegrationTestArgs,
 ) -> ExternalTransfer {
-    let client = &test_args.arbitrum_client;
-    let account_addr = biguint_from_address(client.wallet_address());
+    let account_addr = biguint_from_address(test_args.wallet_address());
     ExternalTransfer {
         mint,
         amount,

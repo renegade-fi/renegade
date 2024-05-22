@@ -249,7 +249,7 @@ impl MockNodeController {
             darkpool_addr: self.config.contract_address.clone(),
             chain: self.config.chain_id,
             rpc_url: self.config.rpc_url.clone().unwrap(),
-            arb_priv_key: self.config.arbitrum_private_key.clone(),
+            arb_priv_keys: self.config.arbitrum_private_keys.clone(),
             block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
         };
 
@@ -537,7 +537,7 @@ mod test {
         let db_path = tmp_db_path();
         let conf = RelayerConfig {
             rpc_url: Some("http://localhost:1234".to_string()),
-            arbitrum_private_key: get_devnet_key(),
+            arbitrum_private_keys: vec![get_devnet_key()],
             raft_snapshot_path: db_path.clone(),
             db_path,
             ..Default::default()

@@ -43,7 +43,7 @@ impl ArbitrumClient {
     /// Get the current Merkle root in the contract
     #[instrument(skip_all, err)]
     pub async fn get_merkle_root(&self) -> Result<Scalar, ArbitrumClientError> {
-        self.darkpool_contract
+        self.get_darkpool_client()
             .get_root()
             .call()
             .await
@@ -55,7 +55,7 @@ impl ArbitrumClient {
     #[instrument(skip_all, err)]
     pub async fn get_protocol_fee(&self) -> Result<FixedPoint, ArbitrumClientError> {
         // The contract returns the repr of the fee as a u256
-        self.darkpool_contract
+        self.get_darkpool_client()
             .get_fee()
             .call()
             .await
@@ -67,7 +67,7 @@ impl ArbitrumClient {
     #[instrument(skip_all, err)]
     pub async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, ArbitrumClientError> {
         let pubkey = self
-            .darkpool_contract
+            .get_darkpool_client()
             .get_pubkey()
             .call()
             .await
@@ -82,7 +82,7 @@ impl ArbitrumClient {
         &self,
         root: MerkleRoot,
     ) -> Result<bool, ArbitrumClientError> {
-        self.darkpool_contract
+        self.get_darkpool_client()
             .root_in_history(scalar_to_u256(&root))
             .call()
             .await
@@ -95,7 +95,7 @@ impl ArbitrumClient {
         &self,
         nullifier: Nullifier,
     ) -> Result<bool, ArbitrumClientError> {
-        self.darkpool_contract
+        self.get_darkpool_client()
             .is_nullifier_spent(scalar_to_u256(&nullifier))
             .call()
             .await
@@ -127,8 +127,7 @@ impl ArbitrumClient {
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = send_tx(
-            self.darkpool_contract
-                .new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
+            self.get_darkpool_client().new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
         )
         .await?;
 
@@ -165,7 +164,7 @@ impl ArbitrumClient {
             transfer_auth.map(to_contract_transfer_aux_data).transpose()?.unwrap_or_default();
         let transfer_aux_data_calldata = serialize_calldata(&contract_transfer_aux_data)?;
 
-        let receipt = send_tx(self.darkpool_contract.update_wallet(
+        let receipt = send_tx(self.get_darkpool_client().update_wallet(
             proof_calldata,
             valid_wallet_update_statement_calldata,
             wallet_commitment_signature.into(),
@@ -258,7 +257,7 @@ impl ArbitrumClient {
         let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
 
         // Call `process_match_settle` on darkpool contract
-        let receipt = send_tx(self.darkpool_contract.process_match_settle(
+        let receipt = send_tx(self.get_darkpool_client().process_match_settle(
             party_0_match_payload_calldata,
             party_1_match_payload_calldata,
             valid_match_settle_statement_calldata,
@@ -297,7 +296,7 @@ impl ArbitrumClient {
         let valid_relayer_fee_settlement_statement_calldata =
             serialize_calldata(&contract_statement)?;
 
-        let receipt = send_tx(self.darkpool_contract.settle_online_relayer_fee(
+        let receipt = send_tx(self.get_darkpool_client().settle_online_relayer_fee(
             proof_calldata,
             valid_relayer_fee_settlement_statement_calldata,
             relayer_wallet_commitment_signature.into(),
@@ -333,7 +332,7 @@ impl ArbitrumClient {
             serialize_calldata(&contract_statement)?;
 
         let receipt =
-            send_tx(self.darkpool_contract.settle_offline_fee(
+            send_tx(self.get_darkpool_client().settle_offline_fee(
                 proof_calldata,
                 valid_offline_fee_settlement_statement_calldata,
             ))
@@ -367,7 +366,7 @@ impl ArbitrumClient {
         let contract_statement = to_contract_valid_fee_redemption_statement(statement)?;
         let valid_fee_redemption_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = send_tx(self.darkpool_contract.redeem_fee(
+        let receipt = send_tx(self.get_darkpool_client().redeem_fee(
             proof_calldata,
             valid_fee_redemption_statement_calldata,
             recipient_wallet_commitment_signature.into(),

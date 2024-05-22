@@ -148,7 +148,7 @@ async fn main() -> Result<(), CoordinatorError> {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.clone().unwrap(),
-        arb_priv_key: args.arbitrum_private_key.clone(),
+        arb_priv_keys: args.arbitrum_private_keys.clone(),
         block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
     })
     .await
@@ -159,7 +159,7 @@ async fn main() -> Result<(), CoordinatorError> {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
-        arb_priv_key: args.arbitrum_private_key.clone(),
+        arb_priv_keys: args.arbitrum_private_keys.clone(),
         block_polling_interval_ms: EVENT_FILTER_POLLING_INTERVAL_MS,
     })
     .await

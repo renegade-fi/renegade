@@ -15,8 +15,7 @@ use common::{
     worker::Worker,
 };
 use constants::Scalar;
-use ethers::middleware::Middleware;
-use ethers::types::Address;
+use ethers::{middleware::Middleware, types::Address};
 use eyre::Result;
 use job_types::{
     network_manager::NetworkManagerQueue,
@@ -197,9 +196,10 @@ pub async fn authorize_transfer(
     let client = &test_args.arbitrum_client;
     let chain_id = client.chain_id().await.unwrap();
     let permit2_address = AlloyAddress::from_str(&test_args.permit2_addr)?;
-    let darkpool_address = AlloyAddress::from_slice(client.darkpool_contract.address().as_bytes());
+    let darkpool_address =
+        AlloyAddress::from_slice(client.get_darkpool_client().address().as_bytes());
 
-    let eth_client = client.darkpool_contract.client(); // Assigned to avoid dropping
+    let eth_client = client.get_darkpool_client().client(); // Assigned to avoid dropping
     let signer = eth_client.inner().signer();
 
     gen_transfer_with_auth(signer, pk_root, permit2_address, darkpool_address, chain_id, transfer)

@@ -15,7 +15,7 @@ tokio = { workspace = true }
 
 # === Workspace Dependencies === #
 api-server = { path = "../workers/api-server" }
-arbitrum-client = { path = "../arbitrum-client" }
+arbitrum-client = { path = "../arbitrum-client", features = ["rand"] }
 circuit-types = { path = "../circuit-types" }
 chain-events = { path = "../workers/chain-events" }
 common = { path = "../common" }

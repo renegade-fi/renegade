@@ -105,7 +105,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             p2p_key,
             p2p_port: args.my_port,
             chain_id: Chain::Devnet,
-            arbitrum_private_key,
+            arbitrum_private_keys: vec![arbitrum_private_key],
             contract_address,
             rpc_url: Some(args.devnet_url.clone()),
             allow_local: true,
