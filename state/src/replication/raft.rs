@@ -283,6 +283,16 @@ impl RaftClient {
 
     /// Handle a proposal to remove a peer
     async fn handle_remove_peer(&self, peer_id: NodeId) -> Result<(), ReplicationV2Error> {
+        // First, check whether the peer has already been removed
+        let members = self.membership();
+        let joint_config = members.get_joint_config();
+        let most_recent_config = &joint_config[joint_config.len() - 1];
+
+        if !most_recent_config.contains(&peer_id) {
+            info!("peer {peer_id} already removed, skipping proposal...");
+            return Ok(());
+        }
+
         let change = ChangeMembers::RemoveVoters(BTreeSet::from([peer_id]));
         self.raft()
             .change_membership(change, false /* retain */)
