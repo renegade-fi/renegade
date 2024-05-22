@@ -7697,6 +7697,7 @@ dependencies = [
  "lazy_static",
  "libmdbx",
  "libp2p",
+ "metrics",
  "multiaddr",
  "num-bigint",
  "openraft",
