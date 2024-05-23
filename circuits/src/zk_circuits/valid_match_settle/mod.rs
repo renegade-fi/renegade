@@ -246,6 +246,7 @@ pub mod test_helpers {
         balance::Balance,
         order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
+        wallet::Wallet,
     };
     use constants::Scalar;
     use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
@@ -257,7 +258,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::test_helpers::{
-            create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
+            create_wallet_shares, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
         },
     };
 
@@ -271,8 +272,13 @@ pub mod test_helpers {
     pub type SizedValidMatchSettleStatement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 
     /// Create a dummy witness to match on
-    pub fn dummy_witness_and_statement(
-    ) -> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
+    pub fn dummy_witness_and_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
+        ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
         let (o1, o2, price, match_res) = random_orders_and_match();
 
         // Build wallets for the crossing orders
@@ -339,15 +345,27 @@ pub mod test_helpers {
 
     // Build two wallets and sample indices for the orders and balances for the
     // match to be placed into
-    fn build_wallet_and_indices(
+    fn build_wallet_and_indices<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         order: &Order,
         match_res: &MatchResult,
-    ) -> (SizedWallet, OrderSettlementIndices) {
-        let mut rng = thread_rng();
-        let mut wallet = INITIAL_WALLET.clone();
+    ) -> (Wallet<MAX_BALANCES, MAX_ORDERS>, OrderSettlementIndices)
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let mut wallet = Wallet {
+            keys: INITIAL_WALLET.keys.clone(),
+            match_fee: INITIAL_WALLET.match_fee,
+            managing_cluster: INITIAL_WALLET.managing_cluster,
+            ..Default::default()
+        };
 
+        let mut rng = thread_rng();
         let send = (0..MAX_BALANCES).sample_single(&mut rng);
-        let recv = MAX_BALANCES - send - 1;
+        let mut recv = (0..MAX_BALANCES).sample_single(&mut rng);
+        while recv == send {
+            recv = (0..MAX_BALANCES).sample_single(&mut rng);
+        }
+
         let order_ind = (0..MAX_ORDERS).sample_single(&mut rng);
 
         // Insert the order and balances into the wallet
