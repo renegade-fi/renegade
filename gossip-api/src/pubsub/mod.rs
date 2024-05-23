@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{check_signature, sign_message, GossipDestination};
 
-use self::{cluster::ClusterManagementMessage, orderbook::OrderBookManagementMessage};
+use self::{
+    cluster::{ClusterManagementMessage, ClusterManagementMessageType},
+    orderbook::OrderBookManagementMessage,
+};
 
 pub mod cluster;
 pub mod orderbook;
@@ -94,8 +97,14 @@ impl PubsubMessage {
     /// The destination to send the pubsub message for processing
     pub fn destination(&self) -> GossipDestination {
         match self {
-            // All cluster management types are handshake caching messages
-            PubsubMessage::Cluster(..) => GossipDestination::HandshakeManager,
+            PubsubMessage::Cluster(ClusterManagementMessage { message_type, .. }) => {
+                match message_type {
+                    ClusterManagementMessageType::ProposeExpiry(..) => {
+                        GossipDestination::GossipServer
+                    },
+                    _ => GossipDestination::HandshakeManager,
+                }
+            },
             PubsubMessage::Orderbook(..) => GossipDestination::GossipServer,
         }
     }

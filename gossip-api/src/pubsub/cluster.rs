@@ -1,6 +1,9 @@
 //! Cluster communications broadcast via Pubsub
 
-use common::types::{gossip::ClusterId, wallet::OrderIdentifier};
+use common::types::{
+    gossip::{ClusterId, WrappedPeerId},
+    wallet::OrderIdentifier,
+};
 use serde::{Deserialize, Serialize};
 
 /// A message from one cluster peer to the rest indicating cluster management
@@ -30,4 +33,11 @@ pub enum ClusterManagementMessageType {
     /// The peers should cache this order pair as completed, and not initiate
     /// handshakes with other peers on this order
     CacheSync(OrderIdentifier, OrderIdentifier),
+    /// Propose a peer expiry to the cluster
+    ///
+    /// Peers will check the last heartbeat they received from the expiry
+    /// candidate. If it is within some threshold they will reject the expiry.
+    /// If no rejection is seen in a reasonable amount of time, the peer will
+    /// be removed from the cluster
+    ProposeExpiry(WrappedPeerId),
 }

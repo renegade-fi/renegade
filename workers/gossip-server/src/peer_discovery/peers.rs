@@ -2,17 +2,18 @@
 
 use common::types::gossip::{PeerInfo, WrappedPeerId};
 use gossip_api::request_response::{
-    heartbeat::{BootstrapRequest, PeerInfoResponse},
-    GossipResponse,
+    heartbeat::{BootstrapRequest, PeerInfoResponse, RejectExpiryRequest},
+    GossipRequest, GossipResponse,
 };
 use itertools::Itertools;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
-use tracing::warn;
-use util::{err_str, get_current_time_seconds};
+use tracing::{info, warn};
+use util::{err_str, get_current_time_millis, get_current_time_seconds};
 
 use crate::{
-    errors::GossipError, peer_discovery::heartbeat::EXPIRY_INVISIBILITY_WINDOW_MS,
+    errors::GossipError,
+    peer_discovery::heartbeat::{EXPIRY_INVISIBILITY_WINDOW_MS, HEARTBEAT_FAILURE_MS},
     server::GossipProtocolExecutor,
 };
 
@@ -49,6 +50,50 @@ impl GossipProtocolExecutor {
         let resp = self.build_heartbeat().await?;
 
         Ok(GossipResponse::Heartbeat(resp))
+    }
+
+    /// Handle a proposed expiry from a peer
+    ///
+    /// TODO: Update this logic, for now we simply check if the local peer
+    /// thinks the expiry candidate should expire
+    pub async fn handle_propose_expiry(
+        &self,
+        sender: WrappedPeerId,
+        peer_id: WrappedPeerId,
+    ) -> Result<(), GossipError> {
+        let peer_info = self.global_state.get_peer_info(&peer_id).await?;
+        let info = match peer_info {
+            Some(info) => info,
+            None => return Ok(()),
+        };
+
+        // If the local peer has received a recent heartbeat from the candidate, notify
+        // the sender that the expiry should not proceed
+        let now = get_current_time_millis();
+        let time_since_last_heartbeat = now - info.last_heartbeat;
+        if time_since_last_heartbeat < HEARTBEAT_FAILURE_MS {
+            info!("rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago");
+
+            // The peer should not expire yet, send a rejection
+            let msg = GossipRequest::RejectExpiry(RejectExpiryRequest {
+                peer_id,
+                last_heartbeat: info.last_heartbeat,
+            });
+
+            let job = NetworkManagerJob::request(sender, msg);
+            self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
+        }
+
+        Ok(())
+    }
+
+    /// Handle a request to reject expiry
+    pub async fn handle_reject_expiry_req(
+        &self,
+        _req: RejectExpiryRequest,
+    ) -> Result<GossipResponse, GossipError> {
+        info!("received reject expiry request");
+        Ok(GossipResponse::Ack)
     }
 
     // ---------------------

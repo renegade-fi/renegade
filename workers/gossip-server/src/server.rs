@@ -12,7 +12,10 @@ use common::{
     AsyncShared,
 };
 use gossip_api::{
-    pubsub::PubsubMessage,
+    pubsub::{
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
+        PubsubMessage,
+    },
     request_response::{heartbeat::BootstrapRequest, GossipRequest, GossipResponse},
 };
 use job_types::{
@@ -202,7 +205,7 @@ impl GossipProtocolExecutor {
             GossipServerJob::NetworkResponse(peer_id, resp) => {
                 self.handle_response(peer_id, resp).await?
             },
-            GossipServerJob::Pubsub(msg) => self.handle_pubsub(msg).await?,
+            GossipServerJob::Pubsub(sender, msg) => self.handle_pubsub(sender, msg).await?,
         };
 
         Ok(())
@@ -222,6 +225,7 @@ impl GossipProtocolExecutor {
             },
             GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids).await,
             GossipRequest::OrderInfo(req) => self.handle_order_info_request(&req.order_ids).await,
+            GossipRequest::RejectExpiry(req) => self.handle_reject_expiry_req(req).await,
             req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
         }
     }
@@ -243,9 +247,17 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles an inbound pubsub message from the network
-    async fn handle_pubsub(&self, msg: PubsubMessage) -> Result<(), GossipError> {
+    async fn handle_pubsub(
+        &self,
+        sender: WrappedPeerId,
+        msg: PubsubMessage,
+    ) -> Result<(), GossipError> {
         match msg {
             PubsubMessage::Orderbook(msg) => self.handle_orderbook_pubsub(msg).await,
+            PubsubMessage::Cluster(ClusterManagementMessage {
+                message_type: ClusterManagementMessageType::ProposeExpiry(peer_id),
+                ..
+            }) => self.handle_propose_expiry(sender, peer_id).await,
             msg => Err(GossipError::UnhandledRequest(format!("{msg:?}"))),
         }
     }
