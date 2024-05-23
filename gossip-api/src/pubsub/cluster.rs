@@ -40,4 +40,17 @@ pub enum ClusterManagementMessageType {
     /// If no rejection is seen in a reasonable amount of time, the peer will
     /// be removed from the cluster
     ProposeExpiry(WrappedPeerId),
+    /// Reject a peer expiry proposal
+    ///
+    /// Peers will check the last heartbeat they received from the expiry
+    /// candidate. If it is within some threshold they will reject the expiry.
+    /// If no rejection is seen in a reasonable amount of time, the peer will
+    /// be removed from the cluster
+    RejectExpiry {
+        /// The peer id of the node that is proposing to expire
+        peer_id: WrappedPeerId,
+        /// The timestamp of the last heartbeat the sender received from the
+        /// expiry candidate
+        last_heartbeat: u64,
+    },
 }
