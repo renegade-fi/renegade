@@ -41,7 +41,7 @@ impl GossipProtocolExecutor {
         &self,
         order_ids: &[OrderIdentifier],
     ) -> Result<GossipResponse, GossipError> {
-        let info = self.global_state.get_orders_batch(order_ids).await?;
+        let info = self.state.get_orders_batch(order_ids).await?;
         let order_info = info.into_iter().flatten().collect();
 
         let resp = OrderInfoResponse { order_info };
@@ -62,7 +62,7 @@ impl GossipProtocolExecutor {
 
             // Skip local orders, their state is added on wallet update through raft
             // consensus
-            let is_local = order.cluster == self.global_state.get_cluster_id().await?;
+            let is_local = order.cluster == self.state.get_cluster_id().await?;
             if is_local {
                 debug!("skipping local order {order_id}");
                 continue;
@@ -73,7 +73,7 @@ impl GossipProtocolExecutor {
 
             order.state = NetworkOrderState::Received;
             order.local = is_local;
-            self.global_state.add_order(order).await?;
+            self.state.add_order(order).await?;
 
             // If there is a proof attached to the order, verify it and transition to
             // `Verified`. If the order is locally managed, the raft consensus will take
@@ -90,7 +90,7 @@ impl GossipProtocolExecutor {
 
                 // Update the state of the order to `Verified` by attaching the verified
                 // validity proof
-                self.global_state.add_order_validity_proof(order_id, proof_bundle).await?;
+                self.state.add_order_validity_proof(order_id, proof_bundle).await?;
             }
         }
 
@@ -124,16 +124,14 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
         // Skip local orders, their state is added on wallet update through raft
-        let is_local = cluster == self.global_state.get_cluster_id().await?;
+        let is_local = cluster == self.state.get_cluster_id().await?;
         if is_local {
             return Ok(());
         }
 
         // Ensure that the nullifier has not been used for this order
         self.assert_nullifier_unused(nullifier).await?;
-        self.global_state
-            .add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local))
-            .await?;
+        self.state.add_order(NetworkOrder::new(order_id, nullifier, cluster, is_local)).await?;
         Ok(())
     }
 
@@ -148,7 +146,7 @@ impl GossipProtocolExecutor {
         proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
         // Skip local orders, their state is added on wallet update through raft
-        let is_local = cluster == self.global_state.get_cluster_id().await?;
+        let is_local = cluster == self.state.get_cluster_id().await?;
         if is_local {
             return Ok(());
         }
@@ -164,8 +162,8 @@ impl GossipProtocolExecutor {
         .unwrap()?;
 
         // Add the order to the book in the `Validated` state
-        if !self.global_state.contains_order(&order_id).await? {
-            self.global_state
+        if !self.state.contains_order(&order_id).await? {
+            self.state
                 .add_order(NetworkOrder::new(
                     order_id,
                     proof_bundle.reblind_proof.statement.original_shares_nullifier,
@@ -175,7 +173,7 @@ impl GossipProtocolExecutor {
                 .await?;
         }
 
-        self.global_state.add_order_validity_proof(order_id, proof_bundle).await?;
+        self.state.add_order_validity_proof(order_id, proof_bundle).await?;
         Ok(())
     }
 

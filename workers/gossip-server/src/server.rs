@@ -7,9 +7,7 @@
 use arbitrum_client::client::ArbitrumClient;
 use common::{
     default_wrapper::DefaultWrapper,
-    new_async_shared,
     types::{gossip::WrappedPeerId, CancelChannel},
-    AsyncShared,
 };
 use gossip_api::{
     pubsub::{
@@ -22,14 +20,14 @@ use job_types::{
     gossip_server::{GossipServerJob, GossipServerQueue, GossipServerReceiver},
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
 };
-use lru::LruCache;
 use state::State;
-use std::{num::NonZeroUsize, thread::JoinHandle};
+use std::thread::JoinHandle;
 use tracing::{error, info};
 use util::err_str;
 
 use crate::peer_discovery::{
-    heartbeat::{CLUSTER_HEARTBEAT_INTERVAL_MS, EXPIRY_CACHE_SIZE, HEARTBEAT_INTERVAL_MS},
+    expiry_window::PeerExpiryWindows,
+    heartbeat::{CLUSTER_HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS},
     heartbeat_timer::HeartbeatTimer,
 };
 
@@ -39,9 +37,6 @@ use super::{errors::GossipError, worker::GossipServerConfig};
 pub(super) const GOSSIP_EXECUTOR_N_THREADS: usize = 5;
 /// The number of threads backing the blocking thread pool of the executor
 pub(super) const GOSSIP_EXECUTOR_N_BLOCKING_THREADS: usize = 5;
-
-/// Type alias for a shared LRU cache
-pub(super) type SharedLRUCache = AsyncShared<LruCache<WrappedPeerId, u64>>;
 
 /// The server type that manages interactions with the gossip network
 pub struct GossipServer {
@@ -107,16 +102,16 @@ impl GossipServer {
 /// Executes the heartbeat protocols
 #[derive(Clone)]
 pub struct GossipProtocolExecutor {
-    /// The peer expiry cache holds peers in an invisibility window so that when
-    /// a peer is expired, it cannot be incorrectly re-discovered for some
-    /// time, until its expiry has had time to propagate
-    pub peer_expiry_cache: SharedLRUCache,
+    /// The peer expiry cache; maintains the state of peers that are in the
+    /// process of being expired or have been expired and are marked as
+    /// "invisible"
+    pub expiry_buffer: PeerExpiryWindows,
     /// The channel on which to receive jobs
     pub job_receiver: DefaultWrapper<Option<GossipServerReceiver>>,
     /// The channel to send outbound network requests on
     pub network_channel: NetworkManagerQueue,
     /// The global state of the relayer
-    pub global_state: State,
+    pub state: State,
     /// A copy of the config passed to the worker
     pub config: GossipServerConfig,
     /// The channel that the coordinator thread uses to cancel gossip execution
@@ -128,20 +123,19 @@ impl GossipProtocolExecutor {
     pub fn new(
         network_channel: NetworkManagerQueue,
         job_receiver: GossipServerReceiver,
-        global_state: State,
+        state: State,
         config: GossipServerConfig,
         cancel_channel: CancelChannel,
     ) -> Result<Self, GossipError> {
         // Tracks recently expired peers and blocks them from being re-registered
         // until the state has synced. Maps peer_id to expiry time
-        let peer_expiry_cache: SharedLRUCache =
-            new_async_shared(LruCache::new(NonZeroUsize::new(EXPIRY_CACHE_SIZE).unwrap()));
+        let expiry_buffer = PeerExpiryWindows::new();
 
         Ok(Self {
-            peer_expiry_cache,
+            expiry_buffer,
             job_receiver: DefaultWrapper::new(Some(job_receiver)),
             network_channel,
-            global_state,
+            state,
             config,
             cancel_channel,
         })
@@ -164,7 +158,7 @@ impl GossipProtocolExecutor {
             job_sender,
             CLUSTER_HEARTBEAT_INTERVAL_MS,
             HEARTBEAT_INTERVAL_MS,
-            self.global_state.clone(),
+            self.state.clone(),
         );
 
         // We check for cancels both before receiving a job (so that we don't sleep

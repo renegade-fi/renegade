@@ -188,6 +188,15 @@ impl State {
         Ok(())
     }
 
+    /// Write the peer info for a peer directly
+    pub async fn set_peer_info(&self, peer: PeerInfo) -> Result<(), StateError> {
+        self.with_write_tx(move |tx| {
+            tx.write_peer(&peer)?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Remove a peer that has been expired
     pub async fn remove_peer(&self, peer_id: WrappedPeerId) -> Result<(), StateError> {
         let this = self.clone();

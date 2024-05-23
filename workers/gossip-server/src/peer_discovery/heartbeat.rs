@@ -1,6 +1,6 @@
 //! Groups gossip server logic for the heartbeat protocol
 
-use common::types::gossip::WrappedPeerId;
+use common::types::gossip::{PeerInfo, WrappedPeerId};
 use gossip_api::{
     pubsub::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
@@ -32,12 +32,7 @@ pub const CLUSTER_HEARTBEAT_INTERVAL_MS: u64 = 3_000; // 3 seconds
 pub const HEARTBEAT_FAILURE_MS: u64 = 20_000; // 20 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed; for cluster peers
-pub const CLUSTER_HEARTBEAT_FAILURE_MS: u64 = 10_000; // 10 seconds
-/// The minimum amount of time between a peer's expiry and when it can be
-/// added back to the peer info
-pub(crate) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 30_000; // 30 seconds
-/// The size of the peer expiry cache to keep around
-pub(crate) const EXPIRY_CACHE_SIZE: usize = 100;
+pub const CLUSTER_HEARTBEAT_FAILURE_MS: u64 = 15_000; // 15 seconds
 
 // -----------
 // | Helpers |
@@ -59,12 +54,12 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        let heartbeat_message = self.global_state.construct_heartbeat().await?;
+        let heartbeat_message = self.state.construct_heartbeat().await?;
         let msg = GossipRequest::Heartbeat(heartbeat_message);
         let job = NetworkManagerJob::request(recipient_peer_id, msg);
 
         self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
-        self.maybe_expire_peer(recipient_peer_id).await
+        self.update_expiry_status(recipient_peer_id).await
     }
 
     // ---------------------
@@ -91,7 +86,7 @@ impl GossipProtocolExecutor {
         peer: &WrappedPeerId,
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
-        let missing_orders = self.global_state.get_missing_orders(&message.known_orders).await?;
+        let missing_orders = self.state.get_missing_orders(&message.known_orders).await?;
         let req = GossipRequest::OrderInfo(OrderInfoRequest { order_ids: missing_orders });
         self.network_channel
             .send(NetworkManagerJob::request(*peer, req))
@@ -104,7 +99,7 @@ impl GossipProtocolExecutor {
         peer: &WrappedPeerId,
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
-        let missing_peers = self.global_state.get_missing_peers(&message.known_peers).await?;
+        let missing_peers = self.state.get_missing_peers(&message.known_peers).await?;
         let req = GossipRequest::PeerInfo(PeerInfoRequest { peer_ids: missing_peers });
         self.network_channel
             .send(NetworkManagerJob::request(*peer, req))
@@ -115,33 +110,60 @@ impl GossipProtocolExecutor {
     // | Helpers |
     // -----------
 
+    // --- Heartbeat --- //
+
+    /// Records a successful heartbeat
+    pub(super) async fn record_heartbeat(
+        &self,
+        peer_id: &WrappedPeerId,
+    ) -> Result<(), GossipError> {
+        Ok(self.state.record_heartbeat(peer_id).await?)
+    }
+
+    /// Build a heartbeat message
+    pub async fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
+        Ok(self.state.construct_heartbeat().await?)
+    }
+
+    // --- Peer Expiry --- //
+
+    /// Update the expiry status of a peer
+    async fn update_expiry_status(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
+        if self.expiry_buffer.is_expiry_candidate(&peer_id).await {
+            self.maybe_expire_candidate(peer_id).await
+        } else {
+            self.maybe_expire_peer(peer_id).await
+        }
+    }
+
     /// Expires peers that have timed out due to consecutive failed heartbeats
     async fn maybe_expire_peer(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
         // Find the peer's info in global state
-        let peer_info = self.global_state.get_peer_info(&peer_id).await?;
-        if peer_info.is_none() {
-            info!("could not find info for peer {peer_id:?}");
+        let maybe_info = self.state.get_peer_info(&peer_id).await?;
+        let peer_info = match maybe_info {
+            Some(info) => info,
+            None => {
+                info!("could not find info for peer {peer_id:?}");
+                return Ok(());
+            },
+        };
+
+        // Check whether the expiry window has elapsed
+        if !self.should_expire_peer(&peer_info).await? {
             return Ok(());
         }
-        let peer_info = peer_info.unwrap();
 
-        // Expire cluster peers sooner than non-cluster peers
-        let cluster_id = self.global_state.get_cluster_id().await?;
+        // If the node is outside the cluster expire it immediately
+        let cluster_id = self.state.get_cluster_id().await?;
         let same_cluster = peer_info.get_cluster_id() == cluster_id;
-
-        let now = get_current_time_millis();
-        let last_heartbeat = now - peer_info.get_last_heartbeat();
-
-        #[allow(clippy::if_same_then_else)]
-        if same_cluster && last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS {
-            return Ok(());
-        } else if !same_cluster && last_heartbeat < HEARTBEAT_FAILURE_MS {
-            return Ok(());
+        if !same_cluster {
+            return self.expire_peer(peer_id).await;
         }
 
-        // TODO: Give the cluster time to reject peer expiry
-
-        // Send a peer expiry proposal to the cluster
+        // Otherwise transition the node to an expiry candidate state
+        // and notify cluster peers
+        info!("proposing expiry of peer: {peer_id}");
+        self.expiry_buffer.mark_expiry_candidate(peer_id).await;
         let msg = ClusterManagementMessage {
             cluster_id: cluster_id.clone(),
             message_type: ClusterManagementMessageType::ProposeExpiry(peer_id),
@@ -149,11 +171,45 @@ impl GossipProtocolExecutor {
 
         let topic = cluster_id.get_management_topic();
         let job = NetworkManagerJob::pubsub(topic, PubsubMessage::Cluster(msg));
-        self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
+        self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))
+    }
 
+    /// Check whether the expiry window for a peer has elapsed
+    async fn should_expire_peer(&self, peer_info: &PeerInfo) -> Result<bool, GossipError> {
+        // Expire cluster peers sooner than non-cluster peers
+        let cluster_id = self.state.get_cluster_id().await?;
+        let same_cluster = peer_info.get_cluster_id() == cluster_id;
+
+        let now = get_current_time_millis();
+        let last_heartbeat = now - peer_info.get_last_heartbeat();
+
+        #[allow(clippy::if_same_then_else)]
+        if same_cluster && last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS {
+            Ok(false)
+        } else if !same_cluster && last_heartbeat < HEARTBEAT_FAILURE_MS {
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
+
+    /// Expire a peer that is already an expiry candidate if the attestation
+    /// window has elapsed
+    async fn maybe_expire_candidate(&self, peer: WrappedPeerId) -> Result<(), GossipError> {
+        if self.expiry_buffer.should_expire(&peer).await {
+            // Remove from the expiry candidates list
+            self.expiry_buffer.remove_expiry_candidate(peer).await;
+            return self.expire_peer(peer).await;
+        }
+
+        Ok(())
+    }
+
+    /// Expire a peer
+    async fn expire_peer(&self, peer_id: WrappedPeerId) -> Result<(), GossipError> {
         // Remove expired peer from global state & DHT
-        info!("Expiring peer {peer_id} last heartbeat was {last_heartbeat}ms ago");
-        self.global_state.remove_peer(peer_id).await?;
+        info!("Expiring peer {peer_id}");
+        self.state.remove_peer(peer_id).await?;
         self.network_channel
             .send(NetworkManagerJob::internal(NetworkManagerControlSignal::PeerExpired { peer_id }))
             .map_err(err_str!(GossipError::SendMessage))?;
@@ -163,24 +219,8 @@ impl GossipProtocolExecutor {
         // until some time has elapsed. Without this check, another peer may
         // send us a heartbeat attesting to the expired peer's liveness,
         // having itself not expired the peer locally.
-        let mut locked_expiry_cache = self.peer_expiry_cache.write().await;
-        locked_expiry_cache.put(peer_id, now);
-
-        record_num_peers_metrics(&self.global_state).await;
-
+        self.expiry_buffer.mark_expired(peer_id).await;
+        record_num_peers_metrics(&self.state).await;
         Ok(())
-    }
-
-    /// Records a successful heartbeat
-    pub(super) async fn record_heartbeat(
-        &self,
-        peer_id: &WrappedPeerId,
-    ) -> Result<(), GossipError> {
-        Ok(self.global_state.record_heartbeat(peer_id).await?)
-    }
-
-    /// Build a heartbeat message
-    pub async fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
-        Ok(self.global_state.construct_heartbeat().await?)
     }
 }

@@ -5,17 +5,14 @@ use gossip_api::request_response::{
     heartbeat::{BootstrapRequest, PeerInfoResponse, RejectExpiryRequest},
     GossipRequest, GossipResponse,
 };
-use itertools::Itertools;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
 use tracing::{info, warn};
-use util::{err_str, get_current_time_millis, get_current_time_seconds};
+use util::{err_str, get_current_time_millis};
 
-use crate::{
-    errors::GossipError,
-    peer_discovery::heartbeat::{EXPIRY_INVISIBILITY_WINDOW_MS, HEARTBEAT_FAILURE_MS},
-    server::GossipProtocolExecutor,
-};
+use crate::{errors::GossipError, server::GossipProtocolExecutor};
+
+use super::heartbeat::CLUSTER_HEARTBEAT_FAILURE_MS;
 
 impl GossipProtocolExecutor {
     // --------------------
@@ -27,7 +24,7 @@ impl GossipProtocolExecutor {
         &self,
         peers: Vec<WrappedPeerId>,
     ) -> Result<GossipResponse, GossipError> {
-        let peer_info = self.global_state.get_peer_info_map().await?;
+        let peer_info = self.state.get_peer_info_map().await?;
 
         let mut res = Vec::new();
         for peer in peers {
@@ -61,7 +58,7 @@ impl GossipProtocolExecutor {
         sender: WrappedPeerId,
         peer_id: WrappedPeerId,
     ) -> Result<(), GossipError> {
-        let peer_info = self.global_state.get_peer_info(&peer_id).await?;
+        let peer_info = self.state.get_peer_info(&peer_id).await?;
         let info = match peer_info {
             Some(info) => info,
             None => return Ok(()),
@@ -71,7 +68,7 @@ impl GossipProtocolExecutor {
         // the sender that the expiry should not proceed
         let now = get_current_time_millis();
         let time_since_last_heartbeat = now - info.last_heartbeat;
-        if time_since_last_heartbeat < HEARTBEAT_FAILURE_MS {
+        if time_since_last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 2 {
             info!("rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago");
 
             // The peer should not expire yet, send a rejection
@@ -90,9 +87,22 @@ impl GossipProtocolExecutor {
     /// Handle a request to reject expiry
     pub async fn handle_reject_expiry_req(
         &self,
-        _req: RejectExpiryRequest,
+        req: RejectExpiryRequest,
     ) -> Result<GossipResponse, GossipError> {
         info!("received reject expiry request");
+        // Remove from the expiry buffer if present
+        let id = req.peer_id;
+        self.expiry_buffer.remove_expiry_candidate(id).await;
+
+        // Update the latest heartbeat for the peer
+        let maybe_info = self.state.get_peer_info(&id).await?;
+        let mut info = match maybe_info {
+            Some(info) => info,
+            None => return Ok(GossipResponse::Ack),
+        };
+        info.last_heartbeat = req.last_heartbeat;
+        self.state.set_peer_info(info).await?;
+
         Ok(GossipResponse::Ack)
     }
 
@@ -120,40 +130,28 @@ impl GossipProtocolExecutor {
         }
 
         // Filter out peers that are in their expiry window
-        let now = get_current_time_seconds();
-        let filtered_peers = {
-            let mut locked_expiry_cache = self.peer_expiry_cache.write().await;
-            peers
-                .iter()
-                .filter(|peer| {
-                    // Check that the peer is not in its invisibility window
-                    if let Some(expired_at) = locked_expiry_cache.get(&peer.peer_id) {
-                        if now - *expired_at <= EXPIRY_INVISIBILITY_WINDOW_MS / 1000 {
-                            return false;
-                        }
-                    }
+        let mut filtered_peers = Vec::new();
+        for peer in peers.into_iter() {
+            // Check that the peer is not in its invisibility window
+            if self.expiry_buffer.contains(&peer.peer_id).await {
+                continue;
+            }
 
-                    // Check that the cluster auth signature on the peer is valid
-                    if peer.verify_cluster_auth_sig().is_err() {
-                        warn!("Peer {} info has invalid cluster auth signature", peer.peer_id);
-                        return false;
-                    }
+            // Check that the cluster auth signature on the peer is valid
+            if peer.verify_cluster_auth_sig().is_err() {
+                warn!("Peer {} info has invalid cluster auth signature", peer.peer_id);
+                continue;
+            }
 
-                    // Remove the peer from the expiry cache if its invisibility window has
-                    // elapsed
-                    locked_expiry_cache.pop_entry(&peer.peer_id);
-                    true
-                })
-                .cloned()
-                .collect_vec()
-        }; // locked_expiry_cache released
+            filtered_peers.push(peer);
+        }
 
         // Add all filtered peers to the network manager's address table
         self.add_new_addrs(&filtered_peers)?;
         // Add all filtered peers to the global peer index
-        self.global_state.add_peer_batch(filtered_peers.clone()).await?;
+        self.state.add_peer_batch(filtered_peers.clone()).await?;
 
-        record_num_peers_metrics(&self.global_state).await;
+        record_num_peers_metrics(&self.state).await;
 
         Ok(())
     }
