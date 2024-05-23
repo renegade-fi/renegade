@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
     time::{SystemTime, UNIX_EPOCH},
 };
-use util::networking::is_dialable_multiaddr;
+use util::{get_current_time_millis, networking::is_dialable_multiaddr};
 
 /// The topic prefix for the cluster management pubsub topic
 ///
@@ -125,7 +125,7 @@ impl PeerInfo {
 
     /// Records a successful heartbeat
     pub fn successful_heartbeat(&mut self) {
-        self.last_heartbeat = current_time_seconds();
+        self.last_heartbeat = get_current_time_millis();
     }
 
     /// Get the last time a heartbeat was recorded for this peer

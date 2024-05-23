@@ -1,15 +1,21 @@
 //! Groups gossip server logic for the heartbeat protocol
 
 use common::types::gossip::WrappedPeerId;
-use gossip_api::request_response::{
-    heartbeat::{HeartbeatMessage, PeerInfoRequest},
-    orderbook::OrderInfoRequest,
-    GossipRequest,
+use gossip_api::{
+    pubsub::{
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
+        PubsubMessage,
+    },
+    request_response::{
+        heartbeat::{HeartbeatMessage, PeerInfoRequest},
+        orderbook::OrderInfoRequest,
+        GossipRequest,
+    },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
 use tracing::info;
-use util::{err_str, get_current_time_seconds};
+use util::{err_str, get_current_time_millis};
 
 use crate::{errors::GossipError, server::GossipProtocolExecutor};
 
@@ -123,18 +129,30 @@ impl GossipProtocolExecutor {
         let cluster_id = self.global_state.get_cluster_id().await?;
         let same_cluster = peer_info.get_cluster_id() == cluster_id;
 
-        let now = get_current_time_seconds();
+        let now = get_current_time_millis();
         let last_heartbeat = now - peer_info.get_last_heartbeat();
 
         #[allow(clippy::if_same_then_else)]
-        if same_cluster && last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 1000 {
+        if same_cluster && last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS {
             return Ok(());
-        } else if !same_cluster && last_heartbeat < HEARTBEAT_FAILURE_MS / 1000 {
+        } else if !same_cluster && last_heartbeat < HEARTBEAT_FAILURE_MS {
             return Ok(());
         }
 
+        // TODO: Give the cluster time to reject peer expiry
+
+        // Send a peer expiry proposal to the cluster
+        let msg = ClusterManagementMessage {
+            cluster_id: cluster_id.clone(),
+            message_type: ClusterManagementMessageType::ProposeExpiry(peer_id),
+        };
+
+        let topic = cluster_id.get_management_topic();
+        let job = NetworkManagerJob::pubsub(topic, PubsubMessage::Cluster(msg));
+        self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
+
         // Remove expired peer from global state & DHT
-        info!("Expiring peer {peer_id} last heartbeat was {last_heartbeat} seconds ago");
+        info!("Expiring peer {peer_id} last heartbeat was {last_heartbeat}ms ago");
         self.global_state.remove_peer(peer_id).await?;
         self.network_channel
             .send(NetworkManagerJob::internal(NetworkManagerControlSignal::PeerExpired { peer_id }))
