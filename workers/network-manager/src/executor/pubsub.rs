@@ -2,6 +2,7 @@
 
 use std::sync::atomic::Ordering;
 
+use common::types::gossip::WrappedPeerId;
 use gossip_api::{
     pubsub::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
@@ -16,6 +17,9 @@ use util::err_str;
 use crate::error::NetworkManagerError;
 
 use super::{behavior::BehaviorJob, BufferedPubsubMessage, NetworkManagerExecutor};
+
+/// Error emitted when a sender is missing from a pubsub message
+const ERR_MISSING_SENDER: &str = "missing sender in pubsub message";
 
 impl NetworkManagerExecutor {
     /// Forward an outbound pubsub message to the network
@@ -48,10 +52,15 @@ impl NetworkManagerExecutor {
             message.data.try_into().map_err(NetworkManagerError::Serialization)?;
         event.verify_cluster_auth(&self.cluster_key.public)?;
 
+        let sender = message
+            .source
+            .map(WrappedPeerId)
+            .ok_or_else(|| NetworkManagerError::UnhandledRequest(ERR_MISSING_SENDER.to_string()))?;
+
         match event.body.destination() {
             GossipDestination::GossipServer => self
                 .gossip_work_queue
-                .send(GossipServerJob::Pubsub(event.body))
+                .send(GossipServerJob::Pubsub(sender, event.body))
                 .map_err(err_str!(NetworkManagerError::EnqueueJob)),
 
             GossipDestination::HandshakeManager => match event.body {
@@ -65,11 +74,10 @@ impl NetworkManagerExecutor {
                             .handshake_work_queue
                             .send(HandshakeExecutionJob::PeerMatchInProgress { order1, order2 })
                             .map_err(err_str!(NetworkManagerError::EnqueueJob)),
+                        _ => unreachable!("handshake manager should not receive other messages"),
                     }
                 },
-                PubsubMessage::Orderbook(_) => {
-                    unreachable!("handshake manager should not receive orderbook messages")
-                },
+                _ => unreachable!("handshake manager should not receive other messages"),
             },
 
             GossipDestination::NetworkManager => {

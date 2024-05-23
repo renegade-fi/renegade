@@ -37,3 +37,13 @@ pub struct PeerInfoResponse {
     /// The peer info for the requested peers
     pub peer_info: Vec<PeerInfo>,
 }
+
+/// Defines a request to reject a peer's proposal to expire a node
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RejectExpiryRequest {
+    /// The peer id of the node that is proposing to expire
+    pub peer_id: WrappedPeerId,
+    /// The timestamp of the last heartbeat the sender received from the expiry
+    /// candidate
+    pub last_heartbeat: u64,
+}

@@ -34,5 +34,7 @@ pub enum GossipServerJob {
     /// An incoming gossip response
     NetworkResponse(WrappedPeerId, GossipResponse),
     /// An incoming pubsub message
-    Pubsub(PubsubMessage),
+    ///
+    /// Arguments are (sender, msg)
+    Pubsub(WrappedPeerId, PubsubMessage),
 }

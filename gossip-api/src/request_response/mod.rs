@@ -7,7 +7,9 @@ use crate::{check_signature, sign_message, GossipDestination};
 
 use self::{
     handshake::HandshakeMessage,
-    heartbeat::{BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse},
+    heartbeat::{
+        BootstrapRequest, HeartbeatMessage, PeerInfoRequest, PeerInfoResponse, RejectExpiryRequest,
+    },
     orderbook::{OrderInfoRequest, OrderInfoResponse},
 };
 
@@ -70,6 +72,8 @@ pub enum GossipRequest {
     Heartbeat(HeartbeatMessage),
     /// A request for peer info
     PeerInfo(PeerInfoRequest),
+    /// Reject a proposal to expire a peer
+    RejectExpiry(RejectExpiryRequest),
 
     // --- Handshakes --- //
     /// A request from a peer communicating about a potential handshake
@@ -101,6 +105,7 @@ impl GossipRequest {
             GossipRequest::Bootstrap(..) => false,
             GossipRequest::Heartbeat(..) => false,
             GossipRequest::PeerInfo(..) => false,
+            GossipRequest::RejectExpiry(..) => true,
             GossipRequest::Handshake { .. } => false,
             GossipRequest::OrderInfo(..) => false,
         }
@@ -115,6 +120,7 @@ impl GossipRequest {
             GossipRequest::Bootstrap(..) => GossipDestination::GossipServer,
             GossipRequest::Heartbeat(..) => GossipDestination::GossipServer,
             GossipRequest::PeerInfo(..) => GossipDestination::GossipServer,
+            GossipRequest::RejectExpiry(..) => GossipDestination::GossipServer,
             GossipRequest::OrderInfo(..) => GossipDestination::GossipServer,
             GossipRequest::Handshake { .. } => GossipDestination::HandshakeManager,
         }
