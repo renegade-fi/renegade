@@ -1,9 +1,15 @@
 //! Handles bootstrap requests and responses
 
 use common::types::gossip::{PeerInfo, WrappedPeerId};
-use gossip_api::request_response::{
-    heartbeat::{BootstrapRequest, PeerInfoResponse, RejectExpiryRequest},
-    GossipRequest, GossipResponse,
+use gossip_api::{
+    pubsub::{
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
+        PubsubMessage,
+    },
+    request_response::{
+        heartbeat::{BootstrapRequest, PeerInfoResponse},
+        GossipResponse,
+    },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
@@ -72,38 +78,48 @@ impl GossipProtocolExecutor {
             info!("rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago");
 
             // The peer should not expire yet, send a rejection
-            let msg = GossipRequest::RejectExpiry(RejectExpiryRequest {
+            let cluster_id = self.state.get_cluster_id().await?;
+            let topic = cluster_id.get_management_topic();
+            let message_type = ClusterManagementMessageType::RejectExpiry {
                 peer_id,
                 last_heartbeat: info.last_heartbeat,
-            });
+            };
 
-            let job = NetworkManagerJob::request(sender, msg);
+            let msg = PubsubMessage::Cluster(ClusterManagementMessage { cluster_id, message_type });
+            let job = NetworkManagerJob::pubsub(topic, msg);
             self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
+        } else {
+            // If we do not reject the expiry, begin expiring on the local node
+            info!("received expiry request, marking {peer_id} as expiry candidate");
+            self.expiry_buffer.mark_expiry_candidate(peer_id).await;
         }
 
         Ok(())
     }
 
     /// Handle a request to reject expiry
-    pub async fn handle_reject_expiry_req(
+    pub async fn handle_reject_expiry(
         &self,
-        req: RejectExpiryRequest,
-    ) -> Result<GossipResponse, GossipError> {
+        peer_id: WrappedPeerId,
+        last_heartbeat: u64,
+    ) -> Result<(), GossipError> {
         info!("received reject expiry request");
         // Remove from the expiry buffer if present
-        let id = req.peer_id;
-        self.expiry_buffer.remove_expiry_candidate(id).await;
+        self.expiry_buffer.remove_expiry_candidate(peer_id).await;
 
         // Update the latest heartbeat for the peer
-        let maybe_info = self.state.get_peer_info(&id).await?;
+        let maybe_info = self.state.get_peer_info(&peer_id).await?;
         let mut info = match maybe_info {
             Some(info) => info,
-            None => return Ok(GossipResponse::Ack),
+            None => return Ok(()),
         };
-        info.last_heartbeat = req.last_heartbeat;
-        self.state.set_peer_info(info).await?;
 
-        Ok(GossipResponse::Ack)
+        if info.last_heartbeat < last_heartbeat {
+            info.last_heartbeat = last_heartbeat;
+            self.state.set_peer_info(info).await?;
+        }
+
+        Ok(())
     }
 
     // ---------------------
@@ -133,7 +149,7 @@ impl GossipProtocolExecutor {
         let mut filtered_peers = Vec::new();
         for peer in peers.into_iter() {
             // Check that the peer is not in its invisibility window
-            if self.expiry_buffer.contains(&peer.peer_id).await {
+            if self.expiry_buffer.is_invisible(&peer.peer_id).await {
                 continue;
             }
 
