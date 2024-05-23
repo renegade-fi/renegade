@@ -219,7 +219,6 @@ impl GossipProtocolExecutor {
             },
             GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids).await,
             GossipRequest::OrderInfo(req) => self.handle_order_info_request(&req.order_ids).await,
-            GossipRequest::RejectExpiry(req) => self.handle_reject_expiry_req(req).await,
             req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
         }
     }
@@ -248,11 +247,17 @@ impl GossipProtocolExecutor {
     ) -> Result<(), GossipError> {
         match msg {
             PubsubMessage::Orderbook(msg) => self.handle_orderbook_pubsub(msg).await,
-            PubsubMessage::Cluster(ClusterManagementMessage {
-                message_type: ClusterManagementMessageType::ProposeExpiry(peer_id),
-                ..
-            }) => self.handle_propose_expiry(sender, peer_id).await,
-            msg => Err(GossipError::UnhandledRequest(format!("{msg:?}"))),
+            PubsubMessage::Cluster(ClusterManagementMessage { message_type, .. }) => {
+                match message_type {
+                    ClusterManagementMessageType::ProposeExpiry(peer_id) => {
+                        self.handle_propose_expiry(sender, peer_id).await
+                    },
+                    ClusterManagementMessageType::RejectExpiry { peer_id, last_heartbeat } => {
+                        self.handle_reject_expiry(peer_id, last_heartbeat).await
+                    },
+                    _ => Err(GossipError::UnhandledRequest(format!("{message_type:?}"))),
+                }
+            },
         }
     }
 }

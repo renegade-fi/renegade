@@ -99,7 +99,8 @@ impl PubsubMessage {
         match self {
             PubsubMessage::Cluster(ClusterManagementMessage { message_type, .. }) => {
                 match message_type {
-                    ClusterManagementMessageType::ProposeExpiry(..) => {
+                    ClusterManagementMessageType::ProposeExpiry(..)
+                    | ClusterManagementMessageType::RejectExpiry { .. } => {
                         GossipDestination::GossipServer
                     },
                     _ => GossipDestination::HandshakeManager,

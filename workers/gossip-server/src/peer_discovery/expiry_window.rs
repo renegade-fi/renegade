@@ -44,12 +44,6 @@ impl<T: Hash + Eq + PartialEq> TimeWindowBuffer<T> {
         self.windows.write().await
     }
 
-    /// Cleanup all expired windows
-    async fn cleanup(&self) {
-        let mut this = self.write_windows().await;
-        this.retain(|_, expiry_time| *expiry_time > Instant::now());
-    }
-
     /// Whether or not the given key is present in the buffer
     pub async fn contains(&self, key: &T) -> bool {
         let this = self.read_windows().await;
@@ -59,29 +53,22 @@ impl<T: Hash + Eq + PartialEq> TimeWindowBuffer<T> {
     /// Check whether the window for a key has expired
     pub async fn is_expired(&self, key: &T) -> bool {
         let this = self.read_windows().await;
-        match this.get(key) {
-            Some(expiry_time) => *expiry_time < Instant::now(),
-            None => true,
-        }
+        this.get(key).map_or(false, |expiry_time| *expiry_time < Instant::now())
     }
 
     /// Adds a key to the buffer
+    ///
+    /// Does not replace existing windows
     pub async fn add(&self, key: T, dur: Duration) {
         let expiry_time = Instant::now() + dur;
         let mut this = self.write_windows().await;
         this.entry(key).or_insert(expiry_time);
-        drop(this); // unlock
-
-        self.cleanup().await;
     }
 
     /// Remove a key from the buffer
     pub async fn remove(&self, key: T) {
         let mut this = self.write_windows().await;
         this.remove(&key);
-        drop(this); // unlock
-
-        self.cleanup().await;
     }
 }
 
@@ -164,6 +151,7 @@ impl PeerExpiryWindows {
 
     /// Mark a peer as expired, adding it to the invisibility window
     pub async fn mark_expired(&self, peer_id: WrappedPeerId) {
+        self.remove_expiry_candidate(peer_id).await;
         self.mark_invisible(peer_id).await;
     }
 }
