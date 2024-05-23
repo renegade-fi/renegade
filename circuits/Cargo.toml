@@ -44,6 +44,11 @@ required-features = ["test_helpers"]
 name = "full_match"
 harness = false
 required-features = ["test_helpers"]
+    
+[[bench]]
+name = "internal_match_settlement"
+harness = false
+required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_relayer_fee_settlement"
