@@ -1,5 +1,13 @@
 //! Groups handlers for the HTTP API
 
+mod admin;
+mod network;
+mod order_book;
+mod price_report;
+mod task;
+mod wallet;
+
+use admin::IsLeaderHandler;
 use async_trait::async_trait;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
@@ -7,6 +15,7 @@ use common::types::{
 };
 use external_api::{
     http::{
+        admin::IS_LEADER_ROUTE,
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
@@ -62,12 +71,6 @@ use super::{
     router::{Router, TypedHandler, UrlParams},
     worker::ApiServerConfig,
 };
-
-mod network;
-mod order_book;
-mod price_report;
-mod task;
-mod wallet;
 
 /// Health check
 pub const PING_ROUTE: &str = "/v0/ping";
@@ -194,6 +197,8 @@ impl HttpServer {
         // Build the router and register its routes
         let mut router = Router::new(global_state.clone());
 
+        // --- Misc Routes --- //
+
         // The "/price_report" route
         router.add_route(
             &Method::POST,
@@ -209,6 +214,8 @@ impl HttpServer {
             false, // auth_required
             PingHandler::new(),
         );
+
+        // --- Wallet Routes --- //
 
         // The "/task/:id" route
         router.add_route(
@@ -354,6 +361,8 @@ impl HttpServer {
             GetOrderHistoryHandler::new(global_state.clone()),
         );
 
+        // --- Orderbook Routes --- //
+
         // The "/order_book/orders" route
         router.add_route(
             &Method::GET,
@@ -369,6 +378,8 @@ impl HttpServer {
             false, // auth_required
             GetNetworkOrderByIdHandler::new(global_state.clone()),
         );
+
+        // --- Network Routes --- //
 
         // The "/network" route
         router.add_route(
@@ -391,7 +402,17 @@ impl HttpServer {
             &Method::GET,
             GET_PEER_INFO_ROUTE.to_string(),
             false, // auth_required
-            GetPeerInfoHandler::new(global_state),
+            GetPeerInfoHandler::new(global_state.clone()),
+        );
+
+        // --- Admin Routes --- //
+
+        // The "/admin/is-leader" route
+        router.add_route(
+            &Method::GET,
+            IS_LEADER_ROUTE.to_string(),
+            false, // auth_required
+            IsLeaderHandler::new(global_state),
         );
 
         router

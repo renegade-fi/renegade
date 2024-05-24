@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod admin;
 pub mod network;
 pub mod order_book;
 pub mod price_report;
