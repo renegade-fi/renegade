@@ -23,6 +23,14 @@ impl State {
         self.raft.is_initialized()
     }
 
+    /// Whether the local node is the leader
+    pub fn is_leader(&self) -> bool {
+        match self.raft.leader_info() {
+            Some((leader_id, _)) => self.raft.node_id() == leader_id,
+            None => false,
+        }
+    }
+
     /// Get the leader of the raft
     pub fn get_leader(&self) -> Option<WrappedPeerId> {
         let (_raft_id, info) = self.raft.leader_info()?;
