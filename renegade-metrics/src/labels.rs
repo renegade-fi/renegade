@@ -41,6 +41,13 @@ pub const NUM_STOPPED_TASKS_METRIC: &str = "num_stopped_tasks";
 /// Metric describing the number of tasks completed
 pub const NUM_COMPLETED_TASKS_METRIC: &str = "num_completed_tasks";
 
+// Proof metrics
+
+/// Metric describing the number of proof jobs started
+pub const NUM_STARTED_PROOFS_METRIC: &str = "num_started_proofs";
+/// Metric describing the number of proof jobs completed
+pub const NUM_COMPLETED_PROOFS_METRIC: &str = "num_completed_proofs";
+
 // ---------------
 // | METRIC TAGS |
 // ---------------

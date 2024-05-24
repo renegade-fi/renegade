@@ -24,6 +24,7 @@ common = { path = "../../common" }
 constants = { path = "../../constants" }
 job-types = { path = "../job-types" }
 util = { path = "../../util" }
+renegade-metrics = { path = "../../renegade-metrics" }
 
 # === Misc Dependencies === #
 serde = { workspace = true }
