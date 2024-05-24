@@ -127,7 +127,8 @@ impl ArbitrumClient {
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = send_tx(
-            self.get_darkpool_client().new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
+            self.get_darkpool_client()
+                .new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
         )
         .await?;
 
