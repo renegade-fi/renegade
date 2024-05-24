@@ -32,6 +32,15 @@ pub const NUM_LOCAL_PEERS_METRIC: &str = "num_local_peers";
 /// is connected to
 pub const NUM_REMOTE_PEERS_METRIC: &str = "num_remote_peers";
 
+// Task metrics
+
+/// Metric describing the number of tasks started
+pub const NUM_STARTED_TASKS_METRIC: &str = "num_started_tasks";
+/// Metric describing the number of tasks stopped
+pub const NUM_STOPPED_TASKS_METRIC: &str = "num_stopped_tasks";
+/// Metric describing the number of tasks completed
+pub const NUM_COMPLETED_TASKS_METRIC: &str = "num_completed_tasks";
+
 // ---------------
 // | METRIC TAGS |
 // ---------------

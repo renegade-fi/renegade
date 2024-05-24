@@ -17,6 +17,7 @@ use common::{
     Shared,
 };
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
+use renegade_metrics::helpers::{incr_completed_tasks, incr_started_tasks, incr_stopped_tasks};
 use serde::Serialize;
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
@@ -261,6 +262,7 @@ impl TaskExecutor {
                 .pause_multiple_task_queues(wallet_ids.clone(), task_id, task.clone())
                 .await?;
             waiter.await?;
+            incr_stopped_tasks(wallet_ids.len())
         }
 
         // Add the task to the preemptive tasks list so that notification requests can
@@ -354,7 +356,10 @@ impl TaskExecutor {
 
         // Create and run the task
         let mut task = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await?;
+        incr_started_tasks();
         let res = Self::run_task_to_completion(&mut task, args).await;
+        incr_stopped_tasks(1);
+        incr_completed_tasks();
 
         // Cleanup
         let cleanup_res = task.cleanup(res.is_ok()).await;
