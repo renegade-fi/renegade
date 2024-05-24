@@ -9,8 +9,9 @@ use util::hex::biguint_to_hex_string;
 
 use crate::labels::{
     ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
-    MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS, NUM_LOCAL_PEERS_METRIC,
-    NUM_REMOTE_PEERS_METRIC, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
+    MATCH_QUOTE_VOLUME_METRIC, NUM_COMPLETED_TASKS_METRIC, NUM_DEPOSITS_METRICS,
+    NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC, NUM_STARTED_TASKS_METRIC,
+    NUM_STOPPED_TASKS_METRIC, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
 };
 
 /// Get the human-readable asset and volume of
@@ -88,4 +89,25 @@ pub async fn record_num_peers_metrics(state: &State) {
 
     metrics::gauge!(NUM_LOCAL_PEERS_METRIC).set(num_local_peers as f64);
     metrics::gauge!(NUM_REMOTE_PEERS_METRIC).set(num_remote_peers as f64);
+}
+
+/// Increment the number of started tasks
+#[inline]
+pub fn incr_started_tasks() {
+    #[cfg(feature = "task-metrics")]
+    metrics::counter!(NUM_STARTED_TASKS_METRIC).increment(1);
+}
+
+/// Increment the number of stopped tasks by the given number of tasks
+#[inline]
+pub fn incr_stopped_tasks(num_tasks: usize) {
+    #[cfg(feature = "task-metrics")]
+    metrics::counter!(NUM_STOPPED_TASKS_METRIC).increment(num_tasks as u64);
+}
+
+/// Increment the number of completed tasks
+#[inline]
+pub fn incr_completed_tasks() {
+    #[cfg(feature = "task-metrics")]
+    metrics::counter!(NUM_COMPLETED_TASKS_METRIC).increment(1);
 }
