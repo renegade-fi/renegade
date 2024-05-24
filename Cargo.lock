@@ -284,6 +284,7 @@ dependencies = [
  "itertools 0.12.1",
  "json",
  "lazy_static",
+ "metrics",
  "mpc-plonk",
  "mpc-relation",
  "num-bigint",
