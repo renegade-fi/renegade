@@ -20,7 +20,11 @@ use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS};
 use crossbeam::channel::Sender as CrossbeamSender;
-use ethers::{middleware::Middleware, signers::{LocalWallet, Signer}, types::Address};
+use ethers::{
+    middleware::Middleware,
+    signers::{LocalWallet, Signer},
+    types::Address,
+};
 use helpers::new_mock_task_driver;
 use job_types::{
     network_manager::{new_network_manager_queue, NetworkManagerReceiver},

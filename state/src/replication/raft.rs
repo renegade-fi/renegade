@@ -231,6 +231,14 @@ impl RaftClient {
             .leader_info()
             .ok_or_else(|| ReplicationV2Error::Proposal(ERR_NO_LEADER.to_string()))?;
 
+        // If we're expiring the leader, first change leader then propose an expiry
+        if let &StateTransition::RemoveRaftPeer { peer_id } = update.transition.as_ref()
+            && leader_nid == peer_id
+        {
+            info!("removing raft leader");
+            self.change_leader().await?;
+        }
+
         if leader_nid != self.node_id() {
             // Get a client to the leader's raft
             let net = self.network_factory.new_p2p_client(leader_nid, leader_info);
@@ -340,6 +348,26 @@ impl RaftClient {
         peers: BTreeMap<NodeId, RaftNode>,
     ) -> Result<(), ReplicationV2Error> {
         self.raft().initialize(peers).await.map_err(err_str!(ReplicationV2Error::RaftSetup))
+    }
+
+    /// Force the leader to change by starting an election and waiting until a
+    /// new leader is elected
+    pub async fn change_leader(&self) -> Result<(), ReplicationV2Error> {
+        // Trigger an election
+        let curr_leader = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
+        self.raft().trigger().elect().await.map_err(err_str!(ReplicationV2Error::Raft))?;
+
+        // Await leadership change away from current leader
+        let timeout = Duration::from_millis(DEFAULT_LEADER_ELECTION_TIMEOUT_MS);
+        self.raft()
+            .wait(Some(timeout))
+            .metrics(
+                |m| m.current_leader.is_some() && m.current_leader.unwrap() != curr_leader,
+                "leader-change",
+            )
+            .await
+            .map_err(err_str!(ReplicationV2Error::Raft))
+            .map(|_| ())
     }
 
     /// Add a learner to the cluster
