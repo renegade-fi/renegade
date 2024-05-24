@@ -8,10 +8,7 @@ use tracing::error;
 use util::hex::biguint_to_hex_string;
 
 use crate::labels::{
-    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
-    MATCH_QUOTE_VOLUME_METRIC, NUM_COMPLETED_TASKS_METRIC, NUM_DEPOSITS_METRICS,
-    NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC, NUM_STARTED_TASKS_METRIC,
-    NUM_STOPPED_TASKS_METRIC, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
+    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC, NUM_COMPLETED_PROOFS_METRIC, NUM_COMPLETED_TASKS_METRIC, NUM_DEPOSITS_METRICS, NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC, NUM_STARTED_PROOFS_METRIC, NUM_STARTED_TASKS_METRIC, NUM_STOPPED_TASKS_METRIC, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC
 };
 
 /// Get the human-readable asset and volume of
@@ -110,4 +107,18 @@ pub fn incr_stopped_tasks(num_tasks: usize) {
 pub fn incr_completed_tasks() {
     #[cfg(feature = "task-metrics")]
     metrics::counter!(NUM_COMPLETED_TASKS_METRIC).increment(1);
+}
+
+/// Increment the number of started proofs
+#[inline]
+pub fn incr_started_proofs() {
+    #[cfg(feature = "proof-metrics")]
+    metrics::counter!(NUM_STARTED_PROOFS_METRIC).increment(1);
+}
+
+/// Increment the number of completed proofs
+#[inline]
+pub fn incr_completed_proofs() {
+    #[cfg(feature = "proof-metrics")]
+    metrics::counter!(NUM_COMPLETED_PROOFS_METRIC).increment(1);
 }

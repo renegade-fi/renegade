@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 task-metrics = []
+proof-metrics = []
 
 [dependencies]
 # === Telemetry === #
