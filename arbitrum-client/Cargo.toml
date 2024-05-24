@@ -10,6 +10,7 @@ integration = [
     "common/mocks",
 ]
 rand = ["dep:rand"]
+tx-metrics = ["dep:metrics"]
 
 [[test]]
 name = "integration"
@@ -50,6 +51,7 @@ itertools = "0.12"
 lazy_static = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true, optional = true }
+metrics = { workspace = true, optional = true }
 
 # === Contracts Repo Dependencies === #
 contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
