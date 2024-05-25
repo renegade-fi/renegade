@@ -3,16 +3,13 @@
 use circuit_types::{r#match::MatchResult, transfers::ExternalTransferDirection};
 use common::types::{token::Token, transfer_auth::ExternalTransferWithAuth};
 use num_bigint::BigUint;
-use state::{error::StateError, State};
-use tracing::error;
 use util::hex::biguint_to_hex_string;
 
 use crate::labels::{
     ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
     MATCH_QUOTE_VOLUME_METRIC, NUM_COMPLETED_PROOFS_METRIC, NUM_COMPLETED_TASKS_METRIC,
-    NUM_DEPOSITS_METRICS, NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC,
-    NUM_STARTED_PROOFS_METRIC, NUM_STARTED_TASKS_METRIC, NUM_STOPPED_TASKS_METRIC,
-    NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
+    NUM_DEPOSITS_METRICS, NUM_STARTED_PROOFS_METRIC, NUM_STARTED_TASKS_METRIC,
+    NUM_STOPPED_TASKS_METRIC, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
 };
 
 /// Get the human-readable asset and volume of
@@ -67,29 +64,6 @@ pub fn record_match_volume(match_result: &MatchResult) {
 /// Record the volume of a fee settlement into the relayer's wallet
 pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
     record_volume(mint, amount, FEES_COLLECTED_METRIC);
-}
-
-/// Get the number of local and remote peers the cluster is connected to
-async fn get_num_peers(state: &State) -> Result<(usize, usize), StateError> {
-    let cluster_id = state.get_cluster_id().await?;
-    let num_local_peers = state.get_cluster_peers(&cluster_id).await?.len();
-    let num_remote_peers = state.get_non_cluster_peers(&cluster_id).await?.len();
-
-    Ok((num_local_peers, num_remote_peers))
-}
-
-/// Record the number of local and remote peers the cluster is connected to
-pub async fn record_num_peers_metrics(state: &State) {
-    let (num_local_peers, num_remote_peers) = match get_num_peers(state).await {
-        Ok(peers) => peers,
-        Err(e) => {
-            error!("Error getting number of peers: {}", e);
-            return;
-        },
-    };
-
-    metrics::gauge!(NUM_LOCAL_PEERS_METRIC).set(num_local_peers as f64);
-    metrics::gauge!(NUM_REMOTE_PEERS_METRIC).set(num_remote_peers as f64);
 }
 
 /// Increment the number of started tasks
