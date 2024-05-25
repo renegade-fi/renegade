@@ -1,0 +1,23 @@
+[package]
+name = "snapshot-sidecar"
+description = "Sidecar process that manages snapshots emitted by the relayer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === AWS Deps === #
+aws-config = { version = "1.1.4", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.14.0"
+
+# === Async + Runtime === #
+tokio = { workspace = true, features = ["full"] }
+
+# === Workspace Dependencies === #
+external-api = { path = "../external-api" }
+util = { path = "../util" }
+
+# === Misc Deps === #
+clap = { version = "3.1.1", features = ["derive"] }
+notify = "6.1"
+tracing = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }

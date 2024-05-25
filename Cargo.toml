@@ -28,6 +28,7 @@ members = [
 	"workers/task-driver",
 	"renegade-metrics",
 	"system-clock",
+	"snapshot-sidecar",
 ]
 
 [profile.bench]
