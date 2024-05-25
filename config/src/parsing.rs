@@ -166,7 +166,8 @@ fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, String> {
 
 /// Parse a config entirely from a file
 pub fn parse_config_from_file(path: &str) -> Result<RelayerConfig, String> {
-    let file_args = read_config_file(path)?;
+    let mut file_args = read_config_file(path)?;
+    file_args.insert(0, "dummy-program-name".to_string());
     let cli = Cli::parse_from(file_args);
     let config = parse_config_from_args(cli)?;
     validate_config(&config)?;

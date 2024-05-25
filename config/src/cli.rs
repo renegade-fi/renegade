@@ -162,7 +162,13 @@ pub struct Cli {
     /// Multiple keys can be provided to mitigate nonce contention across a node / cluster.
     /// 
     /// Defaults to the devnet pre-funded key
-    #[clap(long = "arbitrum-pkeys", value_parser, default_values_t = ["0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659".to_string()])]
+    #[clap(
+        value_parser,
+        long = "arbitrum-pkeys",  
+        default_values_t = ["0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659".to_string()],
+        num_args = 1..,
+        value_delimiter = ' ',
+    )]
     pub arbitrum_private_keys: Vec<String>,
     /// The key used to decrypt fee payments
     #[clap(long = "fee-decryption-key", value_parser)]
