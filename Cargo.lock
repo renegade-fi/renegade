@@ -287,7 +287,6 @@ dependencies = [
  "itertools 0.12.1",
  "json",
  "lazy_static",
- "metrics",
  "mpc-plonk",
  "mpc-relation",
  "num-bigint",
@@ -295,6 +294,7 @@ dependencies = [
  "postcard",
  "rand 0.8.5",
  "renegade-crypto",
+ "renegade-metrics",
  "ruint",
  "serde",
  "serde_with",
@@ -786,6 +786,12 @@ name = "atomic_float"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62af46d040ba9df09edc6528dae9d8e49f5f3e82f55b7d2ec31a733c38dbc49d"
+
+[[package]]
+name = "atomic_float"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c4b08ed8a30ff7320117c190eb4d73d47f0ac0c930ab853b8224cef7cd9a5e7"
 
 [[package]]
 name = "atty"
@@ -6681,7 +6687,7 @@ name = "price-reporter"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "atomic_float",
+ "atomic_float 0.1.0",
  "bimap",
  "common",
  "create2",
@@ -7272,8 +7278,10 @@ dependencies = [
 name = "renegade-metrics"
 version = "0.1.0"
 dependencies = [
+ "atomic_float 1.0.0",
  "circuit-types",
  "common",
+ "lazy_static",
  "metrics",
  "num-bigint",
  "tracing",

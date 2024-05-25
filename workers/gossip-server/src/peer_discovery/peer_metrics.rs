@@ -1,3 +1,5 @@
+//! Helpers for tracking peer metrics
+
 use renegade_metrics::labels::{NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC};
 use state::{error::StateError, State};
 use tracing::error;

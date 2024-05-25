@@ -16,7 +16,10 @@ use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob}
 use tracing::info;
 use util::{err_str, get_current_time_millis};
 
-use crate::{errors::GossipError, peer_discovery::peer_metrics::record_num_peers_metrics, server::GossipProtocolExecutor};
+use crate::{
+    errors::GossipError, peer_discovery::peer_metrics::record_num_peers_metrics,
+    server::GossipProtocolExecutor,
+};
 
 // -------------
 // | Constants |

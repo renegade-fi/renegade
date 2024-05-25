@@ -34,19 +34,20 @@ pub const NUM_REMOTE_PEERS_METRIC: &str = "num_remote_peers";
 
 // Task metrics
 
-/// Metric describing the number of tasks started
-pub const NUM_STARTED_TASKS_METRIC: &str = "num_started_tasks";
-/// Metric describing the number of tasks stopped
-pub const NUM_STOPPED_TASKS_METRIC: &str = "num_stopped_tasks";
+/// Metric describing the number of in-flight tasks
+pub const NUM_INFLIGHT_TASKS_METRIC: &str = "num_inflight_tasks";
 /// Metric describing the number of tasks completed
 pub const NUM_COMPLETED_TASKS_METRIC: &str = "num_completed_tasks";
 
 // Proof metrics
 
-/// Metric describing the number of proof jobs started
-pub const NUM_STARTED_PROOFS_METRIC: &str = "num_started_proofs";
-/// Metric describing the number of proof jobs completed
-pub const NUM_COMPLETED_PROOFS_METRIC: &str = "num_completed_proofs";
+/// Metric describing the number of in-flight proofs
+pub const NUM_INFLIGHT_PROOFS_METRIC: &str = "num_inflight_proofs";
+
+// Transaction metrics
+
+/// Metric describing the number of in-flight Arbitrum transactions
+pub const NUM_INFLIGHT_TXS_METRIC: &str = "num_inflight_txs";
 
 // ---------------
 // | METRIC TAGS |
