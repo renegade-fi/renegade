@@ -36,8 +36,11 @@ ARG CARGO_FEATURES="default"
 # Build only the dependencies to cache them in this layer
 RUN cargo chef cook --release --recipe-path recipe.json --features "$CARGO_FEATURES"
 
-# Build the relayer
+# Build the snapshot sidecar
 COPY . .
+RUN cargo build --release --package snapshot-sidecar
+
+# Build the relayer
 RUN cargo build --release --features "$CARGO_FEATURES"
 
 # Release stage
@@ -48,7 +51,8 @@ RUN apt-get update && \
     apt-get install -y ca-certificates && \
     apt-get install -y awscli
 
-# Copy the binary from the build stage
+# Copy the binaries from the build stage
+COPY --from=builder /build/target/release/snapshot-sidecar /bin/snapshot-sidecar
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 
 # Copy the bootloader script & make it executable
