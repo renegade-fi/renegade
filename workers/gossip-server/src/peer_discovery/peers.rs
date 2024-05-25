@@ -12,13 +12,12 @@ use gossip_api::{
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use renegade_metrics::helpers::record_num_peers_metrics;
 use tracing::{info, warn};
 use util::{err_str, get_current_time_millis};
 
 use crate::{errors::GossipError, server::GossipProtocolExecutor};
 
-use super::heartbeat::CLUSTER_HEARTBEAT_FAILURE_MS;
+use super::{heartbeat::CLUSTER_HEARTBEAT_FAILURE_MS, peer_metrics::record_num_peers_metrics};
 
 impl GossipProtocolExecutor {
     // --------------------

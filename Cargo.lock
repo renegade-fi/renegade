@@ -7276,7 +7276,6 @@ dependencies = [
  "common",
  "metrics",
  "num-bigint",
- "state",
  "tracing",
  "util",
 ]
