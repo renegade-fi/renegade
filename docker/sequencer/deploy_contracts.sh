@@ -156,6 +156,7 @@ cargo run \
     $no_verify_flag
 
 # Deploy the proxy contract
+# Use the FP representation of 2bps for the protocol fee
 cargo run \
     --package scripts -- \
     --priv-key $DEVNET_PKEY \
@@ -163,4 +164,4 @@ cargo run \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-proxy \
     --owner $DEVNET_ACCOUNT_ADDRESS \
-    --fee 1
+    --fee 858993
