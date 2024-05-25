@@ -79,7 +79,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // ---------------------
 
     // Parse command line arguments
-    let args = tokio::task::spawn_blocking(config::parse_command_line_args)
+    let args = tokio::task::spawn_blocking(config::parsing::parse_command_line_args)
         .await
         .expect("error blocking on config parse")
         .expect("error parsing command line args");
