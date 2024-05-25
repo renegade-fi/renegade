@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 task-metrics = []
 proof-metrics = []
+tx-metrics = []
 
 [dependencies]
 # === Telemetry === #
@@ -14,8 +15,12 @@ metrics = { workspace = true }
 
 # === Cryptography / Arithmetic === #
 num-bigint = { workspace = true }
+atomic_float = "1"
 
 # === Workspace Dependencies === #
 circuit-types = { path = "../circuit-types" }
 util = { path = "../util" }
 common = { path = "../common" }
+
+# === Misc === #
+lazy_static = { workspace = true }

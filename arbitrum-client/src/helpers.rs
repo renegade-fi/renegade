@@ -16,6 +16,7 @@ use ethers::{
     contract::ContractCall,
     types::{Bytes, TransactionReceipt},
 };
+use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -48,7 +49,7 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 pub async fn send_tx(
     tx: ContractCall<MiddlewareStack, impl Detokenize>,
 ) -> Result<TransactionReceipt, ArbitrumClientError> {
-    incr_txs_sent();
+    incr_inflight_txs();
     let res = tx
         .send()
         .await
@@ -57,7 +58,7 @@ pub async fn send_tx(
         .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
         .ok_or(ArbitrumClientError::TxDropped);
 
-    incr_txs_submitted();
+    decr_inflight_txs();
     res
 }
 
@@ -190,18 +191,4 @@ pub fn parse_shares_from_redeem_fee(
     let mut shares = statement.new_wallet_public_shares.into_iter().map(Scalar::new);
 
     Ok(SizedWalletShare::from_scalars(&mut shares))
-}
-
-/// Increment the number of transactions sent
-#[inline]
-pub fn incr_txs_sent() {
-    #[cfg(feature = "tx-metrics")]
-    metrics::counter!(NUM_TXS_SENT_METRIC).increment(1);
-}
-
-/// Increment the number of transactions submitted
-#[inline]
-pub fn incr_txs_submitted() {
-    #[cfg(feature = "tx-metrics")]
-    metrics::counter!(NUM_TXS_SUBMITTED_METRIC).increment(1);
 }

@@ -58,13 +58,6 @@ pub const BLOCK_POLLING_INTERVAL_MS: u64 = 100;
 /// The interval at which to poll for event filters
 pub const EVENT_FILTER_POLLING_INTERVAL_MS: u64 = 7000;
 
-// Metric labels
-
-/// Metric describing the number of transactions sent
-pub const NUM_TXS_SENT_METRIC: &str = "num_txs_sent";
-/// Metric describing the number of transactions submitted
-pub const NUM_TXS_SUBMITTED_METRIC: &str = "num_txs_submitted";
-
 lazy_static! {
     // ------------------------
     // | Merkle Tree Metadata |
