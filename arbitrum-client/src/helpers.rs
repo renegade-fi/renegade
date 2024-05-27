@@ -16,7 +16,6 @@ use ethers::{
     contract::ContractCall,
     types::{Bytes, TransactionReceipt},
 };
-use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -29,7 +28,7 @@ use crate::{
 };
 
 #[cfg(feature = "tx-metrics")]
-use crate::constants::{NUM_TXS_SENT_METRIC, NUM_TXS_SUBMITTED_METRIC};
+use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 
 /// Serializes a calldata element for a contract call
 pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, ArbitrumClientError> {
@@ -49,7 +48,9 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 pub async fn send_tx(
     tx: ContractCall<MiddlewareStack, impl Detokenize>,
 ) -> Result<TransactionReceipt, ArbitrumClientError> {
+    #[cfg(feature = "tx-metrics")]
     incr_inflight_txs();
+
     let res = tx
         .send()
         .await
@@ -58,7 +59,9 @@ pub async fn send_tx(
         .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
         .ok_or(ArbitrumClientError::TxDropped);
 
+    #[cfg(feature = "tx-metrics")]
     decr_inflight_txs();
+
     res
 }
 
