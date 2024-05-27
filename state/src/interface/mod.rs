@@ -144,7 +144,7 @@ impl State {
         let applicator = StateApplicator::new(applicator_config).map_err(StateError::Applicator)?;
         let notifications = OpenNotifications::new();
         let sm_config = StateMachineConfig::new(config.raft_snapshot_path.clone());
-        let sm = StateMachine::new(sm_config, notifications.clone(), applicator);
+        let sm = StateMachine::new(sm_config, notifications.clone(), applicator).await?;
 
         // Start a raft
         let raft = RaftClient::new(raft_config, db.clone(), network, sm)
@@ -177,6 +177,7 @@ impl State {
             election_timeout_min: DEFAULT_MIN_ELECTION_MS,
             election_timeout_max: DEFAULT_MAX_ELECTION_MS,
             initial_nodes,
+            snapshot_path: relayer_config.raft_snapshot_path.clone(),
             ..Default::default()
         }
     }

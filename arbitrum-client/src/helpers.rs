@@ -24,9 +24,11 @@ use crate::{
         settleOnlineRelayerFeeCall, updateWalletCall,
     },
     client::MiddlewareStack,
-    constants::{NUM_TXS_SENT_METRIC, NUM_TXS_SUBMITTED_METRIC},
     errors::ArbitrumClientError,
 };
+
+#[cfg(feature = "tx-metrics")]
+use crate::constants::{NUM_TXS_SENT_METRIC, NUM_TXS_SUBMITTED_METRIC};
 
 /// Serializes a calldata element for a contract call
 pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, ArbitrumClientError> {

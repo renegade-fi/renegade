@@ -7,7 +7,6 @@ pub mod error;
 mod log_store;
 pub(crate) mod network;
 pub mod raft;
-mod snapshot;
 pub(crate) mod state_machine;
 
 pub use network::gossip::GossipNetwork;
@@ -98,18 +97,18 @@ pub mod test_helpers {
     // -----------
 
     /// Create a mock state machine
-    pub fn mock_state_machine() -> StateMachine {
-        let (sm, _) = mock_state_and_log();
+    pub async fn mock_state_machine() -> StateMachine {
+        let (sm, _) = mock_state_and_log().await;
         sm
     }
 
     /// Create a mock state machine and log store
-    pub fn mock_state_and_log() -> (StateMachine, LogStore) {
+    pub async fn mock_state_and_log() -> (StateMachine, LogStore) {
         let applicator = mock_applicator();
         let db = applicator.config.db.clone();
         let sm_config = StateMachineConfig::new(db.path().to_string());
         let notifications = OpenNotifications::new();
-        let sm = StateMachine::new(sm_config, notifications, applicator);
+        let sm = StateMachine::new(sm_config, notifications, applicator).await.unwrap();
         let log = LogStore::new(db);
 
         (sm, log)
@@ -221,7 +220,7 @@ pub mod test_helpers {
                 let db = applicator.config.db.clone();
                 let notifications = OpenNotifications::new();
                 let sm_conf = StateMachineConfig::new(db.path().to_string());
-                let sm = StateMachine::new(sm_conf, notifications, applicator);
+                let sm = StateMachine::new(sm_conf, notifications, applicator).await.unwrap();
 
                 let client = RaftClient::new(conf, db.clone(), mock_net, sm).await.unwrap();
                 nodes.insert(i, MockRaftNode::new(client, db));
@@ -289,7 +288,7 @@ pub mod test_helpers {
             let db = applicator.config.db.clone();
             let notifications = OpenNotifications::new();
             let sm_conf = StateMachineConfig::new(db.path().to_string());
-            let sm = StateMachine::new(sm_conf, notifications, applicator);
+            let sm = StateMachine::new(sm_conf, notifications, applicator).await.unwrap();
 
             let client = RaftClient::new(config, db.clone(), mock_net, sm).await.unwrap();
             let node = MockRaftNode::new(client, db);
@@ -331,7 +330,7 @@ mod test {
     struct StorageBuilder;
     impl StoreBuilder<TypeConfig, LogStore, StateMachine> for StorageBuilder {
         async fn build(&self) -> Result<((), LogStore, StateMachine), RaftStorageError<NodeId>> {
-            let (sm, log) = mock_state_and_log();
+            let (sm, log) = mock_state_and_log().await;
             Ok(((), log, sm))
         }
     }

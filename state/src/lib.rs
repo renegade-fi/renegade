@@ -248,6 +248,7 @@ pub mod test_helpers {
             heartbeat_interval: 5,
             init: true,
             initial_nodes,
+            snapshot_path: relayer_config.raft_snapshot_path.clone(),
             ..Default::default()
         }
     }
