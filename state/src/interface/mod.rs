@@ -68,6 +68,8 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 /// replication and durability primitives backing the state machine
 #[derive(Clone)]
 pub struct State {
+    /// Whether the state machine recovered from a snapshot
+    pub(crate) recovered_from_snapshot: bool,
     /// Whether or not the node allows local peers when adding to the peer index
     pub(crate) allow_local: bool,
     /// A handle on the database
@@ -145,6 +147,7 @@ impl State {
         let notifications = OpenNotifications::new();
         let sm_config = StateMachineConfig::new(config.raft_snapshot_path.clone());
         let sm = StateMachine::new(sm_config, notifications.clone(), applicator).await?;
+        let recovered_from_snapshot = sm.recovered_from_snapshot;
 
         // Start a raft
         let raft = RaftClient::new(raft_config, db.clone(), network, sm)
@@ -152,8 +155,14 @@ impl State {
             .map_err(StateError::Replication)?;
 
         // Setup the node metadata from the config
-        let this =
-            Self { allow_local: config.allow_local, db, bus: system_bus, notifications, raft };
+        let this = Self {
+            allow_local: config.allow_local,
+            db,
+            bus: system_bus,
+            notifications,
+            raft,
+            recovered_from_snapshot,
+        };
         this.setup_node_metadata(config).await?;
         this.setup_learner_promotion_timer(&system_clock).await?;
         this.setup_core_panic_timer(&system_clock, failure_send).await?;

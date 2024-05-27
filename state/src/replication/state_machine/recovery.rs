@@ -18,6 +18,7 @@ impl StateMachine {
 
         // Open the snap DB and apply a dummy snapshot
         info!("snapshot found, recovering...");
+        self.recovered_from_snapshot = true;
         let snap_db = self.open_snap_db().await?;
         let dummy_meta = SnapshotMeta {
             last_log_id: None,

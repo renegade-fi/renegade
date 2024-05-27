@@ -18,6 +18,11 @@ use crate::{
 impl State {
     // --- Raft State --- //
 
+    /// Whether the state machine was recovered from a snapshot
+    pub fn was_recovered_from_snapshot(&self) -> bool {
+        self.recovered_from_snapshot
+    }
+
     /// Whether the raft is initialized (has non-empty voters)
     pub fn is_raft_initialized(&self) -> bool {
         self.raft.is_initialized()

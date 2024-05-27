@@ -44,6 +44,19 @@ impl Wallet {
         compute_wallet_share_nullifier(self.get_wallet_share_commitment(), self.blinder)
     }
 
+    /// Get the private share of the blinder
+    pub fn private_blinder_share(&self) -> Scalar {
+        self.private_shares.blinder
+    }
+
+    /// Get the last non-blinder wallet share
+    pub fn get_last_private_share(&self) -> Scalar {
+        let shares = self.private_shares.to_scalars();
+
+        // The last share is the blinder, so take the second to last
+        shares[shares.len() - 2]
+    }
+
     // -----------
     // | Setters |
     // -----------

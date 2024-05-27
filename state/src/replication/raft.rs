@@ -6,9 +6,7 @@ use std::{
     time::Duration,
 };
 
-use openraft::{
-    ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState, SnapshotPolicy,
-};
+use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tracing::info;
 use util::err_str;
 
