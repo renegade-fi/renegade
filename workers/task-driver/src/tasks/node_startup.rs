@@ -7,7 +7,7 @@
 
 use std::{error::Error, fmt::Display, time::Duration};
 
-use arbitrum_client::client::ArbitrumClient;
+use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use async_trait::async_trait;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor},
@@ -62,6 +62,8 @@ pub enum NodeStartupTaskState {
     /// Setup the relayer's wallet, the wallet at which the relayer will receive
     /// fees
     SetupRelayerWallet,
+    /// Refresh state when recovering from a snapshot
+    RefreshState,
     /// Join an existing raft
     JoinRaft,
     /// The task is completed
@@ -86,6 +88,7 @@ impl Display for NodeStartupTaskState {
             Self::GossipWarmup => write!(f, "Gossip Warmup"),
             Self::InitializeRaft => write!(f, "Initialize Raft"),
             Self::SetupRelayerWallet => write!(f, "Setup Relayer Wallet"),
+            Self::RefreshState => write!(f, "Refresh State"),
             Self::JoinRaft => write!(f, "Join Raft"),
             Self::Completed => write!(f, "Completed"),
         }
@@ -144,6 +147,12 @@ impl Error for NodeStartupTaskError {}
 impl From<StateError> for NodeStartupTaskError {
     fn from(e: StateError) -> Self {
         Self::State(e.to_string())
+    }
+}
+
+impl From<ArbitrumClientError> for NodeStartupTaskError {
+    fn from(e: ArbitrumClientError) -> Self {
+        Self::Arbitrum(e.to_string())
     }
 }
 
@@ -218,6 +227,10 @@ impl Task for NodeStartupTask {
             },
             NodeStartupTaskState::SetupRelayerWallet => {
                 self.setup_relayer_wallet().await?;
+                self.task_state = NodeStartupTaskState::RefreshState;
+            },
+            NodeStartupTaskState::RefreshState => {
+                self.refresh_state().await?;
                 self.task_state = NodeStartupTaskState::Completed;
             },
             NodeStartupTaskState::JoinRaft => {
@@ -350,6 +363,24 @@ impl NodeStartupTask {
         self.create_wallet(wallet_id, blinder_seed, share_seed, keychain).await
     }
 
+    /// Refresh state when recovering from a snapshot
+    async fn refresh_state(&self) -> Result<(), NodeStartupTaskError> {
+        // If the node did not recover from a snapshot we need not refresh
+        if !self.state.was_recovered_from_snapshot() {
+            return Ok(());
+        }
+
+        // For each wallet, check if a newer version is known on-chain
+        for wallet in self.state.get_all_wallets().await?.into_iter() {
+            let nullifier = wallet.get_wallet_nullifier();
+            if self.arbitrum_client.check_nullifier_used(nullifier).await? {
+                self.refresh_wallet(&wallet).await?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Manage the process to join an existing raft cluster
     #[allow(clippy::unused_async)]
     async fn join_raft(&self) -> Result<(), NodeStartupTaskError> {
@@ -411,5 +442,29 @@ impl NodeStartupTask {
         await_task(descriptor.into(), &self.state, self.task_queue.clone())
             .await
             .map_err(err_str!(NodeStartupTaskError::Setup))
+    }
+
+    /// Enqueue a wallet lookup task to refresh a wallet
+    async fn refresh_wallet(&self, wallet: &Wallet) -> Result<(), NodeStartupTaskError> {
+        // The seeds for the lookup wallet task may be taken as the last known values in
+        // their respective CSPRNGs:
+        // - The blinder seed is the private share of the blinder
+        // - The secret share seed is the last private share of the wallet
+        let blinder_seed = wallet.private_blinder_share();
+        let share_seed = wallet.get_last_private_share();
+
+        let descriptor = LookupWalletTaskDescriptor::new(
+            wallet.wallet_id,
+            blinder_seed,
+            share_seed,
+            wallet.key_chain.clone(),
+        )
+        .expect("infallible");
+
+        // Enqueue the task and wait for the log entry to be persisted
+        let (_id, waiter) = self.state.append_task(descriptor.into()).await?;
+        waiter.await?;
+
+        Ok(())
     }
 }

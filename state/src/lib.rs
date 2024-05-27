@@ -321,6 +321,7 @@ pub mod test_helpers {
             raft: client,
             bus: SystemBus::new(),
             notifications: OpenNotifications::new(),
+            recovered_from_snapshot: false,
         };
 
         // Configure the node

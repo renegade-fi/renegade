@@ -64,6 +64,8 @@ impl StateMachineConfig {
 /// The state machine for the raft node
 #[derive(Clone)]
 pub struct StateMachine {
+    /// Whether the state machine recovered from a snapshot
+    pub(crate) recovered_from_snapshot: bool,
     /// The index of the last applied log
     pub(crate) last_applied_log: Option<LogId<NodeId>>,
     /// The last cluster membership config
@@ -84,6 +86,7 @@ impl StateMachine {
         applicator: StateApplicator,
     ) -> Result<Self, ReplicationV2Error> {
         let mut this = Self {
+            recovered_from_snapshot: false,
             last_applied_log: None,
             last_membership: Default::default(),
             config,
