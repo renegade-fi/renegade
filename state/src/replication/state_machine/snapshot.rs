@@ -13,15 +13,14 @@ use openraft::{
 };
 use util::{err_str, get_current_time_millis};
 
+use crate::replication::error::{new_snapshot_error, ReplicationV2Error};
 use crate::storage::db::{DbConfig, DB};
 use crate::{
     ALL_TABLES, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE, RAFT_LOGS_TABLE,
     RAFT_METADATA_TABLE,
 };
 
-use super::error::{new_snapshot_error, ReplicationV2Error};
-use super::state_machine::StateMachine;
-use super::{Node, NodeId, TypeConfig};
+use super::{Node, NodeId, StateMachine, TypeConfig};
 
 /// The MDBX data file
 const MDBX_DATA_FILE: &str = "mdbx.dat";
@@ -299,7 +298,7 @@ mod tests {
         const TABLE: &str = "test-table";
         let (k, v) = ("key".to_string(), "value".to_string());
 
-        let state_machine = mock_state_machine();
+        let state_machine = mock_state_machine().await;
 
         // Write to the DB
         let db = state_machine.db();
@@ -322,7 +321,7 @@ mod tests {
         let (k1, v1) = ("key1".to_string(), "value1".to_string());
         let (k2, v2) = ("key2".to_string(), "value2".to_string());
 
-        let state_machine = mock_state_machine();
+        let state_machine = mock_state_machine().await;
         let db = state_machine.db();
 
         // Write to the DB
@@ -352,7 +351,7 @@ mod tests {
     #[tokio::test]
     async fn test_snapshot_overwrite() {
         const TABLE: &str = "test-table";
-        let state_machine = mock_state_machine();
+        let state_machine = mock_state_machine().await;
         let db = state_machine.db();
 
         let (k, v1) = ("key".to_string(), "value".to_string());
@@ -422,7 +421,7 @@ mod tests {
         let (k1, v1) = ("key1".to_string(), "value1".to_string());
         let (k2, v2) = ("key2".to_string(), "value2".to_string());
 
-        let mut state_machine = mock_state_machine();
+        let mut state_machine = mock_state_machine().await;
         let snapshot_db = mock_db();
         let meta = SnapshotMeta::default();
 

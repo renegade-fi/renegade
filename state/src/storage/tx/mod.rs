@@ -352,7 +352,7 @@ impl<'db> DbTxn<'db, RW> {
         table_name: &str,
         mut cursor: DbCursor<'_, T, CowBuffer, CowBuffer>,
     ) -> Result<(), StorageError> {
-        while !cursor.seek_next()? {
+        while !cursor.seek_next_raw()? {
             let (k, v) = cursor.get_current_raw()?.unwrap();
             self.write_raw(table_name, &k, &v)?;
         }

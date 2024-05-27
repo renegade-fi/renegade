@@ -6,7 +6,9 @@ use std::{
     time::Duration,
 };
 
-use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
+use openraft::{
+    ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState, SnapshotPolicy,
+};
 use tracing::info;
 use util::err_str;
 
@@ -63,6 +65,8 @@ pub struct RaftClientConfig {
     pub election_timeout_max: u64,
     /// The length of a learner's log lag before being promoted to a follower
     pub learner_promotion_threshold: u64,
+    /// The directory at which snapshots are stored
+    pub snapshot_path: String,
     /// The nodes to initialize the membership with
     pub initial_nodes: Vec<(NodeId, RaftNode)>,
 }
@@ -77,6 +81,7 @@ impl Default for RaftClientConfig {
             election_timeout_min: DEFAULT_ELECTION_TIMEOUT_MIN,
             election_timeout_max: DEFAULT_ELECTION_TIMEOUT_MAX,
             learner_promotion_threshold: DEFAULT_LEARNER_PROMOTION_THRESHOLD,
+            snapshot_path: "./raft-snapshots".to_string(),
             initial_nodes: vec![],
         }
     }
@@ -86,7 +91,7 @@ impl Default for RaftClientConfig {
 #[derive(Clone)]
 pub struct RaftClient {
     /// The client's config
-    config: RaftClientConfig,
+    pub(crate) config: RaftClientConfig,
     /// The inner raft
     raft: Raft,
     /// The network to use for the raft client

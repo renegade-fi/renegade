@@ -1,7 +1,13 @@
 //! Defines the state machine for the raft node, responsible for applying logs
 //! to the state
 
-use std::{path::PathBuf, sync::Arc};
+mod recovery;
+mod snapshot;
+
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use openraft::{
     storage::RaftStateMachine, EntryPayload, ErrorSubject, ErrorVerb, LogId, OptionalSend,
@@ -25,7 +31,21 @@ use super::{
 };
 
 /// The snapshot file name
-const SNAPSHOT_FILE: &str = "snapshot.dat";
+pub(crate) const SNAPSHOT_FILE: &str = "snapshot.dat";
+/// The name of the snapshot zip file
+pub(crate) const SNAPSHOT_ZIP: &str = "snapshot.gz";
+
+/// Get the path to the snapshot data file
+pub(crate) fn snapshot_data_path(snapshot_dir: &str) -> PathBuf {
+    let dir = Path::new(snapshot_dir);
+    dir.join(SNAPSHOT_FILE)
+}
+
+/// Get the path to the snapshot zip file
+pub(crate) fn snapshot_zip_path(snapshot_dir: &str) -> PathBuf {
+    let dir = Path::new(snapshot_dir);
+    dir.join(SNAPSHOT_ZIP)
+}
 
 /// The config for the state machine
 #[derive(Clone, Debug)]
@@ -58,18 +78,21 @@ pub struct StateMachine {
 
 impl StateMachine {
     /// Constructor
-    pub fn new(
+    pub async fn new(
         config: StateMachineConfig,
         notifications: OpenNotifications,
         applicator: StateApplicator,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ReplicationV2Error> {
+        let mut this = Self {
             last_applied_log: None,
             last_membership: Default::default(),
             config,
             notifications,
             applicator,
-        }
+        };
+
+        this.maybe_recover_snapshot().await?;
+        Ok(this)
     }
 
     /// Get a handle on the DB of the state machine
@@ -89,12 +112,12 @@ impl StateMachine {
 
     /// Get the path of the snapshot file
     pub fn snapshot_archive_path(&self) -> PathBuf {
-        self.snapshot_dir().join(SNAPSHOT_FILE).with_extension("gz")
+        snapshot_zip_path(&self.config.snapshot_out)
     }
 
     /// Get the path to place the snapshot data at
     pub fn snapshot_data_path(&self) -> PathBuf {
-        self.snapshot_dir().join(SNAPSHOT_FILE)
+        snapshot_data_path(&self.config.snapshot_out)
     }
 
     /// Create the snapshot directory if it doesn't exist
@@ -239,7 +262,7 @@ mod test {
     /// Tests applying a log with a waiter on the state
     #[tokio::test]
     async fn test_await_application() {
-        let mut sm = mock_state_machine();
+        let mut sm = mock_state_machine().await;
         let notifs = sm.notifications.clone();
 
         // Add a proposal and await its notification

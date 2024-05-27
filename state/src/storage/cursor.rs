@@ -90,6 +90,13 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
         Ok(end)
     }
 
+    /// Position the cursor at the next keypair without filtering
+    ///
+    /// Returns `true` if the cursor has reached the end of the table
+    pub fn seek_next_raw(&mut self) -> Result<bool, StorageError> {
+        Ok(self.inner.next::<CowBuffer, CowBuffer>().map_err(StorageError::TxOp)?.is_none())
+    }
+
     /// Position the cursor at the previous key value pair
     ///
     /// Returns `true` if the cursor has reached the start of the table
