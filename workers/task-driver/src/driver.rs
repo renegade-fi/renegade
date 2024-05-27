@@ -17,7 +17,6 @@ use common::{
     Shared,
 };
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
-use renegade_metrics::helpers::{decr_inflight_tasks, incr_completed_tasks, incr_inflight_tasks};
 use serde::Serialize;
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
@@ -43,14 +42,15 @@ use crate::{
     worker::TaskDriverConfig,
 };
 
+#[cfg(feature = "task-metrics")]
+use renegade_metrics::helpers::{decr_inflight_tasks, incr_completed_tasks, incr_inflight_tasks};
+
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
 /// The maximum to increase the backoff to in milliseconds
 const BACKOFF_CEILING_MS: u64 = 30_000; // 30 seconds
 /// The initial backoff time when retrying a task
 const INITIAL_BACKOFF_MS: u64 = 2000; // 2 seconds
-/// The number of threads backing the tokio runtime
-const TASK_DRIVER_N_THREADS: usize = 5;
 /// The name of the threads backing the task driver
 const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
@@ -95,8 +95,6 @@ pub struct RuntimeArgs {
     pub initial_backoff_ms: u64,
     /// The number of retries to attempt before propagating an error
     pub n_retries: usize,
-    /// The number of threads backing the tokio runtime
-    pub n_threads: usize,
 }
 
 impl Default for RuntimeArgs {
@@ -106,7 +104,6 @@ impl Default for RuntimeArgs {
             backoff_ceiling_ms: BACKOFF_CEILING_MS,
             initial_backoff_ms: INITIAL_BACKOFF_MS,
             n_retries: TASK_DRIVER_N_RETRIES,
-            n_threads: TASK_DRIVER_N_THREADS,
         }
     }
 }
@@ -158,7 +155,6 @@ impl TaskExecutor {
         // Build a runtime
         let runtime = TokioRuntimeBuilder::new_multi_thread()
             .enable_all()
-            .worker_threads(TASK_DRIVER_N_THREADS)
             .thread_stack_size(DRIVER_THREAD_STACK_SIZE)
             .thread_name(TASK_DRIVER_THREAD_NAME)
             .build()
@@ -275,7 +271,6 @@ impl TaskExecutor {
                 .pause_multiple_task_queues(wallet_ids.clone(), task_id, task.clone())
                 .await?;
             waiter.await?;
-            decr_inflight_tasks(wallet_ids.len() as f64);
         }
 
         let res = self.start_task(true /* immediate */, task_id, task).await;
@@ -372,10 +367,17 @@ impl TaskExecutor {
 
         // Create and run the task
         let mut task = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await?;
+
+        #[cfg(feature = "task-metrics")]
         incr_inflight_tasks();
+
         let res = Self::run_task_to_completion(&mut task, args).await;
-        decr_inflight_tasks(1.0);
-        incr_completed_tasks();
+
+        #[cfg(feature = "task-metrics")]
+        {
+            decr_inflight_tasks(1.0);
+            incr_completed_tasks();
+        }
 
         // Cleanup
         let cleanup_res = task.cleanup(res.is_ok()).await;

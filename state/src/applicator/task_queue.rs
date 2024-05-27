@@ -24,8 +24,10 @@ use super::{
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
 /// Metric describing the number of tasks in a task queue
+#[cfg(feature = "task-queue-len")]
 const TASK_QUEUE_LENGTH_METRIC: &str = "task_queue_length";
 /// Metric tag for the key of a task queue
+#[cfg(feature = "task-queue-len")]
 const QUEUE_KEY_METRIC_TAG: &str = "queue_key";
 
 /// Error emitted when a task's assignment cannot be found
@@ -69,21 +71,18 @@ fn new_running_state() -> QueuedTaskState {
 }
 
 /// Record the length of a task queue
-#[inline]
+#[cfg(feature = "task-queue-len")]
 fn record_task_queue_length<T: TransactionKind>(key: &TaskQueueKey, tx: &StateTxn<'_, T>) {
-    #[cfg(feature = "task-queue-len")]
-    {
-        let task_queue_length = match tx.get_queued_tasks(key) {
-            Ok(tasks) => tasks.len(),
-            Err(e) => {
-                error!("Error getting task queue length: {}", e);
-                return;
-            },
-        };
+    let task_queue_length = match tx.get_queued_tasks(key) {
+        Ok(tasks) => tasks.len(),
+        Err(e) => {
+            error!("Error getting task queue length: {}", e);
+            return;
+        },
+    };
 
-        metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
-            .set(task_queue_length as f64);
-    }
+    metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
+        .set(task_queue_length as f64);
 }
 
 impl StateApplicator {
@@ -113,6 +112,7 @@ impl StateApplicator {
             self.maybe_start_task(task, &tx)?;
         }
 
+        #[cfg(feature = "task-queue-len")]
         record_task_queue_length(&queue_key, &tx);
 
         tx.commit()?;
@@ -158,6 +158,7 @@ impl StateApplicator {
             self.run_matching_engine_on_wallet(key, &tx)?;
         }
 
+        #[cfg(feature = "task-queue-len")]
         record_task_queue_length(&key, &tx);
 
         tx.commit()?;
@@ -269,7 +270,10 @@ impl StateApplicator {
         tx.add_assigned_task(executor, &task.id)?;
         tx.add_task_front(&key, task)?;
         self.publish_task_updates(key, task);
+
+        #[cfg(feature = "task-queue-len")]
         record_task_queue_length(&key, tx);
+
         Ok(ApplicatorReturnType::None)
     }
 
@@ -357,7 +361,10 @@ impl StateApplicator {
         }
 
         self.publish_task_updates(key, &task);
+
+        #[cfg(feature = "task-queue-len")]
         record_task_queue_length(&key, tx);
+
         Ok(ApplicatorReturnType::None)
     }
 

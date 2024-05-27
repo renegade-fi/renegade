@@ -221,7 +221,6 @@ pub fn new_mock_task_driver(
         backoff_ceiling_ms: 1_000, // 1 second
         initial_backoff_ms: 100,   // 100 milliseconds
         n_retries: 2,
-        n_threads: 5,
     };
 
     let config = TaskDriverConfig {

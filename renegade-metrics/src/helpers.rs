@@ -5,14 +5,18 @@ use common::types::{token::Token, transfer_auth::ExternalTransferWithAuth};
 use num_bigint::BigUint;
 use util::hex::biguint_to_hex_string;
 
-use crate::{
-    global_metrics::{IN_FLIGHT_ARBITRUM_TXS, IN_FLIGHT_PROOFS, IN_FLIGHT_TASKS},
-    labels::{
-        ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
-        MATCH_QUOTE_VOLUME_METRIC, NUM_COMPLETED_TASKS_METRIC, NUM_DEPOSITS_METRICS,
-        NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
-    },
+use crate::labels::{
+    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
+    MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS,
+    WITHDRAWAL_VOLUME_METRIC,
 };
+
+#[cfg(feature = "tx-metrics")]
+use crate::global_metrics::IN_FLIGHT_ARBITRUM_TXS;
+#[cfg(feature = "proof-metrics")]
+use crate::global_metrics::IN_FLIGHT_PROOFS;
+#[cfg(feature = "task-metrics")]
+use crate::{global_metrics::IN_FLIGHT_TASKS, labels::NUM_COMPLETED_TASKS_METRIC};
 
 /// Get the human-readable asset and volume of
 /// the given mint and amount.
@@ -69,50 +73,43 @@ pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
 }
 
 /// Increment the number of in-flight tasks by 1
-#[inline]
+#[cfg(feature = "task-metrics")]
 pub fn incr_inflight_tasks() {
-    #[cfg(feature = "task-metrics")]
     IN_FLIGHT_TASKS.increment(1.0);
 }
 
 /// Decrement the number of in-flight tasks
-#[inline]
+#[cfg(feature = "task-metrics")]
 pub fn decr_inflight_tasks(value: f64) {
-    #[cfg(feature = "task-metrics")]
     IN_FLIGHT_TASKS.decrement(value);
 }
 
 /// Increment the number of completed tasks
-#[inline]
+#[cfg(feature = "task-metrics")]
 pub fn incr_completed_tasks() {
-    #[cfg(feature = "task-metrics")]
     metrics::counter!(NUM_COMPLETED_TASKS_METRIC).increment(1);
 }
 
 /// Increment the number of in-flight proofs by 1
-#[inline]
+#[cfg(feature = "proof-metrics")]
 pub fn incr_inflight_proofs() {
-    #[cfg(feature = "proof-metrics")]
     IN_FLIGHT_PROOFS.increment(1.0);
 }
 
 /// Decrement the number of in-flight proofs by 1
-#[inline]
+#[cfg(feature = "proof-metrics")]
 pub fn decr_inflight_proofs() {
-    #[cfg(feature = "proof-metrics")]
     IN_FLIGHT_PROOFS.decrement(1.0);
 }
 
 /// Increment the number of in-flight transactions by 1
-#[inline]
+#[cfg(feature = "tx-metrics")]
 pub fn incr_inflight_txs() {
-    #[cfg(feature = "tx-metrics")]
     IN_FLIGHT_ARBITRUM_TXS.increment(1.0);
 }
 
 /// Decrement the number of in-flight transactions by 1
-#[inline]
+#[cfg(feature = "tx-metrics")]
 pub fn decr_inflight_txs() {
-    #[cfg(feature = "tx-metrics")]
     IN_FLIGHT_ARBITRUM_TXS.decrement(1.0);
 }

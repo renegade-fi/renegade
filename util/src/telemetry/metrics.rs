@@ -21,7 +21,7 @@ pub const METRICS_BUFFER_SIZE: usize = 1024;
 /// maintains. If the queue is full, metrics data will be dropped.
 /// We effectively want an unbounded queue, but the `StatsdBuilder` doesn't
 /// support this, so we set a suffiiently large value here.
-pub const METRICS_QUEUE_SIZE: usize = 1024 * 1024 * 1024;
+pub const METRICS_QUEUE_SIZE: usize = 1024 * 1024;
 
 /// Configures a statsd metrics recorder
 pub fn configure_metrics_statsd_recorder(
