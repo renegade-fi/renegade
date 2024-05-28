@@ -14,6 +14,7 @@ use openraft::{
     Snapshot, SnapshotMeta, StorageError as RaftStorageError, StoredMembership,
 };
 use tokio::fs::File;
+use tracing::error;
 use util::{err_str, res_some};
 
 use crate::{
@@ -94,7 +95,11 @@ impl StateMachine {
             applicator,
         };
 
-        this.maybe_recover_snapshot().await?;
+        // Do not error on an invalid snapshot
+        if let Err(e) = this.maybe_recover_snapshot().await {
+            error!("Failed to recover from snapshot: {e:?}");
+        }
+
         Ok(this)
     }
 

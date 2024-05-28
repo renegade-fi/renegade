@@ -1,7 +1,9 @@
 //! Recover the state machine from a snapshot
 
 use openraft::SnapshotMeta;
+use tokio::fs;
 use tracing::info;
+use util::err_str;
 
 use crate::replication::error::ReplicationV2Error;
 
@@ -10,7 +12,15 @@ use super::StateMachine;
 impl StateMachine {
     /// Check for a snapshot to recover from
     pub(crate) async fn maybe_recover_snapshot(&mut self) -> Result<(), ReplicationV2Error> {
-        if !self.snapshot_archive_path().exists() {
+        let path = self.snapshot_archive_path();
+        if !path.exists() {
+            return Ok(());
+        }
+
+        // Check if the file is empty, this may happen if a dummy snapshot was created
+        let metadata = fs::metadata(path).await.map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        if metadata.len() == 0 {
+            info!("empty snapshot found, skipping...");
             return Ok(());
         }
 
