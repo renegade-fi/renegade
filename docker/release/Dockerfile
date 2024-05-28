@@ -36,12 +36,15 @@ ARG CARGO_FEATURES="default"
 # Build only the dependencies to cache them in this layer
 RUN cargo chef cook --release --recipe-path recipe.json --features "$CARGO_FEATURES"
 
-# Build the snapshot sidecar
+# Build the bootloader
 COPY . .
+RUN cargo build --release --package bootloader
+
+# Build the snapshot sidecar
 RUN cargo build --release --package snapshot-sidecar
 
 # Build the relayer
-RUN cargo build --release --features "$CARGO_FEATURES"
+RUN cargo build --release --bin renegade-relayer --features "$CARGO_FEATURES"
 
 # Release stage
 FROM --platform=arm64 debian:bookworm-slim
@@ -52,6 +55,7 @@ RUN apt-get update && \
     apt-get install -y awscli
 
 # Copy the binaries from the build stage
+COPY --from=builder /build/target/release/bootloader /bin/bootloader
 COPY --from=builder /build/target/release/snapshot-sidecar /bin/snapshot-sidecar
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 
@@ -60,4 +64,4 @@ COPY ./docker/release/bootloader.sh /bootloader.sh
 RUN chmod +x /bootloader.sh
 
 # Set the bootloader as the entrypoint
-ENTRYPOINT ["/bootloader.sh"]
+ENTRYPOINT ["/bin/bootloader"]

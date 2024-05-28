@@ -11,6 +11,8 @@ members = [
 	"external-api",
 	"gossip-api",
 	"mock-node",
+	"node-support/snapshot-sidecar",
+	"node-support/bootloader",
 	"renegade-crypto",
 	"state",
 	"system-bus",
@@ -28,7 +30,6 @@ members = [
 	"workers/task-driver",
 	"renegade-metrics",
 	"system-clock",
-	"snapshot-sidecar",
 ]
 
 [profile.bench]

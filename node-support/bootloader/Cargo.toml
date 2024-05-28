@@ -1,0 +1,20 @@
+[package]
+name = "bootloader"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# === AWS Deps === #
+aws-config = { version = "1.1.4", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1.14.0"
+
+# === Async + Runtime === #
+tokio = { workspace = true, features = ["full"] }
+
+# === Workspace Dependencies === #
+util = { path = "../../util" }
+
+# === Misc Dependencies === #
+tracing = { workspace = true }
+toml = "0.8"
