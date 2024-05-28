@@ -13,6 +13,7 @@ aws-sdk-s3 = "1.14.0"
 tokio = { workspace = true, features = ["full"] }
 
 # === Workspace Dependencies === #
+config = { path = "../../config" }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #

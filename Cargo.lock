@@ -1490,6 +1490,7 @@ version = "0.1.0"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
+ "config",
  "tokio",
  "toml 0.8.13",
  "tracing",
