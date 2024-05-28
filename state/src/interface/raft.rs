@@ -24,8 +24,8 @@ impl State {
     }
 
     /// Whether the raft is initialized (has non-empty voters)
-    pub fn is_raft_initialized(&self) -> bool {
-        self.raft.is_initialized()
+    pub async fn is_raft_initialized(&self) -> Result<bool, StateError> {
+        self.raft.is_initialized().await.map_err(StateError::Replication)
     }
 
     /// Whether the local node is the leader
