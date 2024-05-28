@@ -145,12 +145,8 @@ impl RaftClient {
     }
 
     /// Whether the raft is initialized
-    ///
-    /// This is equivalent to whether the raft has non-empty voters list. A
-    /// non-empty set of voters implies a leader exists or will soon be elected
-    pub fn is_initialized(&self) -> bool {
-        let members = self.membership();
-        members.voter_ids().count() > 0
+    pub async fn is_initialized(&self) -> Result<bool, ReplicationV2Error> {
+        self.raft.is_initialized().await.map_err(err_str!(ReplicationV2Error::Raft))
     }
 
     /// Get a copy of the raft metrics

@@ -304,7 +304,7 @@ impl NodeStartupTask {
             .map_err(|_| NodeStartupTaskError::Enqueue(ERR_SEND_JOB.to_string()))?;
 
         // After warmup, check for an existing raft cluster
-        if self.state.is_raft_initialized() {
+        if self.state.is_raft_initialized().await.map_err(err_str!(NodeStartupTaskError::State))? {
             self.task_state = NodeStartupTaskState::JoinRaft;
         } else {
             self.task_state = NodeStartupTaskState::InitializeRaft;
