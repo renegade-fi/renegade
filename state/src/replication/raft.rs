@@ -34,11 +34,13 @@ const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15000; // 15 seconds
 const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
 /// The amount of time to await promotion before timing out
 ///
-/// Set to two minutes; giving enough time to receive snapshots and catch up to
+/// Set to five minutes; giving enough time to receive snapshots and catch up to
 /// logs
-const DEFAULT_PROMOTION_TIMEOUT_MS: u64 = 2 * 60 * 1000;
+const DEFAULT_PROMOTION_TIMEOUT_MS: u64 = 5 * 60 * 1000;
 /// The amount of time to await a leader election before timing out
 const DEFAULT_LEADER_ELECTION_TIMEOUT_MS: u64 = 30_000; // 30 seconds
+/// The default max chunk size for snapshots
+const DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10MiB
 
 /// Error message emitted when there is no known leader
 const ERR_NO_LEADER: &str = "no leader";
@@ -67,6 +69,8 @@ pub struct RaftClientConfig {
     pub snapshot_path: String,
     /// The nodes to initialize the membership with
     pub initial_nodes: Vec<(NodeId, RaftNode)>,
+    /// The maximum size of snapshot chunks in bytes
+    pub snapshot_max_chunk_size: u64,
 }
 
 impl Default for RaftClientConfig {
@@ -81,6 +85,7 @@ impl Default for RaftClientConfig {
             learner_promotion_threshold: DEFAULT_LEARNER_PROMOTION_THRESHOLD,
             snapshot_path: "./raft-snapshots".to_string(),
             initial_nodes: vec![],
+            snapshot_max_chunk_size: DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE,
         }
     }
 }
@@ -109,6 +114,7 @@ impl RaftClient {
             heartbeat_interval: config.heartbeat_interval,
             election_timeout_min: config.election_timeout_min,
             election_timeout_max: config.election_timeout_max,
+            snapshot_max_chunk_size: config.snapshot_max_chunk_size,
             ..Default::default()
         });
 
