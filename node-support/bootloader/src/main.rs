@@ -6,14 +6,18 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 
-use std::{collections::HashMap, fmt::Debug, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, path::Path, str::FromStr};
 
 use aws_config::Region;
 use aws_sdk_s3::Client as S3Client;
-use tokio::{fs, fs::File, io::AsyncWriteExt, process::Command};
+use config::parsing::parse_config_from_file;
+use tokio::{fs, io::AsyncWriteExt, process::Command};
 use toml::Value;
-use tracing::error;
-use util::raw_err_str;
+use tracing::{error, info};
+use util::{
+    raw_err_str,
+    telemetry::{setup_system_logger, LevelFilter},
+};
 
 // --- Env Vars --- //
 
@@ -57,13 +61,15 @@ const RELAYER_BIN: &str = "/bin/renegade-relayer";
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
+    setup_system_logger(LevelFilter::INFO);
+
     // Build an s3 client
     let s3_client = build_s3_client().await;
 
     // Fetch the config, modify it, and download the most recent snapshot
-    fetch_config(s3_client).await?;
+    fetch_config(&s3_client).await?;
     modify_config().await?;
-    download_snapshot().await?;
+    download_snapshot(&s3_client).await?;
 
     // Start both the snapshot sidecar and the relayer
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
@@ -88,26 +94,11 @@ async fn main() -> Result<(), String> {
 }
 
 /// Fetch the relayer's config from s3
-async fn fetch_config(s3: S3Client) -> Result<(), String> {
+async fn fetch_config(s3: &S3Client) -> Result<(), String> {
     // Read in the fetch info from environment variables
     let bucket = read_env_var::<String>(ENV_CONFIG_BUCKET)?;
     let file = read_env_var::<String>(ENV_CONFIG_FILE)?;
-
-    // Fetch the config
-    let resp = s3
-        .get_object()
-        .bucket(bucket)
-        .key(file)
-        .send()
-        .await
-        .map_err(raw_err_str!("Failed to fetch config from s3: {}"))?;
-
-    // Write the body to the config file
-    let mut file = File::create(CONFIG_PATH)
-        .await
-        .map_err(raw_err_str!("Failed to create config file: {}"))?;
-    let body = resp.body.collect().await.map_err(raw_err_str!("error streaming config: {}"))?;
-    file.write_all(&body.to_vec()).await.map_err(raw_err_str!("error writing config: {}"))
+    download_s3_file(&bucket, &file, CONFIG_PATH, s3).await
 }
 
 /// Modify the config using environment variables set at runtime
@@ -141,18 +132,38 @@ async fn modify_config() -> Result<(), String> {
 }
 
 /// Download the most recent snapshot
-async fn download_snapshot() -> Result<(), String> {
-    Ok(())
+async fn download_snapshot(s3_client: &S3Client) -> Result<(), String> {
+    let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
+
+    // Parse the relayer's config
+    let relayer_config =
+        parse_config_from_file(CONFIG_PATH).expect("could not parse relayer config");
+    let snap_path = format!("cluster-{}", relayer_config.cluster_id);
+
+    // Get the latest snapshot
+    let snaps = s3_client
+        .list_objects_v2()
+        .bucket(&bucket)
+        .prefix(&snap_path)
+        .send()
+        .await
+        .map_err(raw_err_str!("Failed to list objects in S3: {}"))?
+        .contents
+        .unwrap_or_default();
+    if snaps.is_empty() {
+        info!("no snapshots found in s3");
+        return Ok(());
+    }
+
+    let latest = snaps.iter().max_by_key(|obj| obj.last_modified.as_ref().unwrap()).unwrap();
+    let latest_key = latest.key.as_ref().unwrap();
+
+    // Download the snapshot into the snapshot directory
+    let path = format!("{}/snapshot.gz", relayer_config.raft_snapshot_path);
+    download_s3_file(&bucket, latest_key, &path, s3_client).await
 }
 
 // --- Helpers --- //
-
-/// Build an s3 client
-async fn build_s3_client() -> S3Client {
-    let region = Region::new(DEFAULT_AWS_REGION);
-    let config = aws_config::from_env().region(region).load().await;
-    aws_sdk_s3::Client::new(&config)
-}
 
 /// Check whether the given environment variable is set
 fn is_env_var_set(var_name: &str) -> bool {
@@ -168,4 +179,46 @@ where
         .map_err(raw_err_str!("{var_name} not set: {}"))?
         .parse::<T>()
         .map_err(|e| format!("Failed to read env var {}: {:?}", var_name, e))
+}
+
+/// Build an s3 client
+async fn build_s3_client() -> S3Client {
+    let region = Region::new(DEFAULT_AWS_REGION);
+    let config = aws_config::from_env().region(region).load().await;
+    aws_sdk_s3::Client::new(&config)
+}
+
+/// Download an s3 file to the given location
+async fn download_s3_file(
+    bucket: &str,
+    key: &str,
+    destination: &str,
+    s3_client: &S3Client,
+) -> Result<(), String> {
+    // Get the object from S3
+    let resp = s3_client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(raw_err_str!("Failed to get object from S3: {}"))?;
+    let body = resp.body.collect().await.map_err(raw_err_str!("Failed to read object body: {}"))?;
+
+    // Create the directory if it doesn't exist
+    if let Some(parent) = Path::new(destination).parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(raw_err_str!("Failed to create destination directory: {}"))?;
+    }
+
+    // Write the body to the destination file
+    let mut file = fs::File::create(destination)
+        .await
+        .map_err(raw_err_str!("Failed to create destination file: {}"))?;
+    file.write_all(&body.into_bytes())
+        .await
+        .map_err(raw_err_str!("Failed to write to destination file: {}"))?;
+
+    Ok(())
 }

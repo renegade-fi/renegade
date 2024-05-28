@@ -59,9 +59,5 @@ COPY --from=builder /build/target/release/bootloader /bin/bootloader
 COPY --from=builder /build/target/release/snapshot-sidecar /bin/snapshot-sidecar
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 
-# Copy the bootloader script & make it executable
-COPY ./docker/release/bootloader.sh /bootloader.sh
-RUN chmod +x /bootloader.sh
-
 # Set the bootloader as the entrypoint
 ENTRYPOINT ["/bin/bootloader"]
