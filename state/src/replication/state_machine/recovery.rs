@@ -1,11 +1,9 @@
 //! Recover the state machine from a snapshot
 
-use common::types::tasks::{QueuedTask, TaskQueueKey};
 use openraft::SnapshotMeta;
 use tracing::info;
-use uuid::Uuid;
 
-use crate::{replication::error::ReplicationV2Error, TASK_QUEUE_TABLE};
+use crate::replication::error::ReplicationV2Error;
 
 use super::StateMachine;
 
@@ -27,20 +25,21 @@ impl StateMachine {
         };
 
         self.update_from_snapshot(&dummy_meta, snap_db).await?;
-        self.clear_task_queues()
+        self.clear_wallet_task_queues()
     }
 
-    /// Clear all task queues
+    /// Clear all wallet task queues
     ///
     /// We do this when recovering to prevent wallets from being blocked on a
     /// task queue that failed
-    fn clear_task_queues(&self) -> Result<(), ReplicationV2Error> {
+    fn clear_wallet_task_queues(&self) -> Result<(), ReplicationV2Error> {
         let tx = self.db().new_write_tx().unwrap();
-        let cur = tx.inner().cursor::<TaskQueueKey, Vec<QueuedTask>>(TASK_QUEUE_TABLE)?;
-        for kv in cur.into_iter().keys() {
-            let queue_key: Uuid = kv?;
+        let wallets = tx.get_all_wallets()?;
+        for wallet in wallets.into_iter() {
+            let queue_key = wallet.wallet_id;
             tx.clear_task_queue(&queue_key)?;
         }
+
         tx.commit()?;
 
         Ok(())
