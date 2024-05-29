@@ -1,11 +1,12 @@
 //! Wraps the inner raft in a client interface that handles requests and waiters
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::Arc,
     time::Duration,
 };
 
+use common::types::gossip::WrappedPeerId;
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tracing::info;
 use util::err_str;
@@ -437,6 +438,33 @@ impl RaftClient {
             if lag < self.config.learner_promotion_threshold {
                 info!("promoting {learner} to voter");
                 self.promote_learner(learner).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Expire all raft peers not in the list of known peers
+    ///
+    /// Used to sync gossip failure detection with the raft in the case that a
+    /// node removal is dropped
+    pub async fn check_expired_nodes(
+        &self,
+        known_peers: Vec<WrappedPeerId>,
+    ) -> Result<(), ReplicationV2Error> {
+        // Only the leader should expire old raft nodes
+        let leader_id = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
+        if self.node_id() != leader_id {
+            return Ok(());
+        }
+
+        // Check for raft peers not in the list of peers known to the gossip layer
+        let known_peers_set: HashSet<_> = known_peers.into_iter().collect();
+        let members = self.membership();
+        for (id, info) in members.nodes() {
+            if !known_peers_set.contains(&info.peer_id) {
+                info!("found missed expiry, removing raft peer: {id}");
+                self.remove_peer(*id).await?;
             }
         }
 
