@@ -8,7 +8,7 @@ use circuit_types::{keychain::PublicSigningKey, transfers::ExternalTransfer};
 use common::{
     types::{
         proof_bundles::mocks::dummy_valid_wallet_update_bundle,
-        tasks::{LookupWalletTaskDescriptor, TaskDescriptor, TaskIdentifier},
+        tasks::{LookupWalletTaskDescriptor, TaskDescriptor},
         transfer_auth::ExternalTransferWithAuth,
         wallet::{Wallet, WalletIdentifier},
     },
@@ -98,11 +98,7 @@ pub(crate) async fn await_immediate_task(
     task: TaskDescriptor,
     test_args: &IntegrationTestArgs,
 ) -> Result<()> {
-    let task_id = TaskIdentifier::new_v4();
-    let job = TaskDriverJob::RunImmediate { task_id, wallet_ids: modified_wallets, task };
-    test_args.task_queue.send(job).unwrap();
-
-    let (rx, job) = new_task_notification(task_id);
+    let (job, rx) = TaskDriverJob::new_immediate_with_notification(task, modified_wallets);
     test_args.task_queue.send(job).unwrap();
 
     rx.await.unwrap().map_err(|e| eyre::eyre!(e))

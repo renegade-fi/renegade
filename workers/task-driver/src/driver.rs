@@ -2,7 +2,7 @@
 //! of certain critical sections of a task
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{Debug, Display},
     time::Duration,
 };
@@ -77,11 +77,6 @@ pub struct TaskExecutor {
     /// The task context passed to each task, used to inject dependencies
     /// into the task
     task_context: TaskContext,
-    /// The set of currently running preemptive tasks
-    ///
-    /// These tasks are not stored in the state so we keep references to them
-    /// here so that we can validate notification requests to them
-    preemptive_tasks: Shared<HashSet<TaskIdentifier>>,
     /// The map of task notifications to send
     task_notifications: TaskNotificationMap,
 }
@@ -131,7 +126,6 @@ impl TaskExecutor {
             task_queue: config.task_queue,
             runtime_config: config.runtime_config,
             task_context,
-            preemptive_tasks: new_shared(HashSet::new()),
             task_notifications: new_shared(HashMap::new()),
         }
     }
@@ -150,11 +144,6 @@ impl TaskExecutor {
     /// Get a reference to the global state
     fn state(&self) -> &State {
         &self.task_context.state
-    }
-
-    /// Whether or not the given value is a valid preemptive task
-    fn is_preemptive_task(&self, task_id: &TaskIdentifier) -> bool {
-        self.preemptive_tasks.read().unwrap().contains(task_id)
     }
 
     // ------------------
@@ -192,8 +181,8 @@ impl TaskExecutor {
             TaskDriverJob::Run(task) => {
                 self.start_task(false /* immediate */, task.id, task.descriptor).await
             },
-            TaskDriverJob::RunImmediate { wallet_ids, task_id, task } => {
-                self.handle_run_immediate(wallet_ids, task_id, task).await
+            TaskDriverJob::RunImmediate { wallet_ids, task_id, task, resp } => {
+                self.handle_run_immediate(wallet_ids, task_id, task, resp).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await
@@ -209,7 +198,7 @@ impl TaskExecutor {
         channel: TaskNotificationSender,
     ) -> Result<(), TaskDriverError> {
         // Check that the task exists
-        if !self.state().contains_task(&task_id).await? && !self.is_preemptive_task(&task_id) {
+        if !self.state().contains_task(&task_id).await? {
             warn!("got task notification request for non-existent task {task_id:?}");
             let _ = channel.send(Err(TASK_NOT_FOUND_ERROR.to_string()));
             return Ok(());
@@ -229,6 +218,7 @@ impl TaskExecutor {
         wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
+        resp: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
         // Check if any non-preemptable tasks conflict with this task before pausing
         for wallet_id in wallet_ids.iter() {
@@ -241,7 +231,7 @@ impl TaskExecutor {
             }
         }
 
-        self.start_preemptive_task(wallet_ids, task_id, task).await
+        self.start_preemptive_task(wallet_ids, task_id, task, resp).await
     }
 
     // ------------------
@@ -254,6 +244,7 @@ impl TaskExecutor {
         wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
+        resp: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
         // Pause the queues for the affected local wallets
         if !wallet_ids.is_empty() {
@@ -264,10 +255,6 @@ impl TaskExecutor {
             waiter.await?;
             incr_stopped_tasks(wallet_ids.len())
         }
-
-        // Add the task to the preemptive tasks list so that notification requests can
-        // be registered for it
-        self.preemptive_tasks.write().unwrap().insert(task_id);
 
         let res = self.start_task(true /* immediate */, task_id, task).await;
         if let Err(e) = &res {
@@ -280,7 +267,11 @@ impl TaskExecutor {
             self.state().resume_multiple_task_queues(wallet_ids, res.is_ok()).await?;
         }
 
-        self.preemptive_tasks.write().unwrap().remove(&task_id);
+        // Notify the task creator that the task has completed
+        if let Some(sender) = resp {
+            let _ = sender.send(res.map_err(|e| e.to_string()));
+        }
+
         Ok(())
     }
 

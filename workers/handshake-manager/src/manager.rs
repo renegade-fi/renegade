@@ -14,7 +14,7 @@ use common::{
         gossip::WrappedPeerId,
         handshake::{ConnectionRole, HandshakeState},
         proof_bundles::{MatchBundle, OrderValidityProofBundle},
-        tasks::{SettleMatchTaskDescriptor, TaskDescriptor, TaskIdentifier},
+        tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
         wallet::{OrderIdentifier, WalletIdentifier},
         CancelChannel,
@@ -36,7 +36,7 @@ use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerReceiver},
     network_manager::{NetworkManagerJob, NetworkManagerQueue},
     price_reporter::PriceReporterQueue,
-    task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue},
+    task_driver::{TaskDriverJob, TaskDriverQueue},
 };
 use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
@@ -493,24 +493,10 @@ impl HandshakeExecutor {
         .into();
 
         // Signal the task driver to preempt its queue with the task
-        let task_id = TaskIdentifier::new_v4();
         let wallet_ids = vec![wallet_id];
-        let job = TaskDriverJob::RunImmediate { task_id, wallet_ids, task };
+        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task, wallet_ids);
         self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
 
-        self.await_settlement_task(task_id).await
-    }
-
-    /// Await match settlement given the ID of the settlement task
-    async fn await_settlement_task(
-        &self,
-        task_id: TaskIdentifier,
-    ) -> Result<(), HandshakeManagerError> {
-        // Create a oneshot channel to await the task's completion
-        let (rx, job) = new_task_notification(task_id);
-        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
-
-        // Await task completion
         rx.await
             .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
             .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
