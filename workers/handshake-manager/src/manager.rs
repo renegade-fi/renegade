@@ -122,7 +122,7 @@ pub struct HandshakeExecutor {
     /// The pricer reporter's work queue, used for fetching price reports
     pub(crate) price_reporter_job_queue: PriceReporterQueue,
     /// The global relayer state
-    pub(crate) global_state: State,
+    pub(crate) state: State,
     /// The queue used to send tasks to the task driver
     pub(crate) task_queue: TaskDriverQueue,
     /// The system bus used to publish internal broadcast messages
@@ -140,14 +140,14 @@ impl HandshakeExecutor {
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
         price_reporter_job_queue: PriceReporterQueue,
-        global_state: State,
+        state: State,
         task_queue: TaskDriverQueue,
         system_bus: SystemBus<SystemBusMessage>,
         cancel: CancelChannel,
     ) -> Result<Self, HandshakeManagerError> {
         // Build the handshake cache and state machine structures
         let handshake_cache = new_async_shared(HandshakeCache::new(HANDSHAKE_CACHE_SIZE));
-        let handshake_state_index = HandshakeStateIndex::new(global_state.clone());
+        let handshake_state_index = HandshakeStateIndex::new(state.clone());
 
         Ok(Self {
             mutual_exclusion_list,
@@ -156,7 +156,7 @@ impl HandshakeExecutor {
             job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
             price_reporter_job_queue,
-            global_state,
+            state,
             task_queue,
             system_bus,
             cancel,
@@ -206,13 +206,7 @@ impl HandshakeExecutor {
             // An order has been updated, the executor should run the internal engine on the
             // new order to check for matches
             HandshakeExecutionJob::InternalMatchingEngine { order } => {
-                // Spawn a blocking thread to handle matches
-                let self_clone = self.clone();
-                tokio::task::spawn_blocking(move || {
-                    block_on(self_clone.run_internal_matching_engine(order))
-                })
-                .await
-                .unwrap() // JoinError
+                self.run_internal_matching_engine(order).await
             },
 
             // Indicates that a peer has sent a message during the course of a handshake
@@ -277,12 +271,12 @@ impl HandshakeExecutor {
                 // Fetch the validity proofs of the party
                 let (party0_proof, party1_proof) = {
                     let local_validity_proof = self
-                        .global_state
+                        .state
                         .get_validity_proofs(&order_state.local_order_id)
                         .await?
                         .ok_or_else(|| HandshakeManagerError::State(ERR_NO_PROOF.to_string()))?;
                     let remote_validity_proof = self
-                        .global_state
+                        .state
                         .get_validity_proofs(&order_state.peer_order_id)
                         .await?
                         .ok_or_else(|| HandshakeManagerError::State(ERR_NO_PROOF.to_string()))?;
@@ -342,7 +336,7 @@ impl HandshakeExecutor {
         order_id: &OrderIdentifier,
     ) -> Result<(Token, Token), HandshakeManagerError> {
         let order = self
-            .global_state
+            .state
             .get_managed_order(order_id)
             .await?
             .ok_or_else(|| HandshakeManagerError::State(format!("order_id: {order_id:?}")))?;
@@ -395,8 +389,7 @@ impl HandshakeExecutor {
         let locked_handshake_cache = self.handshake_cache.read().await;
 
         // Shuffle the locally managed orders to avoid always matching the same order
-        let mut local_verified_orders =
-            self.global_state.get_locally_matchable_orders().await.ok()?;
+        let mut local_verified_orders = self.state.get_locally_matchable_orders().await.ok()?;
         let mut rng = thread_rng();
         local_verified_orders.shuffle(&mut rng);
 
@@ -447,7 +440,7 @@ impl HandshakeExecutor {
         // Send a message to cluster peers indicating that the local peer has completed
         // a match. Cluster peers should cache the matched order pair as
         // completed and not initiate matches on this pair going forward
-        let cluster_id = self.global_state.get_cluster_id().await.unwrap();
+        let cluster_id = self.state.get_cluster_id().await.unwrap();
         let topic = cluster_id.get_management_topic();
         let message = PubsubMessage::Cluster(ClusterManagementMessage {
             cluster_id,
@@ -483,7 +476,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         // Enqueue a task to settle the match
         let wallet_id = self
-            .global_state
+            .state
             .get_wallet_for_order(&handshake_state.local_order_id)
             .await?
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;

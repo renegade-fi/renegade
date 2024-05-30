@@ -31,16 +31,16 @@ pub struct HandshakeStateIndex {
     /// A mapping from nullifier to a set of request_ids on that nullifier
     nullifier_map: AsyncShared<HashMap<Scalar, HashSet<Uuid>>>,
     /// A copy of the relayer global state
-    global_state: State,
+    state: State,
 }
 
 impl HandshakeStateIndex {
     /// Creates a new instance of the state index
-    pub fn new(global_state: State) -> Self {
+    pub fn new(state: State) -> Self {
         Self {
             state_map: new_async_shared(HashMap::new()),
             nullifier_map: new_async_shared(HashMap::new()),
-            global_state,
+            state,
         }
     }
 
@@ -60,7 +60,7 @@ impl HandshakeStateIndex {
         execution_price: FixedPoint,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order
-        let state = &self.global_state;
+        let state = &self.state;
         let local_nullifier = state
             .get_nullifier_for_order(&local_order_id)
             .await?

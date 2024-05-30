@@ -23,7 +23,7 @@ pub struct HandshakeScheduler {
     /// The UnboundedSender to enqueue jobs on
     job_sender: HandshakeManagerQueue,
     /// A copy of the relayer-global state
-    global_state: State,
+    state: State,
     /// The cancel channel to receive cancel signals on
     cancel: CancelChannel,
 }
@@ -32,10 +32,10 @@ impl HandshakeScheduler {
     /// Construct a new timer
     pub fn new(
         job_sender: HandshakeManagerQueue,
-        global_state: State,
+        state: State,
         cancel: CancelChannel,
     ) -> Self {
-        Self { job_sender, global_state, cancel }
+        Self { job_sender, state, cancel }
     }
 
     /// The execution loop of the timer, periodically enqueues handshake jobs
@@ -50,7 +50,7 @@ impl HandshakeScheduler {
                 // Enqueue handshakes periodically according to a timer
                 _ = tokio::time::sleep(refresh_interval) => {
                     // Enqueue a job to handshake with the randomly selected peer
-                    if let Some(order) = self.global_state.choose_handshake_order().await.ok().flatten() {
+                    if let Some(order) = self.state.choose_handshake_order().await.ok().flatten() {
                         if let Err(e) = self
                             .job_sender
                             .send(HandshakeExecutionJob::PerformHandshake { order })

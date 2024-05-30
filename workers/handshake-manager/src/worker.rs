@@ -35,7 +35,7 @@ pub struct HandshakeManagerConfig {
     /// the node
     pub mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The relayer-global state
-    pub global_state: State,
+    pub state: State,
     /// The channel on which to send outbound network requests
     pub network_channel: NetworkManagerQueue,
     /// The price reporter's job queue
@@ -64,7 +64,7 @@ impl Worker for HandshakeManager {
         // peers
         let scheduler = HandshakeScheduler::new(
             config.job_sender.clone(),
-            config.global_state.clone(),
+            config.state.clone(),
             config.cancel_channel.clone(),
         );
         let executor = HandshakeExecutor::new(
@@ -72,7 +72,7 @@ impl Worker for HandshakeManager {
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_reporter_job_queue.clone(),
-            config.global_state.clone(),
+            config.state.clone(),
             config.task_queue.clone(),
             config.system_bus.clone(),
             config.cancel_channel.clone(),

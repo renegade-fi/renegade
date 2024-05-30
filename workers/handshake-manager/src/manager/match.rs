@@ -121,7 +121,7 @@ impl HandshakeExecutor {
         // fee pair Use the linkable commitments from this witness to commit to
         // values in `VALID MATCH MPC`
         let proof_witnesses = self
-            .global_state
+            .state
             .get_validity_proof_witness(&handshake_state.local_order_id)
             .await?
             .ok_or_else(|| {

@@ -46,7 +46,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         if let Some(local_order_id) = self.choose_match_proposal(peer_order_id).await {
             // Choose a peer to match this order with
-            let managing_peer = self.global_state.get_peer_managing_order(&peer_order_id).await?;
+            let managing_peer = self.state.get_peer_managing_order(&peer_order_id).await?;
             if managing_peer.is_none() {
                 // TODO: Lower the order priority for this order
                 return Ok(());
@@ -59,7 +59,7 @@ impl HandshakeExecutor {
             let message = HandshakeMessage {
                 request_id,
                 message_type: HandshakeMessageType::Propose(ProposeMatchCandidate {
-                    peer_id: self.global_state.get_peer_id().await?,
+                    peer_id: self.state.get_peer_id().await?,
                     peer_order: peer_order_id,
                     sender_order: local_order_id,
                     price_vector: price_vector.clone(),
@@ -171,7 +171,7 @@ impl HandshakeExecutor {
         // Send a pubsub message indicating intent to match on the given order pair
         // Cluster peers will then avoid scheduling this match until the match either
         // completes, or the cache entry's invisibility window times out
-        let cluster_id = self.global_state.get_cluster_id().await?;
+        let cluster_id = self.state.get_cluster_id().await?;
         let topic = cluster_id.get_management_topic();
         let msg = PubsubMessage::Cluster(ClusterManagementMessage {
             cluster_id,
@@ -185,7 +185,7 @@ impl HandshakeExecutor {
         Ok(HandshakeMessage {
             request_id,
             message_type: HandshakeMessageType::Accept(AcceptMatchCandidate {
-                peer_id: self.global_state.get_peer_id().await?,
+                peer_id: self.state.get_peer_id().await?,
                 port: local_port,
                 order1: my_order,
                 order2: sender_order,
@@ -239,14 +239,14 @@ impl HandshakeExecutor {
     ) -> Result<Option<MatchRejectionReason>, HandshakeManagerError> {
         let ProposeMatchCandidate { peer_order: my_order, sender_order, price_vector, .. } =
             proposal;
-        let peer_order_info = self.global_state.get_order(sender_order).await?;
+        let peer_order_info = self.state.get_order(sender_order).await?;
         if peer_order_info.is_none() || !peer_order_info.unwrap().ready_for_match() {
             return Ok(Some(MatchRejectionReason::NoValidityProof));
         }
 
         // Do not accept handshakes on local orders that we don't have
         // validity proof or witness for
-        if !self.global_state.order_ready_for_match(my_order).await? {
+        if !self.state.order_ready_for_match(my_order).await? {
             return Ok(Some(MatchRejectionReason::LocalOrderNotReady));
         }
 
@@ -276,7 +276,7 @@ impl HandshakeExecutor {
         let message = HandshakeMessage {
             request_id,
             message_type: HandshakeMessageType::Reject(RejectMatchCandidate {
-                peer_id: self.global_state.get_peer_id().await?,
+                peer_id: self.state.get_peer_id().await?,
                 peer_order,
                 sender_order: local_order,
                 reason,
