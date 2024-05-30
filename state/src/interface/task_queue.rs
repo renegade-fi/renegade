@@ -19,6 +19,12 @@ impl State {
         Ok(key.is_some())
     }
 
+    /// Whether a task queue is paused
+    pub async fn is_queue_paused(&self, key: &TaskQueueKey) -> Result<bool, StateError> {
+        let key = *key;
+        self.with_read_tx(move |tx| Ok(tx.is_queue_paused(&key)?)).await
+    }
+
     /// Get the length of the task queue
     pub async fn get_task_queue_len(&self, key: &TaskQueueKey) -> Result<usize, StateError> {
         let key = *key;

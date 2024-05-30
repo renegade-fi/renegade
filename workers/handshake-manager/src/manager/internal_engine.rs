@@ -42,8 +42,6 @@ impl HandshakeExecutor {
         order: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
         info!("Running internal matching engine on order {order}");
-        let mut rng = thread_rng();
-
         // Lookup the order and its wallet
         let (network_order, wallet) = self.fetch_order_and_wallet(&order).await?;
         let my_order = wallet
@@ -60,8 +58,8 @@ impl HandshakeExecutor {
 
         // Fetch all other orders that are ready for matches
         // Shuffle the ordering of the other orders for fairness
-        let mut other_orders = self.global_state.get_locally_matchable_orders().await?;
-        other_orders.shuffle(&mut rng);
+        let mut other_orders = self.state.get_locally_matchable_orders().await?;
+        other_orders.shuffle(&mut thread_rng());
 
         // Match against each other order in the local book
         for order_id in other_orders {
@@ -72,7 +70,7 @@ impl HandshakeExecutor {
 
             // Same wallet
             let other_wallet_id = self
-                .global_state
+                .state
                 .get_wallet_for_order(&order_id)
                 .await?
                 .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
@@ -88,7 +86,7 @@ impl HandshakeExecutor {
                 };
 
             // Lookup the other order and match on it
-            let order2 = match self.global_state.get_managed_order(&order_id).await? {
+            let order2 = match self.state.get_managed_order(&order_id).await? {
                 Some(order) => order,
                 None => continue,
             };
@@ -117,10 +115,18 @@ impl HandshakeExecutor {
                         return Ok(());
                     }
                 },
-                Err(e) => error!(
-                    "internal match settlement failed for {} x {}: {e}",
-                    network_order.id, order_id,
-                ),
+                Err(e) => {
+                    error!(
+                        "internal match settlement failed for {} x {}: {e}",
+                        network_order.id, order_id,
+                    );
+
+                    // Check whether matching should continue
+                    if !self.wallet_still_valid(&wallet).await? {
+                        info!("wallet has changed, stopping internal matching engine...");
+                        return Ok(());
+                    }
+                },
             }
         }
 
@@ -224,7 +230,7 @@ impl HandshakeExecutor {
         order_id: &OrderIdentifier,
     ) -> Result<Option<(OrderValidityProofBundle, OrderValidityWitnessBundle)>, HandshakeManagerError>
     {
-        let state = &self.global_state;
+        let state = &self.state;
         let proof = res_some!(state.get_validity_proofs(order_id).await?);
         let witness = res_some!(state.get_validity_proof_witness(order_id).await?);
 
@@ -236,7 +242,7 @@ impl HandshakeExecutor {
         &self,
         order: &OrderIdentifier,
     ) -> Result<(NetworkOrder, Wallet), HandshakeManagerError> {
-        let state = &self.global_state;
+        let state = &self.state;
         let order = state
             .get_order(order)
             .await?
@@ -249,5 +255,34 @@ impl HandshakeExecutor {
         .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
 
         Ok((order, wallet))
+    }
+
+    /// Check whether a wallet is still valid. This amounts to checking:
+    ///     1. Whether the wallet's known nullifier is still valid. This may be
+    ///        false if the wallet has been updated since a match was attempted
+    ///     2. Whether the wallet's queue is still empty and unpaused.
+    ///        Concurrent matches from elsewhere in the relayer may cause this
+    ///        second condition to be false
+    ///
+    /// This check may be executed after a match settlement fails
+    async fn wallet_still_valid(&self, wallet: &Wallet) -> Result<bool, HandshakeManagerError> {
+        // Check the nullifier
+        let new_wallet = self.state.get_wallet(&wallet.wallet_id).await?;
+        let nullifier = new_wallet.map(|w| w.get_wallet_nullifier()).unwrap_or_default();
+        if wallet.get_wallet_nullifier() != nullifier {
+            return Ok(false);
+        }
+
+        // Check the queue
+        let queue_len = self.state.get_task_queue_len(&wallet.wallet_id).await?;
+        if queue_len > 0 {
+            return Ok(false);
+        }
+
+        if self.state.is_queue_paused(&wallet.wallet_id).await? {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 }

@@ -375,7 +375,7 @@ impl MockNodeController {
 
     /// Add a handshake manager to the mock node
     pub fn with_handshake_manager(mut self) -> Self {
-        let global_state = self.state.clone().expect("State not initialized");
+        let state = self.state.clone().expect("State not initialized");
         let network_channel = self.network_queue.0.clone();
         let price_reporter_job_queue = self.price_queue.0.clone();
         let job_sender = self.handshake_queue.0.clone();
@@ -386,7 +386,7 @@ impl MockNodeController {
 
         let conf = HandshakeManagerConfig {
             mutual_exclusion_list: HashSet::new(),
-            global_state,
+            state,
             network_channel,
             price_reporter_job_queue,
             job_sender,
