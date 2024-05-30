@@ -51,6 +51,8 @@ pub enum TaskDriverJob {
         wallet_ids: Vec<WalletIdentifier>,
         /// The task to run
         task: TaskDescriptor,
+        /// The response channel on which to send the task result
+        resp: Option<TaskNotificationSender>,
     },
     /// Request that the task driver notify a worker when a task is complete
     Notify {
@@ -59,4 +61,22 @@ pub enum TaskDriverJob {
         /// The channel on which to notify the worker
         channel: TaskNotificationSender,
     },
+}
+
+impl TaskDriverJob {
+    /// Create a new immediate task without a notification channel
+    pub fn new_immediate(task: TaskDescriptor, wallet_ids: Vec<WalletIdentifier>) -> Self {
+        let id = TaskIdentifier::new_v4();
+        Self::RunImmediate { task_id: id, wallet_ids, task, resp: None }
+    }
+
+    /// Create a new immediate task with a notification channel
+    pub fn new_immediate_with_notification(
+        task: TaskDescriptor,
+        wallet_ids: Vec<WalletIdentifier>,
+    ) -> (Self, TaskNotificationReceiver) {
+        let id = TaskIdentifier::new_v4();
+        let (sender, receiver) = oneshot_channel();
+        (Self::RunImmediate { task_id: id, wallet_ids, task, resp: Some(sender) }, receiver)
+    }
 }

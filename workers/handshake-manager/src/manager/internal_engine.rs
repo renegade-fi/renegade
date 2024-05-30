@@ -1,12 +1,10 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use std::time::Duration;
-
 use circuit_types::{fixed_point::FixedPoint, order::Order};
 use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor, TaskIdentifier},
+    tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
     wallet::{OrderIdentifier, Wallet, WalletIdentifier},
 };
 use job_types::task_driver::TaskDriverJob;
@@ -176,15 +174,13 @@ impl HandshakeExecutor {
 
         let wallet_ids = vec![wallet_id1, wallet_id2];
 
-        let task_id = TaskIdentifier::new_v4();
-        let job = TaskDriverJob::RunImmediate { task_id, wallet_ids, task };
+        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task, wallet_ids);
         self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::TaskError))?;
 
-        // Await settlement, returning true to indicate a match was successfully
-        // processed
-        // Allow the task driver to index the task before awaiting it
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        self.await_settlement_task(task_id).await.map(|_| true)
+        rx.await
+            .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
+            .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
+            .map(|_| true)
     }
 
     // -----------

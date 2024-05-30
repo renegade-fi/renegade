@@ -3,11 +3,9 @@
 //! TODO(@joey): This module will eventually become a dedicated task, for now
 //! this is sufficient
 
-use std::time::Duration;
-
-use common::types::tasks::NodeStartupTaskDescriptor;
+use common::types::tasks::{NodeStartupTaskDescriptor, TaskDescriptor};
 use config::RelayerConfig;
-use job_types::task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue};
+use job_types::task_driver::{TaskDriverJob, TaskDriverQueue};
 use util::err_str;
 
 use crate::error::CoordinatorError;
@@ -21,17 +19,13 @@ pub async fn node_setup(
     task_queue: TaskDriverQueue,
 ) -> Result<(), CoordinatorError> {
     // Start the node setup task and await its completion
-    let desc = NodeStartupTaskDescriptor::new(config.gossip_warmup, config.relayer_arbitrum_key());
-    let id = desc.id;
-    task_queue
-        .send(TaskDriverJob::RunImmediate { task_id: id, wallet_ids: vec![], task: desc.into() })
-        .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
-
-    // Wait for the task driver to index the task then request a notification
-    tokio::time::sleep(Duration::from_millis(1000)).await;
-    let (recv, job) = new_task_notification(id);
+    let desc: TaskDescriptor =
+        NodeStartupTaskDescriptor::new(config.gossip_warmup, config.relayer_arbitrum_key()).into();
+    let (job, rx) =
+        TaskDriverJob::new_immediate_with_notification(desc, vec![] /* wallet_ids */);
     task_queue
         .send(job)
         .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
-    recv.await.unwrap().map_err(err_str!(CoordinatorError::Setup))
+
+    rx.await.map_err(err_str!(CoordinatorError::Setup))?.map_err(err_str!(CoordinatorError::Setup))
 }
