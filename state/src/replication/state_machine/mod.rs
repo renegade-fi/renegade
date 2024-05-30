@@ -35,6 +35,8 @@ use super::{
 pub(crate) const SNAPSHOT_FILE: &str = "snapshot.dat";
 /// The name of the snapshot zip file
 pub(crate) const SNAPSHOT_ZIP: &str = "snapshot.gz";
+/// The snapshot lock file name
+pub(crate) const SNAPSHOT_LOCK: &str = "snapshot.lock";
 
 /// Get the path to the snapshot data file
 pub(crate) fn snapshot_data_path(snapshot_dir: &str) -> PathBuf {
@@ -128,6 +130,12 @@ impl StateMachine {
         snapshot_data_path(&self.config.snapshot_out)
     }
 
+    /// Get the path to the snapshot lock file
+    pub fn snapshot_lock_path(&self) -> PathBuf {
+        let dir = Path::new(&self.config.snapshot_out);
+        dir.join(SNAPSHOT_LOCK)
+    }
+
     /// Create the snapshot directory if it doesn't exist
     pub async fn create_snapshot_dir(&self) -> Result<(), ReplicationV2Error> {
         let snap_dir = self.snapshot_dir();
@@ -138,6 +146,31 @@ impl StateMachine {
         }
 
         Ok(())
+    }
+
+    /// Create the snapshot lock file
+    pub async fn create_snapshot_lock(&self) -> Result<(), ReplicationV2Error> {
+        let snapshot_lock = self.snapshot_lock_path();
+
+        // Create the directory if it doesn't exist
+        let parent_dir = snapshot_lock.parent();
+        if let Some(dir) = parent_dir
+            && !dir.exists()
+        {
+            tokio::fs::create_dir_all(dir).await.map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        }
+
+        tokio::fs::File::create(&snapshot_lock)
+            .await
+            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+
+        Ok(())
+    }
+
+    /// Delete the snapshot lock file
+    pub async fn delete_snapshot_lock(&self) -> Result<(), ReplicationV2Error> {
+        let snapshot_lock = self.snapshot_lock_path();
+        tokio::fs::remove_file(&snapshot_lock).await.map_err(err_str!(ReplicationV2Error::Snapshot))
     }
 
     /// Open the file containing the snapshot
