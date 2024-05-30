@@ -75,13 +75,17 @@ impl SnapshotInfo {
 
 impl RaftSnapshotBuilder<TypeConfig> for StateMachine {
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, RaftStorageError<NodeId>> {
+        // Create the lock file
+        self.create_snapshot_lock().await.map_err(new_snapshot_error)?;
+
         let info = self.take_db_snapshot().await.map_err(new_snapshot_error)?;
         let meta = info.get_snapshot_meta();
         let snapshot_file = tokio::fs::File::open(info.location()).await.map_err(|err| {
             RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Read, err)
         })?;
 
-        // Store the metadata and return
+        // Remove the lock file, store the metadata and return
+        self.delete_snapshot_lock().await.map_err(new_snapshot_error)?;
         self.write_snapshot_metadata(&meta).map_err(new_snapshot_error)?;
         Ok(Snapshot { meta, snapshot: Box::new(snapshot_file) })
     }
