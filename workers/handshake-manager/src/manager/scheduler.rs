@@ -30,11 +30,7 @@ pub struct HandshakeScheduler {
 
 impl HandshakeScheduler {
     /// Construct a new timer
-    pub fn new(
-        job_sender: HandshakeManagerQueue,
-        state: State,
-        cancel: CancelChannel,
-    ) -> Self {
+    pub fn new(job_sender: HandshakeManagerQueue, state: State, cancel: CancelChannel) -> Self {
         Self { job_sender, state, cancel }
     }
 
