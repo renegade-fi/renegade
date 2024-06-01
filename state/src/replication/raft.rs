@@ -26,11 +26,11 @@ use super::{
 /// The default cluster name
 const DEFAULT_CLUSTER_NAME: &str = "relayer-raft-cluster";
 /// The default heartbeat interval for the raft client
-const DEFAULT_HEARTBEAT_INTERVAL: u64 = 1000; // 1 second
+const DEFAULT_HEARTBEAT_INTERVAL: u64 = 3000; // 3 seconds
 /// The default election timeout min
-const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10000; // 10 seconds
+const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 15000; // 15 seconds
 /// The default election timeout max
-const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15000; // 15 seconds
+const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 20000; // 20 seconds
 /// The default log lag threshold for promoting learners
 const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
 /// The amount of time to await promotion before timing out
@@ -43,7 +43,7 @@ const DEFAULT_LEADER_ELECTION_TIMEOUT_MS: u64 = 30_000; // 30 seconds
 /// The default max chunk size for snapshots
 const DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10MiB
 /// The default timeout to use when sending `InstallSnapshot` RPCs
-const DEFAULT_INSTALL_SNAPSHOT_TIMEOUT_MS: u64 = 5000; // 5 seconds
+const DEFAULT_INSTALL_SNAPSHOT_TIMEOUT_MS: u64 = 60_000; // 1 minute
 
 /// Error message emitted when there is no known leader
 const ERR_NO_LEADER: &str = "no leader";
