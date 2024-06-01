@@ -29,7 +29,7 @@ pub const HEARTBEAT_INTERVAL_MS: u64 = 10_000; // 10 seconds
 pub const CLUSTER_HEARTBEAT_INTERVAL_MS: u64 = 3_000; // 3 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed; for non-cluster peers
-pub const HEARTBEAT_FAILURE_MS: u64 = 20_000; // 20 seconds
+pub const HEARTBEAT_FAILURE_MS: u64 = 30_000; // 30 seconds
 /// The amount of time without a successful heartbeat before the local
 /// relayer should assume its peer has failed; for cluster peers
 pub const CLUSTER_HEARTBEAT_FAILURE_MS: u64 = 15_000; // 15 seconds
