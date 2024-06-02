@@ -64,7 +64,7 @@ impl P2PRaftNetwork for GossipNetwork {
     #[allow(clippy::blocks_in_conditions)]
     #[instrument(
         name = "send_raft_request", 
-        skip_all, err, 
+        skip_all, err
         fields(req_type = %request.type_str())
     )]
     async fn send_request(

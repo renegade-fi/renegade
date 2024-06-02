@@ -5738,6 +5738,7 @@ dependencies = [
  "system-bus",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
  "util",
  "uuid 1.8.0",
 ]

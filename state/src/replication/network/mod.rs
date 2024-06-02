@@ -42,12 +42,14 @@ pub enum RaftRequest {
 
 impl RaftRequest {
     /// Get a string representing the request type
-    pub fn type_str(&self) -> &'static str {
+    pub fn type_str(&self) -> String {
         match self {
-            RaftRequest::AppendEntries(_) => "append_entries",
-            RaftRequest::InstallSnapshot(_) => "install_snapshot",
-            RaftRequest::Vote(_) => "vote",
-            RaftRequest::ForwardedProposal(_) => "forwarded_proposal",
+            RaftRequest::AppendEntries(req) => {
+                format!("append_entries (len = {})", req.entries.len())
+            },
+            RaftRequest::InstallSnapshot(_) => "install_snapshot".to_string(),
+            RaftRequest::Vote(_) => "vote".to_string(),
+            RaftRequest::ForwardedProposal(_) => "forwarded_proposal".to_string(),
         }
     }
 }

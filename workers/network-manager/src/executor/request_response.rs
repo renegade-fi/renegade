@@ -12,6 +12,7 @@ use job_types::{gossip_server::GossipServerJob, network_manager::NetworkResponse
 use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use libp2p::PeerId;
 use tracing::{error, instrument};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use util::{err_str, telemetry::propagation::set_parent_span_from_headers};
 
 use crate::error::NetworkManagerError;
@@ -39,8 +40,16 @@ impl NetworkManagerExecutor {
                 // Use the request's span if provided
                 set_parent_span_from_headers(&request.inner.tracing_headers());
 
-                // Authenticate the request then dispatch
-                request.verify_cluster_auth(&self.cluster_key.public)?;
+                // Authenticate the request
+                let pkey = self.cluster_key.public;
+                let ctx = tracing::Span::current().context().clone();
+                let request = tokio::task::spawn_blocking(move || {
+                    tracing::Span::current().set_parent(ctx);
+                    request.verify_cluster_auth(&pkey).map(|_| request)
+                })
+                .await
+                .unwrap()?;
+
                 let body = request.inner;
                 match body.destination() {
                     GossipDestination::NetworkManager => {
@@ -61,7 +70,16 @@ impl NetworkManagerExecutor {
                 // Use the response's span if provided
                 set_parent_span_from_headers(&response.inner.tracing_headers());
 
-                response.verify_cluster_auth(&self.cluster_key.public)?;
+                // Authenticate the response
+                let pkey = self.cluster_key.public;
+                let ctx = tracing::Span::current().context().clone();
+                let response = tokio::task::spawn_blocking(move || {
+                    tracing::Span::current().set_parent(ctx);
+                    response.verify_cluster_auth(&pkey).map(|_| response)
+                })
+                .await
+                .unwrap()?;
+
                 let body = response.inner;
                 if let Some(chan) = self.response_waiters.pop(request_id).await {
                     if !chan.is_closed() && chan.send(body.clone()).is_err() {
@@ -133,23 +151,29 @@ impl NetworkManagerExecutor {
     // ------------
 
     /// Handle an outbound request
+    #[instrument(name = "handle_outbound_req", skip_all, fields(peer = %peer))]
     pub(crate) fn handle_outbound_req(
         &self,
         peer: PeerId,
         req: GossipRequest,
         chan: Option<NetworkResponseChannel>,
     ) -> Result<(), NetworkManagerError> {
+        set_parent_span_from_headers(&req.tracing_headers());
+
         // Authenticate the request
         let authenticate_req = AuthenticatedGossipRequest::new_with_body(req, &self.cluster_key)?;
         self.send_behavior(BehaviorJob::SendReq(peer, authenticate_req, chan))
     }
 
     /// Handle an outbound response
+    #[instrument(name = "handle_outbound_resp", skip_all)]
     pub(crate) fn handle_outbound_resp(
         &self,
         resp: GossipResponse,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
+        set_parent_span_from_headers(&resp.tracing_headers());
+
         // Authenticate the response
         let authenticate_resp =
             AuthenticatedGossipResponse::new_with_body(resp, &self.cluster_key)?;

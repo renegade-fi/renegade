@@ -240,7 +240,7 @@ impl NetworkManagerExecutor {
             },
             ComposedProtocolEvent::PubSub(msg) => {
                 if let GossipsubEvent::Message { message, .. } = msg {
-                    self.handle_inbound_pubsub_message(message)?;
+                    self.handle_inbound_pubsub_message(message).await?;
                 }
 
                 Ok(())

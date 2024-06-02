@@ -13,7 +13,8 @@ use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender},
     oneshot,
 };
-use util::err_str;
+use tracing::instrument;
+use util::{err_str, telemetry::propagation::set_parent_span_from_headers};
 
 use crate::{composed_protocol::ComposedNetworkBehavior, error::NetworkManagerError};
 
@@ -63,6 +64,7 @@ impl NetworkManagerExecutor {
     }
 
     /// Handle a behavior job
+    #[instrument(name = "handle_behavior_job", skip_all)]
     pub(crate) async fn handle_behavior_job(
         &mut self,
         job: BehaviorJob,
@@ -70,6 +72,8 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         match job {
             BehaviorJob::SendReq(peer_id, req, chan) => {
+                set_parent_span_from_headers(&req.inner.tracing_headers());
+
                 let rid = swarm.behaviour_mut().request_response.send_request(&peer_id, req);
                 if let Some(chan) = chan {
                     self.response_waiters.insert(rid, chan).await;
@@ -77,11 +81,15 @@ impl NetworkManagerExecutor {
 
                 Ok(())
             },
-            BehaviorJob::SendResp(channel, resp) => swarm
-                .behaviour_mut()
-                .request_response
-                .send_response(channel, resp)
-                .map_err(|_| NetworkManagerError::Network(ERR_SEND_RESPONSE.to_string())),
+            BehaviorJob::SendResp(channel, resp) => {
+                set_parent_span_from_headers(&resp.inner.tracing_headers());
+
+                swarm
+                    .behaviour_mut()
+                    .request_response
+                    .send_response(channel, resp)
+                    .map_err(|_| NetworkManagerError::Network(ERR_SEND_RESPONSE.to_string()))
+            },
             BehaviorJob::SendPubsub(topic, msg) => swarm
                 .behaviour_mut()
                 .pubsub

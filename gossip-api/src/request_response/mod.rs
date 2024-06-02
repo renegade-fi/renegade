@@ -2,6 +2,7 @@
 
 use ed25519_dalek::{Keypair as SigKeypair, PublicKey, SignatureError};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use util::telemetry::propagation::{trace_context_headers, TraceContextHeaders};
 
 use crate::{check_signature, sign_message, GossipDestination};
@@ -35,23 +36,24 @@ impl AuthenticatedGossipRequest {
     ///
     /// Attaches a signature of the body using the given cluster private key
     /// if one is necessary
-    pub fn new_with_body(
-        body: GossipRequest,
-        keypair: &SigKeypair,
-    ) -> Result<Self, SignatureError> {
+    pub fn new_with_body(req: GossipRequest, keypair: &SigKeypair) -> Result<Self, SignatureError> {
         // Create a signature fo the body
-        let sig =
-            if body.requires_cluster_auth() { sign_message(&body, keypair)? } else { Vec::new() };
-        Ok(Self { sig, inner: body })
+        let sig = if req.requires_cluster_auth() {
+            sign_message(&req.body, keypair)?
+        } else {
+            Vec::new()
+        };
+        Ok(Self { sig, inner: req })
     }
 
     /// Verify the signature on an authenticated request
+    #[instrument(name = "verify_cluster_auth", skip_all)]
     pub fn verify_cluster_auth(&self, key: &PublicKey) -> Result<(), SignatureError> {
         if !self.inner.requires_cluster_auth() {
             return Ok(());
         }
 
-        check_signature(&self.inner, &self.sig, key)
+        check_signature(&self.inner.body, &self.sig, key)
     }
 }
 
@@ -176,26 +178,27 @@ impl AuthenticatedGossipResponse {
     /// Attaches a signature of the body using the given cluster private key
     /// if one is necessary
     pub fn new_with_body(
-        body: GossipResponse,
+        req: GossipResponse,
         cluster_key: &SigKeypair,
     ) -> Result<Self, SignatureError> {
         // Create a signature fo the body
-        let sig = if body.requires_cluster_auth() {
-            sign_message(&body, cluster_key)?
+        let sig = if req.requires_cluster_auth() {
+            sign_message(&req.body, cluster_key)?
         } else {
             Vec::new()
         };
 
-        Ok(Self { sig, inner: body })
+        Ok(Self { sig, inner: req })
     }
 
     /// Verify the signature on an authenticated request
+    #[instrument(name = "verify_cluster_auth")]
     pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> Result<(), SignatureError> {
         if !self.inner.requires_cluster_auth() {
             return Ok(());
         }
 
-        check_signature(&self.inner, &self.sig, cluster_pubkey)
+        check_signature(&self.inner.body, &self.sig, cluster_pubkey)
     }
 }
 

@@ -43,14 +43,20 @@ impl NetworkManagerExecutor {
     }
 
     /// Handle an incoming network request for a pubsub message
-    pub(super) fn handle_inbound_pubsub_message(
+    pub(super) async fn handle_inbound_pubsub_message(
         &self,
         message: GossipsubMessage,
     ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types and verify auth
+        let pkey = self.cluster_key.public;
         let event: AuthenticatedPubsubMessage =
             message.data.try_into().map_err(NetworkManagerError::Serialization)?;
-        event.verify_cluster_auth(&self.cluster_key.public)?;
+
+        // Block on verification to avoid blocking the async pool
+        let event =
+            tokio::task::spawn_blocking(move || event.verify_cluster_auth(&pkey).map(|_| event))
+                .await
+                .unwrap()?;
 
         let sender = message
             .source
