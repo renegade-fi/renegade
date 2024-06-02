@@ -5,11 +5,13 @@ use crate::{cli::RelayerConfig, validation::validate_config, Cli};
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use colored::*;
-use common::types::gossip::{ClusterId, WrappedPeerId};
-use ed25519_dalek::Keypair as DalekKeypair;
+use common::types::gossip::{
+    ClusterId, ClusterSymmetricKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH,
+};
+use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
 use ethers::{core::rand::thread_rng, signers::LocalWallet};
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
-use rand_core::OsRng;
+use rand_core::{OsRng, RngCore};
 use std::{env, fs, str::FromStr};
 use toml::{value::Map, Value};
 use url::Url;
@@ -52,20 +54,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
 /// Separating out this functionality allows us to easily inject custom args
 /// apart from what is specified on the command line
 pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
-    // Parse the cluster keypair from CLI args
-    // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
-    let keypair = if cli_args.cluster_public_key.is_some() && cli_args.cluster_private_key.is_some()
-    {
-        let mut public_key: Vec<u8> = base64::decode(cli_args.cluster_public_key.unwrap()).unwrap();
-        let mut private_key: Vec<u8> =
-            base64::decode(cli_args.cluster_private_key.unwrap()).unwrap();
-        private_key.append(&mut public_key);
-
-        ed25519_dalek::Keypair::from_bytes(&private_key[..]).unwrap()
-    } else {
-        let mut rng = OsRng {};
-        DalekKeypair::generate(&mut rng)
-    };
+    let (cluster_symmetric_key, cluster_keypair) = parse_cluster_keys(&cli_args)?;
 
     // Parse the local relayer's arbitrum wallet from the cli
     let arbitrum_private_keys = cli_args
@@ -83,7 +72,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         Keypair::generate_ed25519()
     };
 
-    let cluster_id = ClusterId::new(&keypair.public);
+    let cluster_id = ClusterId::new(&cluster_keypair.public);
 
     // Parse the bootstrap servers into multiaddrs
     let mut parsed_bootstrap_addrs: Vec<(WrappedPeerId, Multiaddr)> = Vec::new();
@@ -120,7 +109,8 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         gossip_warmup: cli_args.gossip_warmup,
         disable_price_reporter: cli_args.disable_price_reporter,
         disabled_exchanges: cli_args.disabled_exchanges,
-        cluster_keypair: keypair,
+        cluster_keypair,
+        cluster_symmetric_key,
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
@@ -141,6 +131,58 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     set_contract_from_file(&mut config, cli_args.deployments_file)?;
     Ok(config)
 }
+
+// ---------------
+// | Key Parsing |
+// ---------------
+
+/// Parse the cluster's symmetric and asymmetric keys from the CLI
+pub fn parse_cluster_keys(cli: &Cli) -> Result<(ClusterSymmetricKey, DalekKeypair), String> {
+    // Parse the cluster keypair from CLI args
+    // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
+    let keypair = if let Some(key_str) = cli.cluster_private_key.clone() {
+        let pkey_bytes: Vec<u8> = base64::decode(key_str.clone()).unwrap();
+
+        let private_key = SecretKey::from_bytes(&pkey_bytes).unwrap();
+        let public_key = PublicKey::from(&private_key);
+        DalekKeypair { secret: private_key, public: public_key }
+    } else {
+        let mut rng = OsRng {};
+        DalekKeypair::generate(&mut rng)
+    };
+
+    // Parse the symmetric key from its string or generate
+    let symmetric_key: ClusterSymmetricKey =
+        if let Some(key_str) = cli.cluster_symmetric_key.clone() {
+            base64::decode(key_str)
+                .map_err(|e| e.to_string())?
+                .try_into()
+                .map_err(|_| "Invalid symmetric key".to_string())?
+        } else {
+            let mut rng = OsRng {};
+            let mut key = [0u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
+            rng.fill_bytes(&mut key);
+
+            key
+        };
+
+    Ok((symmetric_key, keypair))
+}
+
+/// Parse the relayer's decryption key from a string
+pub fn parse_decryption_key(key_str: Option<String>) -> Result<DecryptionKey, String> {
+    if let Some(k) = key_str {
+        DecryptionKey::from_hex_str(&k)
+    } else {
+        // Must print here as logger is not yet setup
+        println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
+        Ok(DecryptionKey::random(&mut thread_rng()))
+    }
+}
+
+// ----------------
+// | File Parsing |
+// ----------------
 
 /// Parse args from a config file
 fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, String> {
@@ -241,15 +283,4 @@ fn set_contract_from_file(config: &mut RelayerConfig, file: Option<String>) -> R
     }
 
     Ok(())
-}
-
-/// Parse the relayer's decryption key from a string
-pub fn parse_decryption_key(key_str: Option<String>) -> Result<DecryptionKey, String> {
-    if let Some(k) = key_str {
-        DecryptionKey::from_hex_str(&k)
-    } else {
-        // Must print here as logger is not yet setup
-        println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
-        Ok(DecryptionKey::random(&mut thread_rng()))
-    }
 }

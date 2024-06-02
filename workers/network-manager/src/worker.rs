@@ -5,7 +5,7 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use common::default_wrapper::DefaultOption;
-use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use common::types::gossip::{ClusterId, ClusterSymmetricKey, PeerInfo, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
 use ed25519_dalek::Keypair;
@@ -52,6 +52,8 @@ pub struct NetworkManagerConfig {
     pub allow_local: bool,
     /// The cluster keypair, wrapped in an option to allow the worker thread to
     /// take ownership of the keypair
+    pub cluster_symmetric_key: ClusterSymmetricKey,
+    /// The asymmetric key of the cluster
     pub cluster_keypair: DefaultOption<Keypair>,
     /// The known public addr that the local node is listening behind, if one
     /// exists
@@ -246,7 +248,7 @@ impl Worker for NetworkManager {
             self.config.port,
             self.local_peer_id,
             self.config.allow_local,
-            self.config.cluster_keypair.take().unwrap(),
+            self.config.cluster_symmetric_key,
             self.config.send_channel.take().unwrap(),
             self.config.gossip_work_queue.clone(),
             self.config.handshake_work_queue.clone(),

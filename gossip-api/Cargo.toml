@@ -5,7 +5,8 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography === #
-ed25519-dalek = { version = "1.0.1" }
+hmac = "0.12"
+sha2 = "0.10"
 
 # === Workspace Dependencies === #
 circuit-types = { path = "../circuit-types" }

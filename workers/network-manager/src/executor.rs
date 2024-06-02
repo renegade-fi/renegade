@@ -8,10 +8,12 @@ mod request_response;
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
     new_async_shared,
-    types::{gossip::WrappedPeerId, CancelChannel},
+    types::{
+        gossip::{ClusterSymmetricKey, WrappedPeerId},
+        CancelChannel,
+    },
     AsyncShared,
 };
-use ed25519_dalek::Keypair as SigKeypair;
 use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
 use job_types::{
@@ -95,7 +97,7 @@ pub(super) struct NetworkManagerExecutor {
     /// The peer ID of the local node
     local_peer_id: WrappedPeerId,
     /// The local cluster's keypair, used to sign and authenticate requests
-    cluster_key: Arc<SigKeypair>,
+    cluster_key: ClusterSymmetricKey,
     /// Whether or not to allow peer discovery on the local node
     allow_local: bool,
     /// Whether the network manager has discovered the local peer's public,
@@ -136,7 +138,7 @@ impl NetworkManagerExecutor {
         p2p_port: u16,
         local_peer_id: WrappedPeerId,
         allow_local: bool,
-        cluster_key: SigKeypair,
+        cluster_key: ClusterSymmetricKey,
         job_channel: NetworkManagerReceiver,
         gossip_work_queue: GossipServerQueue,
         handshake_work_queue: HandshakeManagerQueue,
@@ -148,7 +150,7 @@ impl NetworkManagerExecutor {
             p2p_port,
             local_peer_id,
             allow_local,
-            cluster_key: Arc::new(cluster_key),
+            cluster_key,
             discovered_identity: Arc::new(AtomicBool::new(false)),
             warmup_finished: Arc::new(AtomicBool::new(false)),
             warmup_buffer: new_async_shared(Vec::new()),
@@ -256,9 +258,9 @@ impl NetworkManagerExecutor {
         match job {
             NetworkManagerJob::Pubsub(topic, msg) => self.forward_outbound_pubsub(topic, msg).await,
             NetworkManagerJob::Request(peer, req, chan) => {
-                self.handle_outbound_req(peer.inner(), req, chan)
+                self.handle_outbound_req(peer.inner(), req, chan).await
             },
-            NetworkManagerJob::Response(resp, chan) => self.handle_outbound_resp(resp, chan),
+            NetworkManagerJob::Response(resp, chan) => self.handle_outbound_resp(resp, chan).await,
             NetworkManagerJob::Internal(cmd) => self.handle_control_directive(cmd).await,
         }
     }

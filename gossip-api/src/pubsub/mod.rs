@@ -1,9 +1,9 @@
 //! Pubsub API definitions for the gossip protocol
 
-use ed25519_dalek::{Keypair as SigKeypair, PublicKey, SignatureError};
+use common::types::gossip::ClusterSymmetricKey;
 use serde::{Deserialize, Serialize};
 
-use crate::{check_signature, sign_message, GossipDestination};
+use crate::{check_hmac, create_hmac, GossipDestination};
 
 use self::{
     cluster::{ClusterManagementMessage, ClusterManagementMessageType},
@@ -26,27 +26,21 @@ pub struct AuthenticatedPubsubMessage {
 impl AuthenticatedPubsubMessage {
     /// Construct a new authenticated pubsub message from the pubsub body
     /// Sign the message if its type requires a signature
-    pub fn new_with_body(
-        body: PubsubMessage,
-        cluster_key: &SigKeypair,
-    ) -> Result<Self, SignatureError> {
+    pub fn new_with_body(body: PubsubMessage, cluster_key: &ClusterSymmetricKey) -> Self {
         // Create a signature fo the body
-        let sig = if body.requires_cluster_auth() {
-            sign_message(&body, cluster_key)?
-        } else {
-            Vec::new()
-        };
+        let sig =
+            if body.requires_cluster_auth() { create_hmac(&body, cluster_key) } else { Vec::new() };
 
-        Ok(Self { sig, body })
+        Self { sig, body }
     }
 
     /// Verify the signature on an authenticated request
-    pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> Result<(), SignatureError> {
+    pub fn verify_cluster_auth(&self, cluster_key: &ClusterSymmetricKey) -> bool {
         if !self.body.requires_cluster_auth() {
-            return Ok(());
+            return true;
         }
 
-        check_signature(&self.body, &self.sig, cluster_pubkey)
+        check_hmac(&self.body, &self.sig, cluster_key)
     }
 }
 

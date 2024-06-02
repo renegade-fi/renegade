@@ -1,11 +1,11 @@
 //! The request/response API types for the gossip protocol
 
-use ed25519_dalek::{Keypair as SigKeypair, PublicKey, SignatureError};
+use common::types::gossip::ClusterSymmetricKey;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use util::telemetry::propagation::{trace_context_headers, TraceContextHeaders};
 
-use crate::{check_signature, sign_message, GossipDestination};
+use crate::{check_hmac, create_hmac, GossipDestination};
 
 use self::{
     handshake::HandshakeMessage,
@@ -36,30 +36,30 @@ impl AuthenticatedGossipRequest {
     ///
     /// Attaches a signature of the body using the given cluster private key
     /// if one is necessary
-    pub fn new_with_body(req: GossipRequest, keypair: &SigKeypair) -> Result<Self, SignatureError> {
+    pub fn new_with_body(req: GossipRequest, cluster_key: &ClusterSymmetricKey) -> Self {
         // Create a signature fo the body
         let sig = if req.requires_cluster_auth() {
-            sign_message(&req.body, keypair)?
+            create_hmac(&req.body, cluster_key)
         } else {
             Vec::new()
         };
-        Ok(Self { sig, inner: req })
+
+        Self { sig, inner: req }
     }
 
     /// Verify the signature on an authenticated request
     #[instrument(name = "verify_cluster_auth", skip_all)]
-    pub fn verify_cluster_auth(&self, key: &PublicKey) -> Result<(), SignatureError> {
+    pub fn verify_cluster_auth(&self, key: &ClusterSymmetricKey) -> bool {
         if !self.inner.requires_cluster_auth() {
-            return Ok(());
+            return true;
         }
 
-        check_signature(&self.inner.body, &self.sig, key)
+        check_hmac(&self.inner.body, &self.sig, key)
     }
 }
 
-/// Represents a request delivered point-to-point through the libp2p
-/// request-response protocol
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A request send via the p2p layer
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GossipRequest {
     /// The tracing context
     pub tracing_context: Option<TraceContextHeaders>,
@@ -177,32 +177,29 @@ impl AuthenticatedGossipResponse {
     /// Constructs a new authenticated gossip request given the request body.
     /// Attaches a signature of the body using the given cluster private key
     /// if one is necessary
-    pub fn new_with_body(
-        req: GossipResponse,
-        cluster_key: &SigKeypair,
-    ) -> Result<Self, SignatureError> {
+    pub fn new_with_body(req: GossipResponse, cluster_key: &ClusterSymmetricKey) -> Self {
         // Create a signature fo the body
         let sig = if req.requires_cluster_auth() {
-            sign_message(&req.body, cluster_key)?
+            create_hmac(&req.body, cluster_key)
         } else {
             Vec::new()
         };
 
-        Ok(Self { sig, inner: req })
+        Self { sig, inner: req }
     }
 
     /// Verify the signature on an authenticated request
     #[instrument(name = "verify_cluster_auth")]
-    pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> Result<(), SignatureError> {
+    pub fn verify_cluster_auth(&self, cluster_key: &ClusterSymmetricKey) -> bool {
         if !self.inner.requires_cluster_auth() {
-            return Ok(());
+            return true;
         }
 
-        check_signature(&self.inner.body, &self.sig, cluster_pubkey)
+        check_hmac(&self.inner.body, &self.sig, cluster_key)
     }
 }
 
-/// Represents the possible response types for a request-response message
+/// A response sent via the p2p layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GossipResponse {
     /// The tracing context

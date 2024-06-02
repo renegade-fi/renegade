@@ -5,7 +5,7 @@ use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::{
     exchange::Exchange,
-    gossip::{ClusterId, WrappedPeerId},
+    gossip::{ClusterId, ClusterSymmetricKey, WrappedPeerId},
     wallet::WalletIdentifier,
 };
 use ed25519_dalek::Keypair as DalekKeypair;
@@ -102,9 +102,11 @@ pub struct Cli {
     /// The cluster private key to use
     #[clap(long = "cluster-private-key", value_parser)]
     pub cluster_private_key: Option<String>,
-    /// The cluster public key to use
-    #[clap(long = "cluster-public-key", value_parser)]
-    pub cluster_public_key: Option<String>,
+    /// The cluster symmetric key to use for authenticating intra-cluster messages
+    /// 
+    /// Encoded as a base64 string
+    #[clap(long, value_parser)]
+    pub cluster_symmetric_key: Option<String>,
 
     // ----------------------------
     // | Local Node Configuration |
@@ -246,6 +248,8 @@ pub struct RelayerConfig {
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The cluster keypair
     pub cluster_keypair: DalekKeypair,
+    /// The cluster symmetric keypair
+    pub cluster_symmetric_key: ClusterSymmetricKey,
 
     // ----------------------------
     // | Local Node Configuration |
@@ -359,6 +363,7 @@ impl Clone for RelayerConfig {
             disable_price_reporter: self.disable_price_reporter,
             disabled_exchanges: self.disabled_exchanges.clone(),
             cluster_keypair: DalekKeypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
+            cluster_symmetric_key: self.cluster_symmetric_key,
             cluster_id: self.cluster_id.clone(),
             coinbase_api_key: self.coinbase_api_key.clone(),
             coinbase_api_secret: self.coinbase_api_secret.clone(),

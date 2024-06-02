@@ -41,11 +41,14 @@ impl NetworkManagerExecutor {
                 set_parent_span_from_headers(&request.inner.tracing_headers());
 
                 // Authenticate the request
-                let pkey = self.cluster_key.public;
+                let pkey = self.cluster_key;
                 let ctx = tracing::Span::current().context().clone();
                 let request = tokio::task::spawn_blocking(move || {
                     tracing::Span::current().set_parent(ctx);
-                    request.verify_cluster_auth(&pkey).map(|_| request)
+                    request
+                        .verify_cluster_auth(&pkey)
+                        .then_some(request)
+                        .ok_or_else(NetworkManagerError::hmac_error)
                 })
                 .await
                 .unwrap()?;
@@ -71,11 +74,14 @@ impl NetworkManagerExecutor {
                 set_parent_span_from_headers(&response.inner.tracing_headers());
 
                 // Authenticate the response
-                let pkey = self.cluster_key.public;
+                let pkey = self.cluster_key;
                 let ctx = tracing::Span::current().context().clone();
                 let response = tokio::task::spawn_blocking(move || {
                     tracing::Span::current().set_parent(ctx);
-                    response.verify_cluster_auth(&pkey).map(|_| response)
+                    response
+                        .verify_cluster_auth(&pkey)
+                        .then_some(response)
+                        .ok_or_else(NetworkManagerError::hmac_error)
                 })
                 .await
                 .unwrap()?;
@@ -143,7 +149,7 @@ impl NetworkManagerExecutor {
             .map_err(err_str!(NetworkManagerError::State))?;
 
         let resp = GossipResponseType::Raft(resp.to_bytes()?);
-        self.handle_outbound_resp(resp.into(), chan)
+        self.handle_outbound_resp(resp.into(), chan).await
     }
 
     // ------------
@@ -152,7 +158,7 @@ impl NetworkManagerExecutor {
 
     /// Handle an outbound request
     #[instrument(name = "handle_outbound_req", skip_all, fields(peer = %peer))]
-    pub(crate) fn handle_outbound_req(
+    pub(crate) async fn handle_outbound_req(
         &self,
         peer: PeerId,
         req: GossipRequest,
@@ -161,13 +167,19 @@ impl NetworkManagerExecutor {
         set_parent_span_from_headers(&req.tracing_headers());
 
         // Authenticate the request
-        let authenticate_req = AuthenticatedGossipRequest::new_with_body(req, &self.cluster_key)?;
-        self.send_behavior(BehaviorJob::SendReq(peer, authenticate_req, chan))
+        let key = self.cluster_key;
+        let req_body = tokio::task::spawn_blocking(move || {
+            AuthenticatedGossipRequest::new_with_body(req, &key)
+        })
+        .await
+        .unwrap();
+
+        self.send_behavior(BehaviorJob::SendReq(peer, req_body, chan))
     }
 
     /// Handle an outbound response
     #[instrument(name = "handle_outbound_resp", skip_all)]
-    pub(crate) fn handle_outbound_resp(
+    pub(crate) async fn handle_outbound_resp(
         &self,
         resp: GossipResponse,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
@@ -175,8 +187,13 @@ impl NetworkManagerExecutor {
         set_parent_span_from_headers(&resp.tracing_headers());
 
         // Authenticate the response
-        let authenticate_resp =
-            AuthenticatedGossipResponse::new_with_body(resp, &self.cluster_key)?;
+        let key = self.cluster_key;
+        let authenticate_resp = tokio::task::spawn_blocking(move || {
+            AuthenticatedGossipResponse::new_with_body(resp, &key)
+        })
+        .await
+        .unwrap();
+
         self.send_behavior(BehaviorJob::SendResp(chan, authenticate_resp))
     }
 }
