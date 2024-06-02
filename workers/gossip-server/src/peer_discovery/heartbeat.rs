@@ -9,7 +9,7 @@ use gossip_api::{
     request_response::{
         heartbeat::{HeartbeatMessage, PeerInfoRequest},
         orderbook::OrderInfoRequest,
-        GossipRequest,
+        GossipRequestType,
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
@@ -55,7 +55,7 @@ impl GossipProtocolExecutor {
         }
 
         let heartbeat_message = self.state.construct_heartbeat().await?;
-        let msg = GossipRequest::Heartbeat(heartbeat_message);
+        let msg = GossipRequestType::Heartbeat(heartbeat_message);
         let job = NetworkManagerJob::request(recipient_peer_id, msg);
 
         self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
@@ -87,7 +87,7 @@ impl GossipProtocolExecutor {
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
         let missing_orders = self.state.get_missing_orders(&message.known_orders).await?;
-        let req = GossipRequest::OrderInfo(OrderInfoRequest { order_ids: missing_orders });
+        let req = GossipRequestType::OrderInfo(OrderInfoRequest { order_ids: missing_orders });
         self.network_channel
             .send(NetworkManagerJob::request(*peer, req))
             .map_err(err_str!(GossipError::SendMessage))
@@ -100,7 +100,7 @@ impl GossipProtocolExecutor {
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
         let missing_peers = self.state.get_missing_peers(&message.known_peers).await?;
-        let req = GossipRequest::PeerInfo(PeerInfoRequest { peer_ids: missing_peers });
+        let req = GossipRequestType::PeerInfo(PeerInfoRequest { peer_ids: missing_peers });
         self.network_channel
             .send(NetworkManagerJob::request(*peer, req))
             .map_err(err_str!(GossipError::SendMessage))

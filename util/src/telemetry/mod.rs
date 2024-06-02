@@ -10,6 +10,7 @@ pub mod datadog;
 pub mod helpers;
 pub mod metrics;
 pub mod otlp_tracer;
+pub mod propagation;
 
 /// Possible errors that occur when setting up telemetry
 /// for the relayer

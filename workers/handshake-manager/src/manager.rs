@@ -29,7 +29,8 @@ use gossip_api::{
         PubsubMessage,
     },
     request_response::{
-        handshake::HandshakeMessage, AuthenticatedGossipResponse, GossipRequest, GossipResponse,
+        handshake::HandshakeMessage, AuthenticatedGossipResponse, GossipRequestType,
+        GossipResponseType,
     },
 };
 use job_types::{
@@ -354,9 +355,9 @@ impl HandshakeExecutor {
         response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
     ) -> Result<(), HandshakeManagerError> {
         let job = if let Some(channel) = response_channel {
-            NetworkManagerJob::response(GossipResponse::Ack, channel)
+            NetworkManagerJob::response(GossipResponseType::Ack, channel)
         } else {
-            NetworkManagerJob::request(*peer_id, GossipRequest::Ack)
+            NetworkManagerJob::request(*peer_id, GossipRequestType::Ack)
         };
 
         self.network_channel.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))
@@ -376,9 +377,9 @@ impl HandshakeExecutor {
         response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
     ) -> Result<(), HandshakeManagerError> {
         let job = if let Some(channel) = response_channel {
-            NetworkManagerJob::response(GossipResponse::Handshake(response), channel)
+            NetworkManagerJob::response(GossipResponseType::Handshake(response), channel)
         } else {
-            NetworkManagerJob::request(peer_id, GossipRequest::Handshake(response))
+            NetworkManagerJob::request(peer_id, GossipRequestType::Handshake(response))
         };
 
         self.network_channel.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))

@@ -2,9 +2,10 @@
 //! layer
 
 use async_trait::async_trait;
-use gossip_api::request_response::{GossipRequest, GossipResponse};
+use gossip_api::request_response::{GossipRequestType, GossipResponse, GossipResponseType};
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
 use openraft::error::{NetworkError, RPCError, RaftError};
+use tracing::instrument;
 use util::err_str;
 
 use crate::replication::{
@@ -41,8 +42,8 @@ impl GossipNetwork {
 
     /// Convert a gossip response into a raft response
     fn to_raft_response(resp: GossipResponse) -> Result<RaftResponse, ReplicationV2Error> {
-        let resp_bytes = match resp {
-            GossipResponse::Raft(x) => x,
+        let resp_bytes = match resp.body {
+            GossipResponseType::Raft(x) => x,
             _ => {
                 return Err(ReplicationV2Error::Deserialize(ERR_INVALID_RESPONSE.to_string()));
             },
@@ -60,6 +61,12 @@ impl P2PRaftNetwork for GossipNetwork {
         self.target
     }
 
+    #[allow(clippy::blocks_in_conditions)]
+    #[instrument(
+        name = "send_raft_request", 
+        skip_all, err, 
+        fields(req_type = %request.type_str())
+    )]
     async fn send_request(
         &self,
         _target: NodeId,
@@ -68,7 +75,7 @@ impl P2PRaftNetwork for GossipNetwork {
         // We serialize in the raft layer to avoid the `gossip-api` depending on `state`
         let ser =
             bincode::serialize(&request).map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
-        let req = GossipRequest::Raft(ser);
+        let req = GossipRequestType::Raft(ser);
 
         // Send a network manager job
         let peer_id = self.target_info.peer_id;

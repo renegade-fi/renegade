@@ -3,15 +3,16 @@
 use common::types::gossip::WrappedPeerId;
 use gossip_api::{
     request_response::{
-        AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest, GossipResponse,
+        AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest, GossipRequestType,
+        GossipResponse, GossipResponseType,
     },
     GossipDestination,
 };
 use job_types::{gossip_server::GossipServerJob, network_manager::NetworkResponseChannel};
 use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use libp2p::PeerId;
-use tracing::error;
-use util::err_str;
+use tracing::{error, instrument};
+use util::{err_str, telemetry::propagation::set_parent_span_from_headers};
 
 use crate::error::NetworkManagerError;
 
@@ -23,6 +24,7 @@ impl NetworkManagerExecutor {
     // -----------
 
     /// Handle an incoming message from the network's request/response protocol
+    #[instrument(name = "handle_inbound_request_response_message", skip_all, err, fields(peer = %peer))]
     pub(super) async fn handle_inbound_request_response_message(
         &self,
         peer: PeerId,
@@ -34,9 +36,12 @@ impl NetworkManagerExecutor {
         match message {
             // Handle inbound request from another peer
             RequestResponseMessage::Request { request, channel, .. } => {
+                // Use the request's span if provided
+                set_parent_span_from_headers(&request.inner.tracing_headers());
+
                 // Authenticate the request then dispatch
                 request.verify_cluster_auth(&self.cluster_key.public)?;
-                let body = request.body;
+                let body = request.inner;
                 match body.destination() {
                     GossipDestination::NetworkManager => {
                         self.handle_internal_request(body, channel).await
@@ -53,8 +58,11 @@ impl NetworkManagerExecutor {
 
             // Handle inbound response
             RequestResponseMessage::Response { request_id, response } => {
+                // Use the response's span if provided
+                set_parent_span_from_headers(&response.inner.tracing_headers());
+
                 response.verify_cluster_auth(&self.cluster_key.public)?;
-                let body = response.body;
+                let body = response.inner;
                 if let Some(chan) = self.response_waiters.pop(request_id).await {
                     if !chan.is_closed() && chan.send(body.clone()).is_err() {
                         error!("error sending response notification for request: {request_id}");
@@ -76,14 +84,15 @@ impl NetworkManagerExecutor {
     }
 
     /// Handle an internally routed request
+    #[instrument(name = "handle_internal_network_request", skip_all, err)]
     async fn handle_internal_request(
         &self,
         req: GossipRequest,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
-        match req {
-            GossipRequest::Ack => Ok(()),
-            GossipRequest::Raft(raft_message) => self.handle_raft_req(raft_message, chan).await,
+        match req.body {
+            GossipRequestType::Ack => Ok(()),
+            GossipRequestType::Raft(raft_message) => self.handle_raft_req(raft_message, chan).await,
             _ => Err(NetworkManagerError::UnhandledRequest(format!(
                 "unhandled internal request: {req:?}",
             ))),
@@ -93,10 +102,10 @@ impl NetworkManagerExecutor {
     /// Handle an internally routed response
     #[allow(clippy::needless_pass_by_value)]
     fn handle_internal_response(&self, resp: GossipResponse) -> Result<(), NetworkManagerError> {
-        match resp {
-            GossipResponse::Ack => Ok(()),
+        match resp.body {
+            GossipResponseType::Ack => Ok(()),
             // The response will be forwarded directly to the raft client via the waiters
-            GossipResponse::Raft(_) => Ok(()),
+            GossipResponseType::Raft(_) => Ok(()),
             _ => Err(NetworkManagerError::UnhandledRequest(format!(
                 "unhandled internal response: {resp:?}",
             ))),
@@ -115,8 +124,8 @@ impl NetworkManagerExecutor {
             .await
             .map_err(err_str!(NetworkManagerError::State))?;
 
-        let resp = GossipResponse::Raft(resp.to_bytes()?);
-        self.handle_outbound_resp(resp, chan)
+        let resp = GossipResponseType::Raft(resp.to_bytes()?);
+        self.handle_outbound_resp(resp.into(), chan)
     }
 
     // ------------

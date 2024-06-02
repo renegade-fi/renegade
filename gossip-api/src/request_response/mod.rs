@@ -2,6 +2,7 @@
 
 use ed25519_dalek::{Keypair as SigKeypair, PublicKey, SignatureError};
 use serde::{Deserialize, Serialize};
+use util::telemetry::propagation::{trace_context_headers, TraceContextHeaders};
 
 use crate::{check_signature, sign_message, GossipDestination};
 
@@ -26,7 +27,7 @@ pub struct AuthenticatedGossipRequest {
     /// A signature of the request body with the sender's cluster private key
     pub sig: Vec<u8>,
     /// The body of the request
-    pub body: GossipRequest,
+    pub inner: GossipRequest,
 }
 
 impl AuthenticatedGossipRequest {
@@ -41,24 +42,47 @@ impl AuthenticatedGossipRequest {
         // Create a signature fo the body
         let sig =
             if body.requires_cluster_auth() { sign_message(&body, keypair)? } else { Vec::new() };
-
-        Ok(Self { sig, body })
+        Ok(Self { sig, inner: body })
     }
 
     /// Verify the signature on an authenticated request
     pub fn verify_cluster_auth(&self, key: &PublicKey) -> Result<(), SignatureError> {
-        if !self.body.requires_cluster_auth() {
+        if !self.inner.requires_cluster_auth() {
             return Ok(());
         }
 
-        check_signature(&self.body, &self.sig, key)
+        check_signature(&self.inner, &self.sig, key)
     }
 }
 
 /// Represents a request delivered point-to-point through the libp2p
 /// request-response protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GossipRequest {
+pub struct GossipRequest {
+    /// The tracing context
+    pub tracing_context: Option<TraceContextHeaders>,
+    /// The type of the request
+    pub body: GossipRequestType,
+}
+
+impl GossipRequest {
+    /// Construct a new request and add the current tracing information
+    pub fn new(body: GossipRequestType) -> Self {
+        let tracing_context = Some(trace_context_headers());
+        Self { tracing_context, body }
+    }
+
+    /// Get the tracing headers
+    ///
+    /// Returns an empty `TraceContextHeaders` if no tracing context is present
+    pub fn tracing_headers(&self) -> TraceContextHeaders {
+        self.tracing_context.clone().unwrap_or_default()
+    }
+}
+
+/// The type of a gossip request
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GossipRequestType {
     /// An ack, used to send a non-empty response so that libp2p will keep alive
     /// the connection
     Ack,
@@ -94,30 +118,36 @@ impl GossipRequest {
     /// The code here is intentionally verbose to force any new request/response
     /// types to be defined with authentication in mind
     pub fn requires_cluster_auth(&self) -> bool {
-        match self {
-            GossipRequest::Ack => false,
+        match self.body {
+            GossipRequestType::Ack => false,
             // Raft messages are always cluster authenticated
-            GossipRequest::Raft(..) => true,
-            GossipRequest::Bootstrap(..) => false,
-            GossipRequest::Heartbeat(..) => false,
-            GossipRequest::PeerInfo(..) => false,
-            GossipRequest::Handshake { .. } => false,
-            GossipRequest::OrderInfo(..) => false,
+            GossipRequestType::Raft(..) => true,
+            GossipRequestType::Bootstrap(..) => false,
+            GossipRequestType::Heartbeat(..) => false,
+            GossipRequestType::PeerInfo(..) => false,
+            GossipRequestType::Handshake { .. } => false,
+            GossipRequestType::OrderInfo(..) => false,
         }
     }
 
     /// The destination to which a request should be sent
     pub fn destination(&self) -> GossipDestination {
-        match self {
-            GossipRequest::Ack => GossipDestination::NetworkManager,
+        match self.body {
+            GossipRequestType::Ack => GossipDestination::NetworkManager,
             // We send to the network manager so that it will implicitly give an ack
-            GossipRequest::Raft(..) => GossipDestination::NetworkManager,
-            GossipRequest::Bootstrap(..) => GossipDestination::GossipServer,
-            GossipRequest::Heartbeat(..) => GossipDestination::GossipServer,
-            GossipRequest::PeerInfo(..) => GossipDestination::GossipServer,
-            GossipRequest::OrderInfo(..) => GossipDestination::GossipServer,
-            GossipRequest::Handshake { .. } => GossipDestination::HandshakeManager,
+            GossipRequestType::Raft(..) => GossipDestination::NetworkManager,
+            GossipRequestType::Bootstrap(..) => GossipDestination::GossipServer,
+            GossipRequestType::Heartbeat(..) => GossipDestination::GossipServer,
+            GossipRequestType::PeerInfo(..) => GossipDestination::GossipServer,
+            GossipRequestType::OrderInfo(..) => GossipDestination::GossipServer,
+            GossipRequestType::Handshake { .. } => GossipDestination::HandshakeManager,
         }
+    }
+}
+
+impl From<GossipRequestType> for GossipRequest {
+    fn from(body: GossipRequestType) -> Self {
+        GossipRequest::new(body)
     }
 }
 
@@ -132,14 +162,14 @@ pub struct AuthenticatedGossipResponse {
     /// A signature of the request body with the sender's cluster private key
     pub sig: Vec<u8>,
     /// The body of the request
-    pub body: GossipResponse,
+    pub inner: GossipResponse,
 }
 
 impl AuthenticatedGossipResponse {
     /// A helper function to create a simple ack without needing to explicitly
     /// construct the nested enumerative types
     pub fn new_ack() -> Self {
-        Self { sig: Vec::new(), body: GossipResponse::Ack }
+        Self { sig: Vec::new(), inner: GossipResponseType::Ack.into() }
     }
 
     /// Constructs a new authenticated gossip request given the request body.
@@ -156,22 +186,46 @@ impl AuthenticatedGossipResponse {
             Vec::new()
         };
 
-        Ok(Self { sig, body })
+        Ok(Self { sig, inner: body })
     }
 
     /// Verify the signature on an authenticated request
     pub fn verify_cluster_auth(&self, cluster_pubkey: &PublicKey) -> Result<(), SignatureError> {
-        if !self.body.requires_cluster_auth() {
+        if !self.inner.requires_cluster_auth() {
             return Ok(());
         }
 
-        check_signature(&self.body, &self.sig, cluster_pubkey)
+        check_signature(&self.inner, &self.sig, cluster_pubkey)
     }
 }
 
 /// Represents the possible response types for a request-response message
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GossipResponse {
+pub struct GossipResponse {
+    /// The tracing context
+    pub tracing_context: Option<TraceContextHeaders>,
+    /// The type of response
+    pub body: GossipResponseType,
+}
+
+impl GossipResponse {
+    /// Construct a new response and add the current tracing information
+    pub fn new(body: GossipResponseType) -> Self {
+        let tracing_context = Some(trace_context_headers());
+        Self { tracing_context, body }
+    }
+
+    /// Get the tracing headers
+    ///
+    /// Returns an empty `TraceContextHeaders` if no tracing context is present
+    pub fn tracing_headers(&self) -> TraceContextHeaders {
+        self.tracing_context.clone().unwrap_or_default()
+    }
+}
+
+/// Represents the type of gossip response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GossipResponseType {
     /// An ack, used to send a non-empty response so that libp2p will keep alive
     /// the connection
     Ack,
@@ -197,25 +251,31 @@ impl GossipResponse {
     /// The code here is intentionally verbose to force any new request/response
     /// types to be defined with authentication in mind
     pub fn requires_cluster_auth(&self) -> bool {
-        match self {
-            GossipResponse::Ack => false,
-            GossipResponse::Heartbeat(..) => false,
-            GossipResponse::Handshake { .. } => false,
-            GossipResponse::OrderInfo(..) => false,
-            GossipResponse::PeerInfo(..) => false,
-            GossipResponse::Raft(..) => true,
+        match self.body {
+            GossipResponseType::Ack => false,
+            GossipResponseType::Heartbeat(..) => false,
+            GossipResponseType::Handshake { .. } => false,
+            GossipResponseType::OrderInfo(..) => false,
+            GossipResponseType::PeerInfo(..) => false,
+            GossipResponseType::Raft(..) => true,
         }
     }
 
     /// The destination to which a request should be sent
     pub fn destination(&self) -> GossipDestination {
-        match self {
-            GossipResponse::Ack => GossipDestination::NetworkManager,
-            GossipResponse::Heartbeat(..) => GossipDestination::GossipServer,
-            GossipResponse::PeerInfo(..) => GossipDestination::GossipServer,
-            GossipResponse::OrderInfo(..) => GossipDestination::GossipServer,
-            GossipResponse::Handshake { .. } => GossipDestination::HandshakeManager,
-            GossipResponse::Raft(..) => GossipDestination::NetworkManager,
+        match self.body {
+            GossipResponseType::Ack => GossipDestination::NetworkManager,
+            GossipResponseType::Heartbeat(..) => GossipDestination::GossipServer,
+            GossipResponseType::PeerInfo(..) => GossipDestination::GossipServer,
+            GossipResponseType::OrderInfo(..) => GossipDestination::GossipServer,
+            GossipResponseType::Handshake { .. } => GossipDestination::HandshakeManager,
+            GossipResponseType::Raft(..) => GossipDestination::NetworkManager,
         }
+    }
+}
+
+impl From<GossipResponseType> for GossipResponse {
+    fn from(body: GossipResponseType) -> Self {
+        GossipResponse::new(body)
     }
 }

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use common::types::gossip::WrappedPeerId;
+use tracing::instrument;
 use util::err_str;
 
 use crate::{
@@ -71,6 +72,7 @@ impl State {
     /// Handle a raft request from a peer
     ///
     /// We (de)serialize at the raft layer to avoid dependency leak
+    #[instrument(name = "handle_raft_request", skip_all, err)]
     pub async fn handle_raft_req(&self, msg_bytes: Vec<u8>) -> Result<RaftResponse, StateError> {
         let msg: RaftRequest =
             bincode::deserialize(&msg_bytes).map_err(err_str!(StateError::Serde))?;

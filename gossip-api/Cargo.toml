@@ -10,6 +10,7 @@ ed25519-dalek = { version = "1.0.1" }
 # === Workspace Dependencies === #
 circuit-types = { path = "../circuit-types" }
 common = { path = "../common" }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 libp2p = { workspace = true }
@@ -17,4 +18,5 @@ openraft = "0.9"
 protobuf = "2.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
