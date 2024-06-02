@@ -14,7 +14,10 @@ use gossip_api::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
         PubsubMessage,
     },
-    request_response::{heartbeat::BootstrapRequest, GossipRequest, GossipResponse},
+    request_response::{
+        heartbeat::BootstrapRequest, GossipRequest, GossipRequestType, GossipResponse,
+        GossipResponseType,
+    },
 };
 use job_types::{
     gossip_server::{GossipServerJob, GossipServerQueue, GossipServerReceiver},
@@ -76,7 +79,7 @@ impl GossipServer {
         // 2. Send bootstrap requests to all known peers
         let my_id = self.config.local_peer_id;
         let my_info = self.state().get_peer_info(&my_id).await?.unwrap();
-        let req = GossipRequest::Bootstrap(BootstrapRequest { peer_info: my_info });
+        let req = GossipRequestType::Bootstrap(BootstrapRequest { peer_info: my_info });
         for (peer_id, _) in self.config.bootstrap_servers.iter() {
             let req = NetworkManagerJob::request(*peer_id, req.clone());
             self.config.network_sender.send(req).map_err(err_str!(GossipError::SendMessage))?;
@@ -210,15 +213,17 @@ impl GossipProtocolExecutor {
         &self,
         peer: WrappedPeerId,
         req: GossipRequest,
-    ) -> Result<GossipResponse, GossipError> {
-        match req {
-            GossipRequest::Bootstrap(req) => self.handle_bootstrap_req(req).await,
-            GossipRequest::Heartbeat(req) => {
+    ) -> Result<GossipResponseType, GossipError> {
+        match req.body {
+            GossipRequestType::Bootstrap(req) => self.handle_bootstrap_req(req).await,
+            GossipRequestType::Heartbeat(req) => {
                 self.handle_heartbeat(&peer, &req).await?;
-                Ok(GossipResponse::Ack)
+                Ok(GossipResponseType::Ack)
             },
-            GossipRequest::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids).await,
-            GossipRequest::OrderInfo(req) => self.handle_order_info_request(&req.order_ids).await,
+            GossipRequestType::PeerInfo(req) => self.handle_peer_info_req(req.peer_ids).await,
+            GossipRequestType::OrderInfo(req) => {
+                self.handle_order_info_request(&req.order_ids).await
+            },
             req => Err(GossipError::UnhandledRequest(format!("{req:?}"))),
         }
     }
@@ -229,12 +234,12 @@ impl GossipProtocolExecutor {
         peer: WrappedPeerId,
         resp: GossipResponse,
     ) -> Result<(), GossipError> {
-        match resp {
-            GossipResponse::Heartbeat(resp) => self.handle_heartbeat(&peer, &resp).await,
-            GossipResponse::OrderInfo(resp) => {
+        match resp.body {
+            GossipResponseType::Heartbeat(resp) => self.handle_heartbeat(&peer, &resp).await,
+            GossipResponseType::OrderInfo(resp) => {
                 self.handle_order_info_response(resp.order_info).await
             },
-            GossipResponse::PeerInfo(resp) => self.handle_peer_info_resp(resp.peer_info).await,
+            GossipResponseType::PeerInfo(resp) => self.handle_peer_info_resp(resp.peer_info).await,
             resp => Err(GossipError::UnhandledRequest(format!("{resp:?}"))),
         }
     }

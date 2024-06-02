@@ -3,7 +3,10 @@
 use common::types::{gossip::WrappedPeerId, handshake::ConnectionRole};
 use gossip_api::{
     pubsub::PubsubMessage,
-    request_response::{AuthenticatedGossipResponse, GossipRequest, GossipResponse},
+    request_response::{
+        AuthenticatedGossipResponse, GossipRequest, GossipRequestType, GossipResponse,
+        GossipResponseType,
+    },
 };
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
@@ -63,25 +66,25 @@ impl NetworkManagerJob {
     }
 
     /// Construct a new gossip request
-    pub fn request(peer_id: WrappedPeerId, request: GossipRequest) -> Self {
-        Self::Request(peer_id, request, None)
+    pub fn request(peer_id: WrappedPeerId, request: GossipRequestType) -> Self {
+        Self::Request(peer_id, request.into(), None)
     }
 
     /// Construct a new gossip request with a response channel
     pub fn request_with_response(
         peer_id: WrappedPeerId,
-        request: GossipRequest,
+        request: GossipRequestType,
     ) -> (Self, NetworkResponseReceiver) {
         let (send, recv) = new_response_channel();
-        (Self::Request(peer_id, request, Some(send)), recv)
+        (Self::Request(peer_id, request.into(), Some(send)), recv)
     }
 
     /// Construct a new gossip response
     pub fn response(
-        response: GossipResponse,
+        response: GossipResponseType,
         channel: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Self {
-        Self::Response(response, channel)
+        Self::Response(response.into(), channel)
     }
 
     /// Construct a new internal network manager control signal

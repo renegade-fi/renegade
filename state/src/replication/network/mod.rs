@@ -40,6 +40,18 @@ pub enum RaftRequest {
     ForwardedProposal(Proposal),
 }
 
+impl RaftRequest {
+    /// Get a string representing the request type
+    pub fn type_str(&self) -> &'static str {
+        match self {
+            RaftRequest::AppendEntries(_) => "append_entries",
+            RaftRequest::InstallSnapshot(_) => "install_snapshot",
+            RaftRequest::Vote(_) => "vote",
+            RaftRequest::ForwardedProposal(_) => "forwarded_proposal",
+        }
+    }
+}
+
 /// The response type a raft node may send to another
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RaftResponse {

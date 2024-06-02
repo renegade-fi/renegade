@@ -8,8 +8,8 @@ use std::{
 
 use common::types::gossip::WrappedPeerId;
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
-use tracing::info;
-use util::err_str;
+use tracing::{info, instrument};
+use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
 
@@ -325,10 +325,12 @@ impl RaftClient {
     // ---------------------
 
     /// Handle a raft request from a peer
+    #[instrument(name = "handle_raft_request", skip_all, err, fields(req_type))]
     pub(crate) async fn handle_raft_request(
         &self,
         req: RaftRequest,
     ) -> Result<RaftResponse, ReplicationV2Error> {
+        backfill_trace_field("req_type", req.type_str());
         match req {
             RaftRequest::AppendEntries(req) => {
                 let res = self.raft().append_entries(req).await?;

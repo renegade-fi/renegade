@@ -8,7 +8,7 @@ use gossip_api::{
     },
     request_response::{
         heartbeat::{BootstrapRequest, PeerInfoResponse},
-        GossipResponse,
+        GossipResponseType,
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
@@ -29,7 +29,7 @@ impl GossipProtocolExecutor {
     pub async fn handle_peer_info_req(
         &self,
         peers: Vec<WrappedPeerId>,
-    ) -> Result<GossipResponse, GossipError> {
+    ) -> Result<GossipResponseType, GossipError> {
         let peer_info = self.state.get_peer_info_map().await?;
 
         let mut res = Vec::new();
@@ -39,7 +39,7 @@ impl GossipProtocolExecutor {
             }
         }
 
-        let resp = GossipResponse::PeerInfo(PeerInfoResponse { peer_info: res });
+        let resp = GossipResponseType::PeerInfo(PeerInfoResponse { peer_info: res });
         Ok(resp)
     }
 
@@ -47,12 +47,12 @@ impl GossipProtocolExecutor {
     pub async fn handle_bootstrap_req(
         &self,
         req: BootstrapRequest,
-    ) -> Result<GossipResponse, GossipError> {
+    ) -> Result<GossipResponseType, GossipError> {
         // Add the peer to the index
         self.add_new_peers(vec![req.peer_info]).await?;
         let resp = self.build_heartbeat().await?;
 
-        Ok(GossipResponse::Heartbeat(resp))
+        Ok(GossipResponseType::Heartbeat(resp))
     }
 
     /// Handle a proposed expiry from a peer

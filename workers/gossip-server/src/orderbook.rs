@@ -18,7 +18,7 @@ use common::types::{
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
-    request_response::{orderbook::OrderInfoResponse, GossipResponse},
+    request_response::{orderbook::OrderInfoResponse, GossipResponseType},
 };
 use tracing::debug;
 use util::err_str;
@@ -40,12 +40,12 @@ impl GossipProtocolExecutor {
     pub(crate) async fn handle_order_info_request(
         &self,
         order_ids: &[OrderIdentifier],
-    ) -> Result<GossipResponse, GossipError> {
+    ) -> Result<GossipResponseType, GossipError> {
         let info = self.state.get_orders_batch(order_ids).await?;
         let order_info = info.into_iter().flatten().collect();
 
         let resp = OrderInfoResponse { order_info };
-        Ok(GossipResponse::OrderInfo(resp))
+        Ok(GossipResponseType::OrderInfo(resp))
     }
 
     // ---------------------
