@@ -37,7 +37,13 @@ impl NetworkManagerExecutor {
         }
 
         // If we require a signature on the message attach one
-        let req_body = AuthenticatedPubsubMessage::new_with_body(message, &self.cluster_key)?;
+        let key = self.cluster_key;
+        let req_body = tokio::task::spawn_blocking(move || {
+            AuthenticatedPubsubMessage::new_with_body(message, &key)
+        })
+        .await
+        .unwrap();
+
         let topic = Sha256Topic::new(topic);
         self.send_behavior(BehaviorJob::SendPubsub(topic, req_body))
     }
@@ -48,15 +54,19 @@ impl NetworkManagerExecutor {
         message: GossipsubMessage,
     ) -> Result<(), NetworkManagerError> {
         // Deserialize into API types and verify auth
-        let pkey = self.cluster_key.public;
+        let pkey = self.cluster_key;
         let event: AuthenticatedPubsubMessage =
             message.data.try_into().map_err(NetworkManagerError::Serialization)?;
 
         // Block on verification to avoid blocking the async pool
-        let event =
-            tokio::task::spawn_blocking(move || event.verify_cluster_auth(&pkey).map(|_| event))
-                .await
-                .unwrap()?;
+        let event = tokio::task::spawn_blocking(move || {
+            event
+                .verify_cluster_auth(&pkey)
+                .then_some(event)
+                .ok_or_else(NetworkManagerError::hmac_error)
+        })
+        .await
+        .unwrap()?;
 
         let sender = message
             .source

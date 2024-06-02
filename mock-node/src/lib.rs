@@ -327,6 +327,7 @@ impl MockNodeController {
             allow_local: config.allow_local,
             cluster_id: config.cluster_id.clone(),
             cluster_keypair: default_option(self.clone_cluster_key()),
+            cluster_symmetric_key: self.config.cluster_symmetric_key,
             send_channel: default_option(network_recv),
             gossip_work_queue: gossip_sender,
             handshake_work_queue: handshake_send,

@@ -5,6 +5,9 @@ use std::fmt::Display;
 use ed25519_dalek::SignatureError;
 use state::error::StateError;
 
+/// Error message given when an hmac check fails
+const HMAC_ERROR: &str = "HMAC check failed";
+
 /// The generic error type for the network manager
 #[derive(Debug)]
 pub enum NetworkManagerError {
@@ -28,6 +31,13 @@ pub enum NetworkManagerError {
     State(String),
     /// An error when a given request type is unhandled
     UnhandledRequest(String),
+}
+
+impl NetworkManagerError {
+    /// A new hmac error
+    pub fn hmac_error() -> Self {
+        Self::Authentication(HMAC_ERROR.to_string())
+    }
 }
 
 impl Display for NetworkManagerError {
