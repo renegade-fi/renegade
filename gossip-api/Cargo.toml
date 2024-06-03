@@ -6,18 +6,20 @@ edition = "2021"
 [dependencies]
 # === Cryptography === #
 hmac = "0.12"
-sha2 = "0.10"
+sha2 = { version = "0.10", features = ["asm"] }
 
 # === Workspace Dependencies === #
 circuit-types = { path = "../circuit-types" }
 common = { path = "../common" }
 util = { path = "../util" }
 
+# === Serialization === #
+bincode = "1.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
 # === Misc Dependencies === #
 libp2p = { workspace = true }
 openraft = "0.9"
-protobuf = "2.0"
-serde = { workspace = true }
-serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
