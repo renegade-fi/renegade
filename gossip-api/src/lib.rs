@@ -26,7 +26,7 @@ pub type HmacSha256 = hmac::Hmac<Sha256>;
 /// Sign a request body with the given key
 #[instrument(name = "sign_message", skip_all, fields(req_size))]
 pub fn create_hmac<M: Serialize>(req: &M, key: &ClusterSymmetricKey) -> Vec<u8> {
-    let buf = serde_json::to_vec(req).unwrap();
+    let buf = bincode::serialize(req).unwrap();
     backfill_trace_field("req_size", buf.len());
 
     let mut hmac = HmacSha256::new_from_slice(key).expect("hmac can handle all slice lengths");
@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn test_hmac() {
-        const SIZE: usize = 1_000;
+        const SIZE: usize = 10_000;
         let key = [20u8; 32];
 
         let body = vec![0u8; SIZE];
