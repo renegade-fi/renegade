@@ -222,16 +222,37 @@ impl TaskExecutor {
     ) -> Result<(), TaskDriverError> {
         // Check if any non-preemptable tasks conflict with this task before pausing
         for wallet_id in wallet_ids.iter() {
-            if let Some(conflicting_task) = self.state().current_committed_task(wallet_id).await? {
-                error!(
-                    "task preemption conflicts with committed task {conflicting_task:?}, aborting..."
-                );
+            if let Some(s) = self.preemption_conflict(wallet_id).await? {
+                warn!("task preemption failed: {s}");
+                if let Some(chan) = resp {
+                    let _ = chan.send(Err(s));
+                }
 
                 return Ok(());
             }
         }
 
         self.start_preemptive_task(wallet_ids, task_id, task, resp).await
+    }
+
+    /// Check for any conflicting conditions that cannot be preempted
+    ///
+    /// Returns an error message describing the conflict, if one exists
+    async fn preemption_conflict(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<Option<String>, TaskDriverError> {
+        if let Some(conflicting_task) = self.state().current_committed_task(wallet_id).await? {
+            return Ok(Some(format!(
+                "task preemption conflicts with committed task {conflicting_task:?}, aborting..."
+            )));
+        }
+
+        if self.state().is_queue_paused(wallet_id).await? {
+            return Ok(Some("queue already paused, aborting...".to_string()));
+        }
+
+        Ok(None)
     }
 
     // ------------------
