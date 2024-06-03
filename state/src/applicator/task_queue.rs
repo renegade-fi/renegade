@@ -38,6 +38,11 @@ fn already_paused(id: TaskQueueKey) -> String {
     format!("task queue {id} already paused")
 }
 
+/// Error message emitted when a task id is missing
+fn missing_task_key(id: TaskIdentifier) -> String {
+    format!("task id {id} not found")
+}
+
 /// Error message emitted when the applicator attempts to preempt a conflicting
 /// committed task
 fn already_committed(id: TaskQueueKey) -> String {
@@ -156,7 +161,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
+            .ok_or_else(|| StateApplicatorError::Rejected(missing_task_key(task_id)))?;
 
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::Rejected(already_paused(key)));
