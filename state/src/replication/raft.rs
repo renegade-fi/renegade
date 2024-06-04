@@ -44,6 +44,8 @@ const DEFAULT_LEADER_ELECTION_TIMEOUT_MS: u64 = 30_000; // 30 seconds
 const DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10MiB
 /// The default timeout to use when sending `InstallSnapshot` RPCs
 const DEFAULT_INSTALL_SNAPSHOT_TIMEOUT_MS: u64 = 60_000; // 1 minute
+/// The default max number of log entries in an `AppendEntries` payload
+const DEFAULT_MAX_PAYLOAD_ENTRIES: u64 = 100;
 
 /// Error message emitted when there is no known leader
 const ERR_NO_LEADER: &str = "no leader";
@@ -76,6 +78,8 @@ pub struct RaftClientConfig {
     pub snapshot_max_chunk_size: u64,
     /// The timeout on individual `InstallSnapshot` RPC calls
     pub install_snapshot_timeout: u64,
+    /// The maximum number of log entries in an `AppendEntries` payload
+    pub max_payload_entries: u64,
 }
 
 impl Default for RaftClientConfig {
@@ -92,6 +96,7 @@ impl Default for RaftClientConfig {
             initial_nodes: vec![],
             snapshot_max_chunk_size: DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE,
             install_snapshot_timeout: DEFAULT_INSTALL_SNAPSHOT_TIMEOUT_MS,
+            max_payload_entries: DEFAULT_MAX_PAYLOAD_ENTRIES,
         }
     }
 }
@@ -122,6 +127,7 @@ impl RaftClient {
             election_timeout_max: config.election_timeout_max,
             snapshot_max_chunk_size: config.snapshot_max_chunk_size,
             install_snapshot_timeout: config.install_snapshot_timeout,
+            max_payload_entries: config.max_payload_entries,
             ..Default::default()
         });
 
