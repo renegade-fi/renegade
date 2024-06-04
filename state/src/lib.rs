@@ -134,7 +134,7 @@ pub enum StateTransition {
 
     // --- Task Queue --- //
     /// Add a task to the task queue
-    AppendTask { task: QueuedTask },
+    AppendTask { task: QueuedTask, executor: WrappedPeerId },
     /// Pop the top task from the task queue
     PopTask { task_id: TaskIdentifier, success: bool },
     /// Transition the state of the top task in the task queue
@@ -142,9 +142,9 @@ pub enum StateTransition {
     /// Preempt the given task queue
     ///
     /// Returns any running tasks to `Queued` state and pauses the queue
-    PreemptTaskQueues { keys: Vec<TaskQueueKey>, task: QueuedTask },
+    PreemptTaskQueues { keys: Vec<TaskQueueKey>, task: QueuedTask, executor: WrappedPeerId },
     /// Resume the given task queue
-    ResumeTaskQueues { keys: Vec<TaskQueueKey>, success: bool },
+    ResumeTaskQueues { keys: Vec<TaskQueueKey>, success: bool},
 
     // --- MPC Preprocessing --- //
     /// Add a preprocessing bundle to the state

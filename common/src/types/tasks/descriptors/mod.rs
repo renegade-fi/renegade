@@ -20,7 +20,7 @@ pub use update_wallet::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{gossip::WrappedPeerId, wallet::WalletIdentifier};
+use crate::types::wallet::WalletIdentifier;
 
 /// The error message returned when a wallet's shares are invalid
 const INVALID_WALLET_SHARES: &str = "invalid wallet shares";
@@ -36,8 +36,6 @@ pub type TaskQueueKey = Uuid;
 pub struct QueuedTask {
     /// The ID of the task
     pub id: TaskIdentifier,
-    /// The peer assigned to the task
-    pub executor: WrappedPeerId,
     /// The state of the task
     pub state: QueuedTaskState,
     /// The task descriptor
@@ -202,10 +200,7 @@ pub mod mocks {
     use k256::ecdsa::SigningKey as K256SigningKey;
     use util::get_current_time_millis;
 
-    use crate::types::{
-        gossip::mocks::mock_peer, tasks::TaskIdentifier, wallet::Wallet,
-        wallet_mocks::mock_empty_wallet,
-    };
+    use crate::types::{tasks::TaskIdentifier, wallet::Wallet, wallet_mocks::mock_empty_wallet};
 
     use super::{
         NewWalletTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey,
@@ -232,7 +227,6 @@ pub mod mocks {
     pub fn mock_queued_task(queue_key: TaskQueueKey) -> super::QueuedTask {
         QueuedTask {
             id: TaskIdentifier::new_v4(),
-            executor: mock_peer().peer_id,
             state: QueuedTaskState::Queued,
             descriptor: mock_task_descriptor(queue_key),
             created_at: get_current_time_millis(),
