@@ -20,6 +20,8 @@ pub enum HandshakeManagerError {
     Multiprover(String),
     /// Necessary price data was not available for a token pair
     NoPriceData(String),
+    /// Error interacting with the price reporter
+    PriceReporter(String),
     /// Error sending a message to the network
     SendMessage(String),
     /// Error while setting up the handshake manager

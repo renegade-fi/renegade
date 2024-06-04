@@ -2,6 +2,7 @@
 
 use circuit_types::{fixed_point::FixedPoint, order::Order};
 use common::types::{
+    exchange::PriceReporterState,
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
@@ -210,12 +211,16 @@ impl HandshakeExecutor {
         order: &OrderIdentifier,
     ) -> Result<FixedPoint, HandshakeManagerError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
-        let price = self
-            .fetch_price_vector()
-            .await?
-            .find_pair(&base, &quote)
-            .ok_or_else(|| HandshakeManagerError::NoPriceData(ERR_NO_PRICE_DATA.to_string()))?
-            .2; // (base, quote, price)
+        let price_recv = self.request_price(base, quote)?;
+        let price =
+            match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
+                PriceReporterState::Nominal(report) => report.price,
+                err_state => {
+                    return Err(HandshakeManagerError::NoPriceData(format!(
+                        "{ERR_NO_PRICE_DATA}: {err_state:?}"
+                    )));
+                },
+            };
 
         Ok(FixedPoint::from_f64_round_down(price))
     }
