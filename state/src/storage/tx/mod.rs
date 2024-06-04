@@ -12,6 +12,7 @@ pub mod order_book;
 pub mod order_history;
 pub mod peer_index;
 pub mod raft_log;
+pub mod task_assignments;
 pub mod task_history;
 pub mod task_queue;
 pub mod wallet_index;
