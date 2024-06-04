@@ -71,6 +71,7 @@ impl QueuedTaskState {
     /// Whether the task is running
     pub fn is_running(&self) -> bool {
         matches!(self, QueuedTaskState::Running { .. })
+            || matches!(self, QueuedTaskState::Preemptive)
     }
 
     /// Whether the task is committed
