@@ -22,11 +22,6 @@ fn task_assignment_key(task_id: &TaskIdentifier) -> String {
     format!("task-assignment-{task_id}")
 }
 
-/// Create a key not found error for a task assignment
-fn task_not_found_err(task_id: &TaskIdentifier) -> StorageError {
-    StorageError::NotFound(format!("Task {task_id} not found"))
-}
-
 impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get the tasks assigned to a node
     pub fn get_assigned_tasks(
@@ -41,12 +36,9 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     pub fn get_task_assignment(
         &self,
         task_id: &TaskIdentifier,
-    ) -> Result<WrappedPeerId, StorageError> {
+    ) -> Result<Option<WrappedPeerId>, StorageError> {
         let key = task_assignment_key(task_id);
-        let value = self
-            .inner()
-            .read(TASK_ASSIGNMENT_TABLE, &key)?
-            .ok_or_else(|| task_not_found_err(task_id))?;
+        let value = self.inner().read(TASK_ASSIGNMENT_TABLE, &key)?;
 
         Ok(value)
     }
@@ -58,7 +50,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 
 impl<'db> StateTxn<'db, RW> {
     /// Push a task to the list of assigned tasks for a node
-    pub fn add_assigned_tasks(
+    pub fn add_assigned_task(
         &self,
         peer_id: &WrappedPeerId,
         task_id: &TaskIdentifier,
@@ -116,21 +108,21 @@ mod test {
         assert_eq!(assigned_tasks, vec![]);
 
         // Add the task to the assigned tasks
-        tx.add_assigned_tasks(&peer_id, &task_id).unwrap();
+        tx.add_assigned_task(&peer_id, &task_id).unwrap();
 
         // Check the assigned tasks => should be empty
         let assigned_tasks = tx.get_assigned_tasks(&peer_id).unwrap();
         let task_assignment = tx.get_task_assignment(&task_id).unwrap();
         assert_eq!(assigned_tasks, vec![task_id]);
-        assert_eq!(task_assignment, peer_id);
+        assert_eq!(task_assignment, Some(peer_id));
 
         // Remove the task from the assigned tasks
         tx.remove_assigned_task(&peer_id, &task_id).unwrap();
 
         // Check the assigned tasks => should be empty
         let assigned_tasks = tx.get_assigned_tasks(&peer_id).unwrap();
-        let task_assignment = tx.get_task_assignment(&task_id);
+        let task_assignment = tx.get_task_assignment(&task_id).unwrap();
         assert_eq!(assigned_tasks, vec![]);
-        assert!(task_assignment.is_err());
+        assert_eq!(task_assignment, None);
     }
 }

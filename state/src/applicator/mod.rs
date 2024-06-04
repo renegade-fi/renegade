@@ -79,13 +79,13 @@ impl StateApplicator {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
-            StateTransition::AppendTask { task } => self.append_task(&task),
+            StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)
             },
-            StateTransition::PreemptTaskQueues { keys, task } => {
-                self.preempt_task_queues(&keys, &task)
+            StateTransition::PreemptTaskQueues { keys, task, executor } => {
+                self.preempt_task_queues(&keys, &task, &executor)
             },
             StateTransition::ResumeTaskQueues { keys, success } => {
                 self.resume_task_queues(&keys, success)

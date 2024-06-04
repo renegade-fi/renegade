@@ -141,13 +141,13 @@ impl State {
         let task = QueuedTask {
             id,
             state: QueuedTaskState::Queued,
-            executor: self_id,
             descriptor: task,
             created_at: get_current_time_millis(),
         };
 
         // Propose the task to the task queue
-        let waiter = self.send_proposal(StateTransition::AppendTask { task }).await?;
+        let proposal = StateTransition::AppendTask { task, executor: self_id };
+        let waiter = self.send_proposal(proposal).await?;
         Ok((id, waiter))
     }
 
@@ -195,12 +195,12 @@ impl State {
         let task = QueuedTask {
             id: task_id,
             state: QueuedTaskState::Preemptive,
-            executor: self_id,
             descriptor: task,
             created_at: get_current_time_millis(),
         };
 
-        self.send_proposal(StateTransition::PreemptTaskQueues { keys, task }).await
+        let proposal = StateTransition::PreemptTaskQueues { keys, task, executor: self_id };
+        self.send_proposal(proposal).await
     }
 
     /// Resume a task queue
