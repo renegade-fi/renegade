@@ -89,8 +89,8 @@ pub struct Cli {
     pub public_ip: Option<SocketAddr>,
     /// The amount of time to allow for gossip warmup, in milliseconds
     /// 
-    /// Defaults to 10s
-    #[clap(long, value_parser, default_value = "10000")]
+    /// Defaults to 30s
+    #[clap(long, value_parser, default_value = "30000")]
     pub gossip_warmup: u64,
     
     // -------------------------
