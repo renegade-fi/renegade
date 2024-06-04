@@ -145,6 +145,8 @@ pub enum StateTransition {
     PreemptTaskQueues { keys: Vec<TaskQueueKey>, task: QueuedTask, executor: WrappedPeerId },
     /// Resume the given task queue
     ResumeTaskQueues { keys: Vec<TaskQueueKey>, success: bool},
+    /// Reassign all tasks from one peer to another peer
+    ReassignTasks { from: WrappedPeerId, to: WrappedPeerId },
 
     // --- MPC Preprocessing --- //
     /// Add a preprocessing bundle to the state

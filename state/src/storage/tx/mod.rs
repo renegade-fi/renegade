@@ -128,7 +128,7 @@ impl<'db> StateTxn<'db, RW> {
         // Check if the value is already in the set
         if !set.contains(value) {
             set.push(value.clone());
-            self.inner().write(table_name, key, &set)?;
+            self.write_set(table_name, key, &set)?;
         }
 
         Ok(())
@@ -150,9 +150,18 @@ impl<'db> StateTxn<'db, RW> {
         set.retain(|v| v != value);
 
         // Write the updated set back to the database
-        self.inner().write(table_name, key, &set)?;
-
+        self.write_set(table_name, key, &set)?;
         Ok(())
+    }
+
+    /// Write a set type to the database
+    pub(crate) fn write_set<K: Key, V: Value>(
+        &self,
+        table_name: &str,
+        key: &K,
+        value: &Vec<V>,
+    ) -> Result<(), StorageError> {
+        self.inner().write(table_name, key, value)
     }
 
     // ----------

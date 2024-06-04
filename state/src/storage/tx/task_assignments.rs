@@ -77,6 +77,32 @@ impl<'db> StateTxn<'db, RW> {
         Ok(())
     }
 
+    /// Reassign the tasks from one peer to another
+    ///
+    /// Returns the ids of the tasks that were reassigned
+    pub fn reassign_tasks(
+        &self,
+        from: &WrappedPeerId,
+        to: &WrappedPeerId,
+    ) -> Result<Vec<TaskIdentifier>, StorageError> {
+        // Reassign the tasks
+        let new_tasks = self.get_assigned_tasks(from)?;
+        let mut curr_tasks = self.get_assigned_tasks(to)?;
+
+        curr_tasks.extend(new_tasks.clone());
+        self.write_assigned_tasks(to, &curr_tasks)?;
+        self.write_assigned_tasks(from, &vec![])?;
+
+        // Update the inverse mapping
+        for task_id in new_tasks.iter() {
+            self.assign_task_to_node(task_id, to)?;
+        }
+
+        Ok(new_tasks)
+    }
+
+    // --- Helpers --- //
+
     /// Add an assignment from a task id to a node
     fn assign_task_to_node(
         &self,
@@ -87,11 +113,29 @@ impl<'db> StateTxn<'db, RW> {
         self.inner().write(TASK_ASSIGNMENT_TABLE, &key, peer_id)?;
         Ok(())
     }
+
+    /// Write the set of assigned tasks for a node
+    fn write_assigned_tasks(
+        &self,
+        peer_id: &WrappedPeerId,
+        value: &Vec<TaskIdentifier>,
+    ) -> Result<(), StorageError> {
+        let key = node_tasks_key(peer_id);
+        // Delete the key if empty
+        if value.is_empty() {
+            self.inner().delete(TASK_ASSIGNMENT_TABLE, &key)?;
+        } else {
+            self.write_set(TASK_ASSIGNMENT_TABLE, &key, value)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod test {
     use common::types::{gossip::mocks::mock_peer, tasks::TaskIdentifier};
+    use itertools::Itertools;
 
     use crate::test_helpers::mock_db;
 
@@ -124,5 +168,61 @@ mod test {
         let task_assignment = tx.get_task_assignment(&task_id).unwrap();
         assert_eq!(assigned_tasks, vec![]);
         assert_eq!(task_assignment, None);
+    }
+
+    /// Tests reassigning an empty set of tasks
+    #[test]
+    fn test_reassign_empty() {
+        let db = mock_db();
+        let tx = db.new_write_tx().unwrap();
+
+        let from = mock_peer().get_peer_id();
+        let to = mock_peer().get_peer_id();
+        let task_id = TaskIdentifier::new_v4();
+
+        // Add a task to the receiver
+        tx.add_assigned_task(&to, &task_id).unwrap();
+        tx.reassign_tasks(&from, &to).unwrap();
+
+        // Check that the already existing task is the only task assigned to the
+        // receiver
+        let assigned_tasks = tx.get_assigned_tasks(&to).unwrap();
+        let task_assignment = tx.get_task_assignment(&task_id).unwrap();
+        assert_eq!(assigned_tasks, vec![task_id]);
+        assert_eq!(task_assignment, Some(to));
+    }
+
+    /// Tests reassigning tasks from a non-empty set
+    #[test]
+    fn test_reassign_non_empty() {
+        const N: usize = 10;
+        let db = mock_db();
+        let tx = db.new_write_tx().unwrap();
+
+        let from = mock_peer().get_peer_id();
+        let to = mock_peer().get_peer_id();
+        let from_tasks = (0..N).map(|_| TaskIdentifier::new_v4()).collect_vec();
+        let to_tasks = (0..N).map(|_| TaskIdentifier::new_v4()).collect_vec();
+
+        // Setup the to and from tasks
+        for i in 0..N {
+            tx.add_assigned_task(&to, &to_tasks[i]).unwrap();
+            tx.add_assigned_task(&from, &from_tasks[i]).unwrap();
+        }
+
+        // Reassign the tasks
+        tx.reassign_tasks(&from, &to).unwrap();
+
+        let expected_tasks = to_tasks.iter().chain(from_tasks.iter()).cloned().collect_vec();
+        let assigned_tasks = tx.get_assigned_tasks(&to).unwrap();
+        assert_eq!(assigned_tasks, expected_tasks);
+
+        // Check that the tasks are reassigned
+        for i in 0..N {
+            let from_task_assignment = tx.get_task_assignment(&from_tasks[i]).unwrap();
+            let to_task_assignment = tx.get_task_assignment(&to_tasks[i]).unwrap();
+            assert_eq!(from_task_assignment, Some(to));
+            assert_eq!(to_task_assignment, Some(to));
+        }
     }
 }

@@ -12,7 +12,7 @@ use external_api::{
 };
 use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
 use libmdbx::{TransactionKind, RW};
-use tracing::{error, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use util::err_str;
 
 use crate::storage::tx::StateTxn;
@@ -319,6 +319,43 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
+    /// Reassign all tasks from one peer to another
+    pub fn reassign_tasks(
+        &self,
+        from: &WrappedPeerId,
+        to: &WrappedPeerId,
+    ) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+        let reassigned_tasks = tx.reassign_tasks(from, to)?;
+        if !reassigned_tasks.is_empty() {
+            info!("Reassigning {} tasks from {from} to {to}", reassigned_tasks.len());
+        }
+
+        // Handle in-flight tasks that were reassigned
+        for task_id in reassigned_tasks.into_iter() {
+            let task = match tx.get_task(&task_id)? {
+                Some(task) => task,
+                None => continue,
+            };
+
+            if !task.state.is_running() {
+                continue;
+            }
+
+            // TODO: If the task is committed we can be smarter and check for its most
+            // recent state on-chain. This is a simpler solution for the moment, but will
+            // error in the case described
+            let queue_key = tx
+                .get_queue_key_for_task(&task_id)?
+                .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
+            tx.transition_task(&queue_key, new_running_state())?;
+            self.maybe_start_task(&task, &tx)?;
+        }
+
+        tx.commit()?;
+        Ok(ApplicatorReturnType::None)
+    }
+
     // -----------
     // | Helpers |
     // -----------
@@ -484,6 +521,7 @@ mod test {
             mocks::{mock_preemptive_task, mock_queued_task},
             QueuedTaskState, TaskIdentifier, TaskQueueKey,
         },
+        wallet::WalletIdentifier,
         wallet_mocks::mock_empty_wallet,
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
@@ -521,9 +559,9 @@ mod test {
         task.id
     }
 
-    // ---------
-    // | Tests |
-    // ---------
+    // ---------------------
+    // | Basic Queue Tests |
+    // ---------------------
 
     /// Tests appending a task to an empty queue
     #[test]
@@ -795,6 +833,10 @@ mod test {
         assert_eq!(tasks[0].state, new_state); // should be updated
     }
 
+    // --------------------
+    // | Preemption Tests |
+    // --------------------
+
     /// Tests cases in pausing an empty queue
     #[test]
     fn test_pause_empty() {
@@ -1006,5 +1048,117 @@ mod test {
         let is_paused2 = tx.is_queue_paused(&queue_key2).unwrap();
         tx.commit().unwrap();
         assert!(!is_paused2);
+    }
+
+    // ----------------------
+    // | Reassignment Tests |
+    // ----------------------
+
+    /// Test the case in which a task is reassigned to a non-local peer
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_reassign__non_executor() {
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        // Add a task
+        let failed_peer = WrappedPeerId::random();
+        let reassigned_peer = WrappedPeerId::random();
+        let task = mock_queued_task(WalletIdentifier::new_v4());
+        applicator.append_task(&task, &failed_peer).unwrap();
+
+        // Reassign the task
+        applicator.reassign_tasks(&failed_peer, &reassigned_peer).unwrap();
+
+        // Ensure the task was reassigned
+        let tx = applicator.db().new_read_tx().unwrap();
+        let executor = tx.get_task_assignment(&task.id).unwrap().unwrap();
+        tx.commit().unwrap();
+        assert_eq!(executor, reassigned_peer);
+        assert!(task_recv.is_empty());
+    }
+
+    /// Tests reassigning a task to the local peer
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_reassign__local_executor() {
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        // Add a task
+        let failed_peer = WrappedPeerId::random();
+        let task = mock_queued_task(WalletIdentifier::new_v4());
+        applicator.append_task(&task, &failed_peer).unwrap();
+
+        // Reassign the task
+        applicator.reassign_tasks(&failed_peer, &peer_id).unwrap();
+
+        // Ensure the task was reassigned
+        let tx = applicator.db().new_read_tx().unwrap();
+        let executor = tx.get_task_assignment(&task.id).unwrap().unwrap();
+        tx.commit().unwrap();
+        assert_eq!(executor, peer_id);
+
+        // Verify the task was started on the local peer
+        assert!(!task_recv.is_empty());
+        let job = task_recv.recv().unwrap();
+        if let TaskDriverJob::Run(queued_task) = job {
+            assert_eq!(queued_task.id, task.id);
+        } else {
+            panic!("Expected a Run task job");
+        }
+    }
+
+    /// Tests reassigning a task that was queued, i.e. not running at the time
+    /// it was reassigned
+    #[test]
+    fn test_reassign_queued_task() {
+        let (task_queue, task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let local_peer_id = WrappedPeerId::random();
+        set_local_peer_id(&local_peer_id, applicator.db());
+
+        // Add two tasks, the second on a failed peer
+        let peer2 = WrappedPeerId::random();
+        let failed_peer = WrappedPeerId::random();
+
+        let wallet_id = WalletIdentifier::new_v4();
+        let task1 = mock_queued_task(wallet_id);
+        let task2 = mock_queued_task(wallet_id);
+        applicator.append_task(&task1, &peer2).unwrap();
+        applicator.append_task(&task2, &failed_peer).unwrap();
+
+        // Reassign the task
+        applicator.reassign_tasks(&failed_peer, &local_peer_id).unwrap();
+
+        // Ensure the first task was not reassigned and the second task was
+        let tx = applicator.db().new_read_tx().unwrap();
+        let executor1 = tx.get_task_assignment(&task1.id).unwrap().unwrap();
+        let executor2 = tx.get_task_assignment(&task2.id).unwrap().unwrap();
+        tx.commit().unwrap();
+        assert_eq!(executor1, peer2);
+        assert_eq!(executor2, local_peer_id);
+
+        // Pop the first task
+        applicator.pop_task(task1.id, true /* success */).unwrap();
+
+        // The second task should now be started on the local peer
+        assert!(!task_recv.is_empty());
+        let job = task_recv.recv().unwrap();
+        if let TaskDriverJob::Run(queued_task) = job {
+            assert_eq!(queued_task.id, task2.id);
+        } else {
+            panic!("Expected a Run task job");
+        }
     }
 }

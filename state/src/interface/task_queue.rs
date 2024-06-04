@@ -1,7 +1,10 @@
 //! The interface for interacting with the task queue
 
-use common::types::tasks::{
-    HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
+use common::types::{
+    gossip::WrappedPeerId,
+    tasks::{
+        HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
+    },
 };
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
@@ -220,6 +223,16 @@ impl State {
         success: bool,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::ResumeTaskQueues { keys, success }).await
+    }
+
+    /// Reassign the tasks from a failed peer to the local peer
+    pub async fn reassign_tasks(
+        &self,
+        failed_peer: &WrappedPeerId,
+    ) -> Result<ProposalWaiter, StateError> {
+        let local_peer = self.get_peer_id().await?;
+        let proposal = StateTransition::ReassignTasks { from: *failed_peer, to: local_peer };
+        self.send_proposal(proposal).await
     }
 }
 

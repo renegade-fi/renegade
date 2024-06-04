@@ -90,6 +90,7 @@ impl StateApplicator {
             StateTransition::ResumeTaskQueues { keys, success } => {
                 self.resume_task_queues(&keys, success)
             },
+            StateTransition::ReassignTasks { from, to } => self.reassign_tasks(&from, &to),
             StateTransition::AddMpcPreprocessingValues { cluster, values } => {
                 self.add_preprocessing_values(&cluster, &values)
             },

@@ -223,7 +223,8 @@ impl State {
 
         if is_cluster_peer {
             let raft_id = get_raft_id(&peer_id);
-            this.raft.remove_peer(raft_id).await?;
+            self.raft.remove_peer(raft_id).await?;
+            self.reassign_tasks(&peer_id).await?;
         }
 
         Ok(())
