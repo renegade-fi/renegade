@@ -44,7 +44,7 @@ use uuid::Uuid;
 // -------------
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 14;
+const NUM_TABLES: usize = 15;
 
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
@@ -70,6 +70,8 @@ pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
 /// The name of the db table that maps tasks to their queue key
 pub(crate) const TASK_TO_KEY_TABLE: &str = "task-to-key";
+/// The name of the db table that maps nodes to their assigned tasks
+pub(crate) const TASK_ASSIGNMENT_TABLE: &str = "task-assignments";
 /// The name of the db table that stores historical task information
 pub(crate) const TASK_HISTORY_TABLE: &str = "task-history";
 
@@ -92,6 +94,7 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     WALLETS_TABLE,
     TASK_QUEUE_TABLE,
     TASK_TO_KEY_TABLE,
+    TASK_ASSIGNMENT_TABLE,
     TASK_HISTORY_TABLE,
     MPC_PREPROCESSING_TABLE,
     RAFT_METADATA_TABLE,
