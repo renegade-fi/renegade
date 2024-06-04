@@ -14,8 +14,9 @@ use common::types::{
 use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use lazy_static::lazy_static;
-use tokio::sync::oneshot;
+use tokio::sync::oneshot::{self, Receiver};
 use tracing::{error, instrument, warn};
+use util::err_str;
 
 use super::{HandshakeExecutor, HandshakeManagerError};
 
@@ -91,7 +92,7 @@ pub fn init_price_streams(
                 base_token: base.clone(),
                 quote_token: quote.clone(),
             })
-            .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+            .map_err(err_str!(HandshakeManagerError::PriceReporter))?;
     }
 
     Ok(())
@@ -103,14 +104,7 @@ impl HandshakeExecutor {
         // Enqueue jobs in the price manager to snapshot the midpoint for each pair
         let mut channels = Vec::with_capacity(DEFAULT_PAIRS.len());
         for (base, quote) in DEFAULT_PAIRS.iter().cloned() {
-            let (sender, receiver) = oneshot::channel();
-            self.price_reporter_job_queue
-                .send(PriceReporterJob::PeekPrice {
-                    base_token: base,
-                    quote_token: quote,
-                    channel: sender,
-                })
-                .map_err(|err| HandshakeManagerError::SetupError(err.to_string()))?;
+            let receiver = self.request_price(base, quote)?;
             channels.push(receiver);
         }
 
@@ -143,6 +137,20 @@ impl HandshakeExecutor {
         }
 
         Ok(PriceVector(midpoint_prices))
+    }
+
+    /// Requests a price from the price reporter, returning a channel upon which
+    /// the price will be received
+    pub(super) fn request_price(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+    ) -> Result<Receiver<PriceReporterState>, HandshakeManagerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.price_reporter_job_queue
+            .send(PriceReporterJob::PeekPrice { base_token, quote_token, channel: sender })
+            .map_err(err_str!(HandshakeManagerError::PriceReporter))?;
+        Ok(receiver)
     }
 
     /// Validate a price vector against an order we intend to match
