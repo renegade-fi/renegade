@@ -74,6 +74,12 @@ impl Wallet {
         self.balances.values().any(|balance| balance.fees().total() > 0)
     }
 
+    /// Whether the wallet has any zero'd balances that may be used for
+    /// receiving a new mint
+    pub fn has_empty_balance(&self) -> bool {
+        self.balances.values().any(|balance| balance.is_zero())
+    }
+
     // -----------
     // | Setters |
     // -----------
