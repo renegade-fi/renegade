@@ -176,8 +176,13 @@ impl StateMachine {
     fn zip_file(path: &PathBuf) -> Result<(), ReplicationV2Error> {
         let source_file = File::open(path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
         let mut source_reader = BufReader::new(source_file);
-        let zip_path = path.with_extension("gz");
-        let zip_file = File::create(zip_path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+
+        // Create a temporary archive file to write the snapshot to while compression is
+        // underway. This is to avoid overwriting an existing snapshot which may
+        // currently be in the process of streaming to a peer.
+        let tmp_zip_path = path.with_extension("tmp.gz");
+        let zip_file =
+            File::create(tmp_zip_path.clone()).map_err(err_str!(ReplicationV2Error::Snapshot))?;
 
         // gzip the file
         let mut encoder = GzEncoder::new(zip_file, Compression::best());
@@ -187,6 +192,14 @@ impl StateMachine {
 
         // Delete the file
         fs::remove_file(path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+
+        // Delete the old snapshot file if it exists & rename the temp file
+        let zip_path = path.with_extension("gz");
+        if zip_path.exists() {
+            fs::remove_file(zip_path.clone()).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        }
+        fs::rename(tmp_zip_path, zip_path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+
         Ok(())
     }
 
