@@ -11,7 +11,9 @@ use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, Ser
 use tracing::{info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
-use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
+use crate::{
+    notifications::ProposalId, replication::get_raft_id, storage::db::DB, Proposal, StateTransition,
+};
 
 use super::{
     error::ReplicationV2Error,
@@ -472,6 +474,36 @@ impl RaftClient {
             if !known_peers_set.contains(&info.peer_id) {
                 info!("found missed expiry, removing raft peer: {id}");
                 self.remove_peer(*id).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Add any missed learners
+    ///
+    /// Used to sync cluster peers discovered through gossip with the raft
+    /// in the case that their addition to the membership was dropped
+    pub async fn sync_missed_learners(
+        &self,
+        known_peers: Vec<WrappedPeerId>,
+    ) -> Result<(), ReplicationV2Error> {
+        // Only the leader should add learners
+        let leader_id = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
+        if self.node_id() != leader_id {
+            return Ok(());
+        }
+
+        // Check for gossip cluster peers not in the raft membership
+        let members = self.membership();
+        let raft_peers_set: HashSet<_> = members.nodes().map(|(_, info)| info.peer_id).collect();
+        for peer_id in known_peers {
+            if !raft_peers_set.contains(&peer_id) {
+                let raft_id = get_raft_id(&peer_id);
+                let info = RaftNode::new(peer_id);
+
+                info!("found missed learner, adding to raft: {raft_id}");
+                self.add_learner(raft_id, info).await?;
             }
         }
 
