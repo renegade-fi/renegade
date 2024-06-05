@@ -12,6 +12,7 @@ use common::types::{
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::applicator::error::StateApplicatorError;
 
@@ -76,6 +77,10 @@ impl StateApplicator {
         witness: OrderValidityWitnessBundle,
     ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
+        if tx.get_order_info(&order_id)?.is_none() {
+            warn!("Order {order_id} not found in state, aborting `add_order_validity_proof`");
+            return Ok(ApplicatorReturnType::None);
+        }
 
         tx.attach_validity_proof(&order_id, proof)?;
         tx.attach_validity_witness(&order_id, witness)?;
