@@ -176,8 +176,8 @@ impl State {
     }
 
     /// Clear a task queue
-    pub async fn clear_task_queue(&self, key: TaskQueueKey) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::ClearTaskQueue { queue: key }).await
+    pub async fn clear_task_queue(&self, key: &TaskQueueKey) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::ClearTaskQueue { queue: *key }).await
     }
 
     /// Pause a task queue placing the given task at the front of the queue
