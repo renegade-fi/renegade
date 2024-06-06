@@ -53,12 +53,10 @@ const DEFAULT_MIN_ELECTION_MS: u64 = 15_000; // 15 seconds
 /// The default upper bound on the number of ticks before a Raft election
 const DEFAULT_MAX_ELECTION_MS: u64 = 20_000; // 20 seconds
 
-/// The frequency with which to attempt learner promotion
-const LEARNER_PROMOTION_MS: u64 = 5_000; // 5 seconds
 /// The frequency with which to check for raft core panics
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 /// The frequency with which to check for missed expiry
-const EXPIRY_CHECK_MS: u64 = 10_000; // 10 seconds
+const MEMBERSHIP_SYNC_INTERVAL_MS: u64 = 10_000; // 10 seconds
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -167,9 +165,8 @@ impl State {
             recovered_from_snapshot,
         };
         this.setup_node_metadata(config).await?;
-        this.setup_learner_promotion_timer(&system_clock).await?;
         this.setup_core_panic_timer(&system_clock, failure_send).await?;
-        this.setup_expiry_timer(&system_clock).await?;
+        this.setup_membership_sync_timer(&system_clock).await?;
 
         Ok(this)
     }
@@ -194,20 +191,6 @@ impl State {
     // ----------
     // | Timers |
     // ----------
-
-    /// Setup a timer in the system clock to promote learners
-    async fn setup_learner_promotion_timer(&self, clock: &SystemClock) -> Result<(), StateError> {
-        let duration = Duration::from_millis(LEARNER_PROMOTION_MS);
-        let name = "learner-promotion-loop".to_string();
-        let client = self.raft.clone();
-        clock
-            .add_async_timer(name, duration, move || {
-                let client = client.clone();
-                async move { client.try_promote_learners().await.map_err(|e| e.to_string()) }
-            })
-            .await
-            .map_err(StateError::Clock)
-    }
 
     /// Setup a timer to check for core panics
     async fn setup_core_panic_timer(
@@ -237,9 +220,9 @@ impl State {
 
     /// Periodically checks for missed expiries, i.e. nodes that have been
     /// expired at the gossip layer but not in the raft
-    async fn setup_expiry_timer(&self, clock: &SystemClock) -> Result<(), StateError> {
-        let duration = Duration::from_millis(EXPIRY_CHECK_MS);
-        let name = "raft-expiry-check-loop".to_string();
+    async fn setup_membership_sync_timer(&self, clock: &SystemClock) -> Result<(), StateError> {
+        let duration = Duration::from_millis(MEMBERSHIP_SYNC_INTERVAL_MS);
+        let name = "raft-membership-sync-loop".to_string();
         let client = self.raft.clone();
         let db = self.db.clone();
         let my_cluster = self.get_cluster_id().await?;
@@ -256,7 +239,7 @@ impl State {
                         tx.get_cluster_peers(&cluster_id).map_err(raw_err_str!("{}"))?;
                     tx.commit().map_err(raw_err_str!("{}"))?;
 
-                    client.check_expired_nodes(known_cluster_peers).await.map_err(|e| e.to_string())
+                    client.sync_membership(known_cluster_peers).await.map_err(|e| e.to_string())
                 }
             })
             .await

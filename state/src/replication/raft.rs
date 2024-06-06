@@ -11,7 +11,9 @@ use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, Ser
 use tracing::{info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
-use crate::{notifications::ProposalId, storage::db::DB, Proposal, StateTransition};
+use crate::{
+    notifications::ProposalId, replication::get_raft_id, storage::db::DB, Proposal, StateTransition,
+};
 
 use super::{
     error::ReplicationV2Error,
@@ -269,12 +271,12 @@ impl RaftClient {
             return Ok(());
         }
 
-        match update.transition.as_ref() {
-            StateTransition::AddRaftLearner { peer_id, info } => {
-                self.handle_add_learner(*peer_id, *info).await
+        match *update.transition {
+            StateTransition::AddRaftLearners { learners } => {
+                self.handle_add_learners(learners).await
             },
-            StateTransition::AddRaftVoter { peer_id } => self.handle_add_voter(*peer_id).await,
-            StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(*peer_id).await,
+            StateTransition::AddRaftVoters { peer_ids } => self.handle_add_voters(peer_ids).await,
+            StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(peer_id).await,
             _ => self
                 .raft()
                 .client_write(update)
@@ -284,22 +286,24 @@ impl RaftClient {
         }
     }
 
-    /// Handle a proposal to add a learner
-    async fn handle_add_learner(
+    /// Handle a proposal to add learners
+    async fn handle_add_learners(
         &self,
-        peer_id: NodeId,
-        info: RaftNode,
+        learners: Vec<(NodeId, RaftNode)>,
     ) -> Result<(), ReplicationV2Error> {
+        let learners = BTreeMap::from_iter(learners.into_iter());
+        let change = ChangeMembers::AddNodes(learners);
         self.raft()
-            .add_learner(peer_id, info, false /* blocking */)
+            .change_membership(change, true /* retain */)
             .await
             .map_err(err_str!(ReplicationV2Error::Proposal))
             .map(|_| ())
     }
 
-    /// Handle a proposal to add a voter
-    async fn handle_add_voter(&self, peer_id: NodeId) -> Result<(), ReplicationV2Error> {
-        let change = ChangeMembers::AddVoterIds(BTreeSet::from([peer_id]));
+    /// Handle a proposal to add voters
+    async fn handle_add_voters(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
+        let voters = BTreeSet::from_iter(peer_ids.into_iter());
+        let change = ChangeMembers::AddVoterIds(voters);
         self.raft()
             .change_membership(change, false /* retain */)
             .await
@@ -389,20 +393,36 @@ impl RaftClient {
             .map(|_| ())
     }
 
-    /// Add a learner to the cluster
+    /// Add a single learner to the cluster
     pub async fn add_learner(
         &self,
-        learner: NodeId,
+        nid: NodeId,
         info: RaftNode,
     ) -> Result<ProposalId, ReplicationV2Error> {
-        let proposal = Proposal::from(StateTransition::AddRaftLearner { peer_id: learner, info });
+        self.add_learners(vec![(nid, info)]).await
+    }
+
+    /// Add learners to the cluster
+    pub async fn add_learners(
+        &self,
+        learners: Vec<(NodeId, RaftNode)>,
+    ) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::AddRaftLearners { learners });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
 
-    /// Promote a learner to a voter
+    /// Promote a single learner to a voter
     pub async fn promote_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationV2Error> {
-        let proposal = Proposal::from(StateTransition::AddRaftVoter { peer_id: learner });
+        self.promote_learners(vec![learner]).await
+    }
+
+    /// Promote the given learners to voters
+    pub async fn promote_learners(
+        &self,
+        learners: Vec<NodeId>,
+    ) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::AddRaftVoters { peer_ids: learners });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
@@ -414,17 +434,71 @@ impl RaftClient {
         self.propose_transition(proposal).await.map(|_| id)
     }
 
-    /// Try promoting all learners if the current node is the leader
-    pub async fn try_promote_learners(&self) -> Result<(), ReplicationV2Error> {
+    /// Sync the state of the cluster as discovered through gossip with the raft
+    /// membership
+    ///
+    /// This method is called periodically by a timer and performs three sync
+    /// functions:
+    ///     - Add new learners that were missed
+    ///     - Promote any learners that are eligible to be voters
+    ///     - Expire any raft peers that are not in the list of known peers
+    pub async fn sync_membership(
+        &self,
+        known_peers: Vec<WrappedPeerId>,
+    ) -> Result<(), ReplicationV2Error> {
+        // Only the leader should update raft membership
         let leader = self.leader().await.unwrap_or(0 /* invalid id */);
         if leader != self.node_id() {
             return Ok(());
         }
 
+        // After each step we return if a change was made, only one membership change
+        // may be made at a time
+        if self.check_expired_nodes(&known_peers).await? > 0 {
+            return Ok(());
+        }
+
+        if self.add_missed_learners(&known_peers).await? > 0 {
+            return Ok(());
+        }
+
+        self.try_promote_learners().await.map(|_| ())
+    }
+
+    /// Add any nodes missed by gossip
+    ///
+    /// Returns the number of learners added
+    pub async fn add_missed_learners(
+        &self,
+        known_peers: &[WrappedPeerId],
+    ) -> Result<usize, ReplicationV2Error> {
+        let membership = self.membership();
+        let mut learners_to_add = Vec::new();
+
+        for peer in known_peers {
+            let raft_id = get_raft_id(peer);
+            if membership.get_node(&raft_id).is_none() {
+                info!("found missed learner {peer}, adding...");
+                learners_to_add.push((raft_id, RaftNode::new(*peer)));
+            }
+        }
+
+        let num_learners = learners_to_add.len();
+        if num_learners > 0 {
+            self.add_learners(learners_to_add).await?;
+        }
+
+        Ok(num_learners)
+    }
+
+    /// Try promoting all learners if the current node is the leader
+    ///
+    /// Returns the number of learners promoted
+    pub async fn try_promote_learners(&self) -> Result<usize, ReplicationV2Error> {
         // Check all learners replication progress
         let learners = self.learners();
         if self.learners().is_empty() {
-            return Ok(());
+            return Ok(0);
         }
 
         let metrics = self.metrics();
@@ -432,9 +506,10 @@ impl RaftClient {
         let replication_info = &match metrics.replication {
             Some(rep) => rep,
             // If there is no replication info the local node may have lost leadership
-            None => return Ok(()),
+            None => return Ok(0),
         };
 
+        let mut learners_to_promote = Vec::new();
         for learner in learners {
             let latest_log = match replication_info.get(&learner).cloned().flatten() {
                 Some(rep) => rep,
@@ -444,37 +519,47 @@ impl RaftClient {
             let lag = my_log.saturating_sub(latest_log.index);
             if lag < self.config.learner_promotion_threshold {
                 info!("promoting {learner} to voter");
-                self.promote_learner(learner).await?;
+                learners_to_promote.push(learner);
             }
         }
 
-        Ok(())
+        let num_learners = learners_to_promote.len();
+        if num_learners > 0 {
+            self.promote_learners(learners_to_promote).await?;
+        }
+
+        Ok(num_learners)
     }
 
     /// Expire all raft peers not in the list of known peers
     ///
     /// Used to sync gossip failure detection with the raft in the case that a
     /// node removal is dropped
+    ///
+    /// Returns the number of nodes expired
     pub async fn check_expired_nodes(
         &self,
-        known_peers: Vec<WrappedPeerId>,
-    ) -> Result<(), ReplicationV2Error> {
+        known_peers: &[WrappedPeerId],
+    ) -> Result<usize, ReplicationV2Error> {
         // Only the leader should expire old raft nodes
         let leader_id = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
         if self.node_id() != leader_id {
-            return Ok(());
+            return Ok(0);
         }
 
         // Check for raft peers not in the list of peers known to the gossip layer
-        let known_peers_set: HashSet<_> = known_peers.into_iter().collect();
+        let known_peers_set: HashSet<_> = known_peers.iter().collect();
         let members = self.membership();
+
+        let mut n_expired = 0;
         for (id, info) in members.nodes() {
             if !known_peers_set.contains(&info.peer_id) {
                 info!("found missed expiry, removing raft peer: {id}");
                 self.remove_peer(*id).await?;
+                n_expired += 1;
             }
         }
 
-        Ok(())
+        Ok(n_expired)
     }
 }
