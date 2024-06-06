@@ -187,6 +187,19 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
+    /// Clear the task queue, marking all tasks as failed
+    #[instrument(skip_all, err, fields(queue_key = %key))]
+    pub fn clear_queue(&self, key: TaskQueueKey) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+        self.clear_task_queue(key, &tx)?;
+
+        // Resume the task queue in case it was paused
+        tx.resume_task_queue(&key)?;
+        tx.commit()?;
+
+        Ok(ApplicatorReturnType::None)
+    }
+
     /// Preempt all queues on a given task
     ///
     /// Multiple queues may be preempted at once to give "all or none" locking
@@ -507,6 +520,10 @@ impl StateApplicator {
             task.state = QueuedTaskState::Failed;
             Self::maybe_append_historical_task(key, task.clone(), tx)?;
             self.publish_task_updates(key, &task);
+
+            if let Some(peer_id) = tx.get_task_assignment(&task.id)? {
+                tx.remove_assigned_task(&peer_id, &task.id)?;
+            }
         }
 
         Ok(())
@@ -831,6 +848,91 @@ mod test {
 
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].state, new_state); // should be updated
+    }
+
+    /// Tests clearing an empty queue
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_clear_queue__empty() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        // Clear the queue
+        let key = WalletIdentifier::new_v4();
+        applicator.clear_queue(key).unwrap();
+
+        // Check that the queue is still empty and unpaused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused = tx.is_queue_paused(&key).unwrap();
+        let tasks = tx.get_queued_tasks(&key).unwrap();
+        tx.commit().unwrap();
+
+        assert!(!is_paused);
+        assert_eq!(tasks.len(), 0);
+    }
+
+    /// Tests clearing a non-empty queue
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_clear_queue__non_empty() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        // Add a task directly via the db
+        let task_queue_key = TaskQueueKey::new_v4();
+        enqueue_dummy_task(task_queue_key, applicator.db());
+
+        // Clear the queue
+        applicator.clear_queue(task_queue_key).unwrap();
+
+        // Check that the queue is empty and unpaused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused = tx.is_queue_paused(&task_queue_key).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
+        tx.commit().unwrap();
+
+        assert!(!is_paused);
+        assert_eq!(tasks.len(), 0);
+    }
+
+    /// Tests clearing a queue when it is paused
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_clear_queue__paused() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        // Add a task directly via the db
+        let task_queue_key = TaskQueueKey::new_v4();
+        enqueue_dummy_task(task_queue_key, applicator.db());
+
+        // Pause the queue
+        let preemptive_task = mock_preemptive_task(task_queue_key);
+        applicator.preempt_task_queues(&[task_queue_key], &preemptive_task, &peer_id).unwrap();
+
+        // Clear the queue
+        applicator.clear_queue(task_queue_key).unwrap();
+
+        // Check that the queue is empty and unpaused
+        let tx = applicator.db().new_read_tx().unwrap();
+        let is_paused = tx.is_queue_paused(&task_queue_key).unwrap();
+        let tasks = tx.get_queued_tasks(&task_queue_key).unwrap();
+        tx.commit().unwrap();
+
+        assert!(!is_paused);
+        assert_eq!(tasks.len(), 0);
     }
 
     // --------------------
