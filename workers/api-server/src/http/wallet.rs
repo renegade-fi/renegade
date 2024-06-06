@@ -19,8 +19,8 @@ use external_api::{
         CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
         FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
         GetOrderByIdResponse, GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse,
-        PayFeesResponse, UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest,
-        WithdrawBalanceResponse,
+        PayFeesResponse, RefreshWalletResponse, UpdateOrderRequest, UpdateOrderResponse,
+        WithdrawBalanceRequest, WithdrawBalanceResponse,
     },
     types::ApiOrder,
     EmptyRequestResponse,
@@ -253,6 +253,51 @@ impl TypedHandler for FindWalletHandler {
         let task_id = append_task_and_await(task.into(), &self.state).await?;
 
         Ok(FindWalletResponse { wallet_id: req.wallet_id, task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:wallet_id/refresh route
+pub struct RefreshWalletHandler {
+    /// A copy of the relayer-global state
+    state: State,
+}
+
+impl RefreshWalletHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for RefreshWalletHandler {
+    type Request = EmptyRequestResponse;
+    type Response = RefreshWalletResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+
+        // Clear the task queue of the wallet
+        let waiter = self.state.clear_task_queue(&wallet_id).await?;
+        waiter.await.map_err(internal_error)?;
+
+        // Run a lookup wallet task
+        let blinder_seed = wallet.private_blinder_share();
+        let secret_share_seed = wallet.get_last_private_share();
+        let key_chain = wallet.key_chain;
+        let descriptor =
+            LookupWalletTaskDescriptor::new(wallet_id, blinder_seed, secret_share_seed, key_chain)
+                .expect("infallible");
+        let task_id = append_task_and_await(descriptor.into(), &self.state).await?;
+
+        Ok(RefreshWalletResponse { task_id })
     }
 }
 

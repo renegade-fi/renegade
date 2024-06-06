@@ -22,6 +22,8 @@ use crate::{
 pub const CREATE_WALLET_ROUTE: &str = "/v0/wallet";
 /// Find a wallet in contract storage
 pub const FIND_WALLET_ROUTE: &str = "/v0/wallet/lookup";
+/// Refresh a wallet from on-chain state
+pub const REFRESH_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id/refresh";
 /// Returns the wallet information for the given id
 pub const GET_WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
 /// Get the wallet at the "back of the queue", i.e. the speculatively updated
@@ -96,6 +98,13 @@ pub struct FindWalletResponse {
     /// The ID to handle the wallet by
     pub wallet_id: WalletIdentifier,
     /// The ID of the task created on behalf of this request
+    pub task_id: TaskIdentifier,
+}
+
+/// The response type to refresh a wallet's state from on-chain
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RefreshWalletResponse {
+    /// The task that refreshes the state
     pub task_id: TaskIdentifier,
 }
 
