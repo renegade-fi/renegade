@@ -139,6 +139,8 @@ pub enum StateTransition {
     PopTask { task_id: TaskIdentifier, success: bool },
     /// Transition the state of the top task in the task queue
     TransitionTask { task_id: TaskIdentifier, state: QueuedTaskState },
+    /// Clear all tasks in the queue, marking them as failed
+    ClearTaskQueue { queue: TaskQueueKey },
     /// Preempt the given task queue
     ///
     /// Returns any running tasks to `Queued` state and pauses the queue

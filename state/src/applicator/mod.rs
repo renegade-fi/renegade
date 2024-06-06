@@ -84,6 +84,7 @@ impl StateApplicator {
             StateTransition::TransitionTask { task_id, state } => {
                 self.transition_task_state(task_id, state)
             },
+            StateTransition::ClearTaskQueue { queue } => self.clear_queue(queue),
             StateTransition::PreemptTaskQueues { keys, task, executor } => {
                 self.preempt_task_queues(&keys, &task, &executor)
             },
