@@ -442,7 +442,7 @@ mod test {
         raft.add_node(new_nid).await;
 
         // Add the node as a learner
-        client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+        client.add_learners(new_nid, RaftNode::default()).await.unwrap();
 
         // Check the DB of the new node
         let db = raft.get_db(new_nid).await;
@@ -481,7 +481,7 @@ mod test {
         // Add a new node as a learner
         let new_nid = N as u64 + 1;
         raft.add_node(new_nid).await;
-        client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+        client.add_learners(new_nid, RaftNode::default()).await.unwrap();
         client.promote_learner(new_nid).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -518,7 +518,7 @@ mod test {
         for i in 1..N {
             let new_nid = i as u64;
             raft.add_node(new_nid).await;
-            client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+            client.add_learners(new_nid, RaftNode::default()).await.unwrap();
             client.promote_learner(new_nid).await.unwrap();
         }
 

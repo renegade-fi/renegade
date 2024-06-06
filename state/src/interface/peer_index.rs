@@ -180,9 +180,7 @@ impl State {
         // Before a raft is setup, we only want to populate the peer index, and not
         // attempt to form a raft
         if self.raft.is_initialized().await? {
-            for (raft_id, info) in learners.into_iter() {
-                this.raft.add_learner(raft_id, info).await?;
-            }
+            this.raft.add_learners(learners).await?;
         }
 
         Ok(())

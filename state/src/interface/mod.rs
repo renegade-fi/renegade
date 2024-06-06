@@ -59,8 +59,6 @@ const LEARNER_PROMOTION_MS: u64 = 5_000; // 5 seconds
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 /// The frequency with which to check for missed expiry
 const EXPIRY_CHECK_MS: u64 = 10_000; // 10 seconds
-/// The frequency with which to attempt syncing missed learners
-const MISSED_LEARNERS_MS: u64 = 5_000; // 5 seconds
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -172,7 +170,6 @@ impl State {
         this.setup_learner_promotion_timer(&system_clock).await?;
         this.setup_core_panic_timer(&system_clock, failure_send).await?;
         this.setup_expiry_timer(&system_clock).await?;
-        this.setup_missed_learners_timer(&system_clock).await?;
 
         Ok(this)
     }
@@ -259,39 +256,7 @@ impl State {
                         tx.get_cluster_peers(&cluster_id).map_err(raw_err_str!("{}"))?;
                     tx.commit().map_err(raw_err_str!("{}"))?;
 
-                    client.check_expired_nodes(known_cluster_peers).await.map_err(|e| e.to_string())
-                }
-            })
-            .await
-            .map_err(StateError::Clock)
-    }
-
-    /// Periodically checks for missed raft peers, i.e. nodes that have been
-    /// added as cluster peers at the gossip layer but are not a part of the
-    /// raft membership
-    async fn setup_missed_learners_timer(&self, clock: &SystemClock) -> Result<(), StateError> {
-        let duration = Duration::from_millis(MISSED_LEARNERS_MS);
-        let name = "raft-missed-learners-loop".to_string();
-        let client = self.raft.clone();
-        let db = self.db.clone();
-        let my_cluster = self.get_cluster_id().await?;
-
-        clock
-            .add_async_timer(name, duration, move || {
-                let db = db.clone();
-                let client = client.clone();
-                let cluster_id = my_cluster.clone();
-
-                async move {
-                    let tx = db.new_read_tx().map_err(raw_err_str!("{}"))?;
-                    let known_cluster_peers =
-                        tx.get_cluster_peers(&cluster_id).map_err(raw_err_str!("{}"))?;
-                    tx.commit().map_err(raw_err_str!("{}"))?;
-
-                    client
-                        .sync_missed_learners(known_cluster_peers)
-                        .await
-                        .map_err(|e| e.to_string())
+                    client.sync_membership(known_cluster_peers).await.map_err(|e| e.to_string())
                 }
             })
             .await
