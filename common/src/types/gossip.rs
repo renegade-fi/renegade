@@ -19,7 +19,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     ops::Deref,
     str::FromStr,
-    time::{SystemTime, UNIX_EPOCH},
 };
 use util::{get_current_time_millis, networking::is_dialable_multiaddr};
 
@@ -77,7 +76,7 @@ impl PeerInfo {
             peer_id,
             cluster_id,
             cluster_auth_signature,
-            last_heartbeat: current_time_seconds(),
+            last_heartbeat: get_current_time_millis(),
         }
     }
 
@@ -283,11 +282,6 @@ impl FromStr for ClusterId {
 // -----------
 // | Helpers |
 // -----------
-
-/// Returns a u64 representing the current unix timestamp in seconds
-fn current_time_seconds() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_secs()
-}
 
 #[cfg(feature = "mocks")]
 pub mod mocks {
