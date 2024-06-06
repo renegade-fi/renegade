@@ -162,7 +162,7 @@ pub enum StateTransition {
     /// Add a raft learner to the cluster
     AddRaftLearners { learners: Vec<(NodeId, RaftNode)> },
     /// Add a raft peer to the local consensus cluster
-    AddRaftVoter { peer_id: NodeId },
+    AddRaftVoters { peer_ids: Vec<NodeId> },
     /// Remove a raft peer from the local consensus cluster
     RemoveRaftPeer { peer_id: NodeId },
 }
@@ -305,7 +305,7 @@ pub mod test_helpers {
             tokio::time::sleep(Duration::from_millis(20)).await;
 
             // Add the node as a voter
-            let prop = StateTransition::AddRaftVoter { peer_id: *id };
+            let prop = StateTransition::AddRaftVoters { peer_id: *id };
             state.send_proposal(prop).await.unwrap();
             tokio::time::sleep(Duration::from_millis(20)).await;
         }

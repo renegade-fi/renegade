@@ -451,7 +451,7 @@ mod test {
         assert!(wallet.is_some());
 
         // Promote the learner, propose a new wallet, ensure consensus is reached
-        client.promote_learner(new_nid).await.unwrap();
+        client.promote_learners(new_nid).await.unwrap();
         let wallet = mock_empty_wallet();
         let wallet_id = wallet.wallet_id;
         let update = Proposal::from(StateTransition::AddWallet { wallet });
@@ -482,7 +482,7 @@ mod test {
         let new_nid = N as u64 + 1;
         raft.add_node(new_nid).await;
         client.add_learners(new_nid, RaftNode::default()).await.unwrap();
-        client.promote_learner(new_nid).await.unwrap();
+        client.promote_learners(new_nid).await.unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         // Propose a new state transition
@@ -519,7 +519,7 @@ mod test {
             let new_nid = i as u64;
             raft.add_node(new_nid).await;
             client.add_learners(new_nid, RaftNode::default()).await.unwrap();
-            client.promote_learner(new_nid).await.unwrap();
+            client.promote_learners(new_nid).await.unwrap();
         }
 
         // Propose a new wallet and check that each node in the cluster has the wallet

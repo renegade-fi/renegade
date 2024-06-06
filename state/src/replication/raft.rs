@@ -275,7 +275,7 @@ impl RaftClient {
             StateTransition::AddRaftLearners { learners } => {
                 self.handle_add_learners(learners).await
             },
-            StateTransition::AddRaftVoter { peer_id } => self.handle_add_voter(peer_id).await,
+            StateTransition::AddRaftVoters { peer_ids } => self.handle_add_voters(peer_ids).await,
             StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(peer_id).await,
             _ => self
                 .raft()
@@ -286,13 +286,13 @@ impl RaftClient {
         }
     }
 
-    /// Handle a proposal to add a learner
+    /// Handle a proposal to add learners
     async fn handle_add_learners(
         &self,
         learners: Vec<(NodeId, RaftNode)>,
     ) -> Result<(), ReplicationV2Error> {
-        let learners_map = BTreeMap::from_iter(learners.into_iter());
-        let change = ChangeMembers::AddNodes(learners_map);
+        let learners = BTreeMap::from_iter(learners.into_iter());
+        let change = ChangeMembers::AddNodes(learners);
         self.raft()
             .change_membership(change, true /* retain */)
             .await
@@ -300,9 +300,10 @@ impl RaftClient {
             .map(|_| ())
     }
 
-    /// Handle a proposal to add a voter
-    async fn handle_add_voter(&self, peer_id: NodeId) -> Result<(), ReplicationV2Error> {
-        let change = ChangeMembers::AddVoterIds(BTreeSet::from([peer_id]));
+    /// Handle a proposal to add voters
+    async fn handle_add_voters(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
+        let voters = BTreeSet::from_iter(peer_ids.into_iter());
+        let change = ChangeMembers::AddVoterIds(voters);
         self.raft()
             .change_membership(change, false /* retain */)
             .await
@@ -392,7 +393,7 @@ impl RaftClient {
             .map(|_| ())
     }
 
-    /// Add a learner to the cluster
+    /// Add learners to the cluster
     pub async fn add_learners(
         &self,
         learners: Vec<(NodeId, RaftNode)>,
@@ -402,9 +403,12 @@ impl RaftClient {
         self.propose_transition(proposal).await.map(|_| id)
     }
 
-    /// Promote a learner to a voter
-    pub async fn promote_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationV2Error> {
-        let proposal = Proposal::from(StateTransition::AddRaftVoter { peer_id: learner });
+    /// Promote learners to voters
+    pub async fn promote_learners(
+        &self,
+        learners: Vec<NodeId>,
+    ) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::AddRaftVoters { peer_ids: learners });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
@@ -437,18 +441,21 @@ impl RaftClient {
             None => return Ok(()),
         };
 
-        for learner in learners {
-            let latest_log = match replication_info.get(&learner).cloned().flatten() {
-                Some(rep) => rep,
-                None => continue,
-            };
+        let learners_to_promote = learners
+            .into_iter()
+            .filter(|learner| {
+                let latest_log = match replication_info.get(&learner).cloned().flatten() {
+                    Some(rep) => rep,
+                    None => return false,
+                };
 
-            let lag = my_log.saturating_sub(latest_log.index);
-            if lag < self.config.learner_promotion_threshold {
-                info!("promoting {learner} to voter");
-                self.promote_learner(learner).await?;
-            }
-        }
+                let lag = my_log.saturating_sub(latest_log.index);
+                lag < self.config.learner_promotion_threshold
+            })
+            .collect();
+
+        info!("promoting learners: {learners_to_promote:?}");
+        self.promote_learners(learners_to_promote).await?;
 
         Ok(())
     }
