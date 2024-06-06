@@ -63,11 +63,8 @@ impl Wallet {
                 };
 
                 let receive_mint = order.receive_mint();
-                let has_receive_balance = match self.get_balance(receive_mint) {
-                    Some(balance) => balance.amount > 0,
-                    // If no receive balance exists, there must be an open balance to overwrite
-                    None => self.has_empty_balance(),
-                };
+                let has_receive_balance =
+                    self.get_balance(receive_mint).is_some() || self.has_empty_balance();
 
                 !order.is_zero() && has_balance && has_receive_balance
             })
