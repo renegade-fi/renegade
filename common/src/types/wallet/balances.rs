@@ -77,7 +77,8 @@ impl Wallet {
     /// Whether the wallet has any zero'd balances that may be used for
     /// receiving a new mint
     pub fn has_empty_balance(&self) -> bool {
-        self.balances.values().any(|balance| balance.is_zero())
+        self.balances.len() < MAX_BALANCES
+            || self.balances.values().any(|balance| balance.is_zero())
     }
 
     // -----------
