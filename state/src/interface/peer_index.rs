@@ -256,7 +256,7 @@ mod test {
     #[tokio::test]
     async fn test_add_peer() {
         let state = mock_state().await;
-        let peer1 = mock_peer();
+        let mut peer1 = mock_peer();
         let mut peer2 = mock_peer();
         let mut peer3 = mock_peer();
 
@@ -270,6 +270,7 @@ mod test {
 
         // Check that the first peer was added
         let peer_info = state.get_peer_info(&peer1.peer_id).await.unwrap().unwrap();
+        peer1.last_heartbeat = peer_info.last_heartbeat;
         assert_eq!(peer_info, peer1);
 
         // Check the cluster peers method
@@ -283,9 +284,18 @@ mod test {
         // Check the info map
         let info_map = state.get_peer_info_map().await.unwrap();
         assert_eq!(info_map.len(), 3);
-        assert_eq!(info_map.get(&peer1.peer_id), Some(&peer1));
-        assert_eq!(info_map.get(&peer2.peer_id), Some(&peer2));
-        assert_eq!(info_map.get(&peer3.peer_id), Some(&peer3));
+        let info_peer1 = info_map.get(&peer1.peer_id).unwrap();
+        let info_peer2 = info_map.get(&peer2.peer_id).unwrap();
+        let info_peer3 = info_map.get(&peer3.peer_id).unwrap();
+
+        // Use the stored heartbeat in comparison
+        peer1.last_heartbeat = info_peer1.last_heartbeat;
+        peer2.last_heartbeat = info_peer2.last_heartbeat;
+        peer3.last_heartbeat = info_peer3.last_heartbeat;
+
+        assert_eq!(peer1, *info_peer1);
+        assert_eq!(peer2, *info_peer2);
+        assert_eq!(peer3, *info_peer3);
     }
 
     /// Tests removing a peer from the state
@@ -322,9 +332,17 @@ mod test {
         // Check the info map
         let info_map = state.get_peer_info_map().await.unwrap();
         assert_eq!(info_map.len(), 2);
-        assert_eq!(info_map.get(&peer1.peer_id), None);
-        assert_eq!(info_map.get(&peer2.peer_id), Some(&peer2));
-        assert_eq!(info_map.get(&peer3.peer_id), Some(&peer3));
+        assert!(info_map.get(&peer1.peer_id).is_none());
+
+        let info_peer2 = info_map.get(&peer2.peer_id).unwrap();
+        let info_peer3 = info_map.get(&peer3.peer_id).unwrap();
+
+        // Use the stored heartbeat in comparison
+        peer2.last_heartbeat = info_peer2.last_heartbeat;
+        peer3.last_heartbeat = info_peer3.last_heartbeat;
+
+        assert_eq!(peer2, *info_peer2);
+        assert_eq!(peer3, *info_peer3);
     }
 
     /// Tests the `get_missing_peers` method

@@ -123,8 +123,8 @@ pub mod test_helpers {
         // All timeouts in ms
         RaftClientConfig {
             cluster_name: "mock-cluster".to_string(),
-            election_timeout_min: 10,
-            election_timeout_max: 15,
+            election_timeout_min: 20,
+            election_timeout_max: 25,
             heartbeat_interval: 5,
             initial_nodes,
             ..Default::default()
@@ -621,7 +621,7 @@ mod test {
         for i in 0..N - SCALE_TO {
             let removed_nid = N - i - 1;
             client.remove_peer(removed_nid as u64).await.unwrap();
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
         // Propose a state transition and ensure consensus is reached

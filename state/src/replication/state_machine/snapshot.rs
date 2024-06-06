@@ -248,6 +248,7 @@ impl StateMachine {
     ) -> Result<(), ReplicationV2Error> {
         self.last_applied_log = meta.last_log_id;
         self.last_membership = meta.last_membership.clone();
+        self.write_snapshot_metadata(meta)?;
 
         let db_clone = self.db_owned();
         let jh = tokio::task::spawn_blocking(move || Self::copy_db_data(&snapshot_db, &db_clone));

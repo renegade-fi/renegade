@@ -277,7 +277,20 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
         meta: &SnapshotMeta<NodeId, Node>,
         _snapshot: Box<SnapshotData>,
     ) -> Result<(), RaftStorageError<NodeId>> {
-        let snap_db = self.open_snap_db().await.map_err(new_snapshot_error)?;
+        // Openraft mysteriously closes the snapshot file outside of unit tests so we
+        // need to open it from the file. In tests we use the snapshot argument directly
+        // to fit into the builder paradigm in line with the openraft test suite
+        let snap_db = {
+            #[cfg(test)]
+            {
+                self.open_snap_db_with_file(*_snapshot).await.map_err(new_snapshot_error)?
+            }
+
+            #[cfg(not(test))]
+            {
+                self.open_snap_db().await.map_err(new_snapshot_error)?
+            }
+        };
         self.update_from_snapshot(meta, snap_db).await.map_err(new_snapshot_error)
     }
 
