@@ -33,6 +33,7 @@ use crate::{
         pay_offline_fee::{PayOfflineFeeTask, PayOfflineFeeTaskState},
         pay_relayer_fee::{PayRelayerFeeTask, PayRelayerFeeTaskState},
         redeem_relayer_fee::{RedeemRelayerFeeTask, RedeemRelayerFeeTaskState},
+        refresh_wallet::{RefreshWalletTask, RefreshWalletTaskState},
         settle_match::{SettleMatchTask, SettleMatchTaskState},
         settle_match_internal::{SettleMatchInternalTask, SettleMatchInternalTaskState},
         update_merkle_proof::{UpdateMerkleProofTask, UpdateMerkleProofTaskState},
@@ -319,6 +320,9 @@ impl TaskExecutor {
             TaskDescriptor::LookupWallet(desc) => {
                 self.start_task_helper::<LookupWalletTask>(immediate, id, desc).await
             },
+            TaskDescriptor::RefreshWallet(desc) => {
+                self.start_task_helper::<RefreshWalletTask>(immediate, id, desc).await
+            },
             TaskDescriptor::OfflineFee(desc) => {
                 self.start_task_helper::<PayOfflineFeeTask>(immediate, id, desc).await
             },
@@ -427,6 +431,8 @@ impl TaskExecutor {
 pub enum StateWrapper {
     /// The state object for the lookup wallet task
     LookupWallet(LookupWalletTaskState),
+    /// The state object for the refresh wallet task
+    RefreshWallet(RefreshWalletTaskState),
     /// The state object for the new wallet task
     NewWallet(NewWalletTaskState),
     /// The state object for the pay protocol fee task
@@ -452,6 +458,7 @@ impl StateWrapper {
     pub fn committed(&self) -> bool {
         match self {
             StateWrapper::LookupWallet(state) => state.committed(),
+            StateWrapper::RefreshWallet(state) => state.committed(),
             StateWrapper::NewWallet(state) => state.committed(),
             StateWrapper::PayOfflineFee(state) => state.committed(),
             StateWrapper::PayRelayerFee(state) => state.committed(),
@@ -469,6 +476,7 @@ impl StateWrapper {
     pub fn is_committing(&self) -> bool {
         match self {
             StateWrapper::LookupWallet(state) => state == &LookupWalletTaskState::commit_point(),
+            StateWrapper::RefreshWallet(state) => state == &RefreshWalletTaskState::commit_point(),
             StateWrapper::NewWallet(state) => state == &NewWalletTaskState::commit_point(),
             StateWrapper::PayOfflineFee(state) => state == &PayOfflineFeeTaskState::commit_point(),
             StateWrapper::PayRelayerFee(state) => state == &PayRelayerFeeTaskState::commit_point(),
@@ -491,6 +499,7 @@ impl StateWrapper {
     pub fn completed(&self) -> bool {
         match self {
             StateWrapper::LookupWallet(state) => state.completed(),
+            StateWrapper::RefreshWallet(state) => state.completed(),
             StateWrapper::NewWallet(state) => state.completed(),
             StateWrapper::PayOfflineFee(state) => state.completed(),
             StateWrapper::PayRelayerFee(state) => state.completed(),
@@ -508,6 +517,7 @@ impl Display for StateWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let out = match self {
             StateWrapper::LookupWallet(state) => state.to_string(),
+            StateWrapper::RefreshWallet(state) => state.to_string(),
             StateWrapper::NewWallet(state) => state.to_string(),
             StateWrapper::PayOfflineFee(state) => state.to_string(),
             StateWrapper::PayRelayerFee(state) => state.to_string(),

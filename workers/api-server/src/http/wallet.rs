@@ -8,7 +8,7 @@ use circuit_types::{
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
-        TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
+        RefreshWalletTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
     },
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{KeyChain, Wallet, WalletIdentifier},
@@ -282,19 +282,14 @@ impl TypedHandler for RefreshWalletHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        find_wallet_for_update(wallet_id, &self.state).await?;
 
         // Clear the task queue of the wallet
         let waiter = self.state.clear_task_queue(&wallet_id).await?;
         waiter.await.map_err(internal_error)?;
 
         // Run a lookup wallet task
-        let blinder_seed = wallet.private_blinder_share();
-        let secret_share_seed = wallet.get_last_private_share();
-        let key_chain = wallet.key_chain;
-        let descriptor =
-            LookupWalletTaskDescriptor::new(wallet_id, blinder_seed, secret_share_seed, key_chain)
-                .expect("infallible");
+        let descriptor = RefreshWalletTaskDescriptor::new(wallet_id);
         let task_id = append_task_and_await(descriptor.into(), &self.state).await?;
 
         Ok(RefreshWalletResponse { task_id })

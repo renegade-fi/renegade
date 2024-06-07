@@ -90,6 +90,8 @@ impl ArbitrumClient {
     }
 
     /// Check whether the given nullifier is used
+    ///
+    /// Returns `true` if the nullifier is used, `false` otherwise
     #[instrument(skip_all, err, fields(nullifier = %nullifier))]
     pub async fn check_nullifier_used(
         &self,
