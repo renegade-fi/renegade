@@ -23,14 +23,25 @@ use super::{
 
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
-/// Error emitted when a key cannot be found for a task
-const ERR_NO_KEY: &str = "key not found for task";
-/// Error emitted when a task's assignment cannot be found
-const ERR_UNASSIGNED_TASK: &str = "task not assigned";
 /// Metric describing the number of tasks in a task queue
 const TASK_QUEUE_LENGTH_METRIC: &str = "task_queue_length";
 /// Metric tag for the key of a task queue
 const QUEUE_KEY_METRIC_TAG: &str = "queue_key";
+
+/// Error emitted when a task's assignment cannot be found
+const ERR_UNASSIGNED_TASK: &str = "task not assigned";
+/// Error emitted when a key cannot be found for a task
+const ERR_NO_KEY: &str = "key not found for task";
+
+/// Construct an invalid task queue key error
+fn invalid_task_id(key: TaskIdentifier) -> String {
+    format!("invalid task id: {key}")
+}
+
+/// Construct a task not running error
+fn task_not_running(task_id: TaskIdentifier) -> String {
+    format!("task {task_id} is not running")
+}
 
 // -----------
 // | Helpers |
@@ -39,11 +50,6 @@ const QUEUE_KEY_METRIC_TAG: &str = "queue_key";
 /// Error message emitted when a task queue is already paused
 fn already_paused(id: TaskQueueKey) -> String {
     format!("task queue {id} already paused")
-}
-
-/// Error message emitted when a task id is missing
-fn missing_task_key(id: TaskIdentifier) -> String {
-    format!("task id {id} not found")
 }
 
 /// Error message emitted when the applicator attempts to preempt a conflicting
@@ -120,7 +126,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
+            .ok_or_else(|| StateApplicatorError::Rejected(invalid_task_id(task_id)))?;
 
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::Rejected(queue_paused(key)));
@@ -171,7 +177,17 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::Rejected(missing_task_key(task_id)))?;
+            .ok_or_else(|| StateApplicatorError::Rejected(invalid_task_id(task_id)))?;
+
+        // If the top task on the queue is not the same as the one being transitioned,
+        // reject the transition
+        let tasks = tx.get_queued_tasks(&key)?;
+        let top_task = tasks.first();
+        if let Some(top_task) = top_task
+            && top_task.id != task_id
+        {
+            return Err(StateApplicatorError::Rejected(task_not_running(task_id)));
+        }
 
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::Rejected(already_paused(key)));
@@ -269,21 +285,25 @@ impl StateApplicator {
 
         let tx = self.db().new_write_tx()?;
 
-        // Lookup the executor for the preemptive task
-        let key = keys[0];
-        let task_id = tx
-            .get_queued_tasks(&key)?
-            .first()
-            .map(|t| t.id)
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
+        // Lookup the executor for the preemptive task, check each task's assignment in
+        // case one has been cleared
+        let mut executor = None;
+        for key in keys.iter() {
+            let task_id = tx
+                .get_queued_tasks(key)?
+                .first()
+                .map(|t| t.id)
+                .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
 
-        let executor = tx
-            .get_task_assignment(&task_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
+            if let Some(exec) = tx.get_task_assignment(&task_id)? {
+                executor = Some(exec);
+                break;
+            }
+        }
 
         // Resume each queue
         for key in keys.iter() {
-            self.resume_task_queue(*key, success, &executor, &tx)?;
+            self.resume_task_queue(*key, success, executor, &tx)?;
         }
         tx.commit()?;
         Ok(ApplicatorReturnType::None)
@@ -295,9 +315,17 @@ impl StateApplicator {
         &self,
         key: TaskQueueKey,
         success: bool,
-        executor: &WrappedPeerId,
+        executor: Option<WrappedPeerId>,
         tx: &StateTxn<'_, RW>,
     ) -> Result<ApplicatorReturnType> {
+        // We don't resume an unpaused queue, nor do we execute any of the dequeuing
+        // logic below, this may happen if the queue was cleared while a preemptive task
+        // was running
+        if !tx.is_queue_paused(&key)? {
+            warn!("task queue {key} is not paused, ignoring resume");
+            return Ok(ApplicatorReturnType::None);
+        }
+
         // Resume the queue, and pop the preemptive task that was added when the queue
         // was paused
         tx.resume_task_queue(&key)?;
@@ -323,7 +351,9 @@ impl StateApplicator {
         }
 
         // Possibly run the matching engine on the wallet
-        if Self::should_run_matching_engine(executor, &tasks, &task, tx)? {
+        if let Some(exec) = executor
+            && Self::should_run_matching_engine(&exec, &tasks, &task, tx)?
+        {
             self.run_matching_engine_on_wallet(key, tx)?;
         }
 

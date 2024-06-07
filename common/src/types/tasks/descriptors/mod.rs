@@ -4,6 +4,7 @@ mod new_wallet;
 mod node_startup;
 mod pay_fees;
 mod redeem_fees;
+mod refresh_wallet;
 mod settle_match;
 mod update_merkle_proof;
 mod update_wallet;
@@ -13,6 +14,7 @@ pub use new_wallet::*;
 pub use node_startup::*;
 pub use pay_fees::*;
 pub use redeem_fees::*;
+pub use refresh_wallet::*;
 pub use settle_match::*;
 pub use update_merkle_proof::*;
 pub use update_wallet::*;
@@ -99,6 +101,8 @@ pub enum TaskDescriptor {
     NewWallet(NewWalletTaskDescriptor),
     /// The task descriptor for the `LookupWallet` task
     LookupWallet(LookupWalletTaskDescriptor),
+    /// The task descriptor for the `RefreshWallet` task
+    RefreshWallet(RefreshWalletTaskDescriptor),
     /// The task descriptor for the `PayProtocolFee` task
     OfflineFee(PayOfflineFeeTaskDescriptor),
     /// The task descriptor for the `PayRelayerFee` task
@@ -123,6 +127,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(task) => task.wallet.wallet_id,
             TaskDescriptor::LookupWallet(task) => task.wallet_id,
+            TaskDescriptor::RefreshWallet(task) => task.wallet_id,
             TaskDescriptor::OfflineFee(task) => task.wallet_id,
             TaskDescriptor::RelayerFee(task) => task.wallet_id,
             TaskDescriptor::RedeemRelayerFee(task) => task.wallet_id,
@@ -143,6 +148,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(task) => vec![task.wallet.wallet_id],
             TaskDescriptor::LookupWallet(task) => vec![task.wallet_id],
+            TaskDescriptor::RefreshWallet(task) => vec![task.wallet_id],
             TaskDescriptor::OfflineFee(task) => vec![task.wallet_id],
             TaskDescriptor::RelayerFee(task) => vec![task.wallet_id],
             TaskDescriptor::RedeemRelayerFee(task) => vec![task.wallet_id],
@@ -159,6 +165,7 @@ impl TaskDescriptor {
         match self {
             TaskDescriptor::NewWallet(_)
             | TaskDescriptor::LookupWallet(_)
+            | TaskDescriptor::RefreshWallet(_)
             | TaskDescriptor::OfflineFee(_)
             | TaskDescriptor::RelayerFee(_)
             | TaskDescriptor::RedeemRelayerFee(_)
@@ -176,6 +183,7 @@ impl TaskDescriptor {
             TaskDescriptor::NewWallet(_) => "New Wallet".to_string(),
             TaskDescriptor::UpdateWallet(args) => args.description.display_description(),
             TaskDescriptor::LookupWallet(_) => "Lookup Wallet".to_string(),
+            TaskDescriptor::RefreshWallet(_) => "Refresh Wallet".to_string(),
             TaskDescriptor::SettleMatch(_) => "Settle Match".to_string(),
             TaskDescriptor::SettleMatchInternal(_) => "Settle Match".to_string(),
             TaskDescriptor::OfflineFee(_) => "Pay Fee Offline".to_string(),

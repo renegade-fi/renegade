@@ -159,6 +159,38 @@ impl Wallet {
         wallet
     }
 
+    /// Construct a new wallet from private shares and blinded public shares
+    pub fn new_from_shares(
+        wallet_id: WalletIdentifier,
+        key_chain: KeyChain,
+        blinded_public_shares: SizedWalletShare,
+        private_shares: SizedWalletShare,
+    ) -> Self {
+        let blinder = blinded_public_shares.blinder + private_shares.blinder;
+        let unblinded_public_shares = blinded_public_shares.unblind_shares(blinder);
+        let recovered_wallet = unblinded_public_shares + private_shares.clone();
+
+        // Construct a wallet from the recovered shares
+        Wallet {
+            wallet_id,
+            orders: recovered_wallet.orders.iter().cloned().map(|o| (Uuid::new_v4(), o)).collect(),
+            balances: recovered_wallet
+                .balances
+                .iter()
+                .cloned()
+                .map(|b| (b.mint.clone(), b))
+                .collect(),
+            key_chain,
+            match_fee: recovered_wallet.match_fee,
+            managing_cluster: recovered_wallet.managing_cluster,
+            blinder: recovered_wallet.blinder,
+            private_shares,
+            blinded_public_shares,
+            merkle_proof: None,
+            merkle_staleness: Default::default(),
+        }
+    }
+
     /// Invalidate the Merkle opening of a wallet after an update
     pub(crate) fn invalidate_merkle_opening(&mut self) {
         self.merkle_proof = None;

@@ -36,7 +36,7 @@ use util::{
 use crate::{
     await_task,
     driver::StateWrapper,
-    tasks::lookup_wallet::ERR_WALLET_NOT_FOUND,
+    helpers::ERR_WALLET_NOT_FOUND,
     traits::{Task, TaskContext, TaskError, TaskState},
 };
 

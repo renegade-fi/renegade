@@ -28,10 +28,11 @@ use crate::{
     traits::{Task, TaskContext, TaskError, TaskState},
 };
 
-use super::lookup_wallet::ERR_WALLET_NOT_FOUND;
-
 /// The name of the task
 const TASK_NAME: &str = "redeem-relayer-fee";
+
+/// The error message emitted when a wallet cannot be found
+const ERR_WALLET_NOT_FOUND: &str = "wallet not found in state";
 
 // --------------
 // | Task State |
