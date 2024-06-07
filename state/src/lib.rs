@@ -166,7 +166,7 @@ pub enum StateTransition {
     /// Add a raft peer to the local consensus cluster
     AddRaftVoters { peer_ids: Vec<NodeId> },
     /// Remove a raft peer from the local consensus cluster
-    RemoveRaftPeer { peer_id: NodeId },
+    RemoveRaftPeers { peer_ids: Vec<NodeId> },
 }
 
 impl From<StateTransition> for Proposal {

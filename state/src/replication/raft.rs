@@ -252,8 +252,8 @@ impl RaftClient {
             .ok_or_else(|| ReplicationV2Error::Proposal(ERR_NO_LEADER.to_string()))?;
 
         // If we're expiring the leader, first change leader then propose an expiry
-        if let &StateTransition::RemoveRaftPeer { peer_id } = update.transition.as_ref()
-            && leader_nid == peer_id
+        if let StateTransition::RemoveRaftPeers { peer_ids } = update.transition.as_ref()
+            && peer_ids.contains(&leader_nid)
         {
             info!("removing raft leader");
             self.change_leader().await?;
@@ -276,7 +276,9 @@ impl RaftClient {
                 self.handle_add_learners(learners).await
             },
             StateTransition::AddRaftVoters { peer_ids } => self.handle_add_voters(peer_ids).await,
-            StateTransition::RemoveRaftPeer { peer_id } => self.handle_remove_peer(peer_id).await,
+            StateTransition::RemoveRaftPeers { peer_ids } => {
+                self.handle_remove_peers(peer_ids).await
+            },
             _ => self
                 .raft()
                 .client_write(update)
@@ -312,22 +314,45 @@ impl RaftClient {
     }
 
     /// Handle a proposal to remove a peer
-    async fn handle_remove_peer(&self, peer_id: NodeId) -> Result<(), ReplicationV2Error> {
-        // First, check whether the peer has already been removed
+    async fn handle_remove_peers(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
+        let peers: HashSet<_> = peer_ids.into_iter().collect();
         let members = self.membership();
-        let mut nodes = members.nodes();
 
-        if !nodes.any(|(id, _)| id == &peer_id) {
-            info!("peer {peer_id} already removed, skipping proposal...");
-            return Ok(());
+        let existing_voters: HashSet<_> = members.voter_ids().collect();
+        let existing_learners: HashSet<_> = members.learner_ids().collect();
+        let all_existing_peers: HashSet<_> =
+            existing_voters.union(&existing_learners).copied().collect();
+
+        let voters_to_remove: Vec<_> = existing_voters.intersection(&peers).copied().collect();
+        let learners_to_remove: Vec<_> = existing_learners.intersection(&peers).copied().collect();
+        let already_removed: Vec<_> = peers.difference(&all_existing_peers).copied().collect();
+
+        // Remove voters
+        if !voters_to_remove.is_empty() {
+            let voter_removal_change =
+                ChangeMembers::RemoveVoters(BTreeSet::from_iter(voters_to_remove.into_iter()));
+            self.raft()
+                .change_membership(voter_removal_change, false /* retain */)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Proposal))?;
         }
 
-        let change = ChangeMembers::RemoveVoters(BTreeSet::from([peer_id]));
-        self.raft()
-            .change_membership(change, false /* retain */)
-            .await
-            .map_err(err_str!(ReplicationV2Error::Proposal))
-            .map(|_| ())
+        // Remove learners
+        if !learners_to_remove.is_empty() {
+            let learner_removal_change =
+                ChangeMembers::RemoveNodes(BTreeSet::from_iter(learners_to_remove.into_iter()));
+            self.raft()
+                .change_membership(learner_removal_change, false /* retain */)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+        }
+
+        // Inform about already-removed peers
+        for peer_id in already_removed {
+            info!("peer {peer_id} already removed, skipping proposal...");
+        }
+
+        Ok(())
     }
 
     // ---------------------
@@ -429,7 +454,12 @@ impl RaftClient {
 
     /// Remove a peer from the raft
     pub async fn remove_peer(&self, peer: NodeId) -> Result<ProposalId, ReplicationV2Error> {
-        let proposal = Proposal::from(StateTransition::RemoveRaftPeer { peer_id: peer });
+        self.remove_peers(vec![peer]).await
+    }
+
+    /// Remove the given peers from the raft
+    pub async fn remove_peers(&self, peers: Vec<NodeId>) -> Result<ProposalId, ReplicationV2Error> {
+        let proposal = Proposal::from(StateTransition::RemoveRaftPeers { peer_ids: peers });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
@@ -551,15 +581,19 @@ impl RaftClient {
         let known_peers_set: HashSet<_> = known_peers.iter().collect();
         let members = self.membership();
 
-        let mut n_expired = 0;
+        let mut peers_to_expire = Vec::new();
         for (id, info) in members.nodes() {
             if !known_peers_set.contains(&info.peer_id) {
                 info!("found missed expiry, removing raft peer: {id}");
-                self.remove_peer(*id).await?;
-                n_expired += 1;
+                peers_to_expire.push(*id);
             }
         }
 
-        Ok(n_expired)
+        let num_peers_to_expire = peers_to_expire.len();
+        if num_peers_to_expire > 0 {
+            self.remove_peers(peers_to_expire).await?;
+        }
+
+        Ok(num_peers_to_expire)
     }
 }
