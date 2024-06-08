@@ -21,6 +21,7 @@ mpc-relation = { workspace = true }
 # === Arithmetic === #
 bigdecimal = "0.3"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
+num-integer = "0.1"
 rand = "0.8"
 
 # === Async + Runtime === #

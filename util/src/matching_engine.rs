@@ -92,9 +92,10 @@ pub fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) 
         // Buy the base, the max amount is possibly limited by the quote
         // balance
         OrderSide::Buy => {
-            let price_f64 = price.to_f64();
-            let balance_limit = (balance.amount as f64 / price_f64).floor() as u128;
-            u128::min(order.amount, balance_limit)
+            let balance_limit = FixedPoint::floor_div_int(balance.amount, *price);
+            let limit = scalar_to_u128(&balance_limit);
+
+            u128::min(order.amount, limit)
         },
         // Buy the quote, sell the base, the maximum amount is directly limited
         // by the balance
@@ -181,7 +182,7 @@ mod tests {
 
     use crate::matching_engine::compute_fee_obligation;
 
-    use super::{apply_match_to_shares, match_orders};
+    use super::{apply_match_to_shares, compute_max_amount, match_orders};
     use circuit_types::{
         balance::Balance,
         fixed_point::FixedPoint,
@@ -194,6 +195,7 @@ mod tests {
     use lazy_static::lazy_static;
     use num_bigint::RandBigInt;
     use rand::{distributions::uniform::SampleRange, thread_rng, Rng};
+    use renegade_crypto::fields::scalar_to_biguint;
 
     // --------------
     // | Dummy Data |
@@ -296,6 +298,36 @@ mod tests {
     // ---------------
     // | Match Tests |
     // ---------------
+
+    /// Tests computing a max amount with values that are hard to represent in
+    /// fixed point
+    ///
+    /// Pulled these values from a buggy witness seen in a deployment
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_max_amount__representation_boundary() {
+        let base = 1u8;
+        let quote = 2u8;
+        let price_repr = Scalar::from(15810790664969u128);
+
+        let order = Order {
+            base_mint: base.into(),
+            quote_mint: quote.into(),
+            side: OrderSide::Buy,
+            amount: 48882710765117843,
+            worst_case_price: FixedPoint::default(),
+        };
+        let balance = Balance::new_from_mint_and_amount(quote.into(), 100000000000000001625);
+        let price = FixedPoint::from_repr(price_repr);
+
+        let amt = compute_max_amount(&price, &order, &balance);
+        let max_quote_spend = Scalar::from(balance.amount);
+        let implied_quote_spend = (price * Scalar::from(amt)).floor();
+
+        let max_bigint = scalar_to_biguint(&max_quote_spend);
+        let implied_bigint = scalar_to_biguint(&implied_quote_spend);
+        assert!(max_bigint >= implied_bigint);
+    }
 
     /// Test a valid match between two orders
     #[test]
