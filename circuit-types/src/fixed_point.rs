@@ -11,6 +11,7 @@ use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use lazy_static::lazy_static;
 use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use num_bigint::{BigUint, ToBigInt};
+use num_integer::Integer;
 use renegade_crypto::fields::{
     bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_biguint, scalar_to_u64,
 };
@@ -163,6 +164,20 @@ impl FixedPoint {
         self_bigint >>= DEFAULT_FP_PRECISION;
 
         bigint_to_scalar(&self_bigint)
+    }
+
+    /// Divides the given integer by the fixed point value returning the
+    /// quotient without remainder
+    ///
+    /// Stated different; returns the maximal integer `a` such that `a * fp`
+    /// < `val`
+    pub fn floor_div_int(val: u128, fp: Self) -> Scalar {
+        let val_repr = Scalar::from(val) * Scalar::new(*TWO_TO_M_SCALAR);
+        let val_repr_bigint = scalar_to_biguint(&val_repr);
+        let self_repr_bigint = scalar_to_biguint(&fp.repr);
+
+        let (q, _r) = val_repr_bigint.div_rem(&self_repr_bigint);
+        biguint_to_scalar(&q)
     }
 }
 
@@ -585,6 +600,40 @@ mod fixed_point_tests {
 
         check_within_fractional_tolerance(res1.to_f64(), expected1 as f64, F64_MUL_TOLERANCE);
         check_within_fractional_tolerance(res2.to_f64(), expected2 as f64, F64_MUL_TOLERANCE);
+    }
+
+    /// Test the floor division with integer method
+    #[test]
+    fn test_floor_div_int() {
+        let mut rng = thread_rng();
+        let val: u128 = rng.gen();
+        let divisor: f64 = rng.gen();
+
+        let fp = FixedPoint::from_f64_round_down(divisor);
+        let quotient = FixedPoint::floor_div_int(val, fp);
+
+        let less_than = fp * quotient;
+        let lt_bigint = scalar_to_biguint(&less_than.floor());
+        let greater_than = less_than + fp;
+        let gt_bigint = scalar_to_biguint(&greater_than.floor());
+        let val_bigint = BigUint::from(val);
+
+        assert!(lt_bigint <= val_bigint);
+        assert!(val_bigint <= gt_bigint);
+    }
+
+    /// Tests floor div when the divisor cleanly divides the value
+    #[test]
+    fn test_floor_div_clean() {
+        let mut rng = thread_rng();
+        let divisor: u64 = rng.gen();
+        let expected_quotient = 2u64;
+        let val = (divisor as u128) * (expected_quotient as u128);
+
+        let fp = FixedPoint::from_integer(divisor);
+        let quotient = FixedPoint::floor_div_int(val, fp);
+
+        assert_eq!(Scalar::from(expected_quotient), quotient);
     }
 
     // ---------------------------------------
