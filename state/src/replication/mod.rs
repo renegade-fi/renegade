@@ -638,4 +638,26 @@ mod test {
         let wallet = tx.get_wallet(&new_wallet_id).unwrap();
         assert!(wallet.is_some());
     }
+
+    #[tokio::test]
+    async fn test_concurrent_membership_change() {
+        const N: usize = 5;
+
+        // Create a cluster of size N
+        let raft = MockRaft::create_initialized_raft(N).await;
+        let client = raft.get_client(0).await;
+        let client2 = raft.get_client(1).await;
+
+        // Add 2 new learners concurrently
+        let learner_1 = N as u64 + 1;
+        let learner_2 = N as u64 + 2;
+        raft.add_node(learner_1).await;
+        raft.add_node(learner_2).await;
+
+        let fut1 = tokio::spawn(async move { client.add_learner(learner_1, RaftNode::default()).await });
+        let fut2 = tokio::spawn(async move { client2.add_learner(learner_2, RaftNode::default()).await });
+
+        fut1.await.unwrap().unwrap();
+        fut2.await.unwrap().unwrap();
+    }
 }
