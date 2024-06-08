@@ -21,11 +21,12 @@ use tracing::instrument;
 
 use crate::{
     driver::StateWrapper,
-    helpers::{find_latest_wallet_tx, gen_private_shares},
     traits::{Task, TaskContext, TaskError, TaskState},
+    utils::{
+        find_wallet::{find_latest_wallet_tx, gen_private_shares},
+        validity_proofs::{find_merkle_path, update_wallet_validity_proofs},
+    },
 };
-
-use crate::helpers::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The task name for the lookup wallet task
 const LOOKUP_WALLET_TASK_NAME: &str = "lookup-wallet";

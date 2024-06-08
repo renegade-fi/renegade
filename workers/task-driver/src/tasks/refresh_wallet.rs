@@ -24,10 +24,11 @@ use tracing::instrument;
 
 use crate::{
     driver::StateWrapper,
-    helpers::{
-        find_latest_wallet_tx, find_merkle_path, gen_private_shares, update_wallet_validity_proofs,
-    },
     traits::{Task, TaskContext, TaskError, TaskState},
+    utils::{
+        find_wallet::{find_latest_wallet_tx, gen_private_shares},
+        validity_proofs::{find_merkle_path, update_wallet_validity_proofs},
+    },
 };
 
 /// The task name

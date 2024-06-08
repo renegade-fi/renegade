@@ -4,11 +4,12 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use crate::helpers::{
-    enqueue_proof_job, record_order_fill, transition_order_settling, update_wallet_validity_proofs,
-};
+use crate::driver::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
-use crate::{driver::StateWrapper, helpers::find_merkle_path};
+use crate::utils::order_states::{record_order_fill, transition_order_settling};
+use crate::utils::validity_proofs::{
+    enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
+};
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;

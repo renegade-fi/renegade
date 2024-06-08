@@ -36,8 +36,8 @@ use util::{
 use crate::{
     await_task,
     driver::StateWrapper,
-    helpers::ERR_WALLET_NOT_FOUND,
     traits::{Task, TaskContext, TaskError, TaskState},
+    utils::ERR_WALLET_NOT_FOUND,
 };
 
 /// The name of the node startup task

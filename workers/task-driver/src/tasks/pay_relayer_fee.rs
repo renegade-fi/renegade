@@ -24,8 +24,10 @@ use tracing::instrument;
 use util::err_str;
 
 use crate::driver::StateWrapper;
-use crate::helpers::{enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::utils::validity_proofs::{
+    enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
+};
 
 use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
 

@@ -1,177 +1,43 @@
-//! Helpers for common functionality across tasks
+//! Utils for updating wallet validity proofs
 
-use std::{iter, sync::Arc};
+use std::sync::Arc;
 
-use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
-use circuit_types::{
-    balance::Balance,
-    native_helpers::{
-        compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
-        wallet_from_blinded_shares,
-    },
-    note::Note,
-    order::Order,
-    r#match::{MatchResult, OrderSettlementIndices},
-    traits::BaseType,
-    SizedWallet, SizedWalletShare,
+use arbitrum_client::client::ArbitrumClient;
+use arbitrum_client::errors::ArbitrumClientError;
+use circuit_types::balance::Balance;
+use circuit_types::native_helpers::{
+    compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
+    wallet_from_blinded_shares,
 };
-use circuits::zk_circuits::{
-    proof_linking::link_sized_commitments_reblind,
-    valid_commitments::{
-        SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitness,
-    },
-    valid_reblind::{SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitness},
+use circuit_types::note::Note;
+use circuit_types::order::Order;
+use circuit_types::r#match::OrderSettlementIndices;
+use circuit_types::SizedWallet;
+use circuits::zk_circuits::proof_linking::link_sized_commitments_reblind;
+use circuits::zk_circuits::valid_commitments::{
+    SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitness,
 };
-use common::types::{
-    proof_bundles::ProofBundle,
-    tasks::RedeemRelayerFeeTaskDescriptor,
-    wallet::{order_metadata::OrderState, Wallet, WalletAuthenticationPath},
+use circuits::zk_circuits::valid_reblind::{
+    SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitness,
 };
-use common::types::{
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::OrderIdentifier,
+use common::types::proof_bundles::{
+    OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
-use constants::Scalar;
-use gossip_api::pubsub::{
-    orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC},
-    PubsubMessage,
-};
-use itertools::Itertools;
-use job_types::{
-    network_manager::{NetworkManagerJob, NetworkManagerQueue},
-    proof_manager::{ProofJob, ProofManagerJob, ProofManagerQueue},
-};
+use common::types::tasks::RedeemRelayerFeeTaskDescriptor;
+use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
+use gossip_api::pubsub::orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC};
+use gossip_api::pubsub::PubsubMessage;
+use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
+use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerQueue};
 use num_bigint::BigUint;
-use renegade_crypto::hash::PoseidonCSPRNG;
 use state::State;
-use tokio::sync::oneshot::{self, Receiver as TokioReceiver};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::Receiver as TokioReceiver;
 
-// -------------
-// | Constants |
-// -------------
-
-/// Error message emitted when enqueuing a job with the proof manager fails
-const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";
-/// Error message emitted when a balance cannot be found for an order
-const ERR_BALANCE_NOT_FOUND: &str = "cannot find balance for order";
-/// Error message emitted when a wallet is given missing an authentication path
-const ERR_MISSING_AUTHENTICATION_PATH: &str = "wallet missing authentication path";
-/// Error message emitted when an order cannot be found in a wallet
-const ERR_ORDER_NOT_FOUND: &str = "cannot find order in wallet";
-/// Error message emitted when proving VALID COMMITMENTS fails
-const ERR_PROVE_COMMITMENTS_FAILED: &str = "failed to prove valid commitments";
-/// Error message emitted when proving VALID REBLIND fails
-const ERR_PROVE_REBLIND_FAILED: &str = "failed to prove valid reblind";
-/// The error message emitted when metadata for an order cannot be found
-const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
-/// The error thrown when the wallet cannot be found in tx history
-pub const ERR_WALLET_NOT_FOUND: &str = "wallet not found in wallet_last_updated map";
-
-// ----------------
-// | Order States |
-// ----------------
-
-/// Update an order's state to `SettlingMatch`
-pub async fn transition_order_settling(
-    order_id: OrderIdentifier,
-    state: &State,
-) -> Result<(), String> {
-    let mut metadata =
-        state.get_order_metadata(&order_id).await?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
-    metadata.state = OrderState::SettlingMatch;
-    state.update_order_metadata(metadata).await?;
-
-    Ok(())
-}
-
-/// Record the result of a match in the order's metadata
-pub async fn record_order_fill(
-    order_id: OrderIdentifier,
-    match_res: &MatchResult,
-    state: &State,
-) -> Result<(), String> {
-    // Get the order metadata
-    let mut metadata =
-        state.get_order_metadata(&order_id).await?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
-
-    // Increment filled amount and transition state if the entire order has matched
-    metadata.filled += match_res.base_amount;
-    if metadata.data.amount == metadata.filled {
-        metadata.state = OrderState::Filled;
-    }
-
-    state.update_order_metadata(metadata).await?;
-    Ok(())
-}
-
-// -----------------
-// | Wallet Lookup |
-// -----------------
-
-/// Get the i'th set of private shares for a wallet from the given share seed
-///
-/// The `idx` here is an index (in number of wallets) into the share CSPRNG
-/// stream
-pub(crate) fn gen_private_shares(
-    idx: usize,
-    share_seed: Scalar,
-    private_blinder: Scalar,
-) -> SizedWalletShare {
-    // Subtract one from the number of scalars to account for the wallet blinder
-    // private share, which is sampled from the blinder stream instead of the
-    // share stream
-    let shares_per_wallet = SizedWallet::NUM_SCALARS - 1;
-    let mut share_csprng = PoseidonCSPRNG::new(share_seed);
-    share_csprng.advance_by((idx - 1) * shares_per_wallet).unwrap();
-
-    // Sample private secret shares for the wallet
-    let mut new_private_shares =
-        share_csprng.take(shares_per_wallet).chain(iter::once(private_blinder));
-    SizedWalletShare::from_scalars(&mut new_private_shares)
-}
-
-/// Find the latest update of a wallet that has been submitted to the
-/// contract. The update is represented as an index into the blinder stream
-///
-/// Returns a tuple: `(blinder_index, blinder, blinder_private_share)`
-pub(crate) async fn find_latest_wallet_tx(
-    blinder_seed: Scalar,
-    arbitrum_client: &ArbitrumClient,
-) -> Result<(usize, Scalar, Scalar), String> {
-    // Find the latest transaction updating the wallet, as indexed by the public
-    // share of the blinders
-    let mut blinder_csprng = PoseidonCSPRNG::new(blinder_seed);
-
-    let mut blinder_index = 0;
-    let mut curr_blinder = Scalar::zero();
-    let mut curr_blinder_private_share = Scalar::zero();
-
-    let mut updating_tx = None;
-
-    while let (blinder, private_share) = blinder_csprng.next_tuple().unwrap()
-        && let Some(tx) = arbitrum_client
-            .get_public_blinder_tx(blinder - private_share)
-            .await
-            .map_err(|e| e.to_string())?
-    {
-        updating_tx = Some(tx);
-
-        curr_blinder = blinder;
-        curr_blinder_private_share = private_share;
-        blinder_index += 1;
-    }
-
-    // Error if not found
-    if updating_tx.is_none() {
-        return Err(ERR_WALLET_NOT_FOUND.to_string());
-    }
-
-    Ok((blinder_index, curr_blinder, curr_blinder_private_share))
-}
-
-// --------------
-// | Proof Jobs |
-// --------------
+use super::{
+    ERR_BALANCE_NOT_FOUND, ERR_ENQUEUING_JOB, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
+    ERR_PROVE_COMMITMENTS_FAILED, ERR_PROVE_REBLIND_FAILED,
+};
 
 /// Enqueue a job with the proof manager
 ///

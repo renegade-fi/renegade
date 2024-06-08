@@ -27,11 +27,11 @@ use util::{arbitrum::get_protocol_pubkey, err_str};
 
 use crate::{
     driver::StateWrapper,
-    helpers::{
+    traits::{Task, TaskContext, TaskError, TaskState},
+    utils::validity_proofs::{
         enqueue_proof_job, enqueue_relayer_redeem_job, find_merkle_path,
         update_wallet_validity_proofs,
     },
-    traits::{Task, TaskContext, TaskError, TaskState},
 };
 
 use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
