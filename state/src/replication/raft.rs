@@ -8,6 +8,7 @@ use std::{
 
 use common::types::gossip::WrappedPeerId;
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
+use tokio::sync::Mutex;
 use tracing::{info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
@@ -112,6 +113,8 @@ pub struct RaftClient {
     raft: Raft,
     /// The network to use for the raft client
     network_factory: P2PNetworkFactoryWrapper,
+    /// A lock to prevent simultaneous membership changes
+    membership_change_lock: Arc<Mutex<()>>,
 }
 
 impl RaftClient {
@@ -147,7 +150,12 @@ impl RaftClient {
             raft.initialize(members).await.map_err(err_str!(ReplicationV2Error::RaftSetup))?;
         }
 
-        Ok(Self { config, raft, network_factory: p2p_factory })
+        Ok(Self {
+            config,
+            raft,
+            network_factory: p2p_factory,
+            membership_change_lock: Arc::new(Mutex::new(())),
+        })
     }
 
     /// Get the inner raft
@@ -295,6 +303,7 @@ impl RaftClient {
     ) -> Result<(), ReplicationV2Error> {
         let learners = BTreeMap::from_iter(learners.into_iter());
         let change = ChangeMembers::AddNodes(learners);
+        let _lock = self.membership_change_lock.lock().await;
         self.raft()
             .change_membership(change, true /* retain */)
             .await
@@ -306,6 +315,7 @@ impl RaftClient {
     async fn handle_add_voters(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
         let voters = BTreeSet::from_iter(peer_ids.into_iter());
         let change = ChangeMembers::AddVoterIds(voters);
+        let _lock = self.membership_change_lock.lock().await;
         self.raft()
             .change_membership(change, false /* retain */)
             .await
@@ -326,6 +336,8 @@ impl RaftClient {
         let voters_to_remove: Vec<_> = existing_voters.intersection(&peers).copied().collect();
         let learners_to_remove: Vec<_> = existing_learners.intersection(&peers).copied().collect();
         let already_removed: Vec<_> = peers.difference(&all_existing_peers).copied().collect();
+
+        let _lock = self.membership_change_lock.lock().await;
 
         // Remove voters
         if !voters_to_remove.is_empty() {
