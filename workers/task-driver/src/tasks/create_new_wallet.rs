@@ -27,10 +27,8 @@ use state::State;
 use tracing::instrument;
 
 use crate::driver::StateWrapper;
-use crate::helpers::enqueue_proof_job;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
-
-use crate::helpers::find_merkle_path;
+use crate::utils::validity_proofs::{enqueue_proof_job, find_merkle_path};
 
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";

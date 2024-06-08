@@ -26,10 +26,10 @@ use state::State;
 use tracing::instrument;
 
 use crate::driver::StateWrapper;
-use crate::helpers::{enqueue_proof_job, find_merkle_path};
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
-
-use crate::helpers::update_wallet_validity_proofs;
+use crate::utils::validity_proofs::{
+    enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
+};
 
 /// The human-readable name of the the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";

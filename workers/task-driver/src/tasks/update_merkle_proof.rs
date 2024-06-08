@@ -17,8 +17,8 @@ use tracing::instrument;
 
 use crate::{
     driver::StateWrapper,
-    helpers::update_wallet_validity_proofs,
     traits::{Task, TaskContext, TaskError, TaskState},
+    utils::validity_proofs::update_wallet_validity_proofs,
 };
 
 /// The human-readable name of the the task

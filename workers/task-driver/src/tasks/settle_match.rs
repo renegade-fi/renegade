@@ -31,10 +31,8 @@ use tracing::instrument;
 
 use crate::driver::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
-
-use crate::helpers::{
-    find_merkle_path, record_order_fill, transition_order_settling, update_wallet_validity_proofs,
-};
+use crate::utils::order_states::{record_order_fill, transition_order_settling};
+use crate::utils::validity_proofs::{find_merkle_path, update_wallet_validity_proofs};
 
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";

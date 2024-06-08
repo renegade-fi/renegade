@@ -23,9 +23,9 @@ use util::err_str;
 
 use crate::{
     driver::StateWrapper,
-    helpers::{enqueue_proof_job, find_merkle_path},
     tasks::ERR_NO_MERKLE_PROOF,
     traits::{Task, TaskContext, TaskError, TaskState},
+    utils::validity_proofs::{enqueue_proof_job, find_merkle_path},
 };
 
 /// The name of the task
