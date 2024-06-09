@@ -301,30 +301,67 @@ impl RaftClient {
         &self,
         learners: Vec<(NodeId, RaftNode)>,
     ) -> Result<(), ReplicationV2Error> {
-        let learners = BTreeMap::from_iter(learners.into_iter());
-        let change = ChangeMembers::AddNodes(learners);
         let _lock = self.membership_change_lock.lock().await;
-        self.raft()
-            .change_membership(change, true /* retain */)
-            .await
-            .map_err(err_str!(ReplicationV2Error::Proposal))
-            .map(|_| ())
+
+        // Only add learners that haven't already been added
+        let membership = self.membership();
+        let mut to_add = Vec::new();
+        for learner in learners {
+            if membership.get_node(&learner.0).is_none() {
+                to_add.push(learner);
+            }
+        }
+
+        if !to_add.is_empty() {
+            let learners = BTreeMap::from_iter(to_add.into_iter());
+            let change = ChangeMembers::AddNodes(learners);
+
+            self.raft()
+                .change_membership(change, true /* retain */)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+        }
+
+        // TEMP: Log the resulting membership
+        let new_membership = self.membership();
+        info!("new membership: {new_membership}");
+
+        Ok(())
     }
 
     /// Handle a proposal to add voters
     async fn handle_add_voters(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
-        let voters = BTreeSet::from_iter(peer_ids.into_iter());
-        let change = ChangeMembers::AddVoterIds(voters);
         let _lock = self.membership_change_lock.lock().await;
-        self.raft()
-            .change_membership(change, false /* retain */)
-            .await
-            .map_err(err_str!(ReplicationV2Error::Proposal))
-            .map(|_| ())
+
+        // Only add voters that haven't already been added
+        let existing_voters: Vec<_> = self.membership().voter_ids().collect();
+        let mut to_add = Vec::new();
+        for peer_id in peer_ids {
+            if !existing_voters.contains(&peer_id) {
+                to_add.push(peer_id);
+            }
+        }
+
+        if !to_add.is_empty() {
+            let voters = BTreeSet::from_iter(to_add.into_iter());
+            let change = ChangeMembers::AddVoterIds(voters);
+            self.raft()
+                .change_membership(change, false /* retain */)
+                .await
+                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+        }
+
+        // TEMP: Log the resulting membership
+        let new_membership = self.membership();
+        info!("new membership: {new_membership}");
+
+        Ok(())
     }
 
     /// Handle a proposal to remove a peer
     async fn handle_remove_peers(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
+        let _lock = self.membership_change_lock.lock().await;
+
         let peers: HashSet<_> = peer_ids.into_iter().collect();
         let members = self.membership();
 
@@ -336,8 +373,6 @@ impl RaftClient {
         let voters_to_remove: Vec<_> = existing_voters.intersection(&peers).copied().collect();
         let learners_to_remove: Vec<_> = existing_learners.intersection(&peers).copied().collect();
         let already_removed: Vec<_> = peers.difference(&all_existing_peers).copied().collect();
-
-        let _lock = self.membership_change_lock.lock().await;
 
         // Remove voters
         if !voters_to_remove.is_empty() {
@@ -363,6 +398,10 @@ impl RaftClient {
         for peer_id in already_removed {
             info!("peer {peer_id} already removed, skipping proposal...");
         }
+
+        // TEMP: Log the resulting membership
+        let new_membership = self.membership();
+        info!("new membership: {new_membership}");
 
         Ok(())
     }
