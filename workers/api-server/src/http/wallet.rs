@@ -185,14 +185,14 @@ impl TypedHandler for CreateWalletHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Overwrite the managing cluster and the match fee with the configured values
+        let wallet_id = req.wallet.id;
         let relayer_key = self.state.get_fee_decryption_key().await?.public_key();
-        let relayer_take_rate = self.state.get_relayer_take_rate().await?;
+        let relayer_take_rate = self.state.get_relayer_fee_for_wallet(&wallet_id).await?;
         req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
         req.wallet.match_fee = relayer_take_rate;
 
         // Create an async task to drive this new wallet into the on-chain state
         // and create proofs of validity
-        let wallet_id = req.wallet.id;
         let mut wallet: Wallet = req.wallet.try_into().map_err(|e: String| bad_request(e))?;
 
         // Modify the public shares of the new wallet to reflect the overwritten fields
