@@ -258,7 +258,7 @@ impl GossipProtocolExecutor {
                         self.handle_propose_expiry(sender, peer_id).await
                     },
                     ClusterManagementMessageType::RejectExpiry { peer_id, last_heartbeat } => {
-                        self.handle_reject_expiry(peer_id, last_heartbeat).await
+                        self.handle_reject_expiry(sender, peer_id, last_heartbeat).await
                     },
                     _ => Err(GossipError::UnhandledRequest(format!("{message_type:?}"))),
                 }

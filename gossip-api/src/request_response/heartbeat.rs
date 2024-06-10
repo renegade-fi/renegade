@@ -15,6 +15,8 @@ pub struct HeartbeatMessage {
     pub known_peers: Vec<WrappedPeerId>,
     /// The list of orders known to the sending node
     pub known_orders: Vec<OrderIdentifier>,
+    /// The peer ID of the sending node
+    pub self_id: WrappedPeerId,
 }
 
 /// Defines a request to bootstrap the cluster state from the recipient
