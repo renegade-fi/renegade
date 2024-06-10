@@ -47,11 +47,11 @@ use crate::{
 use self::error::StateError;
 
 /// The default number of ticks between Raft heartbeats
-const DEFAULT_HEARTBEAT_MS: u64 = 3_000; // 3 seconds
+const DEFAULT_HEARTBEAT_MS: u64 = 1_000; // 1 second
 /// The default lower bound on the number of ticks before a Raft election
-const DEFAULT_MIN_ELECTION_MS: u64 = 15_000; // 15 seconds
+const DEFAULT_MIN_ELECTION_MS: u64 = 10_000; // 10 seconds
 /// The default upper bound on the number of ticks before a Raft election
-const DEFAULT_MAX_ELECTION_MS: u64 = 20_000; // 20 seconds
+const DEFAULT_MAX_ELECTION_MS: u64 = 15_000; // 15 seconds
 
 /// The frequency with which to check for raft core panics
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds

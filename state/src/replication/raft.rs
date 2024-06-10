@@ -29,11 +29,11 @@ use super::{
 /// The default cluster name
 const DEFAULT_CLUSTER_NAME: &str = "relayer-raft-cluster";
 /// The default heartbeat interval for the raft client
-const DEFAULT_HEARTBEAT_INTERVAL: u64 = 3000; // 3 seconds
+const DEFAULT_HEARTBEAT_INTERVAL: u64 = 1_000; // 1 second
 /// The default election timeout min
-const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 15000; // 15 seconds
+const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10_000; // 10 seconds
 /// The default election timeout max
-const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 20000; // 20 seconds
+const DEFAULT_ELECTION_TIMEOUT_MAX: u64 = 15_000; // 15 seconds
 /// The default log lag threshold for promoting learners
 const DEFAULT_LEARNER_PROMOTION_THRESHOLD: u64 = 20; // 20 log entries
 /// The amount of time to await promotion before timing out
