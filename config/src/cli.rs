@@ -19,7 +19,7 @@ use std::{
 };
 use url::Url;
 
-use crate::parsing::parse_config_from_args;
+use crate::parsing::{parse_config_from_args, RelayerFeeWhitelistEntry};
 
 // -------
 // | CLI |
@@ -54,6 +54,9 @@ pub struct Cli {
     /// The mutual exclusion list for matches, two wallets in this list will never be matched internally by the node
     #[clap(long, value_parser, value_delimiter=' ', num_args=0..)]
     pub match_mutual_exclusion_list: Vec<WalletIdentifier>,
+    /// The path to the file containing relayer fee whitelist info
+    #[clap(long, value_parser)]
+    pub relayer_fee_whitelist: Option<String>,
 
     // -----------------------
     // | Environment Configs |
@@ -220,6 +223,10 @@ pub struct RelayerConfig {
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
     pub price_reporter_url: Option<Url>,
+    /// The relayer fee whitelist
+    ///
+    /// Specifies a mapping of wallet IDs to fees for the relayer
+    pub relayer_fee_whitelist: Vec<RelayerFeeWhitelistEntry>,
 
     // -----------------------
     // | Environment Configs |
@@ -345,6 +352,7 @@ impl Clone for RelayerConfig {
         Self {
             match_take_rate: self.match_take_rate,
             match_mutual_exclusion_list: self.match_mutual_exclusion_list.clone(),
+            relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),

@@ -105,6 +105,7 @@ impl State {
         let p2p_key = config.p2p_key.clone();
         let fee_decryption_key = config.fee_decryption_key;
         let match_take_rate = config.match_take_rate;
+        let relayer_fee_whitelist = config.relayer_fee_whitelist.clone();
 
         let relayer_wallet_id =
             derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
@@ -117,6 +118,12 @@ impl State {
             tx.set_fee_decryption_key(&fee_decryption_key)?;
             tx.set_relayer_take_rate(&match_take_rate)?;
             tx.set_local_node_wallet(relayer_wallet_id)?;
+
+            // Setup the relayer fee whitelist
+            for entry in relayer_fee_whitelist {
+                let fee = FixedPoint::from_f64_round_down(entry.fee);
+                tx.set_relayer_fee(&entry.wallet_id, fee)?;
+            }
 
             Ok(())
         })
