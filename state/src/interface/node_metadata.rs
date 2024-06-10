@@ -55,6 +55,16 @@ impl State {
     pub async fn get_relayer_take_rate(&self) -> Result<FixedPoint, StateError> {
         self.with_read_tx(|tx| tx.get_relayer_take_rate().map_err(StateError::Db)).await
     }
+
+    /// Get the relayer fee for a given wallet
+    pub async fn get_relayer_fee_for_wallet(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<FixedPoint, StateError> {
+        let wid = *wallet_id;
+        self.with_read_tx(move |tx| tx.get_relayer_fee(&wid).map_err(StateError::Db)).await
+    }
+
     // -----------
     // | Setters |
     // -----------

@@ -17,7 +17,7 @@ use crate::replication::error::{new_snapshot_error, ReplicationV2Error};
 use crate::storage::db::{DbConfig, DB};
 use crate::{
     ALL_TABLES, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE, RAFT_LOGS_TABLE,
-    RAFT_METADATA_TABLE,
+    RAFT_METADATA_TABLE, RELAYER_FEES_TABLE,
 };
 
 use super::{Node, NodeId, StateMachine, TypeConfig};
@@ -34,6 +34,7 @@ const EXCLUDED_TABLES: &[&str] = &[
     PEER_INFO_TABLE,
     CLUSTER_MEMBERSHIP_TABLE,
     NODE_METADATA_TABLE,
+    RELAYER_FEES_TABLE,
 ];
 
 /// An error awaiting a blocking zip task
