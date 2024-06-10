@@ -44,10 +44,12 @@ use uuid::Uuid;
 // -------------
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 15;
+const NUM_TABLES: usize = 16;
 
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
+/// The name of the db table that stores relayer fees amounts by wallet ID
+pub(crate) const RELAYER_FEES_TABLE: &str = "relayer-fees";
 
 /// The name of the db table that stores peer information
 pub(crate) const PEER_INFO_TABLE: &str = "peer-info";
@@ -85,6 +87,7 @@ pub const RAFT_LOGS_TABLE: &str = "raft-logs";
 /// All tables in the database
 pub const ALL_TABLES: [&str; NUM_TABLES] = [
     NODE_METADATA_TABLE,
+    RELAYER_FEES_TABLE,
     PEER_INFO_TABLE,
     CLUSTER_MEMBERSHIP_TABLE,
     PRIORITIES_TABLE,
