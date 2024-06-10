@@ -5,13 +5,15 @@ use crate::{cli::RelayerConfig, validation::validate_config, Cli};
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use colored::*;
-use common::types::gossip::{
-    ClusterId, ClusterSymmetricKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH,
+use common::types::{
+    gossip::{ClusterId, ClusterSymmetricKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH},
+    wallet::WalletIdentifier,
 };
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
 use ethers::{core::rand::thread_rng, signers::LocalWallet};
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
 use rand_core::{OsRng, RngCore};
+use serde::Deserialize;
 use std::{env, fs, str::FromStr};
 use toml::{value::Map, Value};
 use url::Url;
@@ -89,9 +91,13 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         .price_reporter_url
         .map(|url| Url::parse(&url).expect("Invalid price reporter URL"));
 
+    // Parse the relayer fee whitelist, if there is one
+    let relayer_fee_whitelist = parse_relayer_whitelist_file(cli_args.relayer_fee_whitelist)?;
+
     let mut config = RelayerConfig {
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
         match_mutual_exclusion_list: cli_args.match_mutual_exclusion_list.into_iter().collect(),
+        relayer_fee_whitelist,
         price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
@@ -180,9 +186,35 @@ pub fn parse_decryption_key(key_str: Option<String>) -> Result<DecryptionKey, St
     }
 }
 
-// ----------------
-// | File Parsing |
-// ----------------
+// ---------------------------------
+// | Relayer Fee Whitelist Parsing |
+// ---------------------------------
+
+/// A struct representing the JSON structure of a relayer whitelist file
+#[derive(Clone, Debug, Deserialize)]
+pub struct RelayerFeeWhitelistEntry {
+    /// The wallet ID to set the fee for
+    pub wallet_id: WalletIdentifier,
+    /// The fee to set for the relayer
+    pub fee: f64,
+}
+
+/// Parse a relayer whitelist file
+fn parse_relayer_whitelist_file(
+    file_path: Option<String>,
+) -> Result<Vec<RelayerFeeWhitelistEntry>, String> {
+    let file = match file_path {
+        Some(path) => fs::read_to_string(path).map_err(|e| e.to_string())?,
+        None => return Ok(vec![]),
+    };
+
+    // Parse the file as json
+    serde_json::from_str(&file).map_err(|e| e.to_string())
+}
+
+// -----------------------
+// | Config File Parsing |
+// -----------------------
 
 /// Parse args from a config file
 fn config_file_args(cli_args: &[String]) -> Result<Vec<String>, String> {
