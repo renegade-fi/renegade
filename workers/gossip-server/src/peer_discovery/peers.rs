@@ -100,10 +100,11 @@ impl GossipProtocolExecutor {
     /// Handle a request to reject expiry
     pub async fn handle_reject_expiry(
         &self,
+        sender: WrappedPeerId,
         peer_id: WrappedPeerId,
         last_heartbeat: u64,
     ) -> Result<(), GossipError> {
-        info!("received reject expiry request");
+        info!("received reject expiry request for {peer_id} from {sender}");
         // Remove from the expiry buffer if present
         self.expiry_buffer.remove_expiry_candidate(peer_id).await;
 

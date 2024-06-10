@@ -11,6 +11,7 @@ use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
+use tracing::info;
 
 use crate::{
     error::StateError,
@@ -114,13 +115,14 @@ impl State {
         self.with_read_tx(move |tx| {
             let peers = tx.get_info_map()?;
             let orders = tx.get_all_orders()?;
+            let self_id = tx.get_peer_id()?;
 
             // Filter out cancelled orders
             let known_peers = peers.into_keys().collect_vec();
             let known_orders =
                 orders.into_iter().filter(|order| !order.is_cancelled()).map(|o| o.id).collect();
 
-            Ok(HeartbeatMessage { known_peers, known_orders })
+            Ok(HeartbeatMessage { known_peers, known_orders, self_id })
         })
         .await
     }
@@ -136,6 +138,10 @@ impl State {
 
     /// Add a batch of peers to the index
     pub async fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
+        for peer in &peers {
+            info!("Adding peer {} at {}", peer.peer_id, peer.addr);
+        }
+
         // Index each peer, and return those that should be added as raft learners to
         // the local node's raft
         let this = self.clone();
