@@ -35,17 +35,17 @@ const ERR_INVALID_QUERY_PARAMS: &str = "invalid query params";
 
 /// Builds an empty HTTP 400 (Bad Request) response
 pub(super) fn build_400_response(err: String) -> Response<Body> {
-    Response::builder().status(StatusCode::BAD_REQUEST).body(Body::from(err)).unwrap()
+    build_response_from_status_code(StatusCode::BAD_REQUEST, err)
 }
 
 /// Builds an empty HTTP 404 (Not Found) response
 pub(super) fn build_404_response(err: String) -> Response<Body> {
-    Response::builder().status(StatusCode::NOT_FOUND).body(Body::from(err)).unwrap()
+    build_response_from_status_code(StatusCode::NOT_FOUND, err)
 }
 
 /// Builds an empty HTTP 500 (Internal Server Error) response
 pub(super) fn build_500_response(err: String) -> Response<Body> {
-    Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(err)).unwrap()
+    build_response_from_status_code(StatusCode::INTERNAL_SERVER_ERROR, err)
 }
 
 /// Builds an empty HTTP XXX response
@@ -53,7 +53,11 @@ pub(super) fn build_response_from_status_code(
     status_code: StatusCode,
     err: String,
 ) -> Response<Body> {
-    Response::builder().status(status_code).body(Body::from(err)).unwrap()
+    Response::builder()
+        .status(status_code)
+        .header("Access-Control-Allow-Origin", "*")
+        .body(Body::from(err))
+        .unwrap()
 }
 
 /// Parse key value pairs from query params string
