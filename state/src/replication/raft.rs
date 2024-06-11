@@ -322,10 +322,6 @@ impl RaftClient {
                 .map_err(err_str!(ReplicationV2Error::Proposal))?;
         }
 
-        // TEMP: Log the resulting membership
-        let new_membership = self.membership();
-        info!("new membership: {new_membership}");
-
         Ok(())
     }
 
@@ -351,10 +347,6 @@ impl RaftClient {
                 .map_err(err_str!(ReplicationV2Error::Proposal))?;
         }
 
-        // TEMP: Log the resulting membership
-        let new_membership = self.membership();
-        info!("new membership: {new_membership}");
-
         Ok(())
     }
 
@@ -367,12 +359,9 @@ impl RaftClient {
 
         let existing_voters: HashSet<_> = members.voter_ids().collect();
         let existing_learners: HashSet<_> = members.learner_ids().collect();
-        let all_existing_peers: HashSet<_> =
-            existing_voters.union(&existing_learners).copied().collect();
 
         let voters_to_remove: Vec<_> = existing_voters.intersection(&peers).copied().collect();
         let learners_to_remove: Vec<_> = existing_learners.intersection(&peers).copied().collect();
-        let already_removed: Vec<_> = peers.difference(&all_existing_peers).copied().collect();
 
         // Remove voters
         if !voters_to_remove.is_empty() {
@@ -393,15 +382,6 @@ impl RaftClient {
                 .await
                 .map_err(err_str!(ReplicationV2Error::Proposal))?;
         }
-
-        // Inform about already-removed peers
-        for peer_id in already_removed {
-            info!("peer {peer_id} already removed, skipping proposal...");
-        }
-
-        // TEMP: Log the resulting membership
-        let new_membership = self.membership();
-        info!("new membership: {new_membership}");
 
         Ok(())
     }

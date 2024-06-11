@@ -11,7 +11,7 @@ use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
 use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
-use tracing::{info, instrument};
+use tracing::info;
 
 use crate::{
     error::StateError,
@@ -118,7 +118,6 @@ impl State {
         self.with_read_tx(move |tx| {
             let peers = tx.get_info_map()?;
             let orders = tx.get_all_orders()?;
-            let self_id = tx.get_peer_id()?;
 
             // Filter out cancelled orders & excluded peers
             let known_peers =
@@ -126,7 +125,7 @@ impl State {
             let known_orders =
                 orders.into_iter().filter(|order| !order.is_cancelled()).map(|o| o.id).collect();
 
-            Ok(HeartbeatMessage { known_peers, known_orders, self_id })
+            Ok(HeartbeatMessage { known_peers, known_orders })
         })
         .await
     }
@@ -136,16 +135,14 @@ impl State {
     // -----------
 
     /// Add a peer to the peer index
-    #[instrument(skip_all, err)]
     pub async fn add_peer(&self, peer: PeerInfo) -> Result<(), StateError> {
         self.add_peer_batch(vec![peer]).await
     }
 
     /// Add a batch of peers to the index
-    #[instrument(skip_all, err)]
     pub async fn add_peer_batch(&self, peers: Vec<PeerInfo>) -> Result<(), StateError> {
         for peer in &peers {
-            info!("Adding peer {} at {}", peer.peer_id, peer.addr);
+            info!("Adding peer {}", peer.peer_id);
         }
 
         // Index each peer, and return those that should be added as raft learners to

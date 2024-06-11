@@ -654,8 +654,10 @@ mod test {
         raft.add_node(learner_1).await;
         raft.add_node(learner_2).await;
 
-        let fut1 = tokio::spawn(async move { client.add_learner(learner_1, RaftNode::default()).await });
-        let fut2 = tokio::spawn(async move { client2.add_learner(learner_2, RaftNode::default()).await });
+        let fut1 =
+            tokio::spawn(async move { client.add_learner(learner_1, RaftNode::default()).await });
+        let fut2 =
+            tokio::spawn(async move { client2.add_learner(learner_2, RaftNode::default()).await });
 
         fut1.await.unwrap().unwrap();
         fut2.await.unwrap().unwrap();

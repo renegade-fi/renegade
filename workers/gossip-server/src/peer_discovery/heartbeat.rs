@@ -14,7 +14,7 @@ use gossip_api::{
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
-use tracing::{info, instrument, warn};
+use tracing::info;
 use util::{err_str, get_current_time_millis};
 
 use crate::{errors::GossipError, server::GossipProtocolExecutor};
@@ -67,20 +67,11 @@ impl GossipProtocolExecutor {
     // ---------------------
 
     /// Handle a heartbeat message from a peer
-    #[instrument(skip_all, err, fields(peer = %peer))]
     pub async fn handle_heartbeat(
         &self,
         peer: &WrappedPeerId,
         message: &HeartbeatMessage,
     ) -> Result<(), GossipError> {
-        info!("Received heartbeat from {peer}");
-        if peer != &message.self_id {
-            warn!(
-                "Heartbeat peer mismatch. libp2p sender: {peer}, payload sender: {}",
-                message.self_id
-            );
-        }
-
         // Record the heartbeat
         self.record_heartbeat(peer).await?;
 
