@@ -107,10 +107,10 @@ mod test {
     // Wallet update handlers in the applicator handle order history changes to
     // hide the wallet index/order history denormalization
 
-    use circuit_types::balance::Balance;
+    use circuit_types::{balance::Balance, fixed_point::FixedPoint};
     use common::types::{
         wallet::{
-            order_metadata::{OrderMetadata, OrderState},
+            order_metadata::{OrderMetadata, OrderState, PartialOrderFill},
             OrderIdentifier, WalletIdentifier,
         },
         wallet_mocks::{mock_empty_wallet, mock_order},
@@ -122,11 +122,12 @@ mod test {
 
     /// Create a set of mock historical orders
     fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &State) {
+        let fill = PartialOrderFill::new(1, FixedPoint::from_integer(5));
         let history = (0..n)
             .map(|_| OrderMetadata {
                 id: OrderIdentifier::new_v4(),
                 state: OrderState::Filled,
-                filled: 1,
+                fills: vec![fill],
                 created: 0,
                 data: mock_order(),
             })

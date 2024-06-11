@@ -338,10 +338,11 @@ impl SettleMatchInternalTask {
         self.state.nullify_orders(nullifier2).await?;
 
         // Transition the orders to the `Filled` state if necessary
-        record_order_fill(self.order_id1, &self.match_result, &self.state)
+        let price = self.execution_price;
+        record_order_fill(self.order_id1, &self.match_result, price, &self.state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
-        record_order_fill(self.order_id2, &self.match_result, &self.state)
+        record_order_fill(self.order_id2, &self.match_result, price, &self.state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
 

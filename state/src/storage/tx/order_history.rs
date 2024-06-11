@@ -116,6 +116,7 @@ impl<'db> StateTxn<'db, RW> {
 mod tests {
     use std::cmp::Reverse;
 
+    use circuit_types::fixed_point::FixedPoint;
     use common::types::{
         wallet::order_metadata::{OrderMetadata, OrderState},
         wallet_mocks::mock_order,
@@ -132,7 +133,7 @@ mod tests {
         OrderMetadata {
             id: Uuid::new_v4(),
             state: OrderState::Created,
-            filled: 0,
+            fills: vec![],
             created: rng.next_u64(),
             data: mock_order(),
         }
@@ -198,7 +199,9 @@ mod tests {
 
         // Update the order
         let mut updated_order = curr_order;
-        updated_order.filled = rng.gen();
+        let amount = rng.gen();
+        let price = FixedPoint::from_f64_round_down(100.2);
+        updated_order.record_partial_fill(amount, price);
 
         let tx = db.new_write_tx().unwrap();
         tx.update_order_metadata(&wallet_id, updated_order.clone()).unwrap();
