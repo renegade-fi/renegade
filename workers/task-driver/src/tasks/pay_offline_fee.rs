@@ -39,6 +39,10 @@ use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
 /// The name of the task
 const TASK_NAME: &str = "pay-offline-fee";
 
+/// Error message emitted when the fee amount in the descriptor is more than the
+/// fees owed
+const ERR_INVALID_FEE_AMOUNT: &str = "Fee amount in descriptor does not equal paid amount";
+
 // --------------
 // | Task State |
 // --------------
@@ -175,15 +179,14 @@ impl Task for PayOfflineFeeTask {
             .ok_or_else(|| PayOfflineFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
 
         // Construct the new wallet
-        let (note, new_wallet) = Self::get_wallet_and_note(
-            descriptor.is_protocol_fee,
-            &descriptor.balance_mint,
-            &old_wallet,
-        )?;
+        let (note, new_wallet) = Self::get_wallet_and_note(&descriptor, &old_wallet)?;
+        if descriptor.amount != note.amount {
+            return Err(PayOfflineFeeTaskError::State(ERR_INVALID_FEE_AMOUNT.to_string()));
+        }
 
         Ok(Self {
             is_protocol_fee: descriptor.is_protocol_fee,
-            mint: descriptor.balance_mint,
+            mint: descriptor.mint,
             old_wallet,
             new_wallet,
             note,
@@ -314,15 +317,14 @@ impl PayOfflineFeeTask {
 
     /// Clone the old wallet and update it to reflect the fee payment
     fn get_wallet_and_note(
-        is_protocol: bool,
-        mint: &BigUint,
+        descriptor: &PayOfflineFeeTaskDescriptor,
         old_wallet: &Wallet,
     ) -> Result<(Note, Wallet), PayOfflineFeeTaskError> {
         let mut new_wallet = old_wallet.clone();
         let balance = new_wallet
-            .get_balance_mut(mint)
+            .get_balance_mut(&descriptor.mint)
             .ok_or_else(|| PayOfflineFeeTaskError::State(ERR_BALANCE_MISSING.to_string()))?;
-        let note = if is_protocol {
+        let note = if descriptor.is_protocol_fee {
             balance.create_protocol_note(get_protocol_pubkey())
         } else {
             balance.create_relayer_note(old_wallet.managing_cluster)

@@ -1,7 +1,8 @@
 //! Types for task history storage
 
 use ark_mpc::PARTY1;
-use circuit_types::r#match::MatchResult;
+use circuit_types::{r#match::MatchResult, Amount};
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -46,7 +47,14 @@ pub enum HistoricalTaskDescription {
     /// A match was settled
     SettleMatch(MatchResult),
     /// A fee was paid
-    PayOfflineFee,
+    PayOfflineFee {
+        /// The mind the fee was paid from
+        mint: BigUint,
+        /// The amount of the fee
+        amount: Amount,
+        /// Whether the fee was paid for a protocol fee
+        is_protocol: bool,
+    },
 }
 
 impl HistoricalTaskDescription {
@@ -75,7 +83,11 @@ impl HistoricalTaskDescription {
                 match_res.direction = my_direction;
                 Some(Self::SettleMatch(match_res))
             },
-            TaskDescriptor::OfflineFee(_) => Some(Self::PayOfflineFee),
+            TaskDescriptor::OfflineFee(desc) => Some(Self::PayOfflineFee {
+                mint: desc.mint.clone(),
+                amount: desc.amount,
+                is_protocol: desc.is_protocol_fee,
+            }),
             _ => None,
         }
     }

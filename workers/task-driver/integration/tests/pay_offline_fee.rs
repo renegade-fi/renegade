@@ -51,9 +51,8 @@ async fn test_pay_offline_fees(test_args: IntegrationTestArgs) -> Result<()> {
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, &test_args).await?;
 
     // Pay the protocol fee
-    let descriptor =
-        PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet.wallet_id, bal.mint.clone())
-            .expect("infallible");
+    let descriptor = PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet.wallet_id, bal.clone())
+        .expect("infallible");
     await_task(descriptor.into(), &test_args).await?;
 
     // Check the wallet, first from global state
@@ -75,9 +74,8 @@ async fn test_pay_offline_fees(test_args: IntegrationTestArgs) -> Result<()> {
     lookup_wallet_and_check_result(&expected_wallet, blinder_seed, share_seed, &test_args).await?;
 
     // Now pay the relayer fee
-    let descriptor =
-        PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet.wallet_id, bal.mint.clone())
-            .expect("infallible");
+    let descriptor = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet.wallet_id, bal.clone())
+        .expect("infallible");
     await_task(descriptor.into(), &test_args).await?;
 
     // Check the wallet, first from global state

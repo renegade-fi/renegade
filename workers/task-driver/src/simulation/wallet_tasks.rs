@@ -172,7 +172,7 @@ fn simulate_offline_fee_payment(
 
     // Set the relevant fee to zero
     let balance = wallet
-        .get_balance_mut(&desc.balance_mint)
+        .get_balance_mut(&desc.mint)
         .ok_or(TaskSimulationError::InvalidTask(ERR_BALANCE_MISSING))?;
 
     if desc.is_protocol_fee {
