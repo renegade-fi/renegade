@@ -792,17 +792,18 @@ impl TypedHandler for PayFeesHandler {
 
         // Pay all fees in the wallet
         let mut tasks = Vec::new();
-        for (mint, balance) in wallet.balances.iter() {
+        for (_mint, balance) in wallet.balances.iter() {
             if balance.relayer_fee_balance > 0 {
-                let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, mint.clone())
+                let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, balance.clone())
                     .expect("infallible");
                 let task_id = append_task_and_await(task.into(), &self.state).await?;
                 tasks.push(task_id);
             }
 
             if balance.protocol_fee_balance > 0 {
-                let task = PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, mint.clone())
-                    .expect("infallible");
+                let task =
+                    PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, balance.clone())
+                        .expect("infallible");
                 let task_id = append_task_and_await(task.into(), &self.state).await?;
                 tasks.push(task_id);
             }

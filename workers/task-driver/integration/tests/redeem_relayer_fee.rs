@@ -68,7 +68,7 @@ async fn test_auto_redeem_relayer_fee(test_args: IntegrationTestArgs) -> Result<
 
     // Pay the relayer fee for the balance
     let descriptor =
-        PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet.wallet_id, bal.mint.clone()).unwrap();
+        PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet.wallet_id, bal.clone()).unwrap();
     await_task(descriptor.into(), &test_args).await?;
 
     // Await for the relayer's queue to flush

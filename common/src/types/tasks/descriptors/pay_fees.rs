@@ -1,5 +1,6 @@
 //! Task descriptors for paying fees
 
+use circuit_types::{balance::Balance, Amount};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
@@ -15,24 +16,33 @@ pub struct PayOfflineFeeTaskDescriptor {
     /// The wallet to pay fees for
     pub wallet_id: WalletIdentifier,
     /// The balance to pay fees for
-    pub balance_mint: BigUint,
+    pub mint: BigUint,
+    /// The amount of the mint paid as a fee
+    ///
+    /// For now, this is always set to the full balance and is only used for
+    /// informational purposes in API queries
+    pub amount: Amount,
 }
 
 impl PayOfflineFeeTaskDescriptor {
     /// Constructor for the relayer fee payment task
-    pub fn new_relayer_fee(
-        wallet_id: WalletIdentifier,
-        balance_mint: BigUint,
-    ) -> Result<Self, String> {
-        Ok(PayOfflineFeeTaskDescriptor { is_protocol_fee: false, wallet_id, balance_mint })
+    pub fn new_relayer_fee(wallet_id: WalletIdentifier, balance: Balance) -> Result<Self, String> {
+        Ok(PayOfflineFeeTaskDescriptor {
+            is_protocol_fee: false,
+            wallet_id,
+            mint: balance.mint,
+            amount: balance.relayer_fee_balance,
+        })
     }
 
     /// Constructor for the protocol fee payment task
-    pub fn new_protocol_fee(
-        wallet_id: WalletIdentifier,
-        balance_mint: BigUint,
-    ) -> Result<Self, String> {
-        Ok(PayOfflineFeeTaskDescriptor { is_protocol_fee: true, wallet_id, balance_mint })
+    pub fn new_protocol_fee(wallet_id: WalletIdentifier, balance: Balance) -> Result<Self, String> {
+        Ok(PayOfflineFeeTaskDescriptor {
+            is_protocol_fee: true,
+            wallet_id,
+            mint: balance.mint,
+            amount: balance.protocol_fee_balance,
+        })
     }
 }
 

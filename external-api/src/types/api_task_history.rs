@@ -79,7 +79,14 @@ pub enum ApiHistoricalTaskDescription {
     /// A match was settled
     SettleMatch(ApiHistoricalMatch),
     /// A fee was paid
-    PayOfflineFee,
+    PayOfflineFee {
+        /// The mint of the fee
+        mint: String,
+        /// The amount of the fee
+        amount: Number,
+        /// Whether the fee was paid for a protocol fee
+        is_protocol: bool,
+    },
 }
 
 impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
@@ -92,7 +99,13 @@ impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
             HistoricalTaskDescription::SettleMatch(match_result) => {
                 Self::SettleMatch(match_result.into())
             },
-            HistoricalTaskDescription::PayOfflineFee => Self::PayOfflineFee,
+            HistoricalTaskDescription::PayOfflineFee { mint, amount, is_protocol } => {
+                Self::PayOfflineFee {
+                    mint: biguint_to_hex_string(&mint),
+                    amount: u128_to_number(amount),
+                    is_protocol,
+                }
+            },
         }
     }
 }
