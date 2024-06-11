@@ -9,7 +9,7 @@
 use std::{collections::HashMap, fmt::Debug, path::Path, str::FromStr};
 
 use aws_config::Region;
-use aws_sdk_s3::Client as S3Client;
+use aws_sdk_s3::{error::SdkError, Client as S3Client};
 use config::parsing::parse_config_from_file;
 use tokio::{fs, io::AsyncWriteExt, process::Command};
 use toml::Value;
@@ -48,6 +48,13 @@ const CONFIG_WS_PORT: &str = "websocket-port";
 const CONFIG_P2P_PORT: &str = "p2p-port";
 /// The public IP key name in the relayer config
 const CONFIG_PUBLIC_IP: &str = "public-ip";
+/// The fee whitelist key name in the relayer config
+const CONFIG_FEE_WHITELIST: &str = "relayer-fee-whitelist";
+
+/// The name of the file in the s3 bucket
+const WHITELIST_FILE_NAME: &str = "fee-whitelist.json";
+/// The path at which the relayer expects the whitelist
+const WHITELIST_PATH: &str = "/whitelist.json";
 
 /// The default AWS region to build an s3 client
 const DEFAULT_AWS_REGION: &str = "us-east-2";
@@ -67,8 +74,9 @@ async fn main() -> Result<(), String> {
     let s3_client = build_s3_client().await;
 
     // Fetch the config, modify it, and download the most recent snapshot
+    let whitelist = fetch_fee_whitelist(&s3_client).await?;
     fetch_config(&s3_client).await?;
-    modify_config().await?;
+    modify_config(whitelist).await?;
     download_snapshot(&s3_client).await?;
 
     // Start both the snapshot sidecar and the relayer
@@ -102,7 +110,7 @@ async fn fetch_config(s3: &S3Client) -> Result<(), String> {
 }
 
 /// Modify the config using environment variables set at runtime
-async fn modify_config() -> Result<(), String> {
+async fn modify_config(whitelist_path: Option<String>) -> Result<(), String> {
     // Read the config file
     let config_content = fs::read_to_string(CONFIG_PATH)
         .await
@@ -123,12 +131,35 @@ async fn modify_config() -> Result<(), String> {
         config.insert(CONFIG_PUBLIC_IP.to_string(), public_ip);
     }
 
+    if let Some(path) = whitelist_path {
+        let val = Value::String(path);
+        config.insert(CONFIG_FEE_WHITELIST.to_string(), val);
+    }
+
     // Write the modified config back to the original file
     let new_config_content =
         toml::to_string(&config).map_err(raw_err_str!("Failed to serialize config: {}"))?;
     fs::write(CONFIG_PATH, new_config_content)
         .await
         .map_err(raw_err_str!("Failed to write config file: {}"))
+}
+
+/// Fetch the fee whitelist file from s3
+///
+/// Returns the path at which the whitelist was downloaded, or None if it
+/// doesn't exist
+async fn fetch_fee_whitelist(s3: &S3Client) -> Result<Option<String>, String> {
+    let bucket = read_env_var::<String>(ENV_CONFIG_BUCKET)?;
+
+    // Check if a whitelist file exists
+    match s3.head_object().bucket(bucket.clone()).key(WHITELIST_FILE_NAME).send().await {
+        Ok(_) => {},
+        Err(SdkError::ServiceError(e)) if e.err().is_not_found() => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+
+    download_s3_file(&bucket, WHITELIST_FILE_NAME, WHITELIST_PATH, s3).await?;
+    Ok(Some(WHITELIST_PATH.to_string()))
 }
 
 /// Download the most recent snapshot
