@@ -13,7 +13,7 @@ use gossip_api::{
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use renegade_metrics::helpers::record_num_peers_metrics;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 use util::{err_str, get_current_time_millis};
 
 use crate::{errors::GossipError, server::GossipProtocolExecutor};
@@ -44,6 +44,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a bootstrap request from a peer    
+    #[instrument(skip_all, err)]
     pub async fn handle_bootstrap_req(
         &self,
         req: BootstrapRequest,
@@ -128,6 +129,7 @@ impl GossipProtocolExecutor {
     // ---------------------
 
     /// Handles a response to a request for peer info
+    #[instrument(skip_all, err)]
     pub async fn handle_peer_info_resp(&self, peer_info: Vec<PeerInfo>) -> Result<(), GossipError> {
         self.add_new_peers(peer_info).await
     }
@@ -141,6 +143,7 @@ impl GossipProtocolExecutor {
     /// a heartbeat may not have expired the faulty peer yet, and may still
     /// send the faulty peer as a known peer. So we
     /// exclude thought-to-be-faulty peers for an "invisibility window"
+    #[instrument(skip_all, err)]
     async fn add_new_peers(&self, peers: Vec<PeerInfo>) -> Result<(), GossipError> {
         if peers.is_empty() {
             return Ok(());
