@@ -25,7 +25,7 @@ use job_types::{
 };
 use state::State;
 use std::thread::JoinHandle;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 use util::err_str;
 
 use crate::peer_discovery::{
@@ -209,6 +209,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a gossip request type from a peer
+    #[instrument(skip_all, err, fields(peer = %peer))]
     async fn handle_request(
         &self,
         peer: WrappedPeerId,
@@ -229,6 +230,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a gossip response type from a peer
+    #[instrument(skip_all, err, fields(peer = %peer))]
     async fn handle_response(
         &self,
         peer: WrappedPeerId,

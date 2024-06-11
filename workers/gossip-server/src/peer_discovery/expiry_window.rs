@@ -63,8 +63,6 @@ impl<T: Hash + Eq + PartialEq> TimeWindowBuffer<T> {
     }
 
     /// Adds a key to the buffer
-    ///
-    /// Does not replace existing windows
     pub async fn add(&self, key: T, dur: Duration) {
         let expiry_time = Instant::now() + dur;
         let mut this = self.write_windows().await;
