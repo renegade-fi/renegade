@@ -78,17 +78,7 @@ impl GossipProtocolExecutor {
         if time_since_last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 2 {
             info!("rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago");
 
-            // The peer should not expire yet, send a rejection
-            let cluster_id = self.state.get_cluster_id().await?;
-            let topic = cluster_id.get_management_topic();
-            let message_type = ClusterManagementMessageType::RejectExpiry {
-                peer_id,
-                last_heartbeat: info.last_heartbeat,
-            };
-
-            let msg = PubsubMessage::Cluster(ClusterManagementMessage { cluster_id, message_type });
-            let job = NetworkManagerJob::pubsub(topic, msg);
-            self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))?;
+            self.send_expiry_rejection(peer_id, info.last_heartbeat).await?;
         } else {
             // If we do not reject the expiry, begin expiring on the local node
             info!("received expiry request, marking {peer_id} as expiry candidate");
@@ -163,6 +153,11 @@ impl GossipProtocolExecutor {
                 continue;
             }
 
+            // Check that the peer is not already in the peer index
+            if self.state.get_peer_info(&peer.peer_id).await?.is_some() {
+                continue;
+            }
+
             filtered_peers.push(peer);
         }
 
@@ -189,5 +184,20 @@ impl GossipProtocolExecutor {
         }
 
         Ok(())
+    }
+
+    /// Send a rejection for a proposed expiry
+    pub(crate) async fn send_expiry_rejection(
+        &self,
+        peer_id: WrappedPeerId,
+        last_heartbeat: u64,
+    ) -> Result<(), GossipError> {
+        let cluster_id = self.state.get_cluster_id().await?;
+        let topic = cluster_id.get_management_topic();
+        let message_type = ClusterManagementMessageType::RejectExpiry { peer_id, last_heartbeat };
+
+        let msg = PubsubMessage::Cluster(ClusterManagementMessage { cluster_id, message_type });
+        let job = NetworkManagerJob::pubsub(topic, msg);
+        self.network_channel.send(job).map_err(err_str!(GossipError::SendMessage))
     }
 }

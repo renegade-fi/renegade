@@ -54,7 +54,7 @@ impl GossipProtocolExecutor {
             return Ok(());
         }
 
-        let heartbeat_message = self.state.construct_heartbeat().await?;
+        let heartbeat_message = self.build_heartbeat().await?;
         let msg = GossipRequestType::Heartbeat(heartbeat_message);
         let job = NetworkManagerJob::request(recipient_peer_id, msg);
 
@@ -83,6 +83,15 @@ impl GossipProtocolExecutor {
 
         // Record the heartbeat
         self.record_heartbeat(peer).await?;
+
+        // If peer is an expiry candidate, remove it, & send expiry rejection to other
+        // peers
+        if self.expiry_buffer.is_expiry_candidate(peer).await {
+            self.expiry_buffer.remove_expiry_candidate(*peer).await;
+            if let Some(peer_info) = self.state.get_peer_info(peer).await? {
+                self.send_expiry_rejection(*peer, peer_info.last_heartbeat).await?;
+            }
+        }
 
         // Merge the peer and order info from the heartbeat into the local state
         self.request_missing_orders(peer, message).await?;
@@ -131,7 +140,8 @@ impl GossipProtocolExecutor {
 
     /// Build a heartbeat message
     pub async fn build_heartbeat(&self) -> Result<HeartbeatMessage, GossipError> {
-        Ok(self.state.construct_heartbeat().await?)
+        let expiry_candidates = self.expiry_buffer.get_candidates().await;
+        Ok(self.state.construct_heartbeat(expiry_candidates).await?)
     }
 
     // --- Peer Expiry --- //
