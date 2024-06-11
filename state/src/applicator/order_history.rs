@@ -52,6 +52,7 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod tests {
+    use circuit_types::fixed_point::FixedPoint;
     use common::types::{wallet::order_metadata::OrderState, wallet_mocks::mock_order};
     use uuid::Uuid;
 
@@ -73,7 +74,7 @@ mod tests {
             id: order_id,
             data: order,
             state: OrderState::Created,
-            filled: 0,
+            fills: vec![],
             created: 1,
         };
         let tx = db.new_write_tx().unwrap();
@@ -84,12 +85,12 @@ mod tests {
         tx.commit().unwrap();
 
         // Modify the metadata and push
-        md.filled += 1;
+        md.record_partial_fill(1, FixedPoint::from_f64_round_down(2.));
         applicator.update_order_metadata(md).unwrap();
 
         // Check the state
         let tx = db.new_read_tx().unwrap();
         let md = tx.get_order_metadata(wallet_id, order_id).unwrap().unwrap();
-        assert_eq!(md.filled, 1);
+        assert_eq!(md.total_filled(), 1);
     }
 }

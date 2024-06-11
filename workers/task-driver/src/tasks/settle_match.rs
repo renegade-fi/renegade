@@ -293,9 +293,14 @@ impl SettleMatchTask {
 
         // Transition the order state to filled if the new volume is zero
         let id = self.handshake_state.local_order_id;
-        record_order_fill(id, &self.match_res, &self.global_state)
-            .await
-            .map_err(SettleMatchTaskError::State)?;
+        record_order_fill(
+            id,
+            &self.match_res,
+            self.handshake_state.execution_price,
+            &self.global_state,
+        )
+        .await
+        .map_err(SettleMatchTaskError::State)?;
 
         // Update the shares of the wallet
         let (private_shares, blinded_public_shares) = self.get_new_shares().await?;

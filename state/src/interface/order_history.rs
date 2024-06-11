@@ -63,6 +63,7 @@ impl State {
 pub mod test {
     use std::cmp::Reverse;
 
+    use circuit_types::fixed_point::FixedPoint;
     use common::types::{wallet::order_metadata::OrderState, wallet_mocks::mock_order};
     use itertools::Itertools;
     use rand::{seq::IteratorRandom, thread_rng, RngCore};
@@ -79,7 +80,7 @@ pub mod test {
             id: OrderIdentifier::new_v4(),
             data,
             state: OrderState::Created,
-            filled: 0,
+            fills: vec![],
             created: rng.next_u64(),
         }
     }
@@ -130,7 +131,9 @@ pub mod test {
         // Modify a single order's metadata
         let idx = (0..orders.len()).choose(&mut thread_rng()).unwrap();
         let mut meta = orders[idx].clone();
-        meta.filled += 1;
+        let amount = 1;
+        let price = FixedPoint::from_f64_round_down(10.);
+        meta.record_partial_fill(amount, price);
 
         // Update and retrieve the order's metadata
         let waiter = state.update_order_metadata(meta.clone()).await.unwrap();
