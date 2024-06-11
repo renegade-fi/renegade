@@ -12,10 +12,10 @@ use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 /// The amount of time other cluster peers are allowed to give liveness
 /// attestations for an expiry candidate
-pub(crate) const EXPIRY_CANDIDATE_WINDOW_MS: u64 = 10_000; // 10 seconds
+pub(crate) const EXPIRY_CANDIDATE_WINDOW_MS: u64 = 15_000; // 15 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
-pub(crate) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 30_000; // 30 seconds
+pub(crate) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 60_000; // 1 minute
 
 /// A buffer of time windows
 #[derive(Clone)]
@@ -105,6 +105,11 @@ impl PeerExpiryWindows {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self { candidates: TimeWindowBuffer::new(), invisibility: TimeWindowBuffer::new() }
+    }
+
+    /// Get all of the expiry candidates
+    pub async fn get_candidates(&self) -> Vec<WrappedPeerId> {
+        self.candidates.read_windows().await.keys().cloned().collect()
     }
 
     /// Check the expiry candidacy of a peer

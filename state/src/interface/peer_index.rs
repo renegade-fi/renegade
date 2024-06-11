@@ -108,17 +108,21 @@ impl State {
         .await
     }
 
-    /// Construct a heartbeat message from the state
+    /// Construct a heartbeat message from the state, omitting the given peers
     ///
     /// TODO: Cache this if it becomes a bottleneck
-    pub async fn construct_heartbeat(&self) -> Result<HeartbeatMessage, StateError> {
+    pub async fn construct_heartbeat(
+        &self,
+        excluded_peers: Vec<WrappedPeerId>,
+    ) -> Result<HeartbeatMessage, StateError> {
         self.with_read_tx(move |tx| {
             let peers = tx.get_info_map()?;
             let orders = tx.get_all_orders()?;
             let self_id = tx.get_peer_id()?;
 
-            // Filter out cancelled orders
-            let known_peers = peers.into_keys().collect_vec();
+            // Filter out cancelled orders & excluded peers
+            let known_peers =
+                peers.into_keys().filter(|peer| !excluded_peers.contains(peer)).collect_vec();
             let known_orders =
                 orders.into_iter().filter(|order| !order.is_cancelled()).map(|o| o.id).collect();
 
