@@ -184,7 +184,7 @@ impl RaftClient {
     }
 
     /// Get the membership of the cluster
-    fn membership(&self) -> Membership<NodeId, Node> {
+    pub(crate) fn membership(&self) -> Membership<NodeId, Node> {
         let metrics = self.metrics();
         metrics.membership_config.membership().clone()
     }

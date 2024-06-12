@@ -1,6 +1,6 @@
 //! Helpers for tracking peer metrics
 
-use renegade_metrics::labels::{NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC};
+use renegade_metrics::labels::{NUM_LOCAL_PEERS_METRIC, NUM_REMOTE_PEERS_METRIC, RAFT_CLUSTER_SIZE_METRIC};
 use state::{error::StateError, State};
 use tracing::error;
 
@@ -23,6 +23,9 @@ pub async fn record_num_peers_metrics(state: &State) {
         },
     };
 
+    let raft_cluster_size = state.raft_cluster_size();
+
     metrics::gauge!(NUM_LOCAL_PEERS_METRIC).set(num_local_peers as f64);
     metrics::gauge!(NUM_REMOTE_PEERS_METRIC).set(num_remote_peers as f64);
+    metrics::gauge!(RAFT_CLUSTER_SIZE_METRIC).set(raft_cluster_size as f64);
 }

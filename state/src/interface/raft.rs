@@ -78,4 +78,11 @@ impl State {
             bincode::deserialize(&msg_bytes).map_err(err_str!(StateError::Serde))?;
         self.raft.handle_raft_request(msg).await.map_err(StateError::Replication)
     }
+
+    // --- Raft Metrics --- //
+
+    /// Returns the local node's view of the raft cluster size
+    pub fn raft_cluster_size(&self) -> usize {
+        self.raft.membership().nodes().count()
+    }
 }
