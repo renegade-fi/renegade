@@ -15,7 +15,7 @@ use common::types::{
 };
 use external_api::{
     http::{
-        admin::IS_LEADER_ROUTE,
+        admin::{ADMIN_OPEN_ORDERS_ROUTE, IS_LEADER_ROUTE},
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
@@ -54,6 +54,7 @@ use crate::{
 };
 
 use self::{
+    admin::AdminOpenOrdersHandler,
     network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
     order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
     price_report::PriceReportHandler,
@@ -390,7 +391,14 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             IS_LEADER_ROUTE.to_string(),
-            IsLeaderHandler::new(state),
+            IsLeaderHandler::new(state.clone()),
+        );
+
+        // The "/admin/open-orders" route
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_OPEN_ORDERS_ROUTE.to_string(),
+            AdminOpenOrdersHandler::new(state),
         );
 
         router

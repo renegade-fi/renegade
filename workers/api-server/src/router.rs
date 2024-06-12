@@ -370,7 +370,7 @@ impl Router {
                     .await?;
             },
             AuthType::Admin => {
-                self.auth_middleware.authenticate_admin_request(req.headers(), &req_body).await?;
+                self.auth_middleware.authenticate_admin_request(req.headers(), &req_body)?;
             },
             AuthType::None => unreachable!(),
         }
