@@ -203,10 +203,23 @@ impl RaftClient {
         Some((leader_nid, leader_info))
     }
 
+    /// Whether the local node is the leader
+    pub(crate) fn is_leader(&self) -> bool {
+        match self.leader_info() {
+            Some((leader_id, _)) => self.node_id() == leader_id,
+            None => false,
+        }
+    }
+
     /// Get the ids of the learners in the raft
     fn learners(&self) -> Vec<NodeId> {
         let metrics = self.metrics();
         metrics.membership_config.membership().learner_ids().collect()
+    }
+
+    /// Returns the local node's view of the raft cluster size
+    pub(crate) fn cluster_size(&self) -> usize {
+        self.membership().nodes().count()
     }
 
     /// Check for a panic in the raft core

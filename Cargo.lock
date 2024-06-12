@@ -8389,6 +8389,7 @@ dependencies = [
  "num-bigint",
  "openraft",
  "rand 0.8.5",
+ "renegade-metrics",
  "serde",
  "serde_json",
  "slog",

@@ -31,10 +31,7 @@ impl State {
 
     /// Whether the local node is the leader
     pub fn is_leader(&self) -> bool {
-        match self.raft.leader_info() {
-            Some((leader_id, _)) => self.raft.node_id() == leader_id,
-            None => false,
-        }
+        self.raft.is_leader()
     }
 
     /// Get the leader of the raft
@@ -77,12 +74,5 @@ impl State {
         let msg: RaftRequest =
             bincode::deserialize(&msg_bytes).map_err(err_str!(StateError::Serde))?;
         self.raft.handle_raft_request(msg).await.map_err(StateError::Replication)
-    }
-
-    // --- Raft Metrics --- //
-
-    /// Returns the local node's view of the raft cluster size
-    pub fn raft_cluster_size(&self) -> usize {
-        self.raft.membership().nodes().count()
     }
 }
