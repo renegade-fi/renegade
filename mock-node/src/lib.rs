@@ -473,7 +473,7 @@ impl MockNodeController {
     pub fn with_api_server(self) -> Self {
         let config = &self.config;
         let network_sender = self.network_queue.0.clone();
-        let global_state = self.state.clone().expect("State not initialized");
+        let state = self.state.clone().expect("State not initialized");
         let system_bus = self.bus.clone();
         let price_reporter_work_queue = self.price_queue.0.clone();
         let proof_generation_work_queue = self.proof_queue.0.clone();
@@ -482,8 +482,9 @@ impl MockNodeController {
         let conf = ApiServerConfig {
             http_port: config.http_port,
             websocket_port: config.websocket_port,
+            admin_api_key: config.admin_api_key,
             network_sender,
-            global_state,
+            state,
             system_bus,
             price_reporter_work_queue,
             proof_generation_work_queue,

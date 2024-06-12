@@ -1,6 +1,6 @@
 //! The request/response API types for the gossip protocol
 
-use common::types::gossip::ClusterSymmetricKey;
+use common::types::gossip::SymmetricAuthKey;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use util::telemetry::propagation::{trace_context_headers, TraceContextHeaders};
@@ -36,7 +36,7 @@ impl AuthenticatedGossipRequest {
     ///
     /// Attaches a signature of the body using the given cluster private key
     /// if one is necessary
-    pub fn new_with_body(req: GossipRequest, cluster_key: &ClusterSymmetricKey) -> Self {
+    pub fn new_with_body(req: GossipRequest, cluster_key: &SymmetricAuthKey) -> Self {
         // Create a signature fo the body
         let sig = if req.requires_cluster_auth() {
             create_hmac(&req.body, cluster_key)
@@ -49,7 +49,7 @@ impl AuthenticatedGossipRequest {
 
     /// Verify the signature on an authenticated request
     #[instrument(name = "verify_cluster_auth", skip_all)]
-    pub fn verify_cluster_auth(&self, key: &ClusterSymmetricKey) -> bool {
+    pub fn verify_cluster_auth(&self, key: &SymmetricAuthKey) -> bool {
         if !self.inner.requires_cluster_auth() {
             return true;
         }
@@ -177,7 +177,7 @@ impl AuthenticatedGossipResponse {
     /// Constructs a new authenticated gossip request given the request body.
     /// Attaches a signature of the body using the given cluster private key
     /// if one is necessary
-    pub fn new_with_body(req: GossipResponse, cluster_key: &ClusterSymmetricKey) -> Self {
+    pub fn new_with_body(req: GossipResponse, cluster_key: &SymmetricAuthKey) -> Self {
         // Create a signature fo the body
         let sig = if req.requires_cluster_auth() {
             create_hmac(&req.body, cluster_key)
@@ -190,7 +190,7 @@ impl AuthenticatedGossipResponse {
 
     /// Verify the signature on an authenticated request
     #[instrument(name = "verify_cluster_auth")]
-    pub fn verify_cluster_auth(&self, cluster_key: &ClusterSymmetricKey) -> bool {
+    pub fn verify_cluster_auth(&self, cluster_key: &SymmetricAuthKey) -> bool {
         if !self.inner.requires_cluster_auth() {
             return true;
         }

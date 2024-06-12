@@ -18,9 +18,8 @@ use tracing::info;
 use tungstenite::Message;
 
 use crate::{
-    auth::authenticate_wallet_request,
+    auth::AuthMiddleware,
     error::{bad_request, not_found},
-    router::ERR_WALLET_NOT_FOUND,
 };
 
 use self::{
@@ -84,13 +83,16 @@ pub struct WebsocketServer {
     config: ApiServerConfig,
     /// The router that dispatches incoming subscribe/unsubscribe messages
     router: Arc<WebsocketRouter>,
+    /// The authentication middleware
+    auth_middleware: AuthMiddleware,
 }
 
 impl WebsocketServer {
     /// Create a new websocket server
     pub fn new(config: ApiServerConfig) -> Self {
         let router = Arc::new(Self::setup_routes(&config));
-        Self { config, router }
+        let auth_middleware = AuthMiddleware::new(config.admin_api_key, config.state.clone());
+        Self { config, router, auth_middleware }
     }
 
     /// Setup the websocket routes for the server
@@ -113,10 +115,7 @@ impl WebsocketServer {
         router
             .insert(
                 WALLET_ROUTE,
-                Box::new(WalletTopicHandler::new(
-                    config.global_state.clone(),
-                    config.system_bus.clone(),
-                )),
+                Box::new(WalletTopicHandler::new(config.state.clone(), config.system_bus.clone())),
             )
             .unwrap();
 
@@ -124,10 +123,7 @@ impl WebsocketServer {
         router
             .insert(
                 WALLET_ORDERS_ROUTE,
-                Box::new(OrderStatusHandler::new(
-                    config.global_state.clone(),
-                    config.system_bus.clone(),
-                )),
+                Box::new(OrderStatusHandler::new(config.state.clone(), config.system_bus.clone())),
             )
             .unwrap();
 
@@ -170,10 +166,7 @@ impl WebsocketServer {
         router
             .insert(
                 TASK_STATUS_ROUTE,
-                Box::new(TaskStatusHandler::new(
-                    config.global_state.clone(),
-                    config.system_bus.clone(),
-                )),
+                Box::new(TaskStatusHandler::new(config.state.clone(), config.system_bus.clone())),
             )
             .unwrap();
 
@@ -181,10 +174,7 @@ impl WebsocketServer {
         router
             .insert(
                 TASK_HISTORY_ROUTE,
-                Box::new(TaskHistoryHandler::new(
-                    config.global_state.clone(),
-                    config.system_bus.clone(),
-                )),
+                Box::new(TaskHistoryHandler::new(config.state.clone(), config.system_bus.clone())),
             )
             .unwrap();
 
@@ -383,20 +373,13 @@ impl WebsocketServer {
         let headers: HeaderMap<HeaderValue> = HeaderMap::try_from(&message.headers)
             .map_err(|_| bad_request(ERR_HEADER_PARSE.to_string()))?;
 
-        // Look up the verification key in the global state
-        let wallet = self
-            .config
-            .global_state
-            .get_wallet(&wallet_id)
-            .await?
-            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
-        let pk_root = wallet.key_chain.public_keys.pk_root;
-
         // Serialize the body to bytes
         let body_serialized =
             serde_json::to_vec(&message.body).expect("re-serialization should not fail");
 
-        authenticate_wallet_request(&headers, &body_serialized, &pk_root)
+        self.auth_middleware
+            .authenticate_wallet_request(wallet_id, &headers, &body_serialized)
+            .await
     }
 
     /// Push an internal event that the client is subscribed to onto the

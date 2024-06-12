@@ -27,15 +27,15 @@ const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 #[derive(Clone)]
 pub struct WalletTopicHandler {
     /// A copy of the relayer global state
-    global_state: State,
+    state: State,
     /// A reference to the relayer global system bus
     system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl WalletTopicHandler {
     /// Constructor
-    pub fn new(global_state: State, system_bus: SystemBus<SystemBusMessage>) -> Self {
-        Self { global_state, system_bus }
+    pub fn new(state: State, system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self { state, system_bus }
     }
 }
 
@@ -51,7 +51,7 @@ impl WebsocketTopicHandler for WalletTopicHandler {
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 
         // If the wallet doesn't exist, throw an error
-        if self.global_state.get_wallet(&wallet_id).await?.is_none() {
+        if self.state.get_wallet(&wallet_id).await?.is_none() {
             return Err(not_found(ERR_WALLET_NOT_FOUND.to_string()));
         }
 

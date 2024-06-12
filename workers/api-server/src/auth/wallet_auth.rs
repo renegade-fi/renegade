@@ -1,30 +1,22 @@
-//! Defines authentication primitives for the API server
-
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+//! Authentication for wallet requests based on signatures with `pk_root`
 
 use base64::engine::{general_purpose as b64_general_purpose, Engine};
 use circuit_types::keychain::PublicSigningKey;
-use external_api::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};
+use external_api::RENEGADE_AUTH_HEADER_NAME;
 use hyper::HeaderMap;
 use k256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
 
 use crate::error::{bad_request, unauthorized, ApiServerError};
 
+use super::helpers::{check_auth_timestamp, parse_sig_expiration};
+
 /// Error displayed when the signature format is invalid
 const ERR_SIG_FORMAT_INVALID: &str = "signature format invalid";
 /// Error displayed when the signature header is missing
 const ERR_SIG_HEADER_MISSING: &str = "signature missing from headers";
-/// Error displayed when the signature expiration header is missing
-const ERR_SIG_EXPIRATION_MISSING: &str = "signature expiration missing from headers";
-/// Error displayed when the expiration format is invalid
-const ERR_EXPIRATION_FORMAT_INVALID: &str = "could not parse signature expiration timestamp";
-/// Error displayed when a signature has expired
-const ERR_EXPIRED: &str = "signature expired";
 /// Error displayed when signature verification fails on a request
 const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
 
-/// Authenticates a wallet request using the given key
-///
 /// The signatures are over `secp256k1`, and have an expiration attached that
 /// determines the duration of their validity
 pub fn authenticate_wallet_request(
@@ -34,17 +26,7 @@ pub fn authenticate_wallet_request(
 ) -> Result<(), ApiServerError> {
     // Parse the signature and the expiration timestamp from the header
     let signature = parse_signature_from_header(headers)?;
-    let sig_expiration = headers
-        .get(RENEGADE_SIG_EXPIRATION_HEADER_NAME)
-        .ok_or_else(|| bad_request(ERR_SIG_EXPIRATION_MISSING.to_string()))?;
-
-    // Parse the expiration into a timestamp
-    let expiration = sig_expiration
-        .to_str()
-        .map_err(|_| bad_request(ERR_EXPIRATION_FORMAT_INVALID.to_string()))
-        .and_then(|s| {
-            s.parse::<u64>().map_err(|_| bad_request(ERR_EXPIRATION_FORMAT_INVALID.to_string()))
-        })?;
+    let expiration = parse_sig_expiration(headers)?;
 
     // Recover a public key from the byte packed scalar representing the public key
     let root_key: VerifyingKey = pk_root.into();
@@ -76,14 +58,7 @@ fn validate_expiring_signature(
     signature: &Signature,
     pk_root: &VerifyingKey,
 ) -> Result<(), ApiServerError> {
-    // Check the expiration timestamp
-    let now = SystemTime::now();
-    let target_duration = Duration::from_millis(expiration_timestamp);
-    let target_time = UNIX_EPOCH + target_duration;
-
-    if now >= target_time {
-        return Err(unauthorized(ERR_EXPIRED.to_string()));
-    }
+    check_auth_timestamp(expiration_timestamp)?;
 
     let msg_bytes = [body, &expiration_timestamp.to_le_bytes()].concat();
     pk_root

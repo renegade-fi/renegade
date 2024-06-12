@@ -9,7 +9,7 @@ use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
     new_async_shared,
     types::{
-        gossip::{ClusterSymmetricKey, WrappedPeerId},
+        gossip::{SymmetricAuthKey, WrappedPeerId},
         CancelChannel,
     },
     AsyncShared,
@@ -97,7 +97,7 @@ pub(super) struct NetworkManagerExecutor {
     /// The peer ID of the local node
     local_peer_id: WrappedPeerId,
     /// The local cluster's keypair, used to sign and authenticate requests
-    cluster_key: ClusterSymmetricKey,
+    cluster_key: SymmetricAuthKey,
     /// Whether or not to allow peer discovery on the local node
     allow_local: bool,
     /// Whether the network manager has discovered the local peer's public,
@@ -138,7 +138,7 @@ impl NetworkManagerExecutor {
         p2p_port: u16,
         local_peer_id: WrappedPeerId,
         allow_local: bool,
-        cluster_key: ClusterSymmetricKey,
+        cluster_key: SymmetricAuthKey,
         job_channel: NetworkManagerReceiver,
         gossip_work_queue: GossipServerQueue,
         handshake_work_queue: HandshakeManagerQueue,
