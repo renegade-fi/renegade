@@ -289,11 +289,10 @@ impl StateApplicator {
         // case one has been cleared
         let mut executor = None;
         for key in keys.iter() {
-            let task_id = tx
-                .get_queued_tasks(key)?
-                .first()
-                .map(|t| t.id)
-                .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
+            let task_id = match tx.get_queued_tasks(key)?.first().map(|t| t.id) {
+                Some(t) => t,
+                None => continue,
+            };
 
             if let Some(exec) = tx.get_task_assignment(&task_id)? {
                 executor = Some(exec);
@@ -390,7 +389,7 @@ impl StateApplicator {
             // error in the case described
             let queue_key = tx
                 .get_queue_key_for_task(&task_id)?
-                .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_NO_KEY))?;
+                .ok_or_else(|| StateApplicatorError::Rejected(ERR_NO_KEY.to_string()))?;
             tx.transition_task(&queue_key, new_running_state())?;
             self.maybe_start_task(&task, &tx)?;
         }
