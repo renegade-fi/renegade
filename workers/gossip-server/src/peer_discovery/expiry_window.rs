@@ -12,7 +12,7 @@ use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 /// The amount of time other cluster peers are allowed to give liveness
 /// attestations for an expiry candidate
-pub(crate) const EXPIRY_CANDIDATE_WINDOW_MS: u64 = 15_000; // 15 seconds
+pub(crate) const EXPIRY_CANDIDATE_WINDOW_MS: u64 = 10_000; // 10 seconds
 /// The minimum amount of time between a peer's expiry and when it can be
 /// added back to the peer info
 pub(crate) const EXPIRY_INVISIBILITY_WINDOW_MS: u64 = 60_000; // 1 minute

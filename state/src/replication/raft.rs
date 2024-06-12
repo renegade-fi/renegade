@@ -306,9 +306,9 @@ impl RaftClient {
         // Only add learners that haven't already been added
         let membership = self.membership();
         let mut to_add = Vec::new();
-        for learner in learners {
-            if membership.get_node(&learner.0).is_none() {
-                to_add.push(learner);
+        for (node_id, info) in learners {
+            if membership.get_node(&node_id).is_none() {
+                to_add.push((node_id, info));
             }
         }
 

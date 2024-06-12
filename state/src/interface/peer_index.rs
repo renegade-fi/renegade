@@ -152,12 +152,18 @@ impl State {
             .with_write_tx(move |tx| {
                 let my_id = tx.get_peer_id()?;
                 let mut learners = Vec::new();
-                for peer in peers.into_iter() {
+                for mut peer in peers.into_iter() {
                     let is_me = peer.peer_id == my_id;
 
                     // Do not index the peer if the given address is not dialable
                     if !peer.is_dialable(this.allow_local) {
                         continue;
+                    }
+
+                    // If the peer is already indexed, persist the existing `last_heartbeat`
+                    // to maintain an accurate local view of liveness
+                    if let Some(existing_peer) = tx.get_peer_info(&peer.peer_id)? {
+                        peer.last_heartbeat = existing_peer.last_heartbeat;
                     }
 
                     // Add the peer to the store

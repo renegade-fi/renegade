@@ -150,11 +150,6 @@ impl GossipProtocolExecutor {
                 continue;
             }
 
-            // Check that the peer is not already in the peer index
-            if self.state.get_peer_info(&peer.peer_id).await?.is_some() {
-                continue;
-            }
-
             filtered_peers.push(peer);
         }
 
