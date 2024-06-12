@@ -7,7 +7,7 @@ edition = "2021"
 # Used to enable mocks from other crates in tests
 all-tests = ["common/mocks"]
 mocks = ["dep:tempfile", "dep:test-helpers"]
-task-queue-len = ["dep:metrics"]
+task-queue-len = []
 
 [dependencies]
 
@@ -37,6 +37,7 @@ system-bus = { path = "../system-bus" }
 system-clock = { path = "../system-clock" }
 util = { path = "../util" }
 test-helpers = { path = "../test-helpers", optional = true }
+renegade-metrics = { path = "../renegade-metrics" }
 
 # === Misc === #
 async-trait = { workspace = true }
@@ -54,7 +55,7 @@ tracing-slog = "0.2"
 tui = "0.19"
 tui-logger = "0.8"
 uuid = "1.1.2"
-metrics = { workspace = true, optional = true }
+metrics = { workspace = true }
 
 [dev-dependencies]
 multiaddr = "0.17"
