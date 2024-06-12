@@ -70,7 +70,7 @@ impl AuthMiddleware {
     }
 
     /// Authenticate an admin request
-    pub async fn authenticate_admin_request(
+    pub fn authenticate_admin_request(
         &self,
         headers: &HeaderMap,
         payload: &[u8],
