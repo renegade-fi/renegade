@@ -30,7 +30,7 @@ impl OrderState {
 }
 
 /// Metadata for an order in a wallet, possibly historical
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OrderMetadata {
     /// The order ID
     pub id: OrderIdentifier,
@@ -64,12 +64,12 @@ impl OrderMetadata {
 }
 
 /// A partial fill of an order, recording the information parameterizing a match
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PartialOrderFill {
     /// The amount filled by the partial fill
     pub amount: Amount,
     /// The price at which the fill executed
-    pub price: FixedPoint,
+    pub price: f64,
     /// The time at which the fill executed, in milliseconds since the epoch
     pub timestamp: u64,
 }
@@ -78,6 +78,7 @@ impl PartialOrderFill {
     /// Constructor
     pub fn new(amount: Amount, price: FixedPoint) -> Self {
         let timestamp = get_current_time_millis();
+        let price = price.to_f64();
         Self { amount, price, timestamp }
     }
 }
