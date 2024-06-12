@@ -1,6 +1,6 @@
 //! Pubsub API definitions for the gossip protocol
 
-use common::types::gossip::ClusterSymmetricKey;
+use common::types::gossip::SymmetricAuthKey;
 use serde::{Deserialize, Serialize};
 
 use crate::{check_hmac, create_hmac, GossipDestination};
@@ -26,7 +26,7 @@ pub struct AuthenticatedPubsubMessage {
 impl AuthenticatedPubsubMessage {
     /// Construct a new authenticated pubsub message from the pubsub body
     /// Sign the message if its type requires a signature
-    pub fn new_with_body(body: PubsubMessage, cluster_key: &ClusterSymmetricKey) -> Self {
+    pub fn new_with_body(body: PubsubMessage, cluster_key: &SymmetricAuthKey) -> Self {
         // Create a signature fo the body
         let sig =
             if body.requires_cluster_auth() { create_hmac(&body, cluster_key) } else { Vec::new() };
@@ -35,7 +35,7 @@ impl AuthenticatedPubsubMessage {
     }
 
     /// Verify the signature on an authenticated request
-    pub fn verify_cluster_auth(&self, cluster_key: &ClusterSymmetricKey) -> bool {
+    pub fn verify_cluster_auth(&self, cluster_key: &SymmetricAuthKey) -> bool {
         if !self.body.requires_cluster_auth() {
             return true;
         }

@@ -31,7 +31,7 @@ pub const CLUSTER_MANAGEMENT_TOPIC_PREFIX: &str = "cluster-management";
 pub const CLUSTER_SYMMETRIC_KEY_LENGTH: usize = 32;
 
 /// The type representing a cluster's symmetric key
-pub type ClusterSymmetricKey = [u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
+pub type SymmetricAuthKey = [u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
 
 /// Contains information about connected peers
 #[derive(Clone, Debug, Serialize, Deserialize, Derivative)]

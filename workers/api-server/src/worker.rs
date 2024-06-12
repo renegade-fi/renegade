@@ -1,7 +1,10 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
 use async_trait::async_trait;
-use common::{types::CancelChannel, worker::Worker};
+use common::{
+    types::{gossip::SymmetricAuthKey, CancelChannel},
+    worker::Worker,
+};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{
@@ -44,6 +47,8 @@ pub struct ApiServerConfig {
     pub http_port: u16,
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
+    /// The admin key, if one is set
+    pub admin_api_key: Option<SymmetricAuthKey>,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// The worker job queue for the PriceReporter
@@ -51,7 +56,7 @@ pub struct ApiServerConfig {
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: ProofManagerQueue,
     /// The relayer-global state
-    pub global_state: State,
+    pub state: State,
     /// The system pubsub bus that all workers have access to
     /// The ApiServer uses this bus to forward internal events onto open
     /// websocket connections
@@ -87,7 +92,7 @@ impl Worker for ApiServer {
             .map_err(|err| ApiServerError::Setup(err.to_string()))?;
 
         // Build the http server
-        let http_server = HttpServer::new(self.config.clone(), self.config.global_state.clone());
+        let http_server = HttpServer::new(self.config.clone(), self.config.state.clone());
         let http_thread_handle = tokio_runtime.spawn_blocking(move || {
             let err = block_on(http_server.execution_loop()).err().unwrap();
             ApiServerError::HttpServerFailure(err.to_string())

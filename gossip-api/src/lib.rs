@@ -6,7 +6,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use common::types::gossip::ClusterSymmetricKey;
+use common::types::gossip::SymmetricAuthKey;
 use hmac::Mac;
 use serde::Serialize;
 use sha2::Sha256;
@@ -25,7 +25,7 @@ pub type HmacSha256 = hmac::Hmac<Sha256>;
 
 /// Sign a request body with the given key
 #[instrument(name = "sign_message", skip_all, fields(req_size))]
-pub fn create_hmac<M: Serialize>(req: &M, key: &ClusterSymmetricKey) -> Vec<u8> {
+pub fn create_hmac<M: Serialize>(req: &M, key: &SymmetricAuthKey) -> Vec<u8> {
     let buf = bincode::serialize(req).unwrap();
     backfill_trace_field("req_size", buf.len());
 
@@ -38,7 +38,7 @@ pub fn create_hmac<M: Serialize>(req: &M, key: &ClusterSymmetricKey) -> Vec<u8> 
 
 /// Check a signature on a request body with the given key
 #[instrument(name = "check_signature", skip_all)]
-pub fn check_hmac<M: Serialize>(req: &M, mac: &[u8], key: &ClusterSymmetricKey) -> bool {
+pub fn check_hmac<M: Serialize>(req: &M, mac: &[u8], key: &SymmetricAuthKey) -> bool {
     let expected = create_hmac(req, key);
     expected == mac
 }

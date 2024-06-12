@@ -17,6 +17,9 @@ pub const RENEGADE_AUTH_HEADER_NAME: &str = "renegade-auth";
 /// Header name for the expiration timestamp of a signature
 pub const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "renegade-auth-expiration";
 
+/// Header name for the HTTP auth HMAC
+pub const RENEGADE_AUTH_HMAC_HEADER_NAME: &str = "renegade-auth-symmetric";
+
 /// An empty request/response type
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmptyRequestResponse {}

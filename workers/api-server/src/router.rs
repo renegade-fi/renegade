@@ -3,18 +3,20 @@
 use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
+use common::types::gossip::SymmetricAuthKey;
 use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode, Uri};
 use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use state::State;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
 
-use crate::error::{bad_request, not_found};
-
-use super::{
-    auth::authenticate_wallet_request, error::ApiServerError, http::parse_wallet_id_from_params,
+use crate::{
+    auth::{AuthMiddleware, AuthType},
+    error::bad_request,
 };
+
+use super::{error::ApiServerError, http::parse_wallet_id_from_params};
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;
@@ -182,17 +184,17 @@ pub struct Router {
     ///
     /// Holds a tuple of the handler and a boolean indicating whether
     /// wallet authentication (sk_root) signature is required for the request
-    router: MatchRouter<(Box<dyn Handler>, bool)>,
-    /// A copy of the relayer global state, used to lookup wallet keys for
-    /// authentication
-    global_state: State,
+    router: MatchRouter<(Box<dyn Handler>, AuthType)>,
+    /// The auth middleware, authenticates a variety of requests
+    auth_middleware: AuthMiddleware,
 }
 
 impl Router {
     /// Create a new router with no routes established
-    pub fn new(global_state: State) -> Self {
+    pub fn new(admin_key: Option<SymmetricAuthKey>, state: State) -> Self {
         let router = MatchRouter::new();
-        Self { router, global_state }
+        let auth_middleware = AuthMiddleware::new(admin_key, state);
+        Self { router, auth_middleware }
     }
 
     /// Helper to build a routable path from a method and a concrete route
@@ -217,15 +219,49 @@ impl Router {
         &mut self,
         method: &Method,
         route: String,
-        auth_required: bool,
+        auth: AuthType,
         handler: H,
     ) {
         debug!("Attached handler to route {route} with method {method}");
         let full_route = Self::create_full_route(method, route);
 
         self.router
-            .insert(full_route, (Box::new(handler), auth_required))
+            .insert(full_route, (Box::new(handler), auth))
             .expect("error attaching handler to route");
+    }
+
+    /// Add an unauthenticated route
+    pub fn add_unauthenticated_route<H: Handler + 'static>(
+        &mut self,
+        method: &Method,
+        route: String,
+        handler: H,
+    ) {
+        self.add_route(method, route, AuthType::None, handler);
+    }
+
+    /// Add a route with wallet authentication
+    pub fn add_wallet_authenticated_route<H: Handler + 'static>(
+        &mut self,
+        method: &Method,
+        route: String,
+        handler: H,
+    ) {
+        self.add_route(method, route, AuthType::Wallet, handler);
+    }
+
+    /// Add a route with admin authentication
+    pub fn add_admin_authenticated_route<H: Handler + 'static>(
+        &mut self,
+        method: &Method,
+        route: String,
+        handler: H,
+    ) {
+        if self.auth_middleware.admin_auth_enabled() {
+            self.add_route(method, route, AuthType::Admin, handler);
+        } else {
+            warn!("Admin authentication is not enabled, skipping route {route}");
+        }
     }
 
     /// Route a request to a handler
@@ -250,7 +286,7 @@ impl Router {
 
             // Dispatch to handler
             if let Ok(matched_path) = self.router.at(&full_route) {
-                let (handler, auth_required) = matched_path.value;
+                let (handler, auth) = matched_path.value;
                 let params = matched_path.params;
 
                 // Clone the params to take ownership
@@ -268,10 +304,8 @@ impl Router {
                 };
 
                 // Auth check and handler
-                if *auth_required {
-                    if let Err(e) = self.check_wallet_auth(&params_map, &mut req).await {
-                        return e.into();
-                    }
+                if let Err(e) = self.check_auth(*auth, &params_map, &mut req).await {
+                    return e.into();
                 }
 
                 handler.as_ref().handle(req, params_map, query_params).await
@@ -313,34 +347,34 @@ impl Router {
     }
 
     /// Validate a signature of the request's body by sk_root of the wallet
-    async fn check_wallet_auth(
+    async fn check_auth(
         &self,
+        auth_type: AuthType,
         url_params: &HashMap<String, String>,
         req: &mut Request<Body>,
     ) -> Result<(), ApiServerError> {
-        // Parse the wallet ID from the URL params
-        let wallet_id = parse_wallet_id_from_params(url_params)?;
+        if auth_type == AuthType::None {
+            return Ok(());
+        }
 
-        // Lookup the wallet in the global state
-        let wallet = self
-            .global_state
-            .get_wallet(&wallet_id)
-            .await?
-            .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
-
-        // Get the request bytes
+        // Serialize the request then authenticate it
         let req_body =
             to_bytes(req.body_mut()).await.map_err(|err| bad_request(err.to_string()))?;
 
-        // Authenticated the request
-        authenticate_wallet_request(
-            req.headers(),
-            &req_body,
-            &wallet.key_chain.public_keys.pk_root,
-        )?;
+        match auth_type {
+            AuthType::Wallet => {
+                // Parse the wallet ID from the URL params
+                let wallet_id = parse_wallet_id_from_params(url_params)?;
+                self.auth_middleware
+                    .authenticate_wallet_request(wallet_id, req.headers(), &req_body)
+                    .await?;
+            },
+            AuthType::Admin => {
+                self.auth_middleware.authenticate_admin_request(req.headers(), &req_body).await?;
+            },
+            AuthType::None => unreachable!(),
+        }
 
-        // Reconstruct the body, the above manipulation consumed the body from the
-        // request object
         *req.body_mut() = Body::from(req_body);
         Ok(())
     }

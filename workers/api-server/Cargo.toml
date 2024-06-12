@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 # === Cryptography + Arithmetic === #
+hmac = "0.12"
 k256 = "0.13"
 num-bigint = { workspace = true }
 num-traits = "0.2"
+sha2 = { version = "0.10", features = ["asm"] }
 
 # === HTTP + Websocket === #
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }

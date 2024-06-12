@@ -6,7 +6,7 @@ use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use colored::*;
 use common::types::{
-    gossip::{ClusterId, ClusterSymmetricKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH},
+    gossip::{ClusterId, SymmetricAuthKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH},
     wallet::WalletIdentifier,
 };
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
@@ -57,6 +57,7 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
 /// apart from what is specified on the command line
 pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, String> {
     let (cluster_symmetric_key, cluster_keypair) = parse_cluster_keys(&cli_args)?;
+    let admin_api_key = cli_args.admin_api_key.map(parse_symmetric_key).transpose()?;
 
     // Parse the local relayer's arbitrum wallet from the cli
     let arbitrum_private_keys = cli_args
@@ -117,6 +118,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         disabled_exchanges: cli_args.disabled_exchanges,
         cluster_keypair,
         cluster_symmetric_key,
+        admin_api_key,
         cluster_id,
         coinbase_api_key: cli_args.coinbase_api_key,
         coinbase_api_secret: cli_args.coinbase_api_secret,
@@ -143,7 +145,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
 // ---------------
 
 /// Parse the cluster's symmetric and asymmetric keys from the CLI
-pub fn parse_cluster_keys(cli: &Cli) -> Result<(ClusterSymmetricKey, DalekKeypair), String> {
+pub fn parse_cluster_keys(cli: &Cli) -> Result<(SymmetricAuthKey, DalekKeypair), String> {
     // Parse the cluster keypair from CLI args
     // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
     let keypair = if let Some(key_str) = cli.cluster_private_key.clone() {
@@ -158,21 +160,25 @@ pub fn parse_cluster_keys(cli: &Cli) -> Result<(ClusterSymmetricKey, DalekKeypai
     };
 
     // Parse the symmetric key from its string or generate
-    let symmetric_key: ClusterSymmetricKey =
-        if let Some(key_str) = cli.cluster_symmetric_key.clone() {
-            base64::decode(key_str)
-                .map_err(|e| e.to_string())?
-                .try_into()
-                .map_err(|_| "Invalid symmetric key".to_string())?
-        } else {
-            let mut rng = OsRng {};
-            let mut key = [0u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
-            rng.fill_bytes(&mut key);
+    let symmetric_key: SymmetricAuthKey = if let Some(key_str) = cli.cluster_symmetric_key.clone() {
+        parse_symmetric_key(key_str)?
+    } else {
+        let mut rng = OsRng {};
+        let mut key = [0u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
+        rng.fill_bytes(&mut key);
 
-            key
-        };
+        key
+    };
 
     Ok((symmetric_key, keypair))
+}
+
+/// Parse a symmetric key from a base64 string
+fn parse_symmetric_key(key_str: String) -> Result<SymmetricAuthKey, String> {
+    base64::decode(key_str)
+        .map_err(|e| e.to_string())?
+        .try_into()
+        .map_err(|_| "Invalid symmetric key".to_string())
 }
 
 /// Parse the relayer's decryption key from a string

@@ -319,8 +319,9 @@ async fn main() -> Result<(), CoordinatorError> {
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
+        admin_api_key: args.admin_api_key,
         network_sender: network_sender.clone(),
-        global_state: global_state.clone(),
+        state: global_state.clone(),
         system_bus,
         price_reporter_work_queue: price_reporter_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender,

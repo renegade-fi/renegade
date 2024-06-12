@@ -187,241 +187,210 @@ pub(super) struct HttpServer {
 
 impl HttpServer {
     /// Create a new http server
-    pub(super) fn new(config: ApiServerConfig, global_state: State) -> Self {
+    pub(super) fn new(config: ApiServerConfig, state: State) -> Self {
         // Build the router, server, and register routes
-        let router = Self::build_router(&config, global_state);
+        let router = Self::build_router(&config, state);
         Self { router: Arc::new(router), config }
     }
 
     /// Build a router and register routes on it
-    fn build_router(config: &ApiServerConfig, global_state: State) -> Router {
+    fn build_router(config: &ApiServerConfig, state: State) -> Router {
         // Build the router and register its routes
-        let mut router = Router::new(global_state.clone());
+        let mut router = Router::new(config.admin_api_key, state.clone());
 
         // --- Misc Routes --- //
 
         // The "/price_report" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::POST,
             PRICE_REPORT_ROUTE.to_string(),
-            false, // auth_required
             PriceReportHandler::new(config.clone()),
         );
 
         // The "/ping" route
-        router.add_route(
-            &Method::GET,
-            PING_ROUTE.to_string(),
-            false, // auth_required
-            PingHandler::new(),
-        );
+        router.add_unauthenticated_route(&Method::GET, PING_ROUTE.to_string(), PingHandler::new());
 
         // --- Wallet Routes --- //
 
         // The "/task/:id" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             GET_TASK_STATUS_ROUTE.to_string(),
-            false, // auth_required
-            GetTaskStatusHandler::new(global_state.clone()),
+            GetTaskStatusHandler::new(state.clone()),
         );
 
         // The "/task_queue/:wallet_id" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             GET_TASK_QUEUE_ROUTE.to_string(),
-            true, // auth_required
-            GetTaskQueueHandler::new(global_state.clone()),
+            GetTaskQueueHandler::new(state.clone()),
         );
 
         // The "/wallet/:wallet_id/task-history" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             TASK_HISTORY_ROUTE.to_string(),
-            true, // auth_required
-            GetTaskHistoryHandler::new(global_state.clone()),
+            GetTaskHistoryHandler::new(state.clone()),
         );
 
         // The "/wallet/:id" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             GET_WALLET_ROUTE.to_string(),
-            true, // auth_required
-            GetWalletHandler::new(global_state.clone()),
+            GetWalletHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/back_of_queue" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             BACK_OF_QUEUE_WALLET_ROUTE.to_string(),
-            true, // auth_required
-            GetBackOfQueueWalletHandler::new(global_state.clone()),
+            GetBackOfQueueWalletHandler::new(state.clone()),
         );
 
         // The "/wallet" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
-            false, // auth_required
-            CreateWalletHandler::new(global_state.clone()),
+            CreateWalletHandler::new(state.clone()),
         );
 
         // The "/wallet/lookup" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::POST,
             FIND_WALLET_ROUTE.to_string(),
-            false, // auth_required
-            FindWalletHandler::new(global_state.clone()),
+            FindWalletHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/refresh" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             REFRESH_WALLET_ROUTE.to_string(),
-            true, // auth_required
-            RefreshWalletHandler::new(global_state.clone()),
+            RefreshWalletHandler::new(state.clone()),
         );
 
         // Getter for the "/wallet/:id/orders" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             WALLET_ORDERS_ROUTE.to_string(),
-            true, // auth_required
-            GetOrdersHandler::new(global_state.clone()),
+            GetOrdersHandler::new(state.clone()),
         );
 
         // Post to the "/wallet/:id/orders" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
-            true, // auth_required
-            CreateOrderHandler::new(global_state.clone()),
+            CreateOrderHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/orders/:id" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             GET_ORDER_BY_ID_ROUTE.to_string(),
-            true, // auth_required
-            GetOrderByIdHandler::new(global_state.clone()),
+            GetOrderByIdHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/orders/:id/update" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             UPDATE_ORDER_ROUTE.to_string(),
-            true, // auth_required
-            UpdateOrderHandler::new(global_state.clone()),
+            UpdateOrderHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/orders/:id/cancel" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
-            true, // auth_required
-            CancelOrderHandler::new(global_state.clone()),
+            CancelOrderHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/balances" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             GET_BALANCES_ROUTE.to_string(),
-            true, // auth_required
-            GetBalancesHandler::new(global_state.clone()),
+            GetBalancesHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/balances/:mint" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             GET_BALANCE_BY_MINT_ROUTE.to_string(),
-            true, // auth_required
-            GetBalanceByMintHandler::new(global_state.clone()),
+            GetBalanceByMintHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/balances/deposit" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            true, // auth_required
-            DepositBalanceHandler::new(global_state.clone()),
+            DepositBalanceHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/balances/:mint/withdraw" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
-            true, // auth_required
-            WithdrawBalanceHandler::new(global_state.clone()),
+            WithdrawBalanceHandler::new(state.clone()),
         );
 
         // The `wallet/:id/pay-fees` route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::POST,
             PAY_FEES_ROUTE.to_string(),
-            true, // auth_required
-            PayFeesHandler::new(global_state.clone()),
+            PayFeesHandler::new(state.clone()),
         );
 
         // The "/wallet/:id/order-history" route
-        router.add_route(
+        router.add_wallet_authenticated_route(
             &Method::GET,
             ORDER_HISTORY_ROUTE.to_string(),
-            true, // auth_required
-            GetOrderHistoryHandler::new(global_state.clone()),
+            GetOrderHistoryHandler::new(state.clone()),
         );
 
         // --- Orderbook Routes --- //
 
         // The "/order_book/orders" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             GET_NETWORK_ORDERS_ROUTE.to_string(),
-            false, // auth_required
-            GetNetworkOrdersHandler::new(global_state.clone()),
+            GetNetworkOrdersHandler::new(state.clone()),
         );
 
         // The "/order_book/orders/:id" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
-            false, // auth_required
-            GetNetworkOrderByIdHandler::new(global_state.clone()),
+            GetNetworkOrderByIdHandler::new(state.clone()),
         );
 
         // --- Network Routes --- //
 
         // The "/network" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
-            false, // auth_required
-            GetNetworkTopologyHandler::new(global_state.clone()),
+            GetNetworkTopologyHandler::new(state.clone()),
         );
 
         // The "/network/clusters/:id" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             GET_CLUSTER_INFO_ROUTE.to_string(),
-            false, // auth_required
-            GetClusterInfoHandler::new(global_state.clone()),
+            GetClusterInfoHandler::new(state.clone()),
         );
 
         // The "/network/peers/:id" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             GET_PEER_INFO_ROUTE.to_string(),
-            false, // auth_required
-            GetPeerInfoHandler::new(global_state.clone()),
+            GetPeerInfoHandler::new(state.clone()),
         );
 
         // --- Admin Routes --- //
 
         // The "/admin/is-leader" route
-        router.add_route(
+        router.add_unauthenticated_route(
             &Method::GET,
             IS_LEADER_ROUTE.to_string(),
-            false, // auth_required
-            IsLeaderHandler::new(global_state),
+            IsLeaderHandler::new(state),
         );
 
         router
