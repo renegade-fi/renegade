@@ -160,11 +160,9 @@ impl State {
                         continue;
                     }
 
-                    // If the peer is already indexed, persist the existing `last_heartbeat`
-                    // to maintain an accurate local view of liveness
-                    if let Some(existing_peer) = tx.get_peer_info(&peer.peer_id)? {
-                        peer.last_heartbeat = existing_peer.last_heartbeat;
-                    }
+                    // We only gossip around live peers, so it's safe to optimistically give the
+                    // peer a fresh heartbeat
+                    peer.successful_heartbeat();
 
                     // Add the peer to the store
                     tx.write_peer(&peer)?;
