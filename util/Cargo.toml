@@ -39,7 +39,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-serde = "0.1"
-tracing-subscriber = { vesion = "0.3", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-opentelemetry = "0.22"
 opentelemetry_sdk = { version = "0.21", features = ["trace", "rt-tokio"] }
 opentelemetry-otlp = "0.14"
