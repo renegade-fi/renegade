@@ -6,3 +6,4 @@ mod token_remaps;
 mod validation;
 
 pub use cli::*;
+pub use token_remaps::setup_token_remaps;

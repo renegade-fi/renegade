@@ -48,7 +48,7 @@ lazy_static = { workspace = true }
 libp2p = { workspace = true }
 rand = "0.8"
 serde_json = "1.0"
-slog = { verison = "2.2", features = ["max_level_trace"] }
+slog = { version = "2.2", features = ["max_level_trace"] }
 tempfile = { version = "3.8", optional = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-slog = "0.2"
