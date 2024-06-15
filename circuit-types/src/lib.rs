@@ -215,14 +215,14 @@ pub mod native_helpers {
     use ark_ff::UniformRand;
     use constants::{EmbeddedScalarField, Scalar};
     use itertools::Itertools;
-    use jf_primitives::elgamal::EncKey;
+    use jf_primitives::elgamal::{DecKey, EncKey};
     use rand::thread_rng;
     use renegade_crypto::hash::{compute_poseidon_hash, evaluate_hash_chain};
 
     use crate::{
-        elgamal::{ElGamalCiphertext, EncryptionKey},
+        elgamal::{DecryptionKey, ElGamalCiphertext, EncryptionKey},
         note::{Note, NOTE_CIPHERTEXT_SIZE},
-        traits::BaseType,
+        traits::{BaseType, CircuitBaseType},
         wallet::{Nullifier, Wallet, WalletShare, WalletShareStateCommitment},
     };
 
@@ -430,5 +430,17 @@ pub mod native_helpers {
         let cipher = jf_key.deterministic_encrypt(randomness, &jf_plaintext);
 
         (cipher.into(), randomness)
+    }
+
+    /// Decrypt a ciphertext under the given key
+    pub fn elgamal_decrypt<const N: usize, T: CircuitBaseType>(
+        ciphertext: &ElGamalCiphertext<N>,
+        key: &DecryptionKey,
+    ) -> T {
+        let jf_key = DecKey::from(*key);
+        let jf_cipher = ciphertext.clone().into();
+        let mut plaintext_iter = jf_key.decrypt(&jf_cipher).into_iter().map(Scalar::new);
+
+        T::from_scalars(&mut plaintext_iter)
     }
 }

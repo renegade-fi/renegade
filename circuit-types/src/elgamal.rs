@@ -164,6 +164,12 @@ impl From<DecKey<EmbeddedCurveConfig>> for DecryptionKey {
     }
 }
 
+impl From<DecryptionKey> for DecKey<EmbeddedCurveConfig> {
+    fn from(value: DecryptionKey) -> Self {
+        DecKey { key: value.key }
+    }
+}
+
 impl From<BabyJubJubPointVar> for PointVariable {
     fn from(value: BabyJubJubPointVar) -> Self {
         PointVariable(value.x, value.y)
@@ -217,5 +223,14 @@ impl<const N: usize> From<Ciphertext<EmbeddedCurveConfig>> for ElGamalCiphertext
             .expect("Invalid ciphertext size");
 
         Self { ephemeral_key, ciphertext }
+    }
+}
+
+impl<const N: usize> From<ElGamalCiphertext<N>> for Ciphertext<EmbeddedCurveConfig> {
+    fn from(value: ElGamalCiphertext<N>) -> Self {
+        let ephemeral = value.ephemeral_key.into();
+        let data = value.ciphertext.iter().map(Scalar::inner).collect_vec();
+
+        Ciphertext { ephemeral, data }
     }
 }
