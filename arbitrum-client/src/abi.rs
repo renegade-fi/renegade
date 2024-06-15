@@ -27,6 +27,7 @@ abigen!(
         event MerkleOpeningNode(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
         event MerkleInsertion(uint128 indexed index, uint256 indexed value)
         event NullifierSpent(uint256 indexed nullifier)
+        event NotePosted(uint256 indexed note_commitment)
     ]"#
 );
 
@@ -54,6 +55,7 @@ abigen!(
         event MerkleOpeningNode(uint8 indexed height, uint128 indexed index, uint256 indexed new_value)
         event MerkleInsertion(uint128 indexed index, uint256 indexed value)
         event NullifierSpent(uint256 indexed nullifier)
+        event NotePosted(uint256 indexed note_commitment)
 
         function clearMerkle() external
     ]"#

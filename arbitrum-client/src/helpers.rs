@@ -1,7 +1,12 @@
 //! Various helpers for Arbitrum client execution
 
 use alloy_sol_types::SolCall;
-use circuit_types::{traits::BaseType, SizedWalletShare};
+use circuit_types::{
+    elgamal::{BabyJubJubPoint, ElGamalCiphertext},
+    note::NOTE_CIPHERTEXT_SIZE,
+    traits::BaseType,
+    SizedWalletShare,
+};
 use constants::Scalar;
 use contracts_common::types::{
     ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
@@ -194,4 +199,22 @@ pub fn parse_shares_from_redeem_fee(
     let mut shares = statement.new_wallet_public_shares.into_iter().map(Scalar::new);
 
     Ok(SizedWalletShare::from_scalars(&mut shares))
+}
+
+/// Parse a note from calldata of a `settleOfflineFee` call
+pub fn parse_note_ciphertext_from_settle_offline_fee(
+    calldata: &[u8],
+) -> Result<ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, ArbitrumClientError> {
+    let call = settleOfflineFeeCall::decode(calldata, true /* validate */)
+        .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
+
+    let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
+        &call.valid_offline_fee_settlement_statement.into(),
+    )?;
+    let cipher = statement.note_ciphertext;
+    let key_encryption = BabyJubJubPoint { x: Scalar::new(cipher.0.x), y: Scalar::new(cipher.0.y) };
+    let symmetric_ciphertext =
+        [Scalar::new(cipher.1), Scalar::new(cipher.2), Scalar::new(cipher.3)];
+
+    Ok(ElGamalCiphertext { ephemeral_key: key_encryption, ciphertext: symmetric_ciphertext })
 }
