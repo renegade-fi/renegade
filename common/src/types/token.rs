@@ -81,8 +81,8 @@ pub const COMP_TICKER: &str = "COMP";
 pub const MKR_TICKER: &str = "MKR";
 /// TORN ticker
 pub const TORN_TICKER: &str = "TORN";
-/// REN ticker
-pub const REN_TICKER: &str = "REN";
+/// ARB ticker
+pub const ARB_TICKER: &str = "ARB";
 /// SHIB ticker
 pub const SHIB_TICKER: &str = "SHIB";
 /// ENS ticker
@@ -250,7 +250,7 @@ pub static TICKER_NAMES: &[(
     ),
     // Bridges
     (
-        REN_TICKER,
+        ARB_TICKER,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
