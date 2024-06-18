@@ -9,6 +9,7 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![feature(generic_const_exprs)]
 
+use ethers::types::Address;
 use num_bigint::BigUint;
 use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as TokioRwLock;
@@ -34,8 +35,24 @@ pub fn new_async_shared<T>(wrapped: T) -> AsyncShared<T> {
     Arc::new(TokioRwLock::new(wrapped))
 }
 
-/// From a biguint, get a hex string with a 0x prefix
+/// From a biguint, get a lowercase hex string with a 0x prefix, padded to the
+/// Ethereum address length
 pub fn biguint_to_str_addr(x: &BigUint) -> String {
-    let addr = x.to_str_radix(16 /* radix */);
-    format!("0x{addr}")
+    let mut bytes = [0_u8; Address::len_bytes()];
+    let x_bytes = x.to_bytes_be();
+    bytes[..x_bytes.len()].copy_from_slice(&x_bytes);
+    let addr = Address::from_slice(&bytes);
+    format!("{addr:#x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_biguint_to_str_addr() {
+        let x = BigUint::from(1u8);
+        let addr = biguint_to_str_addr(&x);
+        println!("addr: {}", addr);
+    }
 }

@@ -64,7 +64,7 @@ cargo run \
         AAVE \
         COMP \
         MKR \
-        ARB \
+        REN \
         MANA \
         ENS \
         DYDX \
