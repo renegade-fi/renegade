@@ -96,6 +96,9 @@ pub const DEVNET_DEPLOY_BLOCK: u64 = 0;
 /// The block number at which the darkpool was deployed on testnet
 pub const TESTNET_DEPLOY_BLOCK: u64 = 55713322;
 
+/// The number of bytes in an Arbitrum address
+pub const ADDRESS_BYTE_LENGTH: usize = 20;
+
 // ----------------------
 // | Pubsub Topic Names |
 // ----------------------

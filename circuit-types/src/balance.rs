@@ -10,7 +10,7 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_string,
+    biguint_from_hex_string, biguint_to_hex_addr,
     elgamal::EncryptionKey,
     note::Note,
     r#match::FeeTake,
@@ -27,10 +27,7 @@ use crate::{
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
+    #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
     pub mint: BigUint,
     /// The amount of the given token stored in this balance
     pub amount: Amount,

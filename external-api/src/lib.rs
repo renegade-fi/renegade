@@ -5,7 +5,7 @@
 
 use num_bigint::BigUint;
 use serde::{de::Error as DeserializeError, Deserialize, Deserializer, Serialize, Serializer};
-use util::hex::{biguint_from_hex_string, biguint_to_hex_string};
+use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 
 pub mod bus_message;
 pub mod http;
@@ -61,12 +61,12 @@ impl<'de> serde::de::Visitor<'de> for EmptyRequestResponseVisitor {
     }
 }
 
-/// A helper to serialize a BigUint to a hex string
-pub fn serialize_biguint_to_hex_string<S>(val: &BigUint, serializer: S) -> Result<S::Ok, S::Error>
+/// A helper to serialize a BigUint to a hex address
+pub fn serialize_biguint_to_hex_addr<S>(val: &BigUint, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let hex = biguint_to_hex_string(val);
+    let hex = biguint_to_hex_addr(val);
     serializer.serialize_str(&hex)
 }
 

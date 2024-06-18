@@ -5,7 +5,7 @@ use circuit_types::{
     elgamal::BabyJubJubPoint,
     keychain::{NonNativeScalar, PublicSigningKey},
 };
-use constants::{EmbeddedCurveConfig, Scalar};
+use constants::{EmbeddedCurveConfig, Scalar, ADDRESS_BYTE_LENGTH};
 use num_bigint::BigUint;
 use num_traits::Num;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
@@ -15,6 +15,20 @@ use crate::raw_err_str;
 /// A helper to serialize a BigUint to a hex string
 pub fn biguint_to_hex_string(val: &BigUint) -> String {
     format!("0x{}", val.to_str_radix(16 /* radix */))
+}
+
+/// From a BigUint, get a lowercase hex string with a 0x prefix, padded to the
+/// Ethereum address length
+pub fn biguint_to_hex_addr(val: &BigUint) -> String {
+    let mut bytes = [0_u8; ADDRESS_BYTE_LENGTH];
+    let val_bytes = val.to_bytes_be();
+
+    let len = val_bytes.len();
+    debug_assert!(len <= ADDRESS_BYTE_LENGTH, "BigUint too large for an address");
+
+    bytes[ADDRESS_BYTE_LENGTH - val_bytes.len()..].copy_from_slice(&val_bytes);
+    let hex_str = hex::encode(bytes);
+    format!("0x{hex_str}")
 }
 
 /// A helper to deserialize a BigUint from a hex string
@@ -88,4 +102,27 @@ pub fn jubjub_from_hex_string(hex: &str) -> Result<BabyJubJubPoint, String> {
     let projective = Projective::<EmbeddedCurveConfig>::deserialize_uncompressed(bytes.as_slice())
         .map_err(raw_err_str!("error deserializing projective point from bytes: {:?}"))?;
     Ok(projective.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use constants::ADDRESS_BYTE_LENGTH;
+    use num_bigint::BigUint;
+    use rand::{thread_rng, RngCore};
+
+    use super::{biguint_from_hex_string, biguint_to_hex_addr};
+
+    #[test]
+    fn test_addr_serde_roundtrip() {
+        // Generate a random address as a BigUint
+        let mut rng = thread_rng();
+        let mut addr_bytes = [0_u8; ADDRESS_BYTE_LENGTH];
+        rng.fill_bytes(&mut addr_bytes);
+        let addr_biguint = BigUint::from_bytes_be(&addr_bytes);
+
+        let addr_hex = biguint_to_hex_addr(&addr_biguint);
+        let addr_biguint_rec = biguint_from_hex_string(&addr_hex).unwrap();
+
+        assert_eq!(addr_biguint, addr_biguint_rec)
+    }
 }

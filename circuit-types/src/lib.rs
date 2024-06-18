@@ -27,8 +27,8 @@ use ark_ff::BigInt;
 use ark_mpc::MpcFabric;
 use bigdecimal::Num;
 use constants::{
-    AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup, MAX_BALANCES,
-    MAX_ORDERS, MERKLE_HEIGHT,
+    AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup, ADDRESS_BYTE_LENGTH,
+    MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
 };
 use fixed_point::DEFAULT_FP_PRECISION;
 use jf_primitives::pcs::prelude::Commitment;
@@ -167,6 +167,23 @@ where
     S: Serializer,
 {
     s.serialize_str(&format!("0x{}", val.to_str_radix(16 /* radix */)))
+}
+
+/// A helper to serialize a BigUint to a hex address
+pub fn biguint_to_hex_addr<S>(val: &BigUint, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut bytes = [0_u8; ADDRESS_BYTE_LENGTH];
+    let val_bytes = val.to_bytes_be();
+
+    let len = val_bytes.len();
+    debug_assert!(len <= ADDRESS_BYTE_LENGTH, "BigUint too large for an address");
+
+    bytes[ADDRESS_BYTE_LENGTH - val_bytes.len()..].copy_from_slice(&val_bytes);
+    let hex_str = hex::encode(bytes);
+
+    s.serialize_str(&format!("0x{hex_str}"))
 }
 
 /// A helper to deserialize a BigUint from a hex string

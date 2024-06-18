@@ -13,11 +13,10 @@ use circuit_types::{
     traits::BaseType,
     Amount, SizedWalletShare,
 };
-use constants::{Scalar, MERKLE_HEIGHT};
+use constants::{Scalar, ADDRESS_BYTE_LENGTH, MERKLE_HEIGHT};
 use k256::ecdsa::SigningKey as K256SigningKey;
 use num_bigint::BigUint;
-use rand::thread_rng;
-use renegade_crypto::fields::scalar_to_biguint;
+use rand::{thread_rng, RngCore};
 use uuid::Uuid;
 
 use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
@@ -67,9 +66,8 @@ pub fn mock_empty_wallet() -> Wallet {
 
 /// Create a mock order
 pub fn mock_order() -> Order {
-    let mut rng = thread_rng();
-    let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
-    let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
+    let quote_mint = rand_addr_biguint();
+    let base_mint = rand_addr_biguint();
     let amount = Amount::from(10u8);
     let worst_case_price = FixedPoint::from_integer(100);
 
@@ -84,4 +82,16 @@ pub fn mock_merkle_path() -> MerkleAuthenticationPath {
         BigUint::from(0u8),
         Scalar::random(&mut rng),
     )
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Generate a random address as a BigUint
+pub fn rand_addr_biguint() -> BigUint {
+    let mut rng = thread_rng();
+    let mut addr_bytes = [0_u8; ADDRESS_BYTE_LENGTH];
+    rng.fill_bytes(&mut addr_bytes);
+    BigUint::from_bytes_be(&addr_bytes)
 }

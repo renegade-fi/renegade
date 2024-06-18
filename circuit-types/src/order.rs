@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{fmt::Display, ops::Add, str::FromStr};
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_string,
+    biguint_from_hex_string, biguint_to_hex_addr,
     fixed_point::FixedPoint,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
@@ -25,16 +25,10 @@ use crate::{
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
+    #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
     pub quote_mint: BigUint,
     /// The mint (ERC-20 contract address) of the base token
-    #[serde(
-        serialize_with = "biguint_to_hex_string",
-        deserialize_with = "biguint_from_hex_string"
-    )]
+    #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
     pub base_mint: BigUint,
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: OrderSide,

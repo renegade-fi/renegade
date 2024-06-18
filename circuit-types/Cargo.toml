@@ -34,6 +34,7 @@ constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc === #
+hex = "0.4"
 byteorder = "1.5"
 itertools = "0.10"
 lazy_static = { workspace = true }
