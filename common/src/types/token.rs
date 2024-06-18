@@ -23,8 +23,7 @@ use std::{
     iter,
     sync::OnceLock,
 };
-
-use crate::biguint_to_str_addr;
+use util::hex::biguint_to_hex_addr;
 
 use super::exchange::{Exchange, ALL_EXCHANGES};
 
@@ -357,7 +356,7 @@ impl Token {
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
-        Self { addr: biguint_to_str_addr(addr) }
+        Self { addr: biguint_to_hex_addr(addr) }
     }
 
     /// Given an ERC-20 ticker, returns a new Token.

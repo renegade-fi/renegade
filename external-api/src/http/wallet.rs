@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string,
+    deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr,
     types::{ApiKeychain, ApiOrder, ApiWallet},
 };
 
@@ -204,13 +204,13 @@ pub struct GetBalanceByMintResponse {
 pub struct DepositBalanceRequest {
     /// The arbitrum account contract address to send the balance from
     #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
+        serialize_with = "serialize_biguint_to_hex_addr",
         deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub from_addr: BigUint,
     /// The mint (ERC-20 contract address) of the token to deposit
     #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
+        serialize_with = "serialize_biguint_to_hex_addr",
         deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub mint: BigUint,
@@ -246,7 +246,7 @@ pub struct DepositBalanceResponse {
 pub struct WithdrawBalanceRequest {
     /// The destination address to withdraw the balance to
     #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
+        serialize_with = "serialize_biguint_to_hex_addr",
         deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub destination_addr: BigUint,

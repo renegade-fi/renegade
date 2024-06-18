@@ -20,7 +20,7 @@ use util::hex::{
 };
 use uuid::Uuid;
 
-use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_string};
+use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 /// The wallet type, holds all balances, orders, metadata, and randomness
 /// for a trader
@@ -121,13 +121,13 @@ pub struct ApiOrder {
     pub id: Uuid,
     /// The quote token mint
     #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
+        serialize_with = "serialize_biguint_to_hex_addr",
         deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub quote_mint: BigUint,
     /// The base token mint
     #[serde(
-        serialize_with = "serialize_biguint_to_hex_string",
+        serialize_with = "serialize_biguint_to_hex_addr",
         deserialize_with = "deserialize_biguint_from_hex_string"
     )]
     pub base_mint: BigUint,

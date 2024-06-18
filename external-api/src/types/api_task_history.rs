@@ -16,7 +16,7 @@ use common::types::tasks::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
-use util::hex::biguint_to_hex_string;
+use util::hex::biguint_to_hex_addr;
 
 // -----------
 // | Helpers |
@@ -101,7 +101,7 @@ impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
             },
             HistoricalTaskDescription::PayOfflineFee { mint, amount, is_protocol } => {
                 Self::PayOfflineFee {
-                    mint: biguint_to_hex_string(&mint),
+                    mint: biguint_to_hex_addr(&mint),
                     amount: u128_to_number(amount),
                     is_protocol,
                 }
@@ -125,8 +125,8 @@ pub struct ApiHistoricalMatch {
 
 impl From<MatchResult> for ApiHistoricalMatch {
     fn from(value: MatchResult) -> Self {
-        let base = biguint_to_hex_string(&value.base_mint);
-        let quote = biguint_to_hex_string(&value.quote_mint);
+        let base = biguint_to_hex_addr(&value.base_mint);
+        let quote = biguint_to_hex_addr(&value.quote_mint);
         let volume = u128_to_number(value.base_amount);
         Self { base, quote, volume, is_sell: value.direction }
     }
@@ -182,8 +182,8 @@ pub struct WalletUpdateOrder {
 
 impl From<Order> for WalletUpdateOrder {
     fn from(value: Order) -> Self {
-        let base = biguint_to_hex_string(&value.base_mint);
-        let quote = biguint_to_hex_string(&value.quote_mint);
+        let base = biguint_to_hex_addr(&value.base_mint);
+        let quote = biguint_to_hex_addr(&value.quote_mint);
         let amount = u128_to_number(value.amount);
         Self { base, quote, side: value.side, amount }
     }
@@ -193,12 +193,12 @@ impl From<WalletUpdateType> for ApiWalletUpdateType {
     fn from(value: WalletUpdateType) -> Self {
         match value {
             WalletUpdateType::Deposit { mint, amount } => {
-                let mint = biguint_to_hex_string(&mint);
+                let mint = biguint_to_hex_addr(&mint);
                 let amount = u128_to_number(amount);
                 Self::Deposit { mint, amount }
             },
             WalletUpdateType::Withdraw { mint, amount } => {
-                let mint = biguint_to_hex_string(&mint);
+                let mint = biguint_to_hex_addr(&mint);
                 let amount = u128_to_number(amount);
                 Self::Withdraw { mint, amount }
             },

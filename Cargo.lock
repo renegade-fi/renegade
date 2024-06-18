@@ -1819,6 +1819,7 @@ dependencies = [
  "circuit-macros",
  "constants",
  "futures",
+ "hex 0.4.3",
  "itertools 0.10.5",
  "jf-primitives",
  "k256",
