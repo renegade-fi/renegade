@@ -1,5 +1,7 @@
 //! Groups API definitions for handshake request response
-use common::types::{gossip::WrappedPeerId, token::Token, wallet::OrderIdentifier, Price};
+use common::types::{
+    gossip::WrappedPeerId, token::Token, wallet::OrderIdentifier, TimestampedPrice,
+};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 // ----------------
 
 /// A type representing the midpoint price of a given token pair
-pub type MidpointPrice = (Token, Token, Price);
+pub type MidpointPrice = (Token, Token, TimestampedPrice);
 
 /// A price vector that a peer proposes to its counterparty during a handshake
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -23,7 +25,7 @@ impl PriceVector {
     }
 }
 
-impl From<PriceVector> for HashMap<(Token, Token), Price> {
+impl From<PriceVector> for HashMap<(Token, Token), TimestampedPrice> {
     fn from(price_vector: PriceVector) -> Self {
         price_vector.0.into_iter().map(|(base, quote, price)| ((base, quote), price)).collect()
     }

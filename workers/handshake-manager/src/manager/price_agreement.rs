@@ -9,7 +9,7 @@ use common::types::{
         MATIC_TICKER, UNI_TICKER, USDC_TICKER, WBTC_TICKER, WETH_TICKER,
     },
     wallet::OrderIdentifier,
-    Price,
+    TimestampedPrice,
 };
 use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
@@ -120,14 +120,16 @@ impl HandshakeExecutor {
 
             match midpoint_state {
                 PriceReporterState::Nominal(report) => {
-                    midpoint_prices.push((report.base_token, report.quote_token, report.price));
+                    let price = (&report).into();
+                    midpoint_prices.push((report.base_token, report.quote_token, price));
                 },
 
                 // TODO: We may want to re-evaluate whether we want to accept price reports
                 // with large deviation. This largely happens because of Uniswap, and we could
                 // implement a more complex deviation calculation that ignores DEXs
                 PriceReporterState::TooMuchDeviation(report, _) => {
-                    midpoint_prices.push((report.base_token, report.quote_token, report.price));
+                    let price = (&report).into();
+                    midpoint_prices.push((report.base_token, report.quote_token, price));
                 },
 
                 err_state => {
@@ -176,8 +178,9 @@ impl HandshakeExecutor {
 
         // Validate that the maximum deviation between the proposed prices and the
         // locally observed prices is within the acceptable range
-        let my_prices: HashMap<(Token, Token), Price> = self.fetch_price_vector().await?.into();
-        let peer_prices: HashMap<(Token, Token), Price> = proposed_prices.clone().into();
+        let my_prices: HashMap<(Token, Token), TimestampedPrice> =
+            self.fetch_price_vector().await?.into();
+        let peer_prices: HashMap<(Token, Token), TimestampedPrice> = proposed_prices.clone().into();
         if !my_prices.contains_key(&(base.clone(), quote.clone())) {
             return Err(HandshakeManagerError::NoPriceData(format!(
                 "{ERR_NO_PRICE_STREAM}: {base}-{quote}"
@@ -189,8 +192,8 @@ impl HandshakeExecutor {
         // price rejections with different assets to determine the asset pair an
         // order is on So instead we validate all of the peer's proposed prices
         // that we have local prices for
-        for ((base, quote), peer_price) in peer_prices.into_iter() {
-            if let Some(my_price) = my_prices.get(&(base, quote)) {
+        for ((base, quote), TimestampedPrice { price: peer_price, .. }) in peer_prices.into_iter() {
+            if let Some(TimestampedPrice { price: my_price, .. }) = my_prices.get(&(base, quote)) {
                 let price_deviation = (peer_price - my_price) / my_price;
                 if price_deviation.abs() > MAX_PRICE_DEVIATION {
                     return Ok(false);

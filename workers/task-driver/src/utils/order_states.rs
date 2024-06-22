@@ -1,7 +1,10 @@
 //! Helpers for transitioning order states and recording them in order history
 
-use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
-use common::types::wallet::{order_metadata::OrderState, OrderIdentifier};
+use circuit_types::r#match::MatchResult;
+use common::types::{
+    wallet::{order_metadata::OrderState, OrderIdentifier},
+    TimestampedPrice,
+};
 use state::State;
 
 /// The error message emitted when metadata for an order cannot be found
@@ -24,7 +27,7 @@ pub async fn transition_order_settling(
 pub async fn record_order_fill(
     order_id: OrderIdentifier,
     match_res: &MatchResult,
-    price: FixedPoint,
+    price: TimestampedPrice,
     state: &State,
 ) -> Result<(), String> {
     // Get the order metadata

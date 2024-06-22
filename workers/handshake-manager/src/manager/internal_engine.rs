@@ -7,6 +7,7 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
     wallet::{OrderIdentifier, Wallet, WalletIdentifier},
+    TimestampedPrice,
 };
 use job_types::task_driver::TaskDriverJob;
 use rand::{seq::SliceRandom, thread_rng};
@@ -148,7 +149,7 @@ impl HandshakeExecutor {
         order_id2: OrderIdentifier,
         wallet_id1: WalletIdentifier,
         wallet_id2: WalletIdentifier,
-        price: FixedPoint,
+        price: TimestampedPrice,
         validity_witness1: OrderValidityWitnessBundle,
         validity_witness2: OrderValidityWitnessBundle,
         validity_proof1: OrderValidityProofBundle,
@@ -157,9 +158,10 @@ impl HandshakeExecutor {
         // Match the orders
         let b1 = &validity_witness1.commitment_witness.balance_send;
         let b2 = &validity_witness2.commitment_witness.balance_send;
+        let price_fp = FixedPoint::from_f64_round_down(price.price);
         // TODO: Use a more sophisticated version of `min_fill_size` that takes into
         // account the cost of the match
-        let match_result = match match_orders(&o1, &o2, b1, b2, self.min_fill_size, price) {
+        let match_result = match match_orders(&o1, &o2, b1, b2, self.min_fill_size, price_fp) {
             Some(match_) => match_,
             None => return Ok(false),
         };
@@ -214,14 +216,14 @@ impl HandshakeExecutor {
     async fn get_execution_price(
         &self,
         order: &OrderIdentifier,
-    ) -> Result<FixedPoint, HandshakeManagerError> {
+    ) -> Result<TimestampedPrice, HandshakeManagerError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
         let base_addr = base.get_addr().to_string();
         let quote_addr = quote.get_addr().to_string();
         let price_recv = self.request_price(base.clone(), quote.clone())?;
         let price =
             match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
-                PriceReporterState::Nominal(report) => report.price,
+                PriceReporterState::Nominal(ref report) => report.into(),
                 err_state => {
                     return Err(HandshakeManagerError::NoPriceData(format!(
                         "{ERR_NO_PRICE_DATA}: {} / {} {err_state:?}",
@@ -230,7 +232,7 @@ impl HandshakeExecutor {
                 },
             };
 
-        Ok(FixedPoint::from_f64_round_down(price))
+        Ok(price)
     }
 
     /// Get the validity proof and witness for a given order

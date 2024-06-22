@@ -4,7 +4,6 @@
 //!     2. Order selection
 //!     3. State management
 
-use circuit_types::fixed_point::FixedPoint;
 use common::types::{handshake::ConnectionRole, wallet::OrderIdentifier};
 use gossip_api::{
     pubsub::{
@@ -79,7 +78,7 @@ impl HandshakeExecutor {
                     ConnectionRole::Dialer,
                     peer_order_id,
                     local_order_id,
-                    FixedPoint::from_f64_round_down(price),
+                    price,
                 )
                 .await?;
         }
@@ -149,7 +148,7 @@ impl HandshakeExecutor {
                 ConnectionRole::Listener,
                 sender_order,
                 my_order,
-                FixedPoint::from_f64_round_down(execution_price),
+                execution_price,
             )
             .await?;
 
