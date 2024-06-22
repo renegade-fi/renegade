@@ -135,12 +135,13 @@ impl HandshakeExecutor {
         let reblind_witness = proof_witnesses.copy_reblind_witness();
         let party0_commitments_statement = &party0_validity_bundle.commitment_proof.statement;
         let party1_commitments_statement = &party1_validity_bundle.commitment_proof.statement;
+        let price_fp = FixedPoint::from_f64_round_down(handshake_state.execution_price.price);
         let (witness, statement) = Self::execute_match_settle_mpc(
             &commitment_witness.order,
             &commitment_witness.balance_send,
             &commitment_witness.balance_receive,
             &commitment_witness.relayer_fee,
-            &handshake_state.execution_price,
+            &price_fp,
             &reblind_witness.reblinded_wallet_public_shares,
             party0_commitments_statement.indices,
             party1_commitments_statement.indices,

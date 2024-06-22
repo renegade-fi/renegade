@@ -61,8 +61,7 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod tests {
-    use circuit_types::fixed_point::FixedPoint;
-    use common::types::wallet_mocks::mock_order;
+    use common::types::{wallet_mocks::mock_order, TimestampedPrice};
     use uuid::Uuid;
 
     use crate::applicator::test_helpers::mock_applicator;
@@ -94,7 +93,7 @@ mod tests {
         tx.commit().unwrap();
 
         // Modify the metadata and push
-        md.record_partial_fill(1, FixedPoint::from_f64_round_down(2.));
+        md.record_partial_fill(1, TimestampedPrice::new(2.));
         applicator.update_order_metadata(md).unwrap();
 
         // Check the state

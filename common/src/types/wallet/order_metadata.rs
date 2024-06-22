@@ -1,8 +1,10 @@
 //! Order metadata for a wallet's orders
 
-use circuit_types::{fixed_point::FixedPoint, order::Order, Amount};
+use circuit_types::{order::Order, Amount};
 use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
+
+use crate::types::TimestampedPrice;
 
 use super::OrderIdentifier;
 
@@ -57,7 +59,7 @@ impl OrderMetadata {
     }
 
     /// Add a fill to the order metadata
-    pub fn record_partial_fill(&mut self, amount: Amount, price: FixedPoint) {
+    pub fn record_partial_fill(&mut self, amount: Amount, price: TimestampedPrice) {
         let fill = PartialOrderFill::new(amount, price);
         self.fills.push(fill);
     }
@@ -68,17 +70,13 @@ impl OrderMetadata {
 pub struct PartialOrderFill {
     /// The amount filled by the partial fill
     pub amount: Amount,
-    /// The price at which the fill executed
-    pub price: f64,
-    /// The time at which the fill executed, in milliseconds since the epoch
-    pub timestamp: u64,
+    /// The timestamped price at which the fill executed
+    pub price: TimestampedPrice,
 }
 
 impl PartialOrderFill {
     /// Constructor
-    pub fn new(amount: Amount, price: FixedPoint) -> Self {
-        let timestamp = get_current_time_millis();
-        let price = price.to_f64();
-        Self { amount, price, timestamp }
+    pub fn new(amount: Amount, price: TimestampedPrice) -> Self {
+        Self { amount, price }
     }
 }

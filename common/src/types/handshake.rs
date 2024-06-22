@@ -1,12 +1,11 @@
 //! Groups type definitions for handshake state objects used throughout the node
 
-use circuit_types::fixed_point::FixedPoint;
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::wallet::OrderIdentifier;
+use super::{wallet::OrderIdentifier, TimestampedPrice};
 
 /// The role in an MPC network setup; either Dialer or Listener depending on
 /// which node initiates the connection
@@ -49,7 +48,7 @@ pub struct HandshakeState {
     /// The public secret share nullifier of the local peer's order
     pub local_share_nullifier: Scalar,
     /// The agreed upon price of the asset the local party intends to match on
-    pub execution_price: FixedPoint,
+    pub execution_price: TimestampedPrice,
     /// The current state information of the
     pub state: State,
     /// The cancel channel that the coordinator may use to cancel MPC execution
@@ -88,7 +87,7 @@ impl HandshakeState {
         local_order_id: OrderIdentifier,
         peer_share_nullifier: Scalar,
         local_share_nullifier: Scalar,
-        execution_price: FixedPoint,
+        execution_price: TimestampedPrice,
     ) -> Self {
         Self {
             request_id,
@@ -134,10 +133,11 @@ impl HandshakeState {
 /// Handshake object mocks for testing
 #[cfg(feature = "mocks")]
 pub mod mocks {
-    use circuit_types::fixed_point::FixedPoint;
     use constants::Scalar;
     use rand::thread_rng;
     use uuid::Uuid;
+
+    use crate::types::TimestampedPrice;
 
     use super::{ConnectionRole, HandshakeState, State};
 
@@ -152,7 +152,7 @@ pub mod mocks {
             local_order_id: Uuid::new_v4(),
             peer_share_nullifier: Scalar::random(&mut rng),
             local_share_nullifier: Scalar::random(&mut rng),
-            execution_price: FixedPoint::from_f64_round_down(10.),
+            execution_price: TimestampedPrice::new(10.),
             state: State::Completed,
             cancel_channel: None,
         }

@@ -63,8 +63,9 @@ impl State {
 pub mod test {
     use std::cmp::Reverse;
 
-    use circuit_types::fixed_point::FixedPoint;
-    use common::types::{wallet::order_metadata::OrderState, wallet_mocks::mock_order};
+    use common::types::{
+        wallet::order_metadata::OrderState, wallet_mocks::mock_order, TimestampedPrice,
+    };
     use itertools::Itertools;
     use rand::{seq::IteratorRandom, thread_rng, RngCore};
 
@@ -132,7 +133,7 @@ pub mod test {
         let idx = (0..orders.len()).choose(&mut thread_rng()).unwrap();
         let mut meta = orders[idx].clone();
         let amount = 1;
-        let price = FixedPoint::from_f64_round_down(10.);
+        let price = TimestampedPrice::new(10.);
         meta.record_partial_fill(amount, price);
 
         // Update and retrieve the order's metadata

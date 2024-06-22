@@ -26,6 +26,7 @@ use common::types::{
     tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor},
     wallet::Wallet,
     wallet_mocks::mock_empty_wallet,
+    TimestampedPrice,
 };
 use constants::Scalar;
 use eyre::{eyre, Result};
@@ -365,7 +366,7 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     let order_id1 = *buy_wallet.orders.keys().next().unwrap();
     let order_id2 = *sell_wallet.orders.keys().next().unwrap();
     let task = SettleMatchInternalTaskDescriptor::new(
-        FixedPoint::from_f64_round_down(EXECUTION_PRICE),
+        TimestampedPrice::new(EXECUTION_PRICE),
         buy_wallet.wallet_id,
         sell_wallet.wallet_id,
         order_id1,

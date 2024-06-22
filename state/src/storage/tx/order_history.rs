@@ -116,10 +116,10 @@ impl<'db> StateTxn<'db, RW> {
 mod tests {
     use std::cmp::Reverse;
 
-    use circuit_types::fixed_point::FixedPoint;
     use common::types::{
         wallet::order_metadata::{OrderMetadata, OrderState},
         wallet_mocks::mock_order,
+        TimestampedPrice,
     };
     use itertools::Itertools;
     use rand::{thread_rng, Rng, RngCore};
@@ -200,7 +200,7 @@ mod tests {
         // Update the order
         let mut updated_order = curr_order;
         let amount = rng.gen();
-        let price = FixedPoint::from_f64_round_down(100.2);
+        let price = TimestampedPrice::new(100.2);
         updated_order.record_partial_fill(amount, price);
 
         let tx = db.new_write_tx().unwrap();
