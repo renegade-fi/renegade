@@ -170,9 +170,9 @@ impl Display for NetworkOrderState {
     }
 }
 
+/// Test helpers for creating dummy network orders
 #[cfg(feature = "mocks")]
 pub mod test_helpers {
-    //! Test helpers for creating dummy network orders
     use std::str::FromStr;
 
     use constants::Scalar;

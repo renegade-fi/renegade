@@ -266,7 +266,7 @@ mod test {
 
         // Change the value
         if let Some(v) = map.get_mut(&key) {
-            *v = new_value.clone();
+            v.clone_from(&new_value);
         }
 
         assert_eq!(map.get(&key), Some(&new_value));

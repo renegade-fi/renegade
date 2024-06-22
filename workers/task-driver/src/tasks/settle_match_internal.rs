@@ -21,6 +21,7 @@ use circuits::zk_circuits::valid_match_settle::{
 use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
 use common::types::tasks::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
+use common::types::TimestampedPrice;
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::Wallet,
@@ -148,7 +149,7 @@ impl From<StateError> for SettleMatchInternalTaskError {
 /// Describe the settle match internal task
 pub struct SettleMatchInternalTask {
     /// The price at which the match was executed
-    execution_price: FixedPoint,
+    execution_price: TimestampedPrice,
     /// The identifier of the first order
     order_id1: OrderIdentifier,
     /// The identifier of the second order
@@ -429,7 +430,7 @@ impl SettleMatchInternalTask {
         let commitment_witness0 = &self.order1_validity_witness.commitment_witness;
         let commitment_witness1 = &self.order2_validity_witness.commitment_witness;
 
-        let price = self.execution_price;
+        let price = FixedPoint::from_f64_round_down(self.execution_price.price);
         let order0 = commitment_witness0.order.clone();
         let balance0 = commitment_witness0.balance_send.clone();
         let balance_receive0 = commitment_witness0.balance_receive.clone();

@@ -3,12 +3,12 @@
 use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
-use circuit_types::fixed_point::FixedPoint;
 use common::{
     new_async_shared,
     types::{
         handshake::{ConnectionRole, HandshakeState},
         wallet::OrderIdentifier,
+        TimestampedPrice,
     },
     AsyncShared,
 };
@@ -57,7 +57,7 @@ impl HandshakeStateIndex {
         role: ConnectionRole,
         peer_order_id: OrderIdentifier,
         local_order_id: OrderIdentifier,
-        execution_price: FixedPoint,
+        execution_price: TimestampedPrice,
     ) -> Result<(), HandshakeManagerError> {
         // Lookup the public share nullifiers for the order
         let state = &self.state;

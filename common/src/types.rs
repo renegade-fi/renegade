@@ -1,4 +1,7 @@
 //! Defines common types that many crates can depend on
+
+use serde::{Deserialize, Serialize};
+
 pub mod exchange;
 pub mod gossip;
 pub mod handshake;
@@ -11,6 +14,7 @@ pub mod token;
 pub mod transfer_auth;
 pub mod wallet;
 
+use util::get_current_time_millis;
 // Re-export the mock types
 #[cfg(feature = "mocks")]
 pub use wallet::mocks as wallet_mocks;
@@ -18,6 +22,8 @@ pub use wallet::mocks as wallet_mocks;
 use tokio::sync::watch::{
     channel as watch_channel, Receiver as WatchReceiver, Sender as WatchSender,
 };
+
+use self::exchange::PriceReport;
 
 /// A type alias for an empty channel used to signal cancellation to workers
 pub type CancelChannel = WatchReceiver<()>;
@@ -29,6 +35,29 @@ pub fn new_cancel_channel() -> (WatchSender<()>, CancelChannel) {
 /// An alias for the price of an asset pair that abstracts away its
 /// representation
 pub type Price = f64;
+
+/// A price along with the time it was sampled
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TimestampedPrice {
+    /// The price
+    pub price: Price,
+    /// The time the price was sampled, in milliseconds since the epoch
+    pub timestamp: u64,
+}
+
+impl TimestampedPrice {
+    /// Create a new timestamped price
+    pub fn new(price: Price) -> Self {
+        let timestamp = get_current_time_millis();
+        Self { price, timestamp }
+    }
+}
+
+impl From<&PriceReport> for TimestampedPrice {
+    fn from(value: &PriceReport) -> Self {
+        Self { price: value.price, timestamp: value.local_timestamp }
+    }
+}
 
 /// A type alias for matching pool names
 pub type MatchingPoolName = String;

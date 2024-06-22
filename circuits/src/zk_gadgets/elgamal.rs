@@ -67,9 +67,9 @@ impl ElGamalGadget {
     }
 }
 
+/// Test helpers for the ElGamal gadgets
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    //! Test helpers for the ElGamal gadgets
 
     use circuit_types::elgamal::{DecryptionKey, EncryptionKey};
     use jf_primitives::elgamal::KeyPair;

@@ -340,7 +340,7 @@ mod test {
         // Check the info map
         let info_map = state.get_peer_info_map().await.unwrap();
         assert_eq!(info_map.len(), 2);
-        assert!(info_map.get(&peer1.peer_id).is_none());
+        assert!(!info_map.contains_key(&peer1.peer_id));
 
         let info_peer2 = info_map.get(&peer2.peer_id).unwrap();
         let info_peer3 = info_map.get(&peer3.peer_id).unwrap();

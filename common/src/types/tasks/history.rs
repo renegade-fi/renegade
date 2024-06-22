@@ -93,9 +93,9 @@ impl HistoricalTaskDescription {
     }
 }
 
+/// Mock helpers for testing task history
 #[cfg(feature = "mocks")]
 pub mod historical_mocks {
-    //! Mock helpers for testing task history
 
     use rand::{thread_rng, RngCore};
 
