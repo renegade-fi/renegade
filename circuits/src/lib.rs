@@ -333,8 +333,15 @@ pub mod test_helpers {
         let (o1, o2) = if rng.gen_bool(0.5) { (o1, o2) } else { (o2, o1) };
 
         // Match orders assuming they are fully capitalized
-        let match_res =
-            match_orders_with_max_amount(&o1, &o2, o1.amount, o2.amount, price).unwrap();
+        let match_res = match_orders_with_max_amount(
+            &o1,
+            &o2,
+            o1.amount,
+            o2.amount,
+            Amount::MIN, // min_fill_size
+            price,
+        )
+        .unwrap();
 
         (o1, o2, price, match_res)
     }
