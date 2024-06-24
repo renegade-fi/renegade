@@ -28,13 +28,14 @@ pub fn match_orders(
     o2: &Order,
     b1: &Balance,
     b2: &Balance,
+    min_fill_size: Amount,
     price: FixedPoint,
 ) -> Option<MatchResult> {
     // Compute the amount matched by the engine
     let party0_max_amount = compute_max_amount(&price, o1, b1);
     let party1_max_amount = compute_max_amount(&price, o2, b2);
 
-    match_orders_with_max_amount(o1, o2, party0_max_amount, party1_max_amount, price)
+    match_orders_with_max_amount(o1, o2, party0_max_amount, party1_max_amount, min_fill_size, price)
 }
 
 /// Match two orders with a given maximum amount for each side
@@ -51,6 +52,7 @@ pub fn match_orders_with_max_amount(
     o2: &Order,
     max1: Amount,
     max2: Amount,
+    min_fill_size: Amount,
     price: FixedPoint,
 ) -> Option<MatchResult> {
     // Same asset pair
@@ -75,6 +77,9 @@ pub fn match_orders_with_max_amount(
     // Compute the auth data for the match
     let quote_amount = price * Scalar::from(min_base_amount);
     let quote_amount = scalar_to_u128(&quote_amount.floor());
+    if quote_amount < min_fill_size {
+        return None;
+    }
 
     Some(MatchResult {
         base_mint: o1.base_mint.clone(),
@@ -189,7 +194,7 @@ mod tests {
         order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
         traits::BaseType,
-        SizedWalletShare,
+        Amount, SizedWalletShare,
     };
     use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
     use lazy_static::lazy_static;
@@ -338,8 +343,15 @@ mod tests {
         let balance2 = BALANCE2.clone();
         let midpoint_price = 7.;
 
-        let res =
-            match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        )
+        .unwrap();
 
         assert_eq!(res.base_mint, 1u64.into());
         assert_eq!(res.quote_mint, 2u64.into());
@@ -365,8 +377,15 @@ mod tests {
         // Can only buy 10 units of the base
         balance1.amount = (midpoint_price * 10.) as u128;
 
-        let res =
-            match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        )
+        .unwrap();
 
         assert_eq!(res.base_mint, 1u64.into());
         assert_eq!(res.quote_mint, 2u64.into());
@@ -389,8 +408,15 @@ mod tests {
         // Can only sell 10 units of the base
         balance2.amount = 10u128;
 
-        let res =
-            match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into()).unwrap();
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        )
+        .unwrap();
 
         assert_eq!(res.base_mint, 1u64.into());
         assert_eq!(res.quote_mint, 2u64.into());
@@ -411,7 +437,14 @@ mod tests {
         order2.base_mint = 3u64.into();
         let midpoint_price = 7.;
 
-        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        );
 
         assert!(res.is_none());
     }
@@ -427,7 +460,14 @@ mod tests {
         order2.quote_mint = 3u64.into();
         let midpoint_price = 7.;
 
-        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        );
 
         assert!(res.is_none());
     }
@@ -443,7 +483,14 @@ mod tests {
         order2.side = order1.side;
         let midpoint_price = 7.;
 
-        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        );
 
         assert!(res.is_none());
     }
@@ -458,7 +505,14 @@ mod tests {
 
         let midpoint_price = BUY_SIDE_WORST_CASE_PRICE + 1.;
 
-        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        );
 
         assert!(res.is_none());
     }
@@ -473,7 +527,14 @@ mod tests {
 
         let midpoint_price = SELL_SIDE_WORST_CASE_PRICE - 1.;
 
-        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        );
 
         assert!(res.is_none());
     }
@@ -489,8 +550,42 @@ mod tests {
         balance2.amount = 0;
         let midpoint_price = 7.;
 
-        let res = match_orders(&order1, &order2, &balance1, &balance2, midpoint_price.into());
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_fill_size
+            midpoint_price.into(),
+        );
 
+        assert!(res.is_none());
+    }
+
+    /// Tests the case in which the minimum fill size is greater than the amount
+    /// of the quote asset implied by the match
+    #[test]
+    fn test_min_fill_size_greater_than_quote_amount() {
+        const AMOUNT: Amount = 2;
+        const PRICE: f32 = 10.;
+        let mut order1 = ORDER1.clone();
+        let balance1 = BALANCE1.clone();
+        let mut order2 = ORDER2.clone();
+        let balance2 = BALANCE2.clone();
+
+        order1.amount = AMOUNT;
+        order2.amount = AMOUNT;
+
+        // Implied quote swap is AMOUNT * PRICE
+        let implied_quote_amount = AMOUNT * (PRICE as u128);
+        let res = match_orders(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            implied_quote_amount + 1, // min_fill_size
+            PRICE.into(),
+        );
         assert!(res.is_none());
     }
 

@@ -152,7 +152,9 @@ impl HandshakeExecutor {
         // Match the orders
         let b1 = &validity_witness1.commitment_witness.balance_send;
         let b2 = &validity_witness2.commitment_witness.balance_send;
-        let match_result = match match_orders(&o1, &o2, b1, b2, price) {
+        // TODO: Use a more sophisticated version of `min_fill_size` that takes into
+        // account the cost of the match
+        let match_result = match match_orders(&o1, &o2, b1, b2, self.min_fill_size, price) {
             Some(match_) => match_,
             None => return Ok(false),
         };

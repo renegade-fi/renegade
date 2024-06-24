@@ -1,7 +1,7 @@
 //! The relayer CLI and config definitions
 
 use arbitrum_client::constants::Chain;
-use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
+use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint, Amount};
 use clap::Parser;
 use common::types::{
     exchange::Exchange,
@@ -45,6 +45,9 @@ pub struct Cli {
     // | Application Level Configs |
     // -----------------------------
 
+    /// The minimum amount of the quote asset that the relayer should settle matches on
+    #[clap(long, value_parser, default_value = "0")]
+    pub min_fill_size: Amount,
     /// The take rate of this relayer on a managed match, i.e. the amount of the received asset 
     /// that the relayer takes as a fee
     /// 
@@ -221,6 +224,9 @@ pub struct RelayerConfig {
     // -----------------------------
     // | Application Level Configs |
     // -----------------------------
+    /// The minimum amount of the quote asset that the relayer should settle
+    /// matches on
+    pub min_fill_size: Amount,
     /// The take rate of this relayer on a managed match, i.e. the amount of the
     /// received asset that the relayer takes as a fee
     pub match_take_rate: FixedPoint,
@@ -363,6 +369,7 @@ impl Default for RelayerConfig {
 impl Clone for RelayerConfig {
     fn clone(&self) -> Self {
         Self {
+            min_fill_size: self.min_fill_size,
             match_take_rate: self.match_take_rate,
             match_mutual_exclusion_list: self.match_mutual_exclusion_list.clone(),
             relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),

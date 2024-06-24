@@ -6,7 +6,7 @@ pub mod r#match;
 mod price_agreement;
 pub(crate) mod scheduler;
 
-use circuit_types::r#match::MatchResult;
+use circuit_types::{r#match::MatchResult, Amount};
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
     new_async_shared,
@@ -108,6 +108,9 @@ pub struct HandshakeManager {
 /// Manages the threaded execution of the handshake protocol
 #[derive(Clone)]
 pub struct HandshakeExecutor {
+    /// The minimum amount of the quote asset that the relayer should settle
+    /// matches on
+    pub(crate) min_fill_size: Amount,
     /// The set of wallets to mutually exclude from matches
     pub(crate) mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The cache used to mark order pairs as already matched
@@ -137,6 +140,7 @@ impl HandshakeExecutor {
     /// Create a new protocol executor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        min_fill_size: Amount,
         mutual_exclusion_list: HashSet<WalletIdentifier>,
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
@@ -151,6 +155,7 @@ impl HandshakeExecutor {
         let handshake_state_index = HandshakeStateIndex::new(state.clone());
 
         Ok(Self {
+            min_fill_size,
             mutual_exclusion_list,
             handshake_cache,
             handshake_state_index,

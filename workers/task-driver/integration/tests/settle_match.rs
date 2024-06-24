@@ -147,7 +147,7 @@ async fn setup_match_result(
     let o2 = wallet2.orders.first().unwrap().1.clone();
     let b1 = wallet1.balances.first().unwrap().1.clone();
     let b2 = wallet2.balances.first().unwrap().1.clone();
-    let match_ = match_orders(&o1, &o2, &b1, &b2, price).unwrap();
+    let match_ = match_orders(&o1, &o2, &b1, &b2, Amount::MIN, price).unwrap();
 
     // Pull the validity proof witnesses for the wallets so that we may update the
     // public and private shares to the reblinded and augmented shares; as would

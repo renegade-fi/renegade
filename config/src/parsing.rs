@@ -96,6 +96,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let relayer_fee_whitelist = parse_relayer_whitelist_file(cli_args.relayer_fee_whitelist)?;
 
     let mut config = RelayerConfig {
+        min_fill_size: cli_args.min_fill_size,
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
         match_mutual_exclusion_list: cli_args.match_mutual_exclusion_list.into_iter().collect(),
         relayer_fee_whitelist,

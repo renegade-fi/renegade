@@ -6,6 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use circuit_types::Amount;
 use common::types::{wallet::WalletIdentifier, CancelChannel};
 use common::worker::Worker;
 use external_api::bus_message::SystemBusMessage;
@@ -29,6 +30,9 @@ use super::{error::HandshakeManagerError, manager::HandshakeManager};
 
 /// The config type for the handshake manager
 pub struct HandshakeManagerConfig {
+    /// The minimum amount of the quote asset that the relayer should settle
+    /// matches on
+    pub min_fill_size: Amount,
     /// The set of wallets to mutually exclude from matches
     ///
     /// I.e. any two wallets in this list will never be matched internally by
@@ -68,6 +72,7 @@ impl Worker for HandshakeManager {
             config.cancel_channel.clone(),
         );
         let executor = HandshakeExecutor::new(
+            config.min_fill_size,
             config.mutual_exclusion_list.clone(),
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),

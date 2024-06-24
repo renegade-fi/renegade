@@ -386,6 +386,7 @@ impl MockNodeController {
         let task_queue = self.task_queue.0.clone();
 
         let conf = HandshakeManagerConfig {
+            min_fill_size: self.config.min_fill_size,
             mutual_exclusion_list: HashSet::new(),
             state,
             network_channel,
