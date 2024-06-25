@@ -16,9 +16,18 @@ use common::types::{
 };
 use constants::Scalar;
 use contracts_common::types::MatchPayload;
+use ethers::{
+    abi::Detokenize,
+    contract::ContractCall,
+    providers::Middleware,
+    types::{BlockNumber, TransactionReceipt},
+};
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
+
+#[cfg(feature = "tx-metrics")]
+use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 
 use crate::{
     conversion::{
@@ -30,10 +39,10 @@ use crate::{
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
     },
     errors::ArbitrumClientError,
-    helpers::{send_tx, serialize_calldata},
+    helpers::serialize_calldata,
 };
 
-use super::ArbitrumClient;
+use super::{ArbitrumClient, MiddlewareStack};
 
 impl ArbitrumClient {
     // -----------
@@ -128,11 +137,12 @@ impl ArbitrumClient {
         let contract_statement = to_contract_valid_wallet_create_statement(statement);
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = send_tx(
-            self.get_darkpool_client()
-                .new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
-        )
-        .await?;
+        let receipt = self
+            .send_tx(
+                self.get_darkpool_client()
+                    .new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
+            )
+            .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -167,13 +177,14 @@ impl ArbitrumClient {
             transfer_auth.map(to_contract_transfer_aux_data).transpose()?.unwrap_or_default();
         let transfer_aux_data_calldata = serialize_calldata(&contract_transfer_aux_data)?;
 
-        let receipt = send_tx(self.get_darkpool_client().update_wallet(
-            proof_calldata,
-            valid_wallet_update_statement_calldata,
-            wallet_commitment_signature.into(),
-            transfer_aux_data_calldata,
-        ))
-        .await?;
+        let receipt = self
+            .send_tx(self.get_darkpool_client().update_wallet(
+                proof_calldata,
+                valid_wallet_update_statement_calldata,
+                wallet_commitment_signature.into(),
+                transfer_aux_data_calldata,
+            ))
+            .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -260,14 +271,15 @@ impl ArbitrumClient {
         let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
 
         // Call `process_match_settle` on darkpool contract
-        let receipt = send_tx(self.get_darkpool_client().process_match_settle(
-            party_0_match_payload_calldata,
-            party_1_match_payload_calldata,
-            valid_match_settle_statement_calldata,
-            match_proofs_calldata,
-            match_link_proofs_calldata,
-        ))
-        .await?;
+        let receipt = self
+            .send_tx(self.get_darkpool_client().process_match_settle(
+                party_0_match_payload_calldata,
+                party_1_match_payload_calldata,
+                valid_match_settle_statement_calldata,
+                match_proofs_calldata,
+                match_link_proofs_calldata,
+            ))
+            .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -299,12 +311,13 @@ impl ArbitrumClient {
         let valid_relayer_fee_settlement_statement_calldata =
             serialize_calldata(&contract_statement)?;
 
-        let receipt = send_tx(self.get_darkpool_client().settle_online_relayer_fee(
-            proof_calldata,
-            valid_relayer_fee_settlement_statement_calldata,
-            relayer_wallet_commitment_signature.into(),
-        ))
-        .await?;
+        let receipt = self
+            .send_tx(self.get_darkpool_client().settle_online_relayer_fee(
+                proof_calldata,
+                valid_relayer_fee_settlement_statement_calldata,
+                relayer_wallet_commitment_signature.into(),
+            ))
+            .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -334,8 +347,8 @@ impl ArbitrumClient {
         let valid_offline_fee_settlement_statement_calldata =
             serialize_calldata(&contract_statement)?;
 
-        let receipt =
-            send_tx(self.get_darkpool_client().settle_offline_fee(
+        let receipt = self
+            .send_tx(self.get_darkpool_client().settle_offline_fee(
                 proof_calldata,
                 valid_offline_fee_settlement_statement_calldata,
             ))
@@ -369,17 +382,58 @@ impl ArbitrumClient {
         let contract_statement = to_contract_valid_fee_redemption_statement(statement)?;
         let valid_fee_redemption_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = send_tx(self.get_darkpool_client().redeem_fee(
-            proof_calldata,
-            valid_fee_redemption_statement_calldata,
-            recipient_wallet_commitment_signature.into(),
-        ))
-        .await?;
+        let receipt = self
+            .send_tx(self.get_darkpool_client().redeem_fee(
+                proof_calldata,
+                valid_fee_redemption_statement_calldata,
+                recipient_wallet_commitment_signature.into(),
+            ))
+            .await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`redeem_fee` tx hash: {}", tx_hash);
 
         Ok(())
+    }
+
+    // -----------
+    // | HELPERS |
+    // -----------
+
+    /// Sends a transaction, awaiting its confirmation and returning the receipt
+    pub async fn send_tx(
+        &self,
+        tx: ContractCall<MiddlewareStack, impl Detokenize>,
+    ) -> Result<TransactionReceipt, ArbitrumClientError> {
+        #[cfg(feature = "tx-metrics")]
+        incr_inflight_txs();
+
+        // Set the gas price to 2x the latest basefee for simplicity
+        let latest_block = self
+            .client()
+            .get_block(BlockNumber::Latest)
+            .await
+            .map_err(err_str!(ArbitrumClientError::Rpc))?
+            .ok_or(ArbitrumClientError::Rpc("No latest block found".to_string()))?;
+
+        let latest_basefee = latest_block
+            .base_fee_per_gas
+            .ok_or(ArbitrumClientError::Rpc("No basefee found".to_string()))?;
+
+        let tx = tx.gas_price(latest_basefee * 2);
+
+        let res = tx
+            .send()
+            .await
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+            .await
+            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxDropped);
+
+        #[cfg(feature = "tx-metrics")]
+        decr_inflight_txs();
+
+        res
     }
 }

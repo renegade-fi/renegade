@@ -1,6 +1,6 @@
 //! Helper functions for Arbitrum client integration tests
 
-use arbitrum_client::{client::ArbitrumClient, helpers::send_tx};
+use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{
     native_helpers::compute_wallet_commitment_from_private, traits::BaseType,
     wallet::WalletShareStateCommitment, SizedWalletShare,
@@ -68,7 +68,8 @@ pub async fn setup_pre_allocated_state(client: &mut ArbitrumClient) -> Result<Pr
 /// w/ the default values for the leaves
 pub async fn clear_merkle(client: &ArbitrumClient) -> Result<()> {
     warn!("Clearing Merkle contract state");
-    send_tx(client.get_darkpool_client().clear_merkle())
+    client
+        .send_tx(client.get_darkpool_client().clear_merkle())
         .await
         .map(|_| ())
         .map_err(|e| eyre!(e.to_string()))
