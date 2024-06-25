@@ -16,11 +16,7 @@ use contracts_common::types::{
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
     ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
 };
-use ethers::{
-    abi::Detokenize,
-    contract::ContractCall,
-    types::{Bytes, TransactionReceipt},
-};
+use ethers::types::Bytes;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -28,12 +24,8 @@ use crate::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
         settleOnlineRelayerFeeCall, updateWalletCall,
     },
-    client::MiddlewareStack,
     errors::ArbitrumClientError,
 };
-
-#[cfg(feature = "tx-metrics")]
-use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 
 /// Serializes a calldata element for a contract call
 pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, ArbitrumClientError> {
@@ -47,27 +39,6 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
     calldata: &'de Bytes,
 ) -> Result<T, ArbitrumClientError> {
     postcard::from_bytes(calldata).map_err(|e| ArbitrumClientError::Serde(e.to_string()))
-}
-
-/// Sends a transaction, awaiting its confirmation and returning the receipt
-pub async fn send_tx(
-    tx: ContractCall<MiddlewareStack, impl Detokenize>,
-) -> Result<TransactionReceipt, ArbitrumClientError> {
-    #[cfg(feature = "tx-metrics")]
-    incr_inflight_txs();
-
-    let res = tx
-        .send()
-        .await
-        .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-        .await
-        .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-        .ok_or(ArbitrumClientError::TxDropped);
-
-    #[cfg(feature = "tx-metrics")]
-    decr_inflight_txs();
-
-    res
 }
 
 /// Parses wallet shares from the calldata of a `newWallet` call
