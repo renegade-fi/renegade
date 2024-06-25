@@ -366,7 +366,22 @@ impl TaskExecutor {
         let args = self.runtime_config;
 
         // Create and run the task
-        let mut task = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await?;
+        let task_res = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await;
+
+        // If we fail to create the task, pop it from the queue so it isn't stuck there
+        // in a pending state. For immediate tasks, this is handled by queue
+        // resumption.
+        if let Err(e) = task_res {
+            error!("error creating task: {e:?}");
+            if !immediate {
+                let waiter = self.state().pop_task(id, false /* success */).await?;
+                waiter.await?;
+            }
+
+            return Err(e);
+        }
+
+        let mut task = task_res.unwrap();
 
         #[cfg(feature = "task-metrics")]
         incr_inflight_tasks();

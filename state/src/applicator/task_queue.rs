@@ -45,6 +45,11 @@ fn task_not_running(task_id: TaskIdentifier) -> String {
     format!("task {task_id} is not running")
 }
 
+/// Construct a task not in queue error
+fn task_not_in_queue(task_id: TaskIdentifier, queue_key: TaskQueueKey) -> String {
+    format!("task {task_id} is not in queue {queue_key}")
+}
+
 // -----------
 // | Helpers |
 // -----------
@@ -127,6 +132,14 @@ impl StateApplicator {
         let key = tx
             .get_queue_key_for_task(&task_id)?
             .ok_or_else(|| StateApplicatorError::Rejected(invalid_task_id(task_id)))?;
+
+        // If the task being popped is not at the top of the queue, reject the
+        // transition
+        let queued_tasks = tx.get_queued_tasks(&key)?;
+        let top_of_queue = queued_tasks.first();
+        if top_of_queue.is_none() || top_of_queue.unwrap().id != task_id {
+            return Err(StateApplicatorError::Rejected(task_not_in_queue(task_id, key)));
+        }
 
         if tx.is_queue_paused(&key)? {
             return Err(StateApplicatorError::Rejected(queue_paused(key)));
@@ -857,6 +870,41 @@ mod test {
         assert_eq!(history[0].state, QueuedTaskState::Failed);
         assert_eq!(history[1].id, task_id1);
         assert_eq!(history[1].state, QueuedTaskState::Completed);
+    }
+
+    /// Test popping the same task twice, this should be gracefully rejected by
+    /// the applicator
+    #[test]
+    fn test_double_pop() {
+        let (task_queue, _task_recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        let task_queue_key = TaskQueueKey::new_v4();
+
+        // Test double-popping the only task in a queue
+        let task_id1 = enqueue_dummy_task(task_queue_key, applicator.db());
+        applicator.pop_task(task_id1, true /* success */).unwrap();
+        let res = applicator.pop_task(task_id1, true /* success */);
+        assert!(matches!(res, Err(StateApplicatorError::Rejected(_))));
+        applicator.clear_queue(task_queue_key).unwrap();
+
+        // Test double-popping a task in a filled queue
+        let task_id1 = enqueue_dummy_task(task_queue_key, applicator.db());
+        enqueue_dummy_task(task_queue_key, applicator.db());
+        applicator.pop_task(task_id1, true /* success */).unwrap();
+        let res = applicator.pop_task(task_id1, true /* success */);
+        assert!(matches!(res, Err(StateApplicatorError::Rejected(_))));
+        applicator.clear_queue(task_queue_key).unwrap();
+
+        // Test double-popping a failed task
+        let task_id1 = enqueue_dummy_task(task_queue_key, applicator.db());
+        applicator.pop_task(task_id1, false /* success */).unwrap();
+        let res = applicator.pop_task(task_id1, false /* success */);
+        assert!(matches!(res, Err(StateApplicatorError::Rejected(_))));
     }
 
     /// Test transitioning the state of the top task on the queue
