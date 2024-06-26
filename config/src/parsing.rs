@@ -98,6 +98,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let mut config = RelayerConfig {
         min_fill_size: cli_args.min_fill_size,
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
+        auto_redeem_fees: cli_args.auto_redeem_fees,
         match_mutual_exclusion_list: cli_args.match_mutual_exclusion_list.into_iter().collect(),
         relayer_fee_whitelist,
         price_reporter_url,

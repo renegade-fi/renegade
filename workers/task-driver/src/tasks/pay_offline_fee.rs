@@ -288,9 +288,10 @@ impl PayOfflineFeeTask {
         let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
 
-        // If this was a relayer fee payment, enqueue a job for the relayer to redeem
-        // the fee
-        if !self.is_protocol_fee {
+        // If this was a relayer fee payment and auto-redeem is enabled, enqueue a job
+        // for the relayer to redeem the fee
+        let auto_redeem = self.state.get_auto_redeem_fees().await?;
+        if !self.is_protocol_fee && auto_redeem {
             enqueue_relayer_redeem_job(self.note.clone(), &self.state)
                 .await
                 .map_err(PayOfflineFeeTaskError::State)?;

@@ -65,6 +65,11 @@ impl State {
         self.with_read_tx(move |tx| tx.get_relayer_fee(&wid).map_err(StateError::Db)).await
     }
 
+    /// Get the local relayer's auto-redeem fees flag
+    pub async fn get_auto_redeem_fees(&self) -> Result<bool, StateError> {
+        self.with_read_tx(|tx| tx.get_auto_redeem_fees().map_err(StateError::Db)).await
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -116,6 +121,7 @@ impl State {
         let fee_decryption_key = config.fee_decryption_key;
         let match_take_rate = config.match_take_rate;
         let relayer_fee_whitelist = config.relayer_fee_whitelist.clone();
+        let auto_redeem_fees = config.auto_redeem_fees;
 
         let relayer_wallet_id =
             derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
@@ -128,6 +134,7 @@ impl State {
             tx.set_fee_decryption_key(&fee_decryption_key)?;
             tx.set_relayer_take_rate(&match_take_rate)?;
             tx.set_local_node_wallet(relayer_wallet_id)?;
+            tx.set_auto_redeem_fees(auto_redeem_fees)?;
 
             // Setup the relayer fee whitelist
             for entry in relayer_fee_whitelist {
