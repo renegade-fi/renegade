@@ -291,7 +291,8 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                 self.open_snap_db().await.map_err(new_snapshot_error)?
             }
         };
-        self.update_from_snapshot(meta, snap_db).await.map_err(new_snapshot_error)
+        self.update_from_snapshot(meta, snap_db).await.map_err(new_snapshot_error)?;
+        self.delete_snapshot_data().await.map_err(new_snapshot_error)
     }
 
     async fn get_current_snapshot(

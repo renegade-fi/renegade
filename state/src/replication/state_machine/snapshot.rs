@@ -256,6 +256,20 @@ impl StateMachine {
         jh.await.map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
     }
 
+    /// Deletes the snapshot data
+    pub async fn delete_snapshot_data(&self) -> Result<(), ReplicationV2Error> {
+        let snapshot_data_path = self.snapshot_data_path();
+        if !snapshot_data_path.exists() {
+            return Ok(());
+        }
+
+        // Delete the snapshot DB
+        tokio::fs::remove_file(snapshot_data_path)
+            .await
+            .map_err(err_str!(ReplicationV2Error::Snapshot))
+            .map(|_| ())
+    }
+
     /// Copy all data from one DB to another
     pub(crate) fn copy_db_data(src: &DB, dest: &DB) -> Result<(), ReplicationV2Error> {
         let src_tx = src.new_read_tx()?;
