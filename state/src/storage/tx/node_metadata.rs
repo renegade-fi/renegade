@@ -33,6 +33,8 @@ const LOCAL_WALLET_ID_KEY: &str = "local-wallet-id";
 const LOCAL_RELAYER_DECRYPTION_KEY: &str = "local-relayer-decryption-key";
 /// The key for the local relayer's match take rate in the node metadata table
 const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
+/// The key for the local relayer's auto-redeem fees flag in the node metadata
+const AUTO_REDEEM_FEES_KEY: &str = "auto-redeem-fees";
 
 // -----------
 // | Helpers |
@@ -104,6 +106,13 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
             .read(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string())?
             .ok_or_else(|| err_not_found(RELAYER_TAKE_RATE_KEY))
     }
+
+    /// Get the local relayer's auto-redeem fees flag
+    pub fn get_auto_redeem_fees(&self) -> Result<bool, StorageError> {
+        self.inner()
+            .read(NODE_METADATA_TABLE, &AUTO_REDEEM_FEES_KEY.to_string())?
+            .ok_or_else(|| err_not_found(AUTO_REDEEM_FEES_KEY))
+    }
 }
 
 // -----------
@@ -145,5 +154,14 @@ impl<'db> StateTxn<'db, RW> {
     /// Set the local relayer's match take rate
     pub fn set_relayer_take_rate(&self, take_rate: &FixedPoint) -> Result<(), StorageError> {
         self.inner().write(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string(), take_rate)
+    }
+
+    /// Set the local relayer's auto-redeem fees flag
+    pub fn set_auto_redeem_fees(&self, auto_redeem_fees: bool) -> Result<(), StorageError> {
+        self.inner().write(
+            NODE_METADATA_TABLE,
+            &AUTO_REDEEM_FEES_KEY.to_string(),
+            &auto_redeem_fees,
+        )
     }
 }

@@ -60,6 +60,9 @@ pub struct Cli {
     /// The path to the file containing relayer fee whitelist info
     #[clap(long, value_parser)]
     pub relayer_fee_whitelist: Option<String>,
+    /// When set, the relayer will automatically redeem new fees into its wallet
+    #[clap(long, value_parser, default_value = "false")]
+    pub auto_redeem_fees: bool,
 
     // -----------------------
     // | Environment Configs |
@@ -230,6 +233,8 @@ pub struct RelayerConfig {
     /// The take rate of this relayer on a managed match, i.e. the amount of the
     /// received asset that the relayer takes as a fee
     pub match_take_rate: FixedPoint,
+    /// When set, the relayer will automatically redeem new fees into its wallet
+    pub auto_redeem_fees: bool,
     /// The mutual exclusion list for matches, two wallets in this list will
     /// never be matched internally by the node
     pub match_mutual_exclusion_list: HashSet<WalletIdentifier>,
@@ -371,6 +376,7 @@ impl Clone for RelayerConfig {
         Self {
             min_fill_size: self.min_fill_size,
             match_take_rate: self.match_take_rate,
+            auto_redeem_fees: self.auto_redeem_fees,
             match_mutual_exclusion_list: self.match_mutual_exclusion_list.clone(),
             relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
