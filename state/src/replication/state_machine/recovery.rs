@@ -35,7 +35,8 @@ impl StateMachine {
         };
 
         self.update_from_snapshot(&dummy_meta, snap_db).await?;
-        self.clear_wallet_task_queues()
+        self.clear_wallet_task_queues()?;
+        self.delete_snapshot_data().await
     }
 
     /// Clear all wallet task queues
