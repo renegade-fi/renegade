@@ -101,6 +101,11 @@ impl<'db> StateTxn<'db, RW> {
         self.inner().drop_table(table_name)
     }
 
+    /// Clear a table in the database
+    pub fn clear_table(&self, table_name: &str) -> Result<(), StorageError> {
+        self.inner().clear_table(table_name)
+    }
+
     /// Create the tables used by the state interface
     pub fn setup_tables(&self) -> Result<(), StorageError> {
         for table in ALL_TABLES.iter() {
@@ -334,6 +339,18 @@ impl<'db> DbTxn<'db, RW> {
         };
 
         self.txn.drop_table(table).map_err(StorageError::TxOp)
+    }
+
+    /// Clear a table in the database
+    pub fn clear_table(&self, table_name: &str) -> Result<(), StorageError> {
+        let table = self.open_table(table_name);
+        let table = match table {
+            Ok(t) => t,
+            Err(StorageError::OpenTable(MdbxError::NotFound)) => return Ok(()),
+            Err(e) => return Err(e),
+        };
+
+        self.txn.clear_table(&table).map_err(StorageError::TxOp)
     }
 
     /// Set a key in the database
