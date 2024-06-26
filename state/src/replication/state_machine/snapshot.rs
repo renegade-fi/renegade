@@ -265,10 +265,8 @@ impl StateMachine {
                 continue;
             }
 
-            // Delete and create the table on the destination
-            #[allow(unsafe_code)]
-            unsafe { dest_tx.drop_table(table) }?;
-            dest_tx.create_table(table)?;
+            // Clear the table on the destination
+            dest_tx.clear_table(table)?;
 
             // Copy all keys and values
             let src_cursor = src_tx.inner().cursor(table)?;
