@@ -20,8 +20,9 @@ use libp2p::{
     identity::Keypair,
     kad::{record::store::MemoryStore, Kademlia, KademliaEvent},
     request_response::{
-        Behaviour as RequestResponse, Codec as RequestResponseCodec, Event as RequestResponseEvent,
-        ProtocolName, ProtocolSupport,
+        Behaviour as RequestResponse, Codec as RequestResponseCodec,
+        Config as RequestResponseConfig, Event as RequestResponseEvent, ProtocolName,
+        ProtocolSupport,
     },
     PeerId,
 };
@@ -30,6 +31,7 @@ use std::{
     fmt::{Display, Formatter},
     io::{Error as IoError, ErrorKind},
     iter,
+    time::Duration,
 };
 
 use super::error::NetworkManagerError;
@@ -40,6 +42,9 @@ use super::error::NetworkManagerError;
 
 /// The maximum size libp2p should allocate buffer space for
 const MAX_MESSAGE_SIZE: usize = 1_000_000_000;
+
+/// The timeout for inbound/outbound requests, in seconds
+const REQ_RES_TIMEOUT_SECS: u64 = 60;
 
 /// The composed behavior that handles all types of network requests that
 /// various workers need access to
@@ -67,10 +72,12 @@ impl ComposedNetworkBehavior {
         keypair: &Keypair,
     ) -> Result<Self, NetworkManagerError> {
         // Construct the point-to-point request response protocol
+        let mut request_response_config: RequestResponseConfig = Default::default();
+        request_response_config.set_request_timeout(Duration::from_secs(REQ_RES_TIMEOUT_SECS));
         let request_response = RequestResponse::new(
             RelayerGossipCodec::new(),
             iter::once((RelayerGossipProtocol::new(protocol_version), ProtocolSupport::Full)),
-            Default::default(),
+            request_response_config,
         );
 
         // Construct the peer info KDHT
