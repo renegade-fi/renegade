@@ -8,7 +8,8 @@ use circuit_types::{
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
-        RefreshWalletTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
+        RedeemFeeTaskDescriptor, RefreshWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
+        UpdateWalletTaskDescriptor,
     },
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{KeyChain, Wallet, WalletIdentifier},
@@ -19,8 +20,8 @@ use external_api::{
         CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
         FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
         GetOrderByIdResponse, GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse,
-        PayFeesResponse, RefreshWalletResponse, UpdateOrderRequest, UpdateOrderResponse,
-        WithdrawBalanceRequest, WithdrawBalanceResponse,
+        PayFeesResponse, RedeemNoteRequest, RedeemNoteResponse, RefreshWalletResponse,
+        UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
     },
     types::ApiOrder,
     EmptyRequestResponse,
@@ -754,6 +755,47 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Propose the task and await for it to be enqueued
         let task_id = append_task_and_await(task.into(), &self.state).await?;
         Ok(WithdrawBalanceResponse { task_id })
+    }
+}
+
+/// Handler for the POST /wallet/:id/redeem-note route
+pub struct RedeemNoteHandler {
+    /// A copy of the relayer-global state
+    state: State,
+}
+
+impl RedeemNoteHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for RedeemNoteHandler {
+    type Request = RedeemNoteRequest;
+    type Response = RedeemNoteResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+
+        // Lookup the wallet in the global state, then verify that the note _can_ be
+        // redeemed into the wallet
+        let mut old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let bal = req.note.as_balance();
+        old_wallet.add_balance(bal).map_err(bad_request)?;
+
+        let task = RedeemFeeTaskDescriptor::new(wallet_id, req.note, req.decryption_key);
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
+
+        // Propose the task and await for it to be enqueued
+        Ok(RedeemNoteResponse { task_id })
     }
 }
 

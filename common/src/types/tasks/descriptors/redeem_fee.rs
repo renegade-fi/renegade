@@ -24,12 +24,8 @@ pub struct RedeemFeeTaskDescriptor {
 
 impl RedeemFeeTaskDescriptor {
     /// Constructor
-    pub fn new(
-        wallet_id: WalletIdentifier,
-        note: Note,
-        decryption_key: DecryptionKey,
-    ) -> Result<Self, String> {
-        Ok(RedeemFeeTaskDescriptor { wallet_id, note, decryption_key })
+    pub fn new(wallet_id: WalletIdentifier, note: Note, decryption_key: DecryptionKey) -> Self {
+        RedeemFeeTaskDescriptor { wallet_id, note, decryption_key }
     }
 }
 

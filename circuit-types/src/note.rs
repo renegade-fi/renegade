@@ -12,6 +12,7 @@ use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    balance::Balance,
     elgamal::EncryptionKey,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     Amount,
@@ -62,5 +63,10 @@ impl Note {
     /// Get the elements of the note that are encrypted when the note is created
     pub fn plaintext_elements(&self) -> [Scalar; NOTE_CIPHERTEXT_SIZE] {
         [biguint_to_scalar(&self.mint), Scalar::from(self.amount), self.blinder]
+    }
+
+    /// Get the balance associated with the note
+    pub fn as_balance(&self) -> Balance {
+        Balance::new_from_mint_and_amount(self.mint.clone(), self.amount)
     }
 }
