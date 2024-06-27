@@ -31,6 +31,7 @@ use crate::{
         node_startup::{NodeStartupTask, NodeStartupTaskState},
         pay_offline_fee::{PayOfflineFeeTask, PayOfflineFeeTaskState},
         pay_relayer_fee::{PayRelayerFeeTask, PayRelayerFeeTaskState},
+        redeem_note::{RedeemNoteTask, RedeemNoteTaskState},
         redeem_relayer_fee::{RedeemRelayerFeeTask, RedeemRelayerFeeTaskState},
         refresh_wallet::{RefreshWalletTask, RefreshWalletTaskState},
         settle_match::{SettleMatchTask, SettleMatchTaskState},
@@ -327,6 +328,9 @@ impl TaskExecutor {
             TaskDescriptor::RedeemRelayerFee(desc) => {
                 self.start_task_helper::<RedeemRelayerFeeTask>(immediate, id, desc).await
             },
+            TaskDescriptor::RedeemNote(desc) => {
+                self.start_task_helper::<RedeemNoteTask>(immediate, id, desc).await
+            },
             TaskDescriptor::UpdateWallet(desc) => {
                 self.start_task_helper::<UpdateWalletTask>(immediate, id, desc).await
             },
@@ -458,6 +462,8 @@ pub enum StateWrapper {
     PayRelayerFee(PayRelayerFeeTaskState),
     /// The state object for the redeem relayer fees task
     RedeemRelayerFee(RedeemRelayerFeeTaskState),
+    /// The state object for the redeem note task
+    RedeemNote(RedeemNoteTaskState),
     /// The state object for the settle match task
     SettleMatch(SettleMatchTaskState),
     /// The state object for the settle match internal task
@@ -480,6 +486,7 @@ impl StateWrapper {
             StateWrapper::PayOfflineFee(state) => state.committed(),
             StateWrapper::PayRelayerFee(state) => state.committed(),
             StateWrapper::RedeemRelayerFee(state) => state.committed(),
+            StateWrapper::RedeemNote(state) => state.committed(),
             StateWrapper::SettleMatch(state) => state.committed(),
             StateWrapper::SettleMatchInternal(state) => state.committed(),
             StateWrapper::UpdateWallet(state) => state.committed(),
@@ -500,6 +507,7 @@ impl StateWrapper {
             StateWrapper::RedeemRelayerFee(state) => {
                 state == &RedeemRelayerFeeTaskState::commit_point()
             },
+            StateWrapper::RedeemNote(state) => state == &RedeemNoteTaskState::commit_point(),
             StateWrapper::SettleMatch(state) => state == &SettleMatchTaskState::commit_point(),
             StateWrapper::SettleMatchInternal(state) => {
                 state == &SettleMatchInternalTaskState::commit_point()
@@ -521,6 +529,7 @@ impl StateWrapper {
             StateWrapper::PayOfflineFee(state) => state.completed(),
             StateWrapper::PayRelayerFee(state) => state.completed(),
             StateWrapper::RedeemRelayerFee(state) => state.completed(),
+            StateWrapper::RedeemNote(state) => state.completed(),
             StateWrapper::SettleMatch(state) => state.completed(),
             StateWrapper::SettleMatchInternal(state) => state.completed(),
             StateWrapper::UpdateWallet(state) => state.completed(),
@@ -539,6 +548,7 @@ impl Display for StateWrapper {
             StateWrapper::PayOfflineFee(state) => state.to_string(),
             StateWrapper::PayRelayerFee(state) => state.to_string(),
             StateWrapper::RedeemRelayerFee(state) => state.to_string(),
+            StateWrapper::RedeemNote(state) => state.to_string(),
             StateWrapper::SettleMatch(state) => state.to_string(),
             StateWrapper::SettleMatchInternal(state) => state.to_string(),
             StateWrapper::UpdateWallet(state) => state.to_string(),

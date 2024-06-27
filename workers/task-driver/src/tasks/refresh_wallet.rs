@@ -1,9 +1,5 @@
 //! Refresh a wallet from on-chain state
 
-// --------------
-// | Task State |
-// --------------
-
 use std::{
     error::Error,
     fmt::{self, Display},
@@ -36,6 +32,10 @@ const REFRESH_WALLET_TASK_NAME: &str = "refresh-wallet";
 
 /// Error emitted when the wallet is not found in contract storage
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
+
+// --------------
+// | Task State |
+// --------------
 
 /// Defines the state of the refresh wallet task
 #[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]

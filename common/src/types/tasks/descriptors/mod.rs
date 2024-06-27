@@ -4,6 +4,7 @@ mod new_wallet;
 mod node_startup;
 mod pay_fees;
 mod redeem_fees;
+mod redeem_note;
 mod refresh_wallet;
 mod settle_match;
 mod update_merkle_proof;
@@ -14,6 +15,7 @@ pub use new_wallet::*;
 pub use node_startup::*;
 pub use pay_fees::*;
 pub use redeem_fees::*;
+pub use redeem_note::*;
 pub use refresh_wallet::*;
 pub use settle_match::*;
 pub use update_merkle_proof::*;
@@ -109,6 +111,8 @@ pub enum TaskDescriptor {
     RelayerFee(PayRelayerFeeTaskDescriptor),
     /// The task descriptor for the `RedeemRelayerFee` task
     RedeemRelayerFee(RedeemRelayerFeeTaskDescriptor),
+    /// The task descriptor for the `RedeemNote` task
+    RedeemNote(RedeemNoteTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
     SettleMatchInternal(SettleMatchInternalTaskDescriptor),
     /// The task descriptor for the `SettleMatch` task
@@ -131,6 +135,7 @@ impl TaskDescriptor {
             TaskDescriptor::OfflineFee(task) => task.wallet_id,
             TaskDescriptor::RelayerFee(task) => task.wallet_id,
             TaskDescriptor::RedeemRelayerFee(task) => task.wallet_id,
+            TaskDescriptor::RedeemNote(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
             },
@@ -152,6 +157,7 @@ impl TaskDescriptor {
             TaskDescriptor::OfflineFee(task) => vec![task.wallet_id],
             TaskDescriptor::RelayerFee(task) => vec![task.wallet_id],
             TaskDescriptor::RedeemRelayerFee(task) => vec![task.wallet_id],
+            TaskDescriptor::RedeemNote(task) => vec![task.wallet_id],
             TaskDescriptor::SettleMatch(task) => vec![task.wallet_id],
             TaskDescriptor::SettleMatchInternal(task) => vec![task.wallet_id1, task.wallet_id2],
             TaskDescriptor::UpdateMerkleProof(task) => vec![task.wallet.wallet_id],
@@ -169,6 +175,7 @@ impl TaskDescriptor {
             | TaskDescriptor::OfflineFee(_)
             | TaskDescriptor::RelayerFee(_)
             | TaskDescriptor::RedeemRelayerFee(_)
+            | TaskDescriptor::RedeemNote(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
@@ -188,6 +195,7 @@ impl TaskDescriptor {
             TaskDescriptor::SettleMatchInternal(_) => "Settle Match".to_string(),
             TaskDescriptor::OfflineFee(_) => "Pay Fee Offline".to_string(),
             TaskDescriptor::RelayerFee(_) => "Pay Relayer Fee".to_string(),
+            TaskDescriptor::RedeemNote(_) => "Redeem Note".to_string(),
             TaskDescriptor::RedeemRelayerFee(_) => "Redeem Relayer Fee".to_string(),
             TaskDescriptor::UpdateMerkleProof(_) => "Update Merkle Proof".to_string(),
             TaskDescriptor::NodeStartup(_) => "Node Startup".to_string(),
