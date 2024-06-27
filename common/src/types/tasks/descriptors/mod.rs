@@ -3,7 +3,7 @@ mod lookup_wallet;
 mod new_wallet;
 mod node_startup;
 mod pay_fees;
-mod redeem_fees;
+mod redeem_fee;
 mod refresh_wallet;
 mod settle_match;
 mod update_merkle_proof;
@@ -13,7 +13,7 @@ pub use lookup_wallet::*;
 pub use new_wallet::*;
 pub use node_startup::*;
 pub use pay_fees::*;
-pub use redeem_fees::*;
+pub use redeem_fee::*;
 pub use refresh_wallet::*;
 pub use settle_match::*;
 pub use update_merkle_proof::*;
@@ -107,8 +107,8 @@ pub enum TaskDescriptor {
     OfflineFee(PayOfflineFeeTaskDescriptor),
     /// The task descriptor for the `PayRelayerFee` task
     RelayerFee(PayRelayerFeeTaskDescriptor),
-    /// The task descriptor for the `RedeemRelayerFee` task
-    RedeemRelayerFee(RedeemRelayerFeeTaskDescriptor),
+    /// The task descriptor for the `RedeemFee` task
+    RedeemFee(RedeemFeeTaskDescriptor),
     /// The task descriptor for the `SettleMatchInternal` task
     SettleMatchInternal(SettleMatchInternalTaskDescriptor),
     /// The task descriptor for the `SettleMatch` task
@@ -130,7 +130,7 @@ impl TaskDescriptor {
             TaskDescriptor::RefreshWallet(task) => task.wallet_id,
             TaskDescriptor::OfflineFee(task) => task.wallet_id,
             TaskDescriptor::RelayerFee(task) => task.wallet_id,
-            TaskDescriptor::RedeemRelayerFee(task) => task.wallet_id,
+            TaskDescriptor::RedeemFee(task) => task.wallet_id,
             TaskDescriptor::SettleMatch(_) => {
                 unimplemented!("SettleMatch should preempt queue, no key needed")
             },
@@ -151,7 +151,7 @@ impl TaskDescriptor {
             TaskDescriptor::RefreshWallet(task) => vec![task.wallet_id],
             TaskDescriptor::OfflineFee(task) => vec![task.wallet_id],
             TaskDescriptor::RelayerFee(task) => vec![task.wallet_id],
-            TaskDescriptor::RedeemRelayerFee(task) => vec![task.wallet_id],
+            TaskDescriptor::RedeemFee(task) => vec![task.wallet_id],
             TaskDescriptor::SettleMatch(task) => vec![task.wallet_id],
             TaskDescriptor::SettleMatchInternal(task) => vec![task.wallet_id1, task.wallet_id2],
             TaskDescriptor::UpdateMerkleProof(task) => vec![task.wallet.wallet_id],
@@ -168,7 +168,7 @@ impl TaskDescriptor {
             | TaskDescriptor::RefreshWallet(_)
             | TaskDescriptor::OfflineFee(_)
             | TaskDescriptor::RelayerFee(_)
-            | TaskDescriptor::RedeemRelayerFee(_)
+            | TaskDescriptor::RedeemFee(_)
             | TaskDescriptor::UpdateWallet(_)
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
@@ -188,7 +188,7 @@ impl TaskDescriptor {
             TaskDescriptor::SettleMatchInternal(_) => "Settle Match".to_string(),
             TaskDescriptor::OfflineFee(_) => "Pay Fee Offline".to_string(),
             TaskDescriptor::RelayerFee(_) => "Pay Relayer Fee".to_string(),
-            TaskDescriptor::RedeemRelayerFee(_) => "Redeem Relayer Fee".to_string(),
+            TaskDescriptor::RedeemFee(_) => "Redeem Fee".to_string(),
             TaskDescriptor::UpdateMerkleProof(_) => "Update Merkle Proof".to_string(),
             TaskDescriptor::NodeStartup(_) => "Node Startup".to_string(),
         }

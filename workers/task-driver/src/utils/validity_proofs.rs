@@ -23,7 +23,7 @@ use circuits::zk_circuits::valid_reblind::{
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
-use common::types::tasks::RedeemRelayerFeeTaskDescriptor;
+use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
 use gossip_api::pubsub::orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC};
 use gossip_api::pubsub::PubsubMessage;
@@ -327,8 +327,9 @@ async fn link_and_store_proofs(
 /// Enqueue a job to redeem a relayer fee into the relayer's wallet
 pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
     let relayer_wallet_id = state.get_relayer_wallet_id().await?;
+    let decryption_key = state.get_fee_decryption_key().await?;
     let descriptor =
-        RedeemRelayerFeeTaskDescriptor::new(relayer_wallet_id, note).expect("infallible");
+        RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key).expect("infallible");
 
     state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())
 }
