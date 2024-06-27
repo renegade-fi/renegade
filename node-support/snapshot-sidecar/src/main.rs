@@ -19,7 +19,7 @@ use aws_sdk_s3::{primitives::ByteStream, Client};
 use clap::Parser;
 use config::{parsing::parse_config_from_file, RelayerConfig};
 use external_api::http::admin::{IsLeaderResponse, IS_LEADER_ROUTE};
-use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{event::RemoveKind, Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use reqwest::Client as HttpClient;
 use tracing::{error, info};
 use util::{
@@ -70,28 +70,25 @@ async fn main() {
     let config = aws_config::from_env().region(region).load().await;
     let s3_client = aws_sdk_s3::Client::new(&config);
 
-    // If the watch path does not exist, create it as an empty file
-    let path = snapshot_lock_path(&relayer_config);
+    // If the watch path does not exist, create it as an empty directory
+    let path = relayer_config.raft_snapshot_path();
     if !path.exists() {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("Failed to create parent directories");
-        }
-
-        fs::write(&path, []).expect("Failed to write to file");
+        fs::create_dir_all(path).expect("Failed to create snapshot directory");
     }
 
     // Build a notification channel
     let (tx, rx) = channel();
     let mut watcher =
         RecommendedWatcher::new(tx, Config::default()).expect("Failed to create watcher");
-    watcher.watch(&path, RecursiveMode::NonRecursive).expect("Failed to watch path");
+    watcher.watch(path, RecursiveMode::NonRecursive).expect("Failed to watch path");
 
     // Listen for events
     let debounce_interval = Duration::from_secs(cli.interval);
     let mut last_event = Instant::now() - debounce_interval;
     for event in rx.iter().flatten() {
-        if let EventKind::Remove(..) = event.kind {
-            if Instant::now() - last_event > debounce_interval {
+        if let EventKind::Remove(RemoveKind::File) = event.kind {
+            let lock_path = snapshot_lock_path(&relayer_config);
+            if event.paths.contains(&lock_path) && Instant::now() - last_event > debounce_interval {
                 maybe_record_snapshot(&cli, &relayer_config, &s3_client).await;
                 last_event = Instant::now();
             }
@@ -159,16 +156,12 @@ async fn check_leader(api_base: &str) -> Result<bool, String> {
 
 /// Build the full path of the snapshot lock file
 fn snapshot_lock_path(conf: &RelayerConfig) -> PathBuf {
-    let snap_path = conf.raft_snapshot_path.clone();
-    let dir = if snap_path.ends_with('/') { snap_path } else { format!("{snap_path}/") };
-    let full_path = format!("{}{}", dir, SNAPSHOT_LOCK_FILE_NAME);
-    PathBuf::from(full_path)
+    let snap_path = conf.raft_snapshot_path();
+    snap_path.join(SNAPSHOT_LOCK_FILE_NAME)
 }
 
 /// Build the full path of the snapshot file
 fn snapshot_path(conf: &RelayerConfig) -> PathBuf {
-    let snap_path = conf.raft_snapshot_path.clone();
-    let dir = if snap_path.ends_with('/') { snap_path } else { format!("{snap_path}/") };
-    let full_path = format!("{}{}", dir, SNAPSHOT_FILE_NAME);
-    PathBuf::from(full_path)
+    let snap_path = conf.raft_snapshot_path();
+    snap_path.join(SNAPSHOT_FILE_NAME)
 }
