@@ -4,13 +4,13 @@ use std::{error::Error, fmt::Display};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::{balance::Balance, note::Note};
+use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use circuits::zk_circuits::valid_fee_redemption::{
     SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
 };
 use common::types::{
     merkle::MerkleAuthenticationPath, proof_bundles::FeeRedemptionBundle,
-    tasks::RedeemRelayerFeeTaskDescriptor, wallet::Wallet,
+    tasks::RedeemFeeTaskDescriptor, wallet::Wallet,
 };
 use job_types::{
     network_manager::NetworkManagerQueue,
@@ -40,7 +40,7 @@ const ERR_WALLET_NOT_FOUND: &str = "wallet not found in state";
 
 /// Defines the state of the redeem relayer fee task
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Serialize)]
-pub enum RedeemRelayerFeeTaskState {
+pub enum RedeemFeeTaskState {
     /// The task is awaiting scheduling
     Pending,
     /// The task is finding the Merkle opening for the note
@@ -55,32 +55,32 @@ pub enum RedeemRelayerFeeTaskState {
     Completed,
 }
 
-impl TaskState for RedeemRelayerFeeTaskState {
+impl TaskState for RedeemFeeTaskState {
     fn commit_point() -> Self {
-        RedeemRelayerFeeTaskState::SubmittingRedemption
+        RedeemFeeTaskState::SubmittingRedemption
     }
 
     fn completed(&self) -> bool {
-        matches!(self, RedeemRelayerFeeTaskState::Completed)
+        matches!(self, RedeemFeeTaskState::Completed)
     }
 }
 
-impl Display for RedeemRelayerFeeTaskState {
+impl Display for RedeemFeeTaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RedeemRelayerFeeTaskState::Pending => write!(f, "Pending"),
-            RedeemRelayerFeeTaskState::FindingNoteOpening => write!(f, "Finding Note Opening"),
-            RedeemRelayerFeeTaskState::ProvingRedemption => write!(f, "Proving Redemption"),
-            RedeemRelayerFeeTaskState::SubmittingRedemption => write!(f, "Submitting Redemption"),
-            RedeemRelayerFeeTaskState::FindingWalletOpening => write!(f, "Finding Opening"),
-            RedeemRelayerFeeTaskState::Completed => write!(f, "Completed"),
+            RedeemFeeTaskState::Pending => write!(f, "Pending"),
+            RedeemFeeTaskState::FindingNoteOpening => write!(f, "Finding Note Opening"),
+            RedeemFeeTaskState::ProvingRedemption => write!(f, "Proving Redemption"),
+            RedeemFeeTaskState::SubmittingRedemption => write!(f, "Submitting Redemption"),
+            RedeemFeeTaskState::FindingWalletOpening => write!(f, "Finding Opening"),
+            RedeemFeeTaskState::Completed => write!(f, "Completed"),
         }
     }
 }
 
-impl From<RedeemRelayerFeeTaskState> for StateWrapper {
-    fn from(value: RedeemRelayerFeeTaskState) -> Self {
-        StateWrapper::RedeemRelayerFee(value)
+impl From<RedeemFeeTaskState> for StateWrapper {
+    fn from(value: RedeemFeeTaskState) -> Self {
+        StateWrapper::RedeemFee(value)
     }
 }
 
@@ -90,7 +90,7 @@ impl From<RedeemRelayerFeeTaskState> for StateWrapper {
 
 /// The error type for the redeem relayer fee task
 #[derive(Clone, Debug)]
-pub enum RedeemRelayerFeeError {
+pub enum RedeemFeeError {
     /// An error interacting with Arbitrum
     Arbitrum(String),
     /// An error generating a proof for fee payment
@@ -103,29 +103,29 @@ pub enum RedeemRelayerFeeError {
     UpdateValidityProofs(String),
 }
 
-impl TaskError for RedeemRelayerFeeError {
+impl TaskError for RedeemFeeError {
     fn retryable(&self) -> bool {
         match self {
-            RedeemRelayerFeeError::Arbitrum(_)
-            | RedeemRelayerFeeError::ProofGeneration(_)
-            | RedeemRelayerFeeError::State(_)
-            | RedeemRelayerFeeError::UpdateValidityProofs(_) => true,
-            RedeemRelayerFeeError::Signature(_) => false,
+            RedeemFeeError::Arbitrum(_)
+            | RedeemFeeError::ProofGeneration(_)
+            | RedeemFeeError::State(_)
+            | RedeemFeeError::UpdateValidityProofs(_) => true,
+            RedeemFeeError::Signature(_) => false,
         }
     }
 }
 
-impl Display for RedeemRelayerFeeError {
+impl Display for RedeemFeeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
 }
 
-impl Error for RedeemRelayerFeeError {}
+impl Error for RedeemFeeError {}
 
-impl From<StateError> for RedeemRelayerFeeError {
+impl From<StateError> for RedeemFeeError {
     fn from(err: StateError) -> Self {
-        RedeemRelayerFeeError::State(err.to_string())
+        RedeemFeeError::State(err.to_string())
     }
 }
 
@@ -134,9 +134,11 @@ impl From<StateError> for RedeemRelayerFeeError {
 // -------------------
 
 /// Defines the redeem relayer fee task
-pub struct RedeemRelayerFeeTask {
+pub struct RedeemFeeTask {
     /// The note to redeem
     pub note: Note,
+    /// The decryption key authorized to redeem the wallet
+    pub decryption_key: DecryptionKey,
     /// The Merkle opening of the note
     pub note_opening: Option<MerkleAuthenticationPath>,
     /// The wallet before the note is settled
@@ -154,27 +156,28 @@ pub struct RedeemRelayerFeeTask {
     /// A sender to the network manager's queue
     pub network_sender: NetworkManagerQueue,
     /// The current state of the task
-    pub task_state: RedeemRelayerFeeTaskState,
+    pub task_state: RedeemFeeTaskState,
 }
 
 #[async_trait]
-impl Task for RedeemRelayerFeeTask {
-    type State = RedeemRelayerFeeTaskState;
-    type Error = RedeemRelayerFeeError;
-    type Descriptor = RedeemRelayerFeeTaskDescriptor;
+impl Task for RedeemFeeTask {
+    type State = RedeemFeeTaskState;
+    type Error = RedeemFeeError;
+    type Descriptor = RedeemFeeTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let state = &ctx.state;
         let old_wallet = state
             .get_wallet(&descriptor.wallet_id)
             .await
-            .map_err(err_str!(RedeemRelayerFeeError::State))?
-            .ok_or(RedeemRelayerFeeError::State(ERR_WALLET_NOT_FOUND.to_string()))?;
+            .map_err(err_str!(RedeemFeeError::State))?
+            .ok_or(RedeemFeeError::State(ERR_WALLET_NOT_FOUND.to_string()))?;
 
         let new_wallet = Self::get_new_wallet(&descriptor.note, &old_wallet)?;
 
         Ok(Self {
             note: descriptor.note,
+            decryption_key: descriptor.decryption_key,
             note_opening: None,
             old_wallet,
             new_wallet,
@@ -183,7 +186,7 @@ impl Task for RedeemRelayerFeeTask {
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             network_sender: ctx.network_queue,
-            task_state: RedeemRelayerFeeTaskState::Pending,
+            task_state: RedeemFeeTaskState::Pending,
         })
     }
 
@@ -196,26 +199,26 @@ impl Task for RedeemRelayerFeeTask {
     ))]
     async fn step(&mut self) -> Result<(), Self::Error> {
         match self.task_state {
-            RedeemRelayerFeeTaskState::Pending => {
-                self.task_state = RedeemRelayerFeeTaskState::FindingNoteOpening;
+            RedeemFeeTaskState::Pending => {
+                self.task_state = RedeemFeeTaskState::FindingNoteOpening;
             },
-            RedeemRelayerFeeTaskState::FindingNoteOpening => {
+            RedeemFeeTaskState::FindingNoteOpening => {
                 self.find_note_opening().await?;
-                self.task_state = RedeemRelayerFeeTaskState::ProvingRedemption;
+                self.task_state = RedeemFeeTaskState::ProvingRedemption;
             },
-            RedeemRelayerFeeTaskState::ProvingRedemption => {
+            RedeemFeeTaskState::ProvingRedemption => {
                 self.generate_proof().await?;
-                self.task_state = RedeemRelayerFeeTaskState::SubmittingRedemption;
+                self.task_state = RedeemFeeTaskState::SubmittingRedemption;
             },
-            RedeemRelayerFeeTaskState::SubmittingRedemption => {
+            RedeemFeeTaskState::SubmittingRedemption => {
                 self.submit_redemption().await?;
-                self.task_state = RedeemRelayerFeeTaskState::FindingWalletOpening;
+                self.task_state = RedeemFeeTaskState::FindingWalletOpening;
             },
-            RedeemRelayerFeeTaskState::FindingWalletOpening => {
+            RedeemFeeTaskState::FindingWalletOpening => {
                 self.find_wallet_opening().await?;
-                self.task_state = RedeemRelayerFeeTaskState::Completed;
+                self.task_state = RedeemFeeTaskState::Completed;
             },
-            RedeemRelayerFeeTaskState::Completed => panic!("step() called in `Completed` state"),
+            RedeemFeeTaskState::Completed => panic!("step() called in `Completed` state"),
         }
 
         Ok(())
@@ -238,15 +241,15 @@ impl Task for RedeemRelayerFeeTask {
 // | Task Implementation |
 // -----------------------
 
-impl RedeemRelayerFeeTask {
+impl RedeemFeeTask {
     /// Find the Merkle opening for the note
-    async fn find_note_opening(&mut self) -> Result<(), RedeemRelayerFeeError> {
+    async fn find_note_opening(&mut self) -> Result<(), RedeemFeeError> {
         let note_comm = self.note.commitment();
         let opening = self
             .arbitrum_client
             .find_merkle_authentication_path(note_comm)
             .await
-            .map_err(err_str!(RedeemRelayerFeeError::Arbitrum))?;
+            .map_err(err_str!(RedeemFeeError::Arbitrum))?;
 
         self.note_opening = Some(opening);
         Ok(())
@@ -254,41 +257,39 @@ impl RedeemRelayerFeeTask {
 
     /// Generate a proof of `VALID RELAYER FEE REDEMPTION` for the relayer's
     /// wallet
-    async fn generate_proof(&mut self) -> Result<(), RedeemRelayerFeeError> {
+    async fn generate_proof(&mut self) -> Result<(), RedeemFeeError> {
         let (statement, witness) = self.get_witness_statement().await?;
         let job = ProofJob::ValidFeeRedemption { witness, statement };
         let proof = enqueue_proof_job(job, &self.proof_queue)
-            .map_err(err_str!(RedeemRelayerFeeError::ProofGeneration))?;
+            .map_err(err_str!(RedeemFeeError::ProofGeneration))?;
 
         // Await the proof
-        let bundle = proof.await.map_err(err_str!(RedeemRelayerFeeError::ProofGeneration))?;
+        let bundle = proof.await.map_err(err_str!(RedeemFeeError::ProofGeneration))?;
         self.proof = Some(bundle.proof.into());
 
         Ok(())
     }
 
     /// Submit a `redeem_fee` transaction to the contract
-    async fn submit_redemption(&mut self) -> Result<(), RedeemRelayerFeeError> {
+    async fn submit_redemption(&mut self) -> Result<(), RedeemFeeError> {
         let proof = self.proof.as_ref().unwrap();
 
         // Sign a commitment to the new wallet after redemption
         let new_wallet_comm = self.new_wallet.get_wallet_share_commitment();
-        let sig = self
-            .old_wallet
-            .sign_commitment(new_wallet_comm)
-            .map_err(RedeemRelayerFeeError::Signature)?;
+        let sig =
+            self.old_wallet.sign_commitment(new_wallet_comm).map_err(RedeemFeeError::Signature)?;
 
         self.arbitrum_client
             .redeem_fee(proof, sig.to_vec())
             .await
-            .map_err(err_str!(RedeemRelayerFeeError::Arbitrum))
+            .map_err(err_str!(RedeemFeeError::Arbitrum))
     }
 
     /// Find the opening for the relayer wallet
-    async fn find_wallet_opening(&mut self) -> Result<(), RedeemRelayerFeeError> {
+    async fn find_wallet_opening(&mut self) -> Result<(), RedeemFeeError> {
         let opening = find_merkle_path(&self.new_wallet, &self.arbitrum_client)
             .await
-            .map_err(err_str!(RedeemRelayerFeeError::Arbitrum))?;
+            .map_err(err_str!(RedeemFeeError::Arbitrum))?;
         self.new_wallet.merkle_proof = Some(opening);
 
         let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
@@ -301,10 +302,10 @@ impl RedeemRelayerFeeTask {
     // -----------
 
     /// Get the new wallet after the note is settled
-    fn get_new_wallet(note: &Note, old_wallet: &Wallet) -> Result<Wallet, RedeemRelayerFeeError> {
+    fn get_new_wallet(note: &Note, old_wallet: &Wallet) -> Result<Wallet, RedeemFeeError> {
         let mut new_wallet = old_wallet.clone();
         let bal = Balance::new_from_mint_and_amount(note.mint.clone(), note.amount);
-        new_wallet.add_balance(bal).map_err(err_str!(RedeemRelayerFeeError::State))?;
+        new_wallet.add_balance(bal).map_err(err_str!(RedeemFeeError::State))?;
         new_wallet.reblind_wallet();
 
         Ok(new_wallet)
@@ -313,10 +314,8 @@ impl RedeemRelayerFeeTask {
     /// Get the witness and statement for the proof of `VALID FEE REDEMPTION`
     async fn get_witness_statement(
         &self,
-    ) -> Result<
-        (SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness),
-        RedeemRelayerFeeError,
-    > {
+    ) -> Result<(SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness), RedeemFeeError>
+    {
         let old_wallet = &self.old_wallet;
         let new_wallet = &self.new_wallet;
         let old_wallet_private_shares = old_wallet.private_shares.clone();
@@ -328,14 +327,9 @@ impl RedeemRelayerFeeTask {
             .old_wallet
             .merkle_proof
             .clone()
-            .ok_or(RedeemRelayerFeeError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
+            .ok_or(RedeemFeeError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
         let note_opening = self.note_opening.clone().unwrap();
 
-        let recipient_key = self
-            .state
-            .get_fee_decryption_key()
-            .await
-            .map_err(err_str!(RedeemRelayerFeeError::State))?;
         let receive_index = self.new_wallet.get_balance_index(&self.note.mint).unwrap();
 
         let statement = SizedValidFeeRedemptionStatement {
@@ -355,7 +349,7 @@ impl RedeemRelayerFeeTask {
             wallet_opening: wallet_opening.into(),
             note_opening: note_opening.into(),
             note: self.note.clone(),
-            recipient_key,
+            recipient_key: self.decryption_key,
             receive_index,
         };
 
