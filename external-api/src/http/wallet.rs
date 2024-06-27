@@ -1,6 +1,6 @@
 //! Groups API type definitions for wallet API operations
 
-use circuit_types::balance::Balance;
+use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use common::types::{
     tasks::TaskIdentifier,
     wallet::{order_metadata::OrderMetadata, WalletIdentifier},
@@ -45,6 +45,8 @@ pub const GET_BALANCE_BY_MINT_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:min
 pub const DEPOSIT_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/deposit";
 /// Withdraws an ERC-20 token from the darkpool
 pub const WITHDRAW_BALANCE_ROUTE: &str = "/v0/wallet/:wallet_id/balances/:mint/withdraw";
+/// Redeem a note into a wallet
+pub const REDEEM_NOTE_ROUTE: &str = "/v0/wallet/:wallet_id/redeem-note";
 /// Pays all wallet fees
 pub const PAY_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/pay-fees";
 
@@ -268,6 +270,22 @@ pub struct WithdrawBalanceRequest {
 /// The response type to a request to withdraw a balance
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WithdrawBalanceResponse {
+    /// The ID of the task allocated for this operation
+    pub task_id: TaskIdentifier,
+}
+
+/// A request to redeem a note into a wallet
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RedeemNoteRequest {
+    /// The note to be redeemed
+    pub note: Note,
+    /// The decryption key to use for authorization
+    pub decryption_key: DecryptionKey,
+}
+
+/// A response to redeem a note
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RedeemNoteResponse {
     /// The ID of the task allocated for this operation
     pub task_id: TaskIdentifier,
 }

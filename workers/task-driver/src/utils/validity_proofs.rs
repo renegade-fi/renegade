@@ -328,8 +328,7 @@ async fn link_and_store_proofs(
 pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
     let relayer_wallet_id = state.get_relayer_wallet_id().await?;
     let decryption_key = state.get_fee_decryption_key().await?;
-    let descriptor =
-        RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key).expect("infallible");
+    let descriptor = RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key);
 
     state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())
 }

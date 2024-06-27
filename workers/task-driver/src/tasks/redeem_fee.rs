@@ -258,7 +258,7 @@ impl RedeemFeeTask {
     /// Generate a proof of `VALID RELAYER FEE REDEMPTION` for the relayer's
     /// wallet
     async fn generate_proof(&mut self) -> Result<(), RedeemFeeError> {
-        let (statement, witness) = self.get_witness_statement().await?;
+        let (statement, witness) = self.get_witness_statement()?;
         let job = ProofJob::ValidFeeRedemption { witness, statement };
         let proof = enqueue_proof_job(job, &self.proof_queue)
             .map_err(err_str!(RedeemFeeError::ProofGeneration))?;
@@ -312,7 +312,7 @@ impl RedeemFeeTask {
     }
 
     /// Get the witness and statement for the proof of `VALID FEE REDEMPTION`
-    async fn get_witness_statement(
+    fn get_witness_statement(
         &self,
     ) -> Result<(SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness), RedeemFeeError>
     {
