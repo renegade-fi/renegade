@@ -499,8 +499,7 @@ impl HandshakeExecutor {
         .into();
 
         // Signal the task driver to preempt its queue with the task
-        let wallet_ids = vec![wallet_id];
-        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task, wallet_ids);
+        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task);
         self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
 
         rx.await

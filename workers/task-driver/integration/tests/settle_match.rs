@@ -378,8 +378,7 @@ async fn test_settle_internal_match(test_args: IntegrationTestArgs) -> Result<()
     )
     .unwrap();
 
-    let modified_wallets = vec![buy_wallet.wallet_id, sell_wallet.wallet_id];
-    await_immediate_task(modified_wallets, task.into(), &test_args).await?;
+    await_immediate_task(task.into(), &test_args).await?;
 
     // Verify the match on both wallets
     verify_settlement(
@@ -432,8 +431,7 @@ async fn test_settle_mpc_match(test_args: IntegrationTestArgs) -> Result<()> {
     )
     .unwrap();
 
-    let modified_wallets = vec![buy_wallet.wallet_id];
-    let res = await_immediate_task(modified_wallets, task.into(), &test_args).await;
+    let res = await_immediate_task(task.into(), &test_args).await;
     assert_true_result!(res.is_ok())?;
 
     // Only the first wallet would have been updated in the global state, as the

@@ -1,9 +1,6 @@
 //! Job types for the task driver
 
-use common::types::{
-    tasks::{QueuedTask, TaskDescriptor, TaskIdentifier},
-    wallet::WalletIdentifier,
-};
+use common::types::tasks::{QueuedTask, TaskDescriptor, TaskIdentifier};
 use crossbeam::channel::Sender as CrossbeamSender;
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
@@ -47,8 +44,6 @@ pub enum TaskDriverJob {
     RunImmediate {
         /// The ID to assign the task
         task_id: TaskIdentifier,
-        /// The wallet(s) that this task modifies
-        wallet_ids: Vec<WalletIdentifier>,
         /// The task to run
         task: TaskDescriptor,
         /// The response channel on which to send the task result
@@ -65,18 +60,17 @@ pub enum TaskDriverJob {
 
 impl TaskDriverJob {
     /// Create a new immediate task without a notification channel
-    pub fn new_immediate(task: TaskDescriptor, wallet_ids: Vec<WalletIdentifier>) -> Self {
+    pub fn new_immediate(task: TaskDescriptor) -> Self {
         let id = TaskIdentifier::new_v4();
-        Self::RunImmediate { task_id: id, wallet_ids, task, resp: None }
+        Self::RunImmediate { task_id: id, task, resp: None }
     }
 
     /// Create a new immediate task with a notification channel
     pub fn new_immediate_with_notification(
         task: TaskDescriptor,
-        wallet_ids: Vec<WalletIdentifier>,
     ) -> (Self, TaskNotificationReceiver) {
         let id = TaskIdentifier::new_v4();
         let (sender, receiver) = oneshot_channel();
-        (Self::RunImmediate { task_id: id, wallet_ids, task, resp: Some(sender) }, receiver)
+        (Self::RunImmediate { task_id: id, task, resp: Some(sender) }, receiver)
     }
 }

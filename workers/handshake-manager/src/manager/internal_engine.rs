@@ -175,9 +175,7 @@ impl HandshakeExecutor {
         .unwrap()
         .into();
 
-        let wallet_ids = vec![wallet_id1, wallet_id2];
-
-        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task, wallet_ids);
+        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task);
         self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::TaskError))?;
 
         rx.await

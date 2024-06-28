@@ -21,6 +21,7 @@ use serde::Serialize;
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::{error, info, instrument, warn};
+use util::telemetry::helpers::backfill_trace_field;
 
 use crate::{
     error::TaskDriverError,
@@ -176,10 +177,17 @@ impl TaskExecutor {
     async fn handle_job(&self, job: TaskDriverJob) -> Result<(), TaskDriverError> {
         match job {
             TaskDriverJob::Run(task) => {
-                self.start_task(false /* immediate */, task.id, task.descriptor).await
+                let affected_wallets = task.descriptor.affected_wallets();
+                self.start_task(
+                    false, // immediate
+                    task.id,
+                    task.descriptor,
+                    affected_wallets,
+                )
+                .await
             },
-            TaskDriverJob::RunImmediate { wallet_ids, task_id, task, resp } => {
-                self.handle_run_immediate(wallet_ids, task_id, task, resp).await
+            TaskDriverJob::RunImmediate { task_id, task, resp } => {
+                self.handle_run_immediate(task_id, task, resp).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await
@@ -209,16 +217,18 @@ impl TaskExecutor {
     }
 
     /// Handle a request to run a task immediately
-    #[instrument(skip_all, err, fields(task_id = %task_id, wallet_ids = ?wallet_ids))]
+    #[instrument(skip_all, err, fields(task_id = %task_id, affected_wallets))]
     async fn handle_run_immediate(
         &self,
-        wallet_ids: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
         resp: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
+        let affected_wallets = task.affected_wallets();
+        backfill_trace_field("affected_wallets", format!("{affected_wallets:?}"));
+
         // Check if any non-preemptable tasks conflict with this task before pausing
-        for wallet_id in wallet_ids.iter() {
+        for wallet_id in affected_wallets.iter() {
             if let Some(s) = self.preemption_conflict(wallet_id).await? {
                 warn!("task preemption failed: {s}");
                 if let Some(chan) = resp {
@@ -229,7 +239,7 @@ impl TaskExecutor {
             }
         }
 
-        self.start_preemptive_task(wallet_ids, task_id, task, resp).await
+        self.start_preemptive_task(affected_wallets, task_id, task, resp).await
     }
 
     /// Check for any conflicting conditions that cannot be preempted
@@ -259,29 +269,23 @@ impl TaskExecutor {
     /// Start the given task, preempting the queues of the given wallets
     async fn start_preemptive_task(
         &self,
-        wallet_ids: Vec<WalletIdentifier>,
+        affected_wallets: Vec<WalletIdentifier>,
         task_id: TaskIdentifier,
         task: TaskDescriptor,
         resp: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
         // Pause the queues for the affected local wallets
-        if !wallet_ids.is_empty() {
+        if !affected_wallets.is_empty() {
             let waiter = self
                 .state()
-                .pause_multiple_task_queues(wallet_ids.clone(), task_id, task.clone())
+                .pause_multiple_task_queues(affected_wallets.clone(), task_id, task.clone())
                 .await?;
             waiter.await?;
         }
 
-        let res = self.start_task(true /* immediate */, task_id, task).await;
+        let res = self.start_task(true /* immediate */, task_id, task, affected_wallets).await;
         if let Err(e) = &res {
             error!("error running immediate task: {e:?}");
-        }
-
-        // Unpause the queues for the affected local wallets and remove
-        // from the preemptive tasks list
-        if !wallet_ids.is_empty() {
-            self.state().resume_multiple_task_queues(wallet_ids, res.is_ok()).await?;
         }
 
         // Notify the task creator that the task has completed
@@ -306,41 +310,61 @@ impl TaskExecutor {
         immediate: bool,
         id: TaskIdentifier,
         task: TaskDescriptor,
+        affected_wallets: Vec<WalletIdentifier>,
     ) -> Result<(), TaskDriverError> {
         // Construct the task from the descriptor
         let res = match task {
             TaskDescriptor::NewWallet(desc) => {
-                self.start_task_helper::<NewWalletTask>(immediate, id, desc).await
+                self.start_task_helper::<NewWalletTask>(immediate, id, desc, affected_wallets).await
             },
             TaskDescriptor::LookupWallet(desc) => {
-                self.start_task_helper::<LookupWalletTask>(immediate, id, desc).await
+                self.start_task_helper::<LookupWalletTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
             TaskDescriptor::RefreshWallet(desc) => {
-                self.start_task_helper::<RefreshWalletTask>(immediate, id, desc).await
+                self.start_task_helper::<RefreshWalletTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
             TaskDescriptor::OfflineFee(desc) => {
-                self.start_task_helper::<PayOfflineFeeTask>(immediate, id, desc).await
+                self.start_task_helper::<PayOfflineFeeTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
             TaskDescriptor::RelayerFee(desc) => {
-                self.start_task_helper::<PayRelayerFeeTask>(immediate, id, desc).await
+                self.start_task_helper::<PayRelayerFeeTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
             TaskDescriptor::RedeemFee(desc) => {
-                self.start_task_helper::<RedeemFeeTask>(immediate, id, desc).await
+                self.start_task_helper::<RedeemFeeTask>(immediate, id, desc, affected_wallets).await
             },
             TaskDescriptor::UpdateWallet(desc) => {
-                self.start_task_helper::<UpdateWalletTask>(immediate, id, desc).await
+                self.start_task_helper::<UpdateWalletTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
             TaskDescriptor::SettleMatch(desc) => {
-                self.start_task_helper::<SettleMatchTask>(immediate, id, desc).await
+                self.start_task_helper::<SettleMatchTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
             TaskDescriptor::SettleMatchInternal(desc) => {
-                self.start_task_helper::<SettleMatchInternalTask>(immediate, id, desc).await
+                self.start_task_helper::<SettleMatchInternalTask>(
+                    immediate,
+                    id,
+                    desc,
+                    affected_wallets,
+                )
+                .await
             },
             TaskDescriptor::UpdateMerkleProof(desc) => {
-                self.start_task_helper::<UpdateMerkleProofTask>(immediate, id, desc).await
+                self.start_task_helper::<UpdateMerkleProofTask>(
+                    immediate,
+                    id,
+                    desc,
+                    affected_wallets,
+                )
+                .await
             },
             TaskDescriptor::NodeStartup(desc) => {
-                self.start_task_helper::<NodeStartupTask>(immediate, id, desc).await
+                self.start_task_helper::<NodeStartupTask>(immediate, id, desc, affected_wallets)
+                    .await
             },
         };
 
@@ -360,6 +384,7 @@ impl TaskExecutor {
         immediate: bool,
         id: TaskIdentifier,
         descriptor: T::Descriptor,
+        affected_wallets: Vec<WalletIdentifier>,
     ) -> Result<(), TaskDriverError> {
         // Collect the arguments then spawn
         let ctx = self.task_context();
@@ -395,7 +420,7 @@ impl TaskExecutor {
         }
 
         // Cleanup
-        let cleanup_res = task.cleanup(res.is_ok()).await;
+        let cleanup_res = task.cleanup(res.is_ok(), affected_wallets).await;
         res.and(cleanup_res)
     }
 
