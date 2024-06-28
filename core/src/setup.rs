@@ -21,8 +21,7 @@ pub async fn node_setup(
     // Start the node setup task and await its completion
     let desc: TaskDescriptor =
         NodeStartupTaskDescriptor::new(config.gossip_warmup, config.relayer_arbitrum_key()).into();
-    let (job, rx) =
-        TaskDriverJob::new_immediate_with_notification(desc, vec![] /* wallet_ids */);
+    let (job, rx) = TaskDriverJob::new_immediate_with_notification(desc);
     task_queue
         .send(job)
         .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;

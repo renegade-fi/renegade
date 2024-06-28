@@ -94,11 +94,10 @@ pub(crate) async fn await_task(
 
 /// Await the execution and completion of a task run immediately
 pub(crate) async fn await_immediate_task(
-    modified_wallets: Vec<WalletIdentifier>,
     task: TaskDescriptor,
     test_args: &IntegrationTestArgs,
 ) -> Result<()> {
-    let (job, rx) = TaskDriverJob::new_immediate_with_notification(task, modified_wallets);
+    let (job, rx) = TaskDriverJob::new_immediate_with_notification(task);
     test_args.task_queue.send(job).unwrap();
 
     rx.await.unwrap().map_err(|e| eyre::eyre!(e))

@@ -1,7 +1,7 @@
 //! Encapsulates the running task's bookkeeping structure to simplify the driver
 //! logic
 
-use common::types::tasks::TaskIdentifier;
+use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
 use state::{error::StateError, State};
 use tracing::{error, info};
 
@@ -113,7 +113,7 @@ impl<T: Task> RunnableTask<T> {
     }
 
     /// Cleanup the underlying task
-    pub async fn cleanup(&mut self, success: bool) -> Result<(), TaskDriverError> {
+    pub async fn cleanup(&mut self, success: bool, affected_wallets: Vec<WalletIdentifier>) -> Result<(), TaskDriverError> {
         // Do not propagate errors from cleanup, continue to cleanup
         if let Err(e) = self.task.cleanup().await {
             error!("error cleaning up task: {e:?}");
@@ -124,6 +124,13 @@ impl<T: Task> RunnableTask<T> {
         if !self.bypass_task_queue() {
             let waiter = self.state.pop_task(self.task_id, success).await?;
             waiter.await?;
+        }
+
+        if self.preemptive {
+            // Unpause the queues for the affected local wallets
+            if !affected_wallets.is_empty() {
+                self.state.resume_multiple_task_queues(affected_wallets, success).await?;
+            }
         }
 
         Ok(())
