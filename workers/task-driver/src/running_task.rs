@@ -1,7 +1,10 @@
 //! Encapsulates the running task's bookkeeping structure to simplify the driver
 //! logic
 
-use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
+use common::types::{
+    tasks::{RefreshWalletTaskDescriptor, TaskIdentifier},
+    wallet::WalletIdentifier,
+};
 use state::{error::StateError, State};
 use tracing::{error, info};
 
@@ -113,7 +116,11 @@ impl<T: Task> RunnableTask<T> {
     }
 
     /// Cleanup the underlying task
-    pub async fn cleanup(&mut self, success: bool, affected_wallets: Vec<WalletIdentifier>) -> Result<(), TaskDriverError> {
+    pub async fn cleanup(
+        &mut self,
+        success: bool,
+        affected_wallets: Vec<WalletIdentifier>,
+    ) -> Result<(), TaskDriverError> {
         // Do not propagate errors from cleanup, continue to cleanup
         if let Err(e) = self.task.cleanup().await {
             error!("error cleaning up task: {e:?}");
@@ -129,7 +136,21 @@ impl<T: Task> RunnableTask<T> {
         if self.preemptive {
             // Unpause the queues for the affected local wallets
             if !affected_wallets.is_empty() {
-                self.state.resume_multiple_task_queues(affected_wallets, success).await?;
+                self.state.resume_multiple_task_queues(affected_wallets.clone(), success).await?;
+            }
+        }
+
+        // If the task failed at/after its commit point, we enqueue a wallet refresh
+        // task for the affected wallets to ensure they are in sync w/ the
+        // onchain state.
+        //
+        // Note: it's important to do this after popping / resuming above, as those
+        // code paths will clear task queues in the case of a failure.
+        if !success && self.state().committed() {
+            for wallet_id in affected_wallets {
+                let refresh_task = RefreshWalletTaskDescriptor::new(wallet_id);
+                let (task_id, _) = self.state.append_task(refresh_task.into()).await?;
+                info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
             }
         }
 
