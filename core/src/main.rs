@@ -321,6 +321,7 @@ async fn main() -> Result<(), CoordinatorError> {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
         admin_api_key: args.admin_api_key,
+        compliance_service_url: args.compliance_service_url,
         network_sender: network_sender.clone(),
         state: global_state.clone(),
         system_bus,

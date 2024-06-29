@@ -10,6 +10,8 @@ use super::router::{build_500_response, build_response_from_status_code};
 /// The error type for errors that occur during ApiServer execution
 #[derive(Debug)]
 pub enum ApiServerError {
+    /// An error interacting with the compliance service
+    ComplianceService(String),
     /// An http error code, should be forwarded as a response
     HttpStatusCode(StatusCode, String),
     /// HTTP server has failed

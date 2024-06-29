@@ -104,6 +104,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
+        compliance_service_url: cli_args.compliance_service_url,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,

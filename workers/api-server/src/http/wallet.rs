@@ -32,9 +32,13 @@ use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
-use util::{err_str, hex::jubjub_to_hex_string};
+use util::{
+    err_str,
+    hex::{biguint_to_hex_addr, jubjub_to_hex_string},
+};
 
 use crate::{
+    compliance::ComplianceServerClient,
     error::{bad_request, internal_error, not_found, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
@@ -50,6 +54,8 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 /// The name of the query parameter specifying the length of the order history
 /// to return
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
+/// The error message returned when a deposit address is screened out
+const ERR_SCREENED_OUT_ADDRESS: &str = "deposit address was screened as high risk";
 
 /// Find the wallet in global state and apply any tasks to its state
 async fn find_wallet_for_update(
@@ -632,14 +638,17 @@ impl TypedHandler for GetBalanceByMintHandler {
 
 /// Handler for the POST /wallet/:id/balances/deposit route
 pub struct DepositBalanceHandler {
+    /// The URL of the compliance service to use for wallet screening
+    compliance_client: ComplianceServerClient,
     /// A copy of the relayer-global state
     state: State,
 }
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(compliance_url: Option<String>, state: State) -> Self {
+        let compliance_client = ComplianceServerClient::new(compliance_url);
+        Self { compliance_client, state }
     }
 }
 
@@ -655,6 +664,12 @@ impl TypedHandler for DepositBalanceHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Screen the wallet for compliance
+        let addr = biguint_to_hex_addr(&req.from_addr);
+        if !self.compliance_client.check_address(&addr).await? {
+            return Err(bad_request(ERR_SCREENED_OUT_ADDRESS));
+        }
+
         // Parse the wallet ID from the params
         let wallet_id = parse_wallet_id_from_params(&params)?;
 

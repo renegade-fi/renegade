@@ -14,6 +14,7 @@ sha2 = { version = "0.10", features = ["asm"] }
 # === HTTP + Websocket === #
 hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
 matchit = "0.7"
+reqwest = "0.12"
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.18", features = ["native-tls"] }
 tungstenite = "0.18"
@@ -24,9 +25,10 @@ futures = { workspace = true }
 futures-util = "0.3"
 tokio = { workspace = true }
 
-# === Workspace Dependencies === #
+# === Renegade Dependencies === #
 arbitrum-client = { path = "../../arbitrum-client" }
 circuit-types = { path = "../../circuit-types" }
+renegade-compliance-api = { git = "https://github.com/renegade-fi/relayer-extensions", package = "compliance-api" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
 renegade-crypto = { path = "../../renegade-crypto" }

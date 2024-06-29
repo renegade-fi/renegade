@@ -49,6 +49,10 @@ pub struct ApiServerConfig {
     pub websocket_port: u16,
     /// The admin key, if one is set
     pub admin_api_key: Option<SymmetricAuthKey>,
+    /// The URL of the compliance service to use for wallet screening
+    ///
+    /// Compliance screening is disabled if this is not set
+    pub compliance_service_url: Option<String>,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// The worker job queue for the PriceReporter

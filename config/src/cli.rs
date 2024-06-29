@@ -82,6 +82,12 @@ pub struct Cli {
     /// See https://github.com/renegade-fi/token-mappings for more information on the format of this file
     #[clap(long, value_parser)]
     pub token_remap_file: Option<String>,
+    /// The address of the compliance service to use for wallet screening. If not configured, wallet screening is disabled
+    /// 
+    /// The API of the compliance service must match that defined here:
+    ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api 
+    #[clap(long, value_parser)]
+    pub compliance_service_url: Option<String>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -253,6 +259,12 @@ pub struct RelayerConfig {
     pub chain_id: Chain,
     /// The address of the contract in the target network
     pub contract_address: String,
+    /// The address of the compliance service to use for wallet screening. If
+    /// not configured, wallet screening is disabled
+    ///
+    /// The API of the compliance service must match that defined here:
+    ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api
+    pub compliance_service_url: Option<String>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -382,6 +394,7 @@ impl Clone for RelayerConfig {
             price_reporter_url: self.price_reporter_url.clone(),
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
+            compliance_service_url: self.compliance_service_url.clone(),
             bootstrap_servers: self.bootstrap_servers.clone(),
             p2p_port: self.p2p_port,
             http_port: self.http_port,
