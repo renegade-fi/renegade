@@ -6,6 +6,7 @@
 //! Each of the files in this module are named after the high level interface
 //! they expose
 
+pub mod matching_pools;
 pub mod mpc_preprocessing;
 pub mod node_metadata;
 pub mod order_book;
