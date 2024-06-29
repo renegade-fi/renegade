@@ -44,7 +44,7 @@ use uuid::Uuid;
 // -------------
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 16;
+const NUM_TABLES: usize = 17;
 
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
@@ -62,6 +62,9 @@ pub(crate) const PRIORITIES_TABLE: &str = "priorities";
 pub(crate) const ORDERS_TABLE: &str = "orders";
 /// The table that stores order metadata indexed by wallet id
 pub(crate) const ORDER_HISTORY_TABLE: &str = "order-history";
+
+/// The name of the db table mapping orders to their matching pool
+pub(crate) const POOL_TABLE: &str = "matching-pools";
 
 /// The name of the db table that maps order to their encapsulating wallet
 pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
@@ -93,6 +96,7 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     PRIORITIES_TABLE,
     ORDERS_TABLE,
     ORDER_HISTORY_TABLE,
+    POOL_TABLE,
     ORDER_TO_WALLET_TABLE,
     WALLETS_TABLE,
     TASK_QUEUE_TABLE,
