@@ -322,7 +322,7 @@ impl HttpServer {
         router.add_wallet_authenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            DepositBalanceHandler::new(state.clone()),
+            DepositBalanceHandler::new(config.compliance_service_url.clone(), state.clone()),
         );
 
         // The "/wallet/:id/balances/:mint/withdraw" route

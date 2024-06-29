@@ -484,6 +484,7 @@ impl MockNodeController {
             http_port: config.http_port,
             websocket_port: config.websocket_port,
             admin_api_key: config.admin_api_key,
+            compliance_service_url: config.compliance_service_url.clone(),
             network_sender,
             state,
             system_bus,

@@ -9,8 +9,10 @@
 #![allow(incomplete_features)]
 #![feature(let_chains)]
 #![feature(generic_const_exprs)]
+#![feature(result_flattening)]
 
 mod auth;
+mod compliance;
 pub mod error;
 pub mod http;
 mod router;
