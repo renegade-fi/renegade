@@ -6,7 +6,7 @@
 
 use common::types::wallet::OrderIdentifier;
 
-use crate::{error::StateError, notifications::ProposalWaiter, State};
+use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
 
 /// The name of the global matching pool
 pub const GLOBAL_MATCHING_POOL: &str = "global";
@@ -47,39 +47,39 @@ impl State {
     /// Create a matching pool with the given name
     pub async fn create_matching_pool(
         &self,
-        _pool_name: &str,
+        pool_name: String,
     ) -> Result<ProposalWaiter, StateError> {
-        todo!()
+        self.send_proposal(StateTransition::CreateMatchingPool { pool_name }).await
     }
 
     /// Destroy a matching pool
     pub async fn destroy_matching_pool(
         &self,
-        _pool_name: &str,
+        pool_name: String,
     ) -> Result<ProposalWaiter, StateError> {
-        todo!()
+        self.send_proposal(StateTransition::DestroyMatchingPool { pool_name }).await
     }
 
     /// Assign an order to a matching pool
     pub async fn assign_order_to_matching_pool(
         &self,
-        _order_id: &OrderIdentifier,
-        _pool_name: &str,
+        order_id: OrderIdentifier,
+        pool_name: String,
     ) -> Result<ProposalWaiter, StateError> {
-        todo!()
+        self.send_proposal(StateTransition::AssignOrderToMatchingPool { order_id, pool_name }).await
     }
 
     /// Create the global matching pool
     pub async fn create_global_matching_pool(&self) -> Result<ProposalWaiter, StateError> {
-        self.create_matching_pool(GLOBAL_MATCHING_POOL).await
+        self.create_matching_pool(GLOBAL_MATCHING_POOL.to_string()).await
     }
 
     /// Assign an order to the global matching pool
     pub async fn assign_order_to_global_matching_pool(
         &self,
-        order_id: &OrderIdentifier,
+        order_id: OrderIdentifier,
     ) -> Result<ProposalWaiter, StateError> {
-        self.assign_order_to_matching_pool(order_id, GLOBAL_MATCHING_POOL).await
+        self.assign_order_to_matching_pool(order_id, GLOBAL_MATCHING_POOL.to_string()).await
     }
 }
 
@@ -112,7 +112,7 @@ mod test {
 
         // Assign an order into it
         let order_id = OrderIdentifier::new_v4();
-        let waiter = state.assign_order_to_global_matching_pool(&order_id).await.unwrap();
+        let waiter = state.assign_order_to_global_matching_pool(order_id).await.unwrap();
         waiter.await.unwrap();
 
         // Assert the order is in the global matching pool

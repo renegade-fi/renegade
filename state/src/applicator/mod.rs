@@ -13,6 +13,7 @@ use crate::{storage::db::DB, StateTransition};
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod error;
+pub mod matching_pools;
 pub mod mpc_preprocessing;
 pub mod order_book;
 pub mod order_history;
@@ -79,6 +80,15 @@ impl StateApplicator {
                 self.add_order_validity_proof(order_id, proof, witness)
             },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
+            StateTransition::CreateMatchingPool { pool_name } => {
+                self.create_matching_pool(&pool_name)
+            },
+            StateTransition::DestroyMatchingPool { pool_name } => {
+                self.destroy_matching_pool(&pool_name)
+            },
+            StateTransition::AssignOrderToMatchingPool { order_id, pool_name } => {
+                self.assign_order_to_matching_pool(&order_id, &pool_name)
+            },
             StateTransition::AppendTask { task, executor } => self.append_task(&task, &executor),
             StateTransition::PopTask { task_id, success } => self.pop_task(task_id, success),
             StateTransition::TransitionTask { task_id, state } => {

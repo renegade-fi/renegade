@@ -139,6 +139,14 @@ pub enum StateTransition {
     /// Update the metadata for a given order
     UpdateOrderMetadata { meta: OrderMetadata },
 
+    // --- Matching Pools --- //
+    /// Create a matching pool
+    CreateMatchingPool { pool_name: String },
+    /// Destroy a matching pool
+    DestroyMatchingPool { pool_name: String },
+    /// Assign an order to a matching pool
+    AssignOrderToMatchingPool { order_id: OrderIdentifier, pool_name: String },
+
     // --- Task Queue --- //
     /// Add a task to the task queue
     AppendTask { task: QueuedTask, executor: WrappedPeerId },
