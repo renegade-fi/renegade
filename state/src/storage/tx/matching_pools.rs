@@ -7,13 +7,6 @@ use crate::{storage::error::StorageError, POOL_TABLE};
 
 use super::StateTxn;
 
-// -------------
-// | Constants |
-// -------------
-
-/// The name of the global matching pool
-pub const GLOBAL_MATCHING_POOL: &str = "global";
-
 /// The prefix of all matching pool keys
 pub const POOL_KEY_PREFIX: &str = "matching-pool/";
 
@@ -63,7 +56,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         Ok(all_pools.contains(&pool_name.to_string()))
     }
 
-    /// Whether or not the matching pool is empty
+    /// Whether or not the given matching pool is empty
     pub fn matching_pool_is_empty(&self, pool_name: &str) -> Result<bool, StorageError> {
         // We iterate over the mapping from orders -> their matching pool, and check
         // if any orders are in the given pool
@@ -115,7 +108,7 @@ impl<'db> StateTxn<'db, RW> {
     ///
     /// Note that we allow overwriting an order's pool, this signifies moving
     /// the order from one pool to another.
-    pub fn assign_order_to_pool(
+    pub fn assign_order_to_matching_pool(
         &self,
         order_id: &OrderIdentifier,
         pool_name: &str,
@@ -134,7 +127,7 @@ impl<'db> StateTxn<'db, RW> {
 mod test {
     use common::types::wallet::OrderIdentifier;
 
-    use crate::{storage::tx::matching_pools::GLOBAL_MATCHING_POOL, test_helpers::mock_db};
+    use crate::{matching_pools::GLOBAL_MATCHING_POOL, test_helpers::mock_db};
 
     /// Tests creating a matching pool
     #[test]
@@ -148,12 +141,32 @@ mod test {
         tx.create_matching_pool(&pool_name).unwrap();
         tx.commit().unwrap();
 
-        // Assert the pool exists
+        // Assert the matching pool exists
         let tx = db.new_read_tx().unwrap();
         let pool_exists = tx.matching_pool_exists(&pool_name).unwrap();
         tx.commit().unwrap();
 
         assert!(pool_exists);
+    }
+
+    /// Tests creating a duplicate matching pool
+    #[test]
+    fn test_double_create_matching_pool() {
+        let db = mock_db();
+
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+
+        // Create a matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.create_matching_pool(&pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Try creating it again
+        let tx = db.new_write_tx().unwrap();
+        let res = tx.create_matching_pool(&pool_name);
+        tx.commit().unwrap();
+
+        assert!(res.is_err())
     }
 
     /// Tests destroying a matching pool
@@ -181,9 +194,9 @@ mod test {
         assert!(!pool_exists);
     }
 
-    /// Tests assigning an order to a matching pool
+    /// Tests destroying a non-empty matching pool
     #[test]
-    fn test_assign_order_to_pool() {
+    fn test_destroy_non_empty_matching_pool() {
         let db = mock_db();
 
         let pool_name = GLOBAL_MATCHING_POOL.to_string();
@@ -194,16 +207,91 @@ mod test {
         tx.create_matching_pool(&pool_name).unwrap();
         tx.commit().unwrap();
 
-        // Assign the order to the pool
+        // Assign the order to the matching pool
         let tx = db.new_write_tx().unwrap();
-        tx.assign_order_to_pool(&order_id, &pool_name).unwrap();
+        tx.assign_order_to_matching_pool(&order_id, &pool_name).unwrap();
         tx.commit().unwrap();
 
-        // Assert that the order is in the pool
+        // Try destroying the matching pool
+        let tx = db.new_write_tx().unwrap();
+        let res = tx.destroy_matching_pool(&pool_name);
+        tx.commit().unwrap();
+
+        assert!(res.is_err());
+    }
+
+    /// Tests assigning an order to a matching pool
+    #[test]
+    fn test_assign_order_to_matching_pool() {
+        let db = mock_db();
+
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+        let order_id = OrderIdentifier::new_v4();
+
+        // Create a matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.create_matching_pool(&pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assign the order to the matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.assign_order_to_matching_pool(&order_id, &pool_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assert that the order is in the matching pool
         let tx = db.new_read_tx().unwrap();
         let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap().unwrap();
         tx.commit().unwrap();
 
         assert_eq!(pool_for_order, pool_name);
+    }
+
+    /// Tests re-assigning an order to a different matching pool
+    #[test]
+    fn test_reassign_order_matching_pool() {
+        let db = mock_db();
+
+        let pool_1_name = "pool-1".to_string();
+        let pool_2_name = "pool-2".to_string();
+
+        // Create both matching pools
+        let tx = db.new_write_tx().unwrap();
+        tx.create_matching_pool(&pool_1_name).unwrap();
+        tx.create_matching_pool(&pool_2_name).unwrap();
+        tx.commit().unwrap();
+
+        let order_id = OrderIdentifier::new_v4();
+
+        // Assign the order to the first matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.assign_order_to_matching_pool(&order_id, &pool_1_name).unwrap();
+        tx.commit().unwrap();
+
+        // Re-assign the order to the second matching pool
+        let tx = db.new_write_tx().unwrap();
+        tx.assign_order_to_matching_pool(&order_id, &pool_2_name).unwrap();
+        tx.commit().unwrap();
+
+        // Assert that the order is in the second matching pool
+        let tx = db.new_read_tx().unwrap();
+        let pool_for_order = tx.get_matching_pool_for_order(&order_id).unwrap().unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(pool_for_order, pool_2_name);
+    }
+
+    #[test]
+    fn test_assign_order_to_nonexistent_matching_pool() {
+        let db = mock_db();
+
+        let pool_name = GLOBAL_MATCHING_POOL.to_string();
+        let order_id = OrderIdentifier::new_v4();
+
+        // Try assigning the order to the matching pool (before creating it)
+        let tx = db.new_write_tx().unwrap();
+        let res = tx.assign_order_to_matching_pool(&order_id, &pool_name);
+        tx.commit().unwrap();
+
+        assert!(res.is_err());
     }
 }
