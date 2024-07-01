@@ -11,9 +11,11 @@ use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
+    MatchingPoolName,
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
+use libmdbx::TransactionKind;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     seq::SliceRandom,
@@ -22,8 +24,10 @@ use rand::{
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
-    StateTransition,
+    error::StateError,
+    notifications::ProposalWaiter,
+    storage::{error::StorageError, tx::StateTxn},
+    State, StateTransition,
 };
 
 /// The error message emitted when a caller attempts to add a local order
@@ -185,22 +189,40 @@ impl State {
 
             let mut res = Vec::new();
             for id in local_order_ids.into_iter() {
-                if let Some(info) = tx.get_order_info(&id)? {
-                    // Check that there are no tasks in the queue for the containing wallet
-                    // This avoids unnecessary preemptions or possible dropped matches
-                    let wallet_id = match tx.get_wallet_for_order(&info.id)? {
-                        None => continue,
-                        Some(wallet) => wallet,
-                    };
+                if Self::is_order_matchable(&id, tx)? {
+                    res.push(id);
+                }
+            }
 
-                    if !tx.is_queue_empty(&wallet_id)? || tx.is_queue_paused(&wallet_id)? {
-                        continue;
-                    }
+            Ok(res)
+        })
+        .await
+    }
 
-                    // Check that the order itself is ready for a match
-                    if info.ready_for_match() {
-                        res.push(id);
-                    }
+    /// Get a list of order IDs that are locally managed and ready for match in
+    /// the given matching pool
+    pub async fn get_locally_matchable_orders_in_matching_pool(
+        &self,
+        matching_pool: MatchingPoolName,
+    ) -> Result<Vec<OrderIdentifier>, StateError> {
+        self.with_read_tx(move |tx| {
+            // Get all the local orders
+            let local_order_ids = tx.get_local_orders()?;
+
+            let mut res = Vec::new();
+            for id in local_order_ids.into_iter() {
+                let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
+                match order_matching_pool {
+                    None => continue,
+                    Some(pool) => {
+                        if pool != matching_pool {
+                            continue;
+                        }
+                    },
+                }
+
+                if Self::is_order_matchable(&id, tx)? {
+                    res.push(id);
                 }
             }
 
@@ -311,6 +333,37 @@ impl State {
             Ok(())
         })
         .await
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Checks whether or not a locally managed order is matchable
+    fn is_order_matchable<T: TransactionKind>(
+        order_id: &OrderIdentifier,
+        tx: &StateTxn<T>,
+    ) -> Result<bool, StateError> {
+        let order_info = tx.get_order_info(order_id)?;
+        if order_info.is_none() {
+            return Ok(false);
+        }
+
+        let info = order_info.unwrap();
+
+        // Check that there are no tasks in the queue for the containing wallet
+        // This avoids unnecessary preemptions or possible dropped matches
+        let wallet_id = match tx.get_wallet_for_order(&info.id)? {
+            None => return Ok(false),
+            Some(wallet) => wallet,
+        };
+
+        if !tx.is_queue_empty(&wallet_id)? || tx.is_queue_paused(&wallet_id)? {
+            return Ok(false);
+        }
+
+        // Check that the order itself is ready for a match
+        Ok(info.ready_for_match())
     }
 }
 
