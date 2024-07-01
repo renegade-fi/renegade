@@ -9,7 +9,7 @@ use config::RelayerConfig;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use util::res_some;
 
-use crate::{error::StateError, State, NODE_METADATA_TABLE};
+use crate::{error::StateError, matching_pools::GLOBAL_MATCHING_POOL, State, NODE_METADATA_TABLE};
 
 impl State {
     // -----------
@@ -113,8 +113,9 @@ impl State {
         .await
     }
 
-    /// Setup the node metadata table from a relayer config
-    pub async fn setup_node_metadata(&self, config: &RelayerConfig) -> Result<(), StateError> {
+    /// Setup the initial node state from a relayer config, including the
+    /// metadata table and the global matching pool
+    pub async fn setup_node_state(&self, config: &RelayerConfig) -> Result<(), StateError> {
         let peer_id = config.peer_id();
         let cluster_id = config.cluster_id.clone();
         let p2p_key = config.p2p_key.clone();
@@ -127,6 +128,7 @@ impl State {
             derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
 
         self.with_write_tx(move |tx| {
+            // Set up node metadata table entries
             tx.create_table(NODE_METADATA_TABLE)?;
             tx.set_peer_id(&peer_id)?;
             tx.set_cluster_id(&cluster_id)?;
@@ -140,6 +142,12 @@ impl State {
             for entry in relayer_fee_whitelist {
                 let fee = FixedPoint::from_f64_round_down(entry.fee);
                 tx.set_relayer_fee(&entry.wallet_id, fee)?;
+            }
+
+            // Create the global matching pool if it doesn't already exist
+            // (e.g. the node recovered from a snapshot)
+            if !tx.matching_pool_exists(GLOBAL_MATCHING_POOL)? {
+                tx.create_matching_pool(GLOBAL_MATCHING_POOL)?;
             }
 
             Ok(())
