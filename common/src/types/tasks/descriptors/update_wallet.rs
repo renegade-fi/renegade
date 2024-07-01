@@ -39,6 +39,8 @@ pub enum WalletUpdateType {
     PlaceOrder {
         /// The order to place
         order: Order,
+        /// The matching pool to assign the order to
+        matching_pool: String,
     },
     /// Cancel an order
     CancelOrder {
@@ -140,8 +142,9 @@ impl UpdateWalletTaskDescriptor {
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
+        matching_pool: String,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder { order };
+        let desc = WalletUpdateType::PlaceOrder { order, matching_pool };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 
