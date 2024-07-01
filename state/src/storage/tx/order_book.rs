@@ -209,6 +209,7 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Delete an order from the order book
     pub fn delete_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+        // TODO: Remove the order from its matching pool
         self.inner().delete(ORDERS_TABLE, &order_key(order_id)).map(|_| ())
     }
 

@@ -202,7 +202,7 @@ impl From<WalletUpdateType> for ApiWalletUpdateType {
                 let amount = u128_to_number(amount);
                 Self::Withdraw { mint, amount }
             },
-            WalletUpdateType::PlaceOrder { order } => {
+            WalletUpdateType::PlaceOrder { order, .. } => {
                 Self::PlaceOrder { order: WalletUpdateOrder::from(order) }
             },
             WalletUpdateType::CancelOrder { order } => {

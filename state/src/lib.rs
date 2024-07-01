@@ -327,6 +327,10 @@ pub mod test_helpers {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
 
+        // Set up the global matching pool
+        let waiter = state.create_global_matching_pool().await.unwrap();
+        waiter.await.unwrap();
+
         state
     }
 

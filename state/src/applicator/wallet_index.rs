@@ -137,6 +137,7 @@ impl StateApplicator {
             if !old_orders.contains(&id) {
                 let new_state = OrderMetadata::new(id, o);
                 self.update_order_metadata_with_tx(new_state, tx)?;
+                // TODO: Add the order to the global matching pool
             }
         }
 
@@ -151,6 +152,7 @@ impl StateApplicator {
                 if !old_meta.state.is_terminal() {
                     old_meta.state = OrderState::Cancelled;
                     self.update_order_metadata_with_tx(old_meta, tx)?;
+                    // TODO: Remove the order from its matching pool
                 }
             }
         }
