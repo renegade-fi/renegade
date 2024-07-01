@@ -215,9 +215,6 @@ pub mod mocks {
         NewWalletTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey,
     };
 
-    /// The name of a mock matching pool used for testing task history
-    pub const MOCK_MATCHING_POOL: &str = "mock-matching-pool";
-
     /// Generate the wallet update signature for a new wallet
     pub fn gen_wallet_update_sig(wallet: &Wallet, key: &SecretSigningKey) -> Vec<u8> {
         let new_wallet_comm = wallet.get_wallet_share_commitment();
@@ -271,11 +268,13 @@ pub mod mocks {
 mod test {
     use constants::Scalar;
 
-    use crate::types::wallet_mocks::{mock_empty_wallet, mock_order};
+    use crate::types::{
+        wallet::OrderIdentifier,
+        wallet_mocks::{mock_empty_wallet, mock_order},
+    };
 
     use super::{
-        mocks::{gen_wallet_update_sig, MOCK_MATCHING_POOL},
-        NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
+        mocks::gen_wallet_update_sig, NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
     };
 
     /// Tests creating a new wallet task with an invalid secret sharing
@@ -297,10 +296,10 @@ mod test {
 
         UpdateWalletTaskDescriptor::new_order(
             mock_order(),
+            OrderIdentifier::new_v4(),
             wallet.clone(),
             wallet,
             vec![],
-            MOCK_MATCHING_POOL.to_string(),
         )
         .unwrap();
     }
@@ -314,10 +313,10 @@ mod test {
 
         UpdateWalletTaskDescriptor::new_order(
             mock_order(),
+            OrderIdentifier::new_v4(),
             wallet.clone(),
             wallet,
             sig,
-            MOCK_MATCHING_POOL.to_string(),
         )
         .unwrap();
     }
@@ -332,10 +331,10 @@ mod test {
 
         UpdateWalletTaskDescriptor::new_order(
             mock_order(),
+            OrderIdentifier::new_v4(),
             wallet.clone(),
             wallet,
             sig,
-            MOCK_MATCHING_POOL.to_string(),
         )
         .unwrap();
     }
