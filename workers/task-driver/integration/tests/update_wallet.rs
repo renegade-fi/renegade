@@ -10,15 +10,14 @@ use circuit_types::{
 use common::types::{
     tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor, WalletUpdateType},
     transfer_auth::ExternalTransferWithAuth,
-    wallet::Wallet,
+    wallet::{OrderIdentifier, Wallet},
     wallet_mocks::{mock_empty_wallet, mock_order},
 };
-use constants::Scalar;
+use constants::{Scalar, GLOBAL_MATCHING_POOL};
 use eyre::Result;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use rand::thread_rng;
-use state::matching_pools::GLOBAL_MATCHING_POOL;
 use test_helpers::{
     contract_interaction::{attach_merkle_opening, new_wallet_in_darkpool},
     integration_test_async,
@@ -97,6 +96,7 @@ async fn execute_wallet_update_and_verify_shares(
 ) -> Result<()> {
     let desc = WalletUpdateType::PlaceOrder {
         order: mock_order(),
+        id: OrderIdentifier::new_v4(),
         matching_pool: GLOBAL_MATCHING_POOL.to_string(),
     };
     execute_wallet_update(

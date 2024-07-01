@@ -1,6 +1,6 @@
 //! Helpers for accessing information about matching pools in the database
 
-use common::types::wallet::OrderIdentifier;
+use common::types::{wallet::OrderIdentifier, MatchingPoolName};
 use libmdbx::{TransactionKind, RW};
 
 use crate::{storage::error::StorageError, POOL_TABLE};
@@ -44,7 +44,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     pub fn get_matching_pool_for_order(
         &self,
         order_id: &OrderIdentifier,
-    ) -> Result<Option<String>, StorageError> {
+    ) -> Result<Option<MatchingPoolName>, StorageError> {
         let pool_key = matching_pool_key(order_id);
         self.inner().read(POOL_TABLE, &pool_key)
     }
@@ -52,7 +52,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Whether or not a pool with the given name exists
     pub fn matching_pool_exists(&self, pool_name: &str) -> Result<bool, StorageError> {
         let all_pools_key = all_matching_pools_key();
-        let all_pools: Vec<String> = self.read_set(POOL_TABLE, &all_pools_key)?;
+        let all_pools: Vec<MatchingPoolName> = self.read_set(POOL_TABLE, &all_pools_key)?;
         Ok(all_pools.contains(&pool_name.to_string()))
     }
 
@@ -62,7 +62,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         // if any orders are in the given pool
         let cursor = self
             .inner()
-            .cursor::<String, String>(POOL_TABLE)?
+            .cursor::<String, MatchingPoolName>(POOL_TABLE)?
             .with_key_filter(|key| key.starts_with(POOL_KEY_PREFIX));
 
         let mut pool_in_use = false;
@@ -121,13 +121,23 @@ impl<'db> StateTxn<'db, RW> {
         let pool_key = matching_pool_key(order_id);
         self.inner().write(POOL_TABLE, &pool_key, &pool_name.to_string())
     }
+
+    /// Remove an order's matching pool assignment
+    pub fn remove_order_from_matching_pool(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<(), StorageError> {
+        let pool_key = matching_pool_key(order_id);
+        self.inner().delete(POOL_TABLE, &pool_key).map(|_| ())
+    }
 }
 
 #[cfg(test)]
 mod test {
     use common::types::wallet::OrderIdentifier;
+    use constants::GLOBAL_MATCHING_POOL;
 
-    use crate::{matching_pools::GLOBAL_MATCHING_POOL, test_helpers::mock_db};
+    use crate::test_helpers::mock_db;
 
     /// Tests creating a matching pool
     #[test]

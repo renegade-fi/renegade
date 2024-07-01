@@ -13,10 +13,12 @@ use circuit_types::transfers::ExternalTransferDirection;
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
+use common::types::tasks::WalletUpdateType;
 use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
+use constants::GLOBAL_MATCHING_POOL;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::maybe_record_transfer_metrics;
@@ -155,6 +157,8 @@ impl From<StateError> for UpdateWalletTaskError {
 
 /// Defines the long running flow for updating a wallet
 pub struct UpdateWalletTask {
+    /// The type of wallet update being executed
+    pub update_type: WalletUpdateType,
     /// The external transfer & auth data, if one exists
     pub transfer: Option<ExternalTransferWithAuth>,
     /// The old wallet before update
@@ -203,6 +207,7 @@ impl Task for UpdateWalletTask {
         }
 
         Ok(Self {
+            update_type: descriptor.description,
             transfer: descriptor.transfer,
             old_wallet,
             new_wallet: descriptor.new_wallet,
@@ -325,6 +330,15 @@ impl UpdateWalletTask {
         // state
         let waiter = self.global_state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
+
+        // If we're placing a new order into a non-global matching pool, assign it as
+        // appropriate
+        if let WalletUpdateType::PlaceOrder { id, ref matching_pool, .. } = self.update_type
+            && matching_pool != &GLOBAL_MATCHING_POOL.to_string()
+        {
+            self.global_state.assign_order_to_matching_pool(id, matching_pool.clone()).await?;
+        }
+
         Ok(())
     }
 

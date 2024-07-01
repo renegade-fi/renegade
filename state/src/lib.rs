@@ -21,6 +21,7 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
+    MatchingPoolName,
 };
 use notifications::ProposalId;
 #[cfg(not(feature = "mocks"))]
@@ -141,11 +142,11 @@ pub enum StateTransition {
 
     // --- Matching Pools --- //
     /// Create a matching pool
-    CreateMatchingPool { pool_name: String },
+    CreateMatchingPool { pool_name: MatchingPoolName },
     /// Destroy a matching pool
-    DestroyMatchingPool { pool_name: String },
+    DestroyMatchingPool { pool_name: MatchingPoolName },
     /// Assign an order to a matching pool
-    AssignOrderToMatchingPool { order_id: OrderIdentifier, pool_name: String },
+    AssignOrderToMatchingPool { order_id: OrderIdentifier, pool_name: MatchingPoolName },
 
     // --- Task Queue --- //
     /// Add a task to the task queue
@@ -326,10 +327,6 @@ pub mod test_helpers {
             state.send_proposal(prop).await.unwrap();
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-
-        // Set up the global matching pool
-        let waiter = state.create_global_matching_pool().await.unwrap();
-        waiter.await.unwrap();
 
         state
     }

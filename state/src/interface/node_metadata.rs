@@ -6,10 +6,11 @@ use common::types::{
     wallet::{derivation::derive_wallet_id, Wallet, WalletIdentifier},
 };
 use config::RelayerConfig;
+use constants::GLOBAL_MATCHING_POOL;
 use libp2p::{core::Multiaddr, identity::Keypair};
 use util::res_some;
 
-use crate::{error::StateError, matching_pools::GLOBAL_MATCHING_POOL, State, NODE_METADATA_TABLE};
+use crate::{error::StateError, State, NODE_METADATA_TABLE};
 
 impl State {
     // -----------
