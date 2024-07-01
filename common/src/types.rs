@@ -29,3 +29,6 @@ pub fn new_cancel_channel() -> (WatchSender<()>, CancelChannel) {
 /// An alias for the price of an asset pair that abstracts away its
 /// representation
 pub type Price = f64;
+
+/// A type alias for matching pool names
+pub type MatchingPoolName = String;

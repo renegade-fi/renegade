@@ -100,16 +100,25 @@ pub mod historical_mocks {
     use rand::{thread_rng, RngCore};
 
     use crate::types::{
-        tasks::{QueuedTaskState, TaskIdentifier, WalletUpdateType, mocks::MOCK_MATCHING_POOL},
+        tasks::{QueuedTaskState, TaskIdentifier, WalletUpdateType},
+        wallet::OrderIdentifier,
         wallet_mocks::mock_order,
     };
 
     use super::{HistoricalTask, HistoricalTaskDescription};
 
+    /// The name of a mock matching pool used for testing task history
+    const MOCK_MATCHING_POOL: &str = "mock-matching-pool";
+
     /// Return a mock historical task
     pub fn mock_historical_task() -> HistoricalTask {
         let mut rng = thread_rng();
-        let ty = WalletUpdateType::PlaceOrder { order: mock_order(), matching_pool: MOCK_MATCHING_POOL.to_string() };
+        let id = OrderIdentifier::new_v4();
+        let ty = WalletUpdateType::PlaceOrder {
+            order: mock_order(),
+            id,
+            matching_pool: MOCK_MATCHING_POOL.to_string(),
+        };
         HistoricalTask {
             id: TaskIdentifier::new_v4(),
             state: QueuedTaskState::Completed,
