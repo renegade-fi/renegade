@@ -215,6 +215,9 @@ pub mod mocks {
         NewWalletTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskQueueKey,
     };
 
+    /// The name of a mock matching pool used for testing task history
+    pub const MOCK_MATCHING_POOL: &str = "mock-matching-pool";
+
     /// Generate the wallet update signature for a new wallet
     pub fn gen_wallet_update_sig(wallet: &Wallet, key: &SecretSigningKey) -> Vec<u8> {
         let new_wallet_comm = wallet.get_wallet_share_commitment();
@@ -271,7 +274,8 @@ mod test {
     use crate::types::wallet_mocks::{mock_empty_wallet, mock_order};
 
     use super::{
-        mocks::gen_wallet_update_sig, NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
+        mocks::{gen_wallet_update_sig, MOCK_MATCHING_POOL},
+        NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
     };
 
     /// Tests creating a new wallet task with an invalid secret sharing
@@ -291,8 +295,14 @@ mod test {
         let mut wallet = mock_empty_wallet();
         wallet.blinded_public_shares.orders[0].amount += Scalar::one();
 
-        UpdateWalletTaskDescriptor::new_order(mock_order(), wallet.clone(), wallet, vec![])
-            .unwrap();
+        UpdateWalletTaskDescriptor::new_order(
+            mock_order(),
+            wallet.clone(),
+            wallet,
+            vec![],
+            MOCK_MATCHING_POOL.to_string(),
+        )
+        .unwrap();
     }
 
     /// Tests creating an update wallet task with an invalid signatures
@@ -302,7 +312,14 @@ mod test {
         let wallet = mock_empty_wallet();
         let sig = vec![0; 64];
 
-        UpdateWalletTaskDescriptor::new_order(mock_order(), wallet.clone(), wallet, sig).unwrap();
+        UpdateWalletTaskDescriptor::new_order(
+            mock_order(),
+            wallet.clone(),
+            wallet,
+            sig,
+            MOCK_MATCHING_POOL.to_string(),
+        )
+        .unwrap();
     }
 
     /// Tests creating a valid update wallet task
@@ -313,6 +330,13 @@ mod test {
         let key = wallet.key_chain.secret_keys.sk_root.as_ref().unwrap();
         let sig = gen_wallet_update_sig(&wallet, key);
 
-        UpdateWalletTaskDescriptor::new_order(mock_order(), wallet.clone(), wallet, sig).unwrap();
+        UpdateWalletTaskDescriptor::new_order(
+            mock_order(),
+            wallet.clone(),
+            wallet,
+            sig,
+            MOCK_MATCHING_POOL.to_string(),
+        )
+        .unwrap();
     }
 }
