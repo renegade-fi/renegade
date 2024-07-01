@@ -4,12 +4,9 @@
 // | Constants |
 // -------------
 
-use common::types::wallet::OrderIdentifier;
+use common::types::{wallet::OrderIdentifier, MatchingPoolName};
 
 use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
-
-/// The name of the global matching pool
-pub const GLOBAL_MATCHING_POOL: &str = "global";
 
 impl State {
     // -----------
@@ -21,7 +18,7 @@ impl State {
     pub async fn get_matching_pool_for_order(
         &self,
         order_id: &OrderIdentifier,
-    ) -> Result<Option<String>, StateError> {
+    ) -> Result<Option<MatchingPoolName>, StateError> {
         let order_id = *order_id;
         self.with_read_tx(move |tx| {
             let matching_pool = tx.get_matching_pool_for_order(&order_id)?;
@@ -47,7 +44,7 @@ impl State {
     /// Create a matching pool with the given name
     pub async fn create_matching_pool(
         &self,
-        pool_name: String,
+        pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::CreateMatchingPool { pool_name }).await
     }
@@ -55,7 +52,7 @@ impl State {
     /// Destroy a matching pool
     pub async fn destroy_matching_pool(
         &self,
-        pool_name: String,
+        pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::DestroyMatchingPool { pool_name }).await
     }
@@ -64,7 +61,7 @@ impl State {
     pub async fn assign_order_to_matching_pool(
         &self,
         order_id: OrderIdentifier,
-        pool_name: String,
+        pool_name: MatchingPoolName,
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AssignOrderToMatchingPool { order_id, pool_name }).await
     }

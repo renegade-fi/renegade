@@ -1,6 +1,7 @@
 //! Descriptor for the wallet update task
 
 use circuit_types::{keychain::PublicSigningKey, order::Order, Amount};
+use constants::GLOBAL_MATCHING_POOL;
 use contracts_common::custom_serde::BytesSerializable;
 use ethers::core::types::Signature;
 use ethers::utils::{keccak256, public_key_to_address};
@@ -8,6 +9,8 @@ use k256::ecdsa::VerifyingKey as K256VerifyingKey;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
+use crate::types::wallet::OrderIdentifier;
+use crate::types::MatchingPoolName;
 use crate::types::{
     transfer_auth::ExternalTransferWithAuth,
     wallet::{Wallet, WalletIdentifier},
@@ -39,8 +42,10 @@ pub enum WalletUpdateType {
     PlaceOrder {
         /// The order to place
         order: Order,
+        /// The ID of the order
+        id: OrderIdentifier,
         /// The matching pool to assign the order to
-        matching_pool: String,
+        matching_pool: MatchingPoolName,
     },
     /// Cancel an order
     CancelOrder {
@@ -136,15 +141,32 @@ impl UpdateWalletTaskDescriptor {
         Self::new(desc, Some(transfer_with_auth), old_wallet, new_wallet, wallet_update_signature)
     }
 
-    /// A new create order
+    /// A new order placement in the global matching pool
     pub fn new_order(
         order: Order,
+        id: OrderIdentifier,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
-        matching_pool: String,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder { order, matching_pool };
+        let desc = WalletUpdateType::PlaceOrder {
+            order,
+            id,
+            matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+        };
+        Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
+    }
+
+    /// A new order placement in the given matching pool
+    pub fn new_order_in_matching_pool(
+        order: Order,
+        id: OrderIdentifier,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+        matching_pool: MatchingPoolName,
+    ) -> Result<Self, String> {
+        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 

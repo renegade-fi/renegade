@@ -209,7 +209,6 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Delete an order from the order book
     pub fn delete_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
-        // TODO: Remove the order from its matching pool
         self.inner().delete(ORDERS_TABLE, &order_key(order_id)).map(|_| ())
     }
 
@@ -219,6 +218,11 @@ impl<'db> StateTxn<'db, RW> {
         let orders = self.get_orders_by_nullifier(nullifier)?;
         for order_id in orders {
             self.delete_order(&order_id)?;
+
+            // Remove the order from its matching pool
+            if self.get_matching_pool_for_order(&order_id)?.is_some() {
+                self.remove_order_from_matching_pool(&order_id)?;
+            }
         }
 
         // Delete the index for the nullifier

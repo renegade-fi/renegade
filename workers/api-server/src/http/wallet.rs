@@ -30,7 +30,7 @@ use hyper::HeaderMap;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
-use state::{matching_pools::GLOBAL_MATCHING_POOL, State};
+use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
 use util::{err_str, hex::jubjub_to_hex_string};
 
@@ -423,10 +423,10 @@ impl TypedHandler for CreateOrderHandler {
 
         let task = UpdateWalletTaskDescriptor::new_order(
             new_order,
+            id,
             old_wallet,
             new_wallet,
             req.statement_sig,
-            GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
 
@@ -485,10 +485,10 @@ impl TypedHandler for UpdateOrderHandler {
 
         let task = UpdateWalletTaskDescriptor::new_order(
             new_order,
+            order_id,
             old_wallet,
             new_wallet,
             req.statement_sig,
-            GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
 
