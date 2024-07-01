@@ -22,6 +22,9 @@ use super::HandshakeExecutor;
 
 /// Error emitted when proofs of validity cannot be found for an order
 const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
+/// Error emitted when an order being matched on is not assigned to any matching
+/// pool
+const ERR_NO_MATCHING_POOL: &str = "order not assigned to matching pool";
 
 // ------------------------
 // | Matching Engine Impl |
@@ -55,29 +58,38 @@ impl HandshakeExecutor {
         // Sample a price to match the order at
         let price = self.get_execution_price(&network_order.id).await?;
 
+        // Get the candidate order's matching pool
+        let my_pool_name = self
+            .state
+            .get_matching_pool_for_order(&network_order.id)
+            .await?
+            .ok_or(HandshakeManagerError::State(ERR_NO_MATCHING_POOL.to_string()))?;
+
         // Fetch all other orders that are ready for matches
         // Shuffle the ordering of the other orders for fairness
-        let mut other_orders = self.state.get_locally_matchable_orders().await?;
+        let mut other_orders =
+            self.state.get_locally_matchable_orders_in_matching_pool(my_pool_name).await?;
         other_orders.shuffle(&mut thread_rng());
 
         // Match against each other order in the local book
         for order_id in other_orders {
-            // Same order
+            // Orders must not be the same order
             if network_order.id == order_id {
                 continue;
             }
 
-            // Same wallet
+            // Orders must be in matchable wallets
             let other_wallet_id = self
                 .state
                 .get_wallet_for_order(&order_id)
                 .await?
                 .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
+
             if !self.wallets_can_match(wallet.wallet_id, other_wallet_id) {
                 continue;
             }
 
-            // Lookup the witness used for this order
+            // Order must have a validity proof bundle
             let (other_proof, other_witness) =
                 match self.get_validity_proof_and_witness(&order_id).await? {
                     Some(proof) => proof,
