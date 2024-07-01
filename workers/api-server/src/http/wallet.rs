@@ -30,7 +30,7 @@ use hyper::HeaderMap;
 use itertools::Itertools;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
-use state::State;
+use state::{matching_pools::GLOBAL_MATCHING_POOL, State};
 use task_driver::simulation::simulate_wallet_tasks;
 use util::{
     err_str,
@@ -432,6 +432,7 @@ impl TypedHandler for CreateOrderHandler {
             old_wallet,
             new_wallet,
             req.statement_sig,
+            GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
 
@@ -493,6 +494,7 @@ impl TypedHandler for UpdateOrderHandler {
             old_wallet,
             new_wallet,
             req.statement_sig,
+            GLOBAL_MATCHING_POOL.to_string(),
         )
         .map_err(bad_request)?;
 

@@ -18,6 +18,7 @@ use eyre::Result;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
 use rand::thread_rng;
+use state::matching_pools::GLOBAL_MATCHING_POOL;
 use test_helpers::{
     contract_interaction::{attach_merkle_opening, new_wallet_in_darkpool},
     integration_test_async,
@@ -94,7 +95,10 @@ async fn execute_wallet_update_and_verify_shares(
     share_seed: Scalar,
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    let desc = WalletUpdateType::PlaceOrder { order: mock_order() };
+    let desc = WalletUpdateType::PlaceOrder {
+        order: mock_order(),
+        matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+    };
     execute_wallet_update(
         desc,
         old_wallet,
