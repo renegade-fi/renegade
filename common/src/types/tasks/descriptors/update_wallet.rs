@@ -141,28 +141,16 @@ impl UpdateWalletTaskDescriptor {
         Self::new(desc, Some(transfer_with_auth), old_wallet, new_wallet, wallet_update_signature)
     }
 
-    /// A new order placement in the global matching pool
-    pub fn new_order(
+    /// A new order placement, optionally in a non-global matching pool
+    pub fn new_order_with_maybe_pool(
         order: Order,
         id: OrderIdentifier,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
+        matching_pool: Option<MatchingPoolName>,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool: None };
-        Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
-    }
-
-    /// A new order placement in the given matching pool
-    pub fn new_order_in_matching_pool(
-        order: Order,
-        id: OrderIdentifier,
-        old_wallet: Wallet,
-        new_wallet: Wallet,
-        wallet_update_signature: Vec<u8>,
-        matching_pool: MatchingPoolName,
-    ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool: Some(matching_pool) };
+        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 
