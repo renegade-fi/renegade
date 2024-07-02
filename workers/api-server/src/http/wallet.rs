@@ -13,6 +13,7 @@ use common::types::{
     },
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{KeyChain, Wallet, WalletIdentifier},
+    MatchingPoolName,
 };
 use external_api::{
     http::wallet::{
@@ -83,6 +84,41 @@ async fn append_task_and_await(
     waiter.await.map_err(err_str!(internal_error))?;
 
     Ok(task_id)
+}
+
+/// Create an order (potentially in a matching pool) and wait for it to be
+/// enqueued
+pub async fn create_order(
+    order: ApiOrder,
+    statement_sig: Vec<u8>,
+    wallet_id: WalletIdentifier,
+    state: &State,
+    matching_pool: Option<MatchingPoolName>,
+) -> Result<CreateOrderResponse, ApiServerError> {
+    let id = order.id;
+
+    // Lookup the wallet in the global state
+    let old_wallet = find_wallet_for_update(wallet_id, state).await?;
+    let mut new_wallet = old_wallet.clone();
+    let new_order: Order = order.into();
+
+    // Check that the timestamp is not too old, then add to the wallet
+    new_wallet.add_order(id, new_order.clone()).map_err(bad_request)?;
+    new_wallet.reblind_wallet();
+
+    let task = UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
+        new_order,
+        id,
+        old_wallet,
+        new_wallet,
+        statement_sig,
+        matching_pool,
+    )
+    .map_err(bad_request)?;
+
+    // Propose the task and await for it to be enqueued
+    let task_id = append_task_and_await(task.into(), state).await?;
+    Ok(CreateOrderResponse { id, task_id })
 }
 
 // ------------------
@@ -415,30 +451,16 @@ impl TypedHandler for CreateOrderHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let id = req.order.id;
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
-        // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
-        let mut new_wallet = old_wallet.clone();
-        let new_order: Order = req.order.into();
-
-        // Check that the timestamp is not too old, then add to the wallet
-        new_wallet.add_order(id, new_order.clone()).map_err(bad_request)?;
-        new_wallet.reblind_wallet();
-
-        let task = UpdateWalletTaskDescriptor::new_order(
-            new_order,
-            id,
-            old_wallet,
-            new_wallet,
+        create_order(
+            req.order,
             req.statement_sig,
+            wallet_id,
+            &self.state,
+            None, // matching_pool
         )
-        .map_err(bad_request)?;
-
-        // Propose the task and await for it to be enqueued
-        let task_id = append_task_and_await(task.into(), &self.state).await?;
-        Ok(CreateOrderResponse { id, task_id })
+        .await
     }
 }
 
@@ -489,12 +511,13 @@ impl TypedHandler for UpdateOrderHandler {
         *order = new_order.clone();
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor::new_order(
+        let task = UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
             new_order,
             order_id,
             old_wallet,
             new_wallet,
             req.statement_sig,
+            None, // matching_pool
         )
         .map_err(bad_request)?;
 
