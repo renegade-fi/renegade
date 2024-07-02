@@ -22,9 +22,6 @@ use super::HandshakeExecutor;
 
 /// Error emitted when proofs of validity cannot be found for an order
 const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
-/// Error emitted when an order being matched on is not assigned to any matching
-/// pool
-const ERR_NO_MATCHING_POOL: &str = "order not assigned to matching pool";
 
 // ------------------------
 // | Matching Engine Impl |
@@ -59,11 +56,7 @@ impl HandshakeExecutor {
         let price = self.get_execution_price(&network_order.id).await?;
 
         // Get the candidate order's matching pool
-        let my_pool_name = self
-            .state
-            .get_matching_pool_for_order(&network_order.id)
-            .await?
-            .ok_or(HandshakeManagerError::State(ERR_NO_MATCHING_POOL.to_string()))?;
+        let my_pool_name = self.state.get_matching_pool_for_order(&network_order.id).await?;
 
         // Fetch all other orders that are ready for matches
         // Shuffle the ordering of the other orders for fairness

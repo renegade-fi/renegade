@@ -7,7 +7,6 @@ use common::types::{
         Wallet,
     },
 };
-use constants::GLOBAL_MATCHING_POOL;
 use external_api::bus_message::{wallet_topic, SystemBusMessage};
 use itertools::Itertools;
 use libmdbx::RW;
@@ -138,8 +137,6 @@ impl StateApplicator {
             if !old_orders.contains(&id) {
                 let new_state = OrderMetadata::new(id, o);
                 self.update_order_metadata_with_tx(new_state, tx)?;
-                // Assign the order to the global matching pool by default
-                tx.assign_order_to_matching_pool(&id, GLOBAL_MATCHING_POOL)?;
             }
         }
 
@@ -170,10 +167,12 @@ pub(crate) mod test {
         wallet::Wallet,
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
-    use constants::GLOBAL_MATCHING_POOL;
     use uuid::Uuid;
 
-    use crate::{applicator::test_helpers::mock_applicator, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
+    use crate::{
+        applicator::test_helpers::mock_applicator,
+        storage::tx::matching_pools::GLOBAL_MATCHING_POOL, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
+    };
 
     // -----------
     // | Helpers |
@@ -183,9 +182,6 @@ pub(crate) mod test {
     #[test]
     fn test_add_wallet() {
         let applicator = mock_applicator();
-
-        // Create the global matching pool
-        applicator.create_matching_pool(GLOBAL_MATCHING_POOL).unwrap();
 
         // Add a wallet and an order to the wallet
         let wallet = mock_empty_wallet();
@@ -204,9 +200,6 @@ pub(crate) mod test {
     #[test]
     fn test_update_wallet() {
         let applicator = mock_applicator();
-
-        // Create the global matching pool
-        applicator.create_matching_pool(GLOBAL_MATCHING_POOL).unwrap();
 
         // Add a wallet
         let mut wallet = mock_empty_wallet();
@@ -230,7 +223,7 @@ pub(crate) mod test {
 
         // Check that the order is assigned to the global matching pool
         let tx = db.new_read_tx().unwrap();
-        let pool_name = tx.get_matching_pool_for_order(order_id).unwrap().unwrap();
+        let pool_name = tx.get_matching_pool_for_order(order_id).unwrap();
         tx.commit().unwrap();
         assert_eq!(pool_name, GLOBAL_MATCHING_POOL);
     }

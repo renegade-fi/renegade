@@ -18,7 +18,6 @@ use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
-use constants::GLOBAL_MATCHING_POOL;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::maybe_record_transfer_metrics;
@@ -331,12 +330,15 @@ impl UpdateWalletTask {
         let waiter = self.global_state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
 
-        // If we're placing a new order into a non-global matching pool, assign it as
+        // If we're placing a new order into a matching pool, assign it as
         // appropriate
-        if let WalletUpdateType::PlaceOrder { id, ref matching_pool, .. } = self.update_type
-            && matching_pool != &GLOBAL_MATCHING_POOL.to_string()
+        if let WalletUpdateType::PlaceOrder {
+            id,
+            matching_pool: Some(ref matching_pool_name),
+            ..
+        } = self.update_type
         {
-            self.global_state.assign_order_to_matching_pool(id, matching_pool.clone()).await?;
+            self.global_state.assign_order_to_matching_pool(id, matching_pool_name.clone()).await?;
         }
 
         Ok(())
