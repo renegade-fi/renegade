@@ -331,7 +331,7 @@ impl UpdateWalletTask {
         waiter.await?;
 
         // If we're placing a new order into a matching pool, assign it as
-        // appropriate
+        // appropriate. We assume that the matching pool exists.
         if let WalletUpdateType::PlaceOrder {
             id,
             matching_pool: Some(ref matching_pool_name),

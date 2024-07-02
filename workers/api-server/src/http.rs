@@ -15,7 +15,10 @@ use common::types::{
 };
 use external_api::{
     http::{
-        admin::{ADMIN_OPEN_ORDERS_ROUTE, IS_LEADER_ROUTE},
+        admin::{
+            ADMIN_CREATE_ORDER_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, IS_LEADER_ROUTE,
+        },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
@@ -54,7 +57,10 @@ use crate::{
 };
 
 use self::{
-    admin::AdminOpenOrdersHandler,
+    admin::{
+        AdminCreateMatchingPoolHandler, AdminCreateOrderInMatchingPoolHandler,
+        AdminDestroyMatchingPoolHandler, AdminOpenOrdersHandler,
+    },
     network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
     order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
     price_report::PriceReportHandler,
@@ -93,6 +99,8 @@ const ERR_CLUSTER_ID_PARSE: &str = "could not parse cluster id";
 const ERR_PEER_ID_PARSE: &str = "could not parse peer id";
 /// Error message displayed when parsing a task ID from URL fails
 const ERR_TASK_ID_PARSE: &str = "could not parse task id";
+/// Error message displayed when parsing a matching pool name from URL fails
+const ERR_MATCHING_POOL_PARSE: &str = "could not parse matching pool name";
 
 // ----------------
 // | URL Captures |
@@ -110,36 +118,37 @@ const CLUSTER_ID_URL_PARAM: &str = "cluster_id";
 const PEER_ID_URL_PARAM: &str = "peer_id";
 /// The :task_id param in a URL
 const TASK_ID_URL_PARAM: &str = "task_id";
+/// The :matching_pool param in a URL
+const MATCHING_POOL_URL_PARAM: &str = "matching_pool";
 
 /// A helper to parse out a mint from a URL param
 pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
     // Try to parse as a hex string, then fall back to decimal
-    let mint_str =
-        params.get(MINT_URL_PARAM).ok_or_else(|| not_found(ERR_MINT_PARSE.to_string()))?;
+    let mint_str = params.get(MINT_URL_PARAM).ok_or_else(|| not_found(ERR_MINT_PARSE))?;
     let stripped_param = mint_str.strip_prefix("0x").unwrap_or(mint_str);
     if let Ok(mint) = BigUint::from_str_radix(stripped_param, 16 /* radix */) {
         return Ok(mint);
     }
 
-    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| bad_request(ERR_MINT_PARSE.to_string()))
+    params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| bad_request(ERR_MINT_PARSE))
 }
 
 /// A helper to parse out a wallet ID from a URL param
 pub(super) fn parse_wallet_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
     params
         .get(WALLET_ID_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_WALLET_ID_PARSE.to_string()))?
+        .ok_or_else(|| bad_request(ERR_WALLET_ID_PARSE))?
         .parse()
-        .map_err(|_| bad_request(ERR_WALLET_ID_PARSE.to_string()))
+        .map_err(|_| bad_request(ERR_WALLET_ID_PARSE))
 }
 
 /// A helper to parse out an order ID from a URL param
 pub(super) fn parse_order_id_from_params(params: &UrlParams) -> Result<Uuid, ApiServerError> {
     params
         .get(ORDER_ID_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_ORDER_ID_PARSE.to_string()))?
+        .ok_or_else(|| bad_request(ERR_ORDER_ID_PARSE))?
         .parse()
-        .map_err(|_| bad_request(ERR_ORDER_ID_PARSE.to_string()))
+        .map_err(|_| bad_request(ERR_ORDER_ID_PARSE))
 }
 
 /// A helper to parse out a cluster ID from a URL param
@@ -148,9 +157,9 @@ pub(super) fn parse_cluster_id_from_params(
 ) -> Result<ClusterId, ApiServerError> {
     params
         .get(CLUSTER_ID_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_CLUSTER_ID_PARSE.to_string()))?
+        .ok_or_else(|| bad_request(ERR_CLUSTER_ID_PARSE))?
         .parse()
-        .map_err(|_| bad_request(ERR_CLUSTER_ID_PARSE.to_string()))
+        .map_err(|_| bad_request(ERR_CLUSTER_ID_PARSE))
 }
 
 /// A helper to parse out a peer ID from a URL param
@@ -159,9 +168,9 @@ pub(super) fn parse_peer_id_from_params(
 ) -> Result<WrappedPeerId, ApiServerError> {
     params
         .get(PEER_ID_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_PEER_ID_PARSE.to_string()))?
+        .ok_or_else(|| bad_request(ERR_PEER_ID_PARSE))?
         .parse()
-        .map_err(|_| bad_request(ERR_PEER_ID_PARSE.to_string()))
+        .map_err(|_| bad_request(ERR_PEER_ID_PARSE))
 }
 
 /// A helper to parse out a task ID from a URL param
@@ -170,9 +179,20 @@ pub(super) fn parse_task_id_from_params(
 ) -> Result<TaskIdentifier, ApiServerError> {
     params
         .get(TASK_ID_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_TASK_ID_PARSE.to_string()))?
+        .ok_or_else(|| bad_request(ERR_TASK_ID_PARSE))?
         .parse()
-        .map_err(|_| bad_request(ERR_TASK_ID_PARSE.to_string()))
+        .map_err(|_| bad_request(ERR_TASK_ID_PARSE))
+}
+
+/// A helper to parse out a matching pool name from a URL param
+pub(super) fn parse_matching_pool_from_params(
+    params: &UrlParams,
+) -> Result<String, ApiServerError> {
+    params
+        .get(MATCHING_POOL_URL_PARAM)
+        .ok_or_else(|| bad_request(ERR_MATCHING_POOL_PARSE))?
+        .parse()
+        .map_err(|_| bad_request(ERR_MATCHING_POOL_PARSE))
 }
 
 /// A wrapper around the router and task management operations that
@@ -405,7 +425,28 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_OPEN_ORDERS_ROUTE.to_string(),
-            AdminOpenOrdersHandler::new(state),
+            AdminOpenOrdersHandler::new(state.clone()),
+        );
+
+        // The "/admin/matching_pools/:matching_pool" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_MATCHING_POOL_CREATE_ROUTE.to_string(),
+            AdminCreateMatchingPoolHandler::new(state.clone()),
+        );
+
+        // The "/admin/matching_pools/:matching_pool/destroy" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE.to_string(),
+            AdminDestroyMatchingPoolHandler::new(state.clone()),
+        );
+
+        // The "/admin/wallet/:id/order-in-pool" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_CREATE_ORDER_ROUTE.to_string(),
+            AdminCreateOrderInMatchingPoolHandler::new(state),
         );
 
         router
