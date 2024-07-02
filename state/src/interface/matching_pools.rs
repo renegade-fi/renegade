@@ -27,6 +27,18 @@ impl State {
         .await
     }
 
+    /// Whether or not a pool with the given name exists
+    pub async fn matching_pool_exists(
+        &self,
+        pool_name: MatchingPoolName,
+    ) -> Result<bool, StateError> {
+        self.with_read_tx(move |tx| {
+            let exists = tx.matching_pool_exists(&pool_name)?;
+            Ok(exists)
+        })
+        .await
+    }
+
     // -----------
     // | Setters |
     // -----------
