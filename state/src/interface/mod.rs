@@ -168,7 +168,7 @@ impl State {
             raft,
             recovered_from_snapshot,
         };
-        this.setup_node_state(config).await?;
+        this.setup_node_metadata(config).await?;
         this.setup_core_panic_timer(&system_clock, failure_send).await?;
         this.setup_membership_sync_timer(&system_clock).await?;
         this.setup_raft_metrics_timer(&system_clock).await?;

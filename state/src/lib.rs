@@ -349,6 +349,6 @@ pub mod test_helpers {
 
         // Configure the node
         let config = RelayerConfig { p2p_key: Keypair::generate_ed25519(), ..Default::default() };
-        state.setup_node_state(&config).await.unwrap();
+        state.setup_node_metadata(&config).await.unwrap();
     }
 }

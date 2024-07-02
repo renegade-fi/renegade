@@ -124,7 +124,6 @@ mod test {
         wallet::OrderIdentifier,
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
-    use constants::GLOBAL_MATCHING_POOL;
 
     use crate::applicator::test_helpers::mock_applicator;
 
@@ -132,9 +131,6 @@ mod test {
     #[test]
     fn test_add_validity_proof() {
         let applicator = mock_applicator();
-
-        // Create the global matching pool
-        applicator.create_matching_pool(GLOBAL_MATCHING_POOL).unwrap();
 
         // Add an order via a wallet
         let mut wallet = mock_empty_wallet();

@@ -13,7 +13,7 @@ use common::types::{
     wallet::{OrderIdentifier, Wallet},
     wallet_mocks::{mock_empty_wallet, mock_order},
 };
-use constants::{Scalar, GLOBAL_MATCHING_POOL};
+use constants::Scalar;
 use eyre::Result;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -97,7 +97,7 @@ async fn execute_wallet_update_and_verify_shares(
     let desc = WalletUpdateType::PlaceOrder {
         order: mock_order(),
         id: OrderIdentifier::new_v4(),
-        matching_pool: GLOBAL_MATCHING_POOL.to_string(),
+        matching_pool: None,
     };
     execute_wallet_update(
         desc,
