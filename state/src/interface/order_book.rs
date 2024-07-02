@@ -212,13 +212,8 @@ impl State {
             let mut res = Vec::new();
             for id in local_order_ids.into_iter() {
                 let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
-                match order_matching_pool {
-                    None => continue,
-                    Some(pool) => {
-                        if pool != matching_pool {
-                            continue;
-                        }
-                    },
+                if order_matching_pool != matching_pool {
+                    continue;
                 }
 
                 if Self::is_order_matchable(&id, tx)? {

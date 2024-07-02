@@ -1,7 +1,6 @@
 //! Descriptor for the wallet update task
 
 use circuit_types::{keychain::PublicSigningKey, order::Order, Amount};
-use constants::GLOBAL_MATCHING_POOL;
 use contracts_common::custom_serde::BytesSerializable;
 use ethers::core::types::Signature;
 use ethers::utils::{keccak256, public_key_to_address};
@@ -44,8 +43,9 @@ pub enum WalletUpdateType {
         order: Order,
         /// The ID of the order
         id: OrderIdentifier,
-        /// The matching pool to assign the order to
-        matching_pool: MatchingPoolName,
+        /// The matching pool to assign the order to.
+        /// If `None`, the order is placed in the global pool.
+        matching_pool: Option<MatchingPoolName>,
     },
     /// Cancel an order
     CancelOrder {
@@ -149,11 +149,7 @@ impl UpdateWalletTaskDescriptor {
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder {
-            order,
-            id,
-            matching_pool: GLOBAL_MATCHING_POOL.to_string(),
-        };
+        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool: None };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 
@@ -166,7 +162,7 @@ impl UpdateWalletTaskDescriptor {
         wallet_update_signature: Vec<u8>,
         matching_pool: MatchingPoolName,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool };
+        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool: Some(matching_pool) };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 

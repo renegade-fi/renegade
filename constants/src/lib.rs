@@ -109,10 +109,3 @@ pub const HANDSHAKE_STATUS_TOPIC: &str = "handshakes";
 
 /// The topic published to when a state change occurs on an order
 pub const ORDER_STATE_CHANGE_TOPIC: &str = "order-state";
-
-// ---------------------------
-// | Matching Pool Constants |
-// ---------------------------
-
-/// The name of the global matching pool
-pub const GLOBAL_MATCHING_POOL: &str = "global";
