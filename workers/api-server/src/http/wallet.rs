@@ -120,7 +120,7 @@ pub async fn create_order(
 // ------------------
 
 /// Error message displayed when a given order cannot be found
-const ERR_ORDER_NOT_FOUND: &str = "order not found";
+pub const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// Error message emitted when a withdrawal is attempted with non-zero fees
 const ERR_WITHDRAW_NONZERO_FEES: &str = "cannot withdraw with non-zero fees";
 
