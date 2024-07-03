@@ -7,7 +7,10 @@
 use async_trait::async_trait;
 use external_api::{
     http::{
-        admin::{CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrdersResponse},
+        admin::{
+            AdminOrderMetadataResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
+            OpenOrdersResponse,
+        },
         wallet::CreateOrderResponse,
     },
     EmptyRequestResponse,
@@ -115,6 +118,46 @@ impl TypedHandler for AdminOpenOrdersHandler {
     }
 }
 
+// ------------------------
+// | /orders/:id/metadata |
+// ------------------------
+
+/// Handle for the GET /v0/admin/orders/:id/metadata route
+pub struct AdminOrderMetadataHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminOrderMetadataHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminOrderMetadataHandler {
+    type Request = EmptyRequestResponse;
+    type Response = AdminOrderMetadataResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let order_id = parse_order_id_from_params(&params)?;
+        let order = self
+            .state
+            .get_order_metadata(&order_id)
+            .await?
+            .ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
+
+        Ok(AdminOrderMetadataResponse { order })
+    }
+}
+
 // ----------------------------------
 // | /matching_pools/:matching_pool |
 // ----------------------------------
@@ -147,14 +190,13 @@ impl TypedHandler for AdminCreateMatchingPoolHandler {
         let matching_pool = parse_matching_pool_from_params(&params)?;
 
         // Check that the matching pool does not already exist
-        if self.state.matching_pool_exists(matching_pool.clone()).await.map_err(internal_error)? {
+        if self.state.matching_pool_exists(matching_pool.clone()).await? {
             return Err(bad_request(ERR_MATCHING_POOL_EXISTS));
         }
 
-        let waiter =
-            self.state.create_matching_pool(matching_pool).await.map_err(internal_error)?;
+        let waiter = self.state.create_matching_pool(matching_pool).await?;
 
-        waiter.await.map_err(internal_error)?;
+        waiter.await?;
         Ok(EmptyRequestResponse {})
     }
 }
@@ -190,10 +232,9 @@ impl TypedHandler for AdminDestroyMatchingPoolHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let matching_pool = parse_matching_pool_from_params(&params)?;
 
-        let waiter =
-            self.state.destroy_matching_pool(matching_pool).await.map_err(internal_error)?;
+        let waiter = self.state.destroy_matching_pool(matching_pool).await?;
 
-        waiter.await.map_err(internal_error)?;
+        waiter.await?;
         Ok(EmptyRequestResponse {})
     }
 }
@@ -231,7 +272,7 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
         let matching_pool = req.matching_pool;
 
         // Check that the matching pool exists
-        if !self.state.matching_pool_exists(matching_pool.clone()).await.map_err(internal_error)? {
+        if !self.state.matching_pool_exists(matching_pool.clone()).await? {
             return Err(not_found(ERR_NO_MATCHING_POOL));
         }
 
@@ -275,23 +316,19 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         let matching_pool = parse_matching_pool_from_params(&params)?;
 
         // Check that the order exists
-        if !self.state.contains_order(&order_id).await.map_err(internal_error)? {
+        if !self.state.contains_order(&order_id).await? {
             return Err(not_found(ERR_ORDER_NOT_FOUND));
         }
 
         // Check that the matching pool exists
-        if !self.state.matching_pool_exists(matching_pool.clone()).await.map_err(internal_error)? {
+        if !self.state.matching_pool_exists(matching_pool.clone()).await? {
             return Err(not_found(ERR_NO_MATCHING_POOL));
         }
 
         // Assign the order to the matching pool
-        let waiter = self
-            .state
-            .assign_order_to_matching_pool(order_id, matching_pool)
-            .await
-            .map_err(internal_error)?;
+        let waiter = self.state.assign_order_to_matching_pool(order_id, matching_pool).await?;
 
-        waiter.await.map_err(internal_error)?;
+        waiter.await?;
 
         // Run the matching engine on the order
         let job = HandshakeExecutionJob::InternalMatchingEngine { order: order_id };

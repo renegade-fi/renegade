@@ -17,7 +17,8 @@ use external_api::{
     http::{
         admin::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
-            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
+            IS_LEADER_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
@@ -60,7 +61,7 @@ use self::{
     admin::{
         AdminAssignOrderToMatchingPoolHandler, AdminCreateMatchingPoolHandler,
         AdminCreateOrderInMatchingPoolHandler, AdminDestroyMatchingPoolHandler,
-        AdminOpenOrdersHandler,
+        AdminOpenOrdersHandler, AdminOrderMetadataHandler,
     },
     network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
     order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
@@ -427,6 +428,13 @@ impl HttpServer {
             &Method::GET,
             ADMIN_OPEN_ORDERS_ROUTE.to_string(),
             AdminOpenOrdersHandler::new(state.clone()),
+        );
+
+        // The "/admin/orders/:id/metadata" route
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_ORDER_METADATA_ROUTE.to_string(),
+            AdminOrderMetadataHandler::new(state.clone()),
         );
 
         // The "/admin/matching_pools/:matching_pool" route

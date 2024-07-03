@@ -13,6 +13,8 @@ use crate::types::ApiOrder;
 pub const IS_LEADER_ROUTE: &str = "/v0/admin/is-leader";
 /// Get the open orders managed by the node
 pub const ADMIN_OPEN_ORDERS_ROUTE: &str = "/v0/admin/open-orders";
+/// Get the order metadata for a given order
+pub const ADMIN_ORDER_METADATA_ROUTE: &str = "/v0/admin/orders/:order_id/metadata";
 /// Route to create a matching pool
 pub const ADMIN_MATCHING_POOL_CREATE_ROUTE: &str = "/v0/admin/matching_pools/:matching_pool";
 /// Route to destroy a matching pool
@@ -48,4 +50,11 @@ pub struct CreateOrderInMatchingPoolRequest {
     pub statement_sig: Vec<u8>,
     /// The matching pool to create the order in
     pub matching_pool: MatchingPoolName,
+}
+
+/// The response to an "order metadata" request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AdminOrderMetadataResponse {
+    /// The order metadata
+    pub order: OrderMetadata,
 }
