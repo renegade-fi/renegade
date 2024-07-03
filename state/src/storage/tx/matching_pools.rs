@@ -114,8 +114,14 @@ impl<'db> StateTxn<'db, RW> {
             return Err(StorageError::Other(MATCHING_POOL_DOES_NOT_EXIST_ERR.to_string()));
         }
 
-        let pool_key = matching_pool_key(order_id);
-        self.inner().write(POOL_TABLE, &pool_key, &pool_name.to_string())
+        // If assigning to the global pool, simply remove the existing assignment
+        // (this is safe to do if an existing assignment does not exist)
+        if pool_name == GLOBAL_MATCHING_POOL {
+            self.remove_order_from_matching_pool(order_id)
+        } else {
+            let pool_key = matching_pool_key(order_id);
+            self.inner().write(POOL_TABLE, &pool_key, &pool_name.to_string())
+        }
     }
 
     /// Remove an order's matching pool assignment, this implicitly moves the

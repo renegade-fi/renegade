@@ -8,8 +8,8 @@ use common::{
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{
-    network_manager::NetworkManagerQueue, price_reporter::PriceReporterQueue,
-    proof_manager::ProofManagerQueue,
+    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
+    price_reporter::PriceReporterQueue, proof_manager::ProofManagerQueue,
 };
 use state::State;
 use std::thread::{self, JoinHandle};
@@ -59,6 +59,8 @@ pub struct ApiServerConfig {
     pub price_reporter_work_queue: PriceReporterQueue,
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: ProofManagerQueue,
+    /// The worker job queue for the HandshakeManager
+    pub handshake_manager_work_queue: HandshakeManagerQueue,
     /// The relayer-global state
     pub state: State,
     /// The system pubsub bus that all workers have access to

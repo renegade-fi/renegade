@@ -303,7 +303,7 @@ async fn main() -> Result<(), CoordinatorError> {
         max_root_staleness: args.max_merkle_staleness,
         arbitrum_client: chain_listener_arbitrum_client,
         global_state: global_state.clone(),
-        handshake_manager_job_queue: handshake_worker_sender,
+        handshake_manager_job_queue: handshake_worker_sender.clone(),
         proof_generation_work_queue: proof_generation_worker_sender.clone(),
         network_sender: network_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
@@ -327,6 +327,7 @@ async fn main() -> Result<(), CoordinatorError> {
         system_bus,
         price_reporter_work_queue: price_reporter_worker_sender,
         proof_generation_work_queue: proof_generation_worker_sender,
+        handshake_manager_work_queue: handshake_worker_sender,
         cancel_channel: api_cancel_receiver,
     })
     .await
