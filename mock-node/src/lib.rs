@@ -478,6 +478,7 @@ impl MockNodeController {
         let system_bus = self.bus.clone();
         let price_reporter_work_queue = self.price_queue.0.clone();
         let proof_generation_work_queue = self.proof_queue.0.clone();
+        let handshake_manager_work_queue = self.handshake_queue.0.clone();
         let cancel_channel = mock_cancel();
 
         let conf = ApiServerConfig {
@@ -490,6 +491,7 @@ impl MockNodeController {
             system_bus,
             price_reporter_work_queue,
             proof_generation_work_queue,
+            handshake_manager_work_queue,
             cancel_channel,
         };
 

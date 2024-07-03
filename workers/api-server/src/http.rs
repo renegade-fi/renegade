@@ -16,7 +16,7 @@ use common::types::{
 use external_api::{
     http::{
         admin::{
-            ADMIN_CREATE_ORDER_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
+            ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
             ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, IS_LEADER_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
@@ -58,8 +58,9 @@ use crate::{
 
 use self::{
     admin::{
-        AdminCreateMatchingPoolHandler, AdminCreateOrderInMatchingPoolHandler,
-        AdminDestroyMatchingPoolHandler, AdminOpenOrdersHandler,
+        AdminAssignOrderToMatchingPoolHandler, AdminCreateMatchingPoolHandler,
+        AdminCreateOrderInMatchingPoolHandler, AdminDestroyMatchingPoolHandler,
+        AdminOpenOrdersHandler,
     },
     network::{GetClusterInfoHandler, GetNetworkTopologyHandler, GetPeerInfoHandler},
     order_book::{GetNetworkOrderByIdHandler, GetNetworkOrdersHandler},
@@ -446,7 +447,17 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_CREATE_ORDER_ROUTE.to_string(),
-            AdminCreateOrderInMatchingPoolHandler::new(state),
+            AdminCreateOrderInMatchingPoolHandler::new(state.clone()),
+        );
+
+        // The "/admin/orders/:id/assign-pool/:matching_pool" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_ASSIGN_ORDER_ROUTE.to_string(),
+            AdminAssignOrderToMatchingPoolHandler::new(
+                state,
+                config.handshake_manager_work_queue.clone(),
+            ),
         );
 
         router
