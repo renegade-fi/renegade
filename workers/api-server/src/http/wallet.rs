@@ -55,8 +55,13 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 /// The name of the query parameter specifying the length of the order history
 /// to return
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
+
 /// The error message returned when a deposit address is screened out
 const ERR_SCREENED_OUT_ADDRESS: &str = "deposit address was screened as high risk";
+/// The error message returned when a wallet with a given ID already exists
+const ERR_WALLET_ALREADY_EXISTS: &str = "wallet id already exists";
+/// The error message returned when an order with a given ID already exists
+const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 
 /// Find the wallet in global state and apply any tasks to its state
 async fn find_wallet_for_update(
@@ -227,8 +232,13 @@ impl TypedHandler for CreateWalletHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        // Overwrite the managing cluster and the match fee with the configured values
+        // Disallow overwriting an existing wallet
         let wallet_id = req.wallet.id;
+        if self.state.get_wallet(&wallet_id).await?.is_some() {
+            return Err(bad_request(ERR_WALLET_ALREADY_EXISTS));
+        }
+
+        // Overwrite the managing cluster and the match fee with the configured values
         let relayer_key = self.state.get_fee_decryption_key().await?.public_key();
         let relayer_take_rate = self.state.get_relayer_fee_for_wallet(&wallet_id).await?;
         req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
@@ -256,7 +266,7 @@ impl TypedHandler for CreateWalletHandler {
     }
 }
 
-/// Handler for the POST /wallet route
+/// Handler for the POST /wallet/lookup route
 pub struct FindWalletHandler {
     /// A copy of the relayer-global state
     state: State,
@@ -281,6 +291,12 @@ impl TypedHandler for FindWalletHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Check that the wallet does not already exist.
+        // Existing wallets can be refreshed via the /refresh route
+        if self.state.get_wallet(&req.wallet_id).await?.is_some() {
+            return Err(bad_request(ERR_WALLET_ALREADY_EXISTS));
+        }
+
         // Create a task in thew driver to find and prove validity for
         // the wallet
         let key_chain: KeyChain =
@@ -325,7 +341,9 @@ impl TypedHandler for RefreshWalletHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        find_wallet_for_update(wallet_id, &self.state).await?;
+        if self.state.get_wallet(&wallet_id).await?.is_none() {
+            return Err(not_found(ERR_WALLET_NOT_FOUND));
+        }
 
         // Clear the task queue of the wallet
         let waiter = self.state.clear_task_queue(&wallet_id).await?;
@@ -453,6 +471,12 @@ impl TypedHandler for CreateOrderHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
+        // Check that the order does not already exist
+        let oid = req.order.id;
+        if self.state.contains_order(&oid).await? {
+            return Err(bad_request(ERR_ORDER_ALREADY_EXISTS));
+        }
+
         create_order(
             req.order,
             req.statement_sig,
@@ -495,15 +519,10 @@ impl TypedHandler for UpdateOrderHandler {
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
 
-        // Pop the old order and replace it with a new one
+        // Edit the order if it exists in the wallet
         let mut new_wallet = old_wallet.clone();
-
         let new_order: Order = req.order.into();
 
-        // We edit the value of the underlying map in-place (as opposed to `pop` and
-        // `insert`) to maintain ordering of the orders. This is important for
-        // the circuit, which relies on the order of the orders to be consistent
-        // between the old and new wallets
         let order = new_wallet
             .orders
             .get_mut(&order_id)

@@ -30,7 +30,7 @@ const ERR_PEER_NOT_FOUND: &str = "could not find peer in index";
 // | Route Handlers |
 // ------------------
 
-/// Handler for the GET "/network/clusters" route
+/// Handler for the GET "/network" route
 #[derive(Clone)]
 pub struct GetNetworkTopologyHandler {
     /// A copy of the relayer-global state
