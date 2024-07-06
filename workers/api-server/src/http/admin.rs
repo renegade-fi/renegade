@@ -37,6 +37,8 @@ use super::{
 const ERR_MATCHING_POOL_EXISTS: &str = "matching pool already exists";
 /// The matching pool for the order does not exist
 const ERR_NO_MATCHING_POOL: &str = "matching pool does not exist";
+/// The order already exists
+const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 
 // ------------------
 // | Route Handlers |
@@ -276,6 +278,12 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
             return Err(not_found(ERR_NO_MATCHING_POOL));
         }
 
+        // Check that an order with the given ID does not exist
+        let oid = req.order.id;
+        if self.state.contains_order(&oid).await? {
+            return Err(bad_request(ERR_ORDER_ALREADY_EXISTS));
+        }
+
         create_order(req.order, req.statement_sig, wallet_id, &self.state, Some(matching_pool))
             .await
     }
@@ -327,7 +335,6 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
 
         // Assign the order to the matching pool
         let waiter = self.state.assign_order_to_matching_pool(order_id, matching_pool).await?;
-
         waiter.await?;
 
         // Run the matching engine on the order
