@@ -119,20 +119,13 @@ impl NetworkOrder {
         self.validity_proofs = Some(validity_proofs)
     }
 
-    /// The following state transition methods are made module private because
-    /// we prefer that access flow through the parent (`OrderBook`) object.
-    /// This object has a reference to the system bus for internal events to
-    /// be published
-
     /// Transitions the state of an order back to the received state, this drops
     /// the existing proof of `VALID COMMITMENTS`
-    #[allow(unused)]
     pub fn transition_received(&mut self) {
         self.state = NetworkOrderState::Received;
     }
 
     /// Transitions the state of an order to the verified state
-    #[allow(unused)]
     pub fn transition_verified(&mut self, validity_proofs: OrderValidityProofBundle) {
         self.attach_validity_proofs(validity_proofs);
     }
@@ -144,7 +137,6 @@ impl NetworkOrder {
     }
 
     /// Transitions the state of an order to `Cancelled`
-    #[allow(unused)]
     pub fn transition_cancelled(&mut self) {
         self.state = NetworkOrderState::Cancelled;
 
