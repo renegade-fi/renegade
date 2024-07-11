@@ -11,7 +11,7 @@ use external_api::{
             AdminOrderMetadataResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
             OpenOrdersResponse,
         },
-        wallet::CreateOrderResponse,
+        wallet::{CreateOrderResponse, GetBalancesResponse},
     },
     EmptyRequestResponse,
 };
@@ -21,7 +21,7 @@ use state::State;
 
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},
-    router::{QueryParams, TypedHandler, UrlParams},
+    router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
 use super::{
@@ -124,7 +124,7 @@ impl TypedHandler for AdminOpenOrdersHandler {
 // | /orders/:id/metadata |
 // ------------------------
 
-/// Handle for the GET /v0/admin/orders/:id/metadata route
+/// Handler for the GET /v0/admin/orders/:id/metadata route
 pub struct AdminOrderMetadataHandler {
     /// A handle to the relayer state
     state: State,
@@ -342,5 +342,47 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         self.handshake_manager_queue.send(job).map_err(internal_error)?;
 
         Ok(EmptyRequestResponse {})
+    }
+}
+
+// ------------------------
+// | /wallet/:id/balances |
+// ------------------------
+
+/// Handler for the GET /v0/admin/wallet/:id/balances route
+pub struct AdminGetBalancesHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminGetBalancesHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminGetBalancesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetBalancesResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        if let Some(mut wallet) = self.state.get_wallet(&wallet_id).await? {
+            // Filter out the default balances used to pad the wallet to the circuit size
+            wallet.remove_default_elements();
+            let balances = wallet.get_balances_list().to_vec();
+
+            Ok(GetBalancesResponse { balances })
+        } else {
+            Err(not_found(ERR_WALLET_NOT_FOUND.to_string()))
+        }
     }
 }
