@@ -149,10 +149,18 @@ impl StateApplicator {
 
                 // Only update the state if it has not already entered a terminal state
                 if !old_meta.state.is_terminal() {
+                    // Update the order metadata to reflect the order's cancellation
                     old_meta.state = OrderState::Cancelled;
                     self.update_order_metadata_with_tx(old_meta, tx)?;
+
                     // Remove the order from its matching pool
                     tx.remove_order_from_matching_pool(&id)?;
+
+                    // Remove the order from the local orders set
+                    tx.remove_local_order(&id)?;
+
+                    // Transition the order to a cancelled state
+                    tx.mark_order_cancelled(&id)?;
                 }
             }
         }

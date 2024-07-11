@@ -3,7 +3,7 @@
 use crate::storage::tx::StateTxn;
 
 use super::{error::StateApplicatorError, return_type::ApplicatorReturnType, StateApplicator};
-use common::types::wallet::order_metadata::OrderMetadata;
+use common::types::wallet::order_metadata::{OrderMetadata, OrderState};
 use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
 use libmdbx::RW;
 
@@ -36,10 +36,19 @@ impl StateApplicator {
 
         // Add the order to the history if it doesn't exist
         let old_meta = tx.get_order_metadata(wallet, meta.id)?;
-        if old_meta.is_none() {
-            tx.push_order_history(&wallet, meta.clone())?;
-        } else {
-            tx.update_order_metadata(&wallet, meta.clone())?;
+        match old_meta {
+            None => tx.push_order_history(&wallet, meta.clone())?,
+            Some(old_meta) => {
+                tx.update_order_metadata(&wallet, meta.clone())?;
+
+                // If the order was just filled, remove it from the set of local open orders
+                // as it is no longer matchable
+                if !matches!(old_meta.state, OrderState::Filled)
+                    && matches!(meta.state, OrderState::Filled)
+                {
+                    tx.remove_local_order(&meta.id)?;
+                }
+            },
         }
 
         // Write to system bus
@@ -53,7 +62,7 @@ impl StateApplicator {
 #[cfg(test)]
 mod tests {
     use circuit_types::fixed_point::FixedPoint;
-    use common::types::{wallet::order_metadata::OrderState, wallet_mocks::mock_order};
+    use common::types::wallet_mocks::mock_order;
     use uuid::Uuid;
 
     use crate::applicator::test_helpers::mock_applicator;

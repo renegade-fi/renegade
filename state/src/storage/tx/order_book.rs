@@ -3,7 +3,7 @@
 use circuit_types::wallet::Nullifier;
 use common::types::{
     gossip::ClusterId,
-    network_order::{NetworkOrder, NetworkOrderState},
+    network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
@@ -36,7 +36,7 @@ pub fn nullifier_key(nullifier: Nullifier) -> String {
     format!("nullifier:{nullifier}")
 }
 
-/// The key for the locally managed order set
+/// The key for the set of locally managed open orders
 pub fn locally_managed_key() -> String {
     "local-orders".to_string()
 }
@@ -89,7 +89,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         Ok(OrderPriority { cluster_priority, order_priority })
     }
 
-    /// Get the IDs of orders managed by the local peer's cluster
+    /// Get the IDs of open orders managed by the local peer's cluster
     pub fn get_local_orders(&self) -> Result<Vec<OrderIdentifier>, StorageError> {
         let key = locally_managed_key();
         self.read_set(ORDERS_TABLE, &key)
@@ -188,9 +188,7 @@ impl<'db> StateTxn<'db, RW> {
 
         // Update the order itself
         let mut order = self.get_order_info_or_err(order_id)?;
-        order.validity_proofs = Some(proof);
-        order.public_share_nullifier = new_nullifier;
-        order.state = NetworkOrderState::Verified;
+        order.transition_verified(proof);
 
         self.write_order(&order)
     }
@@ -248,6 +246,13 @@ impl<'db> StateTxn<'db, RW> {
     pub fn remove_local_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
         let key = locally_managed_key();
         self.remove_from_set(ORDERS_TABLE, &key, order_id)
+    }
+
+    /// Mark an order as cancelled
+    pub fn mark_order_cancelled(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+        let mut order = self.get_order_info_or_err(order_id)?;
+        order.transition_cancelled();
+        self.write_order(&order)
     }
 
     // --- Helpers --- //

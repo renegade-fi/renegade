@@ -10,9 +10,7 @@ use circuits::{
     },
 };
 use common::types::{
-    gossip::ClusterId,
-    network_order::{NetworkOrder, NetworkOrderState},
-    proof_bundles::OrderValidityProofBundle,
+    gossip::ClusterId, network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle,
     wallet::OrderIdentifier,
 };
 use futures::executor::block_on;
@@ -71,7 +69,7 @@ impl GossipProtocolExecutor {
             // Move fields out of `order_info` before transferring ownership
             let proof = order.validity_proofs.take();
 
-            order.state = NetworkOrderState::Received;
+            order.transition_received();
             order.local = is_local;
             self.state.add_order(order).await?;
 
