@@ -56,21 +56,21 @@ const ERR_HEADER_PARSE: &str = "error parsing headers";
 // ----------
 
 /// The handshake topic, events include when a handshake beings and ends
-const HANDSHAKE_ROUTE: &str = "/v0/handshake";
+const HANDSHAKE_ROUTE: &str = "/ws/v0/handshake";
 /// The wallet topic, events about wallet updates are streamed here
-const WALLET_ROUTE: &str = "/v0/wallet/:wallet_id";
+const WALLET_ROUTE: &str = "/ws/v0/wallet/:wallet_id";
 /// The wallet order status topic, streams events about wallet's orders
-const WALLET_ORDERS_ROUTE: &str = "/v0/wallet/:wallet_id/order-status";
+const WALLET_ORDERS_ROUTE: &str = "/ws/v0/wallet/:wallet_id/order-status";
 /// The price report topic, events about price updates are streamed
-const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:source/:base/:quote";
+const PRICE_REPORT_ROUTE: &str = "/ws/v0/price_report/:source/:base/:quote";
 /// The order book topic, streams events about known network orders
-const ORDER_BOOK_ROUTE: &str = "/v0/order_book";
+const ORDER_BOOK_ROUTE: &str = "/ws/v0/order_book";
 /// The network topic, streams events about network peers
-const NETWORK_INFO_ROUTE: &str = "/v0/network";
+const NETWORK_INFO_ROUTE: &str = "/ws/v0/network";
 /// The task status topic, streams information about task statuses
-const TASK_STATUS_ROUTE: &str = "/v0/tasks/:task_id";
+const TASK_STATUS_ROUTE: &str = "/ws/v0/tasks/:task_id";
 /// The task history topic, streams information about historical tasks
-const TASK_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/task-history";
+const TASK_HISTORY_ROUTE: &str = "/ws/v0/wallet/:wallet_id/task-history";
 
 // --------------------
 // | Websocket Server |
