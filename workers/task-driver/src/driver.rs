@@ -51,7 +51,7 @@ const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
 /// The maximum to increase the backoff to in milliseconds
 const BACKOFF_CEILING_MS: u64 = 30_000; // 30 seconds
 /// The initial backoff time when retrying a task
-const INITIAL_BACKOFF_MS: u64 = 2000; // 2 seconds
+const INITIAL_BACKOFF_MS: u64 = 100; // 100 milliseconds
 /// The name of the threads backing the task driver
 const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
