@@ -1,11 +1,11 @@
 //! Stores state information relating to the node's configuration
 
-use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
+use circuit_types::fixed_point::FixedPoint;
 use common::types::{
     gossip::{ClusterId, PeerInfo, WrappedPeerId},
     wallet::{derivation::derive_wallet_id, Wallet, WalletIdentifier},
 };
-use config::RelayerConfig;
+use config::{RelayerConfig, RelayerFeeKey};
 use libp2p::{core::Multiaddr, identity::Keypair};
 use util::res_some;
 
@@ -47,8 +47,8 @@ impl State {
     }
 
     /// Get the decryption key used to settle managed match fees
-    pub async fn get_fee_decryption_key(&self) -> Result<DecryptionKey, StateError> {
-        self.with_read_tx(|tx| tx.get_fee_decryption_key().map_err(StateError::Db)).await
+    pub async fn get_fee_key(&self) -> Result<RelayerFeeKey, StateError> {
+        self.with_read_tx(|tx| tx.get_fee_key().map_err(StateError::Db)).await
     }
 
     /// Get the local relayer's match take rate
@@ -118,7 +118,7 @@ impl State {
         let peer_id = config.peer_id();
         let cluster_id = config.cluster_id.clone();
         let p2p_key = config.p2p_key.clone();
-        let fee_decryption_key = config.fee_decryption_key;
+        let fee_key = config.fee_key;
         let match_take_rate = config.match_take_rate;
         let relayer_fee_whitelist = config.relayer_fee_whitelist.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
@@ -131,7 +131,7 @@ impl State {
             tx.set_peer_id(&peer_id)?;
             tx.set_cluster_id(&cluster_id)?;
             tx.set_node_keypair(&p2p_key)?;
-            tx.set_fee_decryption_key(&fee_decryption_key)?;
+            tx.set_fee_key(&fee_key)?;
             tx.set_relayer_take_rate(&match_take_rate)?;
             tx.set_local_node_wallet(relayer_wallet_id)?;
             tx.set_auto_redeem_fees(auto_redeem_fees)?;

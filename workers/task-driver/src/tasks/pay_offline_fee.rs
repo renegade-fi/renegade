@@ -291,7 +291,8 @@ impl PayOfflineFeeTask {
         // If this was a relayer fee payment and auto-redeem is enabled, enqueue a job
         // for the relayer to redeem the fee
         let auto_redeem = self.state.get_auto_redeem_fees().await?;
-        if !self.is_protocol_fee && auto_redeem {
+        let decryption_key = self.state.get_fee_key().await?.secret_key();
+        if !self.is_protocol_fee && auto_redeem && decryption_key.is_some() {
             enqueue_relayer_redeem_job(self.note.clone(), &self.state)
                 .await
                 .map_err(PayOfflineFeeTaskError::State)?;

@@ -1,10 +1,11 @@
 //! Storage access methods for the local node's metadata
 
-use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
+use circuit_types::fixed_point::FixedPoint;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     wallet::WalletIdentifier,
 };
+use config::RelayerFeeKey;
 use libmdbx::{TransactionKind, RW};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
@@ -30,7 +31,7 @@ const LOCAL_ADDR_KEY: &str = "local-addr";
 const LOCAL_WALLET_ID_KEY: &str = "local-wallet-id";
 /// The key for the local relayer's fee decryption key in the node metadata
 /// table
-const LOCAL_RELAYER_DECRYPTION_KEY: &str = "local-relayer-decryption-key";
+const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee-key";
 /// The key for the local relayer's match take rate in the node metadata table
 const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
 /// The key for the local relayer's auto-redeem fees flag in the node metadata
@@ -94,10 +95,10 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     }
 
     /// Get the local relayer's fee decryption key
-    pub fn get_fee_decryption_key(&self) -> Result<DecryptionKey, StorageError> {
+    pub fn get_fee_key(&self) -> Result<RelayerFeeKey, StorageError> {
         self.inner()
-            .read(NODE_METADATA_TABLE, &LOCAL_RELAYER_DECRYPTION_KEY.to_string())?
-            .ok_or_else(|| err_not_found(LOCAL_RELAYER_DECRYPTION_KEY))
+            .read(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string())?
+            .ok_or_else(|| err_not_found(LOCAL_RELAYER_FEE_KEY))
     }
 
     /// Get the local relayer's match take rate
@@ -147,8 +148,8 @@ impl<'db> StateTxn<'db, RW> {
     }
 
     /// Set the local relayer's fee decryption key
-    pub fn set_fee_decryption_key(&self, fee_key: &DecryptionKey) -> Result<(), StorageError> {
-        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_DECRYPTION_KEY.to_string(), fee_key)
+    pub fn set_fee_key(&self, fee_key: &RelayerFeeKey) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), fee_key)
     }
 
     /// Set the local relayer's match take rate

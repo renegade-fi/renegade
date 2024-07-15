@@ -34,6 +34,9 @@ use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
 /// The name of the task
 const TASK_NAME: &str = "pay-relayer-fee";
 
+/// The error message emitted by the task when the fee decryption key is missing
+const ERR_FEE_KEY_MISSING: &str = "fee decryption key is missing";
+
 // --------------
 // | Task State |
 // --------------
@@ -167,6 +170,13 @@ impl Task for PayRelayerFeeTask {
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let state = &ctx.state;
+        // Check that the fee decryption key is set, if not we cannot decrypt relayer
+        // fees directly
+        let key = state.get_fee_key().await?;
+        if key.secret_key().is_none() {
+            return Err(PayRelayerFeeTaskError::State(ERR_FEE_KEY_MISSING.to_string()));
+        }
+
         let sender_wallet = state
             .get_wallet(&descriptor.wallet_id)
             .await?
@@ -354,7 +364,8 @@ impl PayRelayerFeeTask {
             .clone()
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
 
-        let recipient_decryption_key = self.state.get_fee_decryption_key().await?;
+        let recipient_decryption_key =
+            self.state.get_fee_key().await?.secret_key().expect("decryption key missing");
         let sender_balance_index = sender_wallet.get_balance_index(&self.mint).unwrap();
         let recipient_balance_index = new_recipient_wallet.get_balance_index(&self.mint).unwrap();
 

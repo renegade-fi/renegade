@@ -48,7 +48,7 @@ async fn setup_trader_wallet(
     let state = &test_args.state;
 
     // Read the local relayer's decryption key from the state to manage the wallet
-    let decryption_key = state.get_fee_decryption_key().await.unwrap();
+    let decryption_key = state.get_fee_key().await?.secret_key().unwrap();
 
     // Create a wallet in the darkpool with a non-zero fee
     let mut wallet = mock_empty_wallet();

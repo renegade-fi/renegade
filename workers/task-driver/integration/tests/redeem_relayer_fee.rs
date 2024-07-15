@@ -46,7 +46,7 @@ async fn setup_trader_wallet(test_args: &IntegrationTestArgs) -> Result<(Balance
     wallet.add_balance(bal.clone()).unwrap();
 
     // Set the managing cluster of the wallet to the local relayer
-    let key = test_args.state.get_fee_decryption_key().await.unwrap().public_key();
+    let key = test_args.state.get_fee_key().await?.public_key();
     wallet.managing_cluster = key;
 
     setup_initial_wallet(blinder_seed, share_seed, &mut wallet, test_args).await?;

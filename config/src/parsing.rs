@@ -1,7 +1,7 @@
 //! Parsing logic for the config
 
 pub use crate::token_remaps::setup_token_remaps;
-use crate::{cli::RelayerConfig, validation::validate_config, Cli};
+use crate::{cli::RelayerConfig, validation::validate_config, Cli, RelayerFeeKey};
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use colored::*;
@@ -17,7 +17,10 @@ use serde::Deserialize;
 use std::{env, fs, str::FromStr};
 use toml::{value::Map, Value};
 use url::Url;
-use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
+use util::{
+    arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
+    hex::jubjub_from_hex_string,
+};
 
 /// The CLI argument name for the config file
 const CONFIG_FILE_ARG: &str = "--config-file";
@@ -65,7 +68,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         .iter()
         .map(|k| LocalWallet::from_str(k).map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
-    let fee_decryption_key = parse_decryption_key(cli_args.fee_decryption_key)?;
+    let fee_key = parse_fee_key(cli_args.fee_encryption_key, cli_args.fee_decryption_key)?;
 
     // Parse the p2p keypair or generate one
     let p2p_key = if let Some(keypair) = cli_args.p2p_key {
@@ -127,7 +130,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         coinbase_api_secret: cli_args.coinbase_api_secret,
         rpc_url: cli_args.rpc_url,
         arbitrum_private_keys,
-        fee_decryption_key,
+        fee_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
         otlp_enabled: cli_args.otlp_enabled,
@@ -185,13 +188,21 @@ fn parse_symmetric_key(key_str: String) -> Result<SymmetricAuthKey, String> {
 }
 
 /// Parse the relayer's decryption key from a string
-pub fn parse_decryption_key(key_str: Option<String>) -> Result<DecryptionKey, String> {
-    if let Some(k) = key_str {
-        DecryptionKey::from_hex_str(&k)
+pub fn parse_fee_key(
+    encryption_key: Option<String>,
+    decryption_key: Option<String>,
+) -> Result<RelayerFeeKey, String> {
+    if let Some(k) = encryption_key {
+        let key = jubjub_from_hex_string(&k)?;
+        Ok(RelayerFeeKey::new_public(key))
+    } else if let Some(k) = decryption_key {
+        let key = DecryptionKey::from_hex_str(&k)?;
+        Ok(RelayerFeeKey::new_secret(key))
     } else {
         // Must print here as logger is not yet setup
         println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
-        Ok(DecryptionKey::random(&mut thread_rng()))
+        let key = DecryptionKey::random(&mut thread_rng());
+        Ok(RelayerFeeKey::new_secret(key))
     }
 }
 
