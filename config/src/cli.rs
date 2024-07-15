@@ -1,7 +1,11 @@
 //! The relayer CLI and config definitions
 
 use arbitrum_client::constants::Chain;
-use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint, Amount};
+use circuit_types::{
+    elgamal::{DecryptionKey, EncryptionKey},
+    fixed_point::FixedPoint,
+    Amount,
+};
 use clap::Parser;
 use common::types::{
     exchange::Exchange,
@@ -194,8 +198,14 @@ pub struct Cli {
         value_delimiter = ' ',
     )]
     pub arbitrum_private_keys: Vec<String>,
+    /// The key used to encrypt fee payments
+    /// 
+    /// May be specified _instead of_ `fee_decryption_key` in the case that separate infrastructure is used for 
+    /// fee collection and settlement
+    #[clap(long = "fee-encryption-key", value_parser, conflicts_with = "fee_decryption_key")]
+    pub fee_encryption_key: Option<String>,
     /// The key used to decrypt fee payments
-    #[clap(long = "fee-decryption-key", value_parser)]
+    #[clap(long = "fee-decryption-key", value_parser, conflicts_with = "fee_encryption_key")]
     pub fee_decryption_key: Option<String>,
 
     // -------------
@@ -336,8 +346,8 @@ pub struct RelayerConfig {
     pub arbitrum_private_keys: Vec<LocalWallet>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
-    /// The decryption key used to settle managed match fees
-    pub fee_decryption_key: DecryptionKey,
+    /// The key used to encrypt (and possibly decrypt) fee payments
+    pub fee_key: RelayerFeeKey,
 
     // -------------
     // | Telemetry |
@@ -417,7 +427,7 @@ impl Clone for RelayerConfig {
             coinbase_api_secret: self.coinbase_api_secret.clone(),
             rpc_url: self.rpc_url.clone(),
             arbitrum_private_keys: self.arbitrum_private_keys.clone(),
-            fee_decryption_key: self.fee_decryption_key,
+            fee_key: self.fee_key,
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
             otlp_enabled: self.otlp_enabled,
@@ -426,6 +436,47 @@ impl Clone for RelayerConfig {
             metrics_enabled: self.metrics_enabled,
             statsd_host: self.statsd_host.clone(),
             statsd_port: self.statsd_port,
+        }
+    }
+}
+
+/// Wraps an encryption key (public or private) to allow for the relayer to be
+/// configured with either of the encryption key or the decryption key
+///
+/// Configuring the relayer with the decryption key allows the relayer to
+/// automate tasks like fee redemption
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum RelayerFeeKey {
+    /// A public-only configuration
+    Public(EncryptionKey),
+    /// A private-key configuration
+    Secret(DecryptionKey),
+}
+
+impl RelayerFeeKey {
+    /// Construct a new public-only key configuration
+    pub fn new_public(key: EncryptionKey) -> Self {
+        RelayerFeeKey::Public(key)
+    }
+
+    /// Construct a new private-key configuration
+    pub fn new_secret(key: DecryptionKey) -> Self {
+        RelayerFeeKey::Secret(key)
+    }
+
+    /// Get the public key
+    pub fn public_key(&self) -> EncryptionKey {
+        match self {
+            RelayerFeeKey::Public(key) => *key,
+            RelayerFeeKey::Secret(key) => key.public_key(),
+        }
+    }
+
+    /// Get the secret key
+    pub fn secret_key(&self) -> Option<DecryptionKey> {
+        match self {
+            RelayerFeeKey::Public(_) => None,
+            RelayerFeeKey::Secret(key) => Some(*key),
         }
     }
 }

@@ -39,6 +39,9 @@ use super::{
     ERR_PROVE_COMMITMENTS_FAILED, ERR_PROVE_REBLIND_FAILED,
 };
 
+/// The error message emitted by the task when the fee decryption key is missing
+const ERR_FEE_KEY_MISSING: &str = "fee decryption key is missing";
+
 /// Enqueue a job with the proof manager
 ///
 /// Returns a channel on which the proof manager will send the response
@@ -327,7 +330,8 @@ async fn link_and_store_proofs(
 /// Enqueue a job to redeem a relayer fee into the relayer's wallet
 pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
     let relayer_wallet_id = state.get_relayer_wallet_id().await?;
-    let decryption_key = state.get_fee_decryption_key().await?;
+    let decryption_key =
+        state.get_fee_key().await?.secret_key().ok_or_else(|| ERR_FEE_KEY_MISSING.to_string())?;
     let descriptor = RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key);
 
     state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())

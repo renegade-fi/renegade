@@ -96,7 +96,7 @@ async fn setup_wallet_with_order_balance(
     test_args: IntegrationTestArgs,
 ) -> Result<(Wallet, Scalar, Scalar)> {
     let mut rng = thread_rng();
-    let managing_cluster = test_args.state.get_fee_decryption_key().await?.public_key();
+    let managing_cluster = test_args.state.get_fee_key().await?.public_key();
 
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
