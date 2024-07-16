@@ -8,6 +8,7 @@ pub use poseidon2::*;
 #[cfg(feature = "non-wasm")]
 pub use mpc_type_interface::*;
 
+#[allow(clippy::mixed_attributes_style)]
 #[cfg(feature = "non-wasm")]
 mod mpc_type_interface {
     //! Defines the interface for the Poseidon 2 sponge

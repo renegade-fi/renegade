@@ -156,11 +156,11 @@ impl StateApplicator {
                     // Remove the order from its matching pool
                     tx.remove_order_from_matching_pool(&id)?;
 
-                    // Remove the order from the local orders set
+                    // Remove the order from the local orders set and mark as cancelled
                     tx.remove_local_order(&id)?;
-
-                    // Transition the order to a cancelled state
-                    tx.mark_order_cancelled(&id)?;
+                    if tx.get_order_info(&id)?.is_some() {
+                        tx.mark_order_cancelled(&id)?;
+                    }
                 }
             }
         }
