@@ -216,13 +216,16 @@ impl HandshakeExecutor {
         order: &OrderIdentifier,
     ) -> Result<FixedPoint, HandshakeManagerError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
-        let price_recv = self.request_price(base, quote)?;
+        let base_addr = base.get_addr().to_string();
+        let quote_addr = quote.get_addr().to_string();
+        let price_recv = self.request_price(base.clone(), quote.clone())?;
         let price =
             match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
                 PriceReporterState::Nominal(report) => report.price,
                 err_state => {
                     return Err(HandshakeManagerError::NoPriceData(format!(
-                        "{ERR_NO_PRICE_DATA}: {err_state:?}"
+                        "{ERR_NO_PRICE_DATA}: {} / {} {err_state:?}",
+                        base_addr, quote_addr,
                     )));
                 },
             };

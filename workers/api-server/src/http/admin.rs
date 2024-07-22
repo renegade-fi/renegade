@@ -5,23 +5,32 @@
 // ------------------------
 
 use async_trait::async_trait;
+use circuit_types::{fixed_point::FixedPoint, Amount};
+use common::types::{
+    exchange::PriceReporterState, token::Token, wallet::order_metadata::OrderMetadata,
+};
 use external_api::{
     http::{
         admin::{
             AdminOrderMetadataResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
-            OpenOrdersResponse,
+            OpenOrder, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
-use job_types::handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue};
+use job_types::{
+    handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
+    price_reporter::{PriceReporterJob, PriceReporterQueue},
+};
 use state::State;
+use tokio::sync::oneshot;
+use util::matching_engine::compute_max_amount;
 
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},
-    router::{QueryParams, TypedHandler, UrlParams},
+    router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
 use super::{
@@ -40,6 +49,10 @@ const ERR_MATCHING_POOL_EXISTS: &str = "matching pool already exists";
 const ERR_NO_MATCHING_POOL: &str = "matching pool does not exist";
 /// The order already exists
 const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
+/// The balance for an order does not exist in its wallet
+const ERR_BALANCE_NOT_FOUND: &str = "balance not found in wallet";
+/// Error message emitted when price data cannot be found for a token pair
+const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
 // ------------------
 // | Route Handlers |
@@ -87,12 +100,14 @@ impl TypedHandler for IsLeaderHandler {
 pub struct AdminOpenOrdersHandler {
     /// A handle to the relayer state
     state: State,
+    /// A handle to the price reporter's job queue
+    price_reporter_job_queue: PriceReporterQueue,
 }
 
 impl AdminOpenOrdersHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, price_reporter_job_queue: PriceReporterQueue) -> Self {
+        Self { state, price_reporter_job_queue }
     }
 }
 
@@ -110,6 +125,11 @@ impl TypedHandler for AdminOpenOrdersHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let order_ids =
             if let Some(matching_pool) = parse_matching_pool_from_query_params(&query_params) {
+                // Check that the matching pool exists
+                if !self.state.matching_pool_exists(matching_pool.clone()).await? {
+                    return Err(not_found(ERR_NO_MATCHING_POOL));
+                }
+
                 self.state.get_locally_matchable_orders_in_matching_pool(matching_pool).await?
             } else {
                 self.state.get_locally_matchable_orders().await?
@@ -119,12 +139,58 @@ impl TypedHandler for AdminOpenOrdersHandler {
         for id in order_ids.into_iter() {
             let order = self.state.get_order_metadata(&id).await?;
             if let Some(meta) = order {
-                orders.push(meta);
+                let fillable =
+                    get_fillable_amount(&meta, &self.state, &self.price_reporter_job_queue).await?;
+                orders.push(OpenOrder { order: meta, fillable })
             }
         }
 
         Ok(OpenOrdersResponse { orders })
     }
+}
+
+/// Get the fillable amount of an order using the underlying wallet's balances,
+/// & potentially the price of the base asset
+async fn get_fillable_amount(
+    meta: &OrderMetadata,
+    state: &State,
+    price_reporter_job_queue: &PriceReporterQueue,
+) -> Result<Amount, ApiServerError> {
+    let wallet_id =
+        state.get_wallet_for_order(&meta.id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+    let wallet = state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+
+    // Get an up-to-date order & balance.
+    // The order stored on the `OrderMetadata` does not have the order amount
+    // updated to account for fills, which will lead to an incorrect calculation
+    // of the fillable amount.
+    let order = wallet.get_order(&meta.id).ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
+    let balance = wallet.get_balance_for_order(order).ok_or(not_found(ERR_BALANCE_NOT_FOUND))?;
+
+    // Buy orders are capitalized by the quote token, so we may need the price of
+    // the base token to calculate how capitalized the order is
+    let base_token = Token::from_addr_biguint(&order.base_mint);
+    let quote_token = Token::from_addr_biguint(&order.quote_mint);
+    let base_addr = base_token.get_addr().to_string();
+    let quote_addr = quote_token.get_addr().to_string();
+
+    let (price_tx, price_rx) = oneshot::channel();
+    price_reporter_job_queue
+        .send(PriceReporterJob::PeekPrice { base_token, quote_token, channel: price_tx })
+        .map_err(internal_error)?;
+
+    let price = match price_rx.await.map_err(internal_error)? {
+        PriceReporterState::Nominal(report) => report.price,
+        err_state => {
+            return Err(internal_error(format!(
+                "{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {err_state:?}"
+            )))
+        },
+    };
+
+    let price_fp = FixedPoint::from_f64_round_down(price);
+
+    Ok(compute_max_amount(&price_fp, order, &balance))
 }
 
 // ------------------------
