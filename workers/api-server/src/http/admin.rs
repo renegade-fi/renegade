@@ -25,7 +25,8 @@ use crate::{
 };
 
 use super::{
-    parse_matching_pool_from_params, parse_order_id_from_params, parse_wallet_id_from_params,
+    parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
+    parse_order_id_from_params, parse_wallet_id_from_params,
     wallet::{create_order, ERR_ORDER_NOT_FOUND},
 };
 
@@ -105,9 +106,15 @@ impl TypedHandler for AdminOpenOrdersHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         _params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let order_ids = self.state.get_locally_matchable_orders().await?;
+        let order_ids =
+            if let Some(matching_pool) = parse_matching_pool_from_query_params(&query_params) {
+                self.state.get_locally_matchable_orders_in_matching_pool(matching_pool).await?
+            } else {
+                self.state.get_locally_matchable_orders().await?
+            };
+
         let mut orders = Vec::new();
         for id in order_ids.into_iter() {
             let order = self.state.get_order_metadata(&id).await?;
@@ -189,7 +196,7 @@ impl TypedHandler for AdminCreateMatchingPoolHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let matching_pool = parse_matching_pool_from_params(&params)?;
+        let matching_pool = parse_matching_pool_from_url_params(&params)?;
 
         // Check that the matching pool does not already exist
         if self.state.matching_pool_exists(matching_pool.clone()).await? {
@@ -232,7 +239,7 @@ impl TypedHandler for AdminDestroyMatchingPoolHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let matching_pool = parse_matching_pool_from_params(&params)?;
+        let matching_pool = parse_matching_pool_from_url_params(&params)?;
 
         let waiter = self.state.destroy_matching_pool(matching_pool).await?;
 
@@ -321,7 +328,7 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
-        let matching_pool = parse_matching_pool_from_params(&params)?;
+        let matching_pool = parse_matching_pool_from_url_params(&params)?;
 
         // Check that the order exists
         if !self.state.contains_order(&order_id).await? {

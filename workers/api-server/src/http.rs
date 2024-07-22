@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     tasks::TaskIdentifier,
+    MatchingPoolName,
 };
 use external_api::{
     http::{
@@ -122,6 +123,8 @@ const PEER_ID_URL_PARAM: &str = "peer_id";
 const TASK_ID_URL_PARAM: &str = "task_id";
 /// The :matching_pool param in a URL
 const MATCHING_POOL_URL_PARAM: &str = "matching_pool";
+/// The ?matching_pool param in a query string
+const MATCHING_POOL_QUERY_PARAM: &str = "matching_pool";
 
 /// A helper to parse out a mint from a URL param
 pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiServerError> {
@@ -187,14 +190,17 @@ pub(super) fn parse_task_id_from_params(
 }
 
 /// A helper to parse out a matching pool name from a URL param
-pub(super) fn parse_matching_pool_from_params(
+pub(super) fn parse_matching_pool_from_url_params(
     params: &UrlParams,
-) -> Result<String, ApiServerError> {
-    params
-        .get(MATCHING_POOL_URL_PARAM)
-        .ok_or_else(|| bad_request(ERR_MATCHING_POOL_PARSE))?
-        .parse()
-        .map_err(|_| bad_request(ERR_MATCHING_POOL_PARSE))
+) -> Result<MatchingPoolName, ApiServerError> {
+    params.get(MATCHING_POOL_URL_PARAM).ok_or_else(|| bad_request(ERR_MATCHING_POOL_PARSE)).cloned()
+}
+
+/// A helper to parse out a matching pool name from a query string
+pub(super) fn parse_matching_pool_from_query_params(
+    params: &QueryParams,
+) -> Option<MatchingPoolName> {
+    params.get(MATCHING_POOL_QUERY_PARAM).cloned()
 }
 
 /// A wrapper around the router and task management operations that
