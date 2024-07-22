@@ -4,6 +4,7 @@
 // | HTTP Routes |
 // ---------------
 
+use circuit_types::Amount;
 use common::types::{wallet::order_metadata::OrderMetadata, MatchingPoolName};
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +38,19 @@ pub struct IsLeaderResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpenOrdersResponse {
     /// The open orders
-    pub orders: Vec<OrderMetadata>,
+    pub orders: Vec<OpenOrder>,
+}
+
+/// An open order, containing the order's metadata
+/// as well as the fillable amount of the order
+/// given the underlying wallet's balances and potentially
+/// the current price of the base asset
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpenOrder {
+    /// The order metadata
+    pub order: OrderMetadata,
+    /// The fillable amount of the order
+    pub fillable: Amount,
 }
 
 /// The request type to add a new order to a given wallet, within a non-global

@@ -433,7 +433,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_OPEN_ORDERS_ROUTE.to_string(),
-            AdminOpenOrdersHandler::new(state.clone()),
+            AdminOpenOrdersHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
         );
 
         // The "/admin/orders/:id/metadata" route
