@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
-    exchange::PriceReporterState, token::Token, wallet::order_metadata::OrderMetadata,
+    exchange::PriceReporterState, token::Token, wallet::order_metadata::OrderMetadata, Price,
 };
 use external_api::{
     http::{
@@ -139,9 +139,13 @@ impl TypedHandler for AdminOpenOrdersHandler {
         for id in order_ids.into_iter() {
             let order = self.state.get_order_metadata(&id).await?;
             if let Some(meta) = order {
-                let fillable =
-                    get_fillable_amount(&meta, &self.state, &self.price_reporter_job_queue).await?;
-                orders.push(OpenOrder { order: meta, fillable })
+                let (fillable, price) = get_fillable_amount_and_price(
+                    &meta,
+                    &self.state,
+                    &self.price_reporter_job_queue,
+                )
+                .await?;
+                orders.push(OpenOrder { order: meta, fillable, price })
             }
         }
 
@@ -151,11 +155,11 @@ impl TypedHandler for AdminOpenOrdersHandler {
 
 /// Get the fillable amount of an order using the underlying wallet's balances,
 /// & potentially the price of the base asset
-async fn get_fillable_amount(
+async fn get_fillable_amount_and_price(
     meta: &OrderMetadata,
     state: &State,
     price_reporter_job_queue: &PriceReporterQueue,
-) -> Result<Amount, ApiServerError> {
+) -> Result<(Amount, Price), ApiServerError> {
     let wallet_id =
         state.get_wallet_for_order(&meta.id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
     let wallet = state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
@@ -190,7 +194,7 @@ async fn get_fillable_amount(
 
     let price_fp = FixedPoint::from_f64_round_down(price);
 
-    Ok(compute_max_amount(&price_fp, order, &balance))
+    Ok((compute_max_amount(&price_fp, order, &balance), price))
 }
 
 // ------------------------
