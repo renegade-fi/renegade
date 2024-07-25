@@ -42,17 +42,17 @@ pub struct OpenOrdersResponse {
 }
 
 /// An open order, containing the order's metadata
-/// as well as the fillable amount of the order
-/// given the underlying wallet's balances and potentially
+/// and potentially the fillable amount of the order
+/// given the underlying wallet's balances and
 /// the current price of the base asset
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OpenOrder {
     /// The order metadata
     pub order: OrderMetadata,
-    /// The fillable amount of the order
-    pub fillable: Amount,
-    /// The price used to calculate the fillable amount
-    pub price: Price,
+    /// The fillable amount of the order, if calculated
+    pub fillable: Option<Amount>,
+    /// The price used to calculate the fillable amount, if calculated
+    pub price: Option<Price>,
 }
 
 /// The request type to add a new order to a given wallet, within a non-global
