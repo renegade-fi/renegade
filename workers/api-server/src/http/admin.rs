@@ -43,6 +43,10 @@ use super::{
 // | Constants |
 // -------------
 
+/// Query parameter indicating whether or not to calculate fillable values for
+/// open orders
+const INCLUDE_FILLABLE_PARAM: &str = "include_fillable";
+
 /// The matching pool already exists
 const ERR_MATCHING_POOL_EXISTS: &str = "matching pool already exists";
 /// The matching pool for the order does not exist
@@ -135,66 +139,28 @@ impl TypedHandler for AdminOpenOrdersHandler {
                 self.state.get_locally_matchable_orders().await?
             };
 
+        let include_fillable = parse_include_fillable_from_query_params(&query_params)?;
         let mut orders = Vec::new();
         for id in order_ids.into_iter() {
             let order = self.state.get_order_metadata(&id).await?;
             if let Some(meta) = order {
-                let (fillable, price) = get_fillable_amount_and_price(
-                    &meta,
-                    &self.state,
-                    &self.price_reporter_job_queue,
-                )
-                .await?;
+                let (fillable, price) = if include_fillable {
+                    get_fillable_amount_and_price(
+                        &meta,
+                        &self.state,
+                        &self.price_reporter_job_queue,
+                    )
+                    .await
+                    .map(|(fillable, price)| (Some(fillable), Some(price)))?
+                } else {
+                    (None, None)
+                };
                 orders.push(OpenOrder { order: meta, fillable, price })
             }
         }
 
         Ok(OpenOrdersResponse { orders })
     }
-}
-
-/// Get the fillable amount of an order using the underlying wallet's balances,
-/// & potentially the price of the base asset
-async fn get_fillable_amount_and_price(
-    meta: &OrderMetadata,
-    state: &State,
-    price_reporter_job_queue: &PriceReporterQueue,
-) -> Result<(Amount, Price), ApiServerError> {
-    let wallet_id =
-        state.get_wallet_for_order(&meta.id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
-    let wallet = state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
-
-    // Get an up-to-date order & balance.
-    // The order stored on the `OrderMetadata` does not have the order amount
-    // updated to account for fills, which will lead to an incorrect calculation
-    // of the fillable amount.
-    let order = wallet.get_order(&meta.id).ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
-    let balance = wallet.get_balance_for_order(order).ok_or(not_found(ERR_BALANCE_NOT_FOUND))?;
-
-    // Buy orders are capitalized by the quote token, so we may need the price of
-    // the base token to calculate how capitalized the order is
-    let base_token = Token::from_addr_biguint(&order.base_mint);
-    let quote_token = Token::from_addr_biguint(&order.quote_mint);
-    let base_addr = base_token.get_addr().to_string();
-    let quote_addr = quote_token.get_addr().to_string();
-
-    let (price_tx, price_rx) = oneshot::channel();
-    price_reporter_job_queue
-        .send(PriceReporterJob::PeekPrice { base_token, quote_token, channel: price_tx })
-        .map_err(internal_error)?;
-
-    let price = match price_rx.await.map_err(internal_error)? {
-        PriceReporterState::Nominal(report) => report.price,
-        err_state => {
-            return Err(internal_error(format!(
-                "{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {err_state:?}"
-            )))
-        },
-    };
-
-    let price_fp = FixedPoint::from_f64_round_down(price);
-
-    Ok((compute_max_amount(&price_fp, order, &balance), price))
 }
 
 // ------------------------
@@ -420,4 +386,57 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
 
         Ok(EmptyRequestResponse {})
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// A helper to parse out a matching pool name from a query string
+fn parse_include_fillable_from_query_params(params: &QueryParams) -> Result<bool, ApiServerError> {
+    params.get(INCLUDE_FILLABLE_PARAM).map_or(Ok(false), |s| s.parse().map_err(bad_request))
+}
+
+/// Get the fillable amount of an order using the underlying wallet's balances,
+/// & potentially the price of the base asset
+async fn get_fillable_amount_and_price(
+    meta: &OrderMetadata,
+    state: &State,
+    price_reporter_job_queue: &PriceReporterQueue,
+) -> Result<(Amount, Price), ApiServerError> {
+    let wallet_id =
+        state.get_wallet_for_order(&meta.id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+    let wallet = state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+
+    // Get an up-to-date order & balance.
+    // The order stored on the `OrderMetadata` does not have the order amount
+    // updated to account for fills, which will lead to an incorrect calculation
+    // of the fillable amount.
+    let order = wallet.get_order(&meta.id).ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
+    let balance = wallet.get_balance_for_order(order).ok_or(not_found(ERR_BALANCE_NOT_FOUND))?;
+
+    // Buy orders are capitalized by the quote token, so we may need the price of
+    // the base token to calculate how capitalized the order is
+    let base_token = Token::from_addr_biguint(&order.base_mint);
+    let quote_token = Token::from_addr_biguint(&order.quote_mint);
+    let base_addr = base_token.get_addr().to_string();
+    let quote_addr = quote_token.get_addr().to_string();
+
+    let (price_tx, price_rx) = oneshot::channel();
+    price_reporter_job_queue
+        .send(PriceReporterJob::PeekPrice { base_token, quote_token, channel: price_tx })
+        .map_err(internal_error)?;
+
+    let price = match price_rx.await.map_err(internal_error)? {
+        PriceReporterState::Nominal(report) => report.price,
+        err_state => {
+            return Err(internal_error(format!(
+                "{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {err_state:?}"
+            )))
+        },
+    };
+
+    let price_fp = FixedPoint::from_f64_round_down(price);
+
+    Ok((compute_max_amount(&price_fp, order, &balance), price))
 }
