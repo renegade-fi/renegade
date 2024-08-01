@@ -35,6 +35,8 @@ const ENV_WS_PORT: &str = "WEBSOCKET_PORT";
 const ENV_P2P_PORT: &str = "P2P_PORT";
 /// The public IP of the node (optional)
 const ENV_PUBLIC_IP: &str = "PUBLIC_IP";
+/// The symmetric key used to authenticate admin API requests (optional)
+const ENV_ADMIN_KEY: &str = "ADMIN_KEY";
 
 // --- Constants --- //
 
@@ -48,6 +50,8 @@ const CONFIG_WS_PORT: &str = "websocket-port";
 const CONFIG_P2P_PORT: &str = "p2p-port";
 /// The public IP key name in the relayer config
 const CONFIG_PUBLIC_IP: &str = "public-ip";
+/// The admin API key name in the relayer config
+const CONFIG_ADMIN_KEY: &str = "admin-api-key";
 /// The fee whitelist key name in the relayer config
 const CONFIG_FEE_WHITELIST: &str = "relayer-fee-whitelist";
 
@@ -129,6 +133,11 @@ async fn modify_config(whitelist_path: Option<String>) -> Result<(), String> {
     if is_env_var_set(ENV_PUBLIC_IP) {
         let public_ip = Value::String(read_env_var(ENV_PUBLIC_IP)?);
         config.insert(CONFIG_PUBLIC_IP.to_string(), public_ip);
+    }
+
+    if is_env_var_set(ENV_ADMIN_KEY) {
+        let admin_key = Value::String(read_env_var(ENV_ADMIN_KEY)?);
+        config.insert(CONFIG_ADMIN_KEY.to_string(), admin_key);
     }
 
     if let Some(path) = whitelist_path {
