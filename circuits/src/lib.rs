@@ -166,10 +166,11 @@ pub async fn multiprover_prove_and_verify<C: MultiProverCircuit>(
 // ----------------
 // | Test Helpers |
 // ----------------
+
+/// Helpers used in tests throughout the crate and integration tests outside
+/// the crate
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    //! Helpers used in tests throughout the crate and integration tests outside
-    //! the crate
 
     use std::iter;
 

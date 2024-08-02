@@ -131,9 +131,9 @@ impl HandshakeState {
     }
 }
 
+/// Handshake object mocks for testing
 #[cfg(feature = "mocks")]
 pub mod mocks {
-    //! Handshake object mocks for testing
     use circuit_types::fixed_point::FixedPoint;
     use constants::Scalar;
     use rand::thread_rng;

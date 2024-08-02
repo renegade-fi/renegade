@@ -438,9 +438,8 @@ where
 }
 
 #[cfg(any(test, feature = "test_helpers"))]
+/// Helper methods for testing the `VALID RELAYER FEE SETTLEMENT` circuit
 pub mod test_helpers {
-    //! Helper methods for testing the `VALID RELAYER FEE SETTLEMENT` circuit
-
     use circuit_types::{
         elgamal::DecryptionKey,
         native_helpers::{
@@ -479,7 +478,9 @@ pub mod test_helpers {
         // Pick balances to send and receive the fees from
         let send_idx = rng.gen_range(0..MAX_BALANCES);
         let receive_idx = rng.gen_range(0..MAX_BALANCES);
-        recipient_wallet.balances[receive_idx].mint = sender_wallet.balances[send_idx].mint.clone();
+        recipient_wallet.balances[receive_idx]
+            .mint
+            .clone_from(&sender_wallet.balances[send_idx].mint);
 
         let (dec, enc) = DecryptionKey::random_pair(&mut rng);
         sender_wallet.managing_cluster = enc;
@@ -555,9 +556,8 @@ pub mod test_helpers {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
-    #![allow(non_snake_case)]
-
     use ark_mpc::algebra::Scalar;
     use circuit_types::{
         balance::Balance,
@@ -1050,11 +1050,11 @@ mod test {
         // Make all balances the same mint in the sender wallet and receiver wallet
         let (mut sender_wallet, mut recipient_wallet) = get_initial_wallets();
         for bal in recipient_wallet.balances.iter_mut() {
-            bal.mint = mint.clone();
+            bal.mint.clone_from(&mint);
         }
 
         for bal in sender_wallet.balances.iter_mut() {
-            bal.mint = mint.clone();
+            bal.mint.clone_from(&mint);
         }
 
         let (statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);

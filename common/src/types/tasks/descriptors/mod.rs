@@ -199,9 +199,9 @@ impl TaskDescriptor {
 // | Mocks |
 // ---------
 
+/// Mocks for the task descriptors
 #[cfg(any(test, feature = "mocks"))]
 pub mod mocks {
-    //! Mocks for the task descriptors
     use circuit_types::keychain::SecretSigningKey;
     use contracts_common::custom_serde::BytesSerializable;
     use ethers::core::utils::keccak256;
