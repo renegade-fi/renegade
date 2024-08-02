@@ -594,11 +594,11 @@ impl<'de> Deserialize<'de> for MatchBundle {
 // | Mocks |
 // ---------
 
+/// Mocks for proof bundle and proof objects
+///
+/// Note that these mocks are not expected to verify
 #[cfg(feature = "mocks")]
 pub mod mocks {
-    //! Mocks for proof bundle and proof objects
-    //!
-    //! Note that these mocks are not expected to verify
 
     use std::{iter, sync::Arc};
 

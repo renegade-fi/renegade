@@ -283,9 +283,9 @@ impl FromStr for ClusterId {
 // | Helpers |
 // -----------
 
+/// Mocks for peer info types
 #[cfg(feature = "mocks")]
 pub mod mocks {
-    //! Mocks for peer info types
     use std::{
         net::{IpAddr, Ipv4Addr},
         str::FromStr,

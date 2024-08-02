@@ -604,9 +604,8 @@ pub mod test_helpers {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
-    #![allow(non_snake_case)]
-
     use circuit_types::{
         balance::Balance,
         elgamal::DecryptionKey,
@@ -971,6 +970,7 @@ mod test {
 
     /// Tests the case in which a duplicate balance is given
     #[test]
+    #[allow(clippy::assigning_clones)]
     fn test_duplicate_balance() {
         // No update to the orders, but the timestamp is incorrect
         // To ablate any other constraints, make the duplicate balance present in both

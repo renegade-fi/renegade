@@ -411,8 +411,8 @@ pub mod test_helpers {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod tests {
-    #![allow(non_snake_case)]
     use ark_mpc::PARTY0;
     use circuit_types::{fixed_point::FixedPoint, traits::MpcBaseType, AMOUNT_BITS};
 

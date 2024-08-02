@@ -22,6 +22,8 @@ pub const GET_PEER_INFO_ROUTE: &str = "/v0/network/peers/:peer_id";
 /// The response type to fetch the entire known network topology
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetNetworkTopologyResponse {
+    /// The local peer's cluster ID
+    pub local_cluster_id: String,
     /// The network topology
     pub network: Network,
 }

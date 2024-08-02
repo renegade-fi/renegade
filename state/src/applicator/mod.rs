@@ -123,9 +123,9 @@ impl StateApplicator {
     }
 }
 
+/// Test helpers for mock state applicator
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
-    //! Test helpers for mock state applicator
     use std::{mem, str::FromStr, sync::Arc};
 
     use common::types::gossip::ClusterId;

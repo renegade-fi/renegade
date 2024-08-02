@@ -796,7 +796,7 @@ mod test {
         // Start off with duplicates
         let (mut wallet, note) = get_testing_wallet_and_note();
         for balance in wallet.balances.iter_mut() {
-            balance.mint = note.mint.clone();
+            balance.mint.clone_from(&note.mint);
         }
 
         let (statement, witness) = create_witness_and_statement(&wallet, &note);
