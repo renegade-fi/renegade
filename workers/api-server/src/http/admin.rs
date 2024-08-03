@@ -366,8 +366,11 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         let order_id = parse_order_id_from_params(&params)?;
         let matching_pool = parse_matching_pool_from_url_params(&params)?;
 
-        // Check that the order exists
-        if !self.state.contains_order(&order_id).await? {
+        // Check that the order exists. We do this by checking the order
+        // metadata, as filled orders (which a client may still want to reassign
+        // ahead of subsequent order updates) are removed from the network
+        // orderbook.
+        if self.state.get_order_metadata(&order_id).await?.is_none() {
             return Err(not_found(ERR_ORDER_NOT_FOUND));
         }
 
