@@ -65,9 +65,9 @@ pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
 // | Mock Raft |
 // -------------
 
+/// Test helpers for mocking rafts
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
-    //! Test helpers for mocking rafts
     use std::{collections::HashMap, sync::Arc, time::Duration};
 
     use common::{new_async_shared, AsyncShared};

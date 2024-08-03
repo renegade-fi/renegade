@@ -550,9 +550,8 @@ pub mod test_helpers {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
-    #![allow(non_snake_case)]
-
     use circuit_types::{
         balance::{Balance, BalanceShare},
         fixed_point::FixedPointShare,

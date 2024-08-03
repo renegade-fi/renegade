@@ -1,12 +1,13 @@
 //! Descriptors for the match settlement tasks
 
-use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
+use circuit_types::r#match::MatchResult;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
     handshake::HandshakeState,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, WalletIdentifier},
+    TimestampedPrice,
 };
 
 use super::TaskDescriptor;
@@ -16,7 +17,7 @@ use super::TaskDescriptor;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleMatchInternalTaskDescriptor {
     /// The price at which the match was executed
-    pub execution_price: FixedPoint,
+    pub execution_price: TimestampedPrice,
     /// The identifier of the first order
     pub order_id1: OrderIdentifier,
     /// The identifier of the second order
@@ -41,7 +42,7 @@ impl SettleMatchInternalTaskDescriptor {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        execution_price: FixedPoint,
+        execution_price: TimestampedPrice,
         order_id1: OrderIdentifier,
         order_id2: OrderIdentifier,
         wallet_id1: WalletIdentifier,

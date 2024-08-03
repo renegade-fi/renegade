@@ -485,9 +485,9 @@ impl RelayerFeeKey {
 // | Tests |
 // ---------
 
+/// Tests for the cli
 #[cfg(test)]
 mod test {
-    //! Tests for the cli
     use crate::RelayerConfig;
 
     /// Test that the default config parses

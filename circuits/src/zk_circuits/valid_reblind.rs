@@ -353,8 +353,8 @@ pub mod test_helpers {
 }
 
 #[cfg(test)]
+#[allow(non_snake_case)]
 mod test {
-    #![allow(non_snake_case)]
     use circuit_types::{
         native_helpers::compute_wallet_private_share_commitment,
         traits::{BaseType, SecretShareType},

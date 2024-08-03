@@ -196,9 +196,9 @@ impl From<StateTransition> for Proposal {
 // | Tests |
 // ---------
 
+/// Test helpers for the state crate
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
-    //! Test helpers for the state crate
     use std::{mem, time::Duration};
 
     use common::worker::new_worker_failure_channel;
