@@ -462,7 +462,7 @@ impl HttpServer {
             AdminCreateOrderInMatchingPoolHandler::new(state.clone()),
         );
 
-        // The "/admin/orders/:id/assign-pool/:matching_pool" route
+        // The "/admin/wallet/:id/orders/:id/assign-pool/:matching_pool" route
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_ASSIGN_ORDER_ROUTE.to_string(),

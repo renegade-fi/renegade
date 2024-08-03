@@ -25,7 +25,8 @@ pub const ADMIN_MATCHING_POOL_DESTROY_ROUTE: &str =
 pub const ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE: &str =
     "/v0/admin/wallet/:wallet_id/order-in-pool";
 /// Route to assign an order to a matching pool
-pub const ADMIN_ASSIGN_ORDER_ROUTE: &str = "/v0/admin/orders/:order_id/assign-pool/:matching_pool";
+pub const ADMIN_ASSIGN_ORDER_ROUTE: &str =
+    "/v0/admin/wallet/:wallet_id/orders/:order_id/assign-pool/:matching_pool";
 
 /// The response to an "is leader" request
 #[derive(Clone, Debug, Serialize, Deserialize)]

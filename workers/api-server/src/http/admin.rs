@@ -332,11 +332,12 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
     }
 }
 
-// ------------------------------------------
-// | /orders/:id/assign-pool/:matching_pool |
-// ------------------------------------------
+// -----------------------------------------------------
+// | /wallet/:id/orders/:id/assign-pool/:matching_pool |
+// -----------------------------------------------------
 
-/// Handler for the POST /v0/admin/orders/:id/assign-pool/:matching_pool route
+/// Handler for the POST
+/// /v0/admin/wallet/:id/orders/:id/assign-pool/:matching_pool route
 pub struct AdminAssignOrderToMatchingPoolHandler {
     /// A handle to the relayer state
     state: State,
@@ -363,11 +364,17 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
         let order_id = parse_order_id_from_params(&params)?;
         let matching_pool = parse_matching_pool_from_url_params(&params)?;
 
-        // Check that the order exists
-        if !self.state.contains_order(&order_id).await? {
+        // Check that the wallet & order exist
+        let wallet = self.state.get_wallet(&wallet_id).await?;
+        if wallet.is_none() {
+            return Err(not_found(ERR_WALLET_NOT_FOUND));
+        }
+
+        if !wallet.unwrap().contains_order(&order_id) {
             return Err(not_found(ERR_ORDER_NOT_FOUND));
         }
 
