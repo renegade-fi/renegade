@@ -6,11 +6,21 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 
+use funds_manager_api::{
+    auth::{compute_hmac, X_SIGNATURE_HEADER},
+    RegisterGasWalletRequest, RegisterGasWalletResponse, REGISTER_GAS_WALLET_ROUTE,
+};
+use reqwest::{
+    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
+    Client,
+};
 use std::{collections::HashMap, fmt::Debug, path::Path, str::FromStr};
 
 use aws_config::Region;
 use aws_sdk_s3::{error::SdkError, Client as S3Client};
+use base64::prelude::*;
 use config::parsing::parse_config_from_file;
+use libp2p::{identity::Keypair, PeerId};
 use tokio::{fs, io::AsyncWriteExt, process::Command};
 use toml::Value;
 use tracing::{error, info};
@@ -37,11 +47,15 @@ const ENV_P2P_PORT: &str = "P2P_PORT";
 const ENV_PUBLIC_IP: &str = "PUBLIC_IP";
 /// The symmetric key used to authenticate admin API requests (optional)
 const ENV_ADMIN_KEY: &str = "ADMIN_KEY";
+/// The funds manager api URL
+const ENV_FUNDS_MANAGER_URL: &str = "FUNDS_MANAGER_URL";
+/// The funds manager api key
+const ENV_FUNDS_MANAGER_KEY: &str = "FUNDS_MANAGER_KEY";
 
 // --- Constants --- //
 
 /// The path at which the relayer expects its config
-const CONFIG_PATH: &str = "/config.toml";
+const CONFIG_PATH: &str = "./config.toml";
 /// The http port key name in the relayer config
 const CONFIG_HTTP_PORT: &str = "http-port";
 /// The websocket port key name in the relayer config
@@ -54,6 +68,10 @@ const CONFIG_PUBLIC_IP: &str = "public-ip";
 const CONFIG_ADMIN_KEY: &str = "admin-api-key";
 /// The fee whitelist key name in the relayer config
 const CONFIG_FEE_WHITELIST: &str = "relayer-fee-whitelist";
+/// The p2p key name in the relayer config
+const CONFIG_P2P_KEY: &str = "p2p-key";
+/// The gas wallet in the relayer config
+const CONFIG_GAS_WALLET: &str = "arbitrum-pkeys";
 
 /// The name of the file in the s3 bucket
 const WHITELIST_FILE_NAME: &str = "fee-whitelist.json";
@@ -122,6 +140,10 @@ async fn modify_config(whitelist_path: Option<String>) -> Result<(), String> {
     let mut config: HashMap<String, Value> =
         toml::from_str(&config_content).map_err(raw_err_str!("Failed to parse config: {}"))?;
 
+    // Setup the peer id and register a gas wallet under this peer id
+    let peer_id = set_p2p_key(&mut config);
+    setup_gas_wallet(peer_id, &mut config).await?;
+
     // Add values from the environment variables
     let http_port = Value::String(read_env_var(ENV_HTTP_PORT)?);
     let ws_port = Value::String(read_env_var(ENV_WS_PORT)?);
@@ -173,6 +195,7 @@ async fn fetch_fee_whitelist(s3: &S3Client) -> Result<Option<String>, String> {
 
 /// Download the most recent snapshot
 async fn download_snapshot(s3_client: &S3Client) -> Result<(), String> {
+    info!("downloading latest snapshot...");
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
 
     // Parse the relayer's config
@@ -221,6 +244,18 @@ where
         .map_err(|e| format!("Failed to read env var {}: {:?}", var_name, e))
 }
 
+/// Set the p2p key in the relayer config and return the associated peer id
+fn set_p2p_key(config: &mut HashMap<String, Value>) -> PeerId {
+    let keypair = Keypair::generate_ed25519();
+    let peer_id = keypair.public().to_peer_id();
+
+    let key_bytes = keypair.to_protobuf_encoding().unwrap();
+    let encoded = BASE64_STANDARD.encode(key_bytes);
+    config.insert(CONFIG_P2P_KEY.to_string(), Value::String(encoded));
+
+    peer_id
+}
+
 /// Build an s3 client
 async fn build_s3_client() -> S3Client {
     let region = Region::new(DEFAULT_AWS_REGION);
@@ -261,4 +296,67 @@ async fn download_s3_file(
         .map_err(raw_err_str!("Failed to write to destination file: {}"))?;
 
     Ok(())
+}
+
+/// Setup the relayer's gas wallet using the funds manager api
+async fn setup_gas_wallet(
+    peer_id: PeerId,
+    config: &mut HashMap<String, Value>,
+) -> Result<(), String> {
+    info!("registering gas wallet for relayer...");
+    let url = read_env_var::<String>(ENV_FUNDS_MANAGER_URL)?;
+    let key = read_funds_manager_key()?;
+
+    // Prepare the request
+    let client = Client::new();
+    let path = format!("/custody/gas-wallets/{REGISTER_GAS_WALLET_ROUTE}");
+    let method = "POST";
+    let body = RegisterGasWalletRequest { peer_id: peer_id.to_string() };
+    let body_json = serde_json::to_vec(&body).unwrap();
+
+    // Prepare headers
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    // Compute HMAC
+    let hmac = compute_hmac(&key, method, &path, &headers, &body_json);
+    let hmac_value =
+        HeaderValue::from_str(&hex::encode(hmac)).expect("Failed to create header value");
+    headers.insert(X_SIGNATURE_HEADER, hmac_value);
+
+    // Send request
+    let url = format!("{}{}", url, path);
+    let response = client
+        .post(&url)
+        .headers(headers)
+        .body(body_json)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send request: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Request failed with status: {}", response.status()));
+    }
+
+    let resp = response
+        .json::<RegisterGasWalletResponse>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    let key = Value::String(resp.key);
+    config.insert(CONFIG_GAS_WALLET.to_string(), Value::Array(vec![key]));
+
+    Ok(())
+}
+
+/// Read in the funds manager HMAC key from environment variables
+fn read_funds_manager_key() -> Result<[u8; 32], String> {
+    let key = read_env_var::<String>(ENV_FUNDS_MANAGER_KEY)?;
+    let decoded = hex::decode(key).expect("Invalid HMAC key");
+    if decoded.len() != 32 {
+        panic!("HMAC key must be 32 bytes long");
+    }
+
+    let mut array = [0u8; 32];
+    array.copy_from_slice(&decoded);
+    Ok(array)
 }
