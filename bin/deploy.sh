@@ -8,7 +8,7 @@ TASK_FAMILY=$ENVIRONMENT-cluster0-task-def
 ECR_URL=377928551571.dkr.ecr.us-east-2.amazonaws.com/relayer-$ENVIRONMENT
 
 # Fetch the latest image URI from ECR
-IMAGE_URI=$(aws ecr describe-images --repository-name relayer-dev --region us-east-2 --image-ids imageTag=latest | jq -r '.imageDetails[0].imageTags[0]')
+IMAGE_URI=$(aws ecr describe-images --repository-name relayer-$ENVIRONMENT --region us-east-2 --image-ids imageTag=latest | jq -r '.imageDetails[0].imageTags[0]')
 FULL_IMAGE_URI="$ECR_URL:$IMAGE_URI"
 echo "Using image URI: $FULL_IMAGE_URI"
 

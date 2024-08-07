@@ -232,9 +232,15 @@ fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
 pub(crate) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
     proof_manager_work_queue: ProofManagerQueue,
-    global_state: State,
+    state: State,
     network_sender: NetworkManagerQueue,
 ) -> Result<(), String> {
+    // If there are other tasks in the queue behind the current task, skip proving
+    let queue_length = state.get_task_queue_len(&wallet.wallet_id).await?;
+    if queue_length > 1 {
+        return Ok(());
+    }
+
     let matchable_orders = wallet.get_matchable_orders();
     if matchable_orders.is_empty() {
         return Ok(());
@@ -272,7 +278,7 @@ pub(crate) async fn update_wallet_validity_proofs(
             &reblind_witness,
             &commitment_proof,
             &reblind_proof,
-            &global_state,
+            &state,
             &network_sender,
         )
         .await?;
@@ -291,7 +297,7 @@ async fn link_and_store_proofs(
     reblind_witness: &SizedValidReblindWitness,
     commitments_bundle: &ProofBundle,
     reblind_bundle: &ProofBundle,
-    global_state: &State,
+    state: &State,
     network_sender: &NetworkManagerQueue,
 ) -> Result<(), String> {
     // Prove the link between the reblind and commitments proofs
@@ -311,7 +317,7 @@ async fn link_and_store_proofs(
         commitment_linking_hint: Arc::new(comms_link_hint.clone()),
     };
 
-    let waiter = global_state
+    let waiter = state
         .add_local_order_validity_bundle(*order_id, proof_bundle.clone(), witness_bundle)
         .await?;
     waiter.await?;
@@ -319,7 +325,7 @@ async fn link_and_store_proofs(
     // Gossip the updated proofs to the network
     let message = PubsubMessage::Orderbook(OrderBookManagementMessage::OrderProofUpdated {
         order_id: *order_id,
-        cluster: global_state.get_cluster_id().await?,
+        cluster: state.get_cluster_id().await?,
         proof_bundle,
     });
 
