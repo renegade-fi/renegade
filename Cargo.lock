@@ -8626,6 +8626,7 @@ dependencies = [
  "common 0.1.0",
  "config",
  "constants 0.1.0",
+ "criterion",
  "crossbeam",
  "crossterm 0.27.0",
  "external-api 0.1.0",

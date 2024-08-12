@@ -9,6 +9,11 @@ all-tests = ["common/mocks"]
 mocks = ["dep:tempfile", "dep:test-helpers"]
 task-queue-len = []
 
+[[bench]]
+name = "storage"
+harness = false
+required-features = ["mocks"]
+
 [dependencies]
 
 # === Replication === #
@@ -58,6 +63,7 @@ uuid = "1.1.2"
 metrics = { workspace = true }
 
 [dev-dependencies]
+criterion = { version = "0.5" }
 multiaddr = "0.17"
 num-bigint = "0.4"
 tempfile = "3.8"
