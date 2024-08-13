@@ -113,7 +113,7 @@ impl StateApplicator {
     }
 
     /// Get a reference to the db
-    pub(crate) fn db(&self) -> &DB {
+    pub fn db(&self) -> &DB {
         &self.config.db
     }
 
@@ -140,7 +140,7 @@ pub mod test_helpers {
     use super::{StateApplicator, StateApplicatorConfig};
 
     /// Create a mock `StateApplicator`
-    pub(crate) fn mock_applicator() -> StateApplicator {
+    pub fn mock_applicator() -> StateApplicator {
         let (task_queue, recv) = new_task_driver_queue();
         mem::forget(recv);
 
