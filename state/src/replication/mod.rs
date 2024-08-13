@@ -115,17 +115,20 @@ pub mod test_helpers {
     }
 
     /// Get the config for a mock raft
-    pub fn mock_raft_config(initial_nodes: Vec<NodeId>) -> RaftClientConfig {
+    pub fn mock_raft_config(initial_nodes: Vec<NodeId>, delay: u64) -> RaftClientConfig {
         // Use mock peer ids for each node
         let initial_nodes =
             initial_nodes.into_iter().map(|nid| (nid, RaftNode::default())).collect();
+        let heartbeat_interval = delay + 5;
+        let election_timeout_min = heartbeat_interval * 4;
+        let election_timeout_max = heartbeat_interval * 5;
 
         // All timeouts in ms
         RaftClientConfig {
             cluster_name: "mock-cluster".to_string(),
-            election_timeout_min: 20,
-            election_timeout_max: 25,
-            heartbeat_interval: 5,
+            election_timeout_min,
+            election_timeout_max,
+            heartbeat_interval,
             initial_nodes,
             ..Default::default()
         }
@@ -168,6 +171,8 @@ pub mod test_helpers {
 
     /// A network switch in between rafts
     pub struct MockRaft {
+        /// The delay added to each message
+        delay: u64,
         /// A copy of the sender to the switch
         sender: SwitchSender,
         /// The rafts in the network
@@ -187,26 +192,26 @@ pub mod test_helpers {
 
         /// Create a mock raft with a single node
         pub async fn create_singleton_raft() -> Self {
-            Self::create_raft(1, true).await
+            Self::create_raft(1, 0 /* network_delay_ms */, true /* init */).await
         }
 
         /// Create a new network client instance
         pub fn new_network_client(&self) -> MockNetworkNode {
-            MockNetworkNode::new(self.sender.clone())
+            MockNetworkNode::new_with_delay(self.sender.clone(), self.delay)
         }
 
         /// Create an initialized raft with `n` nodes
         pub async fn create_initialized_raft(n_nodes: usize) -> Self {
-            Self::create_raft(n_nodes, true /* init */).await
+            Self::create_raft(n_nodes, 0 /* network_delay_ms */, true /* init */).await
         }
 
         /// Create a mock raft network with `n_nodes` nodes and return the rafts
         /// in use
-        pub async fn create_raft(n_nodes: usize, init: bool) -> Self {
+        pub async fn create_raft(n_nodes: usize, network_delay_ms: u64, init: bool) -> Self {
             let (send, recv) = new_switch_queue();
             let mut nodes = HashMap::new();
             let node_ids = (0..n_nodes as u64).collect_vec();
-            let mut config = mock_raft_config(node_ids);
+            let mut config = mock_raft_config(node_ids, network_delay_ms);
             config.init = init;
 
             for i in 0..n_nodes as u64 {
@@ -215,7 +220,7 @@ pub mod test_helpers {
                 conf.id = i;
 
                 // Setup the raft dependencies
-                let mock_net = MockNetworkNode::new(send.clone());
+                let mock_net = MockNetworkNode::new_with_delay(send.clone(), network_delay_ms);
                 let applicator = mock_applicator();
                 let db = applicator.config.db.clone();
                 let notifications = OpenNotifications::new();
@@ -231,7 +236,7 @@ pub mod test_helpers {
             tokio::spawn(Self::run(recv, rafts.clone()));
             tokio::time::sleep(Duration::from_millis(WAIT_FOR_ELECTION)).await;
 
-            Self { rafts, sender: send }
+            Self { delay: network_delay_ms, rafts, sender: send }
         }
 
         /// The event loop for the network switch
@@ -279,7 +284,7 @@ pub mod test_helpers {
         /// Add a node to the network, does not propose a state transition
         pub async fn add_node(&self, nid: NodeId) {
             // Setup a config
-            let mut config = mock_raft_config(vec![nid]);
+            let mut config = mock_raft_config(vec![nid], self.delay);
             config.id = nid;
 
             // Setup the raft dependencies

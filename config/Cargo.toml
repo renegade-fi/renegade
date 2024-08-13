@@ -3,6 +3,10 @@ name = "config"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+silent = []
+
 [dependencies]
 # === Networking === #
 libp2p = { workspace = true }

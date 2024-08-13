@@ -217,7 +217,7 @@ pub mod test_helpers {
         replication::{
             get_raft_id,
             raft::RaftClientConfig,
-            test_helpers::{MockRaft, MockRaftNode},
+            test_helpers::{mock_raft_config, MockRaft, MockRaftNode},
             RaftNode,
         },
         storage::db::{DbConfig, DB},
@@ -260,19 +260,19 @@ pub mod test_helpers {
     /// Create a mock raft config for testing
     ///
     /// We set the timeouts very low to speed up leader election
-    pub fn mock_raft_config(relayer_config: &RelayerConfig) -> RaftClientConfig {
+    pub fn raft_config_from_relayer_config(
+        relayer_config: &RelayerConfig,
+        delay: u64,
+    ) -> RaftClientConfig {
         let peer_id = relayer_config.peer_id();
         let id = get_raft_id(&peer_id);
         let initial_nodes = vec![(id, RaftNode::new(peer_id))];
         RaftClientConfig {
             id,
-            election_timeout_min: 10,
-            election_timeout_max: 15,
-            heartbeat_interval: 5,
             init: true,
             initial_nodes,
             snapshot_path: relayer_config.raft_snapshot_path.clone(),
-            ..Default::default()
+            ..mock_raft_config(vec![] /* initial nodes */, delay)
         }
     }
 
@@ -286,21 +286,27 @@ pub mod test_helpers {
     pub async fn mock_state_with_config(config: &RelayerConfig) -> State {
         let (task_queue, recv) = new_task_driver_queue();
         mem::forget(recv);
-        mock_state_with_task_queue(task_queue, config).await
+        mock_state_with_task_queue(0 /* network_delay_ms */, task_queue, config).await
     }
 
     /// Create a mock state instance with the given task queue
     pub async fn mock_state_with_task_queue(
+        network_delay_ms: u64,
         task_queue: TaskDriverQueue,
         config: &RelayerConfig,
     ) -> State {
-        let raft = MockRaft::create_raft(2 /* n_nodes */, false /* init */).await;
+        // Create the mock raft
+        let raft =
+            MockRaft::create_raft(2 /* n_nodes */, network_delay_ms, false /* init */).await;
         let net = raft.new_network_client();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
         let (failure_send, _failure_recv) = new_worker_failure_channel();
+
+        // Add a client to the mock raft as leader
+        let raft_config = raft_config_from_relayer_config(config, network_delay_ms);
         let state = State::new_with_network(
             config,
-            mock_raft_config(config),
+            raft_config,
             net,
             task_queue,
             handshake_manager_queue,
@@ -311,8 +317,15 @@ pub mod test_helpers {
         .await
         .unwrap();
 
+        // Promote all nodes to voters
+        setup_voters(&state, &raft).await;
+        state
+    }
+
+    /// Setup all nodes as voters
+    async fn setup_voters(state: &State, mock_raft: &MockRaft) {
         // Add all nodes as voters
-        for (id, node) in raft.rafts.read().await.iter() {
+        for (id, node) in mock_raft.rafts.read().await.iter() {
             // Configure the follower's DB
             configure_follower(node).await;
 
@@ -327,8 +340,6 @@ pub mod test_helpers {
             state.send_proposal(prop).await.unwrap();
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-
-        state
     }
 
     /// Configure the database of a mock raft follower to be properly setup for

@@ -173,7 +173,7 @@ impl IntegrationTestArgs {
 
 /// Create a global state mock for the `task-driver` integration tests
 async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
-    mock_state_with_task_queue(task_queue, &mock_relayer_config()).await
+    mock_state_with_task_queue(0 /* network_delay_ms */, task_queue, &mock_relayer_config()).await
 }
 
 /// Setup a mock `ArbitrumClient` for the integration tests
