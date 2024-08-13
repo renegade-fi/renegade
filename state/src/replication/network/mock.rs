@@ -1,5 +1,7 @@
 //! Mock networking implementation for testing
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use openraft::error::{RPCError, RaftError, Unreachable};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -36,6 +38,8 @@ pub struct MockNetworkNode {
     /// Set to zero on initialization, the factory trait that `openraft`
     /// requires will set this value appropriately
     target: NodeId,
+    /// The delay to add to network requests
+    delay: Duration,
     /// A sender to the network switch queue
     switch_sender: SwitchSender,
 }
@@ -43,7 +47,12 @@ pub struct MockNetworkNode {
 impl MockNetworkNode {
     /// Create a new node using the given channel to send to the network switch
     pub fn new(sender: SwitchSender) -> Self {
-        Self { target: 0, switch_sender: sender }
+        Self::new_with_delay(sender, 0 /* delay_ms */)
+    }
+
+    /// Create a new node with a delay
+    pub fn new_with_delay(sender: SwitchSender, delay_ms: u64) -> Self {
+        Self { target: 0, switch_sender: sender, delay: Duration::from_millis(delay_ms) }
     }
 }
 
@@ -67,6 +76,10 @@ impl P2PRaftNetwork for MockNetworkNode {
         target: NodeId,
         request: RaftRequest,
     ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
+        // Add the delay
+        tokio::time::sleep(self.delay).await;
+
+        // Send the request
         let (send, recv) = new_response_queue();
         self.switch_sender.send((target, request, send)).expect("channel closed");
 
