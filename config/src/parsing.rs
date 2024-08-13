@@ -4,7 +4,6 @@ pub use crate::token_remaps::setup_token_remaps;
 use crate::{cli::RelayerConfig, validation::validate_config, Cli, RelayerFeeKey};
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
-use colored::*;
 use common::types::{
     gossip::{ClusterId, SymmetricAuthKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH},
     wallet::WalletIdentifier,
@@ -199,8 +198,13 @@ pub fn parse_fee_key(
         let key = DecryptionKey::from_hex_str(&k)?;
         Ok(RelayerFeeKey::new_secret(key))
     } else {
-        // Must print here as logger is not yet setup
-        println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
+        #[cfg(not(feature = "silent"))]
+        {
+            // Must print here as logger is not yet setup
+            use colored::*;
+            println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
+        }
+
         let key = DecryptionKey::random(&mut thread_rng());
         Ok(RelayerFeeKey::new_secret(key))
     }
