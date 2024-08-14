@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, Web
 use tracing::{error, info, warn};
 use tungstenite::Error as WsError;
 use url::Url;
-use util::{err_str, get_current_time_seconds};
+use util::{err_str, get_current_time_millis};
 
 use crate::{
     manager::{
@@ -240,7 +240,7 @@ impl ExchangeConnectionManager {
         }
 
         // Save the price update to the global map
-        let ts = get_current_time_seconds();
+        let ts = get_current_time_millis();
         self.price_stream_states
             .new_price(self.exchange, self.base_token.clone(), self.quote_token.clone(), price, ts)
             .await

@@ -10,7 +10,7 @@ use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::oneshot::Sender as OneshotSender;
 use tracing::{debug, error};
-use util::get_current_time_seconds;
+use util::get_current_time_millis;
 
 use crate::errors::PriceReporterError;
 
@@ -86,7 +86,7 @@ impl MockPriceReporter {
         channel: OneshotSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
         // Construct a state and send it back on the queue
-        let timestamp = get_current_time_seconds();
+        let timestamp = get_current_time_millis();
         let state = PriceReporterState::Nominal(PriceReport {
             base_token,
             quote_token,

@@ -130,7 +130,7 @@ impl Sink<NetworkOutbound<SystemCurveGroup>> for MockNetworkWithDelay {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
 
     use ark_mpc::{
         network::{NetworkOutbound, NetworkPayload},
@@ -139,13 +139,9 @@ mod tests {
     use constants::Scalar;
     use futures::{SinkExt, StreamExt};
     use renegade_crypto::fields::scalar_to_u64;
+    use util::get_current_time_millis;
 
     use crate::mpc_network::{mock_with_delay::MockNetworkWithDelay, mocks::UnboundedDuplexStream};
-
-    /// Get the time in milliseconds since the unix epoch
-    pub fn unix_ts_millis() -> u64 {
-        SystemTime::now().duration_since(UNIX_EPOCH).expect("negative timestamp").as_millis() as u64
-    }
 
     /// Test that the delay is accurate
     #[tokio::test]
@@ -164,7 +160,7 @@ mod tests {
 
             // Send the current timestamp as a `Scalar`
             for _ in 0..N_SENDS {
-                let now = unix_ts_millis();
+                let now = get_current_time_millis();
                 let msg = NetworkOutbound {
                     result_id: 0,
                     payload: NetworkPayload::Scalar(Scalar::from(now)),
@@ -186,7 +182,7 @@ mod tests {
                 for _ in 0..N_SENDS {
                     let msg = conn.next().await.unwrap().unwrap();
                     if let NetworkPayload::Scalar(send_ts) = msg.payload {
-                        let recv_ts = unix_ts_millis();
+                        let recv_ts = get_current_time_millis();
                         let delay = recv_ts - scalar_to_u64(&send_ts);
 
                         // Check that the delay is within `DELAY_TOLERANCE` of the expected delay

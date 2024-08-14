@@ -20,7 +20,7 @@ use common::{
 use external_api::bus_message::{price_report_topic, SystemBusMessage};
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
-use util::get_current_time_seconds;
+use util::get_current_time_millis;
 
 use crate::{errors::PriceReporterError, worker::PriceReporterConfig};
 
@@ -396,7 +396,7 @@ pub fn compute_price_reporter_state(
 /// Returns whether or not the provided timestamp is too stale,
 /// and the time difference between the current time and the provided timestamp
 fn ts_too_stale(ts: u64) -> (bool, u64) {
-    let time_diff = get_current_time_seconds() - ts;
+    let time_diff = get_current_time_millis() - ts;
     (time_diff > MAX_REPORT_AGE, time_diff)
 }
 

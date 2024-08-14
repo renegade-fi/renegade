@@ -45,12 +45,8 @@ use hyper::{
 use num_bigint::BigUint;
 use num_traits::Num;
 use state::State;
-use std::{
-    convert::Infallible,
-    net::SocketAddr,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use util::get_current_time_millis;
 use uuid::Uuid;
 
 use crate::{
@@ -528,7 +524,7 @@ impl TypedHandler for PingHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+        let timestamp = get_current_time_millis();
         Ok(PingResponse { timestamp })
     }
 }

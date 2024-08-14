@@ -23,7 +23,7 @@ use test_helpers::{
     integration_test_async,
 };
 use tracing::info;
-use util::{get_current_time_seconds, hex::biguint_from_hex_string};
+use util::hex::biguint_from_hex_string;
 use uuid::Uuid;
 
 use crate::{
@@ -35,8 +35,6 @@ use crate::{
 };
 
 lazy_static! {
-    /// A dummy timestamp used for updates
-    static ref DUMMY_TIMESTAMP: u64 = get_current_time_seconds();
     /// A dummy order that is allocated in a wallet as an update
     static ref DUMMY_ORDER: Order = Order {
         quote_mint: 1u8.into(),
