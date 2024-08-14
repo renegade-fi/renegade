@@ -30,7 +30,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{error, info, info_span, warn, Instrument};
 use tungstenite::Message;
 use url::Url;
-use util::{err_str, get_current_time_seconds};
+use util::{err_str, get_current_time_millis};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -167,7 +167,7 @@ impl ExternalPriceReporterExecutor {
 
         let (exchange, base_token, quote_token) = parse_topic(&price_message.topic)
             .map_err(err_str!(ExchangeConnectionError::InvalidMessage))?;
-        let ts = get_current_time_seconds();
+        let ts = get_current_time_millis();
 
         // Save the price update for the pair on the given exchange
         self.price_stream_states

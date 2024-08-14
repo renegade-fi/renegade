@@ -14,5 +14,5 @@ pub mod wallet;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PingResponse {
     /// The timestamp when the response is sent
-    pub timestamp: u128,
+    pub timestamp: u64,
 }

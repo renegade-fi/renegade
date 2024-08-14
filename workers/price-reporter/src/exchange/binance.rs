@@ -16,7 +16,7 @@ use serde_json::Value;
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
-use util::{err_str, get_current_time_seconds};
+use util::{err_str, get_current_time_millis};
 
 use crate::{
     errors::ExchangeConnectionError, manager::exchange_lists_pair_tokens,
@@ -107,7 +107,7 @@ impl BinanceConnection {
             base_token,
             quote_token,
             price: midpoint_price,
-            local_timestamp: get_current_time_seconds(),
+            local_timestamp: get_current_time_millis(),
         })
     }
 

@@ -31,6 +31,7 @@ circuit-types = { path = "../circuit-types" }
 common = { path = "../common", features = ["mocks"] }
 constants = { path = "../constants" }
 renegade-crypto = { path = "../renegade-crypto" }
+util = { path = "../util" }
 
 # === Misc Dependencies === #
 itertools = "0.10.5"

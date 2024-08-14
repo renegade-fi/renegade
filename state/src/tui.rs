@@ -11,7 +11,6 @@ use std::{
     cell::RefCell,
     fmt::{self, Display},
     thread::JoinHandle,
-    time::{SystemTime, UNIX_EPOCH},
 };
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
 use tracing::log::LevelFilter;
@@ -27,7 +26,7 @@ use tui_logger::{
     init_logger, TuiLoggerLevelOutput, TuiLoggerSmartWidget, TuiLoggerWidget,
     TuiWidgetEvent as LoggerEvent, TuiWidgetState as SmartLoggerState,
 };
-use util::runtime::block_current;
+use util::{get_current_time_millis, runtime::block_current};
 
 use std::io;
 
@@ -413,14 +412,11 @@ impl StateTuiApp {
         sorted_keys.sort();
 
         // Collect into a table
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = get_current_time_millis();
         let mut rows = Vec::new();
         for (peer_id, info) in sorted_keys.iter().map(|key| (key, peer_info.get(key).unwrap())) {
-            let last_heartbeat_elapsed = if peer_id.ne(&local_peer_id) {
-                (now - info.get_last_heartbeat()) * 1000
-            } else {
-                0
-            };
+            let last_heartbeat_elapsed =
+                if peer_id.ne(&local_peer_id) { now - info.get_last_heartbeat() } else { 0 };
 
             let row = Row::new(vec![peer_id.to_string(), format!("{last_heartbeat_elapsed} ms")])
                 .style(*TABLE_ROW_STYLE);

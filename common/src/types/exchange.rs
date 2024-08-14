@@ -63,7 +63,8 @@ pub struct PriceReport {
     pub quote_token: Token,
     /// The reported price
     pub price: Price,
-    /// The time that this update was received by the relayer node.
+    /// The time that this update was received by the relayer node,
+    /// expected to be in milliseconds since the UNIX epoch
     pub local_timestamp: u64,
 }
 

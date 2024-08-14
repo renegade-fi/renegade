@@ -43,14 +43,10 @@ use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
 use renegade_metrics::helpers::record_match_volume;
 use state::State;
-use std::{
-    collections::HashSet,
-    thread::JoinHandle,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashSet, thread::JoinHandle};
 use system_bus::SystemBus;
 use tracing::{error, info, info_span, Instrument};
-use util::err_str;
+use util::{err_str, get_current_time_millis};
 use uuid::Uuid;
 
 pub(super) use price_agreement::init_price_streams;
@@ -76,15 +72,6 @@ use super::{
 pub(super) const HANDSHAKE_CACHE_SIZE: usize = 500;
 /// The number of threads executing handshakes
 pub(super) const HANDSHAKE_EXECUTOR_N_THREADS: usize = 8;
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Get the current unix timestamp in milliseconds since the epoch
-fn get_timestamp_millis() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis().try_into().unwrap()
-}
 
 // ------------------------
 // | Manager and Executor |
@@ -270,7 +257,7 @@ impl HandshakeExecutor {
                     SystemBusMessage::HandshakeInProgress {
                         local_order_id: order_state.local_order_id,
                         peer_order_id: order_state.peer_order_id,
-                        timestamp: get_timestamp_millis(),
+                        timestamp: get_current_time_millis(),
                     },
                 );
 
@@ -463,7 +450,7 @@ impl HandshakeExecutor {
             SystemBusMessage::HandshakeCompleted {
                 local_order_id,
                 peer_order_id,
-                timestamp: get_timestamp_millis(),
+                timestamp: get_current_time_millis(),
             },
         );
 
