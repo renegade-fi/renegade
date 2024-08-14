@@ -268,7 +268,7 @@ impl RaftClient {
     /// Propose an update to the raft
     pub async fn propose_transition(&self, update: Proposal) -> Result<(), ReplicationV2Error> {
         // If the current node is not the leader, forward to the leader
-        let (leader_nid, leader_info) = self
+        let (mut leader_nid, leader_info) = self
             .leader_info()
             .ok_or_else(|| ReplicationV2Error::Proposal(ERR_NO_LEADER.to_string()))?;
 
@@ -277,7 +277,7 @@ impl RaftClient {
             && peer_ids.contains(&leader_nid)
         {
             info!("removing raft leader");
-            self.change_leader().await?;
+            leader_nid = self.change_leader().await?;
         }
 
         if leader_nid != self.node_id() {
@@ -444,22 +444,26 @@ impl RaftClient {
 
     /// Force the leader to change by starting an election and waiting until a
     /// new leader is elected
-    pub async fn change_leader(&self) -> Result<(), ReplicationV2Error> {
+    ///
+    /// Returns the new leader
+    pub async fn change_leader(&self) -> Result<NodeId, ReplicationV2Error> {
         // Trigger an election
         let curr_leader = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
         self.raft().trigger().elect().await.map_err(err_str!(ReplicationV2Error::Raft))?;
 
         // Await leadership change away from current leader
         let timeout = Duration::from_millis(DEFAULT_LEADER_ELECTION_TIMEOUT_MS);
-        self.raft()
+        let metrics = self
+            .raft()
             .wait(Some(timeout))
             .metrics(
                 |m| m.current_leader.is_some() && m.current_leader.unwrap() != curr_leader,
                 "leader-change",
             )
             .await
-            .map_err(err_str!(ReplicationV2Error::Raft))
-            .map(|_| ())
+            .map_err(err_str!(ReplicationV2Error::Raft))?;
+
+        Ok(metrics.current_leader.expect("wait condition ensures leader exists"))
     }
 
     /// Add a single learner to the cluster

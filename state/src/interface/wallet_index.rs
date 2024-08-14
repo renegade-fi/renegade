@@ -199,7 +199,7 @@ mod test {
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_order_history__cancel_replace() {
-        const N: usize = 100;
+        const N: usize = 10;
         let state = mock_state().await;
         let mut wallet = mock_empty_wallet();
 

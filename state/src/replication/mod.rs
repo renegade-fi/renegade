@@ -446,8 +446,9 @@ mod test {
         let new_nid = 2;
         raft.add_node(new_nid).await;
 
-        // Add the node as a learner
+        // Add the node as a learner and wait for replication
         client.add_learner(new_nid, RaftNode::default()).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Check the DB of the new node
         let db = raft.get_db(new_nid).await;
@@ -625,6 +626,7 @@ mod test {
         // Only nodes {0, 1} remain
         for i in 0..N - SCALE_TO {
             let removed_nid = N - i - 1;
+            raft.remove_node(removed_nid as u64).await;
             client.remove_peer(removed_nid as u64).await.unwrap();
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
