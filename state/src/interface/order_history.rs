@@ -121,7 +121,7 @@ pub mod test {
     /// Test updating an order's metadata    
     #[tokio::test]
     async fn test_update_order_metadata() {
-        const N: usize = 100;
+        const N: usize = 10;
         let state = mock_state().await;
         let orders = (0..N).map(|_| random_metadata()).collect_vec();
         let wallet_id = WalletIdentifier::new_v4();

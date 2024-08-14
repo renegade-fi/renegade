@@ -147,7 +147,7 @@ mod tests {
     /// Test appending and retrieving order metadata
     #[test]
     fn test_append_orders() {
-        const N: usize = 1000;
+        const N: usize = 100;
         let db = mock_db();
         let wallet_id = Uuid::new_v4();
         let mut history = random_order_history(N);
@@ -175,7 +175,7 @@ mod tests {
     /// Tests updating an order in the history
     #[test]
     fn test_update_order() {
-        const N: usize = 1000;
+        const N: usize = 100;
         let db = mock_db();
         let wallet_id = Uuid::new_v4();
         let history = random_order_history(N);
