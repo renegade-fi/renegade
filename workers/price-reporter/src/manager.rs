@@ -32,9 +32,9 @@ pub mod native_executor;
 // -------------
 
 /// If a pair has not reported an update within
-/// MAX_REPORT_AGE_MS (in milliseconds), we pause matches until we receive a more
-/// recent price. Note that this threshold cannot be too aggressive, as certain
-/// long-tail asset pairs legitimately do not update that often.
+/// MAX_REPORT_AGE_MS (in milliseconds), we pause matches until we receive a
+/// more recent price. Note that this threshold cannot be too aggressive, as
+/// certain long-tail asset pairs legitimately do not update that often.
 const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until
 /// we have enough reports. This only applies to Named tokens, as Unnamed tokens

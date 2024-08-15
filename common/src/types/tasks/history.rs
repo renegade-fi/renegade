@@ -55,6 +55,10 @@ pub enum HistoricalTaskDescription {
         /// Whether the fee was paid for a protocol fee
         is_protocol: bool,
     },
+    /// A wallet was looked up
+    LookupWallet,
+    /// A wallet was refreshed
+    RefreshWallet,
 }
 
 impl HistoricalTaskDescription {
@@ -88,6 +92,8 @@ impl HistoricalTaskDescription {
                 amount: desc.amount,
                 is_protocol: desc.is_protocol_fee,
             }),
+            TaskDescriptor::LookupWallet(_) => Some(Self::LookupWallet),
+            TaskDescriptor::RefreshWallet(_) => Some(Self::RefreshWallet),
             _ => None,
         }
     }
