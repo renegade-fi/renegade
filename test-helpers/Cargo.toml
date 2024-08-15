@@ -21,8 +21,8 @@ num-bigint = { version = "0.4", features = ["rand"] }
 k256 = { version = "0.13" }
 
 # === Ethereum Utils === #
-alloy-primitives = "0.3.1"
-alloy-sol-types = "0.3.1"
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
 ethers = { workspace = true }
 
 # === Workspace Dependencies === # 

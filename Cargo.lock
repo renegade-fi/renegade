@@ -80,6 +80,22 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e416903084d3392ebd32d94735c395d6709415b76c7728e594d3f996f2b03e65"
 dependencies = [
+ "bytes",
+ "cfg-if",
+ "const-hex",
+ "derive_more",
+ "hex-literal",
+ "itoa",
+ "ruint",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "alloy-primitives"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccb3ead547f4532bc8af961649942f0b9c16ee9226e26caa3f38420651cc0bf4"
+dependencies = [
  "alloy-rlp",
  "bytes",
  "cfg-if",
@@ -87,7 +103,10 @@ dependencies = [
  "derive_more",
  "hex-literal",
  "itoa",
+ "k256",
+ "keccak-asm",
  "proptest",
+ "rand 0.8.5",
  "ruint",
  "serde",
  "tiny-keccak",
@@ -114,8 +133,55 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.58",
- "syn-solidity",
+ "syn-solidity 0.3.2",
  "tiny-keccak",
+]
+
+[[package]]
+name = "alloy-sol-macro"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b40397ddcdcc266f59f959770f601ce1280e699a91fc1862f29cef91707cd09"
+dependencies = [
+ "alloy-sol-macro-expander",
+ "alloy-sol-macro-input",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.58",
+]
+
+[[package]]
+name = "alloy-sol-macro-expander"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "867a5469d61480fea08c7333ffeca52d5b621f5ca2e44f271b117ec1fc9a0525"
+dependencies = [
+ "alloy-sol-macro-input",
+ "const-hex",
+ "heck 0.5.0",
+ "indexmap 2.3.0",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.58",
+ "syn-solidity 0.7.7",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "alloy-sol-macro-input"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e482dc33a32b6fadbc0f599adea520bd3aaa585c141a80b404d0a3e3fa72528"
+dependencies = [
+ "const-hex",
+ "dunce",
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.58",
+ "syn-solidity 0.7.7",
 ]
 
 [[package]]
@@ -124,8 +190,19 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaa7c9a4354b1ff9f1c85adf22802af046e20e4bb55e19b9dc6ca8cbc6f7f4e5"
 dependencies = [
- "alloy-primitives",
- "alloy-sol-macro",
+ "alloy-primitives 0.3.3",
+ "alloy-sol-macro 0.3.2",
+ "const-hex",
+]
+
+[[package]]
+name = "alloy-sol-types"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a91ca40fa20793ae9c3841b83e74569d1cc9af29a2f5237314fd3452d51e38c7"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "alloy-sol-macro 0.7.7",
  "const-hex",
  "serde",
 ]
@@ -271,8 +348,8 @@ dependencies = [
 name = "arbitrum-client"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
+ "alloy-primitives 0.7.7",
+ "alloy-sol-types 0.7.7",
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
@@ -2300,8 +2377,8 @@ name = "contracts-common"
 version = "0.1.0"
 source = "git+https://github.com/renegade-fi/renegade-contracts.git#027388174a5e9b240a58a275c99d1f0b28125473"
 dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
+ "alloy-primitives 0.3.3",
+ "alloy-sol-types 0.3.2",
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
@@ -4955,6 +5032,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
+]
+
+[[package]]
+name = "keccak-asm"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "422fbc7ff2f2f5bdffeb07718e5a5324dca72b0c9293d50df4026652385e3314"
+dependencies = [
+ "digest 0.10.7",
+ "sha3-asm",
 ]
 
 [[package]]
@@ -8365,6 +8452,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha3-asm"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57d79b758b7cb2085612b11a235055e485605a5103faccdd633f35bd7aee69dd"
+dependencies = [
+ "cc",
+ "cfg-if",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8789,6 +8886,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "syn-solidity"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c837dc8852cb7074e46b444afb81783140dab12c58867b49fb3898fbafedf7ea"
+dependencies = [
+ "paste",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.58",
+]
+
+[[package]]
 name = "sync_wrapper"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8891,7 +9000,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 name = "task-driver"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.7.7",
  "arbitrum-client",
  "ark-mpc",
  "async-trait",
@@ -8966,8 +9075,8 @@ dependencies = [
 name = "test-helpers"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
+ "alloy-primitives 0.7.7",
+ "alloy-sol-types 0.7.7",
  "arbitrum-client",
  "ark-ec",
  "ark-mpc",
