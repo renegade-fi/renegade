@@ -32,10 +32,10 @@ pub mod native_executor;
 // -------------
 
 /// If a pair has not reported an update within
-/// MAX_REPORT_AGE (in seconds), we pause matches until we receive a more
+/// MAX_REPORT_AGE_MS (in milliseconds), we pause matches until we receive a more
 /// recent price. Note that this threshold cannot be too aggressive, as certain
 /// long-tail asset pairs legitimately do not update that often.
-const MAX_REPORT_AGE: u64 = 20; // 20 seconds
+const MAX_REPORT_AGE_MS: u64 = 20_000; // 20 seconds
 /// If we do not have at least MIN_CONNECTIONS reports, we pause matches until
 /// we have enough reports. This only applies to Named tokens, as Unnamed tokens
 /// simply use UniswapV3.
@@ -397,7 +397,7 @@ pub fn compute_price_reporter_state(
 /// and the time difference between the current time and the provided timestamp
 fn ts_too_stale(ts: u64) -> (bool, u64) {
     let time_diff = get_current_time_millis() - ts;
-    (time_diff > MAX_REPORT_AGE, time_diff)
+    (time_diff > MAX_REPORT_AGE_MS, time_diff)
 }
 
 /// Returns the (exchange, base, quote) tuples for which price streams are
