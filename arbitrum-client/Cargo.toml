@@ -30,8 +30,8 @@ mpc-relation = { workspace = true }
 
 # === Networking / Blockchain === #
 ethers = { workspace = true }
-alloy-primitives = "0.3.1"
-alloy-sol-types = "0.3.1"
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
 
 # === Workspace Dependencies === #
 constants = { path = "../constants" }

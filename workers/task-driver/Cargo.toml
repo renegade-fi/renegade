@@ -55,7 +55,7 @@ metrics = { workspace = true }
 
 [dev-dependencies]
 ethers = { workspace = true }
-alloy-primitives = "0.3.1"
+alloy-primitives = { workspace = true }
 
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"

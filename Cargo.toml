@@ -63,9 +63,13 @@ crossbeam = "0.8"
 futures = "0.3"
 tokio = { version = "1" }
 
+# === Crypto Libraries === #
+alloy-primitives = "=0.7.7"
+alloy-sol-types = "=0.7.7"
+ethers = "2"
+
 # === Misc === #
 async-trait = "0.1"
-ethers = "2"
 eyre = "0.6"
 indexmap = "2.0.2"
 itertools = "0.10"
