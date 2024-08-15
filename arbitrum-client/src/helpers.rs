@@ -36,7 +36,7 @@ pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, ArbitrumClien
 
 /// Deserializes a return value from a contract call
 pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
-    calldata: &'de Bytes,
+    calldata: &'de [u8],
 ) -> Result<T, ArbitrumClientError> {
     postcard::from_bytes(calldata).map_err(|e| ArbitrumClientError::Serde(e.to_string()))
 }
@@ -45,11 +45,11 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 pub fn parse_shares_from_new_wallet(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = newWalletCall::decode(calldata, true /* validate */)
+    let call = newWalletCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let statement = deserialize_calldata::<ContractValidWalletCreateStatement>(
-        &call.valid_wallet_create_statement_bytes.into(),
+        &call.valid_wallet_create_statement_bytes,
     )?;
 
     let mut shares = statement.public_wallet_shares.into_iter().map(Scalar::new);
@@ -61,11 +61,11 @@ pub fn parse_shares_from_new_wallet(
 pub fn parse_shares_from_update_wallet(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = updateWalletCall::decode(calldata, true /* validate */)
+    let call = updateWalletCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let statement = deserialize_calldata::<ContractValidWalletUpdateStatement>(
-        &call.valid_wallet_update_statement_bytes.into(),
+        &call.valid_wallet_update_statement_bytes,
     )?;
 
     let mut shares = statement.new_public_shares.into_iter().map(Scalar::new);
@@ -78,11 +78,11 @@ pub fn parse_shares_from_process_match_settle(
     calldata: &[u8],
     public_blinder_share: Scalar,
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = processMatchSettleCall::decode(calldata, true /* validate */)
+    let call = processMatchSettleCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let valid_match_settle_statement = deserialize_calldata::<ContractValidMatchSettleStatement>(
-        &call.valid_match_settle_statement.into(),
+        &call.valid_match_settle_statement,
     )?;
 
     let party_0_shares = valid_match_settle_statement.party0_modified_shares;
@@ -111,12 +111,12 @@ pub fn parse_shares_from_settle_online_relayer_fee(
     calldata: &[u8],
     public_blinder_share: Scalar,
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = settleOnlineRelayerFeeCall::decode(calldata, true /* validate */)
+    let call = settleOnlineRelayerFeeCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let valid_relayer_fee_settlement_statement =
         deserialize_calldata::<ContractValidRelayerFeeSettlementStatement>(
-            &call.valid_relayer_fee_settlement_statement.into(),
+            &call.valid_relayer_fee_settlement_statement,
         )?;
 
     let sender_shares = valid_relayer_fee_settlement_statement.sender_updated_public_shares;
@@ -144,11 +144,11 @@ pub fn parse_shares_from_settle_online_relayer_fee(
 pub fn parse_shares_from_settle_offline_fee(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = settleOfflineFeeCall::decode(calldata, true /* validate */)
+    let call = settleOfflineFeeCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
-        &call.valid_offline_fee_settlement_statement.into(),
+        &call.valid_offline_fee_settlement_statement,
     )?;
 
     let mut shares = statement.updated_wallet_public_shares.into_iter().map(Scalar::new);
@@ -160,11 +160,11 @@ pub fn parse_shares_from_settle_offline_fee(
 pub fn parse_shares_from_redeem_fee(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = redeemFeeCall::decode(calldata, true /* validate */)
+    let call = redeemFeeCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let statement = deserialize_calldata::<ContractValidFeeRedemptionStatement>(
-        &call.valid_fee_redemption_statement.into(),
+        &call.valid_fee_redemption_statement,
     )?;
 
     let mut shares = statement.new_wallet_public_shares.into_iter().map(Scalar::new);
@@ -176,11 +176,11 @@ pub fn parse_shares_from_redeem_fee(
 pub fn parse_note_ciphertext_from_settle_offline_fee(
     calldata: &[u8],
 ) -> Result<ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, ArbitrumClientError> {
-    let call = settleOfflineFeeCall::decode(calldata, true /* validate */)
+    let call = settleOfflineFeeCall::abi_decode(calldata, true /* validate */)
         .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
 
     let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
-        &call.valid_offline_fee_settlement_statement.into(),
+        &call.valid_offline_fee_settlement_statement,
     )?;
     let cipher = statement.note_ciphertext;
     let key_encryption = BabyJubJubPoint { x: Scalar::new(cipher.0.x), y: Scalar::new(cipher.0.y) };

@@ -8,7 +8,7 @@
 
 use funds_manager_api::{
     auth::{compute_hmac, X_SIGNATURE_HEADER},
-    RegisterGasWalletRequest, RegisterGasWalletResponse, REGISTER_GAS_WALLET_ROUTE,
+    gas::{RegisterGasWalletRequest, RegisterGasWalletResponse, REGISTER_GAS_WALLET_ROUTE},
 };
 use reqwest::{
     header::{HeaderMap, HeaderValue, CONTENT_TYPE},
