@@ -144,6 +144,12 @@ impl TypedHandler for AdminOpenOrdersHandler {
         for id in order_ids.into_iter() {
             let order = self.state.get_order_metadata(&id).await?;
             if let Some(meta) = order {
+                let wallet_id = self
+                    .state
+                    .get_wallet_for_order(&id)
+                    .await?
+                    .ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+
                 let (fillable, price) = if include_fillable {
                     get_fillable_amount_and_price(
                         &meta,
@@ -155,7 +161,8 @@ impl TypedHandler for AdminOpenOrdersHandler {
                 } else {
                     (None, None)
                 };
-                orders.push(OpenOrder { order: meta, fillable, price })
+
+                orders.push(OpenOrder { order: meta, wallet_id, fillable, price })
             }
         }
 
