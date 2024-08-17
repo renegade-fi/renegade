@@ -5,7 +5,10 @@
 // ---------------
 
 use circuit_types::Amount;
-use common::types::{wallet::order_metadata::OrderMetadata, MatchingPoolName, Price};
+use common::types::{
+    wallet::{order_metadata::OrderMetadata, WalletIdentifier},
+    MatchingPoolName, Price,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::types::ApiOrder;
@@ -49,6 +52,8 @@ pub struct OpenOrdersResponse {
 pub struct OpenOrder {
     /// The order metadata
     pub order: OrderMetadata,
+    /// The ID of the wallet containing the order
+    pub wallet_id: WalletIdentifier,
     /// The fillable amount of the order, if calculated
     pub fillable: Option<Amount>,
     /// The price used to calculate the fillable amount, if calculated
