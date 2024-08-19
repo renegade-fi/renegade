@@ -24,11 +24,11 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The system-wide value of MAX_BALANCES; the number of allowable balances a
 /// wallet holds
-pub const MAX_BALANCES: usize = 5;
+pub const MAX_BALANCES: usize = 10;
 
 /// The system-wide value of MAX_ORDERS; the number of allowable orders a wallet
 /// holds
-pub const MAX_ORDERS: usize = 5;
+pub const MAX_ORDERS: usize = 4;
 
 /// The height of the Merkle state tree used by the contract
 pub const MERKLE_HEIGHT: usize = 32;

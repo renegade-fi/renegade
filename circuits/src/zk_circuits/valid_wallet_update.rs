@@ -33,7 +33,7 @@ use crate::{
 
 /// A type alias for the `ValidWalletUpdate` circuit with default size
 /// parameters attached
-pub type SizedValidWalletUpdate = ValidWalletUpdate<MAX_ORDERS, MAX_BALANCES, MERKLE_HEIGHT>;
+pub type SizedValidWalletUpdate = ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
 
 /// The `VALID WALLET UPDATE` circuit
 pub struct ValidWalletUpdate<
