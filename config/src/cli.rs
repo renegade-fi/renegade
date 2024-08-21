@@ -381,6 +381,13 @@ impl RelayerConfig {
     pub fn raft_snapshot_path(&self) -> &Path {
         Path::new(&self.raft_snapshot_path)
     }
+
+    /// Whether the relayer needs a wallet to support its configuration or not
+    ///
+    /// If it does not, the relayer may skip the wallet creation/lookup step
+    pub fn needs_relayer_wallet(&self) -> bool {
+        self.auto_redeem_fees
+    }
 }
 
 impl Default for RelayerConfig {

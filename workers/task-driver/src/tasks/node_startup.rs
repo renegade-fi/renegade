@@ -164,6 +164,8 @@ impl From<ArbitrumClientError> for NodeStartupTaskError {
 pub struct NodeStartupTask {
     /// The amount of time to wait for the gossip layer to warm up
     pub gossip_warmup_ms: u64,
+    /// Whether the relayer needs a wallet created for it or not
+    pub needs_relayer_wallet: bool,
     /// The arbitrum private key
     pub keypair: LocalWallet,
     /// The arbitrum client to use for submitting transactions
@@ -192,6 +194,7 @@ impl Task for NodeStartupTask {
 
         Ok(Self {
             gossip_warmup_ms: descriptor.gossip_warmup_ms,
+            needs_relayer_wallet: descriptor.needs_relayer_wallet,
             keypair,
             arbitrum_client: ctx.arbitrum_client,
             network_sender: ctx.network_queue,
@@ -344,6 +347,12 @@ impl NodeStartupTask {
     ///
     /// If the wallet is found on-chain, recover it. Otherwise, create a new one
     async fn setup_relayer_wallet(&self) -> Result<(), NodeStartupTaskError> {
+        // If the state setup did not allocate a wallet id, we do not need a wallet
+        if !self.needs_relayer_wallet {
+            info!("no relayer wallet needed, skipping creation...");
+            return Ok(());
+        }
+
         let chain_id = self
             .arbitrum_client
             .chain_id()

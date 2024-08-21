@@ -41,6 +41,8 @@ use super::{
 
 /// The error message emitted by the task when the fee decryption key is missing
 const ERR_FEE_KEY_MISSING: &str = "fee decryption key is missing";
+/// The error message emitted by the task when the relayer wallet is missing
+const ERR_RELAYER_WALLET_MISSING: &str = "relayer wallet is missing";
 
 /// Enqueue a job with the proof manager
 ///
@@ -335,7 +337,10 @@ async fn link_and_store_proofs(
 
 /// Enqueue a job to redeem a relayer fee into the relayer's wallet
 pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
-    let relayer_wallet_id = state.get_relayer_wallet_id().await?;
+    let relayer_wallet_id = state
+        .get_relayer_wallet_id()
+        .await?
+        .ok_or_else(|| ERR_RELAYER_WALLET_MISSING.to_string())?;
     let decryption_key =
         state.get_fee_key().await?.secret_key().ok_or_else(|| ERR_FEE_KEY_MISSING.to_string())?;
     let descriptor = RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key);

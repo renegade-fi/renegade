@@ -32,14 +32,14 @@ impl State {
     }
 
     /// Get the wallet ID that the local relayer owns
-    pub async fn get_relayer_wallet_id(&self) -> Result<WalletIdentifier, StateError> {
+    pub async fn get_relayer_wallet_id(&self) -> Result<Option<WalletIdentifier>, StateError> {
         self.with_read_tx(|tx| tx.get_local_node_wallet().map_err(StateError::Db)).await
     }
 
     /// Get the wallet owned by the local relayer
     pub async fn get_local_relayer_wallet(&self) -> Result<Option<Wallet>, StateError> {
         self.with_read_tx(|tx| {
-            let wallet_id = tx.get_local_node_wallet()?;
+            let wallet_id = res_some!(tx.get_local_node_wallet()?);
             let wallet = res_some!(tx.get_wallet(&wallet_id)?);
             Ok(Some(wallet))
         })
@@ -123,6 +123,7 @@ impl State {
         let relayer_fee_whitelist = config.relayer_fee_whitelist.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
 
+        let need_relayer_wallet = config.needs_relayer_wallet();
         let relayer_wallet_id =
             derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
 
@@ -133,8 +134,10 @@ impl State {
             tx.set_node_keypair(&p2p_key)?;
             tx.set_fee_key(&fee_key)?;
             tx.set_relayer_take_rate(&match_take_rate)?;
-            tx.set_local_node_wallet(relayer_wallet_id)?;
             tx.set_auto_redeem_fees(auto_redeem_fees)?;
+            if need_relayer_wallet {
+                tx.set_local_node_wallet(relayer_wallet_id)?;
+            }
 
             // Setup the relayer fee whitelist
             for entry in relayer_fee_whitelist {
