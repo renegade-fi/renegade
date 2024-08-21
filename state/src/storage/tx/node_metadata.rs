@@ -88,10 +88,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     }
 
     /// Get the wallet ID of the local relayer's wallet
-    pub fn get_local_node_wallet(&self) -> Result<WalletIdentifier, StorageError> {
-        self.inner()
-            .read(NODE_METADATA_TABLE, &LOCAL_WALLET_ID_KEY.to_string())?
-            .ok_or_else(|| err_not_found(LOCAL_WALLET_ID_KEY))
+    pub fn get_local_node_wallet(&self) -> Result<Option<WalletIdentifier>, StorageError> {
+        self.inner().read(NODE_METADATA_TABLE, &LOCAL_WALLET_ID_KEY.to_string())
     }
 
     /// Get the local relayer's fee decryption key

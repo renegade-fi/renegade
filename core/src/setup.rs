@@ -19,8 +19,14 @@ pub async fn node_setup(
     task_queue: TaskDriverQueue,
 ) -> Result<(), CoordinatorError> {
     // Start the node setup task and await its completion
-    let desc: TaskDescriptor =
-        NodeStartupTaskDescriptor::new(config.gossip_warmup, config.relayer_arbitrum_key()).into();
+    let needs_relayer_wallet = config.needs_relayer_wallet();
+    let desc: TaskDescriptor = NodeStartupTaskDescriptor::new(
+        config.gossip_warmup,
+        config.relayer_arbitrum_key(),
+        needs_relayer_wallet,
+    )
+    .into();
+
     let (job, rx) = TaskDriverJob::new_immediate_with_notification(desc);
     task_queue
         .send(job)

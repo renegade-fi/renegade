@@ -72,7 +72,7 @@ async fn test_auto_redeem_relayer_fee(test_args: IntegrationTestArgs) -> Result<
     await_task(descriptor.into(), &test_args).await?;
 
     // Await for the relayer's queue to flush
-    let relayer_wallet_id = state.get_relayer_wallet_id().await?;
+    let relayer_wallet_id = state.get_relayer_wallet_id().await?.unwrap();
     await_wallet_task_queue_flush(relayer_wallet_id, &test_args).await?;
 
     // Check that the relayer has redeemed the fee
