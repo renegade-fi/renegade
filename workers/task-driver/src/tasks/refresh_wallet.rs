@@ -5,6 +5,7 @@
 // --------------
 
 use std::{
+    collections::HashSet,
     error::Error,
     fmt::{self, Display},
 };
@@ -213,7 +214,7 @@ impl RefreshWalletTask {
         let (public_share, private_share) = self.find_wallet_shares(&curr_wallet).await?;
         let mut wallet = Wallet::new_from_shares(
             self.wallet_id,
-            curr_wallet.key_chain,
+            curr_wallet.key_chain.clone(),
             public_share,
             private_share,
         );
@@ -221,6 +222,10 @@ impl RefreshWalletTask {
         // Update the merkle proof for the wallet, then write to state
         let merkle_proof = find_merkle_path(&wallet, &self.arbitrum_client).await?;
         wallet.merkle_proof = Some(merkle_proof);
+
+        // Match up order IDs from the existing wallet with those in the refreshed
+        // wallet to keep them consistent across refreshes
+        matchup_order_ids(&curr_wallet, &mut wallet)?;
 
         let waiter = self.state.update_wallet(wallet.clone()).await?;
         waiter.await?;
@@ -295,5 +300,125 @@ impl RefreshWalletTask {
 
         let public_blinder = blinder - private_blinder_share;
         Ok((public_blinder, private_shares))
+    }
+}
+
+// ----------------------
+// | Non-Member Helpers |
+// ----------------------
+
+/// Match up the order IDs from the existing wallet with those in the
+/// refreshed wallet where possible
+fn matchup_order_ids(
+    existing: &Wallet,
+    refreshed: &mut Wallet,
+) -> Result<(), RefreshWalletTaskError> {
+    // We can only use any existing order ID once to overwrite a refreshed order. So
+    // we track which ones have already been used using this set
+    let mut used_existing_ids = HashSet::new();
+
+    for (refreshed_id, refreshed_order) in refreshed.orders.iter_mut() {
+        // Find an order in the existing wallet that matches the refreshed order and
+        // hasn't been used yet to overwrite a refreshed order
+        let maybe_order = existing.orders.iter().find(|(id, existing_order)| {
+            existing_order == refreshed_order && !used_existing_ids.contains(id)
+        });
+
+        if let Some((existing_id, _)) = maybe_order {
+            *refreshed_id = *existing_id;
+            used_existing_ids.insert(*existing_id);
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use common::types::{
+        wallet::OrderIdentifier,
+        wallet_mocks::{mock_empty_wallet, mock_order},
+    };
+
+    use super::*;
+
+    /// Tests the basic case in which the existing wallet has a single order and
+    /// the refreshed wallet has a single order with a different ID
+    #[test]
+    fn test_matchup_order_ids_single_order() {
+        let mut existing = mock_empty_wallet();
+        let mut refreshed = mock_empty_wallet();
+
+        let id1 = OrderIdentifier::new_v4();
+        let id2 = OrderIdentifier::new_v4();
+        let order = mock_order();
+        existing.orders.insert(id1, order.clone());
+        refreshed.orders.insert(id2, order.clone());
+
+        matchup_order_ids(&existing, &mut refreshed).unwrap();
+        assert_eq!(refreshed.orders.keys().next(), Some(&id1));
+
+        // Verify that the order was not modified
+        assert_eq!(refreshed.orders.get(&id1), existing.orders.get(&id1));
+    }
+
+    /// Tests the case in which the existing wallet has multiple _equal_ orders
+    /// and the refreshed wallet has multiple _equal_ orders with different IDs
+    #[test]
+    fn test_matchup_order_ids_identical_orders() {
+        let mut existing = mock_empty_wallet();
+        let mut refreshed = mock_empty_wallet();
+
+        let id1 = OrderIdentifier::new_v4();
+        let id2 = OrderIdentifier::new_v4();
+        let id3 = OrderIdentifier::new_v4();
+        let id4 = OrderIdentifier::new_v4();
+
+        let order = mock_order();
+
+        existing.orders.insert(id1, order.clone());
+        existing.orders.insert(id2, order.clone());
+
+        refreshed.orders.insert(id3, order.clone());
+        refreshed.orders.insert(id4, order.clone());
+
+        matchup_order_ids(&existing, &mut refreshed).unwrap();
+
+        let expected_ids = HashSet::from([id1, id2]);
+        let refreshed_ids: HashSet<_> = refreshed.orders.keys().cloned().collect();
+        assert_eq!(refreshed_ids, expected_ids);
+
+        // Verify that the orders are equivalent
+        assert_eq!(refreshed.orders.get(&id1), existing.orders.get(&id1));
+        assert_eq!(refreshed.orders.get(&id2), existing.orders.get(&id2));
+    }
+
+    /// Tests the case in which the existing wallet has a single order and the
+    /// refreshed wallet has multiple equal orders with different IDs
+    #[test]
+    fn test_matchup_order_ids_partial_match() {
+        let mut existing = mock_empty_wallet();
+        let mut refreshed = mock_empty_wallet();
+
+        let id1 = OrderIdentifier::new_v4();
+        let id2 = OrderIdentifier::new_v4();
+        let id3 = OrderIdentifier::new_v4();
+
+        let order = mock_order();
+
+        existing.orders.insert(id1, order.clone());
+
+        refreshed.orders.insert(id2, order.clone());
+        refreshed.orders.insert(id3, order.clone());
+
+        matchup_order_ids(&existing, &mut refreshed).unwrap();
+
+        let expected_ids = HashSet::from([id1, id3]);
+        let refreshed_ids: HashSet<_> = refreshed.orders.keys().cloned().collect();
+        assert_eq!(refreshed_ids, expected_ids);
+
+        assert!(refreshed.orders.contains_key(&id1));
+        assert!(refreshed.orders.contains_key(&id3));
+        assert!(!refreshed.orders.contains_key(&id2));
     }
 }
