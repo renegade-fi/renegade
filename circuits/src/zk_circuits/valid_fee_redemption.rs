@@ -136,7 +136,8 @@ where
         EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)?;
 
-        // The match key should remain the same, the root key may rotate
+        // The match key should remain the same, the root key may rotate, and the nonce
+        // may increment arbitrarily
         EqGadget::constrain_eq(&old_wallet.keys.pk_match, &new_wallet.keys.pk_match, cs)?;
 
         // Verify the balance updates
@@ -436,16 +437,19 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use std::iter;
+
     use circuit_types::{
         balance::Balance,
         elgamal::DecryptionKey,
-        keychain::PublicSigningKey,
+        keychain::{PublicSigningKey, PublicSigningKeyShare},
         merkle::{MerkleOpening, MerkleRoot},
         native_helpers::{
             compute_wallet_share_commitment, compute_wallet_share_nullifier, note_commitment,
             note_nullifier,
         },
         note::Note,
+        traits::BaseType,
         wallet::{Nullifier, Wallet},
         Amount, AMOUNT_BITS,
     };
@@ -541,6 +545,23 @@ mod test {
         assert!(check_constraints_satisfied(&witness, &statement));
         // Check that the note was settled into the correct balance
         assert_eq!(witness.receive_index, idx);
+    }
+
+    /// Test the case in which a valid witness is provided with a key rotation
+    /// for the receiver
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_valid_witness__key_rotation() {
+        let (wallet, note) = get_testing_wallet_and_note();
+        let (mut statement, witness) = create_witness_and_statement(&wallet, &note);
+
+        // Rotate the root key and increment the nonce
+        let mut share_stream = iter::repeat(Scalar::one());
+        statement.new_wallet_public_shares.keys.nonce += Scalar::one();
+        statement.new_wallet_public_shares.keys.pk_root =
+            PublicSigningKeyShare::from_scalars(&mut share_stream);
+
+        assert!(check_constraints_satisfied(&witness, &statement));
     }
 
     // ----------------------

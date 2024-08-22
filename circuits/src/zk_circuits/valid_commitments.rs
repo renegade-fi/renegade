@@ -730,10 +730,16 @@ mod test {
     #[test]
     fn test_invalid_commitment__augmentation_modifies_keys() {
         let wallet = UNAUGMENTED_WALLET.clone();
-        let (mut witness, statement) = create_witness_and_statement(&wallet);
+        let (original_witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify a key in the wallet
+        let mut witness = original_witness.clone();
         witness.augmented_public_shares.keys.pk_match.key = Scalar::one();
+        assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
+
+        // Modify the nonce in the keychain, constraints should fail
+        let mut witness = original_witness.clone();
+        witness.augmented_public_shares.keys.nonce += Scalar::one();
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 

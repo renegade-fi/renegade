@@ -723,6 +723,12 @@ mod test {
 
         assert!(!check_constraints_satisfied(&statement, &witness));
 
+        // Modify the keychain nonce
+        let mut statement = original_statement.clone();
+        statement.updated_wallet_public_shares.keys.nonce += Scalar::one();
+
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
         // Modify the match fee
         let mut statement = original_statement.clone();
         statement.updated_wallet_public_shares.match_fee.repr += Scalar::one();

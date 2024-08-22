@@ -230,12 +230,12 @@ impl TryFrom<ApiKeychain> for KeyChain {
 
     fn try_from(keys: ApiKeychain) -> Result<Self, Self::Error> {
         Ok(KeyChain {
-            public_keys: PublicKeyChain {
-                pk_root: public_sign_key_from_hex_string(&keys.public_keys.pk_root)?,
-                pk_match: PublicIdentificationKey {
+            public_keys: PublicKeyChain::new(
+                public_sign_key_from_hex_string(&keys.public_keys.pk_root)?,
+                PublicIdentificationKey {
                     key: scalar_from_hex_string(&keys.public_keys.pk_match)?,
                 },
-            },
+            ),
             secret_keys: PrivateKeyChain {
                 sk_root: keys
                     .private_keys

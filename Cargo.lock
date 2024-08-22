@@ -1944,6 +1944,7 @@ dependencies = [
  "inventory",
  "itertools 0.10.5",
  "jf-primitives",
+ "k256",
  "lazy_static",
  "mpc-plonk",
  "mpc-relation",

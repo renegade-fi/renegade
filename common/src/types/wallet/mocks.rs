@@ -43,7 +43,7 @@ pub fn mock_empty_wallet() -> Wallet {
         orders: KeyedList::default(),
         balances: KeyedList::default(),
         key_chain: KeyChain {
-            public_keys: PublicKeyChain { pk_root, pk_match },
+            public_keys: PublicKeyChain::new(pk_root, pk_match),
             secret_keys: PrivateKeyChain { sk_root, sk_match },
         },
         blinder: Scalar::random(&mut rng),

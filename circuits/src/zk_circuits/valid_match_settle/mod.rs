@@ -891,6 +891,15 @@ mod tests {
             &statement
         ));
 
+        // Modify the keychain nonce
+        let mut statement = original_statement.clone();
+        statement.party0_modified_shares.keys.nonce += Scalar::one();
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
+            &witness.clone(),
+            &statement
+        ));
+
         // Modify the blinder
         let mut statement = original_statement;
         statement.party0_modified_shares.blinder += Scalar::one();

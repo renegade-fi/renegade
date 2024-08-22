@@ -337,6 +337,19 @@ pub struct PublicKeyChain {
     pub pk_root: PublicSigningKey,
     /// The public match key
     pub pk_match: PublicIdentificationKey,
+    /// A nonce set by the wallet owner
+    ///
+    /// The owner may use this nonce to track the number of rotations of the
+    /// keychain. We only allow this nonce to change when authorized by the
+    /// end-user
+    pub nonce: Scalar,
+}
+
+impl PublicKeyChain {
+    /// Create a new public keychain with nonce zero
+    pub fn new(pk_root: PublicSigningKey, pk_match: PublicIdentificationKey) -> Self {
+        Self { pk_root, pk_match, nonce: Scalar::zero() }
+    }
 }
 
 #[cfg(test)]

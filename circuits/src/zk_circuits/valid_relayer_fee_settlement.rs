@@ -245,7 +245,8 @@ where
         EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)?;
 
-        // The match key must be the same as the old wallet, but the root key may rotate
+        // The match key must be the same as the old wallet, but the root key may
+        // rotate, and the nonce may increment
         EqGadget::constrain_eq(&old_wallet.keys.pk_match, &new_wallet.keys.pk_match, cs)?;
 
         // The balances must all remain the same except for the balance that receives
@@ -562,7 +563,7 @@ mod test {
     use circuit_types::{
         balance::Balance,
         elgamal::DecryptionKey,
-        keychain::PublicSigningKey,
+        keychain::{PublicSigningKey, PublicSigningKeyShare},
         native_helpers::{
             compute_wallet_private_share_commitment, compute_wallet_share_commitment,
             compute_wallet_share_nullifier,
@@ -637,6 +638,22 @@ mod test {
     fn test_valid_witness() {
         let (sender_wallet, recipient_wallet) = get_initial_wallets();
         let (statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
+
+        assert!(check_constraints_satisfied(&statement, &witness));
+    }
+
+    /// Tests a valid witness in which we rotate the root key on the recipient
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_valid_witness__root_key_rotation() {
+        let (sender_wallet, recipient_wallet) = get_initial_wallets();
+        let (mut statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);
+
+        // Rotate the root key
+        let mut zero_iter = std::iter::repeat(Scalar::zero());
+        statement.recipient_updated_public_shares.keys.pk_root =
+            PublicSigningKeyShare::from_scalars(&mut zero_iter);
+        statement.recipient_updated_public_shares.keys.nonce += Scalar::one();
 
         assert!(check_constraints_satisfied(&statement, &witness));
     }
@@ -797,6 +814,11 @@ mod test {
         // Modify the keys
         let mut statement = original_statement.clone();
         statement.sender_updated_public_shares.keys.pk_match.key = Scalar::random(&mut rng);
+        assert!(!check_constraints_satisfied(&statement, &witness));
+
+        // Modify the keychain nonce
+        let mut statement = original_statement.clone();
+        statement.sender_updated_public_shares.keys.nonce += Scalar::one();
         assert!(!check_constraints_satisfied(&statement, &witness));
 
         // Modify the match fee
