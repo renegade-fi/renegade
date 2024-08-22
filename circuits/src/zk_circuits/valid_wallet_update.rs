@@ -610,6 +610,7 @@ mod test {
         balance::Balance,
         elgamal::DecryptionKey,
         fixed_point::FixedPoint,
+        keychain::PublicSigningKey,
         native_helpers::compute_wallet_private_share_commitment,
         order::Order,
         traits::CircuitBaseType,
@@ -617,6 +618,7 @@ mod test {
         AMOUNT_BITS, PRICE_BITS,
     };
     use constants::Scalar;
+    use k256::ecdsa::SigningKey;
     use mpc_relation::{traits::Circuit, PlonkCircuit};
     use num_bigint::BigUint;
     use rand::{thread_rng, Rng, RngCore};
@@ -659,6 +661,30 @@ mod test {
     fn max_price_fp() -> FixedPoint {
         let repr = Scalar::from(2u8).pow(PRICE_BITS as u64) - Scalar::one();
         FixedPoint { repr }
+    }
+
+    // ---------------------
+    // | Keychain Rotation |
+    // ---------------------
+
+    /// Tests a valid keychain rotation via a wallet update
+    #[test]
+    fn test_valid_keychain_rotation() {
+        let old_wallet = INITIAL_WALLET.clone();
+        let mut new_wallet = INITIAL_WALLET.clone();
+
+        // Rotate the root key
+        let mut rng = thread_rng();
+        let key = SigningKey::random(&mut rng);
+        new_wallet.keys.pk_root = PublicSigningKey::from(key.verifying_key());
+        new_wallet.keys.nonce += Scalar::one();
+
+        assert!(constraints_satisfied_on_wallets(
+            &old_wallet,
+            &new_wallet,
+            NO_TRANSFER,
+            ExternalTransfer::default()
+        ));
     }
 
     // ----------

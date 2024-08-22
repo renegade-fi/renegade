@@ -116,6 +116,7 @@ pub mod test_helpers {
                 y: NonNativeScalar::from(&BigUint::from(2u8).pow(256)),
             },
             pk_match: compute_poseidon_hash(&[PRIVATE_KEYS[1]]).into(),
+            nonce: 0u8.into(),
         };
         pub static ref INITIAL_BALANCES: [Balance; MAX_BALANCES] = [
             Balance { mint: 1u8.into(), amount: 5, relayer_fee_balance: 0, protocol_fee_balance: 0 },

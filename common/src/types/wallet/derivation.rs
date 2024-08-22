@@ -57,7 +57,7 @@ pub fn derive_wallet_keychain(eth_key: &EthWallet, chain_id: u64) -> Result<KeyC
     let pk_match = sk_match.get_public_key();
 
     Ok(KeyChain {
-        public_keys: PublicKeyChain { pk_root, pk_match },
+        public_keys: PublicKeyChain::new(pk_root, pk_match),
         secret_keys: PrivateKeyChain { sk_root: Some(sk_root), sk_match },
     })
 }

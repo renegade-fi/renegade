@@ -412,6 +412,18 @@ mod test {
         assert!(check_constraint_satisfaction::<SizedReblind>(&witness, &statement))
     }
 
+    /// Tests an invalid reblind that modifies the keychain nonce
+    #[test]
+    fn test_invalid_reblind__keychain_nonce_modified() {
+        // Construct the witness and statement
+        let wallet = INITIAL_WALLET.clone();
+        let (mut witness, statement) = construct_witness_statement(&wallet);
+
+        // Modify the keychain nonce
+        witness.reblinded_wallet_public_shares.keys.nonce += Scalar::one();
+        assert!(!check_constraint_satisfaction::<SizedReblind>(&witness, &statement));
+    }
+
     /// Tests an invalid reblinding, i.e. a secret share that was sampled
     /// incorrectly
     #[test]

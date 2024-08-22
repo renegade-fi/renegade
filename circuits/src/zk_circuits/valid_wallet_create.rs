@@ -80,6 +80,8 @@ where
             cs.enforce_equal(order_var, zero)?;
         }
 
+        // Constrain the keychain nonce to be zero
+        cs.enforce_equal(wallet.keys.nonce, zero)?;
         Ok(())
     }
 }
@@ -264,11 +266,21 @@ pub mod tests {
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
     }
 
-    /// Tests the cas in which a non-zero balance is given
+    /// Tests the case in which a non-zero balance is given
     #[test]
     fn test_nonzero_balance() {
         let mut wallet = create_empty_wallet();
         wallet.balances[0] = INITIAL_BALANCES[0].clone();
+
+        let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
+    }
+
+    /// Tests the case in which the keychain nonce is non-zero
+    #[test]
+    fn test_nonzero_nonce() {
+        let mut wallet = create_empty_wallet();
+        wallet.keys.nonce += Scalar::one();
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
