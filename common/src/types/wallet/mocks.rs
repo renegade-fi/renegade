@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
 use super::{
-    keychain::{KeyChain, PrivateKeyChain},
+    keychain::{HmacKey, KeyChain, PrivateKeyChain},
     Wallet,
 };
 
@@ -38,6 +38,7 @@ pub fn mock_empty_wallet() -> Wallet {
 
     let sk_match = SecretIdentificationKey::from(Scalar::random(&mut rng));
     let pk_match = sk_match.get_public_key();
+    let symmetric_key = HmacKey::random();
 
     let (_, managing_cluster_key) = DecryptionKey::random_pair(&mut rng);
 
@@ -47,7 +48,7 @@ pub fn mock_empty_wallet() -> Wallet {
         balances: KeyedList::default(),
         key_chain: KeyChain {
             public_keys: PublicKeyChain::new(pk_root, pk_match),
-            secret_keys: PrivateKeyChain { sk_root, sk_match },
+            secret_keys: PrivateKeyChain { sk_root, sk_match, symmetric_key },
         },
         blinder: Scalar::random(&mut rng),
         match_fee: FixedPoint::from_integer(0),

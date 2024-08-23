@@ -12,10 +12,48 @@ use ethers::{
     types::{Signature, U256},
     utils::keccak256,
 };
+use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
-use util::raw_err_str;
+use util::{
+    hex::{bytes_from_hex_string, bytes_to_hex_string},
+    raw_err_str,
+};
 
 use super::Wallet;
+
+/// A type representing a symmetric HMAC key
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HmacKey(pub [u8; 32]);
+impl HmacKey {
+    /// Create a new HMAC key from a hex string
+    pub fn new(hex: &str) -> Result<Self, String> {
+        Self::from_hex_string(hex)
+    }
+
+    /// Create a new random HMAC key
+    pub fn random() -> Self {
+        let mut rng = thread_rng();
+        let mut bytes = [0; 32];
+        rng.fill_bytes(&mut bytes);
+
+        Self(bytes)
+    }
+
+    /// Convert the HMAC key to a hex string
+    pub fn to_hex_string(&self) -> String {
+        bytes_to_hex_string(&self.0)
+    }
+
+    /// Try to convert a hex string to an HMAC key
+    pub fn from_hex_string(hex: &str) -> Result<Self, String> {
+        let bytes = bytes_from_hex_string(hex)?;
+        if bytes.len() != 32 {
+            return Err(format!("expected 32 byte HMAC key, got {}", bytes.len()));
+        }
+
+        Ok(Self(bytes.try_into().unwrap()))
+    }
+}
 
 /// Represents the private keys a relayer has access to for a given wallet
 #[derive(Clone, Debug, Derivative, Serialize, Deserialize)]
@@ -29,17 +67,24 @@ pub struct PrivateKeyChain {
     /// The match private key, authorizes the relayer to match orders for the
     /// wallet
     pub sk_match: SecretIdentificationKey,
+    /// The symmetric HMAC key the user has registered with the relayer for API
+    /// authentication
+    pub symmetric_key: HmacKey,
 }
 
 impl PrivateKeyChain {
     /// Create a new private key chain from a match key and a root key
-    pub fn new(sk_match: SecretIdentificationKey, sk_root: Option<SecretSigningKey>) -> Self {
-        Self { sk_match, sk_root }
+    pub fn new(
+        sk_match: SecretIdentificationKey,
+        sk_root: Option<SecretSigningKey>,
+        symmetric_key: HmacKey,
+    ) -> Self {
+        Self { sk_match, sk_root, symmetric_key }
     }
 
     /// Create a new private key chain without the root key
-    pub fn new_without_root(sk_match: SecretIdentificationKey) -> Self {
-        Self { sk_match, sk_root: None }
+    pub fn new_without_root(sk_match: SecretIdentificationKey, symmetric_key: HmacKey) -> Self {
+        Self { sk_match, sk_root: None, symmetric_key }
     }
 }
 
@@ -72,6 +117,21 @@ impl KeyChain {
     /// Get the public match key
     pub fn pk_match(&self) -> PublicIdentificationKey {
         self.public_keys.pk_match
+    }
+
+    /// Get the secret root key
+    pub fn sk_root(&self) -> Option<SecretSigningKey> {
+        self.secret_keys.sk_root.clone()
+    }
+
+    /// Get the secret match key
+    pub fn sk_match(&self) -> SecretIdentificationKey {
+        self.secret_keys.sk_match
+    }
+
+    /// Get the symmetric key
+    pub fn symmetric_key(&self) -> HmacKey {
+        self.secret_keys.symmetric_key
     }
 }
 
