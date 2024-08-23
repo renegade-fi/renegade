@@ -11,7 +11,10 @@ use num_bigint::BigUint;
 use num_traits::Num;
 use util::raw_err_str;
 
-use super::{KeyChain, PrivateKeyChain, WalletIdentifier};
+use super::{
+    keychain::{KeyChain, PrivateKeyChain},
+    WalletIdentifier,
+};
 
 /// The message used to derive the blinder stream seed
 const BLINDER_STREAM_SEED_MESSAGE: &[u8] = b"blinder seed";

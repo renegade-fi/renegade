@@ -4,7 +4,7 @@
 
 mod balances;
 pub mod derivation;
-mod keychain;
+pub mod keychain;
 mod r#match;
 #[cfg(feature = "mocks")]
 pub mod mocks;

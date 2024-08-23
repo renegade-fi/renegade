@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::ApiOrder;
 
+use super::wallet::WalletUpdateAuthorization;
+
 /// Check whether the target node is a raft leader
 pub const IS_LEADER_ROUTE: &str = "/v0/admin/is-leader";
 /// Get the open orders managed by the node
@@ -66,10 +68,9 @@ pub struct OpenOrder {
 pub struct CreateOrderInMatchingPoolRequest {
     /// The order to be created
     pub order: ApiOrder,
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    pub statement_sig: Vec<u8>,
+    /// The update authorization
+    #[serde(flatten)]
+    pub update_auth: WalletUpdateAuthorization,
     /// The matching pool to create the order in
     pub matching_pool: MatchingPoolName,
 }

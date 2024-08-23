@@ -294,13 +294,12 @@ mod test {
         let mut wallet = mock_empty_wallet();
         wallet.blinded_public_shares.orders[0].amount += Scalar::one();
 
-        UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
-            mock_order(),
+        UpdateWalletTaskDescriptor::new_order_placement(
             OrderIdentifier::new_v4(),
+            mock_order(),
             wallet.clone(),
             wallet,
             vec![],
-            None, // matching_pool
         )
         .unwrap();
     }
@@ -312,13 +311,12 @@ mod test {
         let wallet = mock_empty_wallet();
         let sig = vec![0; 64];
 
-        UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
-            mock_order(),
+        UpdateWalletTaskDescriptor::new_order_placement(
             OrderIdentifier::new_v4(),
+            mock_order(),
             wallet.clone(),
             wallet,
             sig,
-            None, // matching_pool
         )
         .unwrap();
     }
@@ -331,13 +329,12 @@ mod test {
         let key = wallet.key_chain.secret_keys.sk_root.as_ref().unwrap();
         let sig = gen_wallet_update_sig(&wallet, key);
 
-        UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
-            mock_order(),
+        UpdateWalletTaskDescriptor::new_order_placement(
             OrderIdentifier::new_v4(),
+            mock_order(),
             wallet.clone(),
             wallet,
             sig,
-            None, // matching_pool
         )
         .unwrap();
     }

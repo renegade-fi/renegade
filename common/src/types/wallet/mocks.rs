@@ -21,7 +21,10 @@ use uuid::Uuid;
 
 use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
-use super::{KeyChain, PrivateKeyChain, Wallet};
+use super::{
+    keychain::{KeyChain, PrivateKeyChain},
+    Wallet,
+};
 
 /// Create a mock empty wallet
 pub fn mock_empty_wallet() -> Wallet {

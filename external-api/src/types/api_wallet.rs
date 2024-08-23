@@ -8,7 +8,10 @@ use circuit_types::{
     traits::BaseType,
     Amount, SizedWalletShare,
 };
-use common::types::wallet::{KeyChain, OrderIdentifier, PrivateKeyChain, Wallet, WalletIdentifier};
+use common::types::wallet::{
+    keychain::{KeyChain, PrivateKeyChain},
+    OrderIdentifier, Wallet, WalletIdentifier,
+};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
@@ -191,6 +194,7 @@ pub struct ApiKeychain {
     /// The private keychain
     pub private_keys: ApiPrivateKeychain,
     /// The nonce of the keychain
+    #[serde(default)]
     pub nonce: u64,
 }
 

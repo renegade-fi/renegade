@@ -3,7 +3,7 @@
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
-use crate::types::wallet::{PrivateKeyChain, WalletIdentifier};
+use crate::types::wallet::{keychain::PrivateKeyChain, WalletIdentifier};
 
 use super::TaskDescriptor;
 

@@ -53,6 +53,19 @@ pub const PAY_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/pay-fees";
 /// Returns the order history of a wallet
 pub const ORDER_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/order-history";
 
+/// The type encapsulating a wallet update's authorization parameters
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WalletUpdateAuthorization {
+    /// A signature of the circuit statement used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    pub statement_sig: Vec<u8>,
+    /// The new public root key to rotate to if desired by the client
+    ///
+    /// Hex encoded
+    pub new_root_key: Option<String>,
+}
+
 // --------------------
 // | Wallet API Types |
 // --------------------
@@ -132,10 +145,9 @@ pub struct GetOrderByIdResponse {
 pub struct CreateOrderRequest {
     /// The order to be created
     pub order: ApiOrder,
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    pub statement_sig: Vec<u8>,
+    /// The authorization parameters for the update
+    #[serde(flatten)]
+    pub update_auth: WalletUpdateAuthorization,
 }
 
 /// The response type to a request that adds a new order to a wallet
@@ -152,10 +164,9 @@ pub struct CreateOrderResponse {
 pub struct UpdateOrderRequest {
     /// The order to be updated
     pub order: ApiOrder,
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    pub statement_sig: Vec<u8>,
+    /// The authorization parameters for the update
+    #[serde(flatten)]
+    pub update_auth: WalletUpdateAuthorization,
 }
 
 /// The response type to update an order
@@ -168,10 +179,9 @@ pub struct UpdateOrderResponse {
 /// The request type to cancel a given order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CancelOrderRequest {
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    pub statement_sig: Vec<u8>,
+    /// The authorization parameters for the update
+    #[serde(flatten)]
+    pub update_auth: WalletUpdateAuthorization,
 }
 
 /// The response type to a request to cancel a given order
@@ -218,13 +228,9 @@ pub struct DepositBalanceRequest {
     pub mint: BigUint,
     /// The amount of the token to deposit
     pub amount: BigUint,
-    /// A signature of the wallet commitment used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    ///
-    /// TODO: For now this is just a blob, we will add this feature in
-    /// a follow up
-    pub wallet_commitment_sig: Vec<u8>,
+    /// The update authorization parameters
+    #[serde(flatten)]
+    pub update_auth: WalletUpdateAuthorization,
     /// The nonce used in the associated Permit2 permit
     pub permit_nonce: BigUint,
     /// The deadline used in the associated Permit2 permit
@@ -254,13 +260,9 @@ pub struct WithdrawBalanceRequest {
     pub destination_addr: BigUint,
     /// The amount of the token to withdraw
     pub amount: BigUint,
-    /// A signature of the wallet commitment used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    ///
-    /// TODO: For now this is just a blob, we will add this feature in
-    /// a follow up
-    pub wallet_commitment_sig: Vec<u8>,
+    /// The authorization parameters for the update
+    #[serde(flatten)]
+    pub update_auth: WalletUpdateAuthorization,
     /// A signature over the external transfer, allowing the contract
     /// to guarantee that the withdrawal is directed at the correct
     /// recipient
