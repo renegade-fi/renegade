@@ -12,7 +12,7 @@ use common::types::{
         UpdateWalletTaskDescriptor,
     },
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
-    wallet::{KeyChain, Wallet, WalletIdentifier},
+    wallet::{PrivateKeyChain, Wallet, WalletIdentifier},
     MatchingPoolName,
 };
 use external_api::{
@@ -35,7 +35,7 @@ use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
 use util::{
     err_str,
-    hex::{biguint_to_hex_addr, jubjub_to_hex_string},
+    hex::{biguint_to_hex_addr, jubjub_to_hex_string, scalar_from_hex_string},
 };
 
 use crate::{
@@ -299,13 +299,12 @@ impl TypedHandler for FindWalletHandler {
 
         // Create a task in thew driver to find and prove validity for
         // the wallet
-        let key_chain: KeyChain =
-            req.key_chain.try_into().map_err(|e: String| bad_request(e.to_string()))?;
-
+        let sk_match_scalar = scalar_from_hex_string(&req.sk_match).map_err(bad_request)?;
+        let keychain = PrivateKeyChain::new_without_root(sk_match_scalar.into());
         let blinder_seed = biguint_to_scalar(&req.blinder_seed);
         let share_seed = biguint_to_scalar(&req.secret_share_seed);
         let task =
-            LookupWalletTaskDescriptor::new(req.wallet_id, blinder_seed, share_seed, key_chain)
+            LookupWalletTaskDescriptor::new(req.wallet_id, blinder_seed, share_seed, keychain)
                 .map_err(bad_request)?;
 
         // Propose the task and await for it to be enqueued

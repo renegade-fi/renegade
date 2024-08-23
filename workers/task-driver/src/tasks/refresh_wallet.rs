@@ -214,7 +214,7 @@ impl RefreshWalletTask {
         let (public_share, private_share) = self.find_wallet_shares(&curr_wallet).await?;
         let mut wallet = Wallet::new_from_shares(
             self.wallet_id,
-            curr_wallet.key_chain.clone(),
+            curr_wallet.key_chain.secret_keys.clone(),
             public_share,
             private_share,
         );

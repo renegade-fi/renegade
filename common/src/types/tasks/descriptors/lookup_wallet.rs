@@ -3,7 +3,7 @@
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 
-use crate::types::wallet::{KeyChain, WalletIdentifier};
+use crate::types::wallet::{PrivateKeyChain, WalletIdentifier};
 
 use super::TaskDescriptor;
 
@@ -17,8 +17,8 @@ pub struct LookupWalletTaskDescriptor {
     pub blinder_seed: Scalar,
     /// The CSPRNG seed for the secret share stream
     pub secret_share_seed: Scalar,
-    /// The keychain to manage the wallet with
-    pub key_chain: KeyChain,
+    /// The secret keys used to manage the wallet when it is found
+    pub secret_keys: PrivateKeyChain,
 }
 
 impl LookupWalletTaskDescriptor {
@@ -27,9 +27,9 @@ impl LookupWalletTaskDescriptor {
         wallet_id: WalletIdentifier,
         blinder_seed: Scalar,
         secret_share_seed: Scalar,
-        key_chain: KeyChain,
+        secret_keys: PrivateKeyChain,
     ) -> Result<Self, String> {
-        Ok(LookupWalletTaskDescriptor { wallet_id, blinder_seed, secret_share_seed, key_chain })
+        Ok(LookupWalletTaskDescriptor { wallet_id, blinder_seed, secret_share_seed, secret_keys })
     }
 }
 

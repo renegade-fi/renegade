@@ -425,9 +425,13 @@ impl NodeStartupTask {
         keychain: KeyChain,
     ) -> Result<bool, NodeStartupTaskError> {
         info!("Finding relayer wallet on-chain");
-        let descriptor =
-            LookupWalletTaskDescriptor::new(wallet_id, blinder_seed, share_seed, keychain)
-                .expect("infallible");
+        let descriptor = LookupWalletTaskDescriptor::new(
+            wallet_id,
+            blinder_seed,
+            share_seed,
+            keychain.secret_keys,
+        )
+        .expect("infallible");
         let res = await_task(descriptor.into(), &self.state, self.task_queue.clone()).await;
 
         match res {
@@ -475,7 +479,7 @@ impl NodeStartupTask {
             wallet.wallet_id,
             blinder_seed,
             share_seed,
-            wallet.key_chain.clone(),
+            wallet.key_chain.secret_keys.clone(),
         )
         .expect("infallible");
 

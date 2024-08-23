@@ -11,7 +11,7 @@ use circuit_types::{
 use common::types::wallet::{KeyChain, OrderIdentifier, PrivateKeyChain, Wallet, WalletIdentifier};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
+use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint, scalar_to_u64};
 use serde::{Deserialize, Serialize};
 use util::hex::{
     jubjub_from_hex_string, jubjub_to_hex_string, nonnative_scalar_from_hex_string,
@@ -190,6 +190,8 @@ pub struct ApiKeychain {
     pub public_keys: ApiPublicKeychain,
     /// The private keychain
     pub private_keys: ApiPrivateKeychain,
+    /// The nonce of the keychain
+    pub nonce: u64,
 }
 
 /// A public keychain for the API wallet
@@ -221,6 +223,7 @@ impl From<KeyChain> for ApiKeychain {
                 sk_root: keys.secret_keys.sk_root.map(|k| nonnative_scalar_to_hex_string(&k)),
                 sk_match: scalar_to_hex_string(&keys.secret_keys.sk_match.key),
             },
+            nonce: scalar_to_u64(&keys.public_keys.nonce),
         }
     }
 }

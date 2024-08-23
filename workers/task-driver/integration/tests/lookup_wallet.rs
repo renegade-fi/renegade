@@ -23,7 +23,7 @@ async fn test_lookup_wallet__invalid_wallet(test_args: IntegrationTestArgs) -> R
         Uuid::new_v4(),
         Scalar::zero(),
         Scalar::zero(),
-        wallet.key_chain,
+        wallet.key_chain.secret_keys,
     )
     .unwrap();
 

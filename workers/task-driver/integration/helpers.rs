@@ -63,9 +63,13 @@ pub(crate) async fn lookup_wallet_and_check_result(
     let state = &test_args.state;
 
     let key_chain = expected_wallet.key_chain.clone();
-    let task =
-        LookupWalletTaskDescriptor::new(wallet_id, blinder_seed, secret_share_seed, key_chain)
-            .unwrap();
+    let task = LookupWalletTaskDescriptor::new(
+        wallet_id,
+        blinder_seed,
+        secret_share_seed,
+        key_chain.secret_keys,
+    )
+    .unwrap();
     await_task(task.into(), test_args).await?;
 
     // Check the global state for the wallet and verify that it was correctly

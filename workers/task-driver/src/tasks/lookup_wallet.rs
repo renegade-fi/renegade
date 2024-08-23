@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::{
     tasks::LookupWalletTaskDescriptor,
-    wallet::{KeyChain, Wallet, WalletIdentifier},
+    wallet::{PrivateKeyChain, Wallet, WalletIdentifier},
 };
 use constants::Scalar;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
@@ -129,8 +129,8 @@ pub struct LookupWalletTask {
     pub blinder_seed: Scalar,
     /// The CSPRNG seed for the secret share stream
     pub secret_share_seed: Scalar,
-    /// The keychain to manage the wallet with
-    pub key_chain: KeyChain,
+    /// The private key chain to use for management after the wallet is found
+    pub keychain: PrivateKeyChain,
     /// The wallet recovered from contract state
     pub wallet: Option<Wallet>,
     /// An arbitrum client for the task to submit transactions
@@ -156,7 +156,7 @@ impl Task for LookupWalletTask {
             wallet_id: descriptor.wallet_id,
             blinder_seed: descriptor.blinder_seed,
             secret_share_seed: descriptor.secret_share_seed,
-            key_chain: descriptor.key_chain,
+            keychain: descriptor.secret_keys,
             arbitrum_client: ctx.arbitrum_client,
             network_sender: ctx.network_queue,
             global_state: ctx.state,
@@ -219,7 +219,7 @@ impl LookupWalletTask {
         let (blinded_public_shares, private_shares) = self.find_wallet_shares().await?;
         let mut wallet = Wallet::new_from_shares(
             self.wallet_id,
-            self.key_chain.clone(),
+            self.keychain.clone(),
             blinded_public_shares,
             private_shares,
         );
