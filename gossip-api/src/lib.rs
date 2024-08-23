@@ -6,8 +6,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use common::types::gossip::SymmetricAuthKey;
-use hmac::Mac;
+use common::types::wallet::keychain::HmacKey;
 use serde::Serialize;
 use sha2::Sha256;
 use tracing::instrument;
@@ -25,20 +24,16 @@ pub type HmacSha256 = hmac::Hmac<Sha256>;
 
 /// Sign a request body with the given key
 #[instrument(name = "sign_message", skip_all, fields(req_size))]
-pub fn create_hmac<M: Serialize>(req: &M, key: &SymmetricAuthKey) -> Vec<u8> {
+pub fn create_hmac<M: Serialize>(req: &M, key: &HmacKey) -> Vec<u8> {
     let buf = bincode::serialize(req).unwrap();
     backfill_trace_field("req_size", buf.len());
 
-    let mut hmac = HmacSha256::new_from_slice(key).expect("hmac can handle all slice lengths");
-    hmac.update(&buf);
-    let mac = hmac.finalize();
-
-    mac.into_bytes().to_vec()
+    key.compute_mac(&buf)
 }
 
 /// Check a signature on a request body with the given key
 #[instrument(name = "check_signature", skip_all)]
-pub fn check_hmac<M: Serialize>(req: &M, mac: &[u8], key: &SymmetricAuthKey) -> bool {
+pub fn check_hmac<M: Serialize>(req: &M, mac: &[u8], key: &HmacKey) -> bool {
     let expected = create_hmac(req, key);
     expected == mac
 }
@@ -62,7 +57,7 @@ mod tests {
     #[test]
     fn test_hmac() {
         const SIZE: usize = 10_000;
-        let key = [20u8; 32];
+        let key = HmacKey([20u8; 32]);
 
         let body = vec![0u8; SIZE];
         let message = GossipRequest::new(GossipRequestType::Raft(body));

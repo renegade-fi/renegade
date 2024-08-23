@@ -12,14 +12,19 @@ use ethers::{
     types::{Signature, U256},
     utils::keccak256,
 };
+use hmac::Mac;
 use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use util::{
     hex::{bytes_from_hex_string, bytes_to_hex_string},
     raw_err_str,
 };
 
 use super::Wallet;
+
+/// Type alias for the hmac core implementation
+type HmacSha256 = hmac::Hmac<Sha256>;
 
 /// A type representing a symmetric HMAC key
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +33,11 @@ impl HmacKey {
     /// Create a new HMAC key from a hex string
     pub fn new(hex: &str) -> Result<Self, String> {
         Self::from_hex_string(hex)
+    }
+
+    /// Get the inner bytes
+    pub fn inner(&self) -> &[u8; 32] {
+        &self.0
     }
 
     /// Create a new random HMAC key
@@ -52,6 +62,19 @@ impl HmacKey {
         }
 
         Ok(Self(bytes.try_into().unwrap()))
+    }
+
+    /// Compute the HMAC of a message
+    pub fn compute_mac(&self, msg: &[u8]) -> Vec<u8> {
+        let mut hmac =
+            HmacSha256::new_from_slice(self.inner()).expect("hmac can handle all slice lengths");
+        hmac.update(msg);
+        hmac.finalize().into_bytes().to_vec()
+    }
+
+    /// Verify the HMAC of a message
+    pub fn verify_mac(&self, msg: &[u8], mac: &[u8]) -> bool {
+        self.compute_mac(msg) == mac
     }
 }
 

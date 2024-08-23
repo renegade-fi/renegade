@@ -1,6 +1,6 @@
 //! Defines authentication primitives for the API server
 
-use common::types::{gossip::SymmetricAuthKey, wallet::WalletIdentifier};
+use common::types::wallet::{keychain::HmacKey, WalletIdentifier};
 use hyper::HeaderMap;
 use state::State;
 
@@ -35,14 +35,14 @@ pub enum AuthType {
 #[derive(Clone)]
 pub struct AuthMiddleware {
     /// The admin auth key, if enabled
-    admin_key: Option<SymmetricAuthKey>,
+    admin_key: Option<HmacKey>,
     /// A handle on the relayer-global state
     state: State,
 }
 
 impl AuthMiddleware {
     /// Create a new authentication middleware
-    pub fn new(admin_key: Option<SymmetricAuthKey>, state: State) -> Self {
+    pub fn new(admin_key: Option<HmacKey>, state: State) -> Self {
         Self { admin_key, state }
     }
 
@@ -64,9 +64,9 @@ impl AuthMiddleware {
             .get_wallet(&wallet_id)
             .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
-        let pk_root = wallet.key_chain.public_keys.pk_root;
+        let symmetric_key = wallet.key_chain.symmetric_key();
 
-        authenticate_wallet_request(headers, payload, &pk_root)
+        authenticate_wallet_request(headers, payload, &symmetric_key)
     }
 
     /// Authenticate an admin request
@@ -79,6 +79,6 @@ impl AuthMiddleware {
             return Err(not_found(ERR_ADMIN_API_DISABLED));
         }
 
-        authenticate_admin_request(self.admin_key.unwrap(), headers, payload)
+        authenticate_admin_request(&self.admin_key.unwrap(), headers, payload)
     }
 }

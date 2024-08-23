@@ -2,6 +2,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use common::types::wallet::keychain::HmacKey;
 use external_api::RENEGADE_SIG_EXPIRATION_HEADER_NAME;
 use hyper::HeaderMap;
 
@@ -38,4 +39,11 @@ pub(crate) fn check_auth_timestamp(expiration_ts: u64) -> Result<(), ApiServerEr
     }
 
     Ok(())
+}
+
+/// Compute the HMAC of a request using the given key
+pub(crate) fn compute_expiring_hmac(key: &HmacKey, payload: &[u8], expiration: u64) -> Vec<u8> {
+    // Check the MAC on the payload concatenated with the expiration timestamp
+    let msg_bytes = [payload, &expiration.to_le_bytes()].concat();
+    key.compute_mac(&msg_bytes)
 }

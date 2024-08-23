@@ -5,7 +5,6 @@ edition = "2021"
 
 [features]
 mocks = [
-    "rand",
     "jf-primitives",
     "mpc-relation",
     "mpc-plonk",
@@ -24,6 +23,7 @@ ark-poly = { version = "0.4", optional = true }
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 ethers = { workspace = true }
+hmac = "0.12"
 jf-primitives = { workspace = true, optional = true }
 k256 = { version = "0.13", features = ["ecdsa"] }
 mpc-plonk = { workspace = true, optional = true }
@@ -31,6 +31,7 @@ mpc-relation = { workspace = true, optional = true }
 num-bigint = { workspace = true }
 num-traits = "0.2"
 signature = "2.0"
+sha2 = { version = "0.10", features = ["asm"] }
 
 # === Runtime + Networking === #
 async-trait = { workspace = true }
@@ -57,7 +58,7 @@ derivative = "2.2"
 indexmap = { workspace = true }
 itertools = "0.10"
 lazy_static = { workspace = true }
-rand = { workspace = true, optional = true }
+rand = { workspace = true }
 renegade-dealer-api = { git = "https://github.com/renegade-fi/renegade-dealer.git" }
 serde = { workspace = true }
 serde_json = { workspace = true }
