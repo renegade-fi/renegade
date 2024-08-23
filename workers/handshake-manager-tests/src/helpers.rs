@@ -43,7 +43,7 @@ pub(crate) async fn lookup_wallet(
         wallet_id: wallet.wallet_id,
         secret_share_seed: share_seed,
         blinder_seed,
-        key_chain: wallet.key_chain.clone(),
+        secret_keys: wallet.key_chain.secret_keys.clone(),
     };
     let (id, waiter) = state.append_task(task.into()).await?;
     waiter.await?;

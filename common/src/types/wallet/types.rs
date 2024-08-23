@@ -47,6 +47,18 @@ pub struct PrivateKeyChain {
     pub sk_match: SecretIdentificationKey,
 }
 
+impl PrivateKeyChain {
+    /// Create a new private key chain from a match key and a root key
+    pub fn new(sk_match: SecretIdentificationKey, sk_root: Option<SecretSigningKey>) -> Self {
+        Self { sk_match, sk_root }
+    }
+
+    /// Create a new private key chain without the root key
+    pub fn new_without_root(sk_match: SecretIdentificationKey) -> Self {
+        Self { sk_match, sk_root: None }
+    }
+}
+
 /// Represents the public and private keys given to the relayer managing a
 /// wallet
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,13 +174,14 @@ impl Wallet {
     /// Construct a new wallet from private shares and blinded public shares
     pub fn new_from_shares(
         wallet_id: WalletIdentifier,
-        key_chain: KeyChain,
+        secret_keys: PrivateKeyChain,
         blinded_public_shares: SizedWalletShare,
         private_shares: SizedWalletShare,
     ) -> Self {
         let blinder = blinded_public_shares.blinder + private_shares.blinder;
         let unblinded_public_shares = blinded_public_shares.unblind_shares(blinder);
         let recovered_wallet = unblinded_public_shares + private_shares.clone();
+        let key_chain = KeyChain { public_keys: recovered_wallet.keys, secret_keys };
 
         // Construct a wallet from the recovered shares
         Wallet {
