@@ -27,12 +27,6 @@ use util::{get_current_time_millis, networking::is_dialable_multiaddr};
 /// The actual topic name will have the cluster ID postfixed; i.e.
 ///     cluster-management-{cluster_id}
 pub const CLUSTER_MANAGEMENT_TOPIC_PREFIX: &str = "cluster-management";
-/// The number of bytes in a cluster symmetric key
-pub const CLUSTER_SYMMETRIC_KEY_LENGTH: usize = 32;
-
-/// The type representing a cluster's symmetric key
-pub type SymmetricAuthKey = [u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
-
 /// Contains information about connected peers
 #[derive(Clone, Debug, Serialize, Deserialize, Derivative)]
 #[derivative(PartialEq, Eq)]

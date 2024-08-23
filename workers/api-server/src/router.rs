@@ -3,7 +3,7 @@
 use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
-use common::types::gossip::SymmetricAuthKey;
+use common::types::wallet::keychain::HmacKey;
 use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode, Uri};
 use itertools::Itertools;
 use matchit::Router as MatchRouter;
@@ -191,7 +191,7 @@ pub struct Router {
 
 impl Router {
     /// Create a new router with no routes established
-    pub fn new(admin_key: Option<SymmetricAuthKey>, state: State) -> Self {
+    pub fn new(admin_key: Option<HmacKey>, state: State) -> Self {
         let router = MatchRouter::new();
         let auth_middleware = AuthMiddleware::new(admin_key, state);
         Self { router, auth_middleware }

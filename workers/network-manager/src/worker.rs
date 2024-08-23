@@ -5,7 +5,8 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use common::default_wrapper::DefaultOption;
-use common::types::gossip::{ClusterId, PeerInfo, SymmetricAuthKey, WrappedPeerId};
+use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use common::types::wallet::keychain::HmacKey;
 use common::types::CancelChannel;
 use common::worker::Worker;
 use ed25519_dalek::Keypair;
@@ -52,7 +53,7 @@ pub struct NetworkManagerConfig {
     pub allow_local: bool,
     /// The cluster keypair, wrapped in an option to allow the worker thread to
     /// take ownership of the keypair
-    pub cluster_symmetric_key: SymmetricAuthKey,
+    pub cluster_symmetric_key: HmacKey,
     /// The asymmetric key of the cluster
     pub cluster_keypair: DefaultOption<Keypair>,
     /// The known public addr that the local node is listening behind, if one

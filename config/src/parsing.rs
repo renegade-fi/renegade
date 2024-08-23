@@ -5,13 +5,13 @@ use crate::{cli::RelayerConfig, validation::validate_config, Cli, RelayerFeeKey}
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::{
-    gossip::{ClusterId, SymmetricAuthKey, WrappedPeerId, CLUSTER_SYMMETRIC_KEY_LENGTH},
-    wallet::WalletIdentifier,
+    gossip::{ClusterId, WrappedPeerId},
+    wallet::{keychain::HmacKey, WalletIdentifier},
 };
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
 use ethers::{core::rand::thread_rng, signers::LocalWallet};
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
-use rand_core::{OsRng, RngCore};
+use rand_core::OsRng;
 use serde::Deserialize;
 use std::{env, fs, str::FromStr};
 use toml::{value::Map, Value};
@@ -150,7 +150,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
 // ---------------
 
 /// Parse the cluster's symmetric and asymmetric keys from the CLI
-pub fn parse_cluster_keys(cli: &Cli) -> Result<(SymmetricAuthKey, DalekKeypair), String> {
+pub fn parse_cluster_keys(cli: &Cli) -> Result<(HmacKey, DalekKeypair), String> {
     // Parse the cluster keypair from CLI args
     // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
     let keypair = if let Some(key_str) = cli.cluster_private_key.clone() {
@@ -165,24 +165,21 @@ pub fn parse_cluster_keys(cli: &Cli) -> Result<(SymmetricAuthKey, DalekKeypair),
     };
 
     // Parse the symmetric key from its string or generate
-    let symmetric_key: SymmetricAuthKey = if let Some(key_str) = cli.cluster_symmetric_key.clone() {
+    let symmetric_key: HmacKey = if let Some(key_str) = cli.cluster_symmetric_key.clone() {
         parse_symmetric_key(key_str)?
     } else {
-        let mut rng = OsRng {};
-        let mut key = [0u8; CLUSTER_SYMMETRIC_KEY_LENGTH];
-        rng.fill_bytes(&mut key);
-
-        key
+        HmacKey::random()
     };
 
     Ok((symmetric_key, keypair))
 }
 
 /// Parse a symmetric key from a base64 string
-fn parse_symmetric_key(key_str: String) -> Result<SymmetricAuthKey, String> {
+fn parse_symmetric_key(key_str: String) -> Result<HmacKey, String> {
     base64::decode(key_str)
         .map_err(|e| e.to_string())?
         .try_into()
+        .map(HmacKey)
         .map_err(|_| "Invalid symmetric key".to_string())
 }
 

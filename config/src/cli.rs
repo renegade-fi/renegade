@@ -9,8 +9,8 @@ use circuit_types::{
 use clap::Parser;
 use common::types::{
     exchange::Exchange,
-    gossip::{ClusterId, SymmetricAuthKey, WrappedPeerId},
-    wallet::WalletIdentifier,
+    gossip::{ClusterId, WrappedPeerId},
+    wallet::{keychain::HmacKey, WalletIdentifier},
 };
 use ed25519_dalek::Keypair as DalekKeypair;
 use ethers::signers::LocalWallet;
@@ -296,13 +296,13 @@ pub struct RelayerConfig {
     /// The cluster keypair
     pub cluster_keypair: DalekKeypair,
     /// The cluster symmetric keypair
-    pub cluster_symmetric_key: SymmetricAuthKey,
+    pub cluster_symmetric_key: HmacKey,
     /// The admin key used to authenticate requests to the relayer's API
     ///
     /// This is a symmetric key encoded as a base64 string
     ///
     /// If not set, the admin API is disabled
-    pub admin_api_key: Option<SymmetricAuthKey>,
+    pub admin_api_key: Option<HmacKey>,
 
     // ----------------------------
     // | Local Node Configuration |

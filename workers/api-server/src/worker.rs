@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use common::{
-    types::{gossip::SymmetricAuthKey, CancelChannel},
+    types::{wallet::keychain::HmacKey, CancelChannel},
     worker::Worker,
 };
 use external_api::bus_message::SystemBusMessage;
@@ -48,7 +48,7 @@ pub struct ApiServerConfig {
     /// The port that the websocket server should listen on
     pub websocket_port: u16,
     /// The admin key, if one is set
-    pub admin_api_key: Option<SymmetricAuthKey>,
+    pub admin_api_key: Option<HmacKey>,
     /// The URL of the compliance service to use for wallet screening
     ///
     /// Compliance screening is disabled if this is not set
