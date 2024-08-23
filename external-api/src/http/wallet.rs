@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr,
-    types::{ApiOrder, ApiWallet},
+    types::{ApiOrder, ApiPrivateKeychain, ApiWallet},
 };
 
 // ---------------
@@ -103,8 +103,8 @@ pub struct FindWalletRequest {
     pub blinder_seed: BigUint,
     /// The seed for the wallet's secret share CSPRNG
     pub secret_share_seed: BigUint,
-    /// The secret match key to use for management after the wallet is found
-    pub sk_match: String,
+    /// The private keychain to use for management after the wallet is found
+    pub private_keychain: ApiPrivateKeychain,
 }
 
 /// The response type to a request to find a wallet in contract storage

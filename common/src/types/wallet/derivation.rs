@@ -12,7 +12,7 @@ use num_traits::Num;
 use util::raw_err_str;
 
 use super::{
-    keychain::{KeyChain, PrivateKeyChain},
+    keychain::{HmacKey, KeyChain, PrivateKeyChain},
     WalletIdentifier,
 };
 
@@ -24,6 +24,8 @@ const SHARE_STREAM_SEED_MESSAGE: &[u8] = b"share seed";
 const ROOT_KEY_MESSAGE_PREFIX: &str = "Unlock your Renegade Wallet on chain ID:";
 /// The message used to derive the wallet's match key
 const MATCH_KEY_MESSAGE: &[u8] = b"match key";
+/// The message used to derive the wallet's symmetric key
+const SYMMETRIC_KEY_MESSAGE: &[u8] = b"symmetric key";
 /// The message used to derive the wallet's ID
 const WALLET_ID_MESSAGE: &[u8] = b"wallet id";
 
@@ -55,13 +57,17 @@ pub fn derive_wallet_keychain(eth_key: &EthWallet, chain_id: u64) -> Result<KeyC
     let pk_root = sk_root_key.verifying_key().into();
 
     // Generate the match key, this time using the root key to derive it
-    let sk_match_key = derive_scalar(MATCH_KEY_MESSAGE, &sk_root_key.into())?;
+    let sk_root_wallet = EthWallet::from(sk_root_key);
+    let sk_match_key = derive_scalar(MATCH_KEY_MESSAGE, &sk_root_wallet)?;
     let sk_match = SecretIdentificationKey::from(sk_match_key);
     let pk_match = sk_match.get_public_key();
 
+    // Generate the symmetric key
+    let symmetric_key = derive_symmetric_key(&sk_root_wallet)?;
+
     Ok(KeyChain {
         public_keys: PublicKeyChain::new(pk_root, pk_match),
-        secret_keys: PrivateKeyChain { sk_root: Some(sk_root), sk_match },
+        secret_keys: PrivateKeyChain { sk_root: Some(sk_root), sk_match, symmetric_key },
     })
 }
 
@@ -116,8 +122,13 @@ fn derive_signing_key(msg: &[u8], key: &EthWallet) -> Result<SigningKey, String>
         .map_err(raw_err_str!("failed to derive signing key from signature: {}"))
 }
 
+/// Derive a symmetric key from a signing key
+fn derive_symmetric_key(key: &EthWallet) -> Result<HmacKey, String> {
+    get_sig_bytes(SYMMETRIC_KEY_MESSAGE, key).map(HmacKey)
+}
+
 /// Sign a message, serialize the signature into bytes
-fn get_extended_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; EXTENDED_BYTES], String> {
+fn get_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; KECCAK_HASH_BYTES], String> {
     let digest = keccak256(msg);
     let wallet = EthWallet::from(key.clone());
     let sig =
@@ -125,8 +136,14 @@ fn get_extended_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; EXTENDED_B
 
     // Take the keccak hash of the signature to disperse its elements
     let bytes = sig.to_vec();
-    let keccak_bytes = keccak256(bytes);
-    Ok(extend_to_64_bytes(&keccak_bytes))
+    Ok(keccak256(bytes))
+}
+
+/// Sign a message, serialize the signature into bytes, and extend the bytes to
+/// support secure reduction into a field
+fn get_extended_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; EXTENDED_BYTES], String> {
+    let sig_bytes = get_sig_bytes(msg, key)?;
+    Ok(extend_to_64_bytes(&sig_bytes))
 }
 
 /// Extend the given byte array to 64 bytes, double the length of the original

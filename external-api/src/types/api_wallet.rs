@@ -9,7 +9,7 @@ use circuit_types::{
     Amount, SizedWalletShare,
 };
 use common::types::wallet::{
-    keychain::{KeyChain, PrivateKeyChain},
+    keychain::{HmacKey, KeyChain, PrivateKeyChain},
     OrderIdentifier, Wallet, WalletIdentifier,
 };
 use itertools::Itertools;
@@ -214,18 +214,36 @@ pub struct ApiPrivateKeychain {
     pub sk_root: Option<String>,
     /// The private match key of the wallet
     pub sk_match: String,
+    /// The symmetric key of the wallet
+    pub symmetric_key: String,
+}
+
+impl TryFrom<ApiPrivateKeychain> for PrivateKeyChain {
+    type Error = String;
+
+    fn try_from(keys: ApiPrivateKeychain) -> Result<Self, Self::Error> {
+        let sk_root =
+            keys.sk_root.clone().map(|k| nonnative_scalar_from_hex_string(&k)).transpose()?;
+
+        Ok(PrivateKeyChain {
+            sk_root,
+            sk_match: SecretIdentificationKey { key: scalar_from_hex_string(&keys.sk_match)? },
+            symmetric_key: HmacKey::from_hex_string(&keys.symmetric_key)?,
+        })
+    }
 }
 
 impl From<KeyChain> for ApiKeychain {
     fn from(keys: KeyChain) -> Self {
         Self {
             public_keys: ApiPublicKeychain {
-                pk_root: public_sign_key_to_hex_string(&keys.public_keys.pk_root),
-                pk_match: scalar_to_hex_string(&keys.public_keys.pk_match.key),
+                pk_root: public_sign_key_to_hex_string(&keys.pk_root()),
+                pk_match: scalar_to_hex_string(&keys.pk_match().key),
             },
             private_keys: ApiPrivateKeychain {
-                sk_root: keys.secret_keys.sk_root.map(|k| nonnative_scalar_to_hex_string(&k)),
-                sk_match: scalar_to_hex_string(&keys.secret_keys.sk_match.key),
+                sk_root: keys.sk_root().map(|k| nonnative_scalar_to_hex_string(&k)),
+                sk_match: scalar_to_hex_string(&keys.sk_match().key),
+                symmetric_key: keys.symmetric_key().to_hex_string(),
             },
             nonce: scalar_to_u64(&keys.public_keys.nonce),
         }
@@ -243,16 +261,7 @@ impl TryFrom<ApiKeychain> for KeyChain {
                     key: scalar_from_hex_string(&keys.public_keys.pk_match)?,
                 },
             ),
-            secret_keys: PrivateKeyChain {
-                sk_root: keys
-                    .private_keys
-                    .sk_root
-                    .map(|k| nonnative_scalar_from_hex_string(&k))
-                    .transpose()?,
-                sk_match: SecretIdentificationKey {
-                    key: scalar_from_hex_string(&keys.private_keys.sk_match)?,
-                },
-            },
+            secret_keys: PrivateKeyChain::try_from(keys.private_keys)?,
         })
     }
 }

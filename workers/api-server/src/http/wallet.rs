@@ -35,10 +35,7 @@ use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
 use util::{
     err_str,
-    hex::{
-        biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string,
-        scalar_from_hex_string,
-    },
+    hex::{biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string},
 };
 
 use crate::{
@@ -287,8 +284,7 @@ impl TypedHandler for FindWalletHandler {
 
         // Create a task in thew driver to find and prove validity for
         // the wallet
-        let sk_match_scalar = scalar_from_hex_string(&req.sk_match).map_err(bad_request)?;
-        let keychain = PrivateKeyChain::new_without_root(sk_match_scalar.into());
+        let keychain = PrivateKeyChain::try_from(req.private_keychain).map_err(bad_request)?;
         let blinder_seed = biguint_to_scalar(&req.blinder_seed);
         let share_seed = biguint_to_scalar(&req.secret_share_seed);
         let task =
