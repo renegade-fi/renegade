@@ -5,9 +5,10 @@
 // ------------------------
 
 use async_trait::async_trait;
-use circuit_types::{fixed_point::FixedPoint, Amount};
+use circuit_types::{fixed_point::FixedPoint, order::Order, Amount};
 use common::types::{
-    exchange::PriceReporterState, token::Token, wallet::order_metadata::OrderMetadata, Price,
+    exchange::PriceReporterState, tasks::UpdateWalletTaskDescriptor, token::Token,
+    wallet::order_metadata::OrderMetadata, Price,
 };
 use external_api::{
     http::{
@@ -36,7 +37,9 @@ use crate::{
 use super::{
     parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
     parse_order_id_from_params, parse_wallet_id_from_params,
-    wallet::{create_order, ERR_ORDER_NOT_FOUND},
+    wallet::{
+        append_task_and_await, find_wallet_for_update, maybe_rotate_root_key, ERR_ORDER_NOT_FOUND,
+    },
 };
 
 // -------------
@@ -334,8 +337,28 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
             return Err(bad_request(ERR_ORDER_ALREADY_EXISTS));
         }
 
-        create_order(req.order, req.statement_sig, wallet_id, &self.state, Some(matching_pool))
-            .await
+        // Lookup the wallet in the global state
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let mut new_wallet = old_wallet.clone();
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
+
+        let new_order: Order = req.order.into();
+        new_wallet.add_order(oid, new_order.clone()).map_err(bad_request)?;
+        new_wallet.reblind_wallet();
+
+        let task = UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
+            oid,
+            new_order,
+            old_wallet,
+            new_wallet,
+            req.update_auth.statement_sig,
+            Some(matching_pool),
+        )
+        .map_err(bad_request)?;
+
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
+        Ok(CreateOrderResponse { id: oid, task_id })
     }
 }
 

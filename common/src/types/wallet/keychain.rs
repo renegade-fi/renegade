@@ -1,15 +1,79 @@
 //! Keychain helpers for the wallet
 
+use circuit_types::keychain::{
+    PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,
+    SecretSigningKey,
+};
 use constants::Scalar;
 use contracts_common::custom_serde::BytesSerializable;
+use derivative::Derivative;
 use ethers::{
     core::k256::ecdsa::SigningKey as EthersSigningKey,
     types::{Signature, U256},
     utils::keccak256,
 };
+use serde::{Deserialize, Serialize};
 use util::raw_err_str;
 
 use super::Wallet;
+
+/// Represents the private keys a relayer has access to for a given wallet
+#[derive(Clone, Debug, Derivative, Serialize, Deserialize)]
+#[derivative(PartialEq, Eq)]
+pub struct PrivateKeyChain {
+    /// Optionally the relayer holds sk_root, in which case the relayer has
+    /// heightened permissions than the standard case
+    ///
+    /// We call such a relayer a "super relayer"
+    pub sk_root: Option<SecretSigningKey>,
+    /// The match private key, authorizes the relayer to match orders for the
+    /// wallet
+    pub sk_match: SecretIdentificationKey,
+}
+
+impl PrivateKeyChain {
+    /// Create a new private key chain from a match key and a root key
+    pub fn new(sk_match: SecretIdentificationKey, sk_root: Option<SecretSigningKey>) -> Self {
+        Self { sk_match, sk_root }
+    }
+
+    /// Create a new private key chain without the root key
+    pub fn new_without_root(sk_match: SecretIdentificationKey) -> Self {
+        Self { sk_match, sk_root: None }
+    }
+}
+
+/// Represents the public and private keys given to the relayer managing a
+/// wallet
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyChain {
+    /// The public keys in the wallet
+    pub public_keys: PublicKeyChain,
+    /// The secret keys in the wallet
+    pub secret_keys: PrivateKeyChain,
+}
+
+impl KeyChain {
+    /// Increment the keychain nonce
+    pub fn increment_nonce(&mut self) {
+        self.public_keys.nonce += Scalar::one();
+    }
+
+    /// Get the public root key
+    pub fn pk_root(&self) -> PublicSigningKey {
+        self.public_keys.pk_root.clone()
+    }
+
+    /// Set the public root key
+    pub fn set_pk_root(&mut self, pk_root: PublicSigningKey) {
+        self.public_keys.pk_root = pk_root;
+    }
+
+    /// Get the public match key
+    pub fn pk_match(&self) -> PublicIdentificationKey {
+        self.public_keys.pk_match
+    }
+}
 
 /// Error message emitted when the wallet does not have an `sk_root` value
 const ERR_NO_SK_ROOT: &str = "wallet does not have an `sk_root` value";

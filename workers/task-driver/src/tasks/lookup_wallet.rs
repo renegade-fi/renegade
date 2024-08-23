@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::{
     tasks::LookupWalletTaskDescriptor,
-    wallet::{PrivateKeyChain, Wallet, WalletIdentifier},
+    wallet::{keychain::PrivateKeyChain, Wallet, WalletIdentifier},
 };
 use constants::Scalar;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};

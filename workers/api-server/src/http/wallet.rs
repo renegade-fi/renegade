@@ -12,8 +12,7 @@ use common::types::{
         UpdateWalletTaskDescriptor,
     },
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
-    wallet::{PrivateKeyChain, Wallet, WalletIdentifier},
-    MatchingPoolName,
+    wallet::{keychain::PrivateKeyChain, Wallet, WalletIdentifier},
 };
 use external_api::{
     http::wallet::{
@@ -22,7 +21,8 @@ use external_api::{
         FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
         GetOrderByIdResponse, GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse,
         PayFeesResponse, RedeemNoteRequest, RedeemNoteResponse, RefreshWalletResponse,
-        UpdateOrderRequest, UpdateOrderResponse, WithdrawBalanceRequest, WithdrawBalanceResponse,
+        UpdateOrderRequest, UpdateOrderResponse, WalletUpdateAuthorization, WithdrawBalanceRequest,
+        WithdrawBalanceResponse,
     },
     types::ApiOrder,
     EmptyRequestResponse,
@@ -35,7 +35,10 @@ use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
 use util::{
     err_str,
-    hex::{biguint_to_hex_addr, jubjub_to_hex_string, scalar_from_hex_string},
+    hex::{
+        biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string,
+        scalar_from_hex_string,
+    },
 };
 
 use crate::{
@@ -64,7 +67,7 @@ const ERR_WALLET_ALREADY_EXISTS: &str = "wallet id already exists";
 const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 
 /// Find the wallet in global state and apply any tasks to its state
-async fn find_wallet_for_update(
+pub(crate) async fn find_wallet_for_update(
     wallet_id: WalletIdentifier,
     state: &State,
 ) -> Result<Wallet, ApiServerError> {
@@ -81,7 +84,7 @@ async fn find_wallet_for_update(
 }
 
 /// Append a task to a task queue and await consensus on this queue update
-async fn append_task_and_await(
+pub(crate) async fn append_task_and_await(
     task: TaskDescriptor,
     state: &State,
 ) -> Result<TaskIdentifier, ApiServerError> {
@@ -91,39 +94,24 @@ async fn append_task_and_await(
     Ok(task_id)
 }
 
-/// Create an order (potentially in a matching pool) and wait for it to be
-/// enqueued
-pub async fn create_order(
-    order: ApiOrder,
-    statement_sig: Vec<u8>,
-    wallet_id: WalletIdentifier,
-    state: &State,
-    matching_pool: Option<MatchingPoolName>,
-) -> Result<CreateOrderResponse, ApiServerError> {
-    let id = order.id;
+/// Rotate the wallet's public root key if the request specifies a new key
+pub(crate) fn maybe_rotate_root_key(
+    update_auth: &WalletUpdateAuthorization,
+    wallet: &mut Wallet,
+) -> Result<(), ApiServerError> {
+    // Parse the new root key if it exists
+    let new_pk = match update_auth.new_root_key.clone() {
+        None => return Ok(()),
+        Some(new_pk) => public_sign_key_from_hex_string(&new_pk).map_err(bad_request)?,
+    };
 
-    // Lookup the wallet in the global state
-    let old_wallet = find_wallet_for_update(wallet_id, state).await?;
-    let mut new_wallet = old_wallet.clone();
-    let new_order: Order = order.into();
+    // Rotate the root key if it has changed
+    if new_pk != wallet.key_chain.pk_root() {
+        wallet.key_chain.set_pk_root(new_pk);
+        wallet.key_chain.increment_nonce();
+    }
 
-    // Check that the timestamp is not too old, then add to the wallet
-    new_wallet.add_order(id, new_order.clone()).map_err(bad_request)?;
-    new_wallet.reblind_wallet();
-
-    let task = UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
-        new_order,
-        id,
-        old_wallet,
-        new_wallet,
-        statement_sig,
-        matching_pool,
-    )
-    .map_err(bad_request)?;
-
-    // Propose the task and await for it to be enqueued
-    let task_id = append_task_and_await(task.into(), state).await?;
-    Ok(CreateOrderResponse { id, task_id })
+    Ok(())
 }
 
 // ------------------
@@ -476,14 +464,28 @@ impl TypedHandler for CreateOrderHandler {
             return Err(bad_request(ERR_ORDER_ALREADY_EXISTS));
         }
 
-        create_order(
-            req.order,
-            req.statement_sig,
-            wallet_id,
-            &self.state,
-            None, // matching_pool
+        // Lookup the wallet in the global state
+        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let mut new_wallet = old_wallet.clone();
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
+
+        // Add the order to the wallet
+        let new_order: Order = req.order.into();
+        new_wallet.add_order(oid, new_order.clone()).map_err(bad_request)?;
+        new_wallet.reblind_wallet();
+
+        let task = UpdateWalletTaskDescriptor::new_order_placement(
+            oid,
+            new_order,
+            old_wallet,
+            new_wallet,
+            req.update_auth.statement_sig,
         )
-        .await
+        .map_err(bad_request)?;
+
+        // Propose the task and await for it to be enqueued
+        let task_id = append_task_and_await(task.into(), &self.state).await?;
+        Ok(CreateOrderResponse { id: oid, task_id })
     }
 }
 
@@ -517,11 +519,11 @@ impl TypedHandler for UpdateOrderHandler {
 
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let mut new_wallet = old_wallet.clone();
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Edit the order if it exists in the wallet
-        let mut new_wallet = old_wallet.clone();
         let new_order: Order = req.order.into();
-
         let order = new_wallet
             .orders
             .get_mut(&order_id)
@@ -529,13 +531,12 @@ impl TypedHandler for UpdateOrderHandler {
         *order = new_order.clone();
         new_wallet.reblind_wallet();
 
-        let task = UpdateWalletTaskDescriptor::new_order_with_maybe_pool(
-            new_order,
+        let task = UpdateWalletTaskDescriptor::new_order_placement(
             order_id,
+            new_order,
             old_wallet,
             new_wallet,
-            req.statement_sig,
-            None, // matching_pool
+            req.update_auth.statement_sig,
         )
         .map_err(bad_request)?;
 
@@ -575,9 +576,10 @@ impl TypedHandler for CancelOrderHandler {
 
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let mut new_wallet = old_wallet.clone();
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Remove the order from the new wallet
-        let mut new_wallet = old_wallet.clone();
         let order = new_wallet
             .remove_order(&order_id)
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
@@ -587,7 +589,7 @@ impl TypedHandler for CancelOrderHandler {
             order.clone(),
             old_wallet,
             new_wallet,
-            req.statement_sig,
+            req.update_auth.statement_sig,
         )
         .map_err(bad_request)?;
 
@@ -718,9 +720,10 @@ impl TypedHandler for DepositBalanceHandler {
 
         // Lookup the old wallet by id
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let mut new_wallet = old_wallet.clone();
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Apply the balance update to the old wallet to get the new wallet
-        let mut new_wallet = old_wallet.clone();
         let amount = req.amount.to_u128().unwrap();
         let bal = Balance::new_from_mint_and_amount(req.mint.clone(), amount);
 
@@ -742,7 +745,7 @@ impl TypedHandler for DepositBalanceHandler {
             deposit_with_auth,
             old_wallet,
             new_wallet,
-            req.wallet_commitment_sig,
+            req.update_auth.statement_sig,
         )
         .map_err(bad_request)?;
 
@@ -784,6 +787,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Check that fees are paid for the wallet
         if old_wallet.has_outstanding_fees() {
@@ -806,7 +810,7 @@ impl TypedHandler for WithdrawBalanceHandler {
             withdrawal_with_auth,
             old_wallet,
             new_wallet,
-            req.wallet_commitment_sig,
+            req.update_auth.statement_sig,
         )
         .map_err(bad_request)?;
 

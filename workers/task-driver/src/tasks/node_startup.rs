@@ -15,7 +15,8 @@ use common::types::{
         derivation::{
             derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
         },
-        KeyChain, Wallet, WalletIdentifier,
+        keychain::KeyChain,
+        Wallet, WalletIdentifier,
     },
 };
 use constants::Scalar;

@@ -1,6 +1,7 @@
 //! Descriptor for the wallet update task
 
 use circuit_types::{keychain::PublicSigningKey, order::Order, Amount};
+use constants::Scalar;
 use contracts_common::custom_serde::BytesSerializable;
 use ethers::core::types::Signature;
 use ethers::utils::{keccak256, public_key_to_address};
@@ -99,6 +100,14 @@ impl UpdateWalletTaskDescriptor {
             return Err(INVALID_WALLET_SHARES.to_string());
         }
 
+        // Check that if the root key has rotated, the nonce has been incremented
+        let old_pkeys = &old_wallet.key_chain.public_keys;
+        let new_pkeys = &new_wallet.key_chain.public_keys;
+        let expected_nonce = old_pkeys.nonce + Scalar::one();
+        if old_pkeys.pk_root != new_pkeys.pk_root && new_pkeys.nonce != expected_nonce {
+            return Err("nonce must be incremented when the root key rotates".to_string());
+        }
+
         // Check the signature on the updated shares commitment
         let key = &old_wallet.key_chain.public_keys.pk_root;
         verify_wallet_update_signature(&new_wallet, key, &wallet_update_signature)
@@ -141,10 +150,28 @@ impl UpdateWalletTaskDescriptor {
         Self::new(desc, Some(transfer_with_auth), old_wallet, new_wallet, wallet_update_signature)
     }
 
+    /// A new order placement with no matching pool
+    pub fn new_order_placement(
+        id: OrderIdentifier,
+        order: Order,
+        old_wallet: Wallet,
+        new_wallet: Wallet,
+        wallet_update_signature: Vec<u8>,
+    ) -> Result<Self, String> {
+        Self::new_order_with_maybe_pool(
+            id,
+            order,
+            old_wallet,
+            new_wallet,
+            wallet_update_signature,
+            None, // matching_pool
+        )
+    }
+
     /// A new order placement, optionally in a non-global matching pool
     pub fn new_order_with_maybe_pool(
-        order: Order,
         id: OrderIdentifier,
+        order: Order,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,

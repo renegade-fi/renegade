@@ -9,13 +9,8 @@ use std::{
 };
 
 use circuit_types::{
-    balance::Balance,
-    elgamal::EncryptionKey,
-    fixed_point::FixedPoint,
-    keychain::{PublicKeyChain, SecretIdentificationKey, SecretSigningKey},
-    native_helpers::create_wallet_shares_with_randomness,
-    order::Order,
-    traits::BaseType,
+    balance::Balance, elgamal::EncryptionKey, fixed_point::FixedPoint,
+    native_helpers::create_wallet_shares_with_randomness, order::Order, traits::BaseType,
     SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 use constants::Scalar;
@@ -28,46 +23,12 @@ use uuid::Uuid;
 
 use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
+use super::keychain::{KeyChain, PrivateKeyChain};
+
 /// A type alias for the wallet identifier type, currently a UUID
 pub type WalletIdentifier = Uuid;
 /// An identifier of an order used for caching
 pub type OrderIdentifier = Uuid;
-
-/// Represents the private keys a relayer has access to for a given wallet
-#[derive(Clone, Debug, Derivative, Serialize, Deserialize)]
-#[derivative(PartialEq, Eq)]
-pub struct PrivateKeyChain {
-    /// Optionally the relayer holds sk_root, in which case the relayer has
-    /// heightened permissions than the standard case
-    ///
-    /// We call such a relayer a "super relayer"
-    pub sk_root: Option<SecretSigningKey>,
-    /// The match private key, authorizes the relayer to match orders for the
-    /// wallet
-    pub sk_match: SecretIdentificationKey,
-}
-
-impl PrivateKeyChain {
-    /// Create a new private key chain from a match key and a root key
-    pub fn new(sk_match: SecretIdentificationKey, sk_root: Option<SecretSigningKey>) -> Self {
-        Self { sk_match, sk_root }
-    }
-
-    /// Create a new private key chain without the root key
-    pub fn new_without_root(sk_match: SecretIdentificationKey) -> Self {
-        Self { sk_match, sk_root: None }
-    }
-}
-
-/// Represents the public and private keys given to the relayer managing a
-/// wallet
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KeyChain {
-    /// The public keys in the wallet
-    pub public_keys: PublicKeyChain,
-    /// The secret keys in the wallet
-    pub secret_keys: PrivateKeyChain,
-}
 
 /// The Merkle opening from the wallet shares' commitment to the global root
 pub type WalletAuthenticationPath = MerkleAuthenticationPath;
