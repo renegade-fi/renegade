@@ -15,10 +15,10 @@ pub const POOL_KEY_PREFIX: &str = "matching-pool/";
 
 /// The error message used when trying to create a matching pool that already
 /// exists
-const MATCHING_POOL_EXISTS_ERR: &str = "matching pool already exists";
+pub const MATCHING_POOL_EXISTS_ERR: &str = "matching pool already exists";
 /// The error message used when assigning an order to a nonexistent matching
 /// pool
-const MATCHING_POOL_DOES_NOT_EXIST_ERR: &str = "matching pool does not exist";
+pub const MATCHING_POOL_DOES_NOT_EXIST_ERR: &str = "matching pool does not exist";
 
 // ---------------
 // | Key Helpers |

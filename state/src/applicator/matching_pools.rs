@@ -2,6 +2,10 @@
 
 use common::types::wallet::OrderIdentifier;
 
+use crate::storage::tx::matching_pools::{
+    MATCHING_POOL_DOES_NOT_EXIST_ERR, MATCHING_POOL_EXISTS_ERR,
+};
+
 use super::{error::StateApplicatorError, return_type::ApplicatorReturnType, StateApplicator};
 
 impl StateApplicator {
@@ -11,6 +15,11 @@ impl StateApplicator {
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
+
+        if tx.matching_pool_exists(pool_name)? {
+            return Err(StateApplicatorError::Rejected(MATCHING_POOL_EXISTS_ERR.to_string()));
+        }
+
         tx.create_matching_pool(pool_name)?;
         tx.commit()?;
 
@@ -23,6 +32,13 @@ impl StateApplicator {
         pool_name: &str,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
         let tx = self.db().new_write_tx()?;
+
+        if !tx.matching_pool_exists(pool_name)? {
+            return Err(StateApplicatorError::Rejected(
+                MATCHING_POOL_DOES_NOT_EXIST_ERR.to_string(),
+            ));
+        }
+
         tx.destroy_matching_pool(pool_name)?;
         tx.commit()?;
 
