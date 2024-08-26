@@ -58,12 +58,16 @@ pub const WETH_TICKER: &str = "WETH";
 pub const BNB_TICKER: &str = "BNB";
 /// MATIC ticker
 pub const MATIC_TICKER: &str = "MATIC";
+/// ARB ticker
+pub const ARB_TICKER: &str = "ARB";
 /// LDO ticker
 pub const LDO_TICKER: &str = "LDO";
 /// LINK ticker
 pub const LINK_TICKER: &str = "LINK";
 /// UNI ticker
 pub const UNI_TICKER: &str = "UNI";
+/// GMX ticker
+pub const GMX_TICKER: &str = "GMX";
 /// CRV ticker
 pub const CRV_TICKER: &str = "CRV";
 /// DYDX ticker
@@ -78,16 +82,26 @@ pub const _1INCH_TICKER: &str = "1INCH";
 pub const COMP_TICKER: &str = "COMP";
 /// MKR ticker
 pub const MKR_TICKER: &str = "MKR";
+/// PENDLE ticker
+pub const PENDLE_TICKER: &str = "PENDLE";
 /// TORN ticker
 pub const TORN_TICKER: &str = "TORN";
 /// REN ticker
 pub const REN_TICKER: &str = "REN";
+/// ZRO ticker
+pub const ZRO_TICKER: &str = "ZRO";
 /// SHIB ticker
 pub const SHIB_TICKER: &str = "SHIB";
+/// PEPE ticker
+pub const PEPE_TICKER: &str = "PEPE";
 /// ENS ticker
 pub const ENS_TICKER: &str = "ENS";
 /// MANA ticker
 pub const MANA_TICKER: &str = "MANA";
+/// LPT ticker
+pub const LPT_TICKER: &str = "LPT";
+/// GRT ticker
+pub const GRT_TICKER: &str = "GRT";
 
 /// A helper enum to describe the state of each ticker on each Exchange. Same
 /// means that the ERC-20 and Exchange tickers are the same, Renamed means that
@@ -129,6 +143,7 @@ pub static TICKER_NAMES: &[(
         ExchangeTicker::Renamed("ETH"),
         ExchangeTicker::Renamed("ETH"),
     ),
+    // L2
     (
         BNB_TICKER,
         ExchangeTicker::Same,
@@ -138,6 +153,13 @@ pub static TICKER_NAMES: &[(
     ),
     (
         MATIC_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
+    (
+        ARB_TICKER,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
@@ -156,14 +178,14 @@ pub static TICKER_NAMES: &[(
         USDC_TICKER,
         ExchangeTicker::Same,
         ExchangeTicker::Renamed("USD"),
-        ExchangeTicker::Same,
+        ExchangeTicker::Renamed("USD"),
         ExchangeTicker::Same,
     ),
     (
         USDT_TICKER,
         ExchangeTicker::Same,
-        ExchangeTicker::Same,
-        ExchangeTicker::Same,
+        ExchangeTicker::Renamed("USD"),
+        ExchangeTicker::Renamed("USD"),
         ExchangeTicker::Same,
     ),
     (
@@ -186,6 +208,13 @@ pub static TICKER_NAMES: &[(
         UNI_TICKER,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
+    (
+        GMX_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
@@ -239,6 +268,13 @@ pub static TICKER_NAMES: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    (
+        PENDLE_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
+    ),
     // DeFi Other
     (
         TORN_TICKER,
@@ -255,11 +291,25 @@ pub static TICKER_NAMES: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
+    (
+        ZRO_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
     // Misc
     (
         SHIB_TICKER,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
+    (
+        PEPE_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
     ),
@@ -272,6 +322,20 @@ pub static TICKER_NAMES: &[(
     ),
     (
         MANA_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
+    (
+        LPT_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
+    (
+        GRT_TICKER,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
@@ -466,7 +530,7 @@ pub fn is_pair_named(base: &Token, quote: &Token) -> bool {
 pub fn default_exchange_stable(exchange: &Exchange) -> Token {
     match exchange {
         Exchange::Binance => Token::from_ticker(USDT_TICKER),
-        Exchange::Coinbase => Token::from_ticker(USDC_TICKER),
+        Exchange::Coinbase => Token::from_ticker(USD_TICKER),
         Exchange::Kraken => Token::from_ticker(USD_TICKER),
         Exchange::Okx => Token::from_ticker(USDT_TICKER),
         _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
