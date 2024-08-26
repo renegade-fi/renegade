@@ -59,11 +59,12 @@ impl TokenRemap {
 pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<(), String> {
     // If the remap file is not provided, fetch the Renegade maintained remap file
     // from the default location
-    let map = if let Some(file) = remap_file {
+    let mut map = if let Some(file) = remap_file {
         parse_remap_from_file(file)
     } else {
         fetch_remap_from_repo(chain)
     }?;
+    lowercase_addresses(&mut map);
 
     // Update the static token remap with the given one
     let mut remap = map.to_remap();
@@ -88,6 +89,13 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
         None => ADDR_DECIMALS_MAP
             .set(decimals_map)
             .map_err(raw_err_str!("Failed to set token decimals map: {:?}")),
+    }
+}
+
+/// Lowercase all addresses in the remap
+fn lowercase_addresses(remap: &mut TokenRemap) {
+    for info in remap.tokens.iter_mut() {
+        info.address = info.address.to_lowercase();
     }
 }
 
