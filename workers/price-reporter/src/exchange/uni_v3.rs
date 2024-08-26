@@ -230,8 +230,8 @@ impl UniswapV3Connection {
         quote_token: &Token,
         web3_connection: &Web3<Web3Socket>,
     ) -> Result<(H160, bool), ExchangeConnectionError> {
-        let base_token_addr = H160::from_str(base_token.get_addr()).unwrap();
-        let quote_token_addr = H160::from_str(quote_token.get_addr()).unwrap();
+        let base_token_addr = H160::from_str(&base_token.get_addr()).unwrap();
+        let quote_token_addr = H160::from_str(&quote_token.get_addr()).unwrap();
         let is_flipped = base_token_addr > quote_token_addr;
 
         let (first_token, second_token) = if is_flipped {

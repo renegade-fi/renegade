@@ -343,7 +343,7 @@ pub struct Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.addr)
+        write!(f, "{}", self.get_addr())
     }
 }
 
@@ -356,7 +356,7 @@ impl Token {
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
-        Self { addr: biguint_to_hex_addr(addr) }
+        Self { addr: biguint_to_hex_addr(addr).to_lowercase() }
     }
 
     /// Given an ERC-20 ticker, returns a new Token.
@@ -371,20 +371,20 @@ impl Token {
     }
 
     /// Returns the ERC-20 address.
-    pub fn get_addr(&self) -> &str {
-        &self.addr
+    pub fn get_addr(&self) -> String {
+        self.addr.to_lowercase()
     }
 
     /// Returns the ERC-20 ticker, if available. Note that it is OK if certain
     /// Tickers do not have any ERC-20 ticker, as we support long-tail
     /// assets.
     pub fn get_ticker(&self) -> Option<&str> {
-        TOKEN_REMAPS.get().unwrap().get_by_left(&self.addr).map(|x| x.as_str())
+        TOKEN_REMAPS.get().unwrap().get_by_left(&self.get_addr()).map(|x| x.as_str())
     }
 
     /// Returns the ERC-20 `decimals` field, if available.
     pub fn get_decimals(&self) -> Option<u8> {
-        ADDR_DECIMALS_MAP.get().unwrap().get(self.get_addr()).copied()
+        ADDR_DECIMALS_MAP.get().unwrap().get(&self.get_addr()).copied()
     }
 
     /// Returns true if the Token has a Renegade-native ticker.
