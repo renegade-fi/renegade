@@ -119,6 +119,14 @@ pub struct BabyJubJubPoint {
     pub y: Scalar,
 }
 
+impl BabyJubJubPoint {
+    /// Check that the point is on the curve
+    pub fn is_on_curve(&self) -> bool {
+        let affine = EmbeddedCurveGroupAffine::new_unchecked(self.x.inner(), self.y.inner());
+        affine.is_on_curve()
+    }
+}
+
 impl Default for BabyJubJubPoint {
     fn default() -> Self {
         // The group generator
@@ -199,6 +207,15 @@ pub struct ElGamalCiphertext<const N: usize> {
     /// The ciphertext
     #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub ciphertext: [Scalar; N],
+}
+
+impl<const N: usize> ElGamalCiphertext<N> {
+    /// Check that the ciphertext is valid
+    ///
+    /// Currently this only checks that the ephemeral key is on the curve
+    pub fn is_valid_ciphertext(&self) -> bool {
+        self.ephemeral_key.is_on_curve()
+    }
 }
 
 /// Conversion from `jf-primitives` types
