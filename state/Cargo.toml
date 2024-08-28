@@ -27,7 +27,7 @@ required-features = ["mocks"]
 [dependencies]
 
 # === Replication === #
-openraft = { version = "0.9", features = ["serde", "storage-v2"] }
+openraft = { version = "=0.9.13", features = ["serde", "storage-v2"] }
 
 # === Storage === #
 bincode = "1.3"
