@@ -4,7 +4,7 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use alloy_primitives::ChainId;
-use constants::{DEVNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
+use constants::{DEVNET_DEPLOY_BLOCK, MAINNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
 use ethers::{
     core::k256::ecdsa::SigningKey,
     middleware::{MiddlewareBuilder, NonceManagerMiddleware, SignerMiddleware},
@@ -54,7 +54,7 @@ impl ArbitrumClientConfig {
     /// Gets the block number at which the darkpool was deployed
     fn get_deploy_block(&self) -> BlockNumber {
         match self.chain {
-            Chain::Mainnet => unimplemented!(),
+            Chain::Mainnet => BlockNumber::Number(MAINNET_DEPLOY_BLOCK.into()),
             Chain::Testnet => BlockNumber::Number(TESTNET_DEPLOY_BLOCK.into()),
             Chain::Devnet => BlockNumber::Number(DEVNET_DEPLOY_BLOCK.into()),
         }
