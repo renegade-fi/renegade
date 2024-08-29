@@ -73,10 +73,10 @@ pub struct Cli {
     // -----------------------
 
     /// The chain that the relayer settles to
-    #[clap(long, value_parser, default_value = "testnet")]
+    #[clap(long, value_parser, default_value = "testnet", env = "CHAIN")]
     pub chain_id: Chain,
     /// The address of the darkpool contract, defaults to the internal testnet deployment
-    #[clap(long, value_parser, default_value = "0x84bc75bc4fb943d5576545fb4724c5cab781a61e")]
+    #[clap(long, value_parser, env = "DARKPOOL_ADDRESS")]
     pub contract_address: String,
     /// The path to the file containing deployments info for the darkpool contract
     #[clap(long, value_parser)]
@@ -116,22 +116,22 @@ pub struct Cli {
     // | Cluster Configuration |
     // -------------------------
     /// The bootstrap servers that the peer should dial initially
-    #[clap(short, long, value_parser)]
+    #[clap(short, long, value_parser, env = "BOOTSTRAP_SERVERS", use_value_delimiter = true)]
     pub bootstrap_servers: Option<Vec<String>>,
     /// The cluster private key to use
-    #[clap(long = "cluster-private-key", value_parser)]
+    #[clap(long = "cluster-private-key", value_parser, env = "CLUSTER_PRIVATE_KEY")]
     pub cluster_private_key: Option<String>,
     /// The cluster symmetric key to use for authenticating intra-cluster messages
     /// 
     /// Encoded as a base64 string
-    #[clap(long, value_parser)]
+    #[clap(long, value_parser, env = "CLUSTER_SYMMETRIC_KEY")]
     pub cluster_symmetric_key: Option<String>,
     /// The admin key used to authenticate requests to the relayer's API
     /// 
     /// This is a symmetric key encoded as a base64 string
     /// 
     /// If not set, the admin API is disabled
-    #[clap(long, value_parser)]
+    #[clap(long, value_parser, env = "ADMIN_API_KEY")]
     pub admin_api_key: Option<String>,
 
     // ----------------------------
@@ -184,7 +184,7 @@ pub struct Cli {
     #[clap(long = "eth-websocket", value_parser)]
     pub eth_websocket_addr: Option<String>,
     /// The HTTP addressable Arbitrum JSON-RPC node
-    #[clap(long = "rpc-url", value_parser)]
+    #[clap(long = "rpc-url", value_parser, env = "RPC_URL")]
     pub rpc_url: Option<String>,
     /// The Arbitrum private keys used to send transactions.
     /// Multiple keys can be provided to mitigate nonce contention across a node / cluster.
@@ -202,10 +202,10 @@ pub struct Cli {
     /// 
     /// May be specified _instead of_ `fee_decryption_key` in the case that separate infrastructure is used for 
     /// fee collection and settlement
-    #[clap(long = "fee-encryption-key", value_parser, conflicts_with = "fee_decryption_key")]
+    #[clap(long = "fee-encryption-key", value_parser, conflicts_with = "fee_decryption_key", env = "FEE_ENCRYPTION_KEY")]
     pub fee_encryption_key: Option<String>,
     /// The key used to decrypt fee payments
-    #[clap(long = "fee-decryption-key", value_parser, conflicts_with = "fee_encryption_key")]
+    #[clap(long = "fee-decryption-key", value_parser, conflicts_with = "fee_encryption_key", env = "FEE_DECRYPTION_KEY")]
     pub fee_decryption_key: Option<String>,
 
     // -------------

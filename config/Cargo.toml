@@ -21,7 +21,7 @@ util = { path = "../util" }
 # === Misc Dependencies === #
 base64 = "0.13"
 bimap = "0.6.2"
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.4", features = ["derive", "env"] }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 ethers = { workspace = true }
 json = "0.12"
