@@ -44,7 +44,10 @@ use crate::{
     router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
 };
 
-use super::{parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params};
+use super::{
+    parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params,
+    rate_limit::WalletTaskRateLimiter,
+};
 
 // -----------
 // | Helpers |
@@ -196,12 +199,14 @@ impl TypedHandler for GetBackOfQueueWalletHandler {
 pub struct CreateWalletHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl CreateWalletHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -245,8 +250,10 @@ impl TypedHandler for CreateWalletHandler {
         wallet.wallet_id = wallet_id;
         let task = NewWalletTaskDescriptor::new(wallet).map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
+
         Ok(CreateWalletResponse { wallet_id, task_id })
     }
 }
@@ -255,12 +262,14 @@ impl TypedHandler for CreateWalletHandler {
 pub struct FindWalletHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl FindWalletHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -291,7 +300,8 @@ impl TypedHandler for FindWalletHandler {
             LookupWalletTaskDescriptor::new(req.wallet_id, blinder_seed, share_seed, keychain)
                 .map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(req.wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
 
         Ok(FindWalletResponse { wallet_id: req.wallet_id, task_id })
@@ -302,12 +312,14 @@ impl TypedHandler for FindWalletHandler {
 pub struct RefreshWalletHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl RefreshWalletHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -332,7 +344,8 @@ impl TypedHandler for RefreshWalletHandler {
         let waiter = self.state.clear_task_queue(&wallet_id).await?;
         waiter.await.map_err(internal_error)?;
 
-        // Run a lookup wallet task
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let descriptor = RefreshWalletTaskDescriptor::new(wallet_id);
         let task_id = append_task_and_await(descriptor.into(), &self.state).await?;
 
@@ -431,12 +444,14 @@ impl TypedHandler for GetOrderByIdHandler {
 pub struct CreateOrderHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl CreateOrderHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -479,8 +494,10 @@ impl TypedHandler for CreateOrderHandler {
         )
         .map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
+
         Ok(CreateOrderResponse { id: oid, task_id })
     }
 }
@@ -489,12 +506,14 @@ impl TypedHandler for CreateOrderHandler {
 pub struct UpdateOrderHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl UpdateOrderHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -536,8 +555,10 @@ impl TypedHandler for UpdateOrderHandler {
         )
         .map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
+
         Ok(UpdateOrderResponse { task_id })
     }
 }
@@ -546,12 +567,14 @@ impl TypedHandler for UpdateOrderHandler {
 pub struct CancelOrderHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl CancelOrderHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -589,8 +612,10 @@ impl TypedHandler for CancelOrderHandler {
         )
         .map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
+
         Ok(CancelOrderResponse { task_id, order: (order_id, order).into() })
     }
 }
@@ -683,13 +708,19 @@ pub struct DepositBalanceHandler {
     compliance_client: ComplianceServerClient,
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl DepositBalanceHandler {
     /// Constructor
-    pub fn new(compliance_url: Option<String>, state: State) -> Self {
+    pub fn new(
+        compliance_url: Option<String>,
+        state: State,
+        rate_limiter: WalletTaskRateLimiter,
+    ) -> Self {
         let compliance_client = ComplianceServerClient::new(compliance_url);
-        Self { compliance_client, state }
+        Self { compliance_client, state, rate_limiter }
     }
 }
 
@@ -745,8 +776,10 @@ impl TypedHandler for DepositBalanceHandler {
         )
         .map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
+
         Ok(DepositBalanceResponse { task_id })
     }
 }
@@ -755,12 +788,14 @@ impl TypedHandler for DepositBalanceHandler {
 pub struct WithdrawBalanceHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -810,8 +845,10 @@ impl TypedHandler for WithdrawBalanceHandler {
         )
         .map_err(bad_request)?;
 
-        // Propose the task and await for it to be enqueued
+        // Check rate limits
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
+
         Ok(WithdrawBalanceResponse { task_id })
     }
 }
@@ -820,12 +857,14 @@ impl TypedHandler for WithdrawBalanceHandler {
 pub struct RedeemNoteHandler {
     /// A copy of the relayer-global state
     state: State,
+    /// The per-wallet task rate limiter
+    rate_limiter: WalletTaskRateLimiter,
 }
 
 impl RedeemNoteHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
+        Self { state, rate_limiter }
     }
 }
 
@@ -850,9 +889,11 @@ impl TypedHandler for RedeemNoteHandler {
         old_wallet.add_balance(bal).map_err(bad_request)?;
 
         let task = RedeemFeeTaskDescriptor::new(wallet_id, req.note, req.decryption_key);
+
+        // Check rate limits and enqueue the task
+        self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
 
-        // Propose the task and await for it to be enqueued
         Ok(RedeemNoteResponse { task_id })
     }
 }
@@ -862,6 +903,8 @@ impl TypedHandler for RedeemNoteHandler {
 // ----------------------
 
 /// The handler for the `/wallet/:id/pay-fees` route
+///
+/// Note that we do not rate limit the endpoint, fees must always be payable
 #[derive(Clone)]
 pub struct PayFeesHandler {
     /// A copy of the relayer-global state

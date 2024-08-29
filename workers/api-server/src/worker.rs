@@ -49,6 +49,8 @@ pub struct ApiServerConfig {
     pub websocket_port: u16,
     /// The admin key, if one is set
     pub admin_api_key: Option<HmacKey>,
+    /// The number of tasks per hour a given wallet is allowed to make
+    pub wallet_task_rate_limit: u32,
     /// The URL of the compliance service to use for wallet screening
     ///
     /// Compliance screening is disabled if this is not set

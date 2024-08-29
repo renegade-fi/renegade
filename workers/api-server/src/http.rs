@@ -4,6 +4,7 @@ mod admin;
 mod network;
 mod order_book;
 mod price_report;
+mod rate_limit;
 mod task;
 mod wallet;
 
@@ -44,6 +45,7 @@ use hyper::{
 };
 use num_bigint::BigUint;
 use num_traits::Num;
+use rate_limit::WalletTaskRateLimiter;
 use state::State;
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 use util::get_current_time_millis;
@@ -220,6 +222,7 @@ impl HttpServer {
     fn build_router(config: &ApiServerConfig, state: State) -> Router {
         // Build the router and register its routes
         let mut router = Router::new(config.admin_api_key, state.clone());
+        let wallet_rate_limiter = WalletTaskRateLimiter::new_hourly(config.wallet_task_rate_limit);
 
         // --- Misc Routes --- //
 
@@ -274,21 +277,21 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             CREATE_WALLET_ROUTE.to_string(),
-            CreateWalletHandler::new(state.clone()),
+            CreateWalletHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The "/wallet/lookup" route
         router.add_unauthenticated_route(
             &Method::POST,
             FIND_WALLET_ROUTE.to_string(),
-            FindWalletHandler::new(state.clone()),
+            FindWalletHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The "/wallet/:id/refresh" route
         router.add_wallet_authenticated_route(
             &Method::POST,
             REFRESH_WALLET_ROUTE.to_string(),
-            RefreshWalletHandler::new(state.clone()),
+            RefreshWalletHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // Getter for the "/wallet/:id/orders" route
@@ -302,7 +305,7 @@ impl HttpServer {
         router.add_wallet_authenticated_route(
             &Method::POST,
             WALLET_ORDERS_ROUTE.to_string(),
-            CreateOrderHandler::new(state.clone()),
+            CreateOrderHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The "/wallet/:id/orders/:id" route
@@ -316,14 +319,14 @@ impl HttpServer {
         router.add_wallet_authenticated_route(
             &Method::POST,
             UPDATE_ORDER_ROUTE.to_string(),
-            UpdateOrderHandler::new(state.clone()),
+            UpdateOrderHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The "/wallet/:id/orders/:id/cancel" route
         router.add_wallet_authenticated_route(
             &Method::POST,
             CANCEL_ORDER_ROUTE.to_string(),
-            CancelOrderHandler::new(state.clone()),
+            CancelOrderHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The "/wallet/:id/balances" route
@@ -344,21 +347,25 @@ impl HttpServer {
         router.add_wallet_authenticated_route(
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
-            DepositBalanceHandler::new(config.compliance_service_url.clone(), state.clone()),
+            DepositBalanceHandler::new(
+                config.compliance_service_url.clone(),
+                state.clone(),
+                wallet_rate_limiter.clone(),
+            ),
         );
 
         // The "/wallet/:id/balances/:mint/withdraw" route
         router.add_wallet_authenticated_route(
             &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
-            WithdrawBalanceHandler::new(state.clone()),
+            WithdrawBalanceHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The "/wallet/:id/redeem-note" route
         router.add_wallet_authenticated_route(
             &Method::POST,
             REDEEM_NOTE_ROUTE.to_string(),
-            RedeemNoteHandler::new(state.clone()),
+            RedeemNoteHandler::new(state.clone(), wallet_rate_limiter.clone()),
         );
 
         // The `wallet/:id/pay-fees` route

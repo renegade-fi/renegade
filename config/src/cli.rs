@@ -157,6 +157,11 @@ pub struct Cli {
     /// The path at which to save raft snapshots
     #[clap(long, value_parser, default_value = "/raft_snapshots")]
     pub raft_snapshot_path: String,
+    /// The maximum number of wallet operations a user is allowed to perform per hour
+    /// 
+    /// Defaults to 500
+    #[clap(long, value_parser, default_value = "500")]
+    pub wallet_task_rate_limit: u32,
     /// The maximum staleness (number of newer roots observed) to allow on Merkle proofs for 
     /// managed wallets. After this threshold is exceeded, the Merkle proof will be updated
     #[clap(long, value_parser, default_value = "100")]
@@ -319,6 +324,9 @@ pub struct RelayerConfig {
     pub db_path: String,
     /// The path at which to save raft snapshots
     pub raft_snapshot_path: String,
+    /// The maximum number of wallet operations a user is allowed to perform per
+    /// hour
+    pub wallet_task_rate_limit: u32,
     /// The maximum staleness (number of newer roots observed) to allow on
     /// Merkle proofs for managed wallets. After this threshold is exceeded,
     /// the Merkle proof will be updated
@@ -419,6 +427,7 @@ impl Clone for RelayerConfig {
             p2p_key: self.p2p_key.clone(),
             db_path: self.db_path.clone(),
             raft_snapshot_path: self.raft_snapshot_path.clone(),
+            wallet_task_rate_limit: self.wallet_task_rate_limit,
             max_merkle_staleness: self.max_merkle_staleness,
             allow_local: self.allow_local,
             bind_addr: self.bind_addr,
