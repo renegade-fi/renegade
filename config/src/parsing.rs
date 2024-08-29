@@ -116,6 +116,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         p2p_key,
         db_path: cli_args.db_path,
         raft_snapshot_path: cli_args.raft_snapshot_path,
+        wallet_task_rate_limit: cli_args.wallet_task_rate_limit,
         bind_addr: cli_args.bind_addr,
         public_ip: cli_args.public_ip,
         gossip_warmup: cli_args.gossip_warmup,

@@ -322,6 +322,7 @@ async fn main() -> Result<(), CoordinatorError> {
         websocket_port: args.websocket_port,
         admin_api_key: args.admin_api_key,
         compliance_service_url: args.compliance_service_url,
+        wallet_task_rate_limit: args.wallet_task_rate_limit,
         network_sender: network_sender.clone(),
         state: global_state.clone(),
         system_bus,

@@ -167,12 +167,7 @@ impl<
                 // information can leak from cross-origin requests.
                 builder.body(Body::from(serde_json::to_vec(&resp).unwrap())).unwrap()
             },
-            Err(ApiServerError::HttpStatusCode(status, msg)) => {
-                builder.status(status).body(Body::from(msg)).unwrap()
-            },
-            Err(_) => {
-                builder.status(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty()).unwrap()
-            },
+            Err(e) => e.into(),
         }
     }
 }

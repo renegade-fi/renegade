@@ -7,6 +7,9 @@ use state::error::StateError;
 
 use super::router::{build_500_response, build_response_from_status_code};
 
+/// The error message for rate limit exceeded errors
+const ERR_RATE_LIMIT_EXCEEDED: &str = "Rate limit exceeded";
+
 /// The error type for errors that occur during ApiServer execution
 #[derive(Debug)]
 pub enum ApiServerError {
@@ -14,6 +17,8 @@ pub enum ApiServerError {
     ComplianceService(String),
     /// An http error code, should be forwarded as a response
     HttpStatusCode(StatusCode, String),
+    /// An error interacting with the rate limiter
+    RateLimitExceeded,
     /// HTTP server has failed
     HttpServerFailure(String),
     /// Error setting up the API server
@@ -42,6 +47,10 @@ impl From<ApiServerError> for Response<Body> {
             ApiServerError::HttpStatusCode(status, message) => {
                 build_response_from_status_code(status, message)
             },
+            ApiServerError::RateLimitExceeded => build_response_from_status_code(
+                StatusCode::TOO_MANY_REQUESTS,
+                ERR_RATE_LIMIT_EXCEEDED.to_string(),
+            ),
             _ => build_500_response(err.to_string()),
         }
     }
