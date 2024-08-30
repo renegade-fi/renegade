@@ -162,6 +162,11 @@ pub struct Cli {
     /// Defaults to 500
     #[clap(long, value_parser, default_value = "500")]
     pub wallet_task_rate_limit: u32,
+    /// The minimum usdc denominated value for a deposit or withdrawal
+    /// 
+    /// Defaults to 1 USDC (ignoring decimals)
+    #[clap(long, value_parser, default_value = "1.0")]
+    pub min_transfer_amount: f64,
     /// The maximum staleness (number of newer roots observed) to allow on Merkle proofs for 
     /// managed wallets. After this threshold is exceeded, the Merkle proof will be updated
     #[clap(long, value_parser, default_value = "100")]
@@ -327,6 +332,8 @@ pub struct RelayerConfig {
     /// The maximum number of wallet operations a user is allowed to perform per
     /// hour
     pub wallet_task_rate_limit: u32,
+    /// The minimum usdc denominated value for a deposit or withdrawal
+    pub min_transfer_amount: f64,
     /// The maximum staleness (number of newer roots observed) to allow on
     /// Merkle proofs for managed wallets. After this threshold is exceeded,
     /// the Merkle proof will be updated
@@ -428,6 +435,7 @@ impl Clone for RelayerConfig {
             db_path: self.db_path.clone(),
             raft_snapshot_path: self.raft_snapshot_path.clone(),
             wallet_task_rate_limit: self.wallet_task_rate_limit,
+            min_transfer_amount: self.min_transfer_amount,
             max_merkle_staleness: self.max_merkle_staleness,
             allow_local: self.allow_local,
             bind_addr: self.bind_addr,

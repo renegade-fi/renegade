@@ -1,7 +1,7 @@
 //! Defines all possible jobs for the PriceReporter.
 use common::types::{exchange::PriceReporterState, token::Token};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioUnboundedSender};
-use tokio::sync::oneshot::Sender as TokioSender;
+use tokio::sync::oneshot::{self, Receiver as TokioReceiver, Sender as TokioSender};
 use util::metered_channels::MeteredTokioReceiver;
 
 /// The name of the price reporter queue, used to label queue length metrics
@@ -53,4 +53,15 @@ pub enum PriceReporterJob {
         /// The return channel for the price report
         channel: TokioSender<PriceReporterState>,
     },
+}
+
+impl PriceReporterJob {
+    /// A new job to peek at a price report
+    pub fn peek_price(
+        base_token: Token,
+        quote_token: Token,
+    ) -> (Self, TokioReceiver<PriceReporterState>) {
+        let (send, recv) = oneshot::channel();
+        (Self::PeekPrice { base_token, quote_token, channel: send }, recv)
+    }
 }

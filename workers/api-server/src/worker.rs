@@ -51,6 +51,8 @@ pub struct ApiServerConfig {
     pub admin_api_key: Option<HmacKey>,
     /// The number of tasks per hour a given wallet is allowed to make
     pub wallet_task_rate_limit: u32,
+    /// The minimum usdc denominated value for a deposit or withdrawal
+    pub min_transfer_amount: f64,
     /// The URL of the compliance service to use for wallet screening
     ///
     /// Compliance screening is disabled if this is not set
