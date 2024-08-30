@@ -485,6 +485,7 @@ impl MockNodeController {
             http_port: config.http_port,
             websocket_port: config.websocket_port,
             admin_api_key: config.admin_api_key,
+            min_transfer_amount: config.min_transfer_amount,
             compliance_service_url: config.compliance_service_url.clone(),
             wallet_task_rate_limit: config.wallet_task_rate_limit,
             network_sender,

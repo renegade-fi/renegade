@@ -348,9 +348,11 @@ impl HttpServer {
             &Method::POST,
             DEPOSIT_BALANCE_ROUTE.to_string(),
             DepositBalanceHandler::new(
+                config.min_transfer_amount,
                 config.compliance_service_url.clone(),
                 state.clone(),
                 wallet_rate_limiter.clone(),
+                config.price_reporter_work_queue.clone(),
             ),
         );
 
@@ -358,7 +360,12 @@ impl HttpServer {
         router.add_wallet_authenticated_route(
             &Method::POST,
             WITHDRAW_BALANCE_ROUTE.to_string(),
-            WithdrawBalanceHandler::new(state.clone(), wallet_rate_limiter.clone()),
+            WithdrawBalanceHandler::new(
+                config.min_transfer_amount,
+                state.clone(),
+                wallet_rate_limiter.clone(),
+                config.price_reporter_work_queue.clone(),
+            ),
         );
 
         // The "/wallet/:id/redeem-note" route

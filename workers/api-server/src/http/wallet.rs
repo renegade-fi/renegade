@@ -2,15 +2,17 @@
 
 use async_trait::async_trait;
 use circuit_types::{
-    balance::Balance, native_helpers::create_wallet_shares_from_private, order::Order,
+    balance::Balance, native_helpers::create_wallet_shares_from_private, order::Order, Amount,
     SizedWallet as SizedCircuitWallet,
 };
 use common::types::{
+    exchange::PriceReporterState,
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
         RedeemFeeTaskDescriptor, RefreshWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
         UpdateWalletTaskDescriptor,
     },
+    token::Token,
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
     wallet::{keychain::PrivateKeyChain, Wallet, WalletIdentifier},
 };
@@ -29,6 +31,8 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
+use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
+use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
@@ -36,6 +40,7 @@ use task_driver::simulation::simulate_wallet_tasks;
 use util::{
     err_str,
     hex::{biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string},
+    res_some,
 };
 
 use crate::{
@@ -58,13 +63,6 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 /// The name of the query parameter specifying the length of the order history
 /// to return
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
-
-/// The error message returned when a deposit address is screened out
-const ERR_SCREENED_OUT_ADDRESS: &str = "deposit address was screened as high risk";
-/// The error message returned when a wallet with a given ID already exists
-const ERR_WALLET_ALREADY_EXISTS: &str = "wallet id already exists";
-/// The error message returned when an order with a given ID already exists
-const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 
 /// Find the wallet in global state and apply any tasks to its state
 pub(crate) async fn find_wallet_for_update(
@@ -114,14 +112,61 @@ pub(crate) fn maybe_rotate_root_key(
     Ok(())
 }
 
+/// Get the USDC denominated value of a balance
+///
+/// Note that this function may have precision issues for large balances, it is
+/// intended as a simple implementation at the expense of some precision
+async fn get_usdc_denominated_value(
+    mint: &BigUint,
+    amount: Amount,
+    price_reporter_queue: &PriceReporterQueue,
+) -> Result<Option<f64>, ApiServerError> {
+    let base_token = Token::from_addr_biguint(mint);
+    let quote_token = Token::from_ticker("USDC");
+    let amount_with_decimals = base_token.convert_to_decimal(amount);
+
+    // If the token is USDC, return the amount
+    if base_token == quote_token {
+        return Ok(Some(amount_with_decimals));
+    }
+
+    // Peek at the price report from the price reporter
+    let (job, recv) = PriceReporterJob::peek_price(base_token, quote_token);
+    price_reporter_queue.send(job).map_err(internal_error)?;
+    let state = recv.await.map_err(internal_error)?;
+
+    let maybe_price = match state {
+        PriceReporterState::Nominal(report) => Some(report.price),
+        _ => None,
+    };
+    let price = res_some!(maybe_price);
+
+    // Compute the usdc denominated value
+    let value = amount_with_decimals * price;
+    Ok(Some(value))
+}
+
 // ------------------
 // | Error Messages |
 // ------------------
+
+/// The error message returned when a deposit address is screened out
+const ERR_SCREENED_OUT_ADDRESS: &str = "deposit address was screened as high risk";
+/// The error message returned when a wallet with a given ID already exists
+const ERR_WALLET_ALREADY_EXISTS: &str = "wallet id already exists";
+/// The error message returned when an order with a given ID already exists
+const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 
 /// Error message displayed when a given order cannot be found
 pub const ERR_ORDER_NOT_FOUND: &str = "order not found";
 /// Error message emitted when a withdrawal is attempted with non-zero fees
 const ERR_WITHDRAW_NONZERO_FEES: &str = "cannot withdraw with non-zero fees";
+/// Error message emitted when a withdrawal is attempted with an amount less
+/// than the minimum allowed
+const ERR_MIN_WITHDRAWAL_AMOUNT: &str = "cannot withdraw less than the minimum allowed amount";
+/// Error message emitted when a deposit is attempted with an amount less than
+/// the minimum allowed
+const ERR_MIN_DEPOSIT_AMOUNT: &str = "cannot deposit less than the minimum allowed amount";
 
 // -------------------------
 // | Wallet Route Handlers |
@@ -704,23 +749,29 @@ impl TypedHandler for GetBalanceByMintHandler {
 
 /// Handler for the POST /wallet/:id/balances/deposit route
 pub struct DepositBalanceHandler {
+    /// The minimum deposit amount allowed by the relayer
+    min_deposit_amount: f64,
     /// The URL of the compliance service to use for wallet screening
     compliance_client: ComplianceServerClient,
     /// A copy of the relayer-global state
     state: State,
     /// The per-wallet task rate limiter
     rate_limiter: WalletTaskRateLimiter,
+    /// The price reporter's job queue
+    price_reporter_queue: PriceReporterQueue,
 }
 
 impl DepositBalanceHandler {
     /// Constructor
     pub fn new(
+        min_deposit_amount: f64,
         compliance_url: Option<String>,
         state: State,
         rate_limiter: WalletTaskRateLimiter,
+        price_reporter_queue: PriceReporterQueue,
     ) -> Self {
         let compliance_client = ComplianceServerClient::new(compliance_url);
-        Self { compliance_client, state, rate_limiter }
+        Self { min_deposit_amount, compliance_client, state, rate_limiter, price_reporter_queue }
     }
 }
 
@@ -742,6 +793,19 @@ impl TypedHandler for DepositBalanceHandler {
             return Err(bad_request(ERR_SCREENED_OUT_ADDRESS));
         }
 
+        // Check that the deposit amount is above the minimum allowed
+        let deposit_amount = req.amount.to_u128().unwrap();
+        let maybe_deposit_value =
+            get_usdc_denominated_value(&req.mint, deposit_amount, &self.price_reporter_queue)
+                .await?;
+
+        // If we are unable to fetch a price, do not block the deposit
+        if let Some(deposit_value) = maybe_deposit_value {
+            if deposit_value < self.min_deposit_amount {
+                return Err(bad_request(ERR_MIN_DEPOSIT_AMOUNT.to_string()));
+            }
+        }
+
         // Parse the wallet ID from the params
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
@@ -751,8 +815,7 @@ impl TypedHandler for DepositBalanceHandler {
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Apply the balance update to the old wallet to get the new wallet
-        let amount = req.amount.to_u128().unwrap();
-        let bal = Balance::new_from_mint_and_amount(req.mint.clone(), amount);
+        let bal = Balance::new_from_mint_and_amount(req.mint.clone(), deposit_amount);
 
         new_wallet.add_balance(bal).map_err(bad_request)?;
         new_wallet.reblind_wallet();
@@ -760,7 +823,7 @@ impl TypedHandler for DepositBalanceHandler {
         let deposit_with_auth = ExternalTransferWithAuth::deposit(
             req.from_addr,
             req.mint,
-            amount,
+            deposit_amount,
             DepositAuth {
                 permit_nonce: req.permit_nonce,
                 permit_deadline: req.permit_deadline,
@@ -786,16 +849,25 @@ impl TypedHandler for DepositBalanceHandler {
 
 /// Handler for the POST /wallet/:id/balances/:mint/withdraw route
 pub struct WithdrawBalanceHandler {
+    /// The minimum withdrawal amount allowed by the relayer
+    min_withdrawal_amount: f64,
     /// A copy of the relayer-global state
     state: State,
     /// The per-wallet task rate limiter
     rate_limiter: WalletTaskRateLimiter,
+    /// The price reporter's job queue
+    price_reporter_queue: PriceReporterQueue,
 }
 
 impl WithdrawBalanceHandler {
     /// Constructor
-    pub fn new(state: State, rate_limiter: WalletTaskRateLimiter) -> Self {
-        Self { state, rate_limiter }
+    pub fn new(
+        min_withdrawal_amount: f64,
+        state: State,
+        rate_limiter: WalletTaskRateLimiter,
+        price_reporter_queue: PriceReporterQueue,
+    ) -> Self {
+        Self { min_withdrawal_amount, state, rate_limiter, price_reporter_queue }
     }
 }
 
@@ -830,6 +902,21 @@ impl TypedHandler for WithdrawBalanceHandler {
         new_wallet.withdraw(&mint, withdrawal_amount).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
+        // Check that the withdrawal amount is above the minimum allowed or withdraws
+        // the entire balance if it is not
+        let maybe_withdrawal_value =
+            get_usdc_denominated_value(&mint, withdrawal_amount, &self.price_reporter_queue)
+                .await?;
+
+        // If we are unable to fetch a price, do not block the withdrawal
+        let new_balance = new_wallet.get_balance(&mint).unwrap();
+        if let Some(withdrawal_value) = maybe_withdrawal_value {
+            if withdrawal_value < self.min_withdrawal_amount && new_balance.amount > 0 {
+                return Err(bad_request(ERR_MIN_WITHDRAWAL_AMOUNT.to_string()));
+            }
+        }
+
+        // Create the withdrawal task
         let withdrawal_with_auth = ExternalTransferWithAuth::withdrawal(
             req.destination_addr,
             mint,
@@ -845,7 +932,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         )
         .map_err(bad_request)?;
 
-        // Check rate limits
+        // Check rate limits and enqueue the task
         self.rate_limiter.check_rate_limit(wallet_id).await?;
         let task_id = append_task_and_await(task.into(), &self.state).await?;
 
