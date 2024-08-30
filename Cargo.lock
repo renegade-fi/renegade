@@ -1786,6 +1786,7 @@ dependencies = [
  "async-trait",
  "circuit-types 0.1.0",
  "common 0.1.0",
+ "constants 0.1.0",
  "crossbeam",
  "ethers",
  "gossip-api",
@@ -1795,6 +1796,7 @@ dependencies = [
  "state",
  "tokio",
  "tracing",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -2292,6 +2294,7 @@ dependencies = [
  "clap 4.5.16",
  "colored",
  "common 0.1.0",
+ "constants 0.1.0",
  "ed25519-dalek 1.0.1",
  "ethers",
  "json",
@@ -4018,6 +4021,7 @@ dependencies = [
  "circuit-types 0.1.0",
  "circuits 0.1.0",
  "common 0.1.0",
+ "constants 0.1.0",
  "futures",
  "gossip-api",
  "itertools 0.10.5",
@@ -7056,6 +7060,7 @@ dependencies = [
  "atomic_float 0.1.0",
  "bimap",
  "common 0.1.0",
+ "constants 0.1.0",
  "create2",
  "external-api 0.1.0",
  "futures",

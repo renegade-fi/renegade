@@ -8,6 +8,7 @@ use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     wallet::{keychain::HmacKey, WalletIdentifier},
 };
+use constants::set_bootstrap_mode;
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
 use ethers::{core::rand::thread_rng, signers::LocalWallet};
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
@@ -48,6 +49,9 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
     let cli = Cli::parse_from(full_args);
     // Setup the token remap
     setup_token_remaps(cli.token_remap_file.clone(), cli.chain_id)?;
+
+    // Set the bootstrap mode
+    set_bootstrap_mode(cli.bootstrap_mode);
 
     let config = parse_config_from_args(cli)?;
     Ok(config)
@@ -107,6 +111,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
         compliance_service_url: cli_args.compliance_service_url,
+        bootstrap_mode: cli_args.bootstrap_mode,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,
         http_port: cli_args.http_port,

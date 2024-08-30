@@ -4,6 +4,8 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(missing_docs)]
 
+use std::sync::OnceLock;
+
 use ark_ec::Group;
 #[cfg(feature = "mpc-types")]
 use ark_mpc::algebra::{
@@ -17,6 +19,24 @@ use ark_mpc::algebra::{
 
 /// The current relayer version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Whether or not the relayer is in bootstrap mode
+pub static BOOTSTRAP_MODE: OnceLock<bool> = OnceLock::new();
+
+/// Whether or not the relayer is in bootstrap mode
+///
+/// We default to false instead of erroring here to allow use of workers
+/// _without_ setting this value. This is especially important outside of the
+/// relayer repo
+pub fn in_bootstrap_mode() -> bool {
+    BOOTSTRAP_MODE.get().copied().unwrap_or(false)
+}
+
+/// Set the bootstrap mode
+pub fn set_bootstrap_mode(mode: bool) {
+    BOOTSTRAP_MODE
+        .set(mode)
+        .expect("BOOTSTRAP_MODE should not be initialized before calling set_bootstrap_mode()")
+}
 
 // -------------------------
 // | System-Wide Constants |

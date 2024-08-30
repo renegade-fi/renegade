@@ -46,7 +46,7 @@ const ENV_P2P_PORT: &str = "P2P_PORT";
 /// The public IP of the node (optional)
 const ENV_PUBLIC_IP: &str = "PUBLIC_IP";
 /// The symmetric key used to authenticate admin API requests (optional)
-const ENV_ADMIN_KEY: &str = "ADMIN_KEY";
+const ENV_ADMIN_KEY: &str = "ADMIN_API_KEY";
 /// The funds manager api URL
 const ENV_FUNDS_MANAGER_URL: &str = "FUNDS_MANAGER_URL";
 /// The funds manager api key

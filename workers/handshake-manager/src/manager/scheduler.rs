@@ -4,10 +4,11 @@
 use std::time::Duration;
 
 use common::types::CancelChannel;
+use constants::in_bootstrap_mode;
 use job_types::handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue};
 use state::State;
 use tracing::info;
-use util::err_str;
+use util::{err_str, runtime::sleep_forever_async};
 
 use crate::error::HandshakeManagerError;
 
@@ -36,6 +37,10 @@ impl HandshakeScheduler {
 
     /// The execution loop of the timer, periodically enqueues handshake jobs
     pub async fn execution_loop(mut self) -> HandshakeManagerError {
+        if in_bootstrap_mode() {
+            sleep_forever_async().await;
+        }
+
         let interval_seconds = HANDSHAKE_INTERVAL_MS / 1000;
         let interval_nanos = (HANDSHAKE_INTERVAL_MS % 1000 * NANOS_PER_MILLI) as u32;
 

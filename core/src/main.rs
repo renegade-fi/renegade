@@ -23,7 +23,7 @@ use arbitrum_client::{
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::default_wrapper::default_option;
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
-use constants::VERSION;
+use constants::{in_bootstrap_mode, VERSION};
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
@@ -102,6 +102,10 @@ async fn main() -> Result<(), CoordinatorError> {
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
         VERSION, args.p2p_port, args.cluster_id
     );
+
+    if in_bootstrap_mode() {
+        info!("Running in bootstrap mode");
+    }
 
     // Build communication primitives
     // First, the global shared mpmc bus that all workers have access to
