@@ -2,7 +2,7 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use constants::{HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC};
+use constants::{in_bootstrap_mode, HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC};
 use external_api::{
     bus_message::{SystemBusMessage, SystemBusMessageWithTopic, NETWORK_TOPOLOGY_TOPIC},
     websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
@@ -208,6 +208,11 @@ impl WebsocketServer {
     /// Manages subscriptions to internal channels and dispatches
     /// subscribe/unsubscribe requests
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), ApiServerError> {
+        // Ignore connections in bootstrap mode
+        if in_bootstrap_mode() {
+            return Ok(());
+        }
+
         // Accept the websocket upgrade and split into read/write streams
         let websocket_stream = accept_async(stream)
             .await

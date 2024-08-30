@@ -16,6 +16,7 @@ arbitrum-client = { path = "../arbitrum-client" }
 circuit-types = { path = "../circuit-types" }
 colored = "2.0"
 common = { path = "../common" }
+constants = { path = "../constants" }
 util = { path = "../util" }
 
 # === Misc Dependencies === #

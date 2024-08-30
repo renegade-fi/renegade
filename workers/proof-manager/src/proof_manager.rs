@@ -36,10 +36,11 @@ use circuits::{
     },
 };
 use common::types::{proof_bundles::ProofBundle, CancelChannel};
+use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
 use tracing::{error, info, info_span, instrument};
-use util::err_str;
+use util::{err_str, runtime::sleep_forever_blocking};
 
 use super::error::ProofManagerError;
 
@@ -80,6 +81,11 @@ impl ProofManager {
         thread_pool: Arc<ThreadPool>,
         cancel_channel: CancelChannel,
     ) -> Result<(), ProofManagerError> {
+        // If the relayer is in bootstrap mode, sleep forever
+        if in_bootstrap_mode() {
+            sleep_forever_blocking();
+        }
+
         // Preprocess the circuits
         ProofManager::preprocess_circuits()?;
 

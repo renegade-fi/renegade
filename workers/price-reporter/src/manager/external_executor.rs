@@ -12,6 +12,7 @@ use common::{
         CancelChannel, Price,
     },
 };
+use constants::in_bootstrap_mode;
 use external_api::websocket::WebsocketMessage;
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -30,7 +31,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{error, info, info_span, warn, Instrument};
 use tungstenite::Message;
 use url::Url;
-use util::{err_str, get_current_time_millis};
+use util::{err_str, get_current_time_millis, runtime::sleep_forever_async};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -90,6 +91,11 @@ impl ExternalPriceReporterExecutor {
 
     /// The execution loop for the price reporter
     pub(crate) async fn execution_loop(mut self) -> Result<(), PriceReporterError> {
+        // If the relayer is in bootstrap mode, sleep forever
+        if in_bootstrap_mode() {
+            sleep_forever_async().await;
+        }
+
         let mut job_receiver = self.job_receiver.take().unwrap();
         let mut cancel_channel = self.cancel_channel.take().unwrap();
 

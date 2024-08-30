@@ -19,7 +19,7 @@ use common::types::{
         Wallet, WalletIdentifier,
     },
 };
-use constants::Scalar;
+use constants::{in_bootstrap_mode, Scalar};
 use ethers::signers::LocalWallet;
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
@@ -275,6 +275,11 @@ impl NodeStartupTask {
     ///
     /// Concretely, this is the contract protocol key and the protocol fee
     async fn fetch_contract_constants(&self) -> Result<(), NodeStartupTaskError> {
+        // Do not fetch constants in bootstrap mode
+        if in_bootstrap_mode() {
+            return Ok(());
+        }
+
         // Fetch the values from the contract
         let protocol_fee = self
             .arbitrum_client
@@ -348,6 +353,11 @@ impl NodeStartupTask {
     ///
     /// If the wallet is found on-chain, recover it. Otherwise, create a new one
     async fn setup_relayer_wallet(&self) -> Result<(), NodeStartupTaskError> {
+        // Do not setup a wallet in bootstrap mode
+        if in_bootstrap_mode() {
+            return Ok(());
+        }
+
         // If the state setup did not allocate a wallet id, we do not need a wallet
         if !self.needs_relayer_wallet {
             info!("no relayer wallet needed, skipping creation...");
@@ -384,6 +394,11 @@ impl NodeStartupTask {
 
     /// Refresh state when recovering from a snapshot
     async fn refresh_state(&self) -> Result<(), NodeStartupTaskError> {
+        // Do not refresh state in bootstrap mode
+        if in_bootstrap_mode() {
+            return Ok(());
+        }
+
         // If the node did not recover from a snapshot we need not refresh
         if !self.state.was_recovered_from_snapshot() {
             return Ok(());

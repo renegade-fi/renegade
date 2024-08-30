@@ -4,6 +4,7 @@ use std::thread::JoinHandle;
 
 use arbitrum_client::{abi::NullifierSpentFilter, client::ArbitrumClient};
 use common::types::CancelChannel;
+use constants::in_bootstrap_mode;
 use ethers::prelude::StreamExt;
 use job_types::{
     handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
@@ -13,6 +14,7 @@ use job_types::{
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
 use tracing::{error, info};
+use util::runtime::sleep_forever_async;
 
 use super::error::OnChainEventListenerError;
 
@@ -74,6 +76,11 @@ impl OnChainEventListenerExecutor {
 
     /// The main execution loop for the executor
     pub async fn execute(self) -> Result<(), OnChainEventListenerError> {
+        // If the node is running in bootstrap mode, sleep forever
+        if in_bootstrap_mode() {
+            sleep_forever_async().await;
+        }
+
         // Get the current block number to start from
         let starting_block_number = self
             .arbitrum_client()

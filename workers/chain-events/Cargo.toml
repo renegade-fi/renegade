@@ -15,10 +15,12 @@ ethers = { workspace = true }
 arbitrum-client = { path = "../../arbitrum-client" }
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
+constants = { path = "../../constants" }
 renegade-crypto = { path = "../../renegade-crypto" }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
 state = { path = "../../state" }
+util = { path = "../../util" }
 
 # === Misc Dependencies === #
 lazy_static = { workspace = true }

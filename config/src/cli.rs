@@ -115,6 +115,13 @@ pub struct Cli {
     // -------------------------
     // | Cluster Configuration |
     // -------------------------
+
+    /// Run the relayer in bootstrap mode
+    /// 
+    /// Bootstrap mode omits much of the relayer's functionality and ignores most messages
+    #[clap(long)]
+    pub bootstrap_mode: bool,
+
     /// The bootstrap servers that the peer should dial initially
     #[clap(short, long, value_parser, env = "BOOTSTRAP_SERVERS", use_value_delimiter = true)]
     pub bootstrap_servers: Option<Vec<String>>,
@@ -301,6 +308,11 @@ pub struct RelayerConfig {
     // -------------------------
     // | Cluster Configuration |
     // -------------------------
+    /// Run the relayer in bootstrap mode
+    ///
+    /// Bootstrap mode omits much of the relayer's functionality and ignores
+    /// most messages
+    pub bootstrap_mode: bool,
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The cluster keypair
@@ -427,6 +439,7 @@ impl Clone for RelayerConfig {
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
             compliance_service_url: self.compliance_service_url.clone(),
+            bootstrap_mode: self.bootstrap_mode,
             bootstrap_servers: self.bootstrap_servers.clone(),
             p2p_port: self.p2p_port,
             http_port: self.http_port,

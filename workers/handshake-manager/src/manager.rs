@@ -20,7 +20,7 @@ use common::{
         CancelChannel,
     },
 };
-use constants::HANDSHAKE_STATUS_TOPIC;
+use constants::{in_bootstrap_mode, HANDSHAKE_STATUS_TOPIC};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::{
@@ -46,7 +46,7 @@ use state::State;
 use std::{collections::HashSet, thread::JoinHandle};
 use system_bus::SystemBus;
 use tracing::{error, info, info_span, Instrument};
-use util::{err_str, get_current_time_millis};
+use util::{err_str, get_current_time_millis, runtime::sleep_forever_async};
 use uuid::Uuid;
 
 pub(super) use price_agreement::init_price_streams;
@@ -158,6 +158,11 @@ impl HandshakeExecutor {
 
     /// The main loop: dequeues jobs and forwards them to the thread pool
     pub async fn execution_loop(mut self) -> HandshakeManagerError {
+        // If the node is running in bootstrap mode, sleep forever
+        if in_bootstrap_mode() {
+            sleep_forever_async().await;
+        }
+
         let mut job_channel = self.job_channel.take().unwrap();
 
         loop {

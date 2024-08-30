@@ -25,6 +25,7 @@ web3 = "0.18"
 
 # === Workspace Dependencies === #
 common = { path = "../../common" }
+constants = { path = "../../constants" }
 external-api = { path = "../../external-api" }
 job-types = { path = "../job-types" }
 system-bus = { path = "../../system-bus" }

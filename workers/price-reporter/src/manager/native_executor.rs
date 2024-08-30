@@ -6,9 +6,11 @@ use common::default_wrapper::{DefaultOption, DefaultWrapper};
 use common::types::exchange::{Exchange, PriceReporterState};
 use common::types::token::Token;
 use common::types::CancelChannel;
+use constants::in_bootstrap_mode;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::sync::oneshot::Sender as TokioSender;
 use tracing::{error, info, info_span, warn, Instrument};
+use util::runtime::sleep_forever_async;
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -48,6 +50,11 @@ impl PriceReporterExecutor {
 
     /// The execution loop for the price reporter
     pub(crate) async fn execution_loop(mut self) -> Result<(), PriceReporterError> {
+        // If the relayer is in bootstrap mode, sleep forever
+        if in_bootstrap_mode() {
+            sleep_forever_async().await;
+        }
+
         let mut job_receiver = self.job_receiver.take().unwrap();
         let mut cancel_channel = self.cancel_channel.take().unwrap();
 

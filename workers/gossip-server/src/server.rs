@@ -9,6 +9,7 @@ use common::{
     default_wrapper::DefaultWrapper,
     types::{gossip::WrappedPeerId, CancelChannel},
 };
+use constants::in_bootstrap_mode;
 use gossip_api::{
     pubsub::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
@@ -214,6 +215,10 @@ impl GossipProtocolExecutor {
         peer: WrappedPeerId,
         req: GossipRequest,
     ) -> Result<GossipResponseType, GossipError> {
+        if should_ignore_request(&req) {
+            return Ok(GossipResponseType::Ack);
+        }
+
         match req.body {
             GossipRequestType::Bootstrap(req) => self.handle_bootstrap_req(req).await,
             GossipRequestType::Heartbeat(req) => {
@@ -234,6 +239,10 @@ impl GossipProtocolExecutor {
         peer: WrappedPeerId,
         resp: GossipResponse,
     ) -> Result<(), GossipError> {
+        if should_ignore_response(&resp) {
+            return Ok(());
+        }
+
         match resp.body {
             GossipResponseType::Heartbeat(resp) => self.handle_heartbeat(&peer, &resp).await,
             GossipResponseType::OrderInfo(resp) => {
@@ -250,6 +259,10 @@ impl GossipProtocolExecutor {
         sender: WrappedPeerId,
         msg: PubsubMessage,
     ) -> Result<(), GossipError> {
+        if should_ignore_pubsub(&msg) {
+            return Ok(());
+        }
+
         match msg {
             PubsubMessage::Orderbook(msg) => self.handle_orderbook_pubsub(msg).await,
             PubsubMessage::Cluster(ClusterManagementMessage { message_type, .. }) => {
@@ -264,5 +277,59 @@ impl GossipProtocolExecutor {
                 }
             },
         }
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Whether or not the relayer should ignore a request
+fn should_ignore_request(req: &GossipRequest) -> bool {
+    // Only bootstrap mode currently causes requests to be ignored
+    if !in_bootstrap_mode() {
+        return false;
+    }
+
+    // We intentionally do not have a default case here so that when new request
+    // types are added, we will remember to update this function
+    match req.body {
+        GossipRequestType::Handshake(_) | GossipRequestType::OrderInfo(_) => true,
+        GossipRequestType::Ack
+        | GossipRequestType::Bootstrap(_)
+        | GossipRequestType::Heartbeat(_)
+        | GossipRequestType::PeerInfo(_)
+        | GossipRequestType::Raft(_) => false,
+    }
+}
+
+/// Whether or not a response should be ignored
+fn should_ignore_response(resp: &GossipResponse) -> bool {
+    // Ignore responses if the relayer is in bootstrap mode
+    if !in_bootstrap_mode() {
+        return false;
+    }
+
+    // We intentionally do not have a default case here so that when new response
+    // types are added, we will remember to update this function
+    match resp.body {
+        GossipResponseType::Handshake(_) | GossipResponseType::OrderInfo(_) => true,
+        GossipResponseType::Ack
+        | GossipResponseType::Heartbeat(_)
+        | GossipResponseType::PeerInfo(_)
+        | GossipResponseType::Raft(_) => false,
+    }
+}
+
+/// Whether or not we should ignore a pubsub message
+fn should_ignore_pubsub(msg: &PubsubMessage) -> bool {
+    // Ignore pubsub messages if the relayer is in bootstrap mode
+    if !in_bootstrap_mode() {
+        return false;
+    }
+
+    match msg {
+        PubsubMessage::Orderbook(_) => true,
+        PubsubMessage::Cluster(_) => false,
     }
 }
