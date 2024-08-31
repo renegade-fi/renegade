@@ -76,7 +76,7 @@ pub struct Cli {
     #[clap(long, value_parser, default_value = "testnet", env = "CHAIN")]
     pub chain_id: Chain,
     /// The address of the darkpool contract, defaults to the internal testnet deployment
-    #[clap(long, value_parser, env = "DARKPOOL_ADDRESS")]
+    #[clap(long, value_parser, env = "DARKPOOL_ADDRESS", default_value = "0x2f88458fc25591f1de247dd3297f039eecfcd534")]
     pub contract_address: String,
     /// The path to the file containing deployments info for the darkpool contract
     #[clap(long, value_parser)]
@@ -119,7 +119,7 @@ pub struct Cli {
     /// Run the relayer in bootstrap mode
     /// 
     /// Bootstrap mode omits much of the relayer's functionality and ignores most messages
-    #[clap(long)]
+    #[clap(long, env = "BOOTSTRAP_MODE")]
     pub bootstrap_mode: bool,
 
     /// The bootstrap servers that the peer should dial initially

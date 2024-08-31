@@ -357,8 +357,10 @@ async fn setup_gas_wallet(
 
 /// Read in the funds manager HMAC key from environment variables
 fn read_funds_manager_key() -> Result<[u8; 32], String> {
-    let key = read_env_var::<String>(ENV_FUNDS_MANAGER_KEY)?;
-    let decoded = hex::decode(key).expect("Invalid HMAC key");
+    let key_str = read_env_var::<String>(ENV_FUNDS_MANAGER_KEY)?;
+    let key_str = key_str.trim_start_matches("0x");
+
+    let decoded = hex::decode(key_str).expect("Invalid HMAC key");
     if decoded.len() != 32 {
         panic!("HMAC key must be 32 bytes long");
     }
