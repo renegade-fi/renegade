@@ -4,16 +4,12 @@ use std::collections::HashMap;
 
 use common::types::{
     exchange::PriceReporterState,
-    token::{
-        Token, AAVE_TICKER, BNB_TICKER, CRV_TICKER, DYDX_TICKER, LDO_TICKER, LINK_TICKER,
-        MATIC_TICKER, UNI_TICKER, USDC_TICKER, WBTC_TICKER, WETH_TICKER,
-    },
+    token::{Token, TOKEN_REMAPS, USDC_TICKER},
     wallet::OrderIdentifier,
     TimestampedPrice,
 };
 use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
-use lazy_static::lazy_static;
 use tokio::sync::oneshot::{self, Receiver};
 use tracing::{error, instrument, warn};
 use util::err_str;
@@ -27,55 +23,6 @@ const MAX_PRICE_DEVIATION: f64 = 0.01;
 /// pair
 const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 
-lazy_static! {
-    /// The token pairs we want to keep price streams open for persistently
-    pub static ref DEFAULT_PAIRS: Vec<(Token, Token)> = {
-        // For now we only stream prices quoted in USDC
-        vec![
-            (
-                Token::from_ticker(WBTC_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(WETH_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(BNB_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(MATIC_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(LDO_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(LINK_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(UNI_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(CRV_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(DYDX_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            ),
-            (
-                Token::from_ticker(AAVE_TICKER),
-                Token::from_ticker(USDC_TICKER),
-            )
-        ]
-    };
-}
-
 /// Initializes price streams for the default token pairs in the
 /// `price-reporter`
 ///
@@ -86,7 +33,15 @@ lazy_static! {
 pub fn init_price_streams(
     price_reporter_job_queue: PriceReporterQueue,
 ) -> Result<(), HandshakeManagerError> {
-    for (base, quote) in DEFAULT_PAIRS.iter() {
+    let quote = Token::from_ticker(USDC_TICKER);
+
+    for (addr, _) in TOKEN_REMAPS.get().unwrap().iter() {
+        let base = Token::from_addr(addr);
+        if base == quote {
+            // Skip the USDC-USDC pair
+            continue;
+        }
+
         price_reporter_job_queue
             .send(PriceReporterJob::StreamPrice {
                 base_token: base.clone(),
@@ -102,9 +57,13 @@ impl HandshakeExecutor {
     /// Fetch a price vector from the price reporter
     pub(super) async fn fetch_price_vector(&self) -> Result<PriceVector, HandshakeManagerError> {
         // Enqueue jobs in the price manager to snapshot the midpoint for each pair
-        let mut channels = Vec::with_capacity(DEFAULT_PAIRS.len());
-        for (base, quote) in DEFAULT_PAIRS.iter().cloned() {
-            let receiver = self.request_price(base, quote)?;
+        let token_maps = TOKEN_REMAPS.get().unwrap();
+        let quote = Token::from_ticker(USDC_TICKER);
+
+        let mut channels = Vec::with_capacity(token_maps.len());
+        for (base_addr, _ticker) in token_maps.iter() {
+            let base = Token::from_addr(base_addr);
+            let receiver = self.request_price(base, quote.clone())?;
             channels.push(receiver);
         }
 
