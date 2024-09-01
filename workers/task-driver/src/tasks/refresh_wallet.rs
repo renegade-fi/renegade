@@ -279,14 +279,6 @@ impl RefreshWalletTask {
         &self,
         wallet: &Wallet,
     ) -> Result<(Scalar, SizedWalletShare), RefreshWalletTaskError> {
-        // If the locally stored version of the wallet has not been nullified on-chain,
-        // it is the latest
-        let nullifier = wallet.get_wallet_nullifier();
-        if !self.arbitrum_client.check_nullifier_used(nullifier).await? {
-            let public_blinder = wallet.blinded_public_shares.blinder;
-            return Ok((public_blinder, wallet.private_shares.clone()));
-        }
-
         // Otherwise lookup the wallet
         let blinder_seed = wallet.private_blinder_share();
         let (idx, blinder, private_blinder_share) =
