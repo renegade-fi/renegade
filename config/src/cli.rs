@@ -56,7 +56,7 @@ pub struct Cli {
     /// that the relayer takes as a fee
     /// 
     /// Defaults to 8 basis points
-    #[clap(long, value_parser, default_value = "0.0008")]
+    #[clap(long, value_parser, default_value = "0.0002")]
     pub match_take_rate: f64,
     /// The mutual exclusion list for matches, two wallets in this list will never be matched internally by the node
     #[clap(long, value_parser, value_delimiter=' ', num_args=0..)]
