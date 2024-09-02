@@ -84,6 +84,8 @@ pub const COMP_TICKER: &str = "COMP";
 pub const MKR_TICKER: &str = "MKR";
 /// PENDLE ticker
 pub const PENDLE_TICKER: &str = "PENDLE";
+/// RDNT ticker
+pub const RDNT_TICKER: &str = "RDNT";
 /// TORN ticker
 pub const TORN_TICKER: &str = "TORN";
 /// REN ticker
@@ -102,6 +104,10 @@ pub const MANA_TICKER: &str = "MANA";
 pub const LPT_TICKER: &str = "LPT";
 /// GRT ticker
 pub const GRT_TICKER: &str = "GRT";
+/// XAI ticker
+pub const XAI_TICKER: &str = "XAI";
+/// ETHFI ticker
+pub const ETHFI_TICKER: &str = "ETHFI";
 
 /// A helper enum to describe the state of each ticker on each Exchange. Same
 /// means that the ERC-20 and Exchange tickers are the same, Renamed means that
@@ -275,6 +281,13 @@ pub static TICKER_NAMES: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Unsupported,
     ),
+    (
+        RDNT_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Same,
+    ),
     // DeFi Other
     (
         TORN_TICKER,
@@ -339,6 +352,20 @@ pub static TICKER_NAMES: &[(
         ExchangeTicker::Same,
         ExchangeTicker::Same,
         ExchangeTicker::Same,
+        ExchangeTicker::Same,
+    ),
+    (
+        XAI_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Unsupported,
+    ),
+    (
+        ETHFI_TICKER,
+        ExchangeTicker::Same,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Unsupported,
         ExchangeTicker::Same,
     ),
 ];
