@@ -28,7 +28,7 @@ use crate::{
 
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
-pub const DEFAULT_FP_PRECISION: usize = 32;
+pub const DEFAULT_FP_PRECISION: usize = 63;
 
 lazy_static! {
     /// The shift used to generate a scalar representation from a fixed point
@@ -183,14 +183,8 @@ impl FixedPoint {
 
 impl From<f32> for FixedPoint {
     fn from(val: f32) -> Self {
-        let shifted_val = val * (2u64.pow(DEFAULT_FP_PRECISION as u32) as f32);
-        assert_eq!(
-            shifted_val,
-            shifted_val.floor(),
-            "Given value exceeds precision of constraint system"
-        );
-
-        Self { repr: Scalar::from(shifted_val as u64) }
+        let val_f64 = val as f64;
+        Self::from_f64_round_down(val_f64)
     }
 }
 
