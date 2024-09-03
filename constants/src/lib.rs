@@ -117,9 +117,7 @@ pub const DEVNET_DEPLOY_BLOCK: u64 = 0;
 pub const TESTNET_DEPLOY_BLOCK: u64 = 55713322;
 
 /// The block number at which the darkpool was deployed on mainnet
-///
-/// TODO: Update this once the contract is deployed
-pub const MAINNET_DEPLOY_BLOCK: u64 = 0;
+pub const MAINNET_DEPLOY_BLOCK: u64 = 249416532;
 
 /// The number of bytes in an Arbitrum address
 pub const ADDRESS_BYTE_LENGTH: usize = 20;

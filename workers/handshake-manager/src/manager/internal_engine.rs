@@ -232,7 +232,9 @@ impl HandshakeExecutor {
                 },
             };
 
-        Ok(price)
+        // Correct the price for decimals
+        let corrected_price = Self::decimal_correct_price(&base, &quote, price)?;
+        Ok(corrected_price)
     }
 
     /// Get the validity proof and witness for a given order
