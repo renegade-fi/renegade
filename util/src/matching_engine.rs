@@ -10,6 +10,7 @@ use circuit_types::{
 };
 use constants::Scalar;
 use renegade_crypto::fields::scalar_to_u128;
+use tracing::warn;
 
 use crate::arbitrum::get_protocol_fee;
 
@@ -61,6 +62,9 @@ pub fn match_orders_with_max_amount(
 
     // Validate that the midpoint price is acceptable for both orders
     valid_match = valid_match && o1.price_in_range(price) && o2.price_in_range(price);
+    if !valid_match {
+        warn!("Price ({}) falls outside of acceptable range for orders", price.to_f64());
+    }
 
     // Neither order is zero'd out
     // Orders are not removed when they are zero'd because a counterparty cannot
