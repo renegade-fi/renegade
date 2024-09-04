@@ -164,4 +164,4 @@ cargo run \
     --deployments-path $DEPLOYMENTS_PATH \
     deploy-proxy \
     --owner $DEVNET_ACCOUNT_ADDRESS \
-    --fee 858993
+    --fee 1844674407370955
