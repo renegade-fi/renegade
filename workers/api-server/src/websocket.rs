@@ -244,7 +244,6 @@ impl WebsocketServer {
                     match message {
                         Some(msg) => {
                             if let Err(e) = msg {
-                                info!("error handling websocket connection: {e}");
                                 return Err(ApiServerError::WebsocketServerFailure(e.to_string()));
                             }
 
