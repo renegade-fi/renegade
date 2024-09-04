@@ -423,17 +423,24 @@ impl ArbitrumClient {
 
         let tx = tx.gas_price(latest_basefee * 2);
 
-        let res = tx
+        let receipt = tx
             .send()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxDropped);
+            .ok_or(ArbitrumClientError::TxDropped)?;
 
         #[cfg(feature = "tx-metrics")]
         decr_inflight_txs();
 
-        res
+        // Check for failure
+        let status = receipt.status.expect("status is `Some` after EIP-658");
+        if status.is_zero() {
+            let error_msg = format!("tx ({:#x}) failed with status 0", receipt.transaction_hash);
+            return Err(ArbitrumClientError::ContractInteraction(error_msg));
+        }
+
+        Ok(receipt)
     }
 }
