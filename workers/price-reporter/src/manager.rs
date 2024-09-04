@@ -367,11 +367,8 @@ pub fn compute_price_reporter_state(
     // we have enough.
     let non_zero_prices: Vec<Price> = exchange_prices
         .iter()
-        .filter(|(exchange, (price, ts))| {
-            exchange != &Exchange::Binance
-                && *price != Price::default()
-                && price.is_finite()
-                && !ts_too_stale(*ts).0
+        .filter(|(_exchange, (price, ts))| {
+            *price != Price::default() && price.is_finite() && !ts_too_stale(*ts).0
         })
         .map(|(_, (price, _))| *price)
         .collect();
