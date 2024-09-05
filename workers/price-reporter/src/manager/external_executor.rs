@@ -42,9 +42,6 @@ use crate::{
 
 use super::SharedPriceStreamStates;
 
-/// The delay between connection retries
-const CONNECTION_RETRY_DELAY_MS: u64 = 3_000; // 3 seconds
-
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 
@@ -283,7 +280,7 @@ async fn ws_handler_loop(
                     if let Err(e) = handle_incoming_ws_message(res, &msg_in_tx) {
                         match e {
                             ExchangeConnectionError::ConnectionHangup(_) => {
-                                warn!("Error handling incoming message from external price reporter: {e}, retrying...");
+                                warn!("Connection to external price reporter lost, reconnecting...");
                             },
                             _ => {
                                 error!("Error handling incoming message from external price reporter: {e}, retrying...");
@@ -309,7 +306,6 @@ async fn ws_handler_loop(
         // As such, we will have to re-subscribe to all the price streams that
         // were previously subscribed to on the re-established connection, so we
         // enqueue the re-subscription jobs here
-        tokio::time::sleep(Duration::from_millis(CONNECTION_RETRY_DELAY_MS)).await;
         (ws_write, ws_read) = connect_and_resubscribe(
             price_reporter_url.clone(),
             msg_out_tx.clone(),
