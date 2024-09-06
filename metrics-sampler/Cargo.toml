@@ -1,0 +1,12 @@
+[package]
+name = "metrics-sampler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# === Workspace Dependencies === #
+state = { path = "../state" }
+system-clock = { path = "../system-clock" }
+
+# === Misc === #
+metrics = { workspace = true }

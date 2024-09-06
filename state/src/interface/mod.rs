@@ -23,7 +23,6 @@ use job_types::{
     task_driver::TaskDriverQueue,
 };
 use libmdbx::{RO, RW};
-use renegade_metrics::labels::{RAFT_CLUSTER_SIZE_METRIC, RAFT_LEADER_METRIC};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
 use tracing::error;
@@ -59,8 +58,6 @@ const DEFAULT_MAX_ELECTION_MS: u64 = 15_000; // 15 seconds
 const PANIC_CHECK_MS: u64 = 10_000; // 10 seconds
 /// The frequency with which to check for missed expiry
 const MEMBERSHIP_SYNC_INTERVAL_MS: u64 = 10_000; // 10 seconds
-/// The frequency with which to record raft metrics
-const RAFT_METRICS_INTERVAL_MS: u64 = 10_000; // 10 seconds
 
 /// A type alias for a proposal queue of state transitions
 pub type ProposalQueue = UnboundedSender<Proposal>;
@@ -99,7 +96,7 @@ impl State {
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
-        system_clock: SystemClock,
+        system_clock: &SystemClock,
         failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
         let raft_config = Self::build_raft_config(config);
@@ -126,7 +123,7 @@ impl State {
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
-        system_clock: SystemClock,
+        system_clock: &SystemClock,
         failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
         // Open up the DB
@@ -169,9 +166,8 @@ impl State {
             recovered_from_snapshot,
         };
         this.setup_node_metadata(config).await?;
-        this.setup_core_panic_timer(&system_clock, failure_send).await?;
-        this.setup_membership_sync_timer(&system_clock).await?;
-        this.setup_raft_metrics_timer(&system_clock).await?;
+        this.setup_core_panic_timer(system_clock, failure_send).await?;
+        this.setup_membership_sync_timer(system_clock).await?;
 
         Ok(this)
     }
@@ -246,26 +242,6 @@ impl State {
 
                     client.sync_membership(known_cluster_peers).await.map_err(|e| e.to_string())
                 }
-            })
-            .await
-            .map_err(StateError::Clock)
-    }
-
-    /// A timer that records metrics about the raft cluster
-    async fn setup_raft_metrics_timer(&self, clock: &SystemClock) -> Result<(), StateError> {
-        let duration = Duration::from_millis(RAFT_METRICS_INTERVAL_MS);
-        let name = "raft-metrics-loop".to_string();
-        let client = self.raft.clone();
-
-        clock
-            .add_timer(name, duration, move || {
-                let raft_cluster_size = client.cluster_size();
-                let is_leader = if client.is_leader() { 1 } else { 0 };
-
-                metrics::gauge!(RAFT_CLUSTER_SIZE_METRIC).set(raft_cluster_size as f64);
-                metrics::gauge!(RAFT_LEADER_METRIC).set(is_leader as f64);
-
-                Ok(())
             })
             .await
             .map_err(StateError::Clock)

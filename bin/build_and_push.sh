@@ -17,8 +17,8 @@ ECR_URL=377928551571.dkr.ecr.us-east-2.amazonaws.com/relayer-$ENVIRONMENT
 
 GIT_HASH=$(git rev-parse HEAD)
 
-TAG_1=$ECR_URL:$GIT_HASH
-TAG_2=$ECR_URL:latest
+TAG_1=$ECR_URL\:$GIT_HASH
+TAG_2=$ECR_URL\:latest
 
 echo "Building and pushing relayer image to: $ENVIRONMENT"
 

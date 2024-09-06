@@ -42,6 +42,7 @@ use state::State;
 use system_bus::SystemBus;
 
 use error::CoordinatorError;
+use metrics_sampler::{raft_metrics_sampler::RaftMetricsSampler, sampler::MetricSampler};
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::{select, sync::watch};
@@ -127,10 +128,13 @@ async fn main() -> Result<(), CoordinatorError> {
         task_sender.clone(),
         handshake_worker_sender.clone(),
         system_bus.clone(),
-        system_clock,
+        &system_clock,
         state_failure_send,
     )
     .await?;
+
+    // Register metrics samplers
+    RaftMetricsSampler::new(global_state.clone()).register(&system_clock).await?;
 
     if args.debug {
         // Build the TUI

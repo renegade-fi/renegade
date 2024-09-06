@@ -31,10 +31,6 @@ pub const NUM_LOCAL_PEERS_METRIC: &str = "num_local_peers";
 /// Metric describing the number of remote peers the relayer
 /// is connected to
 pub const NUM_REMOTE_PEERS_METRIC: &str = "num_remote_peers";
-/// Metric describing the size of the raft cluster
-pub const RAFT_CLUSTER_SIZE_METRIC: &str = "raft_cluster_size";
-/// Metric describing if the local node is the leader of the raft cluster
-pub const RAFT_LEADER_METRIC: &str = "raft_leader";
 
 // Task metrics
 

@@ -34,6 +34,11 @@ impl State {
         self.raft.is_leader()
     }
 
+    /// Get the size of the raft cluster
+    pub fn cluster_size(&self) -> usize {
+        self.raft.cluster_size()
+    }
+
     /// Get the leader of the raft
     pub fn get_leader(&self) -> Option<WrappedPeerId> {
         let (_raft_id, info) = self.raft.leader_info()?;
