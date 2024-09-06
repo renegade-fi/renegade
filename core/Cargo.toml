@@ -38,6 +38,7 @@ system-bus = { path = "../system-bus" }
 system-clock = { path = "../system-clock" }
 task-driver = { path = "../workers/task-driver" }
 util = { path = "../util" }
+metrics-sampler = { path = "../metrics-sampler" }
 
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }

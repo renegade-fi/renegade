@@ -30,6 +30,7 @@ members = [
 	"workers/task-driver",
 	"renegade-metrics",
 	"system-clock",
+	"metrics-sampler",
 ]
 
 [profile.bench]

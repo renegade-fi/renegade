@@ -311,7 +311,7 @@ pub mod test_helpers {
             task_queue,
             handshake_manager_queue,
             SystemBus::new(),
-            SystemClock::new().await,
+            &SystemClock::new().await,
             failure_send,
         )
         .await

@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fmt::Display;
 
 use state::error::StateError;
+use system_clock::SystemClockError;
 
 /// An error type at the coordinator level
 #[derive(Clone, Debug)]
@@ -20,6 +21,8 @@ pub enum CoordinatorError {
     State(String),
     /// An error setting up telemetry
     Telemetry(String),
+    /// An error setting up the system clock timers
+    Clock(String),
 }
 
 impl Error for CoordinatorError {}
@@ -32,5 +35,11 @@ impl Display for CoordinatorError {
 impl From<StateError> for CoordinatorError {
     fn from(value: StateError) -> Self {
         CoordinatorError::State(value.to_string())
+    }
+}
+
+impl From<SystemClockError> for CoordinatorError {
+    fn from(value: SystemClockError) -> Self {
+        CoordinatorError::Clock(value.0)
     }
 }

@@ -276,7 +276,7 @@ impl MockNodeController {
             task_sender,
             handshake_queue,
             bus,
-            clock,
+            &clock,
             failure_send,
         ))
         .expect("Failed to create state instance");

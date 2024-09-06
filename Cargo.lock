@@ -5702,6 +5702,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics-sampler"
+version = "0.1.0"
+dependencies = [
+ "metrics",
+ "state",
+ "system-clock",
+]
+
+[[package]]
 name = "metrics-tracing-context"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7706,6 +7715,7 @@ dependencies = [
  "handshake-manager",
  "job-types",
  "lazy_static",
+ "metrics-sampler",
  "network-manager",
  "opentelemetry",
  "price-reporter",
