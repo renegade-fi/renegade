@@ -134,7 +134,12 @@ async fn main() -> Result<(), CoordinatorError> {
     .await?;
 
     // Register metrics samplers
-    setup_metrics_samplers(global_state.clone(), &system_clock).await?;
+    setup_metrics_samplers(
+        global_state.clone(),
+        &system_clock,
+        price_reporter_worker_sender.clone(),
+    )
+    .await?;
 
     if args.debug {
         // Build the TUI

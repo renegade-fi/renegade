@@ -118,12 +118,10 @@ impl AsyncMetricSampler for OnboardingMetricsSampler {
     }
 
     async fn sample(&self) -> Result<(), String> {
-        // First metric: number of wallets
-        // Second metric: number of wallets w/ at least one deposit
-        // Third metric: number of wallets w/ at least one order placement
-        // Fourth metric: number of wallets w/ at least one match
-        // Latter 3 metrics need task history. So we fetch all wallet IDs, task history
-        // for all wallets, and bucket into sets from there
+        // Only sample on the leader to avoid duplicate metrics
+        if !self.state.is_leader() {
+            return Ok(());
+        }
 
         let wallets = self.state.get_all_wallets().await?;
         let num_wallets = wallets.len();
