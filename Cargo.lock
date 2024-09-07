@@ -5706,9 +5706,13 @@ name = "metrics-sampler"
 version = "0.1.0"
 dependencies = [
  "common 0.1.0",
+ "futures",
+ "job-types",
  "metrics",
+ "num-bigint",
  "state",
  "system-clock",
+ "util 0.1.0",
 ]
 
 [[package]]

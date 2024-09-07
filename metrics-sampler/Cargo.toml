@@ -8,6 +8,10 @@ edition = "2021"
 state = { path = "../state" }
 system-clock = { path = "../system-clock" }
 common = { path = "../common" }
+job-types = { path = "../workers/job-types" }
+util = { path = "../util" }
 
 # === Misc === #
 metrics = { workspace = true }
+futures = { workspace = true }
+num-bigint = { workspace = true }
