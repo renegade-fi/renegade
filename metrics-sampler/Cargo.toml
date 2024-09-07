@@ -7,6 +7,7 @@ edition = "2021"
 # === Workspace Dependencies === #
 state = { path = "../state" }
 system-clock = { path = "../system-clock" }
+common = { path = "../common" }
 
 # === Misc === #
 metrics = { workspace = true }

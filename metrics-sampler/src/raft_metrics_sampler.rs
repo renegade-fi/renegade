@@ -1,4 +1,4 @@
-//! Records raft metrics snapshots at a fixed interval
+//! Samples raft metrics at a fixed interval
 
 use std::time::Duration;
 
@@ -7,14 +7,14 @@ use state::State;
 use crate::sampler::MetricSampler;
 
 /// The name of the sampler for raft metrics
-pub const RAFT_METRICS_SAMPLER_NAME: &str = "raft-metrics-sampler";
+const RAFT_METRICS_SAMPLER_NAME: &str = "raft-metrics-sampler";
 /// The interval at which to sample raft metrics
-pub const RAFT_METRICS_SAMPLE_INTERVAL_MS: u64 = 10_000;
+const RAFT_METRICS_SAMPLE_INTERVAL_MS: u64 = 10_000;
 
 /// Metric describing the size of the raft cluster
-pub const RAFT_CLUSTER_SIZE_METRIC: &str = "raft_cluster_size";
+const RAFT_CLUSTER_SIZE_METRIC: &str = "raft_cluster_size";
 /// Metric describing if the local node is the leader of the raft cluster
-pub const RAFT_LEADER_METRIC: &str = "raft_leader";
+const RAFT_LEADER_METRIC: &str = "raft_leader";
 
 /// Samples raft metrics at a fixed interval
 pub struct RaftMetricsSampler {
