@@ -34,7 +34,7 @@ pub trait AsyncMetricSampler: Sized + Send + Sync + 'static + Clone {
     fn interval(&self) -> Duration;
 
     /// Samples the metrics
-    fn sample(&self) -> impl Future<Output = Result<(), String>> + Send + 'static;
+    fn sample(&self) -> impl Future<Output = Result<(), String>> + Send;
 
     /// Registers the sampler with the system clock
     async fn register(self, clock: &SystemClock) -> Result<(), SystemClockError> {
