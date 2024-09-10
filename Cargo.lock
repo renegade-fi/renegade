@@ -3572,12 +3572,14 @@ dependencies = [
 name = "external-api"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "circuit-types 0.1.0",
  "common 0.1.0",
  "constants 0.1.0",
  "hex 0.4.3",
  "itertools 0.10.5",
  "num-bigint",
+ "rand 0.8.5",
  "renegade-crypto 0.1.0",
  "serde",
  "serde_json",

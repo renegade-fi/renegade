@@ -9,10 +9,24 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::types::{ApiOrder, ApiPrivateKeychain, ApiWallet};
 use crate::{
-    deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr,
-    types::{ApiOrder, ApiPrivateKeychain, ApiWallet},
+    deserialize_biguint_from_hex_string, deserialize_bytes_or_base64, serialize_biguint_to_hex_addr,
 };
+
+/// The type encapsulating a wallet update's authorization parameters
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WalletUpdateAuthorization {
+    /// A signature of the circuit statement used in the proof of
+    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
+    /// to guarantee that the wallet updates are properly authorized
+    #[serde(deserialize_with = "deserialize_bytes_or_base64")]
+    pub statement_sig: Vec<u8>,
+    /// The new public root key to rotate to if desired by the client
+    ///
+    /// Hex encoded
+    pub new_root_key: Option<String>,
+}
 
 // ---------------
 // | HTTP Routes |
@@ -52,19 +66,6 @@ pub const PAY_FEES_ROUTE: &str = "/v0/wallet/:wallet_id/pay-fees";
 
 /// Returns the order history of a wallet
 pub const ORDER_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/order-history";
-
-/// The type encapsulating a wallet update's authorization parameters
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WalletUpdateAuthorization {
-    /// A signature of the circuit statement used in the proof of
-    /// VALID WALLET UPDATE by `sk_root`. This allows the contract
-    /// to guarantee that the wallet updates are properly authorized
-    pub statement_sig: Vec<u8>,
-    /// The new public root key to rotate to if desired by the client
-    ///
-    /// Hex encoded
-    pub new_root_key: Option<String>,
-}
 
 // --------------------
 // | Wallet API Types |

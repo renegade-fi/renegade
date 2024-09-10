@@ -3,8 +3,14 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
+use std::fmt;
+
+use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use num_bigint::BigUint;
-use serde::{de::Error as DeserializeError, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de::{self, Error as DeserializeError, SeqAccess, Visitor},
+    Deserialize, Deserializer, Serialize, Serializer,
+};
 use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 
 pub mod bus_message;
@@ -79,9 +85,64 @@ where
     biguint_from_hex_string(&hex).map_err(D::Error::custom)
 }
 
+/// BytesOrBase64Visitor is a custom deserializer for the statement_sig field
+/// that allows either a json byte array or a base64 encoded string to be used
+struct BytesOrBase64Visitor;
+impl<'de> Visitor<'de> for BytesOrBase64Visitor {
+    type Value = Vec<u8>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a byte array or a base64 encoded string")
+    }
+
+    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(v.to_vec())
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut bytes = Vec::new();
+        while let Some(byte) = seq.next_element()? {
+            bytes.push(byte);
+        }
+        Ok(bytes)
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        STANDARD_NO_PAD.decode(v).map_err(de::Error::custom)
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.visit_str(&v)
+    }
+}
+
+/// Deserializes a byte array, base64 encoded string, or JSON byte array
+fn deserialize_bytes_or_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(BytesOrBase64Visitor)
+}
+
 #[cfg(test)]
 mod test {
-    use super::EmptyRequestResponse;
+    use rand::{thread_rng, RngCore};
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+
+    use super::*;
 
     /// Tests empty request/response serialization, expected behavior is that it
     /// serializes to and from the string "null"
@@ -93,5 +154,49 @@ mod test {
 
         // Test deserialization from empty json struct encoded as a string
         let _req: EmptyRequestResponse = serde_json::from_str("null").unwrap();
+    }
+
+    /// A test structure for deserializing a byte array from multiple encodings
+    #[derive(Debug, Serialize, Deserialize)]
+    struct BytesOrBase64Test {
+        /// A byte array
+        #[serde(deserialize_with = "deserialize_bytes_or_base64")]
+        bytes: Vec<u8>,
+    }
+
+    /// Tests deserializing a byte array as a base64 encoded string
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serde_bytes_or_base64__from_base64() {
+        let mut rng = thread_rng();
+        let mut bytes = vec![0u8; 10];
+        rng.fill_bytes(&mut bytes);
+        let base64_str = STANDARD_NO_PAD.encode(&bytes);
+
+        // Deserialize from a JSON string
+        let json = json!({
+            "bytes": base64_str
+        })
+        .to_string();
+
+        let test_struct: BytesOrBase64Test = serde_json::from_str(&json).unwrap();
+        assert_eq!(test_struct.bytes, bytes);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serde_bytes_or_base64__from_bytes() {
+        let mut rng = thread_rng();
+        let mut bytes = vec![0u8; 10];
+        rng.fill_bytes(&mut bytes);
+
+        // Deserialize from a JSON string
+        let json = json!({
+            "bytes": bytes
+        })
+        .to_string();
+
+        let test_struct: BytesOrBase64Test = serde_json::from_str(&json).unwrap();
+        assert_eq!(test_struct.bytes, bytes);
     }
 }
