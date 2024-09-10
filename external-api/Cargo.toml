@@ -15,8 +15,12 @@ renegade-crypto = { path = "../renegade-crypto" }
 util = { path = "../util" }
 
 # === Misc Dependencies === #
+base64 = "0.22.1"
 itertools = { workspace = true }
 hex = "0.4"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
+
+[dev-dependencies]
+rand = "0.8.5"
