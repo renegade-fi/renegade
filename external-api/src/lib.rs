@@ -136,6 +136,57 @@ where
     deserializer.deserialize_any(BytesOrBase64Visitor)
 }
 
+/// A visitor for deserializing a `BigUint` from either a limb encoding or a
+/// json number type
+struct BigUintVisitor;
+impl<'de> Visitor<'de> for BigUintVisitor {
+    type Value = BigUint;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a limb encoding or a json string representation of a number")
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where
+        E: DeserializeError,
+    {
+        Ok(BigUint::from(v))
+    }
+
+    fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
+    where
+        E: DeserializeError,
+    {
+        Ok(BigUint::from(v))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        value.parse().map_err(E::custom)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut limbs = Vec::new();
+        while let Some(limb) = seq.next_element()? {
+            limbs.push(limb);
+        }
+        Ok(BigUint::new(limbs))
+    }
+}
+
+/// Deserializes a `BigUint` from either a limb encoding or a json number type
+fn deserialize_limbs_or_number<'de, D>(deserializer: D) -> Result<BigUint, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(BigUintVisitor)
+}
+
 #[cfg(test)]
 mod test {
     use rand::{thread_rng, RngCore};
@@ -198,5 +249,59 @@ mod test {
 
         let test_struct: BytesOrBase64Test = serde_json::from_str(&json).unwrap();
         assert_eq!(test_struct.bytes, bytes);
+    }
+
+    /// A test structure for deserializing a `BigUint` from either a limb
+    /// encoding or a json number type
+    #[derive(Debug, Serialize, Deserialize)]
+    struct BigUintTest {
+        #[serde(deserialize_with = "deserialize_limbs_or_number")]
+        value: BigUint,
+    }
+
+    /// Tests deserializing a `BigUint` from a number
+    #[test]
+    fn test_deserialize_biguint_from_number() {
+        let mut rng = thread_rng();
+        let val = rng.next_u64();
+
+        let json = json!({
+            "value": val
+        })
+        .to_string();
+
+        let test_struct: BigUintTest = serde_json::from_str(&json).unwrap();
+        let expected = BigUint::from(val);
+        assert_eq!(test_struct.value, expected);
+    }
+
+    /// Tests deserializing a `BigUint` from a string
+    #[test]
+    fn test_deserialize_biguint_from_string() {
+        let json = r#"{"value": "115792089237316195423570985008687907853269984665640564039457584007913129639936"}"#; // 2^256
+        let test_struct: BigUintTest = serde_json::from_str(json).unwrap();
+        let expected = BigUint::from(1u64) << 256;
+
+        assert_eq!(test_struct.value, expected);
+    }
+
+    /// Tests deserializing a `BigUint` from a limb encoding
+    #[test]
+    fn test_deserialize_biguint_from_limbs() {
+        const NUM_LIMBS: usize = 10;
+        let mut rng = thread_rng();
+        let mut u32_limbs = vec![0u32; NUM_LIMBS];
+        for limb in u32_limbs.iter_mut() {
+            *limb = rng.next_u32();
+        }
+
+        let json = json!({
+            "value": u32_limbs
+        })
+        .to_string();
+
+        let test_struct: BigUintTest = serde_json::from_str(&json).unwrap();
+        let expected = BigUint::new(u32_limbs.to_vec());
+        assert_eq!(test_struct.value, expected);
     }
 }

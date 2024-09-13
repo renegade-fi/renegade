@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 use crate::types::{ApiOrder, ApiPrivateKeychain, ApiWallet};
 use crate::{
-    deserialize_biguint_from_hex_string, deserialize_bytes_or_base64, serialize_biguint_to_hex_addr,
+    deserialize_biguint_from_hex_string, deserialize_bytes_or_base64, deserialize_limbs_or_number,
+    serialize_biguint_to_hex_addr,
 };
 
 /// The type encapsulating a wallet update's authorization parameters
@@ -228,17 +229,21 @@ pub struct DepositBalanceRequest {
     )]
     pub mint: BigUint,
     /// The amount of the token to deposit
+    #[serde(deserialize_with = "deserialize_limbs_or_number")]
     pub amount: BigUint,
     /// The update authorization parameters
     #[serde(flatten)]
     pub update_auth: WalletUpdateAuthorization,
     /// The nonce used in the associated Permit2 permit
+    #[serde(deserialize_with = "deserialize_limbs_or_number")]
     pub permit_nonce: BigUint,
     /// The deadline used in the associated Permit2 permit
+    #[serde(deserialize_with = "deserialize_limbs_or_number")]
     pub permit_deadline: BigUint,
     /// The signature over the associated Permit2 permit, allowing
     /// the contract to guarantee that the deposit is sourced from
     /// the correct account
+    #[serde(deserialize_with = "deserialize_bytes_or_base64")]
     pub permit_signature: Vec<u8>,
 }
 
@@ -260,6 +265,7 @@ pub struct WithdrawBalanceRequest {
     )]
     pub destination_addr: BigUint,
     /// The amount of the token to withdraw
+    #[serde(deserialize_with = "deserialize_limbs_or_number")]
     pub amount: BigUint,
     /// The authorization parameters for the update
     #[serde(flatten)]
@@ -267,6 +273,7 @@ pub struct WithdrawBalanceRequest {
     /// A signature over the external transfer, allowing the contract
     /// to guarantee that the withdrawal is directed at the correct
     /// recipient
+    #[serde(deserialize_with = "deserialize_bytes_or_base64")]
     pub external_transfer_sig: Vec<u8>,
 }
 
