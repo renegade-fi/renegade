@@ -8,9 +8,12 @@ use circuit_types::{
     traits::BaseType,
     Amount, SizedWalletShare,
 };
-use common::types::wallet::{
-    keychain::{HmacKey, KeyChain, PrivateKeyChain},
-    OrderIdentifier, Wallet, WalletIdentifier,
+use common::{
+    keyed_list::KeyedList,
+    types::wallet::{
+        keychain::{HmacKey, KeyChain, PrivateKeyChain},
+        OrderIdentifier, Wallet, WalletIdentifier,
+    },
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
@@ -87,9 +90,19 @@ impl TryFrom<ApiWallet> for Wallet {
     type Error = String;
 
     fn try_from(wallet: ApiWallet) -> Result<Self, Self::Error> {
-        let orders = wallet.orders.into_iter().map(|order| (order.id, order.into())).collect();
-        let balances =
-            wallet.balances.into_iter().map(|balance| (balance.mint.clone(), balance)).collect();
+        // Convert the orders and balances to the indexed types
+        let mut orders = KeyedList::new();
+        for api_order in wallet.orders {
+            let id = api_order.id;
+            let order = Order::try_from(api_order)?;
+            orders.insert(id, order);
+        }
+
+        let mut balances = KeyedList::new();
+        for balance in wallet.balances {
+            balance.validate()?;
+            balances.insert(balance.mint.clone(), balance);
+        }
 
         // Deserialize the shares to scalar then re-structure into WalletSecretShare
         let blinded_public_shares = SizedWalletShare::from_scalars(
@@ -162,15 +175,17 @@ impl From<(OrderIdentifier, Order)> for ApiOrder {
     }
 }
 
-impl From<ApiOrder> for Order {
-    fn from(order: ApiOrder) -> Self {
-        Order {
-            quote_mint: order.quote_mint,
-            base_mint: order.base_mint,
-            side: order.side,
-            worst_case_price: order.worst_case_price,
-            amount: order.amount,
-        }
+impl TryFrom<ApiOrder> for Order {
+    type Error = String;
+
+    fn try_from(order: ApiOrder) -> Result<Self, Self::Error> {
+        Order::new(
+            order.quote_mint,
+            order.base_mint,
+            order.side,
+            order.amount,
+            order.worst_case_price,
+        )
     }
 }
 

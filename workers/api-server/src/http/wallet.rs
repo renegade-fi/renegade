@@ -526,7 +526,7 @@ impl TypedHandler for CreateOrderHandler {
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Add the order to the wallet
-        let new_order: Order = req.order.into();
+        let new_order: Order = req.order.try_into().map_err(bad_request)?;
         new_wallet.add_order(oid, new_order.clone()).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
@@ -583,7 +583,7 @@ impl TypedHandler for UpdateOrderHandler {
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Edit the order if it exists in the wallet
-        let new_order: Order = req.order.into();
+        let new_order: Order = req.order.try_into().map_err(bad_request)?;
         let order = new_wallet
             .orders
             .get_mut(&order_id)

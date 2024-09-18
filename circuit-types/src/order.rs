@@ -16,8 +16,13 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    Amount, AuthenticatedBool, Fabric,
+    validate_amount_bitlength, validate_price_bitlength, Amount, AuthenticatedBool, Fabric,
 };
+
+/// Error message when an order amount is too large
+const ERR_ORDER_AMOUNT_TOO_LARGE: &str = "amount is too large";
+/// Error message when an order worst case price is too large
+const ERR_ORDER_WORST_CASE_PRICE_TOO_LARGE: &str = "worst case price is too large";
 
 /// Represents the base type of an open order, including the asset pair, the
 /// amount, price, and direction
@@ -43,6 +48,45 @@ pub struct Order {
 }
 
 impl Order {
+    /// Create a new order
+    pub fn new(
+        quote_mint: BigUint,
+        base_mint: BigUint,
+        side: OrderSide,
+        amount: Amount,
+        worst_case_price: FixedPoint,
+    ) -> Result<Self, String> {
+        // Validate the range of the amount and worst case price
+        let order = Self::new_unchecked(quote_mint, base_mint, side, amount, worst_case_price);
+        order.validate()?;
+
+        Ok(order)
+    }
+
+    /// Create a new order without validating it
+    pub fn new_unchecked(
+        quote_mint: BigUint,
+        base_mint: BigUint,
+        side: OrderSide,
+        amount: Amount,
+        worst_case_price: FixedPoint,
+    ) -> Self {
+        Self { quote_mint, base_mint, side, amount, worst_case_price }
+    }
+
+    /// Validate the order
+    pub fn validate(&self) -> Result<(), String> {
+        if !validate_amount_bitlength(self.amount) {
+            return Err(ERR_ORDER_AMOUNT_TOO_LARGE.to_string());
+        }
+
+        if !validate_price_bitlength(self.worst_case_price) {
+            return Err(ERR_ORDER_WORST_CASE_PRICE_TOO_LARGE.to_string());
+        }
+
+        Ok(())
+    }
+
     /// Whether or not this is the zero'd order
     pub fn is_default(&self) -> bool {
         self.eq(&Self::default())

@@ -79,6 +79,9 @@ impl Wallet {
     /// Add an order to the wallet, replacing the first default order if the
     /// wallet is full
     pub fn add_order(&mut self, id: OrderIdentifier, order: Order) -> Result<(), String> {
+        // Validate the order
+        order.validate()?;
+
         // Append if the orders are not full
         if let Some(index) = self.find_first_replaceable_order() {
             self.orders.replace_at_index(index, id, order);
