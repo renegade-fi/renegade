@@ -94,15 +94,18 @@ impl Wallet {
             return Ok(());
         }
 
+        let mint = balance.mint.clone();
         if let Some(index) = self.find_first_replaceable_balance() {
-            self.balances.replace_at_index(index, balance.mint.clone(), balance);
+            self.balances.replace_at_index(index, mint.clone(), balance);
         } else if self.balances.len() < MAX_BALANCES {
-            self.balances.append(balance.mint.clone(), balance);
+            self.balances.append(mint.clone(), balance);
         } else {
             return Err(ERR_BALANCES_FULL.to_string());
         }
 
-        Ok(())
+        // Validate the balance after update
+        let bal = self.balances.get(&mint).unwrap();
+        bal.validate()
     }
 
     /// Find the first replaceable balance

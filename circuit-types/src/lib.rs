@@ -30,7 +30,7 @@ use constants::{
     AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup, ADDRESS_BYTE_LENGTH,
     MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
 };
-use fixed_point::DEFAULT_FP_PRECISION;
+use fixed_point::{FixedPoint, DEFAULT_FP_PRECISION};
 use jf_primitives::pcs::prelude::Commitment;
 use merkle::MerkleOpening;
 use mpc_plonk::{
@@ -135,6 +135,18 @@ impl From<AuthenticatedBool> for AuthenticatedScalar {
 // -----------
 // | Helpers |
 // -----------
+
+/// Verify that an amount is within the correct bitlength
+pub fn validate_amount_bitlength(amount: Amount) -> bool {
+    let max_amount = (1u128 << AMOUNT_BITS) - 1;
+    amount <= max_amount
+}
+
+/// Verify that a price is within the correct bitlength
+pub fn validate_price_bitlength(price: FixedPoint) -> bool {
+    let max_repr = (1u128 << PRICE_BITS) - 1;
+    price.repr <= Scalar::from(max_repr)
+}
 
 /// Converts an element of the arkworks `ScalarField` to an `ark-mpc` type
 /// `Scalar`
@@ -459,5 +471,50 @@ pub mod native_helpers {
         let mut plaintext_iter = jf_key.decrypt(&jf_cipher).into_iter().map(Scalar::new);
 
         T::from_scalars(&mut plaintext_iter)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_price_validation() {
+        // Valid price
+        let valid_price = FixedPoint::from_f64_round_down(1234.5678);
+        assert!(validate_price_bitlength(valid_price));
+
+        // Maximum representable price
+        let repr = Scalar::from(1u8).pow(PRICE_BITS as u64) - Scalar::one();
+        let max_price = FixedPoint::from_repr(repr);
+        assert!(validate_price_bitlength(max_price));
+
+        // Minimum non-representable price
+        let repr = repr + Scalar::one();
+        let min_price = FixedPoint::from_repr(repr);
+        assert!(validate_price_bitlength(min_price));
+
+        // Invalid price (too large)
+        let invalid_price = FixedPoint::from_f64_round_down(1e200); // Assuming this is larger than 2^PRICE_BITS
+        assert!(!validate_price_bitlength(invalid_price));
+    }
+
+    #[test]
+    fn test_amount_validation() {
+        // Valid amount
+        let valid_amount = 1_000_000;
+        assert!(validate_amount_bitlength(valid_amount));
+
+        // Maximum representable amount
+        let max_amount = (1u128 << AMOUNT_BITS) - 1;
+        assert!(validate_amount_bitlength(max_amount));
+
+        // Minimum non-representable amount
+        let min_amount = 1;
+        assert!(validate_amount_bitlength(min_amount));
+
+        // Invalid amount (too large)
+        let invalid_amount = u128::MAX;
+        assert!(!validate_amount_bitlength(invalid_amount));
     }
 }

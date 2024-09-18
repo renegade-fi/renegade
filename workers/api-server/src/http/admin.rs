@@ -342,7 +342,7 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
-        let new_order: Order = req.order.into();
+        let new_order: Order = req.order.try_into().map_err(bad_request)?;
         new_wallet.add_order(oid, new_order.clone()).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 

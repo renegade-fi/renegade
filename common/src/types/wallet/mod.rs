@@ -21,7 +21,12 @@ pub use types::*;
 
 #[cfg(test)]
 mod test {
-    use circuit_types::balance::Balance;
+    use circuit_types::{
+        balance::Balance,
+        fixed_point::FixedPoint,
+        order::{Order, OrderSide},
+        Amount,
+    };
     use constants::{MAX_BALANCES, MAX_ORDERS};
     use num_bigint::BigUint;
     use rand::{distributions::uniform::SampleRange, thread_rng};
@@ -133,5 +138,33 @@ mod test {
         let id = Uuid::new_v4();
         let order = mock_order();
         wallet.add_order(id, order).unwrap();
+    }
+
+    /// Tests adding an invalid order to the wallet
+    #[test]
+    #[should_panic(expected = "amount is too large")]
+    fn test_add_order_invalid() {
+        let mut wallet = mock_empty_wallet();
+        let id = Uuid::new_v4();
+        let base_mint = BigUint::from(1u8);
+        let quote_mint = BigUint::from(2u8);
+        let amount = u128::MAX;
+        let worst_case_price = FixedPoint::from_f64_round_down(0.1);
+        let o =
+            Order::new_unchecked(base_mint, quote_mint, OrderSide::Buy, amount, worst_case_price);
+
+        // Try to add the order
+        wallet.add_order(id, o).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "amount is too large")]
+    fn test_add_invalid_balance() {
+        let mut wallet = mock_empty_wallet();
+        let mint = BigUint::from(1u8);
+        let invalid_amount = Amount::MAX;
+        let balance = Balance::new_from_mint_and_amount(mint, invalid_amount);
+
+        wallet.add_balance(balance).unwrap();
     }
 }

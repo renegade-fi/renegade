@@ -18,8 +18,11 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    Amount, Fabric,
+    validate_amount_bitlength, Amount, Fabric,
 };
+
+/// Error message when a balance amount is too large
+const ERR_BALANCE_AMOUNT_TOO_LARGE: &str = "balance amount is too large";
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
@@ -38,6 +41,23 @@ pub struct Balance {
 }
 
 impl Balance {
+    /// Construct a new balance with zero fees; validating its amount
+    pub fn new(mint: BigUint, amount: Amount) -> Result<Balance, String> {
+        let bal = Self::new_from_mint_and_amount(mint, amount);
+        bal.validate()?;
+
+        Ok(bal)
+    }
+
+    /// Validate the balance
+    pub fn validate(&self) -> Result<(), String> {
+        if !validate_amount_bitlength(self.amount) {
+            return Err(ERR_BALANCE_AMOUNT_TOO_LARGE.to_string());
+        }
+
+        Ok(())
+    }
+
     /// Whether or not the instance is a default balance
     pub fn is_default(&self) -> bool {
         self.eq(&Balance::default())
