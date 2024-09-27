@@ -257,7 +257,7 @@ pub(crate) async fn update_wallet_validity_proofs(
     for (id, order) in matchable_orders.iter() {
         // Start a proof of `VALID COMMITMENTS`
         let (commitments_witness, response_channel) = construct_order_commitment_proof(
-            order.clone(),
+            order.clone().into(),
             &reblind_witness,
             &proof_manager_work_queue,
         )?;

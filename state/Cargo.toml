@@ -77,6 +77,7 @@ metrics = { workspace = true }
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
 multiaddr = "0.17"
 num-bigint = "0.4"
+num-traits = "0.2"
 tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"

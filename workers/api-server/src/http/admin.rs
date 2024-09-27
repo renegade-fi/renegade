@@ -5,10 +5,13 @@
 // ------------------------
 
 use async_trait::async_trait;
-use circuit_types::{fixed_point::FixedPoint, order::Order, Amount};
+use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
-    exchange::PriceReporterState, tasks::UpdateWalletTaskDescriptor, token::Token,
-    wallet::order_metadata::OrderMetadata, Price,
+    exchange::PriceReporterState,
+    tasks::UpdateWalletTaskDescriptor,
+    token::Token,
+    wallet::{order_metadata::OrderMetadata, Order},
+    Price,
 };
 use external_api::{
     http::{
@@ -481,5 +484,5 @@ async fn get_fillable_amount_and_price(
 
     let price_fp = FixedPoint::from_f64_round_down(price);
 
-    Ok((compute_max_amount(&price_fp, order, &balance), price))
+    Ok((compute_max_amount(&price_fp, &order.clone().into(), &balance), price))
 }

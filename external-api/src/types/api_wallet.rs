@@ -4,7 +4,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     keychain::{PublicIdentificationKey, PublicKeyChain, SecretIdentificationKey},
-    order::{Order, OrderSide},
+    order::OrderSide,
     traits::BaseType,
     Amount, SizedWalletShare,
 };
@@ -12,7 +12,7 @@ use common::{
     keyed_list::KeyedList,
     types::wallet::{
         keychain::{HmacKey, KeyChain, PrivateKeyChain},
-        OrderIdentifier, Wallet, WalletIdentifier,
+        Order, OrderIdentifier, Wallet, WalletIdentifier,
     },
 };
 use itertools::Itertools;
@@ -159,6 +159,9 @@ pub struct ApiOrder {
     pub worst_case_price: FixedPoint,
     /// The order size
     pub amount: Amount,
+    /// The minimum fill size for the order
+    #[serde(default)]
+    pub min_fill_size: Amount,
 }
 
 impl From<(OrderIdentifier, Order)> for ApiOrder {
@@ -171,6 +174,7 @@ impl From<(OrderIdentifier, Order)> for ApiOrder {
             type_: ApiOrderType::Midpoint,
             worst_case_price: order.worst_case_price,
             amount: order.amount,
+            min_fill_size: order.min_fill_size,
         }
     }
 }
@@ -185,6 +189,7 @@ impl TryFrom<ApiOrder> for Order {
             order.side,
             order.amount,
             order.worst_case_price,
+            order.min_fill_size,
         )
     }
 }

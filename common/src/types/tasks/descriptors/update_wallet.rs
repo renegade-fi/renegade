@@ -1,6 +1,6 @@
 //! Descriptor for the wallet update task
 
-use circuit_types::{keychain::PublicSigningKey, order::Order, Amount};
+use circuit_types::{keychain::PublicSigningKey, Amount};
 use constants::Scalar;
 use contracts_common::custom_serde::BytesSerializable;
 use ethers::core::types::Signature;
@@ -9,7 +9,7 @@ use k256::ecdsa::VerifyingKey as K256VerifyingKey;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
-use crate::types::wallet::OrderIdentifier;
+use crate::types::wallet::{Order, OrderIdentifier};
 use crate::types::MatchingPoolName;
 use crate::types::{
     transfer_auth::ExternalTransferWithAuth,

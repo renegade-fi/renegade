@@ -1,8 +1,15 @@
 //! Wallet helpers for orders in the wallet
 
-use circuit_types::order::Order;
+use circuit_types::{
+    biguint_from_hex_string, biguint_to_hex_addr,
+    fixed_point::FixedPoint,
+    order::{Order as CircuitOrder, OrderSide},
+    validate_amount_bitlength, validate_price_bitlength, Amount,
+};
 use constants::MAX_ORDERS;
 use itertools::Itertools;
+use num_bigint::BigUint;
+use serde::{Deserialize, Serialize};
 
 use crate::keyed_list::KeyedList;
 
@@ -10,6 +17,167 @@ use super::{OrderIdentifier, Wallet};
 
 /// Error message emitted when the orders of a wallet are full
 const ERR_ORDERS_FULL: &str = "orders full";
+/// Error message when an order amount is too large
+const ERR_ORDER_AMOUNT_TOO_LARGE: &str = "amount is too large";
+/// Error message when an order worst case price is too large
+const ERR_ORDER_WORST_CASE_PRICE_TOO_LARGE: &str = "worst case price is too large";
+
+// --------------
+// | Order Type |
+// --------------
+
+/// An order in the wallet
+///
+/// This is a different type from the `CircuitOrder` type which includes fields
+/// like `min_fill_size` that are not validated in-circuit, but are used in the
+/// matching engine
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Order {
+    /// The mint (ERC-20 contract address) of the quote token
+    #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
+    pub quote_mint: BigUint,
+    /// The mint (ERC-20 contract address) of the base token
+    #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
+    pub base_mint: BigUint,
+    /// The side this order is for (0 = buy, 1 = sell)
+    pub side: OrderSide,
+    /// The amount of base currency to buy or sell
+    pub amount: Amount,
+    /// The worse case price the user is willing to accept on this order
+    ///
+    /// If the order is a buy, this is the maximum price the user is willing to
+    /// pay If the order is a sell, this is the minimum price the user is
+    /// willing to accept
+    pub worst_case_price: FixedPoint,
+    /// The minimum fill size for the order
+    #[serde(default)]
+    pub min_fill_size: Amount,
+}
+
+impl From<Order> for CircuitOrder {
+    fn from(order: Order) -> Self {
+        CircuitOrder {
+            quote_mint: order.quote_mint,
+            base_mint: order.base_mint,
+            side: order.side,
+            amount: order.amount,
+            worst_case_price: order.worst_case_price,
+        }
+    }
+}
+
+impl From<CircuitOrder> for Order {
+    fn from(order: CircuitOrder) -> Self {
+        Order {
+            quote_mint: order.quote_mint,
+            base_mint: order.base_mint,
+            side: order.side,
+            amount: order.amount,
+            worst_case_price: order.worst_case_price,
+            min_fill_size: 0,
+        }
+    }
+}
+
+impl Order {
+    /// Create a new order
+    pub fn new(
+        quote_mint: BigUint,
+        base_mint: BigUint,
+        side: OrderSide,
+        amount: Amount,
+        worst_case_price: FixedPoint,
+        min_fill_size: Amount,
+    ) -> Result<Self, String> {
+        // Validate the range of the amount and worst case price
+        let order = Self::new_unchecked(
+            quote_mint,
+            base_mint,
+            side,
+            amount,
+            worst_case_price,
+            min_fill_size,
+        );
+        order.validate()?;
+
+        Ok(order)
+    }
+
+    /// Create a new order without validating it
+    pub fn new_unchecked(
+        quote_mint: BigUint,
+        base_mint: BigUint,
+        side: OrderSide,
+        amount: Amount,
+        worst_case_price: FixedPoint,
+        min_fill_size: Amount,
+    ) -> Self {
+        Self { quote_mint, base_mint, side, amount, worst_case_price, min_fill_size }
+    }
+
+    /// Validate the order
+    pub fn validate(&self) -> Result<(), String> {
+        if !validate_amount_bitlength(self.amount) {
+            return Err(ERR_ORDER_AMOUNT_TOO_LARGE.to_string());
+        }
+
+        if !validate_price_bitlength(self.worst_case_price) {
+            return Err(ERR_ORDER_WORST_CASE_PRICE_TOO_LARGE.to_string());
+        }
+
+        Ok(())
+    }
+
+    /// Whether or not this is the zero'd order
+    pub fn is_default(&self) -> bool {
+        self.eq(&Self::default())
+    }
+
+    /// Whether or not this order is for zero volume
+    pub fn is_zero(&self) -> bool {
+        self.amount == 0
+    }
+
+    /// The mint of the token sent by the creator of this order in the event
+    /// that the order is matched
+    pub fn send_mint(&self) -> &BigUint {
+        match self.side {
+            OrderSide::Buy => &self.quote_mint,
+            OrderSide::Sell => &self.base_mint,
+        }
+    }
+
+    /// The mint of the token received by the creator of this order in the event
+    /// that the order is matched
+    pub fn receive_mint(&self) -> &BigUint {
+        match self.side {
+            OrderSide::Buy => &self.base_mint,
+            OrderSide::Sell => &self.quote_mint,
+        }
+    }
+
+    /// Determines whether the given price is within the allowable range for the
+    /// order
+    pub fn price_in_range(&self, price: FixedPoint) -> bool {
+        match self.side {
+            OrderSide::Buy => price.to_f64() <= self.worst_case_price.to_f64(),
+            OrderSide::Sell => price.to_f64() >= self.worst_case_price.to_f64(),
+        }
+    }
+
+    /// Update an order from a circuit order
+    pub fn update_from_circuit_order(&mut self, order: &CircuitOrder) {
+        self.quote_mint.clone_from(&order.quote_mint);
+        self.base_mint.clone_from(&order.base_mint);
+        self.side = order.side;
+        self.amount = order.amount;
+        self.worst_case_price = order.worst_case_price;
+    }
+}
+
+// ------------------------
+// | Wallet Order Methods |
+// ------------------------
 
 impl Wallet {
     // -----------

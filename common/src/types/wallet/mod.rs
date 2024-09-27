@@ -13,6 +13,7 @@ mod orders;
 mod shares;
 mod types;
 
+pub use orders::Order;
 pub use types::*;
 
 // ----------------
@@ -21,18 +22,15 @@ pub use types::*;
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{
-        balance::Balance,
-        fixed_point::FixedPoint,
-        order::{Order, OrderSide},
-        Amount,
-    };
+    use circuit_types::{balance::Balance, fixed_point::FixedPoint, order::OrderSide, Amount};
     use constants::{MAX_BALANCES, MAX_ORDERS};
     use num_bigint::BigUint;
     use rand::{distributions::uniform::SampleRange, thread_rng};
     use uuid::Uuid;
 
     use crate::types::wallet::mocks::{mock_empty_wallet, mock_order};
+
+    use super::orders::Order;
 
     /// Tests adding a balance to an empty wallet
     #[test]
@@ -150,8 +148,14 @@ mod test {
         let quote_mint = BigUint::from(2u8);
         let amount = u128::MAX;
         let worst_case_price = FixedPoint::from_f64_round_down(0.1);
-        let o =
-            Order::new_unchecked(base_mint, quote_mint, OrderSide::Buy, amount, worst_case_price);
+        let o = Order::new_unchecked(
+            base_mint,
+            quote_mint,
+            OrderSide::Buy,
+            amount,
+            worst_case_price,
+            0,
+        );
 
         // Try to add the order
         wallet.add_order(id, o).unwrap();

@@ -195,7 +195,7 @@ pub mod test_helpers {
         layer::SubscriberExt,
         util::SubscriberInitExt,
     };
-    use util::matching_engine::match_orders_with_max_amount;
+    use util::matching_engine::match_orders_with_max_min_amounts;
 
     use crate::zk_circuits::test_helpers::{MAX_BALANCES, MAX_ORDERS};
 
@@ -334,12 +334,13 @@ pub mod test_helpers {
         let (o1, o2) = if rng.gen_bool(0.5) { (o1, o2) } else { (o2, o1) };
 
         // Match orders assuming they are fully capitalized
-        let match_res = match_orders_with_max_amount(
+        let match_res = match_orders_with_max_min_amounts(
             &o1,
             &o2,
             o1.amount,
             o2.amount,
-            Amount::MIN, // min_fill_size
+            Amount::MIN, // min_quote_amount
+            Amount::MIN, // min_base_amount
             price,
         )
         .unwrap();

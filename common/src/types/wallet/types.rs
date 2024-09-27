@@ -10,8 +10,8 @@ use std::{
 
 use circuit_types::{
     balance::Balance, elgamal::EncryptionKey, fixed_point::FixedPoint,
-    native_helpers::create_wallet_shares_with_randomness, order::Order, traits::BaseType,
-    SizedWallet as SizedCircuitWallet, SizedWalletShare,
+    native_helpers::create_wallet_shares_with_randomness, order::Order as CircuitOrder,
+    traits::BaseType, SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 use constants::Scalar;
 use derivative::Derivative;
@@ -23,7 +23,10 @@ use uuid::Uuid;
 
 use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
-use super::keychain::{KeyChain, PrivateKeyChain};
+use super::{
+    keychain::{KeyChain, PrivateKeyChain},
+    orders::Order,
+};
 
 /// A type alias for the wallet identifier type, currently a UUID
 pub type WalletIdentifier = Uuid;
@@ -72,9 +75,11 @@ pub struct Wallet {
 
 impl From<Wallet> for SizedCircuitWallet {
     fn from(wallet: Wallet) -> Self {
+        let orders_vec = wallet.get_orders_list().into_iter().map(CircuitOrder::from).collect_vec();
+        let orders = orders_vec.try_into().expect("get_orders_list returned more than MAX_ORDERS");
         SizedCircuitWallet {
             balances: wallet.get_balances_list(),
-            orders: wallet.get_orders_list(),
+            orders,
             keys: wallet.key_chain.public_keys,
             match_fee: wallet.match_fee,
             managing_cluster: wallet.managing_cluster,
@@ -145,9 +150,15 @@ impl Wallet {
         let key_chain = KeyChain { public_keys: recovered_wallet.keys, secret_keys };
 
         // Construct a wallet from the recovered shares
+        let orders = recovered_wallet
+            .orders
+            .into_iter()
+            .map(|o| (OrderIdentifier::new_v4(), o.into()))
+            .collect();
+
         Wallet {
             wallet_id,
-            orders: recovered_wallet.orders.iter().cloned().map(|o| (Uuid::new_v4(), o)).collect(),
+            orders,
             balances: recovered_wallet
                 .balances
                 .iter()

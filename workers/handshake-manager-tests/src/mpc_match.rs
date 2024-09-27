@@ -1,12 +1,11 @@
 //! Tests for matching orders via an MPC
 
 use ark_mpc::{PARTY0, PARTY1};
-use circuit_types::{
-    balance::Balance,
-    fixed_point::FixedPoint,
-    order::{Order, OrderSide},
+use circuit_types::{balance::Balance, fixed_point::FixedPoint, order::OrderSide};
+use common::types::{
+    wallet::{Order, Wallet},
+    wallet_mocks::mock_empty_wallet,
 };
-use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
 use eyre::Result;
 use job_types::handshake_manager::HandshakeExecutionJob;
 use test_helpers::integration_test_async;
@@ -68,6 +67,7 @@ fn get_order(side: OrderSide) -> Order {
         side,
         amount: DEFAULT_ORDER_AMOUNT,
         worst_case_price: FixedPoint::from_f64_round_down(worst_case_price),
+        min_fill_size: 0,
     }
 }
 

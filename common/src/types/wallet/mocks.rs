@@ -9,20 +9,21 @@ use circuit_types::{
     elgamal::DecryptionKey,
     fixed_point::FixedPoint,
     keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey, SecretSigningKey},
-    order::{Order, OrderSide},
+    order::OrderSide,
     traits::BaseType,
-    Amount, SizedWalletShare,
+    SizedWalletShare,
 };
 use constants::{Scalar, ADDRESS_BYTE_LENGTH, MERKLE_HEIGHT};
 use k256::ecdsa::SigningKey as K256SigningKey;
 use num_bigint::BigUint;
-use rand::{thread_rng, RngCore};
+use rand::{thread_rng, Rng, RngCore};
 use uuid::Uuid;
 
 use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
 use super::{
     keychain::{HmacKey, KeyChain, PrivateKeyChain},
+    orders::Order,
     Wallet,
 };
 
@@ -70,12 +71,14 @@ pub fn mock_empty_wallet() -> Wallet {
 
 /// Create a mock order
 pub fn mock_order() -> Order {
+    let mut rng = thread_rng();
     let quote_mint = rand_addr_biguint();
     let base_mint = rand_addr_biguint();
-    let amount = Amount::from(10u8);
-    let worst_case_price = FixedPoint::from_integer(100);
+    let amount = rng.next_u64().into();
+    let worst_case_price = FixedPoint::from_integer(rng.gen());
+    let min_fill_size = rng.gen();
 
-    Order { quote_mint, base_mint, amount, worst_case_price, side: OrderSide::Buy }
+    Order { quote_mint, base_mint, amount, worst_case_price, side: OrderSide::Buy, min_fill_size }
 }
 
 /// Create a mock Merkle path for a wallet

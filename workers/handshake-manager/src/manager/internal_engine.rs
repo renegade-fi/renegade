@@ -1,18 +1,18 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use circuit_types::{fixed_point::FixedPoint, order::Order};
+use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
     exchange::PriceReporterState,
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
-    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
+    wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
     TimestampedPrice,
 };
 use job_types::task_driver::TaskDriverJob;
 use rand::{seq::SliceRandom, thread_rng};
 use tracing::{error, info};
-use util::{err_str, matching_engine::match_orders, res_some};
+use util::{err_str, matching_engine::match_orders_with_min_base_amount, res_some};
 
 use crate::{
     error::HandshakeManagerError,
@@ -159,9 +159,18 @@ impl HandshakeExecutor {
         let b1 = &validity_witness1.commitment_witness.balance_send;
         let b2 = &validity_witness2.commitment_witness.balance_send;
         let price_fp = FixedPoint::from_f64_round_down(price.price);
-        // TODO: Use a more sophisticated version of `min_fill_size` that takes into
-        // account the cost of the match
-        let match_result = match match_orders(&o1, &o2, b1, b2, self.min_fill_size, price_fp) {
+        let min_base_amount = Amount::max(o1.min_fill_size, o2.min_fill_size);
+        let min_quote_amount = self.min_fill_size;
+
+        let match_result = match match_orders_with_min_base_amount(
+            &o1.into(),
+            &o2.into(),
+            b1,
+            b2,
+            min_quote_amount,
+            min_base_amount,
+            price_fp,
+        ) {
             Some(match_) => match_,
             None => return Ok(false),
         };

@@ -6,13 +6,13 @@
 
 use std::str::FromStr;
 
-use circuit_types::{
-    order::{Order, OrderSide},
-    r#match::MatchResult,
-};
-use common::types::tasks::{
-    HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,
-    WalletUpdateType,
+use circuit_types::{order::OrderSide, r#match::MatchResult};
+use common::types::{
+    tasks::{
+        HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,
+        WalletUpdateType,
+    },
+    wallet::Order,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
