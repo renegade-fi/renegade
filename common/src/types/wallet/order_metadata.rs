@@ -1,12 +1,12 @@
 //! Order metadata for a wallet's orders
 
-use circuit_types::{order::Order, Amount};
+use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
 
 use crate::types::TimestampedPrice;
 
-use super::OrderIdentifier;
+use super::{Order, OrderIdentifier};
 
 /// The state of an order in the wallet
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

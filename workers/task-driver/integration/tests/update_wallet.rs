@@ -3,14 +3,14 @@
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
-    order::{Order, OrderSide},
+    order::OrderSide,
     transfers::{ExternalTransfer, ExternalTransferDirection},
     Amount,
 };
 use common::types::{
     tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor, WalletUpdateType},
     transfer_auth::ExternalTransferWithAuth,
-    wallet::{OrderIdentifier, Wallet},
+    wallet::{Order, OrderIdentifier, Wallet},
     wallet_mocks::{mock_empty_wallet, mock_order},
 };
 use constants::Scalar;
@@ -42,6 +42,7 @@ lazy_static! {
         side: OrderSide::Buy,
         amount: 10,
         worst_case_price: FixedPoint::from_integer(10),
+        min_fill_size: 0,
     };
 }
 

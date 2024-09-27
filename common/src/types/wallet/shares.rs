@@ -102,10 +102,10 @@ impl Wallet {
         self.blinder = wallet.blinder;
         self.balances = wallet.balances.into_iter().map(|b| (b.mint.clone(), b)).collect();
 
-        // Preserve the order_ids, the indexmap should give a consistent ordering
-        // between orders
-        let order_ids = self.orders.keys().cloned();
-        self.orders = order_ids.zip(wallet.orders).collect();
+        // Update the orders
+        for (order, circuit_order) in self.orders.iter_mut_values().zip(wallet.orders) {
+            order.update_from_circuit_order(&circuit_order);
+        }
 
         // Update the wallet shares
         self.private_shares = private_shares.clone();

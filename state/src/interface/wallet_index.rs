@@ -3,10 +3,9 @@
 //! Wallet index updates must go through raft consensus so that the leader may
 //! order them
 
-use circuit_types::order::Order;
 use common::types::{
     tasks::QueuedTask,
-    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
+    wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
 };
 use util::res_some;
 

@@ -97,6 +97,12 @@ impl<K: Eq, V: Clone> KeyedList<K, V> {
         self.elems.iter_mut()
     }
 
+    /// Returns an iterator over the map that allows modifying only the value of
+    /// each kv pair
+    pub fn iter_mut_values(&mut self) -> impl Iterator<Item = &mut V> {
+        self.elems.iter_mut().map(|(_, v)| v)
+    }
+
     /// Returns an iterator over borrowed keys
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.elems.iter().map(|(k, _)| k)
@@ -319,6 +325,23 @@ mod test {
         assert_eq!(map.get(&non_existent_key), None);
         assert_eq!(map.len(), 0);
         assert!(!map.contains_key(&non_existent_key));
+    }
+
+    /// Tests iterating mutably over the values
+    #[test]
+    fn test_iter_mut_values() {
+        let mut map = KeyedList::default();
+        map.insert(0, 0);
+        map.insert(1, 1);
+        map.insert(2, 2);
+
+        for v in map.iter_mut_values() {
+            *v += 1;
+        }
+
+        for (i, v) in map.iter() {
+            assert_eq!(i + 1, *v);
+        }
     }
 
     /// Test that serialization and deserialization preserves the order of the

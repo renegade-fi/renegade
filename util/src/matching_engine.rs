@@ -28,14 +28,43 @@ pub fn match_orders(
     o2: &Order,
     b1: &Balance,
     b2: &Balance,
-    min_fill_size: Amount,
+    min_quote_amount: Amount,
+    price: FixedPoint,
+) -> Option<MatchResult> {
+    match_orders_with_min_base_amount(
+        o1,
+        o2,
+        b1,
+        b2,
+        min_quote_amount,
+        Amount::MIN, // min_base_amount
+        price,
+    )
+}
+
+/// Match two orders with a minimum base amount specified
+pub fn match_orders_with_min_base_amount(
+    o1: &Order,
+    o2: &Order,
+    b1: &Balance,
+    b2: &Balance,
+    min_quote_amount: Amount,
+    min_base_amount: Amount,
     price: FixedPoint,
 ) -> Option<MatchResult> {
     // Compute the amount matched by the engine
     let party0_max_amount = compute_max_amount(&price, o1, b1);
     let party1_max_amount = compute_max_amount(&price, o2, b2);
 
-    match_orders_with_max_amount(o1, o2, party0_max_amount, party1_max_amount, min_fill_size, price)
+    match_orders_with_max_min_amounts(
+        o1,
+        o2,
+        party0_max_amount,
+        party1_max_amount,
+        min_quote_amount,
+        min_base_amount,
+        price,
+    )
 }
 
 /// Match two orders with a given maximum amount for each side
@@ -47,12 +76,13 @@ pub fn match_orders(
 /// These maximums are dependent upon the balance of each order's owner for
 /// the token they trade. Optionally, a party in a match may voluntarily
 /// subscribe to a maximum amount lower than what is permitted by their balance
-pub fn match_orders_with_max_amount(
+pub fn match_orders_with_max_min_amounts(
     o1: &Order,
     o2: &Order,
     max1: Amount,
     max2: Amount,
-    min_fill_size: Amount,
+    min_quote_amount: Amount,
+    min_base_amount: Amount,
     price: FixedPoint,
 ) -> Option<MatchResult> {
     // Same asset pair
@@ -67,24 +97,29 @@ pub fn match_orders_with_max_amount(
     // update shares to remove an order without revealing the volume of the
     // order. So zero'd orders may exist in the book until the user removes them
     valid_match = valid_match && !o1.is_zero() && !o2.is_zero();
-    let min_base_amount = Amount::min(max1, max2);
-    valid_match = valid_match && min_base_amount > 0;
+    let base_amount = Amount::min(max1, max2);
+    valid_match = valid_match && base_amount > 0;
 
     if !valid_match {
         return None;
     }
 
-    // Compute the auth data for the match
-    let quote_amount = price * Scalar::from(min_base_amount);
+    let quote_amount = price * Scalar::from(base_amount);
     let quote_amount = scalar_to_u128(&quote_amount.floor());
-    if quote_amount < min_fill_size {
+
+    // Check fill sizes
+    if quote_amount < min_quote_amount {
+        return None;
+    }
+
+    if base_amount < min_base_amount {
         return None;
     }
 
     Some(MatchResult {
         base_mint: o1.base_mint.clone(),
         quote_mint: o1.quote_mint.clone(),
-        base_amount: min_base_amount,
+        base_amount,
         quote_amount,
         direction: matches!(o1.side, OrderSide::Sell),
         min_amount_order_index: max1 > max2,
@@ -185,7 +220,7 @@ pub fn compute_fee_obligation(
 mod tests {
     use std::iter;
 
-    use crate::matching_engine::compute_fee_obligation;
+    use crate::matching_engine::{compute_fee_obligation, match_orders_with_min_base_amount};
 
     use super::{apply_match_to_shares, compute_max_amount, match_orders};
     use circuit_types::{
@@ -584,6 +619,31 @@ mod tests {
             &balance1,
             &balance2,
             implied_quote_amount + 1, // min_fill_size
+            PRICE.into(),
+        );
+        assert!(res.is_none());
+    }
+
+    /// Test the case in which the minimum base amount is not met
+    #[test]
+    fn test_min_base_amount_not_met() {
+        const AMOUNT: Amount = 2;
+        const PRICE: f32 = 10.;
+        let mut order1 = ORDER1.clone();
+        let balance1 = BALANCE1.clone();
+        let mut order2 = ORDER2.clone();
+        let balance2 = BALANCE2.clone();
+
+        order1.amount = AMOUNT;
+        order2.amount = AMOUNT;
+
+        let res = match_orders_with_min_base_amount(
+            &order1,
+            &order2,
+            &balance1,
+            &balance2,
+            Amount::MIN, // min_quote_amount
+            AMOUNT + 1,  // min_base_amount
             PRICE.into(),
         );
         assert!(res.is_none());

@@ -10,7 +10,7 @@ use crate::{
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
-    order::{Order, OrderSide},
+    order::OrderSide,
     r#match::{MatchResult, OrderSettlementIndices},
     Amount, SizedWallet,
 };
@@ -24,7 +24,7 @@ use common::types::{
         ValidMatchSettleBundle,
     },
     tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor},
-    wallet::Wallet,
+    wallet::{Order, Wallet},
     wallet_mocks::mock_empty_wallet,
     TimestampedPrice,
 };
@@ -75,6 +75,7 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
         side,
         amount: order_amount,
         worst_case_price: FixedPoint::from_integer(worst_cast_price),
+        min_fill_size: 0,
     }
 }
 
@@ -148,7 +149,7 @@ async fn setup_match_result(
     let o2 = wallet2.orders.first().unwrap().1.clone();
     let b1 = wallet1.balances.first().unwrap().1.clone();
     let b2 = wallet2.balances.first().unwrap().1.clone();
-    let match_ = match_orders(&o1, &o2, &b1, &b2, Amount::MIN, price).unwrap();
+    let match_ = match_orders(&o1.into(), &o2.into(), &b1, &b2, Amount::MIN, price).unwrap();
 
     // Pull the validity proof witnesses for the wallets so that we may update the
     // public and private shares to the reblinded and augmented shares; as would
@@ -208,7 +209,7 @@ async fn dummy_match_bundle(
     let balance0 = wallet1.balances.first().unwrap().1.clone();
     let balance_receive0 = Balance::new_from_mint(order0.receive_mint().clone());
     let relayer_fee0 = wallet1.match_fee;
-    let amount0 = compute_max_amount(&price, &order0, &balance0);
+    let amount0 = compute_max_amount(&price, &order0.clone().into(), &balance0);
     let party0_public_shares = wallet1.blinded_public_shares.clone();
     *wallet1.balances.get_index_mut(party0_indices.balance_receive).unwrap() =
         balance_receive0.clone();
@@ -217,7 +218,7 @@ async fn dummy_match_bundle(
     let balance1 = wallet2.balances.first().unwrap().1.clone();
     let balance_receive1 = Balance::new_from_mint(order1.receive_mint().clone());
     let relayer_fee1 = wallet2.match_fee;
-    let amount1 = compute_max_amount(&price, &order1, &balance1);
+    let amount1 = compute_max_amount(&price, &order1.clone().into(), &balance1);
     let party1_public_shares = wallet2.blinded_public_shares.clone();
     *wallet2.balances.get_index_mut(party1_indices.balance_receive).unwrap() =
         balance_receive1.clone();
@@ -242,7 +243,7 @@ async fn dummy_match_bundle(
     let job = ProofManagerJob {
         type_: ProofJob::ValidMatchSettleSingleprover {
             witness: ValidMatchSettleWitness {
-                order0,
+                order0: order0.into(),
                 balance0,
                 balance_receive0,
                 price0: price,
@@ -250,7 +251,7 @@ async fn dummy_match_bundle(
                 relayer_fee0,
                 party0_fees,
 
-                order1,
+                order1: order1.into(),
                 balance1,
                 balance_receive1,
                 price1: price,

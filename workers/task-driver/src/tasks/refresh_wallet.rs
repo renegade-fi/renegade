@@ -316,8 +316,9 @@ fn matchup_order_ids(
             existing_order == refreshed_order && !used_existing_ids.contains(id)
         });
 
-        if let Some((existing_id, _)) = maybe_order {
+        if let Some((existing_id, existing_order)) = maybe_order {
             *refreshed_id = *existing_id;
+            refreshed_order.min_fill_size = existing_order.min_fill_size;
             used_existing_ids.insert(*existing_id);
         }
     }

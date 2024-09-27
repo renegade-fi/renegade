@@ -2,12 +2,12 @@
 
 use std::iter;
 
-use circuit_types::{balance::Balance, order::Order, Amount};
+use circuit_types::{balance::Balance, Amount};
 use constants::MAX_BALANCES;
 use itertools::Itertools;
 use num_bigint::BigUint;
 
-use super::Wallet;
+use super::{Order, Wallet};
 
 /// Error message emitted when a balance overflows
 const ERR_BALANCE_OVERFLOW: &str = "balance overflowed";

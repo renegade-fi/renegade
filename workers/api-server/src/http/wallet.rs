@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use circuit_types::{
-    balance::Balance, native_helpers::create_wallet_shares_from_private, order::Order, Amount,
+    balance::Balance, native_helpers::create_wallet_shares_from_private, Amount,
     SizedWallet as SizedCircuitWallet,
 };
 use common::types::{
@@ -14,7 +14,7 @@ use common::types::{
     },
     token::Token,
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
-    wallet::{keychain::PrivateKeyChain, Wallet, WalletIdentifier},
+    wallet::{keychain::PrivateKeyChain, Order, Wallet, WalletIdentifier},
 };
 use external_api::{
     http::wallet::{
