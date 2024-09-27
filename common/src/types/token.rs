@@ -137,10 +137,10 @@ pub static TICKER_NAMES: &[(
     // L1
     (
         WBTC_TICKER,
-        ExchangeTicker::Renamed("BTC"),
-        ExchangeTicker::Renamed("BTC"),
-        ExchangeTicker::Renamed("BTC"),
-        ExchangeTicker::Renamed("BTC"),
+        ExchangeTicker::Renamed("WBTC"),
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Unsupported,
+        ExchangeTicker::Renamed("WBTC"),
     ),
     (
         WETH_TICKER,
