@@ -49,9 +49,21 @@ impl GossipNetwork {
             },
         };
 
-        let raft_resp =
-            bincode::deserialize(&resp_bytes).map_err(err_str!(ReplicationV2Error::Deserialize))?;
+        let raft_resp = Self::deserialize_raft_response(&resp_bytes)?;
         Ok(raft_resp)
+    }
+
+    /// Deserialize a raft response from bytes
+    ///
+    /// TODO: Remove this after the migration is complete
+    fn deserialize_raft_response(msg_bytes: &[u8]) -> Result<RaftResponse, ReplicationV2Error> {
+        // Try ciborium first
+        if let Ok(msg) = ciborium::de::from_reader(msg_bytes) {
+            return Ok(msg);
+        }
+
+        // Fallback to bincode
+        bincode::deserialize(msg_bytes).map_err(err_str!(ReplicationV2Error::Deserialize))
     }
 }
 

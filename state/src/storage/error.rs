@@ -1,8 +1,9 @@
 //! Error types for storage access
 
-use std::{error::Error, fmt::Display};
+use std::{convert::Infallible, error::Error, fmt::Display};
 
 use bincode::Error as BincodeError;
+use ciborium::ser::Error as CiboriumError;
 use libmdbx::Error as MdbxError;
 
 /// The error type emitted by the storage layer
@@ -25,7 +26,7 @@ pub enum StorageError {
     /// An uncategorized error
     Other(String),
     /// Error serializing a value for storage
-    Serialization(BincodeError),
+    Serialization(CiboriumError<Infallible>),
     /// Error syncing the database
     Sync(MdbxError),
     /// Error while performing a transaction operation

@@ -25,13 +25,21 @@ const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 
 /// Serialize a value to a `flexbuffers` byte vector
 pub(crate) fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, StorageError> {
-    bincode::serialize(value).map_err(StorageError::Serialization)
+    let mut writer = vec![];
+    ciborium::ser::into_writer(value, &mut writer).expect("infallible");
+    Ok(writer)
 }
 
 /// Deserialize a value from a `flexbuffers` byte vector
 pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
     value_bytes: &[u8],
 ) -> Result<V, StorageError> {
+    // Try ciborium first
+    if let Ok(v) = ciborium::de::from_reader(value_bytes) {
+        return Ok(v);
+    }
+
+    // Fallback to bincode
     bincode::deserialize(value_bytes).map_err(StorageError::Deserialization)
 }
 

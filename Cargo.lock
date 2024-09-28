@@ -8840,6 +8840,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bincode",
+ "ciborium",
  "circuit-types 0.1.0",
  "common 0.1.0",
  "config",
