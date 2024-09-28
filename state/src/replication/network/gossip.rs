@@ -8,9 +8,12 @@ use openraft::error::{NetworkError, RPCError, RaftError};
 use tracing::instrument;
 use util::err_str;
 
-use crate::replication::{
-    error::{new_network_error, ReplicationV2Error},
-    Node, NodeId,
+use crate::{
+    ciborium_serialize,
+    replication::{
+        error::{new_network_error, ReplicationV2Error},
+        Node, NodeId,
+    },
 };
 
 use super::{P2PNetworkFactory, P2PRaftNetwork, P2PRaftNetworkWrapper, RaftRequest, RaftResponse};
@@ -49,9 +52,13 @@ impl GossipNetwork {
             },
         };
 
-        let raft_resp =
-            bincode::deserialize(&resp_bytes).map_err(err_str!(ReplicationV2Error::Deserialize))?;
+        let raft_resp = Self::deserialize_raft_response(&resp_bytes)?;
         Ok(raft_resp)
+    }
+
+    /// Deserialize a raft response from bytes
+    fn deserialize_raft_response(msg_bytes: &[u8]) -> Result<RaftResponse, ReplicationV2Error> {
+        ciborium::de::from_reader(msg_bytes).map_err(err_str!(ReplicationV2Error::Deserialize))
     }
 }
 
@@ -74,7 +81,7 @@ impl P2PRaftNetwork for GossipNetwork {
     ) -> Result<RaftResponse, RPCError<NodeId, Node, RaftError<NodeId>>> {
         // We serialize in the raft layer to avoid the `gossip-api` depending on `state`
         let ser =
-            bincode::serialize(&request).map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
+            ciborium_serialize(&request).map_err(|e| RPCError::Network(NetworkError::new(&e)))?;
         let req = GossipRequestType::Raft(ser);
 
         // Send a network manager job

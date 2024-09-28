@@ -135,6 +135,9 @@ impl State {
     }
 
     /// Get all known orders in the book
+    ///
+    /// Warning: this can be very slow when the state has a medium to large
+    /// number of orders
     pub async fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StateError> {
         self.with_read_tx(move |tx| {
             let orders = tx.get_all_orders()?;
@@ -228,7 +231,7 @@ impl State {
 
     /// Choose an order to handshake with according to their priorities
     ///
-    /// TODO: Optimize this method if necessary
+    /// TODO(@joeykraut): Optimize this method when implementing multi-cluster
     pub async fn choose_handshake_order(&self) -> Result<Option<OrderIdentifier>, StateError> {
         self.with_read_tx(|tx| {
             // Get all orders and filter by those that are not managed internally and ready

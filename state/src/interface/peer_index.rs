@@ -117,13 +117,13 @@ impl State {
     ) -> Result<HeartbeatMessage, StateError> {
         self.with_read_tx(move |tx| {
             let peers = tx.get_info_map()?;
-            let orders = tx.get_all_orders()?;
+            // We don't currently send orders in heartbeats
+            // TODO: Append local orders to heartbeats when multi-cluster support is added
+            let known_orders = vec![];
 
             // Filter out cancelled orders & excluded peers
             let known_peers =
                 peers.into_keys().filter(|peer| !excluded_peers.contains(peer)).collect_vec();
-            let known_orders =
-                orders.into_iter().filter(|order| !order.is_cancelled()).map(|o| o.id).collect();
 
             Ok(HeartbeatMessage { known_peers, known_orders })
         })

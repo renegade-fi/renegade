@@ -19,7 +19,7 @@ use openraft::{
 use serde::{Deserialize, Serialize};
 use util::err_str;
 
-use crate::{error::StateError, Proposal};
+use crate::{ciborium_serialize, error::StateError, Proposal};
 
 use super::{Node, NodeId, TypeConfig};
 
@@ -70,7 +70,7 @@ pub enum RaftResponse {
 impl RaftResponse {
     /// Serialize a raft response to bytes
     pub fn to_bytes(&self) -> Result<Vec<u8>, StateError> {
-        bincode::serialize(self).map_err(err_str!(StateError::Serde))
+        ciborium_serialize(self).map_err(err_str!(StateError::Serde))
     }
 
     /// Convert the response to an append entries request

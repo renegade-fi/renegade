@@ -105,6 +105,9 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     }
 
     /// Get all orders in the book
+    ///
+    /// Warning: this can be very slow when the state has a medium to large
+    /// number of orders
     pub fn get_all_orders(&self) -> Result<Vec<NetworkOrder>, StorageError> {
         // Build a cursor over the table
         let cursor = self

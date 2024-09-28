@@ -81,8 +81,12 @@ impl State {
     /// We (de)serialize at the raft layer to avoid dependency leak
     #[instrument(name = "handle_raft_request", skip_all, err)]
     pub async fn handle_raft_req(&self, msg_bytes: Vec<u8>) -> Result<RaftResponse, StateError> {
-        let msg: RaftRequest =
-            bincode::deserialize(&msg_bytes).map_err(err_str!(StateError::Serde))?;
+        let msg = Self::deserialize_raft_request(&msg_bytes)?;
         self.raft.handle_raft_request(msg).await.map_err(StateError::Replication)
+    }
+
+    /// Deserialize a raft request from bytes
+    pub fn deserialize_raft_request(msg_bytes: &[u8]) -> Result<RaftRequest, StateError> {
+        ciborium::de::from_reader(msg_bytes).map_err(err_str!(StateError::Serde))
     }
 }
