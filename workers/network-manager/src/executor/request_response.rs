@@ -1,5 +1,7 @@
 //! Defines handlers for the request-response protocol
 
+use std::time::{Duration, Instant};
+
 use common::types::gossip::WrappedPeerId;
 use gossip_api::{
     request_response::{
@@ -11,13 +13,16 @@ use gossip_api::{
 use job_types::{gossip_server::GossipServerJob, network_manager::NetworkResponseChannel};
 use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use libp2p::PeerId;
-use tracing::{error, instrument};
+use tracing::{error, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use util::{err_str, telemetry::propagation::set_parent_span_from_headers};
 
 use crate::error::NetworkManagerError;
 
 use super::{behavior::BehaviorJob, NetworkManagerExecutor};
+
+/// The raft job execution latency at which we log a warning
+pub(super) const RAFT_JOB_LATENCY_WARNING_MS: Duration = Duration::from_millis(100);
 
 impl NetworkManagerExecutor {
     // -----------
@@ -142,11 +147,17 @@ impl NetworkManagerExecutor {
         msg_buf: Vec<u8>,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
+        let start = Instant::now();
         let resp = self
             .global_state
             .handle_raft_req(msg_buf)
             .await
             .map_err(err_str!(NetworkManagerError::State))?;
+
+        let elapsed = start.elapsed();
+        if elapsed > RAFT_JOB_LATENCY_WARNING_MS {
+            warn!("raft request took: {elapsed:.2?}");
+        }
 
         let resp = GossipResponseType::Raft(resp.to_bytes()?);
         self.handle_outbound_resp(resp.into(), chan).await

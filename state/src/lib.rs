@@ -109,6 +109,10 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     RAFT_LOGS_TABLE,
 ];
 
+// ---------------------
+// | State Transitions |
+// ---------------------
+
 /// The proposal submitted to the state machine
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proposal {
@@ -190,6 +194,19 @@ impl From<StateTransition> for Proposal {
         let transition = Box::new(transition);
         Self { id: Uuid::new_v4(), transition }
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Serialize a value using ciborium
+pub fn ciborium_serialize<T: Serialize>(
+    value: &T,
+) -> Result<Vec<u8>, ciborium::ser::Error<std::io::Error>> {
+    let mut buf = vec![];
+    ciborium::ser::into_writer(value, &mut buf)?;
+    Ok(buf)
 }
 
 // ---------

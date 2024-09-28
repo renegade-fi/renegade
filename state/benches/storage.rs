@@ -42,7 +42,7 @@ pub fn bench_read_throughput(c: &mut Criterion) {
         // Fill the table with `N_VALUES` values of size `n_bytes`
         for j in 0..N_VALUES {
             let key = format!("key_{j}");
-            let mut val = vec![0; *n_bytes];
+            let mut val: Vec<u8> = vec![0; *n_bytes];
             rng.fill(&mut val[..]);
 
             db.write(BENCHMARK_TABLE, &key, &val).unwrap();

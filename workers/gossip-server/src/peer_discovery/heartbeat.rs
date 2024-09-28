@@ -86,12 +86,15 @@ impl GossipProtocolExecutor {
             }
         }
 
-        // Merge the peer and order info from the heartbeat into the local state
-        self.request_missing_orders(peer, message).await?;
+        // Merge the peer info from the heartbeat into the local state
         self.request_missing_peers(peer, message).await
     }
 
     /// Request any missing orders in the heartbeat message from the given peer
+    ///
+    /// TODO: Add local matchable orders back to the heartbeat when
+    /// multi-cluster is implemented
+    #[allow(dead_code)]
     async fn request_missing_orders(
         &self,
         peer: &WrappedPeerId,

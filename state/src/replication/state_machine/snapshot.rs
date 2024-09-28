@@ -273,21 +273,21 @@ impl StateMachine {
     /// Copy all data from one DB to another
     pub(crate) fn copy_db_data(src: &DB, dest: &DB) -> Result<(), ReplicationV2Error> {
         let src_tx = src.new_read_tx()?;
-        let dest_tx = dest.new_write_tx()?;
         for table in ALL_TABLES.iter() {
             if EXCLUDED_TABLES.contains(table) {
                 continue;
             }
 
             // Clear the table on the destination
+            let dest_tx = dest.new_write_tx()?;
             dest_tx.clear_table(table)?;
 
             // Copy all keys and values
             let src_cursor = src_tx.inner().cursor(table)?;
             dest_tx.inner().copy_cursor_to_table(table, src_cursor)?;
+            dest_tx.commit()?;
         }
 
-        dest_tx.commit()?;
         src_tx.commit()?;
         Ok(())
     }

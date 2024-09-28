@@ -25,8 +25,11 @@ use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
 };
 use state::State;
-use std::thread::JoinHandle;
-use tracing::{error, info};
+use std::{
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
+use tracing::{error, info, warn};
 use util::err_str;
 
 use crate::peer_discovery::{
@@ -41,6 +44,8 @@ use super::{errors::GossipError, worker::GossipServerConfig};
 pub(super) const GOSSIP_EXECUTOR_N_THREADS: usize = 5;
 /// The number of threads backing the blocking thread pool of the executor
 pub(super) const GOSSIP_EXECUTOR_N_BLOCKING_THREADS: usize = 5;
+/// The job execution latency at which we log a warning
+pub(super) const GOSSIP_JOB_LATENCY_WARNING_MS: Duration = Duration::from_millis(100);
 
 /// The server type that manages interactions with the gossip network
 pub struct GossipServer {
@@ -175,10 +180,20 @@ impl GossipProtocolExecutor {
                 Some(job) = job_receiver.recv() => {
                     let self_clone = self.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = self_clone.handle_job(job).await {
+                        // Handle the job
+                        let start = Instant::now();
+                        let res = self_clone.handle_job(job).await;
+
+                        // Log slow jobs
+                        let elapsed = start.elapsed();
+                        if elapsed > GOSSIP_JOB_LATENCY_WARNING_MS {
+                            warn!("gossip server job took {elapsed:.2?}");
+                        }
+
+                        if let Err(e) = res {
                             error!("error handling gossip server job: {e}");
-                        }}
-                    );
+                        }
+                    });
                 },
 
                 // Await a cancel signal from the coordinator

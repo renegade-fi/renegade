@@ -101,7 +101,10 @@ impl GossipProtocolExecutor {
         let maybe_info = self.state.get_peer_info(&peer_id).await?;
         let mut info = match maybe_info {
             Some(info) => info,
-            None => return Ok(()),
+            None => {
+                warn!("received reject expiry request for {peer_id} from {sender}, but {peer_id} is not in the peer index");
+                return Ok(());
+            },
         };
 
         if info.last_heartbeat < last_heartbeat {

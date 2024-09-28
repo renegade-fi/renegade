@@ -16,6 +16,8 @@ use crate::error::HandshakeManagerError;
 pub(super) const HANDSHAKE_INTERVAL_MS: u64 = 2_000; // 2 seconds
 /// Number of nanoseconds in a millisecond, for convenience
 const NANOS_PER_MILLI: u64 = 1_000_000;
+/// Whether MPC matches are disabled
+const DISABLE_MPC_MATCHES: bool = true;
 
 /// Implements a timer that periodically enqueues jobs to the threadpool that
 /// tell the manager to send outbound handshake requests
@@ -37,7 +39,8 @@ impl HandshakeScheduler {
 
     /// The execution loop of the timer, periodically enqueues handshake jobs
     pub async fn execution_loop(mut self) -> HandshakeManagerError {
-        if in_bootstrap_mode() {
+        // TODO(@joeykraut): Enable multi-cluster support
+        if in_bootstrap_mode() || DISABLE_MPC_MATCHES {
             sleep_forever_async().await;
         }
 

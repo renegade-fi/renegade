@@ -7,8 +7,9 @@ use std::{ops::Bound, path::Path};
 
 use libmdbx::{Database, Geometry, WriteMap, RO, RW};
 use serde::{Deserialize, Serialize};
+use util::err_str;
 
-use crate::NUM_TABLES;
+use crate::{ciborium_serialize, NUM_TABLES};
 
 use super::{
     error::StorageError,
@@ -25,14 +26,14 @@ const MAX_DB_SIZE_BYTES: usize = 1 << 36; // 64 GB
 
 /// Serialize a value to a `flexbuffers` byte vector
 pub(crate) fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, StorageError> {
-    bincode::serialize(value).map_err(StorageError::Serialization)
+    ciborium_serialize(value).map_err(err_str!(StorageError::Serialization))
 }
 
 /// Deserialize a value from a `flexbuffers` byte vector
 pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
     value_bytes: &[u8],
 ) -> Result<V, StorageError> {
-    bincode::deserialize(value_bytes).map_err(StorageError::Deserialization)
+    ciborium::de::from_reader(value_bytes).map_err(err_str!(StorageError::Deserialization))
 }
 
 // ------------

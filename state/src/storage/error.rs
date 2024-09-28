@@ -2,7 +2,6 @@
 
 use std::{error::Error, fmt::Display};
 
-use bincode::Error as BincodeError;
 use libmdbx::Error as MdbxError;
 
 /// The error type emitted by the storage layer
@@ -13,7 +12,7 @@ pub enum StorageError {
     /// Error committing a transaction
     Commit(MdbxError),
     /// Error deserializing a value from storage
-    Deserialization(BincodeError),
+    Deserialization(String),
     /// An invalid key was used to access the database
     InvalidKey(String),
     /// An entry was not found in the database
@@ -25,7 +24,7 @@ pub enum StorageError {
     /// An uncategorized error
     Other(String),
     /// Error serializing a value for storage
-    Serialization(BincodeError),
+    Serialization(String),
     /// Error syncing the database
     Sync(MdbxError),
     /// Error while performing a transaction operation
