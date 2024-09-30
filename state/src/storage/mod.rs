@@ -10,4 +10,4 @@ pub mod traits;
 pub mod tx;
 
 /// A type alias used for reading from the database
-type CowBuffer<'a> = Cow<'a, [u8]>;
+pub type CowBuffer<'a> = Cow<'a, [u8]>;

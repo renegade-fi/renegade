@@ -20,6 +20,7 @@ use crate::{
     RAFT_METADATA_TABLE, RELAYER_FEES_TABLE,
 };
 
+use super::conversion::convert_serialized_values;
 use super::{Node, NodeId, StateMachine, TypeConfig};
 
 /// The MDBX data file
@@ -284,7 +285,9 @@ impl StateMachine {
 
             // Copy all keys and values
             let src_cursor = src_tx.inner().cursor(table)?;
-            dest_tx.inner().copy_cursor_to_table(table, src_cursor)?;
+            // dest_tx.inner().copy_cursor_to_table(table, src_cursor)?;
+            convert_serialized_values(table, &dest_tx, src_cursor)
+                .map_err(ReplicationV2Error::Snapshot)?;
         }
 
         dest_tx.commit()?;
@@ -313,7 +316,10 @@ impl StateMachine {
 
 #[cfg(test)]
 mod tests {
-    use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
+    use common::types::{
+        wallet::{Wallet, WalletIdentifier},
+        wallet_mocks::mock_empty_wallet,
+    };
     use libmdbx::Error as MdbxError;
 
     use crate::{
@@ -470,5 +476,49 @@ mod tests {
 
         assert_eq!(value1, v1);
         assert_eq!(value2, None);
+    }
+
+    /// Test converting a snapshot
+    #[test]
+    fn test_convert_snapshot() {
+        use flate2::read::GzDecoder;
+        use std::fs::File;
+        use std::io::BufReader;
+        use tempfile::tempdir;
+
+        // Create a temporary directory to store the unzipped snapshot
+        let temp_dir = tempdir().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+
+        // Open the gzipped snapshot file
+        let snapshot_file =
+            File::open("/Users/joeykraut/work/snapshot.gz").expect("Failed to open snapshot file");
+        let reader = BufReader::new(snapshot_file);
+        let mut decoder = GzDecoder::new(reader);
+
+        // Unzip the snapshot to the temporary directory
+        let unzipped_path = temp_path.join("snapshot");
+        std::io::copy(
+            &mut decoder,
+            &mut File::create(&unzipped_path).expect("Failed to create unzipped file"),
+        )
+        .expect("Failed to unzip snapshot");
+        println!("unzipped path: {:?}", unzipped_path.to_str().unwrap());
+
+        // Open the unzipped snapshot as a database
+        let conf = DbConfig::new_with_path(unzipped_path.to_str().unwrap());
+        let snapshot_db = DB::new(&conf).expect("Failed to open snapshot database");
+
+        // Create a new destination database
+        let dest_db = mock_db();
+
+        // Copy the data from the snapshot to the destination
+        StateMachine::copy_db_data(&snapshot_db, &dest_db).expect("Failed to copy snapshot data");
+
+        let wallet_id =
+            WalletIdentifier::parse_str("178ea3a3-65d7-7260-1a85-76973c5aa790").unwrap();
+        let dest_tx = dest_db.new_read_tx().unwrap();
+        let wallet: Wallet = dest_tx.get_wallet(&wallet_id).unwrap().unwrap();
+        println!("wallet: {:?}", wallet);
     }
 }

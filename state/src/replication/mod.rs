@@ -61,6 +61,24 @@ pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
     fxhash64(&peer_id)
 }
 
+#[cfg(test)]
+mod test2 {
+    use common::types::gossip::WrappedPeerId;
+    use std::str::FromStr;
+
+    use super::get_raft_id;
+
+    /// asdf
+    #[test]
+    fn test_get_raft_id() {
+        let peer_id =
+            WrappedPeerId::from_str("12D3KooWCeGe3hWJsZMyRWNjpoMKpA9LarGJJ5PsoZR3bJ6rh4CG")
+                .unwrap();
+        let raft_id = get_raft_id(&peer_id);
+        println!("raft_id: {}", raft_id);
+    }
+}
+
 // -------------
 // | Mock Raft |
 // -------------

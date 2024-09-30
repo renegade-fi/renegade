@@ -98,3 +98,59 @@ impl State {
         bincode::deserialize(msg_bytes).map_err(err_str!(StateError::Serde))
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::time::Instant;
+
+    use super::*;
+    use crate::{
+        notifications::ProposalId,
+        replication::{Entry, TypeConfig},
+        Proposal, StateTransition,
+    };
+    use common::types::wallet_mocks::mock_empty_wallet;
+    use openraft::{raft::AppendEntriesRequest, EntryPayload, LeaderId, LogId, Vote};
+
+    #[test]
+    fn test_deserialize_large_raft_request() {
+        // Create a large AppendEntriesRequest
+        const NUM_ENTRIES: usize = 100;
+        let wallet = mock_empty_wallet();
+        let transition = StateTransition::AddWallet { wallet };
+        let proposal = EntryPayload::Normal(Proposal {
+            id: ProposalId::new_v4(),
+            transition: Box::new(transition),
+        });
+
+        let mut entries = Vec::with_capacity(NUM_ENTRIES);
+        for i in 0..NUM_ENTRIES {
+            entries.push(Entry {
+                log_id: LogId::new(LeaderId::new(1, 0), 1),
+                payload: proposal.clone(),
+            });
+        }
+
+        let large_request = RaftRequest::AppendEntries(AppendEntriesRequest {
+            vote: Vote::new(1, 1),
+            prev_log_id: Some(LogId::new(LeaderId::new(1, 0), 1)),
+            entries,
+            leader_commit: Some(LogId::new(LeaderId::new(1, 0), 1)),
+        });
+
+        // Serialize the request
+        let serialized = bincode::serialize(&large_request).unwrap();
+
+        // Deserialize and verify
+        let start = Instant::now();
+        let deserialized = State::deserialize_raft_request(&serialized).unwrap();
+        println!("Deserialized in {:?}", start.elapsed());
+
+        match deserialized {
+            RaftRequest::AppendEntries(req) => {
+                assert_eq!(req.entries.len(), NUM_ENTRIES);
+            },
+            _ => panic!("Expected AppendEntries request"),
+        }
+    }
+}

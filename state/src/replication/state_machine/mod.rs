@@ -1,6 +1,7 @@
 //! Defines the state machine for the raft node, responsible for applying logs
 //! to the state
 
+mod conversion;
 mod recovery;
 mod snapshot;
 
