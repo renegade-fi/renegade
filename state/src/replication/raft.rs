@@ -262,6 +262,18 @@ impl RaftClient {
     }
 
     // -------------
+    // | Snapshots |
+    // -------------
+
+    /// Trigger a snapshot to be created
+    ///
+    /// Does not wait for the snapshot to build, returns immediately after
+    /// sending the command to the raft core
+    pub async fn trigger_snapshot(&self) -> Result<(), ReplicationV2Error> {
+        self.raft().trigger().snapshot().await.map_err(err_str!(ReplicationV2Error::Raft))
+    }
+
+    // -------------
     // | Proposals |
     // -------------
 

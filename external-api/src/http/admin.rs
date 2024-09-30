@@ -17,6 +17,8 @@ use super::wallet::WalletUpdateAuthorization;
 
 /// Check whether the target node is a raft leader
 pub const IS_LEADER_ROUTE: &str = "/v0/admin/is-leader";
+/// Trigger a raft snapshot
+pub const ADMIN_TRIGGER_SNAPSHOT_ROUTE: &str = "/v0/admin/trigger-snapshot";
 /// Get the open orders managed by the node
 pub const ADMIN_OPEN_ORDERS_ROUTE: &str = "/v0/admin/open-orders";
 /// Get the order metadata for a given order

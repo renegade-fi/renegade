@@ -8,7 +8,7 @@ mod rate_limit;
 mod task;
 mod wallet;
 
-use admin::IsLeaderHandler;
+use admin::{AdminTriggerSnapshotHandler, IsLeaderHandler};
 use async_trait::async_trait;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
@@ -20,7 +20,8 @@ use external_api::{
         admin::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE,
             ADMIN_MATCHING_POOL_CREATE_ROUTE, ADMIN_MATCHING_POOL_DESTROY_ROUTE,
-            ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE,
+            IS_LEADER_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
@@ -435,6 +436,13 @@ impl HttpServer {
             &Method::GET,
             IS_LEADER_ROUTE.to_string(),
             IsLeaderHandler::new(state.clone()),
+        );
+
+        // The "/admin/trigger-snapshot" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ADMIN_TRIGGER_SNAPSHOT_ROUTE.to_string(),
+            AdminTriggerSnapshotHandler::new(state.clone()),
         );
 
         // The "/admin/open-orders" route
