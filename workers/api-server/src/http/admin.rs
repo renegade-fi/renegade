@@ -61,13 +61,9 @@ const ERR_BALANCE_NOT_FOUND: &str = "balance not found in wallet";
 /// Error message emitted when price data cannot be found for a token pair
 const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
-// ------------------
-// | Route Handlers |
-// ------------------
-
-// --------------
-// | /is-leader |
-// --------------
+// -----------------------
+// | Raft Route Handlers |
+// -----------------------
 
 /// Handler for the GET /v0/admin/is-leader route
 pub struct IsLeaderHandler {
@@ -99,9 +95,39 @@ impl TypedHandler for IsLeaderHandler {
     }
 }
 
-// ----------------
-// | /open-orders |
-// ----------------
+/// Handler for the POST /v0/admin/trigger-snapshot route
+pub struct AdminTriggerSnapshotHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminTriggerSnapshotHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminTriggerSnapshotHandler {
+    type Request = EmptyRequestResponse;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        self.state.trigger_snapshot().await?;
+        Ok(EmptyRequestResponse {})
+    }
+}
+
+// ------------------------
+// | Open Orders Handlers |
+// ------------------------
 
 /// Handler for the GET /v0/admin/open-orders route
 pub struct AdminOpenOrdersHandler {
@@ -173,10 +199,6 @@ impl TypedHandler for AdminOpenOrdersHandler {
     }
 }
 
-// ------------------------
-// | /orders/:id/metadata |
-// ------------------------
-
 /// Handle for the GET /v0/admin/orders/:id/metadata route
 pub struct AdminOrderMetadataHandler {
     /// A handle to the relayer state
@@ -213,9 +235,9 @@ impl TypedHandler for AdminOrderMetadataHandler {
     }
 }
 
-// ----------------------------------
-// | /matching_pools/:matching_pool |
-// ----------------------------------
+// --------------------------
+// | Matching Pool Handlers |
+// --------------------------
 
 /// Handler for the POST /v0/admin/matching_pools/:matching_pool route
 pub struct AdminCreateMatchingPoolHandler {
@@ -256,10 +278,6 @@ impl TypedHandler for AdminCreateMatchingPoolHandler {
     }
 }
 
-// ------------------------------------------
-// | /matching_pools/:matching_pool/destroy |
-// ------------------------------------------
-
 /// Handler for the POST /v0/admin/matching_pools/:matching_pool/destroy route
 pub struct AdminDestroyMatchingPoolHandler {
     /// A handle to the relayer state
@@ -293,10 +311,6 @@ impl TypedHandler for AdminDestroyMatchingPoolHandler {
         Ok(EmptyRequestResponse {})
     }
 }
-
-// -----------------------------
-// | /wallet/:id/order-in-pool |
-// -----------------------------
 
 /// Handler for the POST /v0/admin/wallet/:id/order-in-pool route
 pub struct AdminCreateOrderInMatchingPoolHandler {
@@ -361,10 +375,6 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
         Ok(CreateOrderResponse { id: oid, task_id })
     }
 }
-
-// ------------------------------------------
-// | /orders/:id/assign-pool/:matching_pool |
-// ------------------------------------------
 
 /// Handler for the POST /v0/admin/orders/:id/assign-pool/:matching_pool route
 pub struct AdminAssignOrderToMatchingPoolHandler {

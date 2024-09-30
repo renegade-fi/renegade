@@ -69,6 +69,11 @@ impl State {
         self.raft.await_leader_election().await.map_err(StateError::Replication)
     }
 
+    /// Trigger a snapshot
+    pub async fn trigger_snapshot(&self) -> Result<(), StateError> {
+        self.raft.trigger_snapshot().await.map_err(StateError::Replication)
+    }
+
     // --- Networking --- //
 
     /// Handle a raft request from a peer
