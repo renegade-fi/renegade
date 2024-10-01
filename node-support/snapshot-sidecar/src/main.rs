@@ -22,10 +22,7 @@ use external_api::http::admin::{IsLeaderResponse, IS_LEADER_ROUTE};
 use notify::{event::RemoveKind, Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use reqwest::Client as HttpClient;
 use tracing::{error, info};
-use util::{
-    get_current_time_millis, raw_err_str,
-    telemetry::{setup_system_logger, LevelFilter},
-};
+use util::{get_current_time_millis, raw_err_str};
 
 /// The postfix of the snapshot path
 const SNAPSHOT_FILE_NAME: &str = "snapshot.gz";
@@ -64,7 +61,7 @@ async fn main() {
     let cli = Cli::parse();
     let relayer_config =
         parse_config_from_file(&cli.config_path).expect("could not parse relayer config");
-    setup_system_logger(LevelFilter::INFO);
+    relayer_config.configure_telemetry().expect("failed to configure telemetry");
 
     let region = Region::new(cli.region.clone());
     let config = aws_config::from_env().region(region).load().await;
