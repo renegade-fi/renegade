@@ -19,8 +19,6 @@ pub enum CoordinatorError {
     Setup(String),
     /// An error setting up global state
     State(String),
-    /// An error setting up telemetry
-    Telemetry(String),
     /// An error setting up the system clock timers
     Clock(String),
 }

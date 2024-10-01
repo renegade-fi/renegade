@@ -22,6 +22,7 @@ use std::{
     path::Path,
 };
 use url::Url;
+use util::telemetry::configure_telemetry;
 
 use crate::parsing::{parse_config_from_args, RelayerFeeWhitelistEntry};
 
@@ -415,8 +416,20 @@ impl RelayerConfig {
     pub fn needs_relayer_wallet(&self) -> bool {
         self.auto_redeem_fees
     }
-}
 
+    /// Configure the telemetry layers from the relayer config
+    pub fn configure_telemetry(&self) -> Result<(), String> {
+        configure_telemetry(
+            self.datadog_enabled,
+            self.otlp_enabled,
+            self.metrics_enabled,
+            self.otlp_collector_url.clone(),
+            &self.statsd_host,
+            self.statsd_port,
+        )
+        .map_err(|e| e.to_string())
+    }
+}
 impl Default for RelayerConfig {
     fn default() -> Self {
         // Parse a dummy set of command line args and convert this to a config

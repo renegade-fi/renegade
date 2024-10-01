@@ -47,7 +47,6 @@ use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::{select, sync::watch};
 use tracing::info;
-use util::{err_str, telemetry::configure_telemetry};
 
 use crate::setup::node_setup;
 
@@ -85,19 +84,7 @@ async fn main() -> Result<(), CoordinatorError> {
         .expect("error blocking on config parse")
         .expect("error parsing command line args");
     let setup_config = args.clone();
-
-    // Configure telemetry before all else so we don't lose any data
-    if !args.debug {
-        configure_telemetry(
-            args.datadog_enabled,
-            args.otlp_enabled,
-            args.metrics_enabled,
-            args.otlp_collector_url.clone(),
-            &args.statsd_host,
-            args.statsd_port,
-        )
-        .map_err(err_str!(CoordinatorError::Telemetry))?;
-    }
+    args.configure_telemetry().expect("failed to configure telemetry");
 
     info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
