@@ -7,10 +7,12 @@ use std::fmt::Debug;
 use std::ops::Bound;
 use std::{ops::RangeBounds, sync::Arc};
 
+use itertools::Itertools;
 use libmdbx::{RO, RW};
 use openraft::storage::LogFlushed;
 use openraft::{storage::RaftLogStorage, RaftLogReader};
 use openraft::{LogId, LogState, StorageError as RaftStorageError, Vote};
+use util::err_str;
 
 use crate::replication::error::new_log_read_error;
 use crate::storage::db::DB;
@@ -60,27 +62,37 @@ impl LogStore {
     }
 
     /// Run a callback with a read tx in scope
-    fn with_read_tx<F, T>(&self, f: F) -> Result<T, StorageError>
+    async fn with_read_tx<F, T>(&self, f: F) -> Result<T, StorageError>
     where
-        F: FnOnce(&StateTxn<RO>) -> Result<T, StorageError>,
+        T: Send + 'static,
+        F: FnOnce(&StateTxn<RO>) -> Result<T, StorageError> + Send + 'static,
     {
-        let tx = self.db.new_read_tx()?;
-        let res = f(&tx)?;
-        tx.commit()?;
-
-        Ok(res)
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || {
+            let tx = db.new_read_tx()?;
+            let res = f(&tx)?;
+            tx.commit()?;
+            Ok(res)
+        })
+        .await
+        .map_err(err_str!(StorageError::Other))?
     }
 
     /// Run a callback with a write tx in scope
-    fn with_write_tx<F, T>(&self, f: F) -> Result<T, StorageError>
+    async fn with_write_tx<F, T>(&self, f: F) -> Result<T, StorageError>
     where
-        F: FnOnce(&StateTxn<RW>) -> Result<T, StorageError>,
+        T: Send + 'static,
+        F: FnOnce(&StateTxn<'_, RW>) -> Result<T, StorageError> + Send + 'static,
     {
-        let tx = self.db.new_write_tx()?;
-        let res = f(&tx)?;
-        tx.commit()?;
-
-        Ok(res)
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || {
+            let tx = db.new_write_tx()?;
+            let res = f(&tx)?;
+            tx.commit()?;
+            Ok(res)
+        })
+        .await
+        .map_err(err_str!(StorageError::Other))?
     }
 }
 
@@ -94,7 +106,7 @@ impl RaftLogReader<TypeConfig> for LogStore {
             return Ok(Vec::new());
         }
 
-        self.with_read_tx(|tx| {
+        self.with_read_tx(move |tx| {
             let mut log_cursor = tx.logs_cursor()?;
 
             // Read the range
@@ -112,6 +124,7 @@ impl RaftLogReader<TypeConfig> for LogStore {
 
             Ok(res)
         })
+        .await
         .map_err(new_log_read_error)
     }
 }
@@ -120,7 +133,7 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     type LogReader = Self;
 
     async fn get_log_state(&mut self) -> Result<LogState<TypeConfig>, RaftStorageError<NodeId>> {
-        self.with_read_tx(|tx| {
+        self.with_read_tx(move |tx| {
             let last_purged_log_id = tx.get_last_purged_log_id()?;
             let last_log = tx.last_raft_log()?.map(|(_, entry)| entry.log_id);
             let last_log_id = match last_log {
@@ -130,15 +143,17 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
             Ok(LogState { last_log_id, last_purged_log_id })
         })
+        .await
         .map_err(new_log_read_error)
     }
 
     async fn save_vote(&mut self, vote: &Vote<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
-        self.with_write_tx(|tx| tx.set_last_vote(vote)).map_err(new_log_write_error)
+        let vote = *vote;
+        self.with_write_tx(move |tx| tx.set_last_vote(&vote)).await.map_err(new_log_write_error)
     }
 
     async fn read_vote(&mut self) -> Result<Option<Vote<NodeId>>, RaftStorageError<NodeId>> {
-        self.with_read_tx(|tx| tx.get_last_vote()).map_err(new_log_read_error)
+        self.with_read_tx(move |tx| tx.get_last_vote()).await.map_err(new_log_read_error)
     }
 
     async fn append<I>(
@@ -149,7 +164,10 @@ impl RaftLogStorage<TypeConfig> for LogStore {
     where
         I: IntoIterator<Item = Entry>,
     {
-        self.with_write_tx(|tx| tx.append_log_entries(entries)).map_err(new_log_write_error)?;
+        let entries = entries.into_iter().collect_vec();
+        self.with_write_tx(|tx| tx.append_log_entries(entries))
+            .await
+            .map_err(new_log_write_error)?;
 
         // Report success to the raft callback
         callback.log_io_completed(Ok(()));
@@ -158,15 +176,18 @@ impl RaftLogStorage<TypeConfig> for LogStore {
 
     /// Truncate all logs after the given id (inclusive)
     async fn truncate(&mut self, log_id: LogId<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
-        self.with_write_tx(|tx| tx.truncate_logs(log_id.index)).map_err(new_log_write_error)
+        self.with_write_tx(move |tx| tx.truncate_logs(log_id.index))
+            .await
+            .map_err(new_log_write_error)
     }
 
     /// Purge all logs before the given id (inclusive)
     async fn purge(&mut self, log_id: LogId<NodeId>) -> Result<(), RaftStorageError<NodeId>> {
-        self.with_write_tx(|tx| {
+        self.with_write_tx(move |tx| {
             tx.purge_logs(log_id.index)?;
             tx.set_last_purged_log_id(&log_id)
         })
+        .await
         .map_err(new_log_write_error)
     }
 
