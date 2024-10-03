@@ -189,7 +189,7 @@ impl AuthenticatedGossipResponse {
     }
 
     /// Verify the signature on an authenticated request
-    #[instrument(name = "verify_cluster_auth")]
+    #[instrument(name = "verify_cluster_auth", skip_all)]
     pub fn verify_cluster_auth(&self, cluster_key: &HmacKey) -> bool {
         if !self.inner.requires_cluster_auth() {
             return true;
