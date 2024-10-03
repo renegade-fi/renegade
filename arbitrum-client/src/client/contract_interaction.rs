@@ -113,6 +113,22 @@ impl ArbitrumClient {
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
     }
 
+    /// Check whether the given public blinder is used
+    ///
+    /// Returns `true` if the blinder is used, `false` otherwise
+    #[instrument(skip_all, err, fields(blinder = %blinder))]
+    pub async fn is_public_blinder_used(
+        &self,
+        blinder: Scalar,
+    ) -> Result<bool, ArbitrumClientError> {
+        let blinder_u256 = scalar_to_u256(&blinder);
+        self.get_darkpool_client()
+            .is_public_blinder_used(blinder_u256)
+            .call()
+            .await
+            .map_err(err_str!(ArbitrumClientError::ContractInteraction))
+    }
+
     // -----------
     // | SETTERS |
     // -----------

@@ -29,7 +29,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 use util::err_str;
 
 use crate::peer_discovery::{
@@ -206,6 +206,7 @@ impl GossipProtocolExecutor {
     }
 
     /// The main dispatch method for handling jobs
+    #[instrument(name = "gossip_server_job", skip(self))]
     async fn handle_job(&self, job: GossipServerJob) -> Result<(), GossipError> {
         match job {
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id).await?,
@@ -225,6 +226,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a gossip request type from a peer
+    #[instrument(name = "handle_request", skip(self, req))]
     async fn handle_request(
         &self,
         peer: WrappedPeerId,
@@ -249,6 +251,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a gossip response type from a peer
+    #[instrument(name = "handle_response", skip(self, resp))]
     async fn handle_response(
         &self,
         peer: WrappedPeerId,
@@ -269,6 +272,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles an inbound pubsub message from the network
+    #[instrument(name = "handle_pubsub", skip(self, msg))]
     async fn handle_pubsub(
         &self,
         sender: WrappedPeerId,
