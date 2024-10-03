@@ -13,7 +13,7 @@ use gossip_api::{
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use tracing::info;
+use tracing::{info, instrument};
 use util::{err_str, get_current_time_millis};
 
 use crate::{
@@ -48,6 +48,7 @@ impl GossipProtocolExecutor {
 
     /// Sends heartbeat message to peers to exchange network information and
     /// ensure liveness
+    #[instrument(name = "send_heartbeat", skip(self))]
     pub async fn send_heartbeat(
         &self,
         recipient_peer_id: WrappedPeerId,
@@ -69,6 +70,7 @@ impl GossipProtocolExecutor {
     // ---------------------
 
     /// Handle a heartbeat message from a peer
+    #[instrument(name = "handle_heartbeat", skip(self, message))]
     pub async fn handle_heartbeat(
         &self,
         peer: &WrappedPeerId,

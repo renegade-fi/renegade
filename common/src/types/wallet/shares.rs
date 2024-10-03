@@ -49,6 +49,17 @@ impl Wallet {
         self.private_shares.blinder
     }
 
+    /// Get the public blinder of the wallet
+    pub fn public_blinder(&self) -> Scalar {
+        self.blinded_public_shares.blinder
+    }
+
+    /// Get the next public blinder of the wallet
+    pub fn next_public_blinder(&self) -> Scalar {
+        let (new_blinder, new_blinder_private) = self.new_blinder_and_private_share();
+        new_blinder - new_blinder_private
+    }
+
     /// Get the last non-blinder wallet share
     pub fn get_last_private_share(&self) -> Scalar {
         let shares = self.private_shares.to_scalars();
@@ -61,16 +72,25 @@ impl Wallet {
     // | Setters |
     // -----------
 
+    /// Sample a new blinder and private blinder share
+    ///
+    /// Returned in order `(new_blinder, new_blinder_private_share)`
+    pub fn new_blinder_and_private_share(&self) -> (Scalar, Scalar) {
+        let seed = self.private_blinder_share();
+        let blinder_and_private_share = evaluate_hash_chain(seed, 2 /* length */);
+        let new_blinder = blinder_and_private_share[0];
+        let new_blinder_private_share = blinder_and_private_share[1];
+
+        (new_blinder, new_blinder_private_share)
+    }
+
     /// Reblind the wallet, consuming the next set of blinders and secret shares
     pub fn reblind_wallet(&mut self) {
         let private_shares_serialized: Vec<Scalar> = self.private_shares.to_scalars();
 
         // Sample a new blinder and private secret share
         let n_shares = private_shares_serialized.len();
-        let blinder_and_private_share =
-            evaluate_hash_chain(private_shares_serialized[n_shares - 1], 2 /* length */);
-        let new_blinder = blinder_and_private_share[0];
-        let new_blinder_private_share = blinder_and_private_share[1];
+        let (new_blinder, new_blinder_private_share) = self.new_blinder_and_private_share();
 
         // Sample new secret shares for the wallet
         let mut new_private_shares =

@@ -21,7 +21,8 @@ use constants::Scalar;
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};
-use tracing::instrument;
+use tracing::{info, instrument};
+use util::err_str;
 
 use crate::{
     driver::StateWrapper,
@@ -173,8 +174,12 @@ impl Task for RefreshWalletTask {
             },
 
             RefreshWalletTaskState::FindingWallet => {
-                self.find_wallet().await?;
-                self.task_state = RefreshWalletTaskState::CreatingValidityProofs;
+                // If the wallet is up to date, skip creating validity proofs
+                if self.find_wallet().await? {
+                    self.task_state = RefreshWalletTaskState::Completed;
+                } else {
+                    self.task_state = RefreshWalletTaskState::CreatingValidityProofs;
+                }
             },
 
             RefreshWalletTaskState::CreatingValidityProofs => {
@@ -209,8 +214,18 @@ impl RefreshWalletTask {
     // --------------
 
     /// Find the wallet in contract storage
-    async fn find_wallet(&mut self) -> Result<(), RefreshWalletTaskError> {
+    ///
+    /// Returns `true` if the wallet is up to date, `false` otherwise
+    async fn find_wallet(&mut self) -> Result<bool, RefreshWalletTaskError> {
+        // First, check if the wallet's public blinder is used on-chain
+        // If not, the local view of the wallet is up to date and we can use the
+        // shares we have locally
         let curr_wallet = self.get_wallet().await?;
+        if !self.is_public_blinder_used(curr_wallet.next_public_blinder()).await? {
+            info!("next public blinder not used, wallet is up to date");
+            return Ok(true);
+        }
+
         let (public_share, private_share) = self.find_wallet_shares(&curr_wallet).await?;
         let mut wallet = Wallet::new_from_shares(
             self.wallet_id,
@@ -229,7 +244,7 @@ impl RefreshWalletTask {
 
         let waiter = self.state.update_wallet(wallet.clone()).await?;
         waiter.await?;
-        Ok(())
+        Ok(false)
     }
 
     /// Update validity proofs for the wallet
@@ -270,6 +285,17 @@ impl RefreshWalletTask {
         let blinded_public_shares =
             self.arbitrum_client.fetch_public_shares_for_blinder(public_blinder).await?;
         Ok((blinded_public_shares, private_share))
+    }
+
+    /// Check if the given public blinder is used on-chain
+    async fn is_public_blinder_used(
+        &self,
+        public_blinder: Scalar,
+    ) -> Result<bool, RefreshWalletTaskError> {
+        self.arbitrum_client
+            .is_public_blinder_used(public_blinder)
+            .await
+            .map_err(err_str!(RefreshWalletTaskError::Arbitrum))
     }
 
     /// Get the latest known shares on-chain

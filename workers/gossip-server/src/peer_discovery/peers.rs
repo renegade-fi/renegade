@@ -12,7 +12,7 @@ use gossip_api::{
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 use util::{err_str, get_current_time_millis};
 
 use crate::{errors::GossipError, server::GossipProtocolExecutor};
@@ -25,6 +25,7 @@ impl GossipProtocolExecutor {
     // --------------------
 
     /// Handles a request for peer info
+    #[instrument(name = "handle_peer_info_req", skip_all, fields(n_peers = %peers.len()))]
     pub async fn handle_peer_info_req(
         &self,
         peers: Vec<WrappedPeerId>,
@@ -43,6 +44,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a bootstrap request from a peer    
+    #[instrument(name = "handle_bootstrap_req", skip_all, fields(peer_id = %req.peer_info.peer_id))]
     pub async fn handle_bootstrap_req(
         &self,
         req: BootstrapRequest,
@@ -58,6 +60,7 @@ impl GossipProtocolExecutor {
     ///
     /// TODO: Update this logic, for now we simply check if the local peer
     /// thinks the expiry candidate should expire
+    #[instrument(name = "handle_propose_expiry", skip(self))]
     pub async fn handle_propose_expiry(
         &self,
         sender: WrappedPeerId,
@@ -87,6 +90,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handle a request to reject expiry
+    #[instrument(name = "handle_reject_expiry", skip(self))]
     pub async fn handle_reject_expiry(
         &self,
         sender: WrappedPeerId,
@@ -120,6 +124,7 @@ impl GossipProtocolExecutor {
     // ---------------------
 
     /// Handles a response to a request for peer info
+    #[instrument(name = "handle_peer_info_resp", skip_all, fields(n_peers = %peer_info.len()))]
     pub async fn handle_peer_info_resp(&self, peer_info: Vec<PeerInfo>) -> Result<(), GossipError> {
         self.add_new_peers(peer_info).await
     }

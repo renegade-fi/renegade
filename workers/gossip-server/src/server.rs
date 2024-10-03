@@ -29,7 +29,7 @@ use std::{
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 use util::err_str;
 
 use crate::peer_discovery::{
@@ -180,17 +180,7 @@ impl GossipProtocolExecutor {
                 Some(job) = job_receiver.recv() => {
                     let self_clone = self.clone();
                     tokio::spawn(async move {
-                        // Handle the job
-                        let start = Instant::now();
-                        let res = self_clone.handle_job(job).await;
-
-                        // Log slow jobs
-                        let elapsed = start.elapsed();
-                        if elapsed > GOSSIP_JOB_LATENCY_WARNING_MS {
-                            warn!("gossip server job took {elapsed:.2?}");
-                        }
-
-                        if let Err(e) = res {
+                        if let Err(e) = self_clone.handle_job(job).await {
                             error!("error handling gossip server job: {e}");
                         }
                     });
@@ -206,7 +196,9 @@ impl GossipProtocolExecutor {
     }
 
     /// The main dispatch method for handling jobs
+    #[instrument(name = "gossip_server_job", skip(self))]
     async fn handle_job(&self, job: GossipServerJob) -> Result<(), GossipError> {
+        let start = Instant::now();
         match job {
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id).await?,
             GossipServerJob::NetworkRequest(peer_id, req, response_chan) => {
@@ -221,10 +213,17 @@ impl GossipProtocolExecutor {
             GossipServerJob::Pubsub(sender, msg) => self.handle_pubsub(sender, msg).await?,
         };
 
+        // Log slow jobs
+        let elapsed = start.elapsed();
+        if start.elapsed() > GOSSIP_JOB_LATENCY_WARNING_MS {
+            warn!("gossip server job took {elapsed:.2?}");
+        }
+
         Ok(())
     }
 
     /// Handles a gossip request type from a peer
+    #[instrument(name = "handle_request", skip(self, req))]
     async fn handle_request(
         &self,
         peer: WrappedPeerId,
@@ -249,6 +248,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles a gossip response type from a peer
+    #[instrument(name = "handle_response", skip(self, resp))]
     async fn handle_response(
         &self,
         peer: WrappedPeerId,
@@ -269,6 +269,7 @@ impl GossipProtocolExecutor {
     }
 
     /// Handles an inbound pubsub message from the network
+    #[instrument(name = "handle_pubsub", skip(self, msg))]
     async fn handle_pubsub(
         &self,
         sender: WrappedPeerId,

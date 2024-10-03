@@ -11,6 +11,7 @@ abigen!(
     DarkpoolContract,
     r#"[
         function isNullifierSpent(uint256 memory nullifier) external view returns (bool)
+        function isPublicBlinderUsed(uint256 memory blinder) external view returns (bool)
         function getRoot() external view returns (uint256)
         function getFee() external view returns (uint256)
         function getPubkey() external view returns (uint256[2])
@@ -39,6 +40,7 @@ abigen!(
     DarkpoolContract,
     r#"[
         function isNullifierSpent(uint256 memory nullifier) external view returns (bool)
+        function isPublicBlinderUsed(uint256 memory blinder) external view returns (bool)
         function getRoot() external view returns (uint256)
         function getFee() external view returns (uint256)
         function getPubkey() external view returns (uint256[2])
