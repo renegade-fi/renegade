@@ -33,6 +33,8 @@ pub const ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE: &str =
     "/v0/admin/wallet/:wallet_id/order-in-pool";
 /// Route to assign an order to a matching pool
 pub const ADMIN_ASSIGN_ORDER_ROUTE: &str = "/v0/admin/orders/:order_id/assign-pool/:matching_pool";
+/// Route to get the matching pool for an order
+pub const ADMIN_GET_ORDER_MATCHING_POOL_ROUTE: &str = "/v0/admin/orders/:order_id/matching-pool";
 
 /// The response to an "is leader" request
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,4 +84,11 @@ pub struct CreateOrderInMatchingPoolRequest {
 pub struct AdminOrderMetadataResponse {
     /// The order metadata
     pub order: OrderMetadata,
+}
+
+/// The response to a "get order matching pool" request
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AdminGetOrderMatchingPoolResponse {
+    /// The matching pool name for the order
+    pub matching_pool: MatchingPoolName,
 }
