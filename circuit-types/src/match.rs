@@ -15,6 +15,10 @@ use crate::{
     Amount, Fabric,
 };
 
+// ----------------
+// | Match Result |
+// ----------------
+
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
@@ -103,4 +107,32 @@ pub struct OrderSettlementIndices {
     pub balance_receive: usize,
     /// The index of the order that is to be matched
     pub order: usize,
+}
+
+// -------------------------
+// | External Match Result |
+// -------------------------
+
+/// The result of an external match settlement
+///
+/// An external match is one between a darkpool (internal) order and an external
+/// order, facilitated directly by token transfers in the contract
+#[circuit_type(serde, singleprover_circuit)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalMatchResult {
+    /// The mint of the quote token in the matched asset pair
+    pub quote_mint: BigUint,
+    /// The mint of the base token in the matched asset pair
+    pub base_mint: BigUint,
+    /// The amount of the quote token exchanged by the match
+    pub quote_amount: Amount,
+    /// The amount of the base token exchanged by the match
+    pub base_amount: Amount,
+    /// The direction of the match
+    ///
+    /// - `true` implies that the internal party buys the quote and sells the
+    ///   base
+    /// - `false` implies that the internal party buys the base and sells the
+    ///   quote
+    pub direction: bool,
 }
