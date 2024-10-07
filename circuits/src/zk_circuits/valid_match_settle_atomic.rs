@@ -31,6 +31,8 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
+use super::valid_match_settle::ValidMatchSettle;
+
 // ----------------------
 // | Circuit Definition |
 // ----------------------
@@ -54,8 +56,8 @@ where
         // Validate the matching engine
         Self::validate_matching_engine(statement, witness, cs)?;
 
-        // TODO: Validate internal party settlement
-        Ok(())
+        // Validate the internal party's settlement
+        Self::validate_settlement(statement, witness, cs)
     }
 
     // --- Matching Engine Constraints --- //
@@ -164,6 +166,39 @@ where
     }
 
     // --- Settlement Constraints --- //
+
+    /// Validate the settlement of the atomic match
+    fn validate_settlement(
+        statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let match_res = &statement.match_result;
+        let (base_amt, quote_amt) = (match_res.base_amount, match_res.quote_amount);
+        let send_amt_receive_amt = CondSelectVectorGadget::select(
+            &[base_amt, quote_amt],
+            &[quote_amt, base_amt],
+            match_res.direction,
+            cs,
+        )?;
+        let (send_amt, receive_amt) = (send_amt_receive_amt[0], send_amt_receive_amt[1]);
+
+        // Validate the internal party's settlement directly using the standard
+        // settlement logic
+        ValidMatchSettle::validate_party_settlement_singleprover(
+            send_amt,
+            receive_amt,
+            base_amt,
+            &witness.internal_party_receive_balance,
+            witness.relayer_fee,
+            statement.protocol_fee,
+            &witness.internal_party_fees,
+            &statement.internal_party_indices,
+            &witness.internal_party_public_shares,
+            &statement.internal_party_modified_shares,
+            cs,
+        )
+    }
 }
 
 // ---------------------------
@@ -189,6 +224,8 @@ where
     pub relayer_fee: FixedPoint,
     /// The internal party's fee obligations as a result of the match
     pub internal_party_fees: FeeTake,
+    /// The internal party's public shares before settlement
+    pub internal_party_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 
 /// A `VALID MATCH SETTLE ATOMIC` witness with default const generic sizing
@@ -209,6 +246,8 @@ where
 {
     /// The result of the match
     pub match_result: ExternalMatchResult,
+    /// The external party's fee obligations as a result of the match
+    pub external_party_fees: FeeTake,
     /// The modified public shares of the internal party
     pub internal_party_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The indices that settlement should modify in the internal party's wallet
