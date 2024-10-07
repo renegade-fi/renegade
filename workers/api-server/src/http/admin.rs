@@ -16,8 +16,8 @@ use common::types::{
 use external_api::{
     http::{
         admin::{
-            AdminOrderMetadataResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
-            OpenOrder, OpenOrdersResponse,
+            AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
+            CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrder, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
@@ -431,6 +431,47 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         self.handshake_manager_queue.send(job).map_err(internal_error)?;
 
         Ok(EmptyRequestResponse {})
+    }
+}
+
+/// Handler for the GET /v0/admin/orders/:order_id/matching-pool route
+pub struct AdminGetOrderMatchingPoolHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminGetOrderMatchingPoolHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminGetOrderMatchingPoolHandler {
+    type Request = EmptyRequestResponse;
+    type Response = AdminGetOrderMatchingPoolResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let order_id = parse_order_id_from_params(&params)?;
+
+        // Check that the order exists. We do this by checking the order
+        // metadata, as filled orders (which a client may still want to
+        // see the matching pool of, ahead of subsequent order updates)
+        // are removed from the network orderbook.
+        if self.state.get_order_metadata(&order_id).await?.is_none() {
+            return Err(not_found(ERR_ORDER_NOT_FOUND));
+        }
+
+        let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
+
+        Ok(AdminGetOrderMatchingPoolResponse { matching_pool })
     }
 }
 
