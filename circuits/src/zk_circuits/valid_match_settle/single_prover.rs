@@ -222,73 +222,80 @@ where
         let party0_received_amount = party0_party1_received[0];
         let party1_received_amount = party0_party1_received[1];
 
-        // Validate the first party's fee take
-        Self::validate_fee_take_singleprover(
+        // Party 0 settlement
+        Self::validate_party_settlement_singleprover(
+            party1_received_amount,
             party0_received_amount,
+            base_amt,
+            &witness.balance_receive0,
             witness.relayer_fee0,
             statement.protocol_fee,
             &witness.party0_fees,
+            &statement.party0_indices,
+            &witness.party0_public_shares,
+            &statement.party0_modified_shares,
             cs,
         )?;
 
-        // Constrain the wallet updates to party0's shares
-        Self::validate_balance_updates_singleprover(
-            party1_received_amount,
+        // Party 1 settlement
+        Self::validate_party_settlement_singleprover(
             party0_received_amount,
-            &witness.balance_receive0,
-            &witness.party0_fees,
-            &statement.party0_indices,
-            &witness.party0_public_shares,
-            &statement.party0_modified_shares,
-            cs,
-        )?;
-
-        Self::validate_order_updates_singleprover(
-            witness.match_res.base_amount,
-            &statement.party0_indices,
-            &witness.party0_public_shares,
-            &statement.party0_modified_shares,
-            cs,
-        )?;
-
-        Self::validate_fees_keys_blinder_updates_singleprover(
-            &witness.party0_public_shares,
-            &statement.party0_modified_shares,
-            cs,
-        )?;
-
-        // Validate the second party's fee take
-        Self::validate_fee_take_singleprover(
             party1_received_amount,
+            base_amt,
+            &witness.balance_receive1,
             witness.relayer_fee1,
             statement.protocol_fee,
             &witness.party1_fees,
+            &statement.party1_indices,
+            &witness.party1_public_shares,
+            &statement.party1_modified_shares,
             cs,
-        )?;
+        )
+    }
 
-        // Constrain the wallet update to party1's shares
+    /// Validate the settlement of a single party
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn validate_party_settlement_singleprover(
+        send_amount: Variable,
+        receive_amount: Variable,
+        base_amount: Variable,
+        receive_balance: &BalanceVar,
+        relayer_fee: FixedPointVar,
+        protocol_fee: FixedPointVar,
+        fees: &FeeTakeVar,
+        indices: &OrderSettlementIndicesVar,
+        pre_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        post_update_shares: &WalletShareVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Validate the fee take
+        Self::validate_fee_take_singleprover(receive_amount, relayer_fee, protocol_fee, fees, cs)?;
+
+        // Validate the balance updates
         Self::validate_balance_updates_singleprover(
-            party0_received_amount,
-            party1_received_amount,
-            &witness.balance_receive1,
-            &witness.party1_fees,
-            &statement.party1_indices,
-            &witness.party1_public_shares,
-            &statement.party1_modified_shares,
+            send_amount,
+            receive_amount,
+            receive_balance,
+            fees,
+            indices,
+            pre_update_shares,
+            post_update_shares,
             cs,
         )?;
 
+        // Validate the order updates
         Self::validate_order_updates_singleprover(
-            witness.match_res.base_amount,
-            &statement.party1_indices,
-            &witness.party1_public_shares,
-            &statement.party1_modified_shares,
+            base_amount,
+            indices,
+            pre_update_shares,
+            post_update_shares,
             cs,
         )?;
 
+        // Validate the fees, keys, and blinders
         Self::validate_fees_keys_blinder_updates_singleprover(
-            &witness.party1_public_shares,
-            &statement.party1_modified_shares,
+            pre_update_shares,
+            post_update_shares,
             cs,
         )
     }
