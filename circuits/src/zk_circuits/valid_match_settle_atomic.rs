@@ -7,16 +7,24 @@
 //! internal order; emulating the standard deposit, order placement, settlement,
 //! and withdrawal flow in a single transaction.
 
-use crate::SingleProverCircuit;
+use crate::{
+    zk_gadgets::{
+        comparators::GreaterThanEqGadget,
+        fixed_point::FixedPointGadget,
+        select::{CondSelectGadget, CondSelectVectorGadget},
+        wallet_operations::{AmountGadget, PriceGadget},
+    },
+    SingleProverCircuit,
+};
 use circuit_macros::circuit_type;
 use circuit_types::{
-    balance::Balance,
-    fixed_point::FixedPoint,
-    order::Order,
-    r#match::{FeeTake, OrderSettlementIndices},
+    balance::{Balance, BalanceVar},
+    fixed_point::{FixedPoint, FixedPointVar},
+    order::{Order, OrderVar},
+    r#match::{ExternalMatchResult, ExternalMatchResultVar, FeeTake, OrderSettlementIndices},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::WalletShare,
-    PlonkCircuit,
+    PlonkCircuit, AMOUNT_BITS,
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
@@ -41,11 +49,121 @@ where
     pub fn circuit(
         statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
         witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
-        cs: &PlonkCircuit,
+        cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        // TODO: Implement circuit constraints
+        // Validate the matching engine
+        Self::validate_matching_engine(statement, witness, cs)?;
+
+        // TODO: Validate internal party settlement
         Ok(())
     }
+
+    // --- Matching Engine Constraints --- //
+
+    /// Validate the match result
+    fn validate_matching_engine(
+        statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let internal_order = &witness.internal_party_order;
+        let match_res = &statement.match_result;
+
+        // Check that the match is on the correct pair, in the correct direction
+        cs.enforce_equal(internal_order.quote_mint, match_res.quote_mint)?;
+        cs.enforce_equal(internal_order.base_mint, match_res.base_mint)?;
+        cs.enforce_equal(internal_order.side.into(), match_res.direction.into())?;
+
+        // Validate the volumes and price at which the match executes
+        Self::validate_price(witness.price, &statement.match_result, cs)?;
+        AmountGadget::constrain_valid_amount(match_res.quote_amount, cs)?;
+        AmountGadget::constrain_valid_amount(match_res.base_amount, cs)?;
+
+        // Check that the matched volume does not exceed the internal party's order and
+        // that it is capitalized by the internal party's send balance
+        Self::validate_volume_constraints(
+            &witness.internal_party_order,
+            &witness.internal_party_balance,
+            &statement.match_result,
+            cs,
+        )?;
+
+        // Check that the price is within the user-defined limits
+        Self::validate_price_protection(&witness.price, &witness.internal_party_order, cs)
+    }
+
+    /// Validate the price that the match executed at
+    fn validate_price(
+        price: FixedPointVar,
+        match_res: &ExternalMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The price must be representable as a fixed point
+        PriceGadget::constrain_valid_price(price, cs)?;
+
+        // Check that the price implied by the match matches the price in the witness
+        let base_amount = match_res.base_amount;
+        let quote_amount = match_res.quote_amount;
+        let expected_quote = price.mul_integer(base_amount, cs)?;
+        FixedPointGadget::constrain_equal_integer_ignore_fraction(expected_quote, quote_amount, cs)
+    }
+
+    /// Validate that the internal party's balance capitalizes their side of the
+    /// match
+    fn validate_volume_constraints(
+        internal_party_order: &OrderVar,
+        internal_party_balance: &BalanceVar,
+        match_res: &ExternalMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Check that the match amount is less than or equal to the internal party's
+        // order size
+        let order_amount = internal_party_order.amount;
+        let match_amount = match_res.base_amount;
+        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
+            order_amount,
+            match_amount,
+            cs,
+        )?;
+
+        // Check that the internal party's balance covers the amount of the match
+        // If the direction of the order is 0 (buy the base) then the balance must
+        // cover the amount of the quote token sold in the swap
+        // If the direction of the order is 1 (sell the base) then the balance must
+        // cover the amount of the base token sold in the swap
+        let side = internal_party_order.side;
+        let sell_amount =
+            CondSelectGadget::select(&match_res.base_amount, &match_res.quote_amount, side, cs)?;
+
+        let new_balance = cs.sub(internal_party_balance.amount, sell_amount)?;
+        AmountGadget::constrain_valid_amount(new_balance, cs)
+    }
+
+    /// Validate that the execution price is within the user-defined limits
+    fn validate_price_protection(
+        price: &FixedPointVar,
+        order: &OrderVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // If the order is buy side, verify that the execution price is less
+        // than the limit price. If the order is sell side, verify that the
+        // execution price is greater than the limit price
+        let mut gte_terms: Vec<FixedPointVar> = CondSelectVectorGadget::select(
+            &[*price, order.worst_case_price],
+            &[order.worst_case_price, *price],
+            order.side,
+            cs,
+        )?;
+
+        // Constrain the difference to be representable in the maximum number of bits
+        // that a price may take
+        let lhs = gte_terms.remove(0);
+        let rhs = gte_terms.remove(0);
+        let price_improvement = lhs.sub(&rhs, cs);
+        PriceGadget::constrain_valid_price(price_improvement, cs)
+    }
+
+    // --- Settlement Constraints --- //
 }
 
 // ---------------------------
@@ -65,6 +183,8 @@ where
     pub internal_party_balance: Balance,
     /// The internal party's receive balance
     pub internal_party_receive_balance: Balance,
+    /// The price at which the match executes
+    pub price: FixedPoint,
     /// The internal party's managing relayer fee
     pub relayer_fee: FixedPoint,
     /// The internal party's fee obligations as a result of the match
@@ -87,6 +207,8 @@ pub struct ValidMatchSettleAtomicStatement<const MAX_BALANCES: usize, const MAX_
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
+    /// The result of the match
+    pub match_result: ExternalMatchResult,
     /// The modified public shares of the internal party
     pub internal_party_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The indices that settlement should modify in the internal party's wallet

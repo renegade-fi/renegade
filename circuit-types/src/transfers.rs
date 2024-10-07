@@ -1,10 +1,6 @@
 //! Defines native and circuit types for internal/external transfers
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-// ----------------------
-// | External Transfers |
-// ----------------------
-
 use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, BoolVar, Variable};
@@ -16,6 +12,10 @@ use crate::{
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     Amount,
 };
+
+// ----------------------
+// | External Transfers |
+// ----------------------
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
