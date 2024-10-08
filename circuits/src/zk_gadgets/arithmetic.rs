@@ -21,6 +21,27 @@ use super::comparators::LessThanGadget;
 // | Single Prover Gadgets |
 // -------------------------
 
+/// The noop gadget is used to prevent certain fields from being changed in the
+/// circuit
+///
+/// We do this by constraining each variable with a zero product: `a * 0 = 0`
+pub struct NoopGadget {}
+impl NoopGadget {
+    /// Constrain the noop gadget
+    pub fn constrain_noop<V, C>(a: &V, cs: &mut C) -> Result<(), CircuitError>
+    where
+        V: CircuitVarType,
+        C: Circuit<ScalarField>,
+    {
+        let zero_var = cs.zero();
+        for a_var in a.to_vars() {
+            cs.mul_gate(a_var, zero_var, zero_var)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// The maximum bit size of the divisor in the div-rem gadget
 ///
 /// This value is safely under half the field size, which prevents wraparound

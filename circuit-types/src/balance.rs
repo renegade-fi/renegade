@@ -6,7 +6,6 @@ use std::ops::Add;
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -18,7 +17,7 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    validate_amount_bitlength, Amount, Fabric,
+    validate_amount_bitlength, Address, Amount, Fabric,
 };
 
 /// Error message when a balance amount is too large
@@ -31,7 +30,7 @@ const ERR_BALANCE_AMOUNT_TOO_LARGE: &str = "balance amount is too large";
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
     #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
-    pub mint: BigUint,
+    pub mint: Address,
     /// The amount of the given token stored in this balance
     pub amount: Amount,
     /// The amount of this balance owed to the managing relayer cluster
@@ -42,7 +41,7 @@ pub struct Balance {
 
 impl Balance {
     /// Construct a new balance with zero fees; validating its amount
-    pub fn new(mint: BigUint, amount: Amount) -> Result<Balance, String> {
+    pub fn new(mint: Address, amount: Amount) -> Result<Balance, String> {
         let bal = Self::new_from_mint_and_amount(mint, amount);
         bal.validate()?;
 
@@ -69,12 +68,12 @@ impl Balance {
     }
 
     /// Construct a zero'd balance from a mint
-    pub fn new_from_mint(mint: BigUint) -> Balance {
+    pub fn new_from_mint(mint: Address) -> Balance {
         Balance { mint, amount: 0, relayer_fee_balance: 0, protocol_fee_balance: 0 }
     }
 
     /// Construct a balance with zero fees from a mint and amount
-    pub fn new_from_mint_and_amount(mint: BigUint, amount: Amount) -> Balance {
+    pub fn new_from_mint_and_amount(mint: Address, amount: Amount) -> Balance {
         Balance { mint, amount, relayer_fee_balance: 0, protocol_fee_balance: 0 }
     }
 

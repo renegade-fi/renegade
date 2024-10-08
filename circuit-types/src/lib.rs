@@ -132,6 +132,9 @@ impl From<AuthenticatedBool> for AuthenticatedScalar {
     }
 }
 
+/// A type alias for an on-chain address, we represent these as `BigUint`
+pub type Address = BigUint;
+
 // -----------
 // | Helpers |
 // -----------

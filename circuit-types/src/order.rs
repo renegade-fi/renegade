@@ -4,7 +4,6 @@
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, BoolVar, Variable};
-use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, ops::Add, str::FromStr};
@@ -16,7 +15,7 @@ use crate::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
         MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
     },
-    Amount, AuthenticatedBool, Fabric,
+    Address, Amount, AuthenticatedBool, Fabric,
 };
 
 /// Represents the base type of an open order, including the asset pair, the
@@ -26,10 +25,10 @@ use crate::{
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
     #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
-    pub quote_mint: BigUint,
+    pub quote_mint: Address,
     /// The mint (ERC-20 contract address) of the base token
     #[serde(serialize_with = "biguint_to_hex_addr", deserialize_with = "biguint_from_hex_string")]
-    pub base_mint: BigUint,
+    pub base_mint: Address,
     /// The side this order is for (0 = buy, 1 = sell)
     pub side: OrderSide,
     /// The amount of base currency to buy or sell
@@ -58,7 +57,7 @@ impl Order {
 
     /// The mint of the token sent by the creator of this order in the event
     /// that the order is matched
-    pub fn send_mint(&self) -> &BigUint {
+    pub fn send_mint(&self) -> &Address {
         match self.side {
             OrderSide::Buy => &self.quote_mint,
             OrderSide::Sell => &self.base_mint,
@@ -67,7 +66,7 @@ impl Order {
 
     /// The mint of the token received by the creator of this order in the event
     /// that the order is matched
-    pub fn receive_mint(&self) -> &BigUint {
+    pub fn receive_mint(&self) -> &Address {
         match self.side {
             OrderSide::Buy => &self.base_mint,
             OrderSide::Sell => &self.quote_mint,

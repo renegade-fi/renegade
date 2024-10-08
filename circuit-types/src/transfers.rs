@@ -4,13 +4,12 @@
 use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, BoolVar, Variable};
-use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     traits::{BaseType, CircuitBaseType, CircuitVarType},
-    Amount,
+    Address, Amount,
 };
 
 // ----------------------
@@ -23,9 +22,9 @@ use crate::{
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ExternalTransfer {
     /// The address of the account contract to transfer to/from
-    pub account_addr: BigUint,
+    pub account_addr: Address,
     /// The mint (ERC20 address) of the token to transfer
-    pub mint: BigUint,
+    pub mint: Address,
     /// The amount of the token transferred
     pub amount: Amount,
     /// The direction of transfer
