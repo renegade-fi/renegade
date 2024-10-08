@@ -615,12 +615,11 @@ mod test {
         order::Order,
         traits::CircuitBaseType,
         transfers::{ExternalTransfer, ExternalTransferDirection},
-        AMOUNT_BITS, PRICE_BITS,
+        Address, AMOUNT_BITS, PRICE_BITS,
     };
     use constants::Scalar;
     use k256::ecdsa::SigningKey;
     use mpc_relation::{traits::Circuit, PlonkCircuit};
-    use num_bigint::BigUint;
     use rand::{thread_rng, Rng, RngCore};
     use renegade_crypto::fields::scalar_to_u128;
 
@@ -809,7 +808,7 @@ mod test {
 
         // Quote mint is zero in new order
         let mut new_wallet = new_wallet.clone();
-        new_wallet.orders[0].quote_mint = BigUint::from(0u8);
+        new_wallet.orders[0].quote_mint = Address::from(0u8);
 
         assert!(!constraints_satisfied_on_wallets(
             &old_wallet,
@@ -820,7 +819,7 @@ mod test {
 
         // Base mint is zero in new order
         let mut new_wallet = new_wallet.clone();
-        new_wallet.orders[0].base_mint = BigUint::from(0u8);
+        new_wallet.orders[0].base_mint = Address::from(0u8);
 
         assert!(!constraints_satisfied_on_wallets(
             &old_wallet,
@@ -868,8 +867,8 @@ mod test {
         let mut cs = PlonkCircuit::new_turbo_plonk();
 
         let transfer = ExternalTransfer {
-            account_addr: BigUint::from(0u8),
-            mint: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
+            mint: Address::from(0u8),
             amount: 1u128,
             direction: ExternalTransferDirection::Deposit,
         };
@@ -890,8 +889,8 @@ mod test {
     fn test_invalid_transfer__large_amount() {
         let mut cs = PlonkCircuit::new_turbo_plonk();
         let transfer = ExternalTransfer {
-            account_addr: BigUint::from(0u8),
-            mint: BigUint::from(1u8),
+            account_addr: Address::from(0u8),
+            mint: Address::from(1u8),
             amount: 0, // replaced
             direction: ExternalTransferDirection::Deposit,
         };
@@ -922,7 +921,7 @@ mod test {
     fn test_invalid_balance__non_zero_zero_mint() {
         // To ablate any other constraints, make the zero mint present in both
         let mut old_wallet = INITIAL_WALLET.clone();
-        old_wallet.balances[0].mint = BigUint::from(0u8);
+        old_wallet.balances[0].mint = Address::from(0u8);
         let new_wallet = old_wallet.clone();
 
         assert!(!constraints_satisfied_on_wallets(
@@ -953,7 +952,7 @@ mod test {
                 mint: old_wallet.balances[0].mint.clone(),
                 amount: transfer_amt,
                 direction: ExternalTransferDirection::Deposit,
-                account_addr: BigUint::from(0u8),
+                account_addr: Address::from(0u8),
             },
         );
 
@@ -1028,7 +1027,7 @@ mod test {
             mint: old_wallet.balances[idx].mint.clone(),
             amount: old_wallet.balances[idx].amount,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1052,7 +1051,7 @@ mod test {
             mint: withdrawn_mint,
             amount: withdrawn_amount,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1077,7 +1076,7 @@ mod test {
             mint: withdrawn_mint,
             amount: withdrawn_amount,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1102,7 +1101,7 @@ mod test {
             mint: withdrawn_mint,
             amount: withdrawn_amount,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1117,7 +1116,7 @@ mod test {
 
         // Withdraw a random balance
         let mut rng = thread_rng();
-        let withdrawn_mint = BigUint::from(rng.next_u32());
+        let withdrawn_mint = Address::from(rng.next_u32());
         let withdrawn_amount = 1u128;
 
         // Build a valid transfer
@@ -1126,7 +1125,7 @@ mod test {
             mint: withdrawn_mint,
             amount: withdrawn_amount,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1152,7 +1151,7 @@ mod test {
             mint: withdrawal_mint,
             amount: withdrawal_amount,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1178,7 +1177,7 @@ mod test {
             mint: old_wallet.balances[idx].mint.clone(),
             amount: 1,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1204,7 +1203,7 @@ mod test {
             mint: old_wallet.balances[idx].mint.clone(),
             amount: 1,
             direction: ExternalTransferDirection::Withdrawal,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1230,7 +1229,7 @@ mod test {
             mint: deposit_mint,
             amount: deposit_amount,
             direction: ExternalTransferDirection::Deposit,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1253,7 +1252,7 @@ mod test {
             mint: deposit_mint,
             amount: deposit_amount,
             direction: ExternalTransferDirection::Deposit,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1277,7 +1276,7 @@ mod test {
             mint: deposit_mint,
             amount: deposit_amount,
             direction: ExternalTransferDirection::Deposit,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1304,7 +1303,7 @@ mod test {
             mint: deposit_mint,
             amount: deposit_amount,
             direction: ExternalTransferDirection::Deposit,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(!constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1326,7 +1325,7 @@ mod test {
             mint: old_wallet.balances[idx].mint.clone(),
             amount: 1,
             direction: ExternalTransferDirection::Deposit,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1346,7 +1345,7 @@ mod test {
         old_wallet.balances[idx] = Balance::new_from_mint(old_wallet.balances[idx].mint.clone());
 
         // Replace that balance with a new deposit
-        let new_mint = BigUint::from(rng.next_u64());
+        let new_mint = Address::from(rng.next_u64());
         let new_amt = 1;
         let mut new_wallet = old_wallet.clone();
         new_wallet.balances[idx] = Balance::new_from_mint_and_amount(new_mint.clone(), new_amt);
@@ -1355,7 +1354,7 @@ mod test {
             mint: new_mint,
             amount: new_amt,
             direction: ExternalTransferDirection::Deposit,
-            account_addr: BigUint::from(0u8),
+            account_addr: Address::from(0u8),
         };
 
         assert!(constraints_satisfied_on_wallets(&old_wallet, &new_wallet, idx, transfer));
@@ -1368,7 +1367,7 @@ mod test {
         let mut new_wallet = INITIAL_WALLET.clone();
 
         // Set the first balance to have zero amount and fees
-        old_wallet.balances[0] = Balance::new_from_mint(BigUint::from(1u8));
+        old_wallet.balances[0] = Balance::new_from_mint(Address::from(1u8));
 
         // Replace it with an entirely zero'd balance
         new_wallet.balances[0] = Balance::default();

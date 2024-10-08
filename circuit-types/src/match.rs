@@ -4,7 +4,6 @@
 use circuit_macros::circuit_type;
 use constants::{AuthenticatedScalar, Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
-use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -12,7 +11,7 @@ use crate::{
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
     },
-    Amount, Fabric,
+    Address, Amount, Fabric,
 };
 
 // ----------------
@@ -25,9 +24,9 @@ use crate::{
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchResult {
     /// The mint of the order token in the asset pair being matched
-    pub quote_mint: BigUint,
+    pub quote_mint: Address,
     /// The mint of the base token in the asset pair being matched
-    pub base_mint: BigUint,
+    pub base_mint: Address,
     /// The amount of the quote token exchanged by this match
     pub quote_amount: Amount,
     /// The amount of the base token exchanged by this match
@@ -50,7 +49,7 @@ pub struct MatchResult {
 
 impl MatchResult {
     /// Get the send mint and amount given a side of the order
-    pub fn send_mint_amount(&self, side: OrderSide) -> (BigUint, Amount) {
+    pub fn send_mint_amount(&self, side: OrderSide) -> (Address, Amount) {
         match side {
             // Buy the base, sell the quote
             OrderSide::Buy => (self.quote_mint.clone(), self.quote_amount),
@@ -60,7 +59,7 @@ impl MatchResult {
     }
 
     /// Get the receive mint and amount given a side of the order
-    pub fn receive_mint_amount(&self, side: OrderSide) -> (BigUint, Amount) {
+    pub fn receive_mint_amount(&self, side: OrderSide) -> (Address, Amount) {
         match side {
             // Buy the base, sell the quote
             OrderSide::Buy => (self.base_mint.clone(), self.base_amount),
@@ -121,9 +120,9 @@ pub struct OrderSettlementIndices {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalMatchResult {
     /// The mint of the quote token in the matched asset pair
-    pub quote_mint: BigUint,
+    pub quote_mint: Address,
     /// The mint of the base token in the matched asset pair
-    pub base_mint: BigUint,
+    pub base_mint: Address,
     /// The amount of the quote token exchanged by the match
     pub quote_amount: Amount,
     /// The amount of the base token exchanged by the match

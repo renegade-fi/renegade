@@ -570,9 +570,8 @@ mod test {
         },
         traits::BaseType,
         wallet::{Wallet, WalletShare},
-        AMOUNT_BITS,
+        Address, AMOUNT_BITS,
     };
-    use num_bigint::BigUint;
     use rand::{thread_rng, Rng};
     use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u128};
 
@@ -781,7 +780,7 @@ mod test {
     fn test_invalid_settlement__send_balance_zero() {
         let (mut sender_wallet, recipient_wallet) = get_initial_wallets();
         for bal in sender_wallet.balances.iter_mut() {
-            bal.mint = BigUint::from(0u8);
+            bal.mint = Address::from(0u8);
         }
 
         let (statement, witness) = create_witness_statement(&sender_wallet, &recipient_wallet);

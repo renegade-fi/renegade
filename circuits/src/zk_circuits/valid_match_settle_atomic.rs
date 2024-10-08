@@ -9,6 +9,7 @@
 
 use crate::{
     zk_gadgets::{
+        arithmetic::NoopGadget,
         comparators::GreaterThanEqGadget,
         fixed_point::FixedPointGadget,
         select::{CondSelectGadget, CondSelectVectorGadget},
@@ -24,7 +25,7 @@ use circuit_types::{
     r#match::{ExternalMatchResult, ExternalMatchResultVar, FeeTake, OrderSettlementIndices},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::WalletShare,
-    PlonkCircuit, AMOUNT_BITS,
+    Address, PlonkCircuit, AMOUNT_BITS,
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
@@ -53,11 +54,23 @@ where
         witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
+        // Constrain the malleable fields
+        Self::constrain_malleable_fields(statement, witness, cs)?;
         // Validate the matching engine
         Self::validate_matching_engine(statement, witness, cs)?;
-
         // Validate the internal party's settlement
         Self::validate_settlement(statement, witness, cs)
+    }
+
+    /// Constrain the fields that appear in no constraints to prevent them from
+    /// being changed
+    fn constrain_malleable_fields(
+        statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        _witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Constrain the relayer fee address
+        NoopGadget::constrain_noop(&statement.relayer_fee_address, cs)
     }
 
     // --- Matching Engine Constraints --- //
@@ -197,6 +210,43 @@ where
             &witness.internal_party_public_shares,
             &statement.internal_party_modified_shares,
             cs,
+        )?;
+
+        // Validate the external party's fees
+        Self::validate_external_fees(statement, witness, cs)
+    }
+
+    /// Validate the external party's fees
+    ///
+    /// Note that we do not validate the relayer fee as the relayer may choose
+    /// the fee on a per-match basis. Instead, we constrain the relayer fee only
+    /// to be a valid amount
+    fn validate_external_fees(
+        statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let internal_order_side = witness.internal_party_order.side;
+        let quote_amount = statement.match_result.quote_amount;
+        let base_amount = statement.match_result.base_amount;
+        let fee_take = &statement.external_party_fees;
+
+        // Validate that both the protocol fee and relayer fee are valid amounts
+        AmountGadget::constrain_valid_amount(fee_take.protocol_fee, cs)?;
+        AmountGadget::constrain_valid_amount(fee_take.relayer_fee, cs)?;
+
+        // If the internal order is a buy (side = 0) then the external party buys the
+        // quote. If the internal order is a sell (side = 1) then the external party
+        // buys the base
+        let receive_amount =
+            CondSelectGadget::select(&base_amount, &quote_amount, internal_order_side, cs)?;
+
+        // Validate the protocol fee value
+        let expected_protocol_fee = statement.protocol_fee.mul_integer(receive_amount, cs)?;
+        FixedPointGadget::constrain_equal_integer_ignore_fraction(
+            expected_protocol_fee,
+            fee_take.protocol_fee,
+            cs,
         )
     }
 }
@@ -254,6 +304,9 @@ where
     pub internal_party_indices: OrderSettlementIndices,
     /// The protocol fee used in the match
     pub protocol_fee: FixedPoint,
+    /// The address at which the relayer wishes to receive their fee due from
+    /// the external party
+    pub relayer_fee_address: Address,
 }
 
 /// A `VALID MATCH SETTLE ATOMIC` statement with default const generic sizing

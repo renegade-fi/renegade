@@ -7,7 +7,7 @@
 use circuit_types::elgamal::DecryptionKey;
 use circuit_types::note::Note;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuit_types::{Amount, PlonkCircuit};
+use circuit_types::{Address, Amount, PlonkCircuit};
 use circuits::test_helpers::wallet_with_random_balances;
 use circuits::zk_circuits::valid_fee_redemption::ValidFeeRedemption;
 use circuits::zk_circuits::valid_fee_redemption::{
@@ -17,7 +17,6 @@ use circuits::zk_circuits::valid_fee_redemption::{
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{Scalar, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use num_bigint::BigUint;
 use rand::thread_rng;
 
 /// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS,
@@ -47,7 +46,7 @@ where
     let sender_wallet = wallet_with_random_balances();
     let (_, dummy_receiver) = DecryptionKey::random_pair(&mut rng);
     let note = Note {
-        mint: BigUint::from(1u8),
+        mint: Address::from(1u8),
         amount: Amount::from(1u8),
         receiver: dummy_receiver,
         blinder: Scalar::zero(),

@@ -6,7 +6,6 @@
 use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
 use mpc_relation::{traits::Circuit, Variable};
-use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
@@ -15,7 +14,7 @@ use crate::{
     balance::Balance,
     elgamal::EncryptionKey,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
-    Amount,
+    Address, Amount,
 };
 
 /// The size of the note ciphertext when encrypted
@@ -29,7 +28,7 @@ pub const NOTE_CIPHERTEXT_SIZE: usize = Note::NUM_SCALARS - EncryptionKey::NUM_S
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     /// The mint of the note
-    pub mint: BigUint,
+    pub mint: Address,
     /// The amount of the note
     pub amount: Amount,
     /// The receiver's identification key
@@ -40,7 +39,7 @@ pub struct Note {
 
 impl Note {
     /// Constructor
-    pub fn new(mint: BigUint, amount: Amount, receiver: EncryptionKey) -> Self {
+    pub fn new(mint: Address, amount: Amount, receiver: EncryptionKey) -> Self {
         // Sample a blinder
         let mut rng = thread_rng();
         let blinder = Scalar::random(&mut rng);

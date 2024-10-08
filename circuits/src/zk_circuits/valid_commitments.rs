@@ -430,8 +430,8 @@ pub mod test_helpers {
         balance::Balance,
         native_helpers::create_wallet_shares_from_private,
         wallet::{Wallet, WalletShare},
+        Address,
     };
-    use num_bigint::BigUint;
 
     use crate::zk_circuits::test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS};
 
@@ -522,7 +522,7 @@ pub mod test_helpers {
     /// If the balance does not exist the `augment` flag lets the method augment
     /// the wallet with a zero'd balance
     pub(super) fn find_balance_or_augment<const MAX_BALANCES: usize>(
-        mint: BigUint,
+        mint: Address,
         balances: &mut [Balance; MAX_BALANCES],
         augment: bool,
     ) -> (usize, Balance) {
@@ -539,7 +539,7 @@ pub mod test_helpers {
                 let (zerod_index, _) = balances
                     .iter()
                     .enumerate()
-                    .find(|(_ind, balance)| balance.mint == BigUint::from(0u8))
+                    .find(|(_ind, balance)| balance.mint == Address::from(0u8))
                     .expect("wallet must have zero'd balance to augment");
 
                 balances[zerod_index] = Balance::new_from_mint(mint);
@@ -557,10 +557,10 @@ mod test {
         fixed_point::FixedPointShare,
         order::{OrderShare, OrderSide},
         traits::{SecretShareType, SingleProverCircuit},
+        Address,
     };
     use constants::Scalar;
     use lazy_static::lazy_static;
-    use num_bigint::BigUint;
     use rand::{thread_rng, RngCore};
 
     use crate::zk_circuits::{
@@ -866,7 +866,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the mint of the send balance
-        witness.balance_send.mint = BigUint::from(rng.next_u64());
+        witness.balance_send.mint = Address::from(rng.next_u64());
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -912,7 +912,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the mint of the receive balance
-        witness.balance_receive.mint = BigUint::from(rng.next_u64());
+        witness.balance_receive.mint = Address::from(rng.next_u64());
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -976,7 +976,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the amount of the order
-        witness.order.base_mint = BigUint::from(0u8);
+        witness.order.base_mint = Address::from(0u8);
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -988,7 +988,7 @@ mod test {
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the quote mint of the order
-        witness.order.quote_mint = BigUint::from(0u8);
+        witness.order.quote_mint = Address::from(0u8);
 
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
