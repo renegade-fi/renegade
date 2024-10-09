@@ -282,8 +282,8 @@ pub mod test_helpers {
         let (o1, o2, price, match_res) = random_orders_and_match();
 
         // Build wallets for the crossing orders
-        let (wallet1, party0_indices) = build_wallet_and_indices(&o1, &match_res);
-        let (wallet2, party1_indices) = build_wallet_and_indices(&o2, &match_res);
+        let (wallet1, party0_indices) = build_wallet_and_indices_from_order(&o1, &match_res);
+        let (wallet2, party1_indices) = build_wallet_and_indices_from_order(&o2, &match_res);
         let (_, party0_public_shares) = create_wallet_shares(&wallet1);
         let (_, party1_public_shares) = create_wallet_shares(&wallet2);
 
@@ -345,7 +345,7 @@ pub mod test_helpers {
 
     // Build two wallets and sample indices for the orders and balances for the
     // match to be placed into
-    fn build_wallet_and_indices<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    pub fn build_wallet_and_indices_from_order<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         order: &Order,
         match_res: &MatchResult,
     ) -> (Wallet<MAX_BALANCES, MAX_ORDERS>, OrderSettlementIndices)
