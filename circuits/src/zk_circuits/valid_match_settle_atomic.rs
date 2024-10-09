@@ -29,10 +29,15 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
+use mpc_relation::{
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    Variable,
+};
 use serde::{Deserialize, Serialize};
 
-use super::valid_match_settle::ValidMatchSettle;
+use super::{valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE_LINK0};
 
 // ----------------------
 // | Circuit Definition |
@@ -263,19 +268,24 @@ where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The internal party's order
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_order: Order,
     /// The internal party's balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_balance: Balance,
     /// The internal party's receive balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_receive_balance: Balance,
+    /// The internal party's managing relayer fee
+    #[link_groups = "valid_commitments_match_settle0"]
+    pub relayer_fee: FixedPoint,
+    /// The internal party's public shares before settlement
+    #[link_groups = "valid_commitments_match_settle0"]
+    pub internal_party_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The price at which the match executes
     pub price: FixedPoint,
-    /// The internal party's managing relayer fee
-    pub relayer_fee: FixedPoint,
     /// The internal party's fee obligations as a result of the match
     pub internal_party_fees: FeeTake,
-    /// The internal party's public shares before settlement
-    pub internal_party_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 
 /// A `VALID MATCH SETTLE ATOMIC` witness with default const generic sizing
@@ -330,9 +340,15 @@ where
         format!("Valid Match Settle Atomic ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
+    /// VALID MATCH SETTLE ATOMIC has one proof linking group:
+    /// - valid_commitments_match_settle0: The linking group between VALID
+    ///   COMMITMENTS and VALID MATCH SETTLE. We directly use the first layout
+    ///   from the standard match settle circuit here for simplicity
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        // TODO: Implement proof linking groups
-        Ok(vec![])
+        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+
+        Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
     }
 
     fn apply_constraints(
@@ -541,24 +557,34 @@ mod test {
     use bigdecimal::ToPrimitive;
     use circuit_types::{
         fixed_point::FixedPoint,
-        traits::{BaseType, CircuitBaseType},
+        traits::{BaseType, CircuitBaseType, SingleProverCircuit},
         Amount, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
     };
     use constants::Scalar;
     use itertools::Itertools;
-    use mpc_relation::traits::Circuit;
+    use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
     use num_bigint::BigUint;
     use rand::{distributions::uniform::SampleRange, thread_rng};
     use renegade_crypto::fields::biguint_to_scalar;
 
-    use super::test_helpers::{
-        SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
-        SizedValidMatchSettleAtomicWitness,
+    use super::{
+        test_helpers::{
+            SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+            SizedValidMatchSettleAtomicWitness,
+        },
+        ValidMatchSettleAtomicStatementVar, ValidMatchSettleAtomicWitnessVar,
     };
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// The witness variable type with testing const generic sizing parameters
+    type SizedValidMatchSettleAtomicWitnessVar =
+        ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>;
+    /// The statement variable type with testing const generic sizing parameters
+    type SizedValidMatchSettleAtomicStatementVar =
+        ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>;
 
     /// Check the constraints on a given witness and statement
     fn check_constraints(
@@ -575,11 +601,7 @@ mod test {
         witness: &SizedValidMatchSettleAtomicWitness,
         statement: &SizedValidMatchSettleAtomicStatement,
     ) -> bool {
-        let mut cs = PlonkCircuit::new_turbo_plonk();
-        let witness_var = witness.create_witness(&mut cs);
-        let statement_var = statement.create_public_var(&mut cs);
-
-        // Apply the matching engine constraints
+        let (witness_var, statement_var, mut cs) = setup_constraint_system(witness, statement);
         SizedValidMatchSettleAtomic::validate_matching_engine(
             &statement_var,
             &witness_var,
@@ -597,15 +619,32 @@ mod test {
         witness: &SizedValidMatchSettleAtomicWitness,
         statement: &SizedValidMatchSettleAtomicStatement,
     ) -> bool {
-        let mut cs = PlonkCircuit::new_turbo_plonk();
-        let witness_var = witness.create_witness(&mut cs);
-        let statement_var = statement.create_public_var(&mut cs);
-
+        let (witness_var, statement_var, mut cs) = setup_constraint_system(witness, statement);
         SizedValidMatchSettleAtomic::validate_settlement(&statement_var, &witness_var, &mut cs)
             .unwrap();
 
         let statement_scalars = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
         cs.check_circuit_satisfiability(&statement_scalars).is_ok()
+    }
+
+    fn setup_constraint_system(
+        witness: &SizedValidMatchSettleAtomicWitness,
+        statement: &SizedValidMatchSettleAtomicStatement,
+    ) -> (
+        SizedValidMatchSettleAtomicWitnessVar,
+        SizedValidMatchSettleAtomicStatementVar,
+        PlonkCircuit,
+    ) {
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let layout = SizedValidMatchSettleAtomic::get_circuit_layout().unwrap();
+        for (id, layout) in layout.group_layouts.into_iter() {
+            cs.create_link_group(id, Some(layout));
+        }
+
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+
+        (witness_var, statement_var, cs)
     }
 
     /// Get the maximum amount allowed
