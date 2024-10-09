@@ -76,7 +76,7 @@ where
     // --- Matching Engine Constraints --- //
 
     /// Validate the match result
-    fn validate_matching_engine(
+    pub(super) fn validate_matching_engine(
         statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
         witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
@@ -181,7 +181,7 @@ where
     // --- Settlement Constraints --- //
 
     /// Validate the settlement of the atomic match
-    fn validate_settlement(
+    pub(crate) fn validate_settlement(
         statement: &ValidMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
         witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
@@ -348,9 +348,525 @@ where
 // | Tests |
 // ---------
 
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
+    use circuit_types::{
+        fixed_point::FixedPoint,
+        order::Order,
+        r#match::{ExternalMatchResult, MatchResult},
+        Address,
+    };
+    use util::{
+        arbitrum::get_protocol_fee,
+        matching_engine::{apply_match_to_shares, compute_fee_obligation},
+    };
+
+    use crate::{
+        test_helpers::random_orders_and_match,
+        zk_circuits::{
+            test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS},
+            valid_match_settle::test_helpers::build_wallet_and_indices_from_order,
+        },
+    };
+
+    use super::{
+        ValidMatchSettleAtomic, ValidMatchSettleAtomicStatement, ValidMatchSettleAtomicWitness,
+    };
+
+    /// An atomic match settle circuit with testing sizing parameters
+    pub type SizedValidMatchSettleAtomic = ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>;
+    /// A witness with testing sizing parameters
+    pub type SizedValidMatchSettleAtomicWitness =
+        ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
+    /// A statement with testing sizing parameters
+    pub type SizedValidMatchSettleAtomicStatement =
+        ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>;
+
+    /// The default relayer fee (4bps)
+    pub const DEFAULT_RELAYER_FEE: f64 = 0.0004;
+
+    /// Get the default relayer fee as a fixed point
+    pub fn default_relayer_fee() -> FixedPoint {
+        FixedPoint::from_f64_round_down(DEFAULT_RELAYER_FEE)
+    }
+
+    /// Create a valid witness and statement for the circuit
+    pub fn create_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
+        ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        // Setup the orders, match, and wallet
+        let (o1, o2, price, mut match_res) = random_orders_and_match();
+        let (internal_order, _external_order) = if rand::random() {
+            (o1, o2)
+        } else {
+            match_res.direction = !match_res.direction;
+            (o2, o1)
+        };
+
+        create_witness_statement_from_order_and_match(price, &internal_order, &match_res)
+    }
+
+    /// Create a witness and statement wherein the internal order is a buy
+    pub fn create_witness_statement_buy_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    ) -> (
+        ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (o1, o2, price, mut match_res) = random_orders_and_match();
+        let internal_order = if o1.side.is_buy() {
+            o1
+        } else {
+            match_res.direction = !match_res.direction;
+            o2
+        };
+
+        create_witness_statement_from_order_and_match(price, &internal_order, &match_res)
+    }
+
+    /// Create a witness and statement wherein the internal order is a sell
+    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    ) -> (
+        ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (o1, o2, price, mut match_res) = random_orders_and_match();
+        let internal_order = if o1.side.is_sell() {
+            o1
+        } else {
+            match_res.direction = !match_res.direction;
+            o2
+        };
+
+        create_witness_statement_from_order_and_match(price, &internal_order, &match_res)
+    }
+
+    /// Create a witness and statement from an internal order and match result
+    pub fn create_witness_statement_from_order_and_match<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >(
+        price: FixedPoint,
+        internal_order: &Order,
+        match_res: &MatchResult,
+    ) -> (
+        ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (wallet1, party0_indices) =
+            build_wallet_and_indices_from_order(internal_order, match_res);
+        let (_, internal_party_public_shares) = create_wallet_shares(&wallet1);
+        let mut internal_party_modified_shares = internal_party_public_shares.clone();
+        let internal_party_fees =
+            compute_fee_obligation(default_relayer_fee(), internal_order.side, match_res);
+
+        apply_match_to_shares(
+            &mut internal_party_modified_shares,
+            &party0_indices,
+            internal_party_fees,
+            match_res,
+            internal_order.side,
+        );
+
+        let internal_party_balance = wallet1.balances[party0_indices.balance_send].clone();
+        let internal_party_receive_balance =
+            wallet1.balances[party0_indices.balance_receive].clone();
+        let witness = ValidMatchSettleAtomicWitness {
+            internal_party_order: internal_order.clone(),
+            internal_party_balance,
+            internal_party_receive_balance,
+            price,
+            relayer_fee: default_relayer_fee(),
+            internal_party_fees,
+            internal_party_public_shares,
+        };
+
+        let match_result = create_external_match_result(match_res);
+        let statement = ValidMatchSettleAtomicStatement {
+            match_result,
+            external_party_fees: compute_fee_obligation(
+                default_relayer_fee(),
+                internal_order.side.opposite(),
+                match_res,
+            ),
+            internal_party_modified_shares,
+            internal_party_indices: party0_indices,
+            protocol_fee: get_protocol_fee(),
+            relayer_fee_address: random_address(),
+        };
+
+        (witness, statement)
+    }
+
+    /// Get a random address
+    fn random_address() -> Address {
+        let random_u128 = rand::random::<u128>();
+        Address::from_bytes_be(random_u128.to_be_bytes().as_slice())
+    }
+
+    /// Create an external match result from a match result
+    fn create_external_match_result(match_res: &MatchResult) -> ExternalMatchResult {
+        ExternalMatchResult {
+            quote_mint: match_res.quote_mint.clone(),
+            base_mint: match_res.base_mint.clone(),
+            quote_amount: match_res.quote_amount,
+            base_amount: match_res.base_amount,
+            direction: match_res.direction,
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::zk_circuits::{
+        check_constraint_satisfaction,
+        test_helpers::{MAX_BALANCES, MAX_ORDERS},
+        valid_match_settle_atomic::test_helpers::{
+            create_witness_statement, create_witness_statement_buy_side,
+            create_witness_statement_sell_side,
+        },
+    };
+    use bigdecimal::ToPrimitive;
+    use circuit_types::{
+        fixed_point::FixedPoint,
+        traits::{BaseType, CircuitBaseType},
+        Amount, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
+    };
+    use constants::Scalar;
+    use itertools::Itertools;
+    use mpc_relation::traits::Circuit;
+    use num_bigint::BigUint;
+    use rand::{distributions::uniform::SampleRange, thread_rng};
+    use renegade_crypto::fields::biguint_to_scalar;
 
-    // TODO: Implement test cases
+    use super::test_helpers::{
+        SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+        SizedValidMatchSettleAtomicWitness,
+    };
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Check the constraints on a given witness and statement
+    fn check_constraints(
+        witness: &SizedValidMatchSettleAtomicWitness,
+        statement: &SizedValidMatchSettleAtomicStatement,
+    ) -> bool {
+        check_constraint_satisfaction::<SizedValidMatchSettleAtomic>(witness, statement)
+    }
+
+    /// Check only the matching engine constraints
+    ///
+    /// Used to isolate test cases
+    fn check_matching_engine_constraints(
+        witness: &SizedValidMatchSettleAtomicWitness,
+        statement: &SizedValidMatchSettleAtomicStatement,
+    ) -> bool {
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+
+        // Apply the matching engine constraints
+        SizedValidMatchSettleAtomic::validate_matching_engine(
+            &statement_var,
+            &witness_var,
+            &mut cs,
+        )
+        .unwrap();
+
+        // Check for satisfiability
+        let statement_scalars = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
+        cs.check_circuit_satisfiability(&statement_scalars).is_ok()
+    }
+
+    /// Check only the settlement constraints
+    fn check_settlement_constraints(
+        witness: &SizedValidMatchSettleAtomicWitness,
+        statement: &SizedValidMatchSettleAtomicStatement,
+    ) -> bool {
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+
+        SizedValidMatchSettleAtomic::validate_settlement(&statement_var, &witness_var, &mut cs)
+            .unwrap();
+
+        let statement_scalars = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
+        cs.check_circuit_satisfiability(&statement_scalars).is_ok()
+    }
+
+    /// Get the maximum amount allowed
+    fn max_amount() -> Amount {
+        (1u128 << AMOUNT_BITS) - 1u128
+    }
+
+    // -----------------------
+    // | Valid Witness Tests |
+    // -----------------------
+
+    /// Tests the `VALID MATCH SETTLE ATOMIC` circuit with a valid witness and
+    /// statement
+    #[test]
+    fn test_valid_match_settle_atomic() {
+        let (witness, statement) = create_witness_statement();
+        assert!(check_constraints(&witness, &statement));
+    }
+
+    // -------------------------
+    // | Matching Engine Tests |
+    // -------------------------
+
+    #[test]
+    fn test_invalid_match_pair() {
+        let (witness, original_statement) = create_witness_statement();
+
+        // Incorrect quote mint
+        let mut statement = original_statement.clone();
+        statement.match_result.quote_mint += 1u8;
+        assert!(!check_constraints(&witness, &statement));
+
+        // Incorrect base mint
+        let mut statement = original_statement;
+        statement.match_result.base_mint += 1u8;
+        assert!(!check_constraints(&witness, &statement));
+    }
+
+    /// Tests the case in which the match goes the wrong direction
+    #[test]
+    fn test_invalid_match_direction() {
+        let (witness, mut statement) = create_witness_statement();
+
+        // Incorrect direction
+        statement.match_result.direction = !statement.match_result.direction;
+        assert!(!check_constraints(&witness, &statement));
+    }
+
+    /// Tests the case where the price at which the match executes is invalid
+    #[test]
+    fn test_invalid_match_price() {
+        let (mut witness, statement) = create_witness_statement();
+
+        // Incorrect price, not equal to quote amount / base amount
+        witness.price = witness.price - FixedPoint::from_integer(1);
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+
+        // Invalid price, not representable in `PRICE_BITS` bits
+        let max_representable = BigUint::from(1u8) << PRICE_BITS;
+        let max_repr = biguint_to_scalar(&max_representable);
+        let max_representable_price = FixedPoint::from_repr(max_repr);
+        witness.price = max_representable_price;
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the quote amount of the match is too high
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match__quote_volume_exceeds_bounds() {
+        // Quote amount too high
+        let (mut witness, mut statement) = create_witness_statement_sell_side();
+        let balance = &mut witness.internal_party_balance;
+        let order = &mut witness.internal_party_order;
+
+        // Setup the balance and order to be valid
+        let price_int = 2;
+        let price = FixedPoint::from_integer(price_int);
+        balance.amount = max_amount();
+        // This is technically impossible, but set above the max here to
+        // isolate the constraint
+        order.amount = max_amount() + 1;
+        order.worst_case_price = price;
+
+        // Setup the match result to be valid other than the quote amount
+        statement.match_result.base_amount = max_amount();
+        statement.match_result.quote_amount = max_amount() * price_int.to_u128().unwrap();
+        witness.price = price;
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the base amount of the match is too high
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match__base_volume_exceeds_bounds() {
+        // Base amount too high
+        let (mut witness, mut statement) = create_witness_statement_buy_side();
+        let balance = &mut witness.internal_party_balance;
+        let order = &mut witness.internal_party_order;
+
+        let price = 0.5;
+        let price_inverse = 2;
+        let price = FixedPoint::from_f64_round_down(price);
+        let quote_amount = max_amount() - 1;
+        let base_amount = quote_amount * price_inverse;
+
+        balance.amount = quote_amount;
+        order.amount = base_amount;
+        order.worst_case_price = price;
+
+        // Setup the match result to be valid other than the base amount
+        statement.match_result.quote_amount = balance.amount;
+        statement.match_result.base_amount = base_amount;
+        witness.price = price;
+
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which a match exceeds the order's size
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match__exceeds_order_size() {
+        let (mut witness, statement) = create_witness_statement();
+        let order = &mut witness.internal_party_order;
+        order.amount = statement.match_result.base_amount - 1;
+
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the internal party's balance is too low
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match__internal_party_balance_too_low() {
+        let (mut witness, statement) = create_witness_statement();
+        let balance = &mut witness.internal_party_balance;
+        if witness.internal_party_order.side.is_buy() {
+            balance.amount = statement.match_result.quote_amount - 1;
+        } else {
+            balance.amount = statement.match_result.base_amount - 1;
+        }
+
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the price is out of the user-defined limits
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_match__price_out_of_bounds() {
+        let (mut witness, statement) = create_witness_statement();
+        let order = &mut witness.internal_party_order;
+        let price = witness.price;
+        if order.side.is_buy() {
+            order.worst_case_price = price - FixedPoint::from_integer(1);
+        } else {
+            order.worst_case_price = price + FixedPoint::from_integer(1);
+        }
+
+        assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    // --------------------
+    // | Settlement Tests |
+    // --------------------
+
+    /// Test the case in which the relayer fee is out of bounds
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__relayer_fee_out_of_bounds() {
+        let (witness, mut statement) = create_witness_statement();
+        statement.external_party_fees.relayer_fee = max_amount() + 1;
+
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the protocol fee is out of bounds
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__protocol_fee_out_of_bounds() {
+        let (witness, mut statement) = create_witness_statement();
+        statement.external_party_fees.protocol_fee = max_amount() + 1;
+
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the protocol fee is incorrectly computed
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__incorrect_protocol_fee() {
+        let (witness, mut statement) = create_witness_statement();
+        statement.external_party_fees.protocol_fee += 2;
+
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the internal party's order is incorrectly updated
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__incorrect_order_update() {
+        let (witness, mut statement) = create_witness_statement();
+        let order_idx = statement.internal_party_indices.order;
+        statement.internal_party_modified_shares.orders[order_idx].amount += Scalar::one();
+
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the internal party's send balance is incorrectly
+    /// updated
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__incorrect_send_balance_update() {
+        let (witness, mut statement) = create_witness_statement();
+        let balance_idx = statement.internal_party_indices.balance_send;
+        statement.internal_party_modified_shares.balances[balance_idx].amount += Scalar::one();
+
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the internal party's receive balance is
+    /// incorrectly updated
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__incorrect_receive_balance_update() {
+        let (witness, mut statement) = create_witness_statement();
+        let balance_idx = statement.internal_party_indices.balance_receive;
+        statement.internal_party_modified_shares.balances[balance_idx].amount += Scalar::one();
+
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    /// Test the cases in which spurious updates to the internal party's shares
+    /// are made
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_settle__spurious_updates() {
+        let mut rng = thread_rng();
+        let (witness, original_statement) = create_witness_statement();
+        let indices = original_statement.internal_party_indices;
+
+        // Modify a balance's mint
+        let mut statement = original_statement.clone();
+        let balance_idx = (0..MAX_BALANCES).sample_single(&mut rng);
+        statement.internal_party_modified_shares.balances[balance_idx].mint += Scalar::one();
+        assert!(!check_settlement_constraints(&witness, &statement));
+
+        // Modify an uninvolved order's amount
+        let mut statement = original_statement.clone();
+        let range = 0..MAX_ORDERS;
+        let mut order_idx = range.clone().sample_single(&mut rng);
+        while order_idx == indices.order {
+            order_idx = range.clone().sample_single(&mut rng);
+        }
+        statement.internal_party_modified_shares.orders[order_idx].amount += Scalar::one();
+        assert!(!check_settlement_constraints(&witness, &statement));
+
+        // Modify the wallet keychain
+        let mut statement = original_statement.clone();
+        statement.internal_party_modified_shares.keys.nonce += Scalar::one();
+        assert!(!check_settlement_constraints(&witness, &statement));
+
+        // Modify the wallet blinder
+        let mut statement = original_statement.clone();
+        statement.internal_party_modified_shares.blinder += Scalar::one();
+        assert!(!check_settlement_constraints(&witness, &statement));
+    }
 }
