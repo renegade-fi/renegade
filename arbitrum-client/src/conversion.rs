@@ -10,14 +10,16 @@ use circuit_types::{
     elgamal::{ElGamalCiphertext, EncryptionKey},
     keychain::PublicSigningKey,
     note::NOTE_CIPHERTEXT_SIZE,
+    r#match::{ExternalMatchResult, FeeTake, OrderSettlementIndices},
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
-    PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
+    Amount, PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
 };
 use circuits::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,
     valid_fee_redemption::SizedValidFeeRedemptionStatement,
     valid_match_settle::SizedValidMatchSettleStatement,
+    valid_match_settle_atomic::SizedValidMatchSettleAtomicStatement,
     valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement,
     valid_reblind::ValidReblindStatement,
     valid_relayer_fee_settlement::SizedValidRelayerFeeSettlementStatement,
@@ -33,7 +35,9 @@ use contracts_common::{
     constants::NUM_SCALARS_PK,
     custom_serde::scalar_to_u256,
     types::{
-        BabyJubJubPoint as ContractBabyJubJubPoint, ExternalTransfer as ContractExternalTransfer,
+        BabyJubJubPoint as ContractBabyJubJubPoint,
+        ExternalMatchResult as ContractExternalMatchResult,
+        ExternalTransfer as ContractExternalTransfer, FeeTake as ContractFeeTake,
         LinkingProof as ContractLinkingProof, MatchLinkingProofs as ContractMatchLinkingProofs,
         MatchProofs as ContractMatchProofs, NoteCiphertext as ContractNoteCiphertext,
         OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
@@ -41,6 +45,7 @@ use contracts_common::{
         PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
         ValidCommitmentsStatement as ContractValidCommitmentsStatement,
         ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+        ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
         ValidMatchSettleStatement as ContractValidMatchSettleStatement,
         ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
         ValidReblindStatement as ContractValidReblindStatement,
@@ -49,6 +54,8 @@ use contracts_common::{
         ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
     },
 };
+use num_bigint::BigUint;
+use renegade_crypto::fields::biguint_to_scalar;
 use ruint::aliases::{U160, U256};
 use util::hex::biguint_to_hex_string;
 
@@ -96,19 +103,13 @@ pub fn to_contract_link_proof(
 pub fn to_contract_external_transfer(
     external_transfer: &ExternalTransfer,
 ) -> Result<ContractExternalTransfer, ConversionError> {
-    let account_addr: U160 = external_transfer
-        .account_addr
-        .clone()
-        .try_into()
-        .map_err(|_| ConversionError::InvalidUint)?;
-    let mint: U160 =
-        external_transfer.mint.clone().try_into().map_err(|_| ConversionError::InvalidUint)?;
-    let amount: U256 =
-        external_transfer.amount.try_into().map_err(|_| ConversionError::InvalidUint)?;
+    let account_addr = biguint_to_address(&external_transfer.account_addr)?;
+    let mint = biguint_to_address(&external_transfer.mint)?;
+    let amount = amount_to_u256(external_transfer.amount)?;
 
     Ok(ContractExternalTransfer {
-        account_addr: Address::from(account_addr),
-        mint: Address::from(mint),
+        account_addr,
+        mint,
         amount,
         is_withdrawal: external_transfer.direction == ExternalTransferDirection::Withdrawal,
     })
@@ -213,6 +214,17 @@ pub fn to_contract_valid_commitments_statement(
     }
 }
 
+/// Convert `OrderSettlementIndices` to its corresponding smart contract type
+pub fn to_contract_order_settlement_indices(
+    indices: &OrderSettlementIndices,
+) -> ContractOrderSettlementIndices {
+    ContractOrderSettlementIndices {
+        balance_send: indices.balance_send as u64,
+        balance_receive: indices.balance_receive as u64,
+        order: indices.order as u64,
+    }
+}
+
 /// Convert a [`SizedValidMatchSettleStatement`] to its corresponding smart
 /// contract type
 pub fn to_contract_valid_match_settle_statement(
@@ -220,22 +232,62 @@ pub fn to_contract_valid_match_settle_statement(
 ) -> ContractValidMatchSettleStatement {
     let party0_modified_shares = wallet_shares_to_scalar_vec(&statement.party0_modified_shares);
     let party1_modified_shares = wallet_shares_to_scalar_vec(&statement.party1_modified_shares);
+    let party0_indices = to_contract_order_settlement_indices(&statement.party0_indices);
+    let party1_indices = to_contract_order_settlement_indices(&statement.party1_indices);
 
     ContractValidMatchSettleStatement {
         party0_modified_shares,
         party1_modified_shares,
-        party0_indices: ContractOrderSettlementIndices {
-            balance_send: statement.party0_indices.balance_send as u64,
-            balance_receive: statement.party0_indices.balance_receive as u64,
-            order: statement.party0_indices.order as u64,
-        },
-        party1_indices: ContractOrderSettlementIndices {
-            balance_send: statement.party1_indices.balance_send as u64,
-            balance_receive: statement.party1_indices.balance_receive as u64,
-            order: statement.party1_indices.order as u64,
-        },
+        party0_indices,
+        party1_indices,
         protocol_fee: statement.protocol_fee.repr.inner(),
     }
+}
+
+/// Convert a [`ExternalMatchResult`] to its corresponding smart contract type
+pub fn to_contract_external_match_result(
+    match_result: &ExternalMatchResult,
+) -> Result<ContractExternalMatchResult, ConversionError> {
+    let quote_mint = biguint_to_address(&match_result.quote_mint)?;
+    let base_mint = biguint_to_address(&match_result.base_mint)?;
+    let quote_amount = amount_to_u256(match_result.quote_amount)?;
+    let base_amount = amount_to_u256(match_result.base_amount)?;
+
+    Ok(ContractExternalMatchResult {
+        quote_mint,
+        base_mint,
+        quote_amount,
+        base_amount,
+        direction: match_result.direction,
+    })
+}
+
+/// Convert a [`FeeTake`] to its corresponding smart contract type
+pub fn to_contract_fee_take(fee_take: &FeeTake) -> Result<ContractFeeTake, ConversionError> {
+    Ok(ContractFeeTake {
+        relayer_fee: amount_to_u256(fee_take.relayer_fee)?,
+        protocol_fee: amount_to_u256(fee_take.protocol_fee)?,
+    })
+}
+
+/// Convert a [`SizedValidMatchSettleAtomicStatement`] to its corresponding
+/// smart contract type
+pub fn to_contract_valid_match_settle_atomic_statement(
+    statement: &SizedValidMatchSettleAtomicStatement,
+) -> Result<ContractValidMatchSettleAtomicStatement, ConversionError> {
+    let internal_party_modified_shares =
+        wallet_shares_to_scalar_vec(&statement.internal_party_modified_shares);
+    let internal_party_indices =
+        to_contract_order_settlement_indices(&statement.internal_party_indices);
+
+    Ok(ContractValidMatchSettleAtomicStatement {
+        match_result: to_contract_external_match_result(&statement.match_result)?,
+        external_party_fees: to_contract_fee_take(&statement.external_party_fees)?,
+        internal_party_modified_shares,
+        internal_party_indices,
+        protocol_fee: statement.protocol_fee.repr.inner(),
+        relayer_fee_address: biguint_to_scalar(&statement.relayer_fee_address).inner(),
+    })
 }
 
 /// Build a [`MatchProofs`] contract type from a set of proof bundles
@@ -380,6 +432,17 @@ pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[AlloyU256; NUM_SCALARS_PK],
 // ------------------------
 // | CONVERSION UTILITIES |
 // ------------------------
+
+/// Convert a `BigUint` to an `Address`
+pub fn biguint_to_address(biguint: &BigUint) -> Result<Address, ConversionError> {
+    let u160: U160 = biguint.try_into().map_err(|_| ConversionError::InvalidUint)?;
+    Ok(Address::from(u160))
+}
+
+/// Convert an `Amount` to a `U256`
+pub fn amount_to_u256(amount: Amount) -> Result<U256, ConversionError> {
+    amount.try_into().map_err(|_| ConversionError::InvalidUint)
+}
 
 /// Try to extract a fixed-length array of G1Affine points
 /// from a slice of proof system commitments
