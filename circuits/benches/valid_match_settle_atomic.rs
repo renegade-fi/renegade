@@ -13,6 +13,7 @@ use circuits::zk_circuits::valid_match_settle_atomic::{
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{MAX_BALANCES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use mpc_relation::proof_linking::LinkableCircuit;
 
 /// The small parameter set for the `VALID MATCH SETTLE ATOMIC` circuit
 const SMALL_PARAM_SET: (usize, usize) = (2, 2);
@@ -43,9 +44,15 @@ pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_O
     group.bench_function(benchmark_id, |b| {
         let mut cs = PlonkCircuit::new_turbo_plonk();
         let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
+        // Add proof linking groups to the circuit
+        let layout =
+            ValidMatchSettleAtomic::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout().unwrap();
+        for (id, layout) in layout.group_layouts.into_iter() {
+            cs.create_link_group(id, Some(layout));
+        }
+
         let witness_var = witness.create_witness(&mut cs);
         let statement_var = statement.create_public_var(&mut cs);
-
         b.iter(|| {
             ValidMatchSettleAtomic::apply_constraints(
                 witness_var.clone(),
