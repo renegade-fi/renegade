@@ -57,7 +57,7 @@ const TASK_DRIVER_THREAD_NAME: &str = "renegade-task-driver";
 /// The number of times to retry a step in a task before propagating the error
 const TASK_DRIVER_N_RETRIES: usize = 5;
 /// The stack size to allocate for task driver threads
-const DRIVER_THREAD_STACK_SIZE: usize = 5_000_000; // 5MB
+const DRIVER_THREAD_STACK_SIZE: usize = 50_000_000; // 50MB
 
 /// Error message sent on a notification when a task is not found
 const TASK_NOT_FOUND_ERROR: &str = "task not found";
