@@ -110,6 +110,12 @@ impl FixedPoint {
         }
     }
 
+    /// Get the maximum value of a fixed point
+    pub fn max_value() -> Self {
+        let repr = Scalar::one().neg(); // -1 is the largest scalar value
+        Self { repr }
+    }
+
     /// Construct a fixed point value from its `Scalar` representation
     pub fn from_repr(repr: Scalar) -> Self {
         Self { repr }
