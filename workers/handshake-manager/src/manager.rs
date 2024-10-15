@@ -1,8 +1,7 @@
 //! The handshake module handles the execution of handshakes from negotiating
 //! a pair of orders to match, all the way through settling any resulting match
 mod handshake;
-mod internal_engine;
-pub mod r#match;
+pub mod matching;
 mod price_agreement;
 pub(crate) mod scheduler;
 
@@ -16,7 +15,7 @@ use common::{
         proof_bundles::{MatchBundle, OrderValidityProofBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
-        wallet::{OrderIdentifier, WalletIdentifier},
+        wallet::OrderIdentifier,
         CancelChannel,
     },
 };
@@ -34,7 +33,7 @@ use gossip_api::{
     },
 };
 use job_types::{
-    handshake_manager::{HandshakeExecutionJob, HandshakeManagerReceiver},
+    handshake_manager::{HandshakeManagerJob, HandshakeManagerReceiver},
     network_manager::{NetworkManagerJob, NetworkManagerQueue},
     price_reporter::PriceReporterQueue,
     task_driver::{TaskDriverJob, TaskDriverQueue},
@@ -43,7 +42,7 @@ use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
 use renegade_metrics::helpers::record_match_volume;
 use state::State;
-use std::{collections::HashSet, thread::JoinHandle};
+use std::thread::JoinHandle;
 use system_bus::SystemBus;
 use tracing::{error, info, info_span, Instrument};
 use util::{err_str, get_current_time_millis, runtime::sleep_forever_async};
@@ -97,8 +96,6 @@ pub struct HandshakeExecutor {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub(crate) min_fill_size: Amount,
-    /// The set of wallets to mutually exclude from matches
-    pub(crate) mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The cache used to mark order pairs as already matched
     pub(crate) handshake_cache: SharedHandshakeCache<OrderIdentifier>,
     /// Stores the state of existing handshake executions
@@ -127,7 +124,6 @@ impl HandshakeExecutor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_fill_size: Amount,
-        mutual_exclusion_list: HashSet<WalletIdentifier>,
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
         price_reporter_job_queue: PriceReporterQueue,
@@ -142,7 +138,6 @@ impl HandshakeExecutor {
 
         Ok(Self {
             min_fill_size,
-            mutual_exclusion_list,
             handshake_cache,
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
@@ -192,26 +187,25 @@ impl HandshakeExecutor {
     /// Handle a handshake message from the peer
     pub async fn handle_handshake_job(
         &self,
-        job: HandshakeExecutionJob,
+        job: HandshakeManagerJob,
     ) -> Result<(), HandshakeManagerError> {
         match job {
             // The timer thread has scheduled an outbound handshake
-            HandshakeExecutionJob::PerformHandshake { order } => {
-                self.perform_handshake(order).await
-            },
+            HandshakeManagerJob::PerformHandshake { order } => self.perform_handshake(order).await,
 
             // An order has been updated, the executor should run the internal engine on the
             // new order to check for matches
-            HandshakeExecutionJob::InternalMatchingEngine { order } => {
+            HandshakeManagerJob::InternalMatchingEngine { order } => {
                 self.run_internal_matching_engine(order).await
             },
 
+            // A request to run the external matching engine
+            HandshakeManagerJob::ExternalMatchingEngine { order, response_channel } => {
+                todo!()
+            },
+
             // Indicates that a peer has sent a message during the course of a handshake
-            HandshakeExecutionJob::ProcessHandshakeMessage {
-                peer_id,
-                message,
-                response_channel,
-            } => {
+            HandshakeManagerJob::ProcessHandshakeMessage { peer_id, message, response_channel } => {
                 let request_id = message.request_id;
                 let resp = self.handle_handshake_message(request_id, message).await?;
                 // Send the message returned if one exists, or send an ack
@@ -226,21 +220,21 @@ impl HandshakeExecutor {
 
             // A peer has completed a match on the given order pair; cache this match pair as
             // completed and do not schedule the pair going forward
-            HandshakeExecutionJob::CacheEntry { order1, order2 } => {
+            HandshakeManagerJob::CacheEntry { order1, order2 } => {
                 self.handshake_cache.write().await.mark_completed(order1, order2);
                 Ok(())
             },
 
             // A peer has initiated a match on the given order pair; place this order pair in an
             // invisibility window, i.e. do not initiate matches on this pair
-            HandshakeExecutionJob::PeerMatchInProgress { order1, order2 } => {
+            HandshakeManagerJob::PeerMatchInProgress { order1, order2 } => {
                 self.handshake_cache.write().await.mark_invisible(order1, order2);
                 Ok(())
             },
 
             // Indicates that the network manager has setup a network connection for a handshake to
             // execute over the local peer should connect and go forward with the MPC
-            HandshakeExecutionJob::MpcNetSetup { request_id, party_id, net } => {
+            HandshakeManagerJob::MpcNetSetup { request_id, party_id, net } => {
                 // Fetch the local handshake state to get an order for the MPC
                 let order_state =
                     self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
@@ -313,7 +307,7 @@ impl HandshakeExecutor {
             },
 
             // Indicates that in-flight MPCs on the given nullifier should be terminated
-            HandshakeExecutionJob::MpcShootdown { nullifier } => {
+            HandshakeManagerJob::MpcShootdown { nullifier } => {
                 self.handshake_state_index.shootdown_nullifier(nullifier).await
             },
         }

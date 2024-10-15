@@ -38,9 +38,7 @@ use tracing::info;
 use util::{arbitrum::get_protocol_fee, matching_engine::compute_max_amount};
 use uuid::Uuid;
 
-use crate::error::HandshakeManagerError;
-
-use super::HandshakeExecutor;
+use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 /// Error message emitted when opening a statement fails
 const ERR_OPENING_STATEMENT: &str = "error opening statement";
@@ -60,7 +58,7 @@ impl HandshakeExecutor {
     /// Spawns the match computation in a separate thread wrapped by a custom
     /// Tokio runtime. The QUIC implementation in quinn is async and expects
     /// to be run inside of a Tokio runtime
-    pub(super) async fn execute_match(
+    pub(crate) async fn execute_match(
         &self,
         request_id: Uuid,
         party_id: u64,

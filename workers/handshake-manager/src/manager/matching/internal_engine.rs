@@ -1,25 +1,28 @@
 //! Defines logic for running the internal matching engine on a given order
 
-use circuit_types::{fixed_point::FixedPoint, Amount};
+use std::collections::HashSet;
+
+use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
 use common::types::{
     exchange::PriceReporterState,
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
-    wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
+    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
     TimestampedPrice,
 };
+use itertools::Itertools;
 use job_types::task_driver::TaskDriverJob;
-use rand::{seq::SliceRandom, thread_rng};
 use tracing::{error, info};
-use util::{err_str, matching_engine::match_orders_with_min_base_amount, res_some};
+use util::err_str;
 
 use crate::{
     error::HandshakeManagerError,
-    manager::handshake::{ERR_NO_ORDER, ERR_NO_PRICE_DATA, ERR_NO_WALLET},
+    manager::{
+        handshake::{ERR_NO_ORDER, ERR_NO_PRICE_DATA, ERR_NO_WALLET},
+        HandshakeExecutor,
+    },
 };
-
-use super::HandshakeExecutor;
 
 /// Error emitted when proofs of validity cannot be found for an order
 const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
@@ -39,86 +42,45 @@ impl HandshakeExecutor {
     ///        denormalization easier
     pub async fn run_internal_matching_engine(
         &self,
-        order: OrderIdentifier,
+        order_id: OrderIdentifier,
     ) -> Result<(), HandshakeManagerError> {
-        info!("Running internal matching engine on order {order}");
+        info!("Running internal matching engine on order {order_id}");
         // Lookup the order and its wallet
-        let (network_order, wallet) = self.fetch_order_and_wallet(&order).await?;
+        let (network_order, wallet) = self.fetch_order_and_wallet(&order_id).await?;
         let my_order = wallet
             .orders
             .get(&network_order.id)
+            .cloned()
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
-        let (my_proof, my_witness) = self
-            .get_validity_proof_and_witness(&network_order.id)
-            .await?
-            .ok_or_else(|| HandshakeManagerError::State(ERR_MISSING_PROOFS.to_string()))?;
+        let wallet_order_ids = wallet.orders.keys().cloned().collect_vec();
+        let sell_mint = my_order.send_mint();
+        let my_balance = wallet.get_balance_or_default(sell_mint);
 
         // Sample a price to match the order at
-        let price = self.get_execution_price(&network_order.id).await?;
+        let ts_price = self.get_execution_price(&network_order.id).await?;
+        let price = FixedPoint::from_f64_round_down(ts_price.price);
 
-        // Get the candidate order's matching pool
-        let my_pool_name = self.state.get_matching_pool_for_order(&network_order.id).await?;
-
-        // Fetch all other orders that are ready for matches
-        // Shuffle the ordering of the other orders for fairness
-        let mut other_orders =
-            self.state.get_locally_matchable_orders_in_matching_pool(my_pool_name).await?;
-        other_orders.shuffle(&mut thread_rng());
-
-        // Match against each other order in the local book
-        for order_id in other_orders {
-            // Orders must not be the same order
-            if network_order.id == order_id {
-                continue;
-            }
-
-            // Orders must be in matchable wallets
-            let other_wallet_id = self
-                .state
-                .get_wallet_for_order(&order_id)
+        // Try to find a match iteratively, we wrap this in a retry loop in case
+        // settlement fails on a match
+        let mut match_candidates =
+            self.get_match_candidates(network_order.id, wallet_order_ids).await?;
+        while !match_candidates.is_empty() {
+            let (other_order_id, match_res) = match self
+                .find_match(&my_order, &my_balance, price, match_candidates.clone())
                 .await?
-                .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
-
-            if !self.wallets_can_match(wallet.wallet_id, other_wallet_id) {
-                continue;
-            }
-
-            // Order must have a validity proof bundle
-            let (other_proof, other_witness) =
-                match self.get_validity_proof_and_witness(&order_id).await? {
-                    Some(proof) => proof,
-                    None => continue,
-                };
-
-            // Lookup the other order and match on it
-            let order2 = match self.state.get_managed_order(&order_id).await? {
-                Some(order) => order,
-                None => continue,
+            {
+                Some(match_res) => match_res,
+                None => {
+                    info!("No internal matches found for {order_id:?}");
+                    return Ok(());
+                },
             };
 
-            // If a match is successful, break from the loop, the settlement task will
-            // re-enqueue a job for the internal engine to run again
-            match self
-                .try_match_and_settle(
-                    my_order.clone(),
-                    order2,
-                    network_order.id,
-                    order_id,
-                    wallet.wallet_id,
-                    other_wallet_id,
-                    price,
-                    my_witness.clone(),
-                    other_witness.clone(),
-                    my_proof.clone(),
-                    other_proof.clone(),
-                )
-                .await
-            {
-                Ok(did_match) => {
+            // Try to settle the match
+            match self.try_settle_match(order_id, other_order_id, ts_price, match_res).await {
+                Ok(()) => {
                     // Stop matching if a match was found
-                    if did_match {
-                        return Ok(());
-                    }
+                    return Ok(());
                 },
                 Err(e) => {
                     error!(
@@ -133,47 +95,51 @@ impl HandshakeExecutor {
                     }
                 },
             }
+
+            // If matching failed, remove the other order from the candidate set
+            match_candidates.remove(&other_order_id);
         }
 
-        info!("No internal matches found for {order:?}");
         Ok(())
     }
 
-    /// Try a match and settle it if the two orders cross
-    #[allow(clippy::too_many_arguments)]
-    async fn try_match_and_settle(
+    /// Get the set of match candidates for an order
+    ///
+    /// Shuffles the ordering of the other orders for fairness
+    async fn get_match_candidates(
         &self,
-        o1: Order,
-        o2: Order,
+        order_id: OrderIdentifier,
+        wallet_order_ids: Vec<OrderIdentifier>,
+    ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
+        // Filter by matching pool
+        let my_pool_name = self.state.get_matching_pool_for_order(&order_id).await?;
+        let other_orders =
+            self.state.get_locally_matchable_orders_in_matching_pool(my_pool_name).await?;
+        let mut orders_set = HashSet::from_iter(other_orders);
+
+        // Filter out orders from the same wallet
+        for order_id in wallet_order_ids {
+            orders_set.remove(&order_id);
+        }
+
+        Ok(orders_set)
+    }
+
+    /// Try a match and settle it if the two orders cross
+    async fn try_settle_match(
+        &self,
         order_id1: OrderIdentifier,
         order_id2: OrderIdentifier,
-        wallet_id1: WalletIdentifier,
-        wallet_id2: WalletIdentifier,
         price: TimestampedPrice,
-        validity_witness1: OrderValidityWitnessBundle,
-        validity_witness2: OrderValidityWitnessBundle,
-        validity_proof1: OrderValidityProofBundle,
-        validity_proof2: OrderValidityProofBundle,
-    ) -> Result<bool, HandshakeManagerError> {
-        // Match the orders
-        let b1 = &validity_witness1.commitment_witness.balance_send;
-        let b2 = &validity_witness2.commitment_witness.balance_send;
-        let price_fp = FixedPoint::from_f64_round_down(price.price);
-        let min_base_amount = Amount::max(o1.min_fill_size, o2.min_fill_size);
-        let min_quote_amount = self.min_fill_size;
-
-        let match_result = match match_orders_with_min_base_amount(
-            &o1.into(),
-            &o2.into(),
-            b1,
-            b2,
-            min_quote_amount,
-            min_base_amount,
-            price_fp,
-        ) {
-            Some(match_) => match_,
-            None => return Ok(false),
-        };
+        match_result: MatchResult,
+    ) -> Result<(), HandshakeManagerError> {
+        // Fetch state elements needed for settlement
+        let wallet_id1 = self.get_wallet_id_for_order(&order_id1).await?;
+        let wallet_id2 = self.get_wallet_id_for_order(&order_id2).await?;
+        let (validity_proof1, validity_witness1) =
+            self.get_validity_proof_and_witness(&order_id1).await?;
+        let (validity_proof2, validity_witness2) =
+            self.get_validity_proof_and_witness(&order_id2).await?;
 
         // Submit the match to the task driver
         let task: TaskDescriptor = SettleMatchInternalTaskDescriptor::new(
@@ -197,29 +163,11 @@ impl HandshakeExecutor {
         rx.await
             .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
             .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
-            .map(|_| true)
     }
 
     // -----------
     // | Helpers |
     // -----------
-
-    /// Check if two wallets may match
-    fn wallets_can_match(&self, w1: WalletIdentifier, w2: WalletIdentifier) -> bool {
-        // Same wallet
-        if w1 == w2 {
-            return false;
-        }
-
-        // Wallets marked in the mutual exclusion list
-        let w1_in_list = self.mutual_exclusion_list.contains(&w1);
-        let w2_in_list = self.mutual_exclusion_list.contains(&w2);
-        if w1_in_list && w2_in_list {
-            return false;
-        }
-
-        true
-    }
 
     /// Fetch the execution price for an order
     async fn get_execution_price(
@@ -250,13 +198,29 @@ impl HandshakeExecutor {
     async fn get_validity_proof_and_witness(
         &self,
         order_id: &OrderIdentifier,
-    ) -> Result<Option<(OrderValidityProofBundle, OrderValidityWitnessBundle)>, HandshakeManagerError>
-    {
+    ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle), HandshakeManagerError> {
         let state = &self.state;
-        let proof = res_some!(state.get_validity_proofs(order_id).await?);
-        let witness = res_some!(state.get_validity_proof_witness(order_id).await?);
+        let proof = state
+            .get_validity_proofs(order_id)
+            .await?
+            .ok_or_else(|| HandshakeManagerError::state(ERR_MISSING_PROOFS))?;
+        let witness = state
+            .get_validity_proof_witness(order_id)
+            .await?
+            .ok_or_else(|| HandshakeManagerError::state(ERR_MISSING_PROOFS))?;
 
-        Ok(Some((proof, witness)))
+        Ok((proof, witness))
+    }
+
+    /// Get the wallet for an order
+    async fn get_wallet_id_for_order(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<WalletIdentifier, HandshakeManagerError> {
+        self.state
+            .get_wallet_for_order(order_id)
+            .await?
+            .ok_or_else(|| HandshakeManagerError::state(ERR_NO_WALLET))
     }
 
     /// Fetch the order and wallet for the given order identifier

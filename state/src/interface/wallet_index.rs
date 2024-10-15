@@ -3,6 +3,7 @@
 //! Wallet index updates must go through raft consensus so that the leader may
 //! order them
 
+use circuit_types::balance::Balance;
 use common::types::{
     tasks::QueuedTask,
     wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
@@ -57,6 +58,29 @@ impl State {
             let wallet_id = res_some!(tx.get_wallet_for_order(&id)?);
             let wallet = res_some!(tx.get_wallet(&wallet_id)?);
             Ok(wallet.orders.get(&id).cloned())
+        })
+        .await
+    }
+
+    /// Get the order for a given order ID and the balance that capitalizes it
+    pub async fn get_managed_order_and_balance(
+        &self,
+        id: &OrderIdentifier,
+    ) -> Result<Option<(Order, Balance)>, StateError> {
+        let id = *id;
+        self.with_read_tx(move |tx| {
+            let wallet_id = res_some!(tx.get_wallet_for_order(&id)?);
+            let wallet = res_some!(tx.get_wallet(&wallet_id)?);
+            let order = res_some!(wallet.orders.get(&id)).clone();
+
+            // Get the balance that capitalizes the order
+            let sell_mint = order.send_mint().clone();
+            let balance = wallet
+                .balances
+                .get(&sell_mint)
+                .cloned()
+                .unwrap_or_else(|| Balance::new_from_mint(sell_mint));
+            Ok(Some((order, balance)))
         })
         .await
     }
