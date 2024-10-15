@@ -2,7 +2,10 @@
 
 use ark_mpc::network::QuicTwoPartyNet;
 use circuit_types::wallet::Nullifier;
-use common::types::{gossip::WrappedPeerId, wallet::OrderIdentifier};
+use common::types::{
+    gossip::WrappedPeerId,
+    wallet::{Order, OrderIdentifier},
+};
 use constants::SystemCurveGroup;
 use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
 use libp2p::request_response::ResponseChannel;
@@ -10,13 +13,20 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
 use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
+use crate::{new_response_channel, ResponseReceiver, ResponseSender};
+
 /// The name of the handshake manager queue, used to label queue length metrics
 const HANDSHAKE_MANAGER_QUEUE_NAME: &str = "handshake_manager";
 
+/// The response type for external matching jobs
+///
+/// TODO: Define this type
+pub type ExternalMatchingResponse = ();
+
 /// The job queue for the handshake manager
-pub type HandshakeManagerQueue = TokioSender<HandshakeExecutionJob>;
+pub type HandshakeManagerQueue = TokioSender<HandshakeManagerJob>;
 /// The job queue receiver for the handshake manager
-pub type HandshakeManagerReceiver = MeteredTokioReceiver<HandshakeExecutionJob>;
+pub type HandshakeManagerReceiver = MeteredTokioReceiver<HandshakeManagerJob>;
 
 /// Create a new handshake manager queue and receiver
 pub fn new_handshake_manager_queue() -> (HandshakeManagerQueue, HandshakeManagerReceiver) {
@@ -26,15 +36,8 @@ pub fn new_handshake_manager_queue() -> (HandshakeManagerQueue, HandshakeManager
 
 /// Represents a job for the handshake manager's thread pool to execute
 #[allow(clippy::large_enum_variant)]
-pub enum HandshakeExecutionJob {
-    /// Update the handshake cache with an entry from an order pair that a
-    /// cluster peer has executed
-    CacheEntry {
-        /// The first of the orders matched
-        order1: OrderIdentifier,
-        /// The second of the orders matched
-        order2: OrderIdentifier,
-    },
+pub enum HandshakeManagerJob {
+    // --- Handshakes and Matching --- //
     /// Run the internal matching engine on the given order
     ///
     /// That is, check it against all other locally managed orders for a match.
@@ -45,16 +48,40 @@ pub enum HandshakeExecutionJob {
         /// The order to match
         order: OrderIdentifier,
     },
-    /// Indicates that the network manager has setup an MPC net and the
-    /// receiving thread may begin executing a match over this network
-    MpcNetSetup {
-        /// The ID of the handshake request that this connection has been
-        /// allocated for
-        request_id: Uuid,
-        /// The ID of the local peer in the subsequent MPC computation
-        party_id: u64,
-        /// The net that was setup for the party
-        net: QuicTwoPartyNet<SystemCurveGroup>,
+    ExternalMatchingEngine {
+        /// The external order to match
+        order: Order,
+        /// The response channel on which to send the resulting external match
+        ///
+        /// TODO: Define the response type
+        response_channel: ResponseSender<ExternalMatchingResponse>,
+    },
+    /// Process a handshake request
+    ProcessHandshakeMessage {
+        /// The peer requesting to handshake
+        peer_id: WrappedPeerId,
+        /// The handshake request message contents
+        message: HandshakeMessage,
+        /// The channel on which to send the response
+        ///
+        /// If the channel is `None`, the response should be forwarded
+        /// as a new gossip request to the network manager directly
+        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
+    },
+    /// A request to initiate a handshake with a scheduled peer
+    PerformHandshake {
+        /// The order to attempt a handshake on
+        order: OrderIdentifier,
+    },
+
+    // --- Caching --- //
+    /// Update the handshake cache with an entry from an order pair that a
+    /// cluster peer has executed
+    CacheEntry {
+        /// The first of the orders matched
+        order1: OrderIdentifier,
+        /// The second of the orders matched
+        order2: OrderIdentifier,
     },
     /// Indicates that the local peer should halt any MPCs active on the given
     /// nullifier
@@ -76,21 +103,27 @@ pub enum HandshakeExecutionJob {
         /// The second of the orders in the pair
         order2: OrderIdentifier,
     },
-    /// Process a handshake request
-    ProcessHandshakeMessage {
-        /// The peer requesting to handshake
-        peer_id: WrappedPeerId,
-        /// The handshake request message contents
-        message: HandshakeMessage,
-        /// The channel on which to send the response
-        ///
-        /// If the channel is `None`, the response should be forwarded
-        /// as a new gossip request to the network manager directly
-        response_channel: Option<ResponseChannel<AuthenticatedGossipResponse>>,
+
+    // --- Networking --- //
+    /// Indicates that the network manager has setup an MPC net and the
+    /// receiving thread may begin executing a match over this network
+    MpcNetSetup {
+        /// The ID of the handshake request that this connection has been
+        /// allocated for
+        request_id: Uuid,
+        /// The ID of the local peer in the subsequent MPC computation
+        party_id: u64,
+        /// The net that was setup for the party
+        net: QuicTwoPartyNet<SystemCurveGroup>,
     },
-    /// A request to initiate a handshake with a scheduled peer
-    PerformHandshake {
-        /// The order to attempt a handshake on
-        order: OrderIdentifier,
-    },
+}
+
+impl HandshakeManagerJob {
+    /// Create a new external matching job
+    pub fn new_external_matching_job(
+        order: Order,
+    ) -> (Self, ResponseReceiver<ExternalMatchingResponse>) {
+        let (resp, recv) = new_response_channel();
+        (Self::ExternalMatchingEngine { order, response_channel: resp }, recv)
+    }
 }

@@ -12,10 +12,12 @@ use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
 use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedSender as TokioSender},
-    oneshot::{channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender},
+    oneshot::{Receiver as OneshotReceiver, Sender as OneshotSender},
 };
 use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
+
+use crate::new_response_channel;
 
 /// The name of the network manager queue, used to label queue length metrics
 const NETWORK_MANAGER_QUEUE_NAME: &str = "network_manager";
@@ -35,10 +37,6 @@ pub type NetworkResponseReceiver = OneshotReceiver<GossipResponse>;
 pub fn new_network_manager_queue() -> (NetworkManagerQueue, NetworkManagerReceiver) {
     let (send, recv) = unbounded_channel();
     (send, MeteredTokioReceiver::new(recv, NETWORK_MANAGER_QUEUE_NAME))
-}
-/// Create a new response channel for a request
-pub fn new_response_channel() -> (NetworkResponseChannel, NetworkResponseReceiver) {
-    oneshot_channel()
 }
 
 /// The job type for the network manager

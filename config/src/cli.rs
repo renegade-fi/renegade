@@ -10,14 +10,13 @@ use clap::Parser;
 use common::types::{
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
-    wallet::{keychain::HmacKey, WalletIdentifier},
+    wallet::keychain::HmacKey,
 };
 use ed25519_dalek::Keypair as DalekKeypair;
 use ethers::signers::LocalWallet;
 use libp2p::{identity::Keypair, Multiaddr};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
     net::{IpAddr, SocketAddr},
     path::Path,
 };
@@ -59,9 +58,6 @@ pub struct Cli {
     /// Defaults to 8 basis points
     #[clap(long, value_parser, default_value = "0.0002")]
     pub match_take_rate: f64,
-    /// The mutual exclusion list for matches, two wallets in this list will never be matched internally by the node
-    #[clap(long, value_parser, value_delimiter=' ', num_args=0..)]
-    pub match_mutual_exclusion_list: Vec<WalletIdentifier>,
     /// The path to the file containing relayer fee whitelist info
     #[clap(long, value_parser)]
     pub relayer_fee_whitelist: Option<String>,
@@ -269,9 +265,6 @@ pub struct RelayerConfig {
     pub match_take_rate: FixedPoint,
     /// When set, the relayer will automatically redeem new fees into its wallet
     pub auto_redeem_fees: bool,
-    /// The mutual exclusion list for matches, two wallets in this list will
-    /// never be matched internally by the node
-    pub match_mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
     pub price_reporter_url: Option<Url>,
@@ -446,7 +439,6 @@ impl Clone for RelayerConfig {
             min_fill_size: self.min_fill_size,
             match_take_rate: self.match_take_rate,
             auto_redeem_fees: self.auto_redeem_fees,
-            match_mutual_exclusion_list: self.match_mutual_exclusion_list.clone(),
             relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
             chain_id: self.chain_id,
