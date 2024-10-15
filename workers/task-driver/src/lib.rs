@@ -18,14 +18,15 @@ pub mod driver;
 pub mod error;
 mod running_task;
 pub mod simulation;
+pub mod task_state;
 pub mod tasks;
 pub mod traits;
 pub(crate) mod utils;
 pub mod worker;
 
+use ::state::State;
 use common::types::tasks::TaskDescriptor;
 use job_types::task_driver::{new_task_notification, TaskDriverQueue};
-use state::State;
 
 /// A helper to enqueue a task and await its completion
 /// Await the queueing, execution, and completion of a task

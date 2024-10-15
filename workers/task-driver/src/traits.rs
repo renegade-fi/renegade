@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use state::State;
 use system_bus::SystemBus;
 
-use crate::driver::StateWrapper;
+use crate::task_state::StateWrapper;
 
 // ------------------
 // | Task and State |

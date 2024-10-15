@@ -59,8 +59,7 @@ impl HandshakeExecutor {
 
         // Try to find a match iteratively, we wrap this in a retry loop in case
         // settlement fails on a match
-        let mut match_candidates =
-            self.get_internal_match_candidates(network_order.id, &wallet).await?;
+        let mut match_candidates = self.get_internal_match_candidates(order_id, &wallet).await?;
         while !match_candidates.is_empty() {
             let (other_order_id, match_res) = match self
                 .find_match(&my_order, &my_balance, price, match_candidates.clone())

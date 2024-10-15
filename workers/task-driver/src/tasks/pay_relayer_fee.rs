@@ -23,7 +23,7 @@ use state::State;
 use tracing::instrument;
 use util::err_str;
 
-use crate::driver::StateWrapper;
+use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::{
     enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
