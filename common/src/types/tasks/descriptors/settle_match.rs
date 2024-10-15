@@ -75,6 +75,43 @@ impl From<SettleMatchInternalTaskDescriptor> for TaskDescriptor {
 }
 
 /// The task descriptor containing only the parameterization of the
+/// `SettleExternalMatch` task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SettleExternalMatchTaskDescriptor {
+    /// The ID of the wallet that the local node matched an order from
+    pub internal_wallet_id: WalletIdentifier,
+    /// The price at which the match was executed
+    pub execution_price: TimestampedPrice,
+    /// The match result from the external matching engine
+    pub match_res: MatchResult,
+    /// The validity proofs submitted by the local party
+    pub internal_order_validity_bundle: OrderValidityProofBundle,
+}
+
+impl SettleExternalMatchTaskDescriptor {
+    /// Constructor
+    pub fn new(
+        internal_wallet_id: WalletIdentifier,
+        execution_price: TimestampedPrice,
+        match_res: MatchResult,
+        internal_order_validity_bundle: OrderValidityProofBundle,
+    ) -> Result<Self, String> {
+        Ok(SettleExternalMatchTaskDescriptor {
+            internal_wallet_id,
+            execution_price,
+            match_res,
+            internal_order_validity_bundle,
+        })
+    }
+}
+
+impl From<SettleExternalMatchTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: SettleExternalMatchTaskDescriptor) -> Self {
+        TaskDescriptor::SettleExternalMatch(descriptor)
+    }
+}
+
+/// The task descriptor containing only the parameterization of the
 /// `SettleMatch` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleMatchTaskDescriptor {

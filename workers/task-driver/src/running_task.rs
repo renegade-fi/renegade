@@ -9,8 +9,8 @@ use state::{error::StateError, State};
 use tracing::{error, info};
 
 use crate::{
-    driver::StateWrapper,
     error::TaskDriverError,
+    task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError},
 };
 

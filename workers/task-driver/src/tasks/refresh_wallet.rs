@@ -25,7 +25,7 @@ use tracing::{info, instrument};
 use util::err_str;
 
 use crate::{
-    driver::StateWrapper,
+    task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::{
         find_wallet::{find_latest_wallet_tx, gen_private_shares},
