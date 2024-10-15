@@ -10,7 +10,7 @@ use external_api::{
     http::task::ApiTaskStatus,
     types::ApiHistoricalTask,
 };
-use job_types::{handshake_manager::HandshakeExecutionJob, task_driver::TaskDriverJob};
+use job_types::{handshake_manager::HandshakeManagerJob, task_driver::TaskDriverJob};
 use libmdbx::{TransactionKind, RW};
 use tracing::{error, info, instrument, warn};
 use util::err_str;
@@ -506,7 +506,7 @@ impl StateApplicator {
             };
 
             if order.ready_for_match() {
-                let job = HandshakeExecutionJob::InternalMatchingEngine { order: order.id };
+                let job = HandshakeManagerJob::InternalMatchingEngine { order: order.id };
                 if self.config.handshake_manager_queue.send(job).is_err() {
                     error!("error enqueueing internal matching engine job for order {order_id}");
                 }

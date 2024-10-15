@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
-use job_types::handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue};
+use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use state::State;
 use tracing::info;
 use util::{err_str, runtime::sleep_forever_async};
@@ -57,7 +57,7 @@ impl HandshakeScheduler {
                     if let Some(order) = self.state.choose_handshake_order().await.ok().flatten() {
                         if let Err(e) = self
                             .job_sender
-                            .send(HandshakeExecutionJob::PerformHandshake { order })
+                            .send(HandshakeManagerJob::PerformHandshake { order })
                             .map_err(err_str!(HandshakeManagerError::SendMessage))
                         {
                             return e;

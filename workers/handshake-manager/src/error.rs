@@ -34,6 +34,14 @@ pub enum HandshakeManagerError {
     VerificationError(String),
 }
 
+impl HandshakeManagerError {
+    /// Create a new error from a state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(e: T) -> Self {
+        HandshakeManagerError::State(e.to_string())
+    }
+}
+
 impl Display for HandshakeManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)

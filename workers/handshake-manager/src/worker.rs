@@ -1,13 +1,10 @@
 //! Implements the `Worker` trait for the handshake manager
 
-use std::{
-    collections::HashSet,
-    thread::{Builder, JoinHandle},
-};
+use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use circuit_types::Amount;
-use common::types::{wallet::WalletIdentifier, CancelChannel};
+use common::types::CancelChannel;
 use common::worker::Worker;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
@@ -33,11 +30,6 @@ pub struct HandshakeManagerConfig {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub min_fill_size: Amount,
-    /// The set of wallets to mutually exclude from matches
-    ///
-    /// I.e. any two wallets in this list will never be matched internally by
-    /// the node
-    pub mutual_exclusion_list: HashSet<WalletIdentifier>,
     /// The relayer-global state
     pub state: State,
     /// The channel on which to send outbound network requests
@@ -73,7 +65,6 @@ impl Worker for HandshakeManager {
         );
         let executor = HandshakeExecutor::new(
             config.min_fill_size,
-            config.mutual_exclusion_list.clone(),
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
             config.price_reporter_job_queue.clone(),
