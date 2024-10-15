@@ -26,7 +26,7 @@ use tracing::instrument;
 use util::{arbitrum::get_protocol_pubkey, err_str};
 
 use crate::{
-    driver::StateWrapper,
+    task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::validity_proofs::{
         enqueue_proof_job, enqueue_relayer_redeem_job, find_merkle_path,

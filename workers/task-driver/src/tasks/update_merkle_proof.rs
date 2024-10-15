@@ -16,7 +16,7 @@ use state::{error::StateError, State};
 use tracing::instrument;
 
 use crate::{
-    driver::StateWrapper,
+    task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::validity_proofs::update_wallet_validity_proofs,
 };
