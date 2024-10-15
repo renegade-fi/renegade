@@ -7,7 +7,7 @@ use ark_mpc::network::QuicTwoPartyNet;
 use common::types::handshake::ConnectionRole;
 use itertools::Itertools;
 use job_types::{
-    handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
+    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
     network_manager::NetworkManagerControlSignal,
 };
 use libp2p::PeerId;
@@ -205,7 +205,7 @@ impl NetworkManagerExecutor {
         // After the dependencies are injected into the network; forward it to the
         // handshake manager to dial the peer and begin the MPC
         handshake_work_queue
-            .send(HandshakeExecutionJob::MpcNetSetup { request_id, party_id, net: mpc_net })
+            .send(HandshakeManagerJob::MpcNetSetup { request_id, party_id, net: mpc_net })
             .map_err(|err| NetworkManagerError::EnqueueJob(err.to_string()))?;
         Ok(())
     }

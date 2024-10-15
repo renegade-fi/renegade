@@ -1,9 +1,15 @@
 //! Helpers for matching orders
 
 use circuit_types::{balance::Balance, fixed_point::FixedPoint, r#match::MatchResult, Amount};
-use common::types::wallet::{Order, OrderIdentifier};
-use util::matching_engine::match_orders_with_min_base_amount;
+use common::types::{
+    exchange::PriceReporterState,
+    token::Token,
+    wallet::{Order, OrderIdentifier},
+    TimestampedPrice,
+};
+use util::{err_str, matching_engine::match_orders_with_min_base_amount};
 
+use crate::manager::handshake::ERR_NO_PRICE_DATA;
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 /// A successful match between two orders
@@ -62,5 +68,39 @@ impl HandshakeExecutor {
             min_base_amount,
             price,
         )
+    }
+
+    /// Get the execution price for an order
+    pub(crate) async fn get_execution_price_for_order(
+        &self,
+        order: &OrderIdentifier,
+    ) -> Result<TimestampedPrice, HandshakeManagerError> {
+        let (base, quote) = self.token_pair_for_order(order).await?;
+        self.get_execution_price(&base, &quote).await
+    }
+
+    /// Fetch the execution price for an order
+    pub(crate) async fn get_execution_price(
+        &self,
+        base: &Token,
+        quote: &Token,
+    ) -> Result<TimestampedPrice, HandshakeManagerError> {
+        let base_addr = base.get_addr().to_string();
+        let quote_addr = quote.get_addr().to_string();
+        let price_recv = self.request_price(base.clone(), quote.clone())?;
+        let price =
+            match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
+                PriceReporterState::Nominal(ref report) => report.into(),
+                err_state => {
+                    return Err(HandshakeManagerError::NoPriceData(format!(
+                        "{ERR_NO_PRICE_DATA}: {} / {} {err_state:?}",
+                        base_addr, quote_addr,
+                    )));
+                },
+            };
+
+        // Correct the price for decimals
+        let corrected_price = Self::decimal_correct_price(base, quote, price)?;
+        Ok(corrected_price)
     }
 }

@@ -7,7 +7,7 @@ use common::types::{
     wallet_mocks::mock_empty_wallet,
 };
 use eyre::Result;
-use job_types::handshake_manager::HandshakeExecutionJob;
+use job_types::handshake_manager::HandshakeManagerJob;
 use test_helpers::integration_test_async;
 use util::hex::biguint_from_hex_string;
 use uuid::Uuid;
@@ -111,7 +111,7 @@ async fn test_mpc_match(args: IntegrationTestArgs) -> Result<()> {
     // Peer 1 starts a handshake for peer 2's order
     let order = get_order_id(PARTY1);
     if args.party_id == PARTY0 {
-        let job = HandshakeExecutionJob::PerformHandshake { order };
+        let job = HandshakeManagerJob::PerformHandshake { order };
         node.send_handshake_job(job).unwrap();
     }
 

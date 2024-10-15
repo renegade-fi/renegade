@@ -4,14 +4,12 @@ use std::collections::HashSet;
 
 use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
 use common::types::{
-    exchange::PriceReporterState,
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
     wallet::{OrderIdentifier, Wallet, WalletIdentifier},
     TimestampedPrice,
 };
-use itertools::Itertools;
 use job_types::task_driver::TaskDriverJob;
 use tracing::{error, info};
 use util::err_str;
@@ -19,7 +17,7 @@ use util::err_str;
 use crate::{
     error::HandshakeManagerError,
     manager::{
-        handshake::{ERR_NO_ORDER, ERR_NO_PRICE_DATA, ERR_NO_WALLET},
+        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
         HandshakeExecutor,
     },
 };
@@ -52,18 +50,17 @@ impl HandshakeExecutor {
             .get(&network_order.id)
             .cloned()
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
-        let wallet_order_ids = wallet.orders.keys().cloned().collect_vec();
         let sell_mint = my_order.send_mint();
         let my_balance = wallet.get_balance_or_default(sell_mint);
 
         // Sample a price to match the order at
-        let ts_price = self.get_execution_price(&network_order.id).await?;
+        let ts_price = self.get_execution_price_for_order(&network_order.id).await?;
         let price = FixedPoint::from_f64_round_down(ts_price.price);
 
         // Try to find a match iteratively, we wrap this in a retry loop in case
         // settlement fails on a match
         let mut match_candidates =
-            self.get_match_candidates(network_order.id, wallet_order_ids).await?;
+            self.get_internal_match_candidates(network_order.id, &wallet).await?;
         while !match_candidates.is_empty() {
             let (other_order_id, match_res) = match self
                 .find_match(&my_order, &my_balance, price, match_candidates.clone())
@@ -106,10 +103,10 @@ impl HandshakeExecutor {
     /// Get the set of match candidates for an order
     ///
     /// Shuffles the ordering of the other orders for fairness
-    async fn get_match_candidates(
+    async fn get_internal_match_candidates(
         &self,
         order_id: OrderIdentifier,
-        wallet_order_ids: Vec<OrderIdentifier>,
+        wallet: &Wallet,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
         // Filter by matching pool
         let my_pool_name = self.state.get_matching_pool_for_order(&order_id).await?;
@@ -118,8 +115,9 @@ impl HandshakeExecutor {
         let mut orders_set = HashSet::from_iter(other_orders);
 
         // Filter out orders from the same wallet
+        let wallet_order_ids = wallet.orders.keys();
         for order_id in wallet_order_ids {
-            orders_set.remove(&order_id);
+            orders_set.remove(order_id);
         }
 
         Ok(orders_set)
@@ -168,31 +166,6 @@ impl HandshakeExecutor {
     // -----------
     // | Helpers |
     // -----------
-
-    /// Fetch the execution price for an order
-    async fn get_execution_price(
-        &self,
-        order: &OrderIdentifier,
-    ) -> Result<TimestampedPrice, HandshakeManagerError> {
-        let (base, quote) = self.token_pair_for_order(order).await?;
-        let base_addr = base.get_addr().to_string();
-        let quote_addr = quote.get_addr().to_string();
-        let price_recv = self.request_price(base.clone(), quote.clone())?;
-        let price =
-            match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
-                PriceReporterState::Nominal(ref report) => report.into(),
-                err_state => {
-                    return Err(HandshakeManagerError::NoPriceData(format!(
-                        "{ERR_NO_PRICE_DATA}: {} / {} {err_state:?}",
-                        base_addr, quote_addr,
-                    )));
-                },
-            };
-
-        // Correct the price for decimals
-        let corrected_price = Self::decimal_correct_price(&base, &quote, price)?;
-        Ok(corrected_price)
-    }
 
     /// Get the validity proof and witness for a given order
     async fn get_validity_proof_and_witness(
