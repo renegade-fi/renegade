@@ -25,7 +25,7 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use job_types::{
-    handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
+    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
     price_reporter::{PriceReporterJob, PriceReporterQueue},
 };
 use state::State;
@@ -427,7 +427,7 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         waiter.await?;
 
         // Run the matching engine on the order
-        let job = HandshakeExecutionJob::InternalMatchingEngine { order: order_id };
+        let job = HandshakeManagerJob::InternalMatchingEngine { order: order_id };
         self.handshake_manager_queue.send(job).map_err(internal_error)?;
 
         Ok(EmptyRequestResponse {})

@@ -201,7 +201,7 @@ impl HandshakeExecutor {
 
             // A request to run the external matching engine
             HandshakeManagerJob::ExternalMatchingEngine { order, response_channel } => {
-                todo!()
+                self.run_external_matching_engine(order, response_channel).await
             },
 
             // Indicates that a peer has sent a message during the course of a handshake
