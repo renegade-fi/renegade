@@ -7,7 +7,7 @@ use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use ethers::prelude::StreamExt;
 use job_types::{
-    handshake_manager::{HandshakeExecutionJob, HandshakeManagerQueue},
+    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
 };
@@ -115,7 +115,7 @@ impl OnChainEventListenerExecutor {
         let nullifier = u256_to_scalar(&event.nullifier);
         self.config
             .handshake_manager_job_queue
-            .send(HandshakeExecutionJob::MpcShootdown { nullifier })
+            .send(HandshakeManagerJob::MpcShootdown { nullifier })
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
         // Nullify any orders that used this nullifier in their validity proof

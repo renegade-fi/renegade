@@ -37,6 +37,11 @@ impl Wallet {
         self.balances.get_mut(mint)
     }
 
+    /// Get a balance or default to an empty balance
+    pub fn get_balance_or_default(&self, mint: &BigUint) -> Balance {
+        self.get_balance(mint).cloned().unwrap_or_else(|| Balance::new_from_mint(mint.clone()))
+    }
+
     /// Get a mutable reference to the balance for the given mint or add a
     /// zero'd balance if one does not exist
     pub fn get_balance_mut_or_default(&mut self, mint: &BigUint) -> &mut Balance {

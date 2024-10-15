@@ -8,7 +8,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use std::{collections::HashSet, mem};
+use std::mem;
 
 use api_server::worker::{ApiServer, ApiServerConfig};
 use arbitrum_client::{
@@ -32,7 +32,7 @@ use job_types::{
         new_gossip_server_queue, GossipServerJob, GossipServerQueue, GossipServerReceiver,
     },
     handshake_manager::{
-        new_handshake_manager_queue, HandshakeExecutionJob, HandshakeManagerQueue,
+        new_handshake_manager_queue, HandshakeManagerJob, HandshakeManagerQueue,
         HandshakeManagerReceiver,
     },
     network_manager::{
@@ -225,7 +225,7 @@ impl MockNodeController {
     }
 
     /// Send a job to the handshake manager
-    pub fn send_handshake_job(&self, job: HandshakeExecutionJob) -> Result<(), String> {
+    pub fn send_handshake_job(&self, job: HandshakeManagerJob) -> Result<(), String> {
         self.handshake_queue.0.send(job).map_err(|e| e.to_string())
     }
 
@@ -387,7 +387,6 @@ impl MockNodeController {
 
         let conf = HandshakeManagerConfig {
             min_fill_size: self.config.min_fill_size,
-            mutual_exclusion_list: HashSet::new(),
             state,
             network_channel,
             price_reporter_job_queue,

@@ -400,7 +400,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_MATCH_ROUTE.to_string(),
-            RequestExternalMatchHandler::new(state.clone(), handshake_queue),
+            RequestExternalMatchHandler::new(handshake_queue),
         );
 
         // --- Orderbook Routes --- //

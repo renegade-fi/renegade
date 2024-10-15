@@ -75,11 +75,7 @@ impl State {
 
             // Get the balance that capitalizes the order
             let sell_mint = order.send_mint().clone();
-            let balance = wallet
-                .balances
-                .get(&sell_mint)
-                .cloned()
-                .unwrap_or_else(|| Balance::new_from_mint(sell_mint));
+            let balance = wallet.get_balance_or_default(&sell_mint);
             Ok(Some((order, balance)))
         })
         .await
