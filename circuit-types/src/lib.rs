@@ -139,6 +139,13 @@ pub type Address = BigUint;
 // | Helpers |
 // -----------
 
+/// Get the maximum representable price
+pub fn max_price() -> FixedPoint {
+    let repr_bigint = (BigUint::from(1u8) << PRICE_BITS) - 1u8;
+    let repr = biguint_to_scalar(&repr_bigint);
+    FixedPoint::from_repr(repr)
+}
+
 /// Verify that an amount is within the correct bitlength
 pub fn validate_amount_bitlength(amount: Amount) -> bool {
     let max_amount = (1u128 << AMOUNT_BITS) - 1;

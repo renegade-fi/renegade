@@ -4,6 +4,7 @@ use common::types::{
     exchange::PriceReport,
     gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
+    proof_bundles::AtomicMatchSettleBundle,
     tasks::TaskIdentifier,
     token::Token,
     wallet::{
@@ -11,6 +12,7 @@ use common::types::{
     },
 };
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::{
     http::task::ApiTaskStatus,
@@ -50,6 +52,11 @@ pub fn task_history_topic(wallet_id: &WalletIdentifier) -> String {
 /// Get the topic name for a price report
 pub fn price_report_topic(base: &Token, quote: &Token) -> String {
     format!("price-report-{}-{}", base.get_addr(), quote.get_addr())
+}
+
+/// Get a topic name for an atomic match response
+pub fn gen_atomic_match_response_topic() -> String {
+    format!("atomic-match-{}", Uuid::new_v4())
 }
 
 /// A message type for generic system bus messages, broadcast to all modules
@@ -113,6 +120,12 @@ pub enum SystemBusMessage {
         status: ApiTaskStatus,
     },
 
+    /// A message indicating an update to a task in the task history
+    TaskHistoryUpdate {
+        /// The new state of the task
+        task: ApiHistoricalTask,
+    },
+
     // -- Wallet Updates -- //
     /// A message indicating that a wallet has been updated
     WalletUpdate {
@@ -134,12 +147,19 @@ pub enum SystemBusMessage {
         order: OrderMetadata,
     },
 
-    // --- Task History Updates -- //
-    /// A message indicating an update to a task in the task history
-    TaskHistoryUpdate {
-        /// The new state of the task
-        task: ApiHistoricalTask,
+    // --- Jobs --- //
+    /// A message containing an atomic match settlement bundle for an external
+    /// caller to execute
+    ///
+    /// This message is published by a task enqueued by the external matching
+    /// engine, and consumed by the API server which will forward the bundle
+    /// to its client
+    AtomicMatchFound {
+        /// The atomic match bundle that should be forwarded to the client
+        match_bundle: AtomicMatchSettleBundle,
     },
+    /// A message indicating that no atomic match was found for a request
+    NoAtomicMatchFound,
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for

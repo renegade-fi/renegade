@@ -16,6 +16,7 @@ circuits = { path = "../../circuits" }
 circuit-types = { path = "../../circuit-types" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
+external-api = { path = "../../external-api" }
 gossip-api = { path = "../../gossip-api" }
 util = { path = "../../util" }
 
