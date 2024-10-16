@@ -27,7 +27,7 @@ use circuits::zk_circuits::{
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
 use common::types::{
-    proof_bundles::{MatchBundle, OrderValidityProofBundle},
+    proof_bundles::{AtomicMatchSettleBundle, MatchBundle, OrderValidityProofBundle},
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
@@ -38,8 +38,11 @@ use contracts_common::{
         BabyJubJubPoint as ContractBabyJubJubPoint,
         ExternalMatchResult as ContractExternalMatchResult,
         ExternalTransfer as ContractExternalTransfer, FeeTake as ContractFeeTake,
-        LinkingProof as ContractLinkingProof, MatchLinkingProofs as ContractMatchLinkingProofs,
-        MatchProofs as ContractMatchProofs, NoteCiphertext as ContractNoteCiphertext,
+        LinkingProof as ContractLinkingProof,
+        MatchAtomicLinkingProofs as ContractMatchAtomicLinkingProofs,
+        MatchAtomicProofs as ContractMatchAtomicProofs,
+        MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
+        NoteCiphertext as ContractNoteCiphertext,
         OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
         PublicEncryptionKey as ContractPublicEncryptionKey,
         PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
@@ -316,6 +319,37 @@ pub fn build_match_linking_proofs(
         valid_reblind_commitments_1: to_contract_link_proof(&party1_validity_proofs.linking_proof)?,
         valid_commitments_match_settle_0: to_contract_link_proof(&match_bundle.commitments_link0)?,
         valid_commitments_match_settle_1: to_contract_link_proof(&match_bundle.commitments_link1)?,
+    })
+}
+
+/// Build a [`MatchAtomicProofs`] contract type from a set of atomic match
+/// proofs
+pub fn build_atomic_match_proofs(
+    internal_party_validity_proofs: &OrderValidityProofBundle,
+    atomic_match_proof: &PlonkProof,
+) -> Result<ContractMatchAtomicProofs, ConversionError> {
+    Ok(ContractMatchAtomicProofs {
+        valid_commitments: to_contract_proof(
+            &internal_party_validity_proofs.commitment_proof.proof,
+        )?,
+        valid_reblind: to_contract_proof(&internal_party_validity_proofs.reblind_proof.proof)?,
+        valid_match_settle_atomic: to_contract_proof(atomic_match_proof)?,
+    })
+}
+
+/// Build a [`MatchAtomicLinkingProofs`] contract type from a set of atomic
+/// match linking proofs
+pub fn build_atomic_match_linking_proofs(
+    internal_party_validity_proofs: &OrderValidityProofBundle,
+    match_bundle: &AtomicMatchSettleBundle,
+) -> Result<ContractMatchAtomicLinkingProofs, ConversionError> {
+    Ok(ContractMatchAtomicLinkingProofs {
+        valid_reblind_commitments: to_contract_link_proof(
+            &internal_party_validity_proofs.linking_proof,
+        )?,
+        valid_commitments_match_settle_atomic: to_contract_link_proof(
+            &match_bundle.commitments_link,
+        )?,
     })
 }
 

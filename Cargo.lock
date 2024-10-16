@@ -3572,6 +3572,7 @@ dependencies = [
  "circuit-types 0.1.0",
  "common 0.1.0",
  "constants 0.1.0",
+ "ethers",
  "hex 0.4.3",
  "itertools 0.10.5",
  "num-bigint",

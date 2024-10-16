@@ -8,8 +8,11 @@
 //! Endpoints here allow permissioned solvers, searchers, etc to "ping the pool"
 //! for consenting liquidity on a given token pair.
 
-use circuit_types::{fixed_point::FixedPoint, max_price, order::OrderSide, Amount};
-use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
+use circuit_types::{
+    fixed_point::FixedPoint, max_price, order::OrderSide, r#match::ExternalMatchResult, Amount,
+};
+use common::types::wallet::Order;
+use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +40,7 @@ pub struct ExternalMatchRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalMatchResponse {
     /// The match bundle
-    pub match_bundle: AtomicMatchSettleBundle,
+    pub match_bundle: AtomicMatchApiBundle,
 }
 
 // ------------------
@@ -82,4 +85,14 @@ impl From<ExternalOrder> for Order {
             worst_case_price,
         }
     }
+}
+
+/// An atomic match settlement bundle, sent to the client so that they may
+/// settle the match on-chain
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AtomicMatchApiBundle {
+    /// The match result
+    pub match_result: ExternalMatchResult,
+    /// The transaction which settles the match on-chain
+    pub settlement_tx: TypedTransaction,
 }
