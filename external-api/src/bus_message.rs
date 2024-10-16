@@ -4,7 +4,6 @@ use common::types::{
     exchange::PriceReport,
     gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
-    proof_bundles::AtomicMatchSettleBundle,
     tasks::TaskIdentifier,
     token::Token,
     wallet::{
@@ -15,7 +14,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
-    http::task::ApiTaskStatus,
+    http::{external_match::AtomicMatchApiBundle, task::ApiTaskStatus},
     types::{ApiHistoricalTask, ApiWallet},
 };
 
@@ -156,7 +155,7 @@ pub enum SystemBusMessage {
     /// to its client
     AtomicMatchFound {
         /// The atomic match bundle that should be forwarded to the client
-        match_bundle: AtomicMatchSettleBundle,
+        match_bundle: AtomicMatchApiBundle,
     },
     /// A message indicating that no atomic match was found for a request
     NoAtomicMatchFound,

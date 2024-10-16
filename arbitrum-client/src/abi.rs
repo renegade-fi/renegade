@@ -15,11 +15,13 @@ abigen!(
         function getRoot() external view returns (uint256)
         function getFee() external view returns (uint256)
         function getPubkey() external view returns (uint256[2])
+        function getProtocolExternalFeeCollectionAddress() external view returns (address)
         function rootInHistory(uint256 memory root) external view returns (bool)
 
         function newWallet(bytes memory proof, bytes memory valid_wallet_create_statement_bytes) external
         function updateWallet(bytes memory proof, bytes memory valid_wallet_update_statement_bytes, bytes memory wallet_commitment_signature, bytes memory transfer_aux_data) external
         function processMatchSettle(bytes memory party_0_match_payload, bytes memory party_1_match_payload, bytes memory valid_match_settle_statement, bytes memory match_proofs, bytes memory match_linking_proofs) external
+        function processAtomicMatchSettle(bytes memory internal_party_match_payload, bytes memory valid_match_settle_atomic_statement, bytes memory match_proofs, bytes memory match_linking_proofs) external
         function settleOnlineRelayerFee(bytes memory proof, bytes memory valid_relayer_fee_settlement_statement, bytes memory relayer_wallet_commitment_signature) external
         function settleOfflineFee(bytes memory proof, bytes memory valid_offline_fee_settlement_statement) external
         function redeemFee(bytes memory proof, bytes memory valid_fee_redemption_statement, bytes memory recipient_wallet_commitment_signature) external
@@ -44,11 +46,13 @@ abigen!(
         function getRoot() external view returns (uint256)
         function getFee() external view returns (uint256)
         function getPubkey() external view returns (uint256[2])
+        function getProtocolExternalFeeCollectionAddress() external view returns (address)
         function rootInHistory(uint256 memory root) external view returns (bool)
 
         function newWallet(bytes memory proof, bytes memory valid_wallet_create_statement_bytes) external
         function updateWallet(bytes memory proof, bytes memory valid_wallet_update_statement_bytes, bytes memory wallet_commitment_signature, bytes memory transfer_aux_data) external
         function processMatchSettle(bytes memory party_0_match_payload, bytes memory party_1_match_payload, bytes memory valid_match_settle_statement, bytes memory match_proofs, bytes memory match_linking_proofs) external
+        function processAtomicMatchSettle(bytes memory internal_party_match_payload, bytes memory valid_match_settle_atomic_statement, bytes memory match_proofs, bytes memory match_linking_proofs) external
         function settleOnlineRelayerFee(bytes memory proof, bytes memory valid_relayer_fee_settlement_statement, bytes memory relayer_wallet_commitment_signature) external
         function settleOfflineFee(bytes memory proof, bytes memory valid_offline_fee_settlement_statement) external
         function redeemFee(bytes memory proof, bytes memory valid_fee_redemption_statement, bytes memory recipient_wallet_commitment_signature) external

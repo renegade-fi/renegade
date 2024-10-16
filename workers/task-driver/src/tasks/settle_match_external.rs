@@ -8,6 +8,7 @@ use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
+use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
@@ -23,6 +24,7 @@ use common::types::proof_bundles::{
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use external_api::bus_message::SystemBusMessage;
+use external_api::http::external_match::AtomicMatchApiBundle;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
@@ -155,6 +157,12 @@ impl Error for SettleMatchExternalTaskError {}
 impl From<StateError> for SettleMatchExternalTaskError {
     fn from(value: StateError) -> Self {
         Self::state(value.to_string())
+    }
+}
+
+impl From<ArbitrumClientError> for SettleMatchExternalTaskError {
+    fn from(value: ArbitrumClientError) -> Self {
+        Self::arbitrum(value.to_string())
     }
 }
 
@@ -317,8 +325,15 @@ impl SettleMatchExternalTask {
 
     /// Forward the atomic match settle bundle to the system bus
     async fn forward_atomic_match_bundle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
-        // TODO: Build out a more useful type from the bundle
-        let match_bundle = self.atomic_match_bundle.clone().unwrap();
+        // Build the atomic settlement bundle
+        let match_bundle = self.atomic_match_bundle.as_ref().unwrap();
+        let validity_proofs = &self.internal_order_validity_bundle;
+        let settlement_tx =
+            self.arbitrum_client.gen_atomic_match_settle_calldata(validity_proofs, match_bundle)?;
+
+        // Respond to the client via the system bus
+        let match_bundle =
+            AtomicMatchApiBundle { match_result: self.match_res.clone().into(), settlement_tx };
         let message = SystemBusMessage::AtomicMatchFound { match_bundle };
         self.bus.publish(self.atomic_match_bundle_topic.clone(), message);
         Ok(())

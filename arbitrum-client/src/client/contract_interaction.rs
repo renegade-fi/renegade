@@ -6,7 +6,8 @@ use circuit_types::{
 };
 use common::types::{
     proof_bundles::{
-        GenericFeeRedemptionBundle, GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
+        AtomicMatchSettleBundle, GenericFeeRedemptionBundle, GenericMatchSettleAtomicBundle,
+        GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
         GenericRelayerFeeSettlementBundle, GenericValidWalletCreateBundle,
         GenericValidWalletUpdateBundle, MatchBundle, OrderValidityProofBundle,
         SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
@@ -20,7 +21,7 @@ use ethers::{
     abi::Detokenize,
     contract::ContractCall,
     providers::Middleware,
-    types::{BlockNumber, TransactionReceipt},
+    types::{transaction::eip2718::TypedTransaction, BlockNumber, TransactionReceipt},
 };
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{info, instrument};
@@ -31,9 +32,10 @@ use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 
 use crate::{
     conversion::{
-        build_match_linking_proofs, build_match_proofs, to_contract_proof,
-        to_contract_transfer_aux_data, to_contract_valid_commitments_statement,
-        to_contract_valid_fee_redemption_statement, to_contract_valid_match_settle_statement,
+        build_atomic_match_linking_proofs, build_atomic_match_proofs, build_match_linking_proofs,
+        build_match_proofs, to_contract_proof, to_contract_transfer_aux_data,
+        to_contract_valid_commitments_statement, to_contract_valid_fee_redemption_statement,
+        to_contract_valid_match_settle_atomic_statement, to_contract_valid_match_settle_statement,
         to_contract_valid_offline_fee_settlement_statement, to_contract_valid_reblind_statement,
         to_contract_valid_relayer_fee_settlement_statement,
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
@@ -302,6 +304,71 @@ impl ArbitrumClient {
         info!("`process_match_settle` tx hash: {}", tx_hash);
 
         Ok(())
+    }
+
+    /// Return the tx parameters for a `process_atomic_match_settle` call
+    ///
+    /// We do not submit the transaction here, as atomic matches are settled by
+    /// the external party
+    pub fn gen_atomic_match_settle_calldata(
+        &self,
+        internal_party_validity_proofs: &OrderValidityProofBundle,
+        match_atomic_bundle: &AtomicMatchSettleBundle,
+    ) -> Result<TypedTransaction, ArbitrumClientError> {
+        // Destructure proof bundles
+        let GenericMatchSettleAtomicBundle {
+            statement: valid_match_settle_atomic_statement,
+            proof: valid_match_settle_atomic_proof,
+        } = match_atomic_bundle.copy_atomic_match_proof();
+
+        let internal_party_valid_commitments_statement =
+            internal_party_validity_proofs.commitment_proof.statement;
+        let internal_party_valid_reblind_statement =
+            internal_party_validity_proofs.reblind_proof.statement.clone();
+
+        let internal_party_match_payload = MatchPayload {
+            valid_commitments_statement: to_contract_valid_commitments_statement(
+                internal_party_valid_commitments_statement,
+            ),
+            valid_reblind_statement: to_contract_valid_reblind_statement(
+                &internal_party_valid_reblind_statement,
+            ),
+        };
+
+        let match_proofs = build_atomic_match_proofs(
+            internal_party_validity_proofs,
+            &valid_match_settle_atomic_proof,
+        )
+        .map_err(ArbitrumClientError::Conversion)?;
+
+        let match_link_proofs =
+            build_atomic_match_linking_proofs(internal_party_validity_proofs, match_atomic_bundle)
+                .map_err(ArbitrumClientError::Conversion)?;
+
+        // Serialize calldata
+        let internal_party_match_payload_calldata =
+            serialize_calldata(&internal_party_match_payload)?;
+
+        let contract_valid_match_settle_atomic_statement =
+            to_contract_valid_match_settle_atomic_statement(&valid_match_settle_atomic_statement)?;
+        let valid_match_settle_atomic_statement_calldata =
+            serialize_calldata(&contract_valid_match_settle_atomic_statement)?;
+
+        let match_proofs_calldata = serialize_calldata(&match_proofs)?;
+        let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
+
+        // Generate the calldata for `process_atomic_match_settle`
+        let tx = self
+            .get_darkpool_client()
+            .process_atomic_match_settle(
+                internal_party_match_payload_calldata,
+                valid_match_settle_atomic_statement_calldata,
+                match_proofs_calldata,
+                match_link_proofs_calldata,
+            )
+            .tx;
+
+        Ok(tx)
     }
 
     /// Call the `settle_online_relayer_fee` contract method with the given
