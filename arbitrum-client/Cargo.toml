@@ -50,6 +50,7 @@ postcard = { version = "1", features = ["alloc"] }
 # === Misc === #
 itertools = "0.12"
 lazy_static = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true, optional = true }
 
