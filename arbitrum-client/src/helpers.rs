@@ -10,6 +10,7 @@ use circuit_types::{
 use constants::Scalar;
 use contracts_common::types::{
     ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+    ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
     ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
     ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
@@ -18,11 +19,12 @@ use contracts_common::types::{
 };
 use ethers::types::Bytes;
 use serde::{Deserialize, Serialize};
+use util::err_str;
 
 use crate::{
     abi::{
-        newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
-        settleOnlineRelayerFeeCall, updateWalletCall,
+        newWalletCall, processAtomicMatchSettleCall, processMatchSettleCall, redeemFeeCall,
+        settleOfflineFeeCall, settleOnlineRelayerFeeCall, updateWalletCall,
     },
     errors::ArbitrumClientError,
 };
@@ -103,6 +105,20 @@ pub fn parse_shares_from_process_match_settle(
     };
 
     let mut shares = selected_shares.into_iter().map(Scalar::new);
+    Ok(SizedWalletShare::from_scalars(&mut shares))
+}
+
+/// Parses wallet shares from the calldata of a `processAtomicMatchSettle` call
+pub fn parse_shares_from_process_atomic_match_settle(
+    calldata: &[u8],
+) -> Result<SizedWalletShare, ArbitrumClientError> {
+    let call = processAtomicMatchSettleCall::abi_decode(calldata, true /* validate */)
+        .map_err(err_str!(ArbitrumClientError::Serde))?;
+    let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
+        &call.valid_match_settle_atomic_statement,
+    )?;
+
+    let mut shares = statement.internal_party_modified_shares.into_iter().map(Scalar::new);
     Ok(SizedWalletShare::from_scalars(&mut shares))
 }
 
