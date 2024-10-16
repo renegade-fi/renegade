@@ -10,14 +10,14 @@ use common::types::{
     exchange::PriceReporterState,
     tasks::UpdateWalletTaskDescriptor,
     token::Token,
-    wallet::{order_metadata::OrderMetadata, Order},
+    wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
     Price,
 };
 use external_api::{
     http::{
         admin::{
-            AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
-            CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrder, OpenOrdersResponse,
+            AdminGetOrderMatchingPoolResponse, AdminOrderMetadata, AdminOrderMetadataResponse,
+            CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
@@ -136,14 +136,12 @@ impl TypedHandler for AdminTriggerSnapshotHandler {
 pub struct AdminOpenOrdersHandler {
     /// A handle to the relayer state
     state: State,
-    /// A handle to the price reporter's job queue
-    price_reporter_job_queue: PriceReporterQueue,
 }
 
 impl AdminOpenOrdersHandler {
     /// Constructor
-    pub fn new(state: State, price_reporter_job_queue: PriceReporterQueue) -> Self {
-        Self { state, price_reporter_job_queue }
+    pub fn new(state: State) -> Self {
+        Self { state }
     }
 }
 
@@ -171,34 +169,7 @@ impl TypedHandler for AdminOpenOrdersHandler {
                 self.state.get_locally_matchable_orders().await?
             };
 
-        let include_fillable = parse_include_fillable_from_query_params(&query_params)?;
-        let mut orders = Vec::new();
-        for id in order_ids.into_iter() {
-            let order = self.state.get_order_metadata(&id).await?;
-            if let Some(meta) = order {
-                let wallet_id = self
-                    .state
-                    .get_wallet_for_order(&id)
-                    .await?
-                    .ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
-
-                let (fillable, price) = if include_fillable {
-                    get_fillable_amount_and_price(
-                        &meta,
-                        &self.state,
-                        &self.price_reporter_job_queue,
-                    )
-                    .await
-                    .map(|(fillable, price)| (Some(fillable), Some(price)))?
-                } else {
-                    (None, None)
-                };
-
-                orders.push(OpenOrder { order: meta, wallet_id, fillable, price })
-            }
-        }
-
-        Ok(OpenOrdersResponse { orders })
+        Ok(OpenOrdersResponse { orders: order_ids })
     }
 }
 
@@ -206,12 +177,14 @@ impl TypedHandler for AdminOpenOrdersHandler {
 pub struct AdminOrderMetadataHandler {
     /// A handle to the relayer state
     state: State,
+    /// A handle to the price reporter's job queue
+    price_reporter_job_queue: PriceReporterQueue,
 }
 
 impl AdminOrderMetadataHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(state: State, price_reporter_job_queue: PriceReporterQueue) -> Self {
+        Self { state, price_reporter_job_queue }
     }
 }
 
@@ -225,14 +198,41 @@ impl TypedHandler for AdminOrderMetadataHandler {
         _headers: HeaderMap,
         _req: Self::Request,
         params: UrlParams,
-        _query_params: QueryParams,
+        query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
-        let order = self
+        let order_metadata = self
             .state
             .get_order_metadata(&order_id)
             .await?
             .ok_or(not_found(ERR_ORDER_NOT_FOUND))?;
+
+        let wallet_id = self
+            .state
+            .get_wallet_for_order(&order_id)
+            .await?
+            .ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+
+        let mut order = AdminOrderMetadata {
+            order: order_metadata.clone(),
+            wallet_id,
+            fillable: None,
+            price: None,
+        };
+
+        let include_fillable = parse_include_fillable_from_query_params(&query_params)?;
+        if include_fillable {
+            let (fillable, price) = get_fillable_amount_and_price(
+                &order_metadata,
+                &wallet_id,
+                &self.state,
+                &self.price_reporter_job_queue,
+            )
+            .await?;
+
+            order.fillable = Some(fillable);
+            order.price = Some(price);
+        }
 
         Ok(AdminOrderMetadataResponse { order })
     }
@@ -488,12 +488,11 @@ fn parse_include_fillable_from_query_params(params: &QueryParams) -> Result<bool
 /// & potentially the price of the base asset
 async fn get_fillable_amount_and_price(
     meta: &OrderMetadata,
+    wallet_id: &WalletIdentifier,
     state: &State,
     price_reporter_job_queue: &PriceReporterQueue,
 ) -> Result<(Amount, Price), ApiServerError> {
-    let wallet_id =
-        state.get_wallet_for_order(&meta.id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
-    let wallet = state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+    let wallet = state.get_wallet(wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
 
     // Get an up-to-date order & balance.
     // The order stored on the `OrderMetadata` does not have the order amount
