@@ -4,23 +4,43 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::task_state::StateWrapper;
+use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
+use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
-use common::types::proof_bundles::OrderValidityProofBundle;
+use circuit_types::Address;
+use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
+use circuits::zk_circuits::valid_match_settle_atomic::{
+    SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
+};
+use common::types::proof_bundles::{
+    AtomicMatchSettleBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
+    ValidMatchSettleAtomicBundle,
+};
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
-use common::types::wallet::WalletIdentifier;
-use common::types::TimestampedPrice;
+use common::types::wallet::{OrderIdentifier, WalletIdentifier};
+use external_api::bus_message::SystemBusMessage;
 use job_types::network_manager::NetworkManagerQueue;
-use job_types::proof_manager::ProofManagerQueue;
+use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
+use state::error::StateError;
 use state::State;
+use system_bus::SystemBus;
 use tracing::instrument;
+use util::arbitrum::get_protocol_fee;
+use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
+
+use super::ERR_NO_VALIDITY_PROOF;
 
 // -------------
 // | Constants |
 // -------------
+
+/// The error message emitted when an order is not found in the relayer state
+pub const ERR_ORDER_NOT_FOUND: &str = "order not found";
 
 /// The name of the task
 pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
@@ -36,6 +56,8 @@ pub enum SettleMatchExternalTaskState {
     Pending,
     /// The task is performing a dummy step
     ProvingAtomicMatchSettle,
+    /// The task is forwarding the settlement bundle to the client
+    ForwardingAtomicMatchBundle,
     /// Await the result of the atomic match settlement to be submitted on-chain
     AwaitingSettlement,
     /// Refresh the wallet after the match settlement is witnessed on-chain
@@ -65,6 +87,7 @@ impl Display for SettleMatchExternalTaskState {
         match self {
             Self::Pending => write!(f, "Pending"),
             Self::ProvingAtomicMatchSettle => write!(f, "Proving Atomic Match Settle"),
+            Self::ForwardingAtomicMatchBundle => write!(f, "Forwarding Atomic Match Bundle"),
             Self::AwaitingSettlement => write!(f, "Awaiting Settlement"),
             Self::RefreshingWallet => write!(f, "Refreshing Wallet"),
             Self::Completed => write!(f, "Completed"),
@@ -81,6 +104,39 @@ impl Display for SettleMatchExternalTaskState {
 pub enum SettleMatchExternalTaskError {
     /// A dummy error
     Arbitrum(String),
+    /// An error enqueuing a job to the proof manager
+    EnqueuingJob(String),
+    /// An error creating a proof-link between the atomic match settle proof and
+    /// the internal party's proof of `VALID COMMITMENTS`
+    ProofLinking(String),
+    /// An error interacting with the relayer state
+    State(String),
+}
+
+impl SettleMatchExternalTaskError {
+    /// Construct an `Arbitrum` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn arbitrum<T: ToString>(msg: T) -> Self {
+        Self::Arbitrum(msg.to_string())
+    }
+
+    /// Construct an `EnqueuingJob` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn enqueuing_job<T: ToString>(msg: T) -> Self {
+        Self::EnqueuingJob(msg.to_string())
+    }
+
+    /// Construct a `ProofLinking` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn proof_linking<T: ToString>(msg: T) -> Self {
+        Self::ProofLinking(msg.to_string())
+    }
+
+    /// Construct a `State` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(msg: T) -> Self {
+        Self::State(msg.to_string())
+    }
 }
 
 impl TaskError for SettleMatchExternalTaskError {
@@ -96,6 +152,12 @@ impl Display for SettleMatchExternalTaskError {
 }
 impl Error for SettleMatchExternalTaskError {}
 
+impl From<StateError> for SettleMatchExternalTaskError {
+    fn from(value: StateError) -> Self {
+        Self::state(value.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
@@ -105,17 +167,25 @@ pub struct SettleMatchExternalTask {
     /// The ID of the wallet that the local node matched an order from
     internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
-    execution_price: TimestampedPrice,
+    execution_price: FixedPoint,
     /// The match result from the external matching engine
     match_res: MatchResult,
-    /// The validity proofs submitted by the local party
+    /// The validity proofs for the internal order
     internal_order_validity_bundle: OrderValidityProofBundle,
+    /// The validity witness for an internal order
+    internal_order_validity_witness: OrderValidityWitnessBundle,
+    /// The atomic match settle bundle
+    atomic_match_bundle: Option<AtomicMatchSettleBundle>,
+    /// The system bus topic on which to send the atomic match settle bundle
+    atomic_match_bundle_topic: String,
     /// The arbitrum client to use for submitting transactions
     arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     state: State,
+    /// A handle on the system bus
+    bus: SystemBus<SystemBusMessage>,
     /// The work queue to add proof management jobs to
     proof_queue: ProofManagerQueue,
     /// The state of the task
@@ -130,21 +200,28 @@ impl Task for SettleMatchExternalTask {
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let SettleExternalMatchTaskDescriptor {
+            internal_order_id,
             internal_wallet_id,
             execution_price,
             match_res,
-            internal_order_validity_bundle,
+            atomic_match_bundle_topic,
         } = descriptor;
+        let (internal_order_validity_bundle, internal_order_validity_witness) =
+            Self::fetch_internal_order_validity_bundle(internal_order_id, &ctx.state).await?;
 
         Ok(Self {
             internal_wallet_id,
             execution_price,
             match_res,
             internal_order_validity_bundle,
+            internal_order_validity_witness,
+            atomic_match_bundle: None,
+            atomic_match_bundle_topic,
             arbitrum_client: ctx.arbitrum_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
+            bus: ctx.bus,
             task_state: SettleMatchExternalTaskState::Pending,
         })
     }
@@ -164,6 +241,11 @@ impl Task for SettleMatchExternalTask {
 
             SettleMatchExternalTaskState::ProvingAtomicMatchSettle => {
                 self.prove_atomic_match_settle().await?;
+                self.task_state = SettleMatchExternalTaskState::ForwardingAtomicMatchBundle
+            },
+
+            SettleMatchExternalTaskState::ForwardingAtomicMatchBundle => {
+                self.forward_atomic_match_bundle().await?;
                 self.task_state = SettleMatchExternalTaskState::AwaitingSettlement
             },
 
@@ -214,7 +296,32 @@ impl SettleMatchExternalTask {
 
     /// Prove the atomic match settlement
     async fn prove_atomic_match_settle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
-        todo!()
+        let (statement, witness) = self.get_witness_statement()?;
+
+        // Enqueue a job with the proof generation module
+        let job = ProofJob::ValidMatchSettleAtomic { witness, statement };
+        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
+            .map_err(SettleMatchExternalTaskError::EnqueuingJob)?;
+
+        // Await the proof from the proof manager
+        let proof = proof_recv
+            .await
+            .map_err(|_| SettleMatchExternalTaskError::enqueuing_job(ERR_AWAITING_PROOF))?;
+
+        // Create proof-links between the atomic match settle proof and the internal
+        // party's proof of `VALID COMMITMENTS`
+        let atomic_match_bundle = self.create_link_proofs(proof)?;
+        self.atomic_match_bundle = Some(atomic_match_bundle);
+        Ok(())
+    }
+
+    /// Forward the atomic match settle bundle to the system bus
+    async fn forward_atomic_match_bundle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+        // TODO: Build out a more useful type from the bundle
+        let match_bundle = self.atomic_match_bundle.clone().unwrap();
+        let message = SystemBusMessage::AtomicMatchFound { match_bundle };
+        self.bus.publish(self.atomic_match_bundle_topic.clone(), message);
+        Ok(())
     }
 
     /// Await the result of the atomic match settlement to be submitted on-chain
@@ -233,5 +340,99 @@ impl SettleMatchExternalTask {
     // | Helpers |
     // -----------
 
-    // Add helper methods here as needed
+    /// Fetch the internal order validity proof bundle
+    async fn fetch_internal_order_validity_bundle(
+        order_id: OrderIdentifier,
+        state: &State,
+    ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle), SettleMatchExternalTaskError>
+    {
+        let order = state
+            .get_order(&order_id)
+            .await?
+            .ok_or_else(|| SettleMatchExternalTaskError::state(ERR_ORDER_NOT_FOUND))?;
+        let validity_proofs = order
+            .validity_proofs
+            .ok_or_else(|| SettleMatchExternalTaskError::state(ERR_NO_VALIDITY_PROOF))?;
+        let validity_proof_witnesses = order
+            .validity_proof_witnesses
+            .ok_or_else(|| SettleMatchExternalTaskError::state(ERR_NO_VALIDITY_PROOF))?;
+
+        Ok((validity_proofs, validity_proof_witnesses))
+    }
+
+    /// Get the witness and statement for the atomic match settle proof
+    fn get_witness_statement(
+        &self,
+    ) -> Result<
+        (SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness),
+        SettleMatchExternalTaskError,
+    > {
+        let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
+        let commitments_statement = &self.internal_order_validity_bundle.commitment_proof.statement;
+
+        // Copy values from the witnesses and statements of the order validity proofs
+        let internal_party_order = commitments_witness.order.clone();
+        let internal_party_balance = commitments_witness.balance_send.clone();
+        let internal_party_receive_balance = commitments_witness.balance_receive.clone();
+        let internal_party_public_shares = commitments_witness.augmented_public_shares.clone();
+        let internal_party_indices = commitments_statement.indices;
+        let relayer_fee = commitments_witness.relayer_fee;
+
+        // Compute the update to the internal party's state
+        let internal_party_fees =
+            compute_fee_obligation(relayer_fee, internal_party_order.side, &self.match_res);
+        let mut internal_party_modified_shares = internal_party_public_shares.clone();
+        apply_match_to_shares(
+            &mut internal_party_modified_shares,
+            &internal_party_indices,
+            internal_party_fees,
+            &self.match_res,
+            internal_party_order.side,
+        );
+
+        // Compute the fees due by the external party in the match
+        let external_party_fees = compute_fee_obligation(
+            relayer_fee,
+            internal_party_order.side.opposite(),
+            &self.match_res,
+        );
+
+        let statement = SizedValidMatchSettleAtomicStatement {
+            match_result: self.match_res.clone().into(),
+            external_party_fees,
+            internal_party_modified_shares,
+            internal_party_indices,
+            protocol_fee: get_protocol_fee(),
+            // TODO: Add this value as a configurable parameter
+            relayer_fee_address: Address::default(),
+        };
+        let witness = SizedValidMatchSettleAtomicWitness {
+            internal_party_order,
+            internal_party_balance,
+            internal_party_receive_balance,
+            relayer_fee,
+            internal_party_fees,
+            price: self.execution_price,
+            internal_party_public_shares,
+        };
+
+        Ok((statement, witness))
+    }
+
+    /// Create link proofs between the proof of `VALID MATCH SETTLE ATOMIC` and
+    /// the internal party's proof of `VALID COMMITMENTS`
+    fn create_link_proofs(
+        &self,
+        atomic_match_proof: ProofBundle,
+    ) -> Result<AtomicMatchSettleBundle, SettleMatchExternalTaskError> {
+        let atomic_match_hint = &atomic_match_proof.link_hint;
+        let atomic_match_proof: ValidMatchSettleAtomicBundle = atomic_match_proof.proof.into();
+
+        let commitments_hint = &self.internal_order_validity_witness.commitment_linking_hint;
+        let link_proof =
+            link_sized_commitments_match_settle_atomic(commitments_hint, atomic_match_hint)
+                .map_err(SettleMatchExternalTaskError::proof_linking)?;
+
+        Ok(AtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })
+    }
 }

@@ -185,7 +185,7 @@ impl HandshakeExecutor {
     }
 
     /// Get the wallet for an order
-    async fn get_wallet_id_for_order(
+    pub(crate) async fn get_wallet_id_for_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<WalletIdentifier, HandshakeManagerError> {

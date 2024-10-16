@@ -7,13 +7,12 @@ use common::types::{
     wallet::{Order, OrderIdentifier},
 };
 use constants::SystemCurveGroup;
+use external_api::bus_message::gen_atomic_match_response_topic;
 use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
 use libp2p::request_response::ResponseChannel;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
 use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
-
-use crate::{new_response_channel, ResponseReceiver, ResponseSender};
 
 /// The name of the handshake manager queue, used to label queue length metrics
 const HANDSHAKE_MANAGER_QUEUE_NAME: &str = "handshake_manager";
@@ -48,13 +47,18 @@ pub enum HandshakeManagerJob {
         /// The order to match
         order: OrderIdentifier,
     },
+    /// Run the external matching engine on the given order
     ExternalMatchingEngine {
         /// The external order to match
         order: Order,
-        /// The response channel on which to send the resulting external match
+        /// The system bus topic on which to send the resulting external match
         ///
-        /// TODO: Define the response type
-        response_channel: ResponseSender<ExternalMatchingResponse>,
+        /// We send on the bus rather than directly through a oneshot for two
+        /// reasons:
+        /// 1. Sending via a oneshot would require storing the oneshot in state
+        ///    to use in the task driver, which is not possible
+        /// 2. Sending via the bus avoids needing to clone a oneshot to retry
+        response_topic: String,
     },
     /// Process a handshake request
     ProcessHandshakeMessage {
@@ -120,10 +124,8 @@ pub enum HandshakeManagerJob {
 
 impl HandshakeManagerJob {
     /// Create a new external matching job
-    pub fn new_external_matching_job(
-        order: Order,
-    ) -> (Self, ResponseReceiver<ExternalMatchingResponse>) {
-        let (resp, recv) = new_response_channel();
-        (Self::ExternalMatchingEngine { order, response_channel: resp }, recv)
+    pub fn new_external_matching_job(order: Order) -> (Self, String) {
+        let topic = gen_atomic_match_response_topic();
+        (Self::ExternalMatchingEngine { order, response_topic: topic.clone() }, topic)
     }
 }

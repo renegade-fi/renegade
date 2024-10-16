@@ -8,8 +8,8 @@
 //! Endpoints here allow permissioned solvers, searchers, etc to "ping the pool"
 //! for consenting liquidity on a given token pair.
 
-use circuit_types::{fixed_point::FixedPoint, order::OrderSide, Amount};
-use common::types::wallet::Order;
+use circuit_types::{fixed_point::FixedPoint, max_price, order::OrderSide, Amount};
+use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,8 @@ pub struct ExternalMatchRequest {
 /// The response type for requesting an external match
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalMatchResponse {
-    // TODO: Define this type
+    /// The match bundle
+    pub match_bundle: AtomicMatchSettleBundle,
 }
 
 // ------------------
@@ -69,11 +70,8 @@ pub struct ExternalOrder {
 
 impl From<ExternalOrder> for Order {
     fn from(order: ExternalOrder) -> Self {
-        let worst_case_price = if order.side == OrderSide::Buy {
-            FixedPoint::max_value()
-        } else {
-            FixedPoint::from_integer(0)
-        };
+        let worst_case_price =
+            if order.side == OrderSide::Buy { max_price() } else { FixedPoint::from_integer(0) };
 
         Order {
             quote_mint: order.quote_mint,
