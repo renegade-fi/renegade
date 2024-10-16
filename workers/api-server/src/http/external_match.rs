@@ -18,10 +18,11 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
+use state::State;
 use system_bus::SystemBus;
 
 use crate::{
-    error::{internal_error, no_content, ApiServerError},
+    error::{bad_request, internal_error, no_content, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -32,13 +33,15 @@ use crate::{
 /// The timeout waiting for an external match to be generated
 const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The error message returned when the external matching engine times out
-const ERR_EXTERNAL_MATCH_TIMEOUT: &str = "external match request timed out";
+/// The error message returned when atomic matches are disabled
+const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 /// The error message returned when the relayer fails to process an external
 /// match request
 const ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH: &str = "failed to process external match request";
 /// The message returned when no atomic match is found
 const NO_ATOMIC_MATCH_FOUND: &str = "no atomic match found";
+/// The error message returned when the external matching engine times out
+const ERR_EXTERNAL_MATCH_TIMEOUT: &str = "external match request timed out";
 
 // -----------
 // | Helpers |
@@ -71,12 +74,18 @@ pub struct RequestExternalMatchHandler {
     handshake_queue: HandshakeManagerQueue,
     /// A handle on the system bus
     bus: SystemBus<SystemBusMessage>,
+    /// A handle on the relayer state
+    state: State,
 }
 
 impl RequestExternalMatchHandler {
     /// Create a new handler
-    pub fn new(handshake_queue: HandshakeManagerQueue, bus: SystemBus<SystemBusMessage>) -> Self {
-        Self { handshake_queue, bus }
+    pub fn new(
+        handshake_queue: HandshakeManagerQueue,
+        bus: SystemBus<SystemBusMessage>,
+        state: State,
+    ) -> Self {
+        Self { handshake_queue, bus, state }
     }
 }
 
@@ -92,16 +101,22 @@ impl TypedHandler for RequestExternalMatchHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Check that atomic matches are enabled
+        let enabled = self.state.get_atomic_matches_enabled().await?;
+        if !enabled {
+            return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
+        }
+
+        // Forward a request to the handshake manager for an external match
         let order: Order = req.external_order.into();
         let (job, response_topic) = HandshakeManagerJob::new_external_matching_job(order);
         self.handshake_queue
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
+
         let match_bundle = await_external_match_response(response_topic, &self.bus)
             .await?
             .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
-
-        // TODO: Use a more informative return type
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
