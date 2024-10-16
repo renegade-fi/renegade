@@ -4,7 +4,7 @@ use arbitrum_client::constants::Chain;
 use circuit_types::{
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
-    Amount,
+    Address, Amount,
 };
 use clap::Parser;
 use common::types::{
@@ -58,6 +58,15 @@ pub struct Cli {
     /// Defaults to 8 basis points
     #[clap(long, value_parser, default_value = "0.0002")]
     pub match_take_rate: f64,
+    /// The address at which to collect externally paid fees
+    /// 
+    /// External fees are generated when an atomic match is settled. An atomic match is one between an 
+    /// internal party (one with state in the darkpool) and an external party (one without). 
+    /// The external party pays fees directly to this address.
+    /// 
+    /// If not set, atomic matches are not supported
+    #[clap(long, value_parser, env = "EXTERNAL_FEE_ADDR")]
+    pub external_fee_addr: Option<String>,
     /// The path to the file containing relayer fee whitelist info
     #[clap(long, value_parser)]
     pub relayer_fee_whitelist: Option<String>,
@@ -263,6 +272,8 @@ pub struct RelayerConfig {
     /// The take rate of this relayer on a managed match, i.e. the amount of the
     /// received asset that the relayer takes as a fee
     pub match_take_rate: FixedPoint,
+    /// The address at which to collect externally paid fees
+    pub external_fee_addr: Option<Address>,
     /// When set, the relayer will automatically redeem new fees into its wallet
     pub auto_redeem_fees: bool,
     /// The price reporter from which to stream prices.
@@ -438,6 +449,7 @@ impl Clone for RelayerConfig {
         Self {
             min_fill_size: self.min_fill_size,
             match_take_rate: self.match_take_rate,
+            external_fee_addr: self.external_fee_addr.clone(),
             auto_redeem_fees: self.auto_redeem_fees,
             relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
