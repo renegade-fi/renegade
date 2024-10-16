@@ -17,7 +17,8 @@ use num_bigint::BigUint;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{error, instrument};
 
-use crate::abi::MerkleInsertionFilter;
+use crate::abi::{processAtomicMatchSettleCall, MerkleInsertionFilter};
+use crate::helpers::parse_shares_from_process_atomic_match_settle;
 use crate::{
     abi::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
@@ -200,6 +201,9 @@ impl ArbitrumClient {
             <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(&calldata),
             <processMatchSettleCall as SolCall>::SELECTOR => {
                 parse_shares_from_process_match_settle(&calldata, public_blinder_share)
+            },
+            <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_atomic_match_settle(&calldata)
             },
             <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
                 parse_shares_from_settle_online_relayer_fee(&calldata, public_blinder_share)
