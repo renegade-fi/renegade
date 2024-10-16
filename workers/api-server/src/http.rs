@@ -466,14 +466,14 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_OPEN_ORDERS_ROUTE.to_string(),
-            AdminOpenOrdersHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
+            AdminOpenOrdersHandler::new(state.clone()),
         );
 
         // The "/admin/orders/:id/metadata" route
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_ORDER_METADATA_ROUTE.to_string(),
-            AdminOrderMetadataHandler::new(state.clone()),
+            AdminOrderMetadataHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
         );
 
         // The "/admin/matching_pools/:matching_pool" route
