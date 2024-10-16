@@ -1,6 +1,6 @@
 //! Stores state information relating to the node's configuration
 
-use circuit_types::fixed_point::FixedPoint;
+use circuit_types::{fixed_point::FixedPoint, Address};
 use common::types::{
     gossip::{ClusterId, PeerInfo, WrappedPeerId},
     wallet::{derivation::derive_wallet_id, Wallet, WalletIdentifier},
@@ -54,6 +54,17 @@ impl State {
     /// Get the local relayer's match take rate
     pub async fn get_relayer_take_rate(&self) -> Result<FixedPoint, StateError> {
         self.with_read_tx(|tx| tx.get_relayer_take_rate().map_err(StateError::Db)).await
+    }
+
+    /// Whether atomic matches are supported
+    pub async fn get_atomic_matches_enabled(&self) -> Result<bool, StateError> {
+        let maybe_addr = self.get_external_fee_addr().await?;
+        Ok(maybe_addr.is_some())
+    }
+
+    /// Get the local relayer's external fee address
+    pub async fn get_external_fee_addr(&self) -> Result<Option<Address>, StateError> {
+        self.with_read_tx(|tx| tx.get_external_fee_addr().map_err(StateError::Db)).await
     }
 
     /// Get the relayer fee for a given wallet
@@ -120,6 +131,7 @@ impl State {
         let p2p_key = config.p2p_key.clone();
         let fee_key = config.fee_key;
         let match_take_rate = config.match_take_rate;
+        let external_fee_addr = config.external_fee_addr.clone();
         let relayer_fee_whitelist = config.relayer_fee_whitelist.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
 
@@ -134,6 +146,9 @@ impl State {
             tx.set_node_keypair(&p2p_key)?;
             tx.set_fee_key(&fee_key)?;
             tx.set_relayer_take_rate(&match_take_rate)?;
+            if let Some(addr) = external_fee_addr {
+                tx.set_external_fee_addr(&addr)?;
+            }
             tx.set_auto_redeem_fees(auto_redeem_fees)?;
             if need_relayer_wallet {
                 tx.set_local_node_wallet(relayer_wallet_id)?;

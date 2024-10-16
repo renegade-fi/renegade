@@ -12,7 +12,6 @@ use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
-use circuit_types::Address;
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
 use circuits::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
@@ -43,6 +42,8 @@ use super::ERR_NO_VALIDITY_PROOF;
 
 /// The error message emitted when an order is not found in the relayer state
 pub const ERR_ORDER_NOT_FOUND: &str = "order not found";
+/// The error message emitted to indicate that atomic matches are disabled
+pub const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 
 /// The name of the task
 pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
@@ -207,6 +208,12 @@ impl Task for SettleMatchExternalTask {
     type Descriptor = SettleExternalMatchTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
+        // Check that atomic matches are enabled
+        let enabled = ctx.state.get_atomic_matches_enabled().await?;
+        if !enabled {
+            return Err(SettleMatchExternalTaskError::state(ERR_ATOMIC_MATCHES_DISABLED));
+        }
+
         let SettleExternalMatchTaskDescriptor {
             internal_order_id,
             internal_wallet_id,
@@ -304,7 +311,7 @@ impl SettleMatchExternalTask {
 
     /// Prove the atomic match settlement
     async fn prove_atomic_match_settle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
-        let (statement, witness) = self.get_witness_statement()?;
+        let (statement, witness) = self.get_witness_statement().await?;
 
         // Enqueue a job with the proof generation module
         let job = ProofJob::ValidMatchSettleAtomic { witness, statement };
@@ -376,7 +383,7 @@ impl SettleMatchExternalTask {
     }
 
     /// Get the witness and statement for the atomic match settle proof
-    fn get_witness_statement(
+    async fn get_witness_statement(
         &self,
     ) -> Result<
         (SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness),
@@ -406,6 +413,7 @@ impl SettleMatchExternalTask {
         );
 
         // Compute the fees due by the external party in the match
+        let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
         let external_party_fees = compute_fee_obligation(
             relayer_fee,
             internal_party_order.side.opposite(),
@@ -418,8 +426,7 @@ impl SettleMatchExternalTask {
             internal_party_modified_shares,
             internal_party_indices,
             protocol_fee: get_protocol_fee(),
-            // TODO: Add this value as a configurable parameter
-            relayer_fee_address: Address::default(),
+            relayer_fee_address,
         };
         let witness = SizedValidMatchSettleAtomicWitness {
             internal_party_order,

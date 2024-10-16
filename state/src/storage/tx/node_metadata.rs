@@ -1,6 +1,6 @@
 //! Storage access methods for the local node's metadata
 
-use circuit_types::fixed_point::FixedPoint;
+use circuit_types::{fixed_point::FixedPoint, Address};
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     wallet::WalletIdentifier,
@@ -34,6 +34,9 @@ const LOCAL_WALLET_ID_KEY: &str = "local-wallet-id";
 const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee-key";
 /// The key for the local relayer's match take rate in the node metadata table
 const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
+/// The key for the local relayer's external fee address in the node metadata
+/// table
+const EXTERNAL_FEE_ADDR_KEY: &str = "external-fee-addr";
 /// The key for the local relayer's auto-redeem fees flag in the node metadata
 const AUTO_REDEEM_FEES_KEY: &str = "auto-redeem-fees";
 
@@ -106,6 +109,11 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
             .ok_or_else(|| err_not_found(RELAYER_TAKE_RATE_KEY))
     }
 
+    /// Get the local relayer's external fee address
+    pub fn get_external_fee_addr(&self) -> Result<Option<Address>, StorageError> {
+        self.inner().read(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string())
+    }
+
     /// Get the local relayer's auto-redeem fees flag
     pub fn get_auto_redeem_fees(&self) -> Result<bool, StorageError> {
         self.inner()
@@ -153,6 +161,11 @@ impl<'db> StateTxn<'db, RW> {
     /// Set the local relayer's match take rate
     pub fn set_relayer_take_rate(&self, take_rate: &FixedPoint) -> Result<(), StorageError> {
         self.inner().write(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string(), take_rate)
+    }
+
+    /// Set the local relayer's external fee address
+    pub fn set_external_fee_addr(&self, addr: &Address) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &EXTERNAL_FEE_ADDR_KEY.to_string(), addr)
     }
 
     /// Set the local relayer's auto-redeem fees flag

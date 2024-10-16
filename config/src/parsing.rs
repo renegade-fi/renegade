@@ -19,7 +19,7 @@ use toml::{value::Map, Value};
 use url::Url;
 use util::{
     arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
-    hex::jubjub_from_hex_string,
+    hex::{biguint_from_hex_string, jubjub_from_hex_string},
 };
 
 /// The CLI argument name for the config file
@@ -65,13 +65,16 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let (cluster_symmetric_key, cluster_keypair) = parse_cluster_keys(&cli_args)?;
     let admin_api_key = cli_args.admin_api_key.map(parse_symmetric_key).transpose()?;
 
-    // Parse the local relayer's arbitrum wallet from the cli
+    // Parse the local relayer's keys and fee configuration from the CLI
     let arbitrum_private_keys = cli_args
         .arbitrum_private_keys
         .iter()
         .map(|k| LocalWallet::from_str(k).map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
     let fee_key = parse_fee_key(cli_args.fee_encryption_key, cli_args.fee_decryption_key)?;
+    let external_fee_addr = cli_args
+        .external_fee_addr
+        .map(|a| biguint_from_hex_string(&a).expect("could not parse external fee address"));
 
     // Parse the p2p keypair or generate one
     let p2p_key = if let Some(keypair) = cli_args.p2p_key {
@@ -104,6 +107,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let mut config = RelayerConfig {
         min_fill_size: cli_args.min_fill_size,
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
+        external_fee_addr,
         auto_redeem_fees: cli_args.auto_redeem_fees,
         relayer_fee_whitelist,
         price_reporter_url,
