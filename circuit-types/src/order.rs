@@ -137,6 +137,20 @@ impl OrderSide {
             OrderSide::Sell => OrderSide::Buy,
         }
     }
+
+    /// Return the match direction for this order assuming that the order is
+    /// matched for party 0
+    ///
+    /// If party0 buys the base, the match direction is `false` and if party0
+    /// sells the base, the match direction is `true`
+    ///
+    /// See [`MatchResult`] for more information
+    pub fn match_direction(&self) -> bool {
+        match self {
+            OrderSide::Buy => false,
+            OrderSide::Sell => true,
+        }
+    }
 }
 
 impl BaseType for OrderSide {

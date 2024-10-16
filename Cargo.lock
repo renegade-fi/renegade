@@ -4956,6 +4956,7 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "crossbeam",
+ "external-api 0.1.0",
  "gossip-api",
  "lazy_static",
  "libp2p",

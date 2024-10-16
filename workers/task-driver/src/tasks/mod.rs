@@ -19,3 +19,7 @@ pub(crate) const ERR_WALLET_MISSING: &str = "wallet not found in global state";
 pub(crate) const ERR_BALANCE_MISSING: &str = "balance not found in wallet";
 /// The error message emitted when a Merkle proof is not found for a wallet
 pub(crate) const ERR_NO_MERKLE_PROOF: &str = "no merkle proof found for wallet";
+/// The error message emitted when validity proofs are not found for an order
+pub(crate) const ERR_NO_VALIDITY_PROOF: &str = "no validity proofs found for order";
+/// Error message emitted when awaiting a proof fails
+pub(crate) const ERR_AWAITING_PROOF: &str = "error awaiting proof";

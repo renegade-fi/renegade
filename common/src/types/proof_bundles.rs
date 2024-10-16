@@ -7,6 +7,9 @@ use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
     valid_fee_redemption::{SizedValidFeeRedemptionStatement, ValidFeeRedemptionStatement},
     valid_match_settle::{SizedValidMatchSettleStatement, ValidMatchSettleStatement},
+    valid_match_settle_atomic::{
+        SizedValidMatchSettleAtomicStatement, ValidMatchSettleAtomicStatement,
+    },
     valid_offline_fee_settlement::{
         SizedValidOfflineFeeSettlementStatement, ValidOfflineFeeSettlementStatement,
     },
@@ -121,6 +124,26 @@ where
 pub type SizedValidMatchSettleBundle = GenericMatchSettleBundle<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias that heap-allocates a `ValidMatchMpcBundle`
 pub type ValidMatchSettleBundle = Arc<SizedValidMatchSettleBundle>;
+
+/// A bundle of the statement and proof of `VALID MATCH SETTLE ATOMIC`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenericMatchSettleAtomicBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    /// The statement (public variables) used to prove `VALID MATCH SETTLE
+    /// ATOMIC`
+    pub statement: ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    /// The proof itself
+    pub proof: PlonkProof,
+}
+
+/// A type alias that specifies the default generics for
+/// `GenericMatchSettleAtomicBundle`
+pub type SizedValidMatchSettleAtomicBundle =
+    GenericMatchSettleAtomicBundle<MAX_BALANCES, MAX_ORDERS>;
+/// A type alias that heap-allocates a `ValidMatchSettleAtomicBundle`
+pub type ValidMatchSettleAtomicBundle = Arc<SizedValidMatchSettleAtomicBundle>;
 
 /// A bundle of the statement and proof of `VALID RELAYER FEE SETTLEMENT`
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -265,6 +288,20 @@ impl ProofBundle {
         }
     }
 
+    /// Create a new proof bundle from a `VALID MATCH SETTLE ATOMIC` proof
+    pub fn new_valid_match_settle_atomic(
+        statement: SizedValidMatchSettleAtomicStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle {
+            proof: R1CSProofBundle::ValidMatchSettleAtomic(Arc::new(
+                GenericMatchSettleAtomicBundle { statement, proof },
+            )),
+            link_hint,
+        }
+    }
+
     /// Create a new proof bundle from a `VALID RELAYER FEE SETTLEMENT` proof
     pub fn new_valid_relayer_fee_settlement(
         statement: SizedValidRelayerFeeSettlementStatement,
@@ -323,6 +360,8 @@ pub enum R1CSProofBundle {
     ValidWalletUpdate(ValidWalletUpdateBundle),
     /// A statement and proof of `VALID MATCH SETTLE`
     ValidMatchSettle(ValidMatchSettleBundle),
+    /// A statement and proof of `VALID MATCH SETTLE ATOMIC`
+    ValidMatchSettleAtomic(ValidMatchSettleAtomicBundle),
     /// A statement and proof of `VALID RELAYER FEE SETTLEMENT`
     ValidRelayerFeeSettlement(RelayerFeeSettlementBundle),
     /// A statement and proof of `VALID OFFLINE FEE SETTLEMENT`
@@ -378,6 +417,16 @@ impl From<R1CSProofBundle> for ValidMatchSettleBundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMatchMpc: {:?}", bundle)
+        }
+    }
+}
+
+impl From<R1CSProofBundle> for ValidMatchSettleAtomicBundle {
+    fn from(bundle: R1CSProofBundle) -> Self {
+        if let R1CSProofBundle::ValidMatchSettleAtomic(b) = bundle {
+            b
+        } else {
+            panic!("Proof bundle is not of type ValidMatchSettleAtomic: {:?}", bundle);
         }
     }
 }
@@ -587,6 +636,47 @@ impl<'de> Deserialize<'de> for MatchBundle {
             )?;
 
         Ok(MatchBundle { match_proof: Arc::new(match_proof), commitments_link0, commitments_link1 })
+    }
+}
+
+/// A bundle of proofs for the atomic match settlement proof
+#[derive(Clone, Debug)]
+pub struct AtomicMatchSettleBundle {
+    /// The proof of `VALID MATCH SETTLE ATOMIC` for the matched orders
+    pub atomic_match_proof: ValidMatchSettleAtomicBundle,
+    /// The linking proof of the atomic match proof to the commitment proof of
+    /// the internal party
+    pub commitments_link: PlonkLinkProof,
+}
+
+impl AtomicMatchSettleBundle {
+    /// Clone the atomic match proof out from behind the `Arc`
+    pub fn copy_atomic_match_proof(&self) -> SizedValidMatchSettleAtomicBundle {
+        SizedValidMatchSettleAtomicBundle::clone(&self.atomic_match_proof)
+    }
+}
+
+impl Serialize for AtomicMatchSettleBundle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (self.copy_atomic_match_proof(), self.commitments_link.clone()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AtomicMatchSettleBundle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (atomic_match_proof, commitments_link) =
+            <(SizedValidMatchSettleAtomicBundle, PlonkLinkProof)>::deserialize(deserializer)?;
+
+        Ok(AtomicMatchSettleBundle {
+            atomic_match_proof: Arc::new(atomic_match_proof),
+            commitments_link,
+        })
     }
 }
 

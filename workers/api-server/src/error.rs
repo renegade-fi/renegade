@@ -56,6 +56,12 @@ impl From<ApiServerError> for Response<Body> {
     }
 }
 
+/// Create an `ApiServerError` with a 204 no content code
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn no_content<E: ToString>(e: E) -> ApiServerError {
+    ApiServerError::HttpStatusCode(StatusCode::NO_CONTENT, e.to_string())
+}
+
 /// Create an `ApiServerError` with a 400 bad request code
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn bad_request<E: ToString>(e: E) -> ApiServerError {

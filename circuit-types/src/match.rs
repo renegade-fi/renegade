@@ -31,8 +31,8 @@ pub struct MatchResult {
     pub quote_amount: Amount,
     /// The amount of the base token exchanged by this match
     pub base_amount: Amount,
-    /// The direction of the match, `true` implies that party 1 buys the quote
-    /// and sells the base, `false` implies that party 1 buys the base and
+    /// The direction of the match, `true` implies that party 0 buys the quote
+    /// and sells the base, `false` implies that party 0 buys the base and
     /// sells the quote
     pub direction: bool,
 
@@ -134,4 +134,16 @@ pub struct ExternalMatchResult {
     /// - `false` implies that the internal party buys the base and sells the
     ///   quote
     pub direction: bool,
+}
+
+impl From<MatchResult> for ExternalMatchResult {
+    fn from(value: MatchResult) -> Self {
+        Self {
+            quote_mint: value.quote_mint,
+            base_mint: value.base_mint,
+            quote_amount: value.quote_amount,
+            base_amount: value.base_amount,
+            direction: value.direction,
+        }
+    }
 }

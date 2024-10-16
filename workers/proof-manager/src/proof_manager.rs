@@ -18,6 +18,10 @@ use circuits::{
         valid_match_settle::{
             SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
         },
+        valid_match_settle_atomic::{
+            SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+            SizedValidMatchSettleAtomicWitness,
+        },
         valid_offline_fee_settlement::{
             SizedValidOfflineFeeSettlement, SizedValidOfflineFeeSettlementStatement,
             SizedValidOfflineFeeSettlementWitness,
@@ -143,6 +147,11 @@ impl ProofManager {
                 Self::prove_valid_match_mpc(witness, statement)
             },
 
+            ProofJob::ValidMatchSettleAtomic { witness, statement } => {
+                // Prove `VALID MATCH SETTLE ATOMIC`
+                Self::prove_valid_match_settle_atomic(witness, statement)
+            },
+
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
                 // Prove `VALID RELAYER FEE SETTLEMENT`
                 Self::prove_valid_relayer_fee_settlement(witness, statement)
@@ -264,6 +273,20 @@ impl ProofManager {
                 .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
+    }
+
+    /// Create a proof of `VALID MATCH SETTLE ATOMIC`
+    #[instrument(skip_all, err)]
+    fn prove_valid_match_settle_atomic(
+        witness: SizedValidMatchSettleAtomicWitness,
+        statement: SizedValidMatchSettleAtomicStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID MATCH SETTLE ATOMIC`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidMatchSettleAtomic>(witness, statement.clone())
+                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_hint))
     }
 
     /// Create a proof of `VALID RELAYER FEE SETTLEMENT`

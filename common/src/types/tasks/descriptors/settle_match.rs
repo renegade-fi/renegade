@@ -1,6 +1,6 @@
 //! Descriptors for the match settlement tasks
 
-use circuit_types::r#match::MatchResult;
+use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
@@ -78,30 +78,34 @@ impl From<SettleMatchInternalTaskDescriptor> for TaskDescriptor {
 /// `SettleExternalMatch` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleExternalMatchTaskDescriptor {
+    /// The ID of the order that the local node matched
+    pub internal_order_id: OrderIdentifier,
     /// The ID of the wallet that the local node matched an order from
     pub internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
-    pub execution_price: TimestampedPrice,
+    pub execution_price: FixedPoint,
     /// The match result from the external matching engine
     pub match_res: MatchResult,
-    /// The validity proofs submitted by the local party
-    pub internal_order_validity_bundle: OrderValidityProofBundle,
+    /// The system bus topic on which to send the atomic match settle bundle
+    pub atomic_match_bundle_topic: String,
 }
 
 impl SettleExternalMatchTaskDescriptor {
     /// Constructor
     pub fn new(
+        internal_order_id: OrderIdentifier,
         internal_wallet_id: WalletIdentifier,
-        execution_price: TimestampedPrice,
+        execution_price: FixedPoint,
         match_res: MatchResult,
-        internal_order_validity_bundle: OrderValidityProofBundle,
-    ) -> Result<Self, String> {
-        Ok(SettleExternalMatchTaskDescriptor {
+        atomic_match_bundle_topic: String,
+    ) -> Self {
+        SettleExternalMatchTaskDescriptor {
+            internal_order_id,
             internal_wallet_id,
+            atomic_match_bundle_topic,
             execution_price,
             match_res,
-            internal_order_validity_bundle,
-        })
+        }
     }
 }
 

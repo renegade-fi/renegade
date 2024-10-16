@@ -11,25 +11,25 @@ use std::collections::HashSet;
 
 use circuit_types::{balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
 use common::types::{
+    tasks::SettleExternalMatchTaskDescriptor,
     token::Token,
     wallet::{Order, OrderIdentifier},
 };
 use constants::Scalar;
-use job_types::{handshake_manager::ExternalMatchingResponse, ResponseSender};
+use external_api::bus_message::SystemBusMessage;
+use job_types::task_driver::TaskDriverJob;
 use renegade_crypto::fields::scalar_to_u128;
 use tracing::{error, info};
+use util::err_str;
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
-
-/// The response channel type for the external matching engine
-type ExternalMatchResponseSender = ResponseSender<ExternalMatchingResponse>;
 
 impl HandshakeExecutor {
     /// Execute an external match
     pub async fn run_external_matching_engine(
         &self,
         order: Order,
-        response_channel: ExternalMatchResponseSender,
+        response_topic: String,
     ) -> Result<(), HandshakeManagerError> {
         let base = Token::from_addr_biguint(&order.base_mint);
         let quote = Token::from_addr_biguint(&order.quote_mint);
@@ -40,7 +40,7 @@ impl HandshakeExecutor {
         );
 
         // Get all orders that consent to external matching
-        let mut matchable_orders = self.get_external_match_candidates(&order).await?;
+        let mut matchable_orders = self.get_external_match_candidates().await?;
         let ts_price = self.get_execution_price(&base, &quote).await?;
         let price = FixedPoint::from_f64_round_down(ts_price.price);
 
@@ -50,17 +50,24 @@ impl HandshakeExecutor {
         // Try to find a match iteratively, we wrap this in a retry loop in case
         // settlement fails on a match
         while !matchable_orders.is_empty() {
-            let (other_order_id, match_res) =
+            let (other_order_id, mut match_res) =
                 match self.find_match(&order, &balance, price, matchable_orders.clone()).await? {
                     Some(match_res) => match_res,
                     None => {
-                        info!("No external matches found");
+                        self.handle_no_match(response_topic);
                         return Ok(());
                     },
                 };
 
-            // Try to settle the match
-            match self.try_settle_external_match(other_order_id, match_res).await {
+            // For an external match, the direction of the match should always equal the
+            // internal order's direction, make sure this is the case. The core engine logic
+            // may match the external order as the first party
+            match_res.direction = order.side.opposite().match_direction();
+            let settle_res = self
+                .try_settle_external_match(other_order_id, price, match_res, response_topic.clone())
+                .await;
+
+            match settle_res {
                 Ok(()) => {
                     // Stop matching if a match was found
                     return Ok(());
@@ -77,9 +84,7 @@ impl HandshakeExecutor {
             matchable_orders.remove(&other_order_id);
         }
 
-        // TODO: Send this when a match is found
-        response_channel.send(()).expect("failed to send response");
-        info!("no external matches found");
+        self.handle_no_match(response_topic);
         Ok(())
     }
 
@@ -89,7 +94,6 @@ impl HandshakeExecutor {
     /// which do not consent to external matching
     async fn get_external_match_candidates(
         &self,
-        order: &Order,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
         let matchable_orders = self.state.get_locally_matchable_orders().await?;
         Ok(HashSet::from_iter(matchable_orders))
@@ -99,10 +103,24 @@ impl HandshakeExecutor {
     async fn try_settle_external_match(
         &self,
         internal_order_id: OrderIdentifier,
+        price: FixedPoint,
         match_res: MatchResult,
+        response_topic: String,
     ) -> Result<(), HandshakeManagerError> {
-        // TODO: Implement this method
-        todo!()
+        let wallet_id = self.get_wallet_id_for_order(&internal_order_id).await?;
+        let task = SettleExternalMatchTaskDescriptor::new(
+            internal_order_id,
+            wallet_id,
+            price,
+            match_res,
+            response_topic,
+        );
+
+        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task.into());
+        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
+        rx.await
+            .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
+            .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
     }
 
     /// Mock a balance for an external order
@@ -122,5 +140,12 @@ impl HandshakeExecutor {
         };
 
         Balance::new_from_mint_and_amount(mint, scalar_to_u128(&amount))
+    }
+
+    /// Send a message on the response topic indicating that no match was found
+    fn handle_no_match(&self, response_topic: String) {
+        info!("no match found for external order");
+        let response = SystemBusMessage::NoAtomicMatchFound;
+        self.system_bus.publish(response_topic, response);
     }
 }

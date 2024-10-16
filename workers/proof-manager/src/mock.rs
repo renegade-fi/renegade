@@ -13,6 +13,10 @@ use circuits::zk_circuits::{
     valid_match_settle::{
         SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
     },
+    valid_match_settle_atomic::{
+        SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+        SizedValidMatchSettleAtomicWitness,
+    },
     valid_offline_fee_settlement::{
         SizedValidOfflineFeeSettlement, SizedValidOfflineFeeSettlementStatement,
         SizedValidOfflineFeeSettlementWitness,
@@ -92,6 +96,9 @@ impl MockProofManager {
             ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
                 Self::valid_match_settle(witness, statement)
             },
+            ProofJob::ValidMatchSettleAtomic { witness, statement } => {
+                Self::valid_match_settle_atomic(witness, statement)
+            },
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
                 Self::valid_relayer_fee_settlement(witness, statement)
             },
@@ -165,6 +172,18 @@ impl MockProofManager {
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
         Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
+    }
+
+    /// Create a dummy proof of `VALID MATCH SETTLE ATOMIC`
+    fn valid_match_settle_atomic(
+        witness: SizedValidMatchSettleAtomicWitness,
+        statement: SizedValidMatchSettleAtomicStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        Self::check_constraints::<SizedValidMatchSettleAtomic>(&witness, &statement)?;
+
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_hint))
     }
 
     /// Generate a dummy proof of `VALID RELAYER FEE SETTLEMENT`

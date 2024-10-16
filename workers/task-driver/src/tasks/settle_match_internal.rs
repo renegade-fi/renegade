@@ -40,6 +40,8 @@ use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
 };
 
+use super::ERR_AWAITING_PROOF;
+
 // -------------
 // | Constants |
 // -------------
@@ -47,8 +49,6 @@ use util::matching_engine::{
 /// The name of the task
 pub const SETTLE_MATCH_INTERNAL_TASK_NAME: &str = "settle-match-internal";
 
-/// Error message emitted when awaiting a proof fails
-const ERR_AWAITING_PROOF: &str = "error awaiting proof";
 /// Error message emitted when a wallet cannot be found
 const ERR_WALLET_NOT_FOUND: &str = "wallet not found in global state";
 
