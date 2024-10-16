@@ -8,11 +8,13 @@
 //! Endpoints here allow permissioned solvers, searchers, etc to "ping the pool"
 //! for consenting liquidity on a given token pair.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
-use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
+use common::types::wallet::Order;
 use external_api::{
     bus_message::SystemBusMessage,
-    http::external_match::{ExternalMatchRequest, ExternalMatchResponse},
+    http::external_match::{AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse},
 };
 use hyper::HeaderMap;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
@@ -27,6 +29,11 @@ use crate::{
 // | Error Messages |
 // ------------------
 
+/// The timeout waiting for an external match to be generated
+const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The error message returned when the external matching engine times out
+const ERR_EXTERNAL_MATCH_TIMEOUT: &str = "external match request timed out";
 /// The error message returned when the relayer fails to process an external
 /// match request
 const ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH: &str = "failed to process external match request";
@@ -38,14 +45,16 @@ const NO_ATOMIC_MATCH_FOUND: &str = "no atomic match found";
 // -----------
 
 /// Await a response from the external matching engine
-///
-/// TODO: Add a timeout
 async fn await_external_match_response(
     response_topic: String,
     bus: &SystemBus<SystemBusMessage>,
-) -> Result<Option<AtomicMatchSettleBundle>, ApiServerError> {
+) -> Result<Option<AtomicMatchApiBundle>, ApiServerError> {
     let mut rx = bus.subscribe(response_topic);
-    match rx.next_message().await {
+    let msg = tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
+        .await
+        .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))?;
+
+    match msg {
         SystemBusMessage::AtomicMatchFound { match_bundle } => Ok(Some(match_bundle)),
         SystemBusMessage::NoAtomicMatchFound => Ok(None),
         _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
