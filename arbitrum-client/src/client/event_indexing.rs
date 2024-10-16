@@ -2,22 +2,26 @@
 //! emitted by the darkpool contract
 
 use std::cmp::Reverse;
+use std::time::Duration;
 
 use alloy_sol_types::SolCall;
+use circuit_types::wallet::Nullifier;
 use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::contract::EthLogDecode;
 use ethers::{
     middleware::Middleware,
+    prelude::StreamExt,
     types::{TransactionReceipt, TxHash},
 };
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{error, instrument};
+use util::err_str;
 
-use crate::abi::{processAtomicMatchSettleCall, MerkleInsertionFilter};
+use crate::abi::{processAtomicMatchSettleCall, MerkleInsertionFilter, NullifierSpentFilter};
 use crate::helpers::parse_shares_from_process_atomic_match_settle;
 use crate::{
     abi::{
@@ -38,6 +42,10 @@ use super::ArbitrumClient;
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
+/// Error message emitted when a timeout occurs while waiting for an event
+const ERR_NULLIFIER_SPENT_TIMEOUT: &str = "nullifier spent event not found";
+/// Error message emitted when an event stream closes unexpectedly
+const ERR_EVENT_STREAM_CLOSED: &str = "event stream closed";
 
 impl ArbitrumClient {
     /// Return the hash of the transaction that last indexed secret shares for
@@ -215,6 +223,38 @@ impl ArbitrumClient {
             sel => {
                 error!("invalid selector when parsing public shares: {sel:?}");
                 Err(ArbitrumClientError::InvalidSelector)
+            },
+        }
+    }
+
+    /// Await a nullifier spent event on a given nullifier
+    #[instrument(skip_all, err, fields(nullifier = %nullifier))]
+    pub async fn await_nullifier_spent(
+        &self,
+        nullifier: Nullifier,
+        timeout: Duration,
+    ) -> Result<(), ArbitrumClientError> {
+        // Build an event filter on the nullifier
+        let nullifier_u256 = scalar_to_u256(&nullifier);
+        let address = self.get_darkpool_client().address().into();
+        let filter = self
+            .get_darkpool_client()
+            .event::<NullifierSpentFilter>()
+            .address(address)
+            .topic1(nullifier_u256)
+            .from_block(self.deploy_block);
+        let mut stream =
+            filter.stream().await.map_err(err_str!(ArbitrumClientError::EventQuerying))?;
+
+        // Await the event with a timeout
+        let next_event = tokio::time::timeout(timeout, stream.next()).await;
+        match next_event {
+            Ok(Some(_)) => Ok(()),
+            Ok(None) => {
+                Err(ArbitrumClientError::EventQuerying(ERR_EVENT_STREAM_CLOSED.to_string()))
+            },
+            Err(_) => {
+                Err(ArbitrumClientError::EventQuerying(ERR_NULLIFIER_SPENT_TIMEOUT.to_string()))
             },
         }
     }

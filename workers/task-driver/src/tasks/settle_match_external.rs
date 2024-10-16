@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::time::Duration;
 
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
@@ -20,17 +21,16 @@ use common::types::proof_bundles::{
     AtomicMatchSettleBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
     ValidMatchSettleAtomicBundle,
 };
-use common::types::tasks::SettleExternalMatchTaskDescriptor;
+use common::types::tasks::{RefreshWalletTaskDescriptor, SettleExternalMatchTaskDescriptor};
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use external_api::bus_message::SystemBusMessage;
 use external_api::http::external_match::AtomicMatchApiBundle;
-use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use system_bus::SystemBus;
-use tracing::instrument;
+use tracing::{info, instrument, warn};
 use util::arbitrum::get_protocol_fee;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 
@@ -47,6 +47,9 @@ pub const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 
 /// The name of the task
 pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
+
+/// The duration to await an atomic match settlement
+pub const ATOMIC_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 
 // --------------
 // | Task State |
@@ -189,8 +192,6 @@ pub struct SettleMatchExternalTask {
     atomic_match_bundle_topic: String,
     /// The arbitrum client to use for submitting transactions
     arbitrum_client: ArbitrumClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
     state: State,
     /// A handle on the system bus
@@ -233,7 +234,6 @@ impl Task for SettleMatchExternalTask {
             atomic_match_bundle: None,
             atomic_match_bundle_topic,
             arbitrum_client: ctx.arbitrum_client,
-            network_sender: ctx.network_queue,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             bus: ctx.bus,
@@ -260,7 +260,7 @@ impl Task for SettleMatchExternalTask {
             },
 
             SettleMatchExternalTaskState::ForwardingAtomicMatchBundle => {
-                self.forward_atomic_match_bundle().await?;
+                self.forward_atomic_match_bundle()?;
                 self.task_state = SettleMatchExternalTaskState::AwaitingSettlement
             },
 
@@ -331,7 +331,7 @@ impl SettleMatchExternalTask {
     }
 
     /// Forward the atomic match settle bundle to the system bus
-    async fn forward_atomic_match_bundle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+    fn forward_atomic_match_bundle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
         // Build the atomic settlement bundle
         let match_bundle = self.atomic_match_bundle.as_ref().unwrap();
         let validity_proofs = &self.internal_order_validity_bundle;
@@ -348,14 +348,36 @@ impl SettleMatchExternalTask {
 
     /// Await the result of the atomic match settlement to be submitted on-chain
     ///
-    /// Returns `true` if the settlement landed on-chain, `false` otherwise
+    /// Returns `true` if the settlement succeeded on-chain, `false` otherwise
     async fn await_settlement(&mut self) -> Result<bool, SettleMatchExternalTaskError> {
-        todo!()
+        let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
+        let nullifier = valid_reblind.original_shares_nullifier;
+        let res =
+            self.arbitrum_client.await_nullifier_spent(nullifier, ATOMIC_SETTLEMENT_TIMEOUT).await;
+
+        let did_settle = res.is_ok();
+        if !did_settle {
+            warn!("atomic match settlement not observed on-chain");
+        }
+        Ok(did_settle)
     }
 
     /// Refresh the wallet after the match settlement is witnessed on-chain
+    ///
+    /// Instead of replicating the logic of the refresh task we simply enqueue a
+    /// refresh task for the wallet.
+    ///
+    /// The wallet should have no other tasks enqueued by virtue of it being
+    /// considered for atomic matches, but if it does they will fail through
+    /// and be discarded
     async fn refresh_wallet(&mut self) -> Result<(), SettleMatchExternalTaskError> {
-        todo!()
+        let wallet_id = self.internal_wallet_id;
+        let task = RefreshWalletTaskDescriptor::new(wallet_id);
+        let (task_id, waiter) = self.state.append_task(task.into()).await?;
+        waiter.await?;
+
+        info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
+        Ok(())
     }
 
     // -----------
