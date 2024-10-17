@@ -11,7 +11,7 @@ use common::types::{
     TimestampedPrice,
 };
 use job_types::task_driver::TaskDriverJob;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 use util::err_str;
 
 use crate::{
@@ -38,6 +38,7 @@ impl HandshakeExecutor {
     ///     1. Determine this code path to be a bottleneck
     ///     2. Have a better state management abstraction that makes
     ///        denormalization easier
+    #[instrument(name = "run_internal_matching_engine", skip_all)]
     pub async fn run_internal_matching_engine(
         &self,
         order_id: OrderIdentifier,

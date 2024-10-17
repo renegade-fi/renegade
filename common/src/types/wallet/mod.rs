@@ -13,7 +13,7 @@ mod orders;
 mod shares;
 mod types;
 
-pub use orders::Order;
+pub use orders::{Order, OrderBuilder};
 pub use types::*;
 
 // ----------------
@@ -30,7 +30,7 @@ mod test {
 
     use crate::types::wallet::mocks::{mock_empty_wallet, mock_order};
 
-    use super::orders::Order;
+    use super::OrderBuilder;
 
     /// Tests adding a balance to an empty wallet
     #[test]
@@ -144,18 +144,14 @@ mod test {
     fn test_add_order_invalid() {
         let mut wallet = mock_empty_wallet();
         let id = Uuid::new_v4();
-        let base_mint = BigUint::from(1u8);
-        let quote_mint = BigUint::from(2u8);
-        let amount = u128::MAX;
-        let worst_case_price = FixedPoint::from_f64_round_down(0.1);
-        let o = Order::new_unchecked(
-            base_mint,
-            quote_mint,
-            OrderSide::Buy,
-            amount,
-            worst_case_price,
-            0,
-        );
+        let o = OrderBuilder::new()
+            .base_mint(BigUint::from(1u8))
+            .quote_mint(BigUint::from(2u8))
+            .side(OrderSide::Buy)
+            .amount(Amount::MAX)
+            .worst_case_price(FixedPoint::from_f64_round_down(0.1))
+            .build()
+            .unwrap();
 
         // Try to add the order
         wallet.add_order(id, o).unwrap();

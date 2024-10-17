@@ -10,7 +10,7 @@ use circuit_types::{
 use common::types::{
     tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor, WalletUpdateType},
     transfer_auth::ExternalTransferWithAuth,
-    wallet::{Order, OrderIdentifier, Wallet},
+    wallet::{Order, OrderBuilder, OrderIdentifier, Wallet},
     wallet_mocks::{mock_empty_wallet, mock_order},
 };
 use constants::Scalar;
@@ -36,14 +36,14 @@ use crate::{
 
 lazy_static! {
     /// A dummy order that is allocated in a wallet as an update
-    static ref DUMMY_ORDER: Order = Order {
-        quote_mint: 1u8.into(),
-        base_mint: 2u8.into(),
-        side: OrderSide::Buy,
-        amount: 10,
-        worst_case_price: FixedPoint::from_integer(10),
-        min_fill_size: 0,
-    };
+    static ref DUMMY_ORDER: Order = OrderBuilder::new()
+        .quote_mint(1u8.into())
+        .base_mint(2u8.into())
+        .side(OrderSide::Buy)
+        .amount(10)
+        .worst_case_price(FixedPoint::from_integer(10))
+        .build()
+        .unwrap();
 }
 
 // -----------

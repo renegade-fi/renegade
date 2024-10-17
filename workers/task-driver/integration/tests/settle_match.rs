@@ -24,7 +24,7 @@ use common::types::{
         ValidMatchSettleBundle,
     },
     tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor},
-    wallet::{Order, Wallet},
+    wallet::{Order, OrderBuilder, Wallet},
     wallet_mocks::mock_empty_wallet,
     TimestampedPrice,
 };
@@ -69,14 +69,14 @@ fn dummy_order(side: OrderSide, test_args: &IntegrationTestArgs) -> Order {
         OrderSide::Sell => SELL_ORDER_AMOUNT,
     };
 
-    Order {
-        quote_mint: biguint_from_hex_string(&test_args.erc20_addr0).unwrap(),
-        base_mint: biguint_from_hex_string(&test_args.erc20_addr1).unwrap(),
-        side,
-        amount: order_amount,
-        worst_case_price: FixedPoint::from_integer(worst_cast_price),
-        min_fill_size: 0,
-    }
+    OrderBuilder::new()
+        .quote_mint(biguint_from_hex_string(&test_args.erc20_addr0).unwrap())
+        .base_mint(biguint_from_hex_string(&test_args.erc20_addr1).unwrap())
+        .side(side)
+        .amount(order_amount)
+        .worst_case_price(FixedPoint::from_integer(worst_cast_price))
+        .build()
+        .unwrap()
 }
 
 /// Create a dummy balance

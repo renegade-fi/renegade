@@ -162,6 +162,9 @@ pub struct ApiOrder {
     /// The minimum fill size for the order
     #[serde(default)]
     pub min_fill_size: Amount,
+    /// Whether or not to allow external matches
+    #[serde(default)]
+    pub allow_external_matches: bool,
 }
 
 impl From<(OrderIdentifier, Order)> for ApiOrder {
@@ -175,6 +178,7 @@ impl From<(OrderIdentifier, Order)> for ApiOrder {
             worst_case_price: order.worst_case_price,
             amount: order.amount,
             min_fill_size: order.min_fill_size,
+            allow_external_matches: order.allow_external_matches,
         }
     }
 }
@@ -190,6 +194,7 @@ impl TryFrom<ApiOrder> for Order {
             order.amount,
             order.worst_case_price,
             order.min_fill_size,
+            order.allow_external_matches,
         )
     }
 }

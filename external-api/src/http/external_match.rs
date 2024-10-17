@@ -83,6 +83,7 @@ impl From<ExternalOrder> for Order {
             amount: order.amount,
             min_fill_size: order.min_fill_size,
             worst_case_price,
+            allow_external_matches: true,
         }
     }
 }
