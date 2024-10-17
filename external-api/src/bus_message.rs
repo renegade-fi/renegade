@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     http::{external_match::AtomicMatchApiBundle, task::ApiTaskStatus},
-    types::{ApiHistoricalTask, ApiWallet},
+    types::{AdminWalletUpdate, ApiHistoricalTask, ApiWallet},
 };
 
 // ----------------------------
@@ -27,6 +27,9 @@ pub const NETWORK_TOPOLOGY_TOPIC: &str = "network-topology";
 /// The system bus topic published to for all wallet updates, not those given by
 /// Id
 pub const ALL_WALLET_UPDATES_TOPIC: &str = "wallet-updates";
+/// The system bus topic published to for all admin wallet updates, including
+/// order placements and cancellations
+pub const ADMIN_WALLET_UPDATES_TOPIC: &str = "admin-wallet-updates";
 
 /// Get the topic name for a given wallet
 pub fn wallet_topic(wallet_id: &WalletIdentifier) -> String {
@@ -159,6 +162,10 @@ pub enum SystemBusMessage {
     },
     /// A message indicating that no atomic match was found for a request
     NoAtomicMatchFound,
+
+    // --- Admin -- //
+    /// An opaque message indicating that a wallet has been updated
+    AdminWalletUpdate(AdminWalletUpdate),
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for

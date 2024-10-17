@@ -10,6 +10,7 @@ use state::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
+    auth::AuthType,
     error::{not_found, ApiServerError},
     http::{parse_task_id_from_params, parse_wallet_id_from_params},
     router::UrlParams,
@@ -69,8 +70,8 @@ impl WebsocketTopicHandler for TaskStatusHandler {
         Ok(())
     }
 
-    fn requires_wallet_auth(&self) -> bool {
-        false
+    fn auth_type(&self) -> AuthType {
+        AuthType::None
     }
 }
 
@@ -117,7 +118,7 @@ impl WebsocketTopicHandler for TaskHistoryHandler {
         Ok(())
     }
 
-    fn requires_wallet_auth(&self) -> bool {
-        true
+    fn auth_type(&self) -> AuthType {
+        AuthType::Wallet
     }
 }

@@ -4,14 +4,10 @@
 // | HTTP Routes |
 // ---------------
 
-use circuit_types::Amount;
-use common::types::{
-    wallet::{order_metadata::OrderMetadata, OrderIdentifier, WalletIdentifier},
-    MatchingPoolName, Price,
-};
+use common::types::{wallet::OrderIdentifier, MatchingPoolName};
 use serde::{Deserialize, Serialize};
 
-use crate::types::ApiOrder;
+use crate::types::{AdminOrderMetadata, ApiOrder};
 
 use super::wallet::WalletUpdateAuthorization;
 
@@ -48,21 +44,6 @@ pub struct IsLeaderResponse {
 pub struct OpenOrdersResponse {
     /// The open order IDs
     pub orders: Vec<OrderIdentifier>,
-}
-
-/// An order's metadata, augmented with the containing
-/// wallet's ID, and optionally the fillable amount
-/// of the order and the price used to calculate it
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AdminOrderMetadata {
-    /// The order metadata
-    pub order: OrderMetadata,
-    /// The ID of the wallet containing the order
-    pub wallet_id: WalletIdentifier,
-    /// The fillable amount of the order, if calculated
-    pub fillable: Option<Amount>,
-    /// The price used to calculate the fillable amount
-    pub price: Option<Price>,
 }
 
 /// The request type to add a new order to a given wallet, within a non-global
