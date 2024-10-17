@@ -318,6 +318,8 @@ impl WebsocketServer {
                 // Find the handler for the given topic
                 let (params, route_handler) = self.parse_route_and_params(topic)?;
 
+                // TODO: Admin auth somewhere near here
+
                 // Validate auth
                 if route_handler.requires_wallet_auth() {
                     self.authenticate_subscription(topic, &params, &message).await?;
