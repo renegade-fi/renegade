@@ -13,10 +13,10 @@ use crate::{
         network::{RaftRequest, RaftResponse},
         Node, NodeId, RaftNode,
     },
-    State,
+    StateInner,
 };
 
-impl State {
+impl StateInner {
     // --- Raft State --- //
 
     /// Whether the state machine was recovered from a snapshot

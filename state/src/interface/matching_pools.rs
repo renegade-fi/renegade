@@ -6,9 +6,9 @@
 
 use common::types::{wallet::OrderIdentifier, MatchingPoolName};
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

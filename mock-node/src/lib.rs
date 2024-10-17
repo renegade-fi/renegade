@@ -58,7 +58,7 @@ use proof_manager::{
 };
 use reqwest::{blocking::Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
-use state::State;
+use state::{create_global_state, State};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
@@ -270,7 +270,7 @@ impl MockNodeController {
         let clock = self.clock.clone();
         let (failure_send, failure_recv) = new_worker_failure_channel();
 
-        let state = run_fut(State::new(
+        let state = run_fut(create_global_state(
             &self.config,
             network_queue,
             task_sender,

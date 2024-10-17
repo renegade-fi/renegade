@@ -9,9 +9,9 @@ use config::{RelayerConfig, RelayerFeeKey};
 use libp2p::{core::Multiaddr, identity::Keypair};
 use util::res_some;
 
-use crate::{error::StateError, State, NODE_METADATA_TABLE};
+use crate::{error::StateError, StateInner, NODE_METADATA_TABLE};
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

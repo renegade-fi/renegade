@@ -4,14 +4,14 @@ use common::types::wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wall
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, State,
+    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, StateInner,
     StateTransition,
 };
 
 /// The error message emitted when a wallet cannot be found for an order
 pub const ERR_MISSING_WALLET: &str = "Wallet not found for order";
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

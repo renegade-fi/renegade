@@ -27,14 +27,14 @@ use crate::{
     error::StateError,
     notifications::ProposalWaiter,
     storage::{error::StorageError, tx::StateTxn},
-    State, StateTransition,
+    StateInner, StateTransition,
 };
 
 /// The error message emitted when a caller attempts to add a local order
 /// directly
 const ERR_LOCAL_ORDER: &str = "local order should be updated through a wallet update";
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

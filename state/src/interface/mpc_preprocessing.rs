@@ -5,9 +5,9 @@ use common::types::{
     mpc_preprocessing::{PairwiseOfflineSetup, PreprocessingSlice},
 };
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

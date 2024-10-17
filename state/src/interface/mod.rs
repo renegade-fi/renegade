@@ -68,8 +68,34 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 
 /// A handle on the state that allows workers throughout the node to access the
 /// replication and durability primitives backing the state machine
+pub type State = Arc<StateInner>;
+
+/// Create a new state instance and wrap it in an `Arc`
+pub async fn create_global_state(
+    config: &RelayerConfig,
+    network_queue: NetworkManagerQueue,
+    task_queue: TaskDriverQueue,
+    handshake_manager_queue: HandshakeManagerQueue,
+    system_bus: SystemBus<SystemBusMessage>,
+    system_clock: &SystemClock,
+    failure_send: WorkerFailureSender,
+) -> Result<State, StateError> {
+    let state = StateInner::new(
+        config,
+        network_queue,
+        task_queue,
+        handshake_manager_queue,
+        system_bus,
+        system_clock,
+        failure_send,
+    )
+    .await?;
+    Ok(Arc::new(state))
+}
+
+/// The inner state struct, wrapped in an `Arc` to allow for efficient clones
 #[derive(Clone)]
-pub struct State {
+pub struct StateInner {
     /// Whether the state machine recovered from a snapshot
     pub(crate) recovered_from_snapshot: bool,
     /// Whether or not the node allows local peers when adding to the peer index
@@ -84,7 +110,7 @@ pub struct State {
     pub(crate) raft: RaftClient,
 }
 
-impl State {
+impl StateInner {
     // ----------------
     // | Constructors |
     // ----------------

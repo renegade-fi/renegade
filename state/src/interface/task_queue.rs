@@ -9,9 +9,9 @@ use common::types::{
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

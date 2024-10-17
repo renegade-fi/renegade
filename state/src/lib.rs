@@ -216,7 +216,7 @@ pub fn ciborium_serialize<T: Serialize>(
 /// Test helpers for the state crate
 #[cfg(any(test, feature = "mocks"))]
 pub mod test_helpers {
-    use std::{mem, time::Duration};
+    use std::{mem, sync::Arc, time::Duration};
 
     use common::worker::new_worker_failure_channel;
     use config::RelayerConfig;
@@ -238,7 +238,7 @@ pub mod test_helpers {
             RaftNode,
         },
         storage::db::{DbConfig, DB},
-        State, StateTransition,
+        State, StateInner, StateTransition,
     };
 
     /// Sleep for the given number of ms
@@ -321,7 +321,7 @@ pub mod test_helpers {
 
         // Add a client to the mock raft as leader
         let raft_config = raft_config_from_relayer_config(config, network_delay_ms);
-        let state = State::new_with_network(
+        let state = StateInner::new_with_network(
             config,
             raft_config,
             net,
@@ -336,11 +336,11 @@ pub mod test_helpers {
 
         // Promote all nodes to voters
         setup_voters(&state, &raft).await;
-        state
+        Arc::new(state)
     }
 
     /// Setup all nodes as voters
-    async fn setup_voters(state: &State, mock_raft: &MockRaft) {
+    async fn setup_voters(state: &StateInner, mock_raft: &MockRaft) {
         // Add all nodes as voters
         for (id, node) in mock_raft.rafts.read().await.iter() {
             // Configure the follower's DB
@@ -366,7 +366,7 @@ pub mod test_helpers {
         // underlying DB
         let client = node.get_client().clone();
         let db = node.clone_db();
-        let state = State {
+        let state = StateInner {
             allow_local: true,
             db,
             raft: client,

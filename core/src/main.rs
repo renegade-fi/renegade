@@ -37,8 +37,7 @@ use network_manager::{worker::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
 use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
-use state::tui::StateTuiApp;
-use state::State;
+use state::{create_global_state, tui::StateTuiApp};
 use system_bus::SystemBus;
 
 use error::CoordinatorError;
@@ -109,7 +108,7 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // Construct a global state
     let (state_failure_send, mut state_failure_recv) = new_worker_failure_channel();
-    let global_state = State::new(
+    let global_state = create_global_state(
         &args,
         network_sender.clone(),
         task_sender.clone(),

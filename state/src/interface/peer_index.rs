@@ -16,10 +16,10 @@ use tracing::info;
 use crate::{
     error::StateError,
     replication::{get_raft_id, RaftNode},
-    State,
+    StateInner,
 };
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------

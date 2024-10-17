@@ -10,9 +10,9 @@ use common::types::{
 };
 use util::res_some;
 
-use crate::{error::StateError, notifications::ProposalWaiter, State, StateTransition};
+use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
 
-impl State {
+impl StateInner {
     // -----------
     // | Getters |
     // -----------
