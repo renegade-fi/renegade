@@ -3,8 +3,10 @@
 use common::types::{
     gossip::WrappedPeerId,
     tasks::{
-        HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
+        HistoricalTask, QueuedTask, QueuedTaskState, RefreshWalletTaskDescriptor, TaskDescriptor,
+        TaskIdentifier, TaskQueueKey,
     },
+    wallet::WalletIdentifier,
 };
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
@@ -129,6 +131,21 @@ impl StateInner {
     // -----------
     // | Setters |
     // -----------
+
+    /// A shorthand to append a wallet refresh task to the queue and await the
+    /// state transition
+    ///
+    /// Returns the task ID for the refresh
+    pub async fn append_wallet_refresh_task(
+        &self,
+        wallet_id: WalletIdentifier,
+    ) -> Result<TaskIdentifier, StateError> {
+        let task = RefreshWalletTaskDescriptor::new(wallet_id);
+        let (task_id, waiter) = self.append_task(task.into()).await?;
+        waiter.await?;
+
+        Ok(task_id)
+    }
 
     /// Append a task to the queue
     #[instrument(name = "propose_append_task", skip_all, err, fields(task_id, task = %task.display_description()))]

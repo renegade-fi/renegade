@@ -9,8 +9,7 @@ use common::types::{
     exchange::PriceReporterState,
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
-        RedeemFeeTaskDescriptor, RefreshWalletTaskDescriptor, TaskDescriptor, TaskIdentifier,
-        UpdateWalletTaskDescriptor,
+        RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
     },
     token::Token,
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
@@ -391,8 +390,7 @@ impl TypedHandler for RefreshWalletHandler {
 
         // Check rate limits and enqueue the task
         self.rate_limiter.check_rate_limit(wallet_id).await?;
-        let descriptor = RefreshWalletTaskDescriptor::new(wallet_id);
-        let task_id = append_task_and_await(descriptor.into(), &self.state).await?;
+        let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
 
         Ok(RefreshWalletResponse { task_id })
     }

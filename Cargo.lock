@@ -1788,6 +1788,7 @@ dependencies = [
  "gossip-api",
  "job-types",
  "lazy_static",
+ "rand 0.8.5",
  "renegade-crypto 0.1.0",
  "state",
  "tokio",
