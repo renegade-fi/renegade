@@ -6,6 +6,7 @@ use state::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
+    auth::AuthType,
     error::{not_found, ApiServerError},
     http::parse_wallet_id_from_params,
     router::{UrlParams, ERR_WALLET_NOT_FOUND},
@@ -58,7 +59,7 @@ impl WebsocketTopicHandler for OrderStatusHandler {
         Ok(())
     }
 
-    fn requires_wallet_auth(&self) -> bool {
-        true
+    fn auth_type(&self) -> AuthType {
+        AuthType::Wallet
     }
 }

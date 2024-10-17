@@ -7,6 +7,7 @@ use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
+    auth::AuthType,
     error::{bad_request, ApiServerError},
     router::UrlParams,
 };
@@ -108,7 +109,7 @@ impl WebsocketTopicHandler for PriceReporterHandler {
         Ok(())
     }
 
-    fn requires_wallet_auth(&self) -> bool {
-        false
+    fn auth_type(&self) -> AuthType {
+        AuthType::None
     }
 }
