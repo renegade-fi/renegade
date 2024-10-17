@@ -19,13 +19,14 @@ use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
 use job_types::task_driver::TaskDriverJob;
 use renegade_crypto::fields::scalar_to_u128;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 use util::err_str;
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 impl HandshakeExecutor {
     /// Execute an external match
+    #[instrument(name = "run_external_matching_engine", skip_all)]
     pub async fn run_external_matching_engine(
         &self,
         order: Order,
@@ -95,7 +96,7 @@ impl HandshakeExecutor {
     async fn get_external_match_candidates(
         &self,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
-        let matchable_orders = self.state.get_locally_matchable_orders().await?;
+        let matchable_orders = self.state.get_externally_matchable_orders().await?;
         Ok(HashSet::from_iter(matchable_orders))
     }
 

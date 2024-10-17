@@ -3,7 +3,7 @@
 use ark_mpc::{PARTY0, PARTY1};
 use circuit_types::{balance::Balance, fixed_point::FixedPoint, order::OrderSide};
 use common::types::{
-    wallet::{Order, Wallet},
+    wallet::{Order, OrderBuilder, Wallet},
     wallet_mocks::mock_empty_wallet,
 };
 use eyre::Result;
@@ -61,14 +61,14 @@ fn get_order(side: OrderSide) -> Order {
         OrderSide::Sell => MOCK_EXECUTION_PRICE - 1.,
     };
 
-    Order {
-        quote_mint,
-        base_mint,
-        side,
-        amount: DEFAULT_ORDER_AMOUNT,
-        worst_case_price: FixedPoint::from_f64_round_down(worst_case_price),
-        min_fill_size: 0,
-    }
+    OrderBuilder::new()
+        .quote_mint(quote_mint)
+        .base_mint(base_mint)
+        .side(side)
+        .amount(DEFAULT_ORDER_AMOUNT)
+        .worst_case_price(FixedPoint::from_f64_round_down(worst_case_price))
+        .build()
+        .unwrap()
 }
 
 /// Get the balance to insert into the wallet to cover the order

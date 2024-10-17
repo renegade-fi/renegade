@@ -3,6 +3,7 @@
 use circuit_types::{
     biguint_from_hex_string, biguint_to_hex_addr,
     fixed_point::FixedPoint,
+    max_price,
     order::{Order as CircuitOrder, OrderSide},
     validate_amount_bitlength, validate_price_bitlength, Amount,
 };
@@ -52,6 +53,14 @@ pub struct Order {
     /// The minimum fill size for the order
     #[serde(default)]
     pub min_fill_size: Amount,
+    /// Whether or not to allow external matches for the order
+    ///
+    /// When set to true, the relayer will allow the external matching engine to
+    /// run on the order. If an external match is found, the relayer will
+    /// forward the match bundle to the external party. Clients may opt-in to
+    /// this in order to source external crossing liquidity
+    #[serde(default)]
+    pub allow_external_matches: bool,
 }
 
 impl From<Order> for CircuitOrder {
@@ -75,6 +84,7 @@ impl From<CircuitOrder> for Order {
             amount: order.amount,
             worst_case_price: order.worst_case_price,
             min_fill_size: 0,
+            allow_external_matches: false,
         }
     }
 }
@@ -88,6 +98,7 @@ impl Order {
         amount: Amount,
         worst_case_price: FixedPoint,
         min_fill_size: Amount,
+        allow_external_matches: bool,
     ) -> Result<Self, String> {
         // Validate the range of the amount and worst case price
         let order = Self::new_unchecked(
@@ -97,6 +108,7 @@ impl Order {
             amount,
             worst_case_price,
             min_fill_size,
+            allow_external_matches,
         );
         order.validate()?;
 
@@ -111,8 +123,17 @@ impl Order {
         amount: Amount,
         worst_case_price: FixedPoint,
         min_fill_size: Amount,
+        allow_external_matches: bool,
     ) -> Self {
-        Self { quote_mint, base_mint, side, amount, worst_case_price, min_fill_size }
+        Self {
+            quote_mint,
+            base_mint,
+            side,
+            amount,
+            worst_case_price,
+            min_fill_size,
+            allow_external_matches,
+        }
     }
 
     /// Validate the order
@@ -172,6 +193,96 @@ impl Order {
         self.side = order.side;
         self.amount = order.amount;
         self.worst_case_price = order.worst_case_price;
+    }
+}
+
+// ----------------
+// | Builder Type |
+// ----------------
+
+/// Builder for creating an Order
+#[allow(clippy::missing_docs_in_private_items)]
+#[derive(Default)]
+pub struct OrderBuilder {
+    quote_mint: Option<BigUint>,
+    base_mint: Option<BigUint>,
+    side: Option<OrderSide>,
+    amount: Option<Amount>,
+    worst_case_price: Option<FixedPoint>,
+    min_fill_size: Option<Amount>,
+    allow_external_matches: Option<bool>,
+}
+
+impl OrderBuilder {
+    /// Create a new order builder
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the quote mint
+    pub fn quote_mint(mut self, quote_mint: BigUint) -> Self {
+        self.quote_mint = Some(quote_mint);
+        self
+    }
+
+    /// Set the base mint
+    pub fn base_mint(mut self, base_mint: BigUint) -> Self {
+        self.base_mint = Some(base_mint);
+        self
+    }
+
+    /// Set the side
+    pub fn side(mut self, side: OrderSide) -> Self {
+        self.side = Some(side);
+        self
+    }
+
+    /// Set the amount
+    pub fn amount(mut self, amount: Amount) -> Self {
+        self.amount = Some(amount);
+        self
+    }
+
+    /// Set the worst case price
+    pub fn worst_case_price(mut self, worst_case_price: FixedPoint) -> Self {
+        self.worst_case_price = Some(worst_case_price);
+        self
+    }
+
+    /// Set the minimum fill size
+    pub fn min_fill_size(mut self, min_fill_size: Amount) -> Self {
+        self.min_fill_size = Some(min_fill_size);
+        self
+    }
+
+    /// Set whether or not to allow external matches
+    pub fn allow_external_matches(mut self, allow: bool) -> Self {
+        self.allow_external_matches = Some(allow);
+        self
+    }
+
+    /// Build the order
+    pub fn build(self) -> Result<Order, String> {
+        let quote_mint = self.quote_mint.ok_or("Quote mint is required")?;
+        let base_mint = self.base_mint.ok_or("Base mint is required")?;
+        let side = self.side.ok_or("Side is required")?;
+        let amount = self.amount.ok_or("Amount is required")?;
+        let worst_case_price = self.worst_case_price.unwrap_or_else(|| match side {
+            OrderSide::Buy => max_price(),
+            OrderSide::Sell => FixedPoint::from_integer(0),
+        });
+        let min_fill_size = self.min_fill_size.unwrap_or(0);
+        let allow_external_matches = self.allow_external_matches.unwrap_or(false);
+
+        Ok(Order {
+            quote_mint,
+            base_mint,
+            side,
+            amount,
+            worst_case_price,
+            min_fill_size,
+            allow_external_matches,
+        })
     }
 }
 
