@@ -23,7 +23,7 @@ use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 
 use super::{
     keychain::{HmacKey, KeyChain, PrivateKeyChain},
-    orders::Order,
+    orders::{Order, OrderBuilder},
     Wallet,
 };
 
@@ -72,13 +72,15 @@ pub fn mock_empty_wallet() -> Wallet {
 /// Create a mock order
 pub fn mock_order() -> Order {
     let mut rng = thread_rng();
-    let quote_mint = rand_addr_biguint();
-    let base_mint = rand_addr_biguint();
-    let amount = rng.next_u64().into();
-    let worst_case_price = FixedPoint::from_integer(rng.gen());
-    let min_fill_size = rng.gen();
-
-    Order { quote_mint, base_mint, amount, worst_case_price, side: OrderSide::Buy, min_fill_size }
+    OrderBuilder::new()
+        .quote_mint(rand_addr_biguint())
+        .base_mint(rand_addr_biguint())
+        .side(OrderSide::Buy)
+        .amount(rng.next_u64().into())
+        .worst_case_price(FixedPoint::from_integer(rng.gen()))
+        .min_fill_size(rng.gen())
+        .build()
+        .unwrap()
 }
 
 /// Create a mock Merkle path for a wallet

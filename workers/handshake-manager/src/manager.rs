@@ -44,7 +44,7 @@ use renegade_metrics::helpers::record_match_volume;
 use state::State;
 use std::thread::JoinHandle;
 use system_bus::SystemBus;
-use tracing::{error, info, info_span, Instrument};
+use tracing::{error, info, info_span, instrument, Instrument};
 use util::{err_str, get_current_time_millis, runtime::sleep_forever_async};
 use uuid::Uuid;
 
@@ -185,6 +185,7 @@ impl HandshakeExecutor {
 /// threadpool
 impl HandshakeExecutor {
     /// Handle a handshake message from the peer
+    #[instrument(name = "handle_handshake_job", skip_all)]
     pub async fn handle_handshake_job(
         &self,
         job: HandshakeManagerJob,
