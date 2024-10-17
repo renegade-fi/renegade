@@ -7,7 +7,7 @@ use common::types::{
         Wallet,
     },
 };
-use external_api::bus_message::{wallet_topic, SystemBusMessage};
+use external_api::bus_message::{wallet_topic, SystemBusMessage, ADMIN_WALLET_UPDATES_TOPIC};
 use itertools::Itertools;
 use libmdbx::RW;
 
@@ -64,11 +64,17 @@ impl StateApplicator {
         tx.write_wallet(wallet)?;
         tx.commit()?;
 
-        // Push an update to the bus
+        // Push updates to the bus
+
         let wallet_topic = wallet_topic(&wallet.wallet_id);
         self.system_bus().publish(
             wallet_topic,
             SystemBusMessage::WalletUpdate { wallet: Box::new(wallet.clone().into()) },
+        );
+
+        self.system_bus().publish(
+            ADMIN_WALLET_UPDATES_TOPIC.to_string(),
+            SystemBusMessage::AdminWalletUpdate { wallet_id: wallet.wallet_id },
         );
 
         Ok(ApplicatorReturnType::None)
@@ -137,6 +143,15 @@ impl StateApplicator {
             if !old_orders.contains(&id) {
                 let new_state = OrderMetadata::new(id, o);
                 self.update_order_metadata_with_tx(new_state, tx)?;
+
+                // Publish an order placement message to the admin wallet updates topic
+                self.system_bus().publish(
+                    ADMIN_WALLET_UPDATES_TOPIC.to_string(),
+                    SystemBusMessage::AdminOrderPlacement {
+                        wallet_id: wallet.wallet_id,
+                        order_id: id,
+                    },
+                );
             }
         }
 
@@ -161,6 +176,15 @@ impl StateApplicator {
                     if tx.get_order_info(&id)?.is_some() {
                         tx.mark_order_cancelled(&id)?;
                     }
+
+                    // Publish an order placement message to the admin wallet updates topic
+                    self.system_bus().publish(
+                        ADMIN_WALLET_UPDATES_TOPIC.to_string(),
+                        SystemBusMessage::AdminOrderCancellation {
+                            wallet_id: wallet.wallet_id,
+                            order_id: id,
+                        },
+                    );
                 }
             }
         }
