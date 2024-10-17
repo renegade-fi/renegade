@@ -21,6 +21,7 @@ use rand::{
     seq::SliceRandom,
     thread_rng,
 };
+use tracing::instrument;
 use util::res_some;
 
 use crate::{
@@ -185,6 +186,7 @@ impl StateInner {
     /// Get a list of order IDs that are locally managed and ready for match
     ///
     /// TODO: Optimize this if necessary, possibly by caching this list
+    #[instrument(name = "get_locally_matchable_orders", skip_all)]
     pub async fn get_locally_matchable_orders(&self) -> Result<Vec<OrderIdentifier>, StateError> {
         self.with_read_tx(|tx| {
             // Get all the local orders
@@ -204,6 +206,7 @@ impl StateInner {
 
     /// Get a list of order IDs that are locally managed and ready for match in
     /// the given matching pool
+    #[instrument(name = "get_locally_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool))]
     pub async fn get_locally_matchable_orders_in_matching_pool(
         &self,
         matching_pool: MatchingPoolName,
@@ -225,6 +228,35 @@ impl StateInner {
             }
 
             Ok(res)
+        })
+        .await
+    }
+
+    /// Get the set of orders that are ready for a match and allow external
+    /// matches
+    ///
+    /// TODO: We do this by adding a filter beyond what the normal matching
+    /// engine does, i.e. by reading out the order. Check if performance for
+    /// this method is sufficient
+    #[instrument(name = "get_externally_matchable_orders", skip_all)]
+    pub async fn get_externally_matchable_orders(
+        &self,
+    ) -> Result<Vec<OrderIdentifier>, StateError> {
+        self.with_read_tx(|tx| {
+            let mut orders = Vec::new();
+            for id in tx.get_local_orders()?.iter() {
+                // First check that the order is matchable
+                if !Self::is_order_matchable(id, tx)? {
+                    continue;
+                }
+
+                // Then check that the order allows external matches
+                if Self::is_order_externally_matchable(id, tx)? {
+                    orders.push(*id);
+                }
+            }
+
+            Ok(orders)
         })
         .await
     }
@@ -332,11 +364,13 @@ impl StateInner {
         })
         .await
     }
+}
 
-    // -----------
-    // | Helpers |
-    // -----------
+// -----------
+// | Helpers |
+// -----------
 
+impl StateInner {
     /// Checks whether or not a locally managed order is matchable
     fn is_order_matchable<T: TransactionKind>(
         order_id: &OrderIdentifier,
@@ -363,7 +397,30 @@ impl StateInner {
         // Check that the order itself is ready for a match
         Ok(info.ready_for_match())
     }
+
+    /// Checks whether an order is externally matchable
+    fn is_order_externally_matchable<T: TransactionKind>(
+        id: &OrderIdentifier,
+        tx: &StateTxn<T>,
+    ) -> Result<bool, StateError> {
+        // Fetch the wallet and pull the order from it
+        let wallet_id = match tx.get_wallet_for_order(id)? {
+            None => return Ok(false),
+            Some(wallet) => wallet,
+        };
+
+        let order = tx.get_wallet(&wallet_id)?.and_then(|w| w.get_order(id).cloned());
+        if order.is_none() {
+            return Ok(false);
+        }
+
+        Ok(order.unwrap().allow_external_matches)
+    }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod test {
