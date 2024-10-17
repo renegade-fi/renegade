@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use external_api::bus_message::SystemBusMessage;
 use system_bus::{SystemBus, TopicReader};
 
-use crate::{error::ApiServerError, router::UrlParams};
+use crate::{auth::AuthType, error::ApiServerError, router::UrlParams};
 
 /// The main trait that route handlers implement for their topic, handles any
 /// custom logic required to process a websocket subscribe/unsubscribe request
@@ -29,15 +29,15 @@ pub trait WebsocketTopicHandler: Send + Sync {
         route_params: &UrlParams,
     ) -> Result<(), ApiServerError>;
 
-    /// Whether or not the route requires wallet auth
-    fn requires_wallet_auth(&self) -> bool;
+    /// The type of authentication required by the route
+    fn auth_type(&self) -> AuthType;
 }
 
 /// The default handler directly subscribes and unsubscribes from the topic
 #[derive(Clone)]
 pub struct DefaultHandler {
-    /// Whether or not the endpoint is authenticated
-    authenticated: bool,
+    /// The type of authentication required by the endpoint
+    auth_type: AuthType,
     /// A reference to the relayer-global system bus
     system_bus: SystemBus<SystemBusMessage>,
     /// The bus topic to subscribe to on a subscription message
@@ -49,11 +49,11 @@ pub struct DefaultHandler {
 impl DefaultHandler {
     /// Constructor
     pub fn new_with_remap(
-        authenticated: bool,
+        auth_type: AuthType,
         topic_remap: String,
         system_bus: SystemBus<SystemBusMessage>,
     ) -> Self {
-        Self { authenticated, system_bus, topic_remap: Some(topic_remap) }
+        Self { auth_type, system_bus, topic_remap: Some(topic_remap) }
     }
 }
 
@@ -83,7 +83,7 @@ impl WebsocketTopicHandler for DefaultHandler {
         Ok(())
     }
 
-    fn requires_wallet_auth(&self) -> bool {
-        self.authenticated
+    fn auth_type(&self) -> AuthType {
+        self.auth_type
     }
 }
