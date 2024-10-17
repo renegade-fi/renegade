@@ -4,7 +4,10 @@ use std::{net::SocketAddr, sync::Arc};
 
 use constants::{in_bootstrap_mode, HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC};
 use external_api::{
-    bus_message::{SystemBusMessage, SystemBusMessageWithTopic, NETWORK_TOPOLOGY_TOPIC},
+    bus_message::{
+        SystemBusMessage, SystemBusMessageWithTopic, ADMIN_WALLET_UPDATES_TOPIC,
+        NETWORK_TOPOLOGY_TOPIC,
+    },
     websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
 };
 use futures::{stream::SplitSink, SinkExt, StreamExt};
@@ -17,7 +20,7 @@ use tokio_tungstenite::{accept_async, WebSocketStream};
 use tungstenite::Message;
 
 use crate::{
-    auth::AuthMiddleware,
+    auth::{AuthMiddleware, AuthType},
     error::{bad_request, not_found},
 };
 
@@ -70,6 +73,9 @@ const NETWORK_INFO_ROUTE: &str = "/v0/network";
 const TASK_STATUS_ROUTE: &str = "/v0/tasks/:task_id";
 /// The task history topic, streams information about historical tasks
 const TASK_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/task-history";
+/// The admin wallet updates topic, streams opaque information about all wallet
+/// updates
+const ADMIN_WALLET_UPDATES_ROUTE: &str = "/v0/admin/wallet-updates";
 
 // --------------------
 // | Websocket Server |
@@ -103,7 +109,7 @@ impl WebsocketServer {
             .insert(
                 HANDSHAKE_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
-                    false, // authenticated
+                    AuthType::None,
                     HANDSHAKE_STATUS_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -142,7 +148,7 @@ impl WebsocketServer {
             .insert(
                 ORDER_BOOK_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
-                    false, // authenticated
+                    AuthType::None,
                     ORDER_STATE_CHANGE_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -154,7 +160,7 @@ impl WebsocketServer {
             .insert(
                 NETWORK_INFO_ROUTE,
                 Box::new(DefaultHandler::new_with_remap(
-                    false, // authenticated
+                    AuthType::None,
                     NETWORK_TOPOLOGY_TOPIC.to_string(),
                     config.system_bus.clone(),
                 )),
@@ -174,6 +180,18 @@ impl WebsocketServer {
             .insert(
                 TASK_HISTORY_ROUTE,
                 Box::new(TaskHistoryHandler::new(config.state.clone(), config.system_bus.clone())),
+            )
+            .unwrap();
+
+        // The "/v0/admin/wallet-updates" route
+        router
+            .insert(
+                ADMIN_WALLET_UPDATES_ROUTE,
+                Box::new(DefaultHandler::new_with_remap(
+                    AuthType::Admin,
+                    ADMIN_WALLET_UPDATES_TOPIC.to_string(),
+                    config.system_bus.clone(),
+                )),
             )
             .unwrap();
 
@@ -318,12 +336,9 @@ impl WebsocketServer {
                 // Find the handler for the given topic
                 let (params, route_handler) = self.parse_route_and_params(topic)?;
 
-                // TODO: Admin auth somewhere near here
-
                 // Validate auth
-                if route_handler.requires_wallet_auth() {
-                    self.authenticate_subscription(topic, &params, &message).await?;
-                }
+                self.authenticate_subscription(route_handler.auth_type(), &params, &message)
+                    .await?;
 
                 // Register the topic subscription in the system bus and in the stream
                 // map that the listener loop polls
@@ -367,15 +382,17 @@ impl WebsocketServer {
         Ok((params, route.value.as_ref()))
     }
 
-    /// Authenticate a request by verifying a signature of the body by `sk_root`
+    /// Authenticate a websocket subscription
     async fn authenticate_subscription(
         &self,
-        topic: &str,
+        auth_type: AuthType,
         params: &UrlParams,
         message: &ClientWebsocketMessage,
     ) -> Result<(), ApiServerError> {
-        // Parse the wallet ID from the params
-        let wallet_id = parse_wallet_id_from_params(params)?;
+        if matches!(auth_type, AuthType::None) {
+            return Ok(());
+        }
+
         let headers: HeaderMap<HeaderValue> = HeaderMap::try_from(&message.headers)
             .map_err(|_| bad_request(ERR_HEADER_PARSE.to_string()))?;
 
@@ -383,9 +400,19 @@ impl WebsocketServer {
         let body_serialized =
             serde_json::to_vec(&message.body).expect("re-serialization should not fail");
 
-        self.auth_middleware
-            .authenticate_wallet_request(wallet_id, topic, &headers, &body_serialized)
-            .await
+        match auth_type {
+            AuthType::Wallet => {
+                // Parse the wallet ID from the params
+                let wallet_id = parse_wallet_id_from_params(params)?;
+                self.auth_middleware
+                    .authenticate_wallet_request(wallet_id, &headers, &body_serialized)
+                    .await
+            },
+            AuthType::Admin => {
+                self.auth_middleware.authenticate_admin_request(&headers, &body_serialized)
+            },
+            AuthType::None => unreachable!(),
+        }
     }
 
     /// Push an internal event that the client is subscribed to onto the
