@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     http::{external_match::AtomicMatchApiBundle, task::ApiTaskStatus},
-    types::{ApiHistoricalTask, ApiWallet},
+    types::{AdminWalletUpdate, ApiHistoricalTask, ApiWallet},
 };
 
 // ----------------------------
@@ -160,32 +160,13 @@ pub enum SystemBusMessage {
         /// The atomic match bundle that should be forwarded to the client
         match_bundle: AtomicMatchApiBundle,
     },
+    /// A message indicating that no atomic match was found for a request
+    NoAtomicMatchFound,
 
     // --- Admin -- //
-    /// An opaque message indicating that a wallet has been updated,
-    /// without leaking unnecessary information about the wallet
-    AdminWalletUpdate {
-        /// The ID of the wallet that was updated
-        wallet_id: WalletIdentifier,
-    },
-
-    /// An opaque message indicating that an order has been placed,
-    /// without leaking unnecessary information about the order
-    AdminOrderPlacement {
-        /// The ID of the order that was placed
-        order_id: OrderIdentifier,
-        /// The ID of the wallet containing the order
-        wallet_id: WalletIdentifier,
-    },
-
-    /// An opaque message indicating that an order has been cancelled,
-    /// without leaking unnecessary information about the order
-    AdminOrderCancellation {
-        /// The ID of the order that was cancelled
-        order_id: OrderIdentifier,
-        /// The ID of the wallet containing the order
-        wallet_id: WalletIdentifier,
-    },
+    /// A message indicating that a wallet has been updated, intended for
+    /// consumption by the admin API
+    AdminWalletUpdate(AdminWalletUpdate),
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for

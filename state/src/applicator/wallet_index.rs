@@ -7,7 +7,10 @@ use common::types::{
         Wallet,
     },
 };
-use external_api::bus_message::{wallet_topic, SystemBusMessage, ADMIN_WALLET_UPDATES_TOPIC};
+use external_api::{
+    bus_message::{wallet_topic, SystemBusMessage, ADMIN_WALLET_UPDATES_TOPIC},
+    types::AdminWalletUpdate,
+};
 use itertools::Itertools;
 use libmdbx::RW;
 
@@ -74,7 +77,9 @@ impl StateApplicator {
 
         self.system_bus().publish(
             ADMIN_WALLET_UPDATES_TOPIC.to_string(),
-            SystemBusMessage::AdminWalletUpdate { wallet_id: wallet.wallet_id },
+            SystemBusMessage::AdminWalletUpdate(AdminWalletUpdate::WalletUpdate {
+                wallet_id: wallet.wallet_id,
+            }),
         );
 
         Ok(ApplicatorReturnType::None)
@@ -147,10 +152,10 @@ impl StateApplicator {
                 // Publish an order placement message to the admin wallet updates topic
                 self.system_bus().publish(
                     ADMIN_WALLET_UPDATES_TOPIC.to_string(),
-                    SystemBusMessage::AdminOrderPlacement {
+                    SystemBusMessage::AdminWalletUpdate(AdminWalletUpdate::OrderPlacement {
                         wallet_id: wallet.wallet_id,
                         order_id: id,
-                    },
+                    }),
                 );
             }
         }
@@ -177,13 +182,13 @@ impl StateApplicator {
                         tx.mark_order_cancelled(&id)?;
                     }
 
-                    // Publish an order placement message to the admin wallet updates topic
+                    // Publish an order cancellation message to the admin wallet updates topic
                     self.system_bus().publish(
                         ADMIN_WALLET_UPDATES_TOPIC.to_string(),
-                        SystemBusMessage::AdminOrderCancellation {
+                        SystemBusMessage::AdminWalletUpdate(AdminWalletUpdate::OrderCancellation {
                             wallet_id: wallet.wallet_id,
                             order_id: id,
-                        },
+                        }),
                     );
                 }
             }
