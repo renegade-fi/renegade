@@ -1,14 +1,27 @@
 //! Helpers for accessing wallet index information in the database
 
+use circuit_types::wallet::Nullifier;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
 use libmdbx::{TransactionKind, RW};
 
-use crate::{storage::error::StorageError, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
+use crate::{
+    storage::error::StorageError, NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
+};
 
 use super::StateTxn;
 
 /// The error message emitted when a wallet is not found
 const ERR_WALLET_NOT_FOUND: &str = "Wallet not found";
+
+/// Get the key for a nullifier to wallet mapping
+fn nullifier_to_wallet_key(nullifier: &Nullifier) -> String {
+    format!("nullifier-{nullifier}")
+}
+
+/// Get the key for a wallet id to nullifier mapping
+fn wallet_id_to_nullifiers_key(wallet_id: &WalletIdentifier) -> String {
+    format!("wallet-id-nullifier-{wallet_id}")
+}
 
 // -----------
 // | Getters |
@@ -26,6 +39,24 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         order_id: &OrderIdentifier,
     ) -> Result<Option<WalletIdentifier>, StorageError> {
         self.inner().read(ORDER_TO_WALLET_TABLE, order_id)
+    }
+
+    /// Get the wallet associated with a given nullifier
+    pub fn get_wallet_for_nullifier(
+        &self,
+        nullifier: &Nullifier,
+    ) -> Result<Option<WalletIdentifier>, StorageError> {
+        let key = nullifier_to_wallet_key(nullifier);
+        self.inner().read(NULLIFIER_TO_WALLET_TABLE, &key)
+    }
+
+    /// Get the nullifier for a wallet
+    pub fn get_nullifier_for_wallet(
+        &self,
+        wallet_id: &WalletIdentifier,
+    ) -> Result<Option<Nullifier>, StorageError> {
+        let key = wallet_id_to_nullifiers_key(wallet_id);
+        self.inner().read(NULLIFIER_TO_WALLET_TABLE, &key)
     }
 
     /// Get all the wallets in the database
@@ -46,6 +77,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 impl<'db> StateTxn<'db, RW> {
     /// Write a wallet to the table
     pub fn write_wallet(&self, wallet: &Wallet) -> Result<(), StorageError> {
+        let nullifier = wallet.get_wallet_nullifier();
+        self.update_wallet_nullifier_mapping(wallet.wallet_id, nullifier)?;
         self.inner().write(WALLETS_TABLE, &wallet.wallet_id, wallet)
     }
 
@@ -75,6 +108,26 @@ impl<'db> StateTxn<'db, RW> {
 
         Ok(())
     }
+
+    /// Update the wallet ID <-> nullifier mapping
+    fn update_wallet_nullifier_mapping(
+        &self,
+        wallet_id: WalletIdentifier,
+        nullifier: Nullifier,
+    ) -> Result<(), StorageError> {
+        let old_nullifier = self.get_nullifier_for_wallet(&wallet_id)?;
+        // Delete the old nullifier -> wallet mapping
+        if let Some(nullifier) = old_nullifier {
+            let nullifier_key = nullifier_to_wallet_key(&nullifier);
+            self.inner().delete(NULLIFIER_TO_WALLET_TABLE, &nullifier_key)?;
+        }
+
+        // Update the nullifier -> wallet mapping and the wallet -> nullifier mapping
+        let nullifier_key = nullifier_to_wallet_key(&nullifier);
+        let wallet_id_key = wallet_id_to_nullifiers_key(&wallet_id);
+        self.inner().write(NULLIFIER_TO_WALLET_TABLE, &nullifier_key, &wallet_id)?;
+        self.inner().write(NULLIFIER_TO_WALLET_TABLE, &wallet_id_key, &nullifier)
+    }
 }
 
 // ---------
@@ -89,7 +142,9 @@ mod test {
     };
     use itertools::Itertools;
 
-    use crate::{test_helpers::mock_db, ORDER_TO_WALLET_TABLE, WALLETS_TABLE};
+    use crate::{
+        test_helpers::mock_db, NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
+    };
 
     /// Tests adding a wallet then retrieving it
     #[test]
@@ -183,5 +238,49 @@ mod test {
         assert_eq!(wallet_res2, Some(wallet_id1));
         let wallet_res3 = tx.get_wallet_for_order(&order_id3).unwrap();
         assert_eq!(wallet_res3, Some(wallet_id2));
+    }
+
+    /// Tests the nullifier <-> wallet ID mappings
+    #[test]
+    fn test_nullifier_wallet_mapping() {
+        let db = mock_db();
+        db.create_table(WALLETS_TABLE).unwrap();
+        db.create_table(NULLIFIER_TO_WALLET_TABLE).unwrap();
+
+        // Create and write a wallet
+        let mut wallet = mock_empty_wallet();
+        let initial_nullifier = wallet.get_wallet_nullifier();
+
+        let tx = db.new_write_tx().unwrap();
+        tx.write_wallet(&wallet).unwrap();
+        tx.commit().unwrap();
+
+        // Test initial mapping
+        let tx = db.new_read_tx().unwrap();
+        let wallet_id = tx.get_wallet_for_nullifier(&initial_nullifier).unwrap();
+        assert_eq!(wallet_id, Some(wallet.wallet_id));
+
+        let nullifier = tx.get_nullifier_for_wallet(&wallet.wallet_id).unwrap();
+        assert_eq!(nullifier, Some(initial_nullifier));
+
+        // Update wallet with a new nullifier
+        wallet.reblind_wallet();
+        let new_nullifier = wallet.get_wallet_nullifier();
+
+        let tx = db.new_write_tx().unwrap();
+        tx.write_wallet(&wallet).unwrap();
+        tx.commit().unwrap();
+
+        // Test updated mapping
+        let tx = db.new_read_tx().unwrap();
+        let wallet_id = tx.get_wallet_for_nullifier(&new_nullifier).unwrap();
+        assert_eq!(wallet_id, Some(wallet.wallet_id));
+
+        let nullifier = tx.get_nullifier_for_wallet(&wallet.wallet_id).unwrap();
+        assert_eq!(nullifier, Some(new_nullifier));
+
+        // Ensure old nullifier mapping is removed
+        let wallet_id = tx.get_wallet_for_nullifier(&initial_nullifier).unwrap();
+        assert_eq!(wallet_id, None);
     }
 }
