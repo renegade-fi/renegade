@@ -45,7 +45,7 @@ use uuid::Uuid;
 // -------------
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 17;
+const NUM_TABLES: usize = 18;
 
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
@@ -69,6 +69,8 @@ pub(crate) const POOL_TABLE: &str = "matching-pools";
 
 /// The name of the db table that maps order to their encapsulating wallet
 pub(crate) const ORDER_TO_WALLET_TABLE: &str = "order-to-wallet";
+/// The name of the db table that maps nullifiers to wallets
+pub(crate) const NULLIFIER_TO_WALLET_TABLE: &str = "nullifier-to-wallet";
 /// The name of the db table that stores wallet information
 pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
@@ -99,6 +101,7 @@ pub const ALL_TABLES: [&str; NUM_TABLES] = [
     ORDER_HISTORY_TABLE,
     POOL_TABLE,
     ORDER_TO_WALLET_TABLE,
+    NULLIFIER_TO_WALLET_TABLE,
     WALLETS_TABLE,
     TASK_QUEUE_TABLE,
     TASK_TO_KEY_TABLE,
