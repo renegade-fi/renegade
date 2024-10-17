@@ -3,7 +3,7 @@
 //! Wallet index updates must go through raft consensus so that the leader may
 //! order them
 
-use circuit_types::balance::Balance;
+use circuit_types::{balance::Balance, wallet::Nullifier};
 use common::types::{
     tasks::QueuedTask,
     wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
@@ -90,6 +90,19 @@ impl StateInner {
         self.with_read_tx(move |tx| {
             let wallet_id = tx.get_wallet_for_order(&oid)?;
             Ok(wallet_id)
+        })
+        .await
+    }
+
+    /// Get the wallet for a given nullifier
+    pub async fn get_wallet_for_nullifier(
+        &self,
+        nullifier: &Nullifier,
+    ) -> Result<Option<WalletIdentifier>, StateError> {
+        let n = *nullifier;
+        self.with_read_tx(move |tx| {
+            let res = tx.get_wallet_for_nullifier(&n)?;
+            Ok(res)
         })
         .await
     }

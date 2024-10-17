@@ -1,10 +1,7 @@
 //! Encapsulates the running task's bookkeeping structure to simplify the driver
 //! logic
 
-use common::types::{
-    tasks::{RefreshWalletTaskDescriptor, TaskIdentifier},
-    wallet::WalletIdentifier,
-};
+use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
 use state::{error::StateError, State};
 use tracing::{error, info};
 
@@ -148,8 +145,7 @@ impl<T: Task> RunnableTask<T> {
         // code paths will clear task queues in the case of a failure.
         if !success && self.state().committed() {
             for wallet_id in affected_wallets {
-                let refresh_task = RefreshWalletTaskDescriptor::new(wallet_id);
-                let (task_id, _) = self.state.append_task(refresh_task.into()).await?;
+                let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
                 info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
             }
         }
