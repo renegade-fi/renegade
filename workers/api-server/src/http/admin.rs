@@ -16,11 +16,12 @@ use common::types::{
 use external_api::{
     http::{
         admin::{
-            AdminGetOrderMatchingPoolResponse, AdminOrderMetadata, AdminOrderMetadataResponse,
+            AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
             CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
+    types::AdminOrderMetadata,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
