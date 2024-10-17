@@ -21,7 +21,7 @@ use common::types::proof_bundles::{
     AtomicMatchSettleBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
     ValidMatchSettleAtomicBundle,
 };
-use common::types::tasks::{RefreshWalletTaskDescriptor, SettleExternalMatchTaskDescriptor};
+use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use external_api::bus_message::SystemBusMessage;
 use external_api::http::external_match::AtomicMatchApiBundle;
@@ -372,11 +372,9 @@ impl SettleMatchExternalTask {
     /// and be discarded
     async fn refresh_wallet(&mut self) -> Result<(), SettleMatchExternalTaskError> {
         let wallet_id = self.internal_wallet_id;
-        let task = RefreshWalletTaskDescriptor::new(wallet_id);
-        let (task_id, waiter) = self.state.append_task(task.into()).await?;
-        waiter.await?;
-
+        let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
         info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
+
         Ok(())
     }
 
