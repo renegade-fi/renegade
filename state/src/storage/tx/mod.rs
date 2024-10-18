@@ -273,6 +273,15 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
         value_bytes.map(|bytes| deserialize_value(&bytes)).transpose()
     }
 
+    /// Check if a table exists in the database
+    pub fn table_exists(&self, table_name: &str) -> Result<bool, StorageError> {
+        match self.txn.open_table(Some(table_name)) {
+            Ok(_) => Ok(true),
+            Err(MdbxError::NotFound) => Ok(false),
+            Err(e) => Err(StorageError::TxOp(e)),
+        }
+    }
+
     /// Open a cursor in the txn
     pub fn cursor<K: Key, V: Value>(
         &self,
@@ -448,5 +457,26 @@ mod test {
         let tx = db.new_read_tx().unwrap();
         let value: Option<i32> = tx.inner().read(TABLE_NAME, &"a".to_string()).unwrap();
         assert_eq!(value, None);
+    }
+
+    /// Tests checking if a table exists
+    #[test]
+    fn test_table_exists() {
+        let db = mock_db();
+        const TABLE_NAME: &str = "test";
+
+        // Check that the table doesn't exist
+        let tx = db.new_write_tx().unwrap();
+        let exists = tx.inner().table_exists(TABLE_NAME).unwrap();
+        assert!(!exists);
+
+        // Create the table
+        tx.inner().create_table(TABLE_NAME).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the table exists
+        let tx = db.new_read_tx().unwrap();
+        let exists = tx.inner().table_exists(TABLE_NAME).unwrap();
+        assert!(exists);
     }
 }
