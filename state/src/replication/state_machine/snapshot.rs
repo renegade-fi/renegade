@@ -278,6 +278,11 @@ impl StateMachine {
                 continue;
             }
 
+            // Skip the table if it doesn't exist in the snapshot
+            if !src_tx.inner().table_exists(table)? {
+                continue;
+            }
+
             // Clear the table on the destination
             let dest_tx = dest.new_write_tx()?;
             dest_tx.clear_table(table)?;
