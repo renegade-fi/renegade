@@ -14,6 +14,7 @@ use common::types::{
     tasks::SettleExternalMatchTaskDescriptor,
     token::Token,
     wallet::{Order, OrderIdentifier},
+    TimestampedPrice,
 };
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
@@ -65,7 +66,12 @@ impl HandshakeExecutor {
             // may match the external order as the first party
             match_res.direction = order.side.opposite().match_direction();
             let settle_res = self
-                .try_settle_external_match(other_order_id, price, match_res, response_topic.clone())
+                .try_settle_external_match(
+                    other_order_id,
+                    ts_price,
+                    match_res,
+                    response_topic.clone(),
+                )
                 .await;
 
             match settle_res {
@@ -104,7 +110,7 @@ impl HandshakeExecutor {
     async fn try_settle_external_match(
         &self,
         internal_order_id: OrderIdentifier,
-        price: FixedPoint,
+        price: TimestampedPrice,
         match_res: MatchResult,
         response_topic: String,
     ) -> Result<(), HandshakeManagerError> {

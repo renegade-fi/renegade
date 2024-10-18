@@ -13,7 +13,7 @@ use crate::utils::validity_proofs::{
 use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;
-use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
+use circuit_types::r#match::MatchResult;
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
@@ -430,7 +430,7 @@ impl SettleMatchInternalTask {
         let commitment_witness0 = &self.order1_validity_witness.commitment_witness;
         let commitment_witness1 = &self.order2_validity_witness.commitment_witness;
 
-        let price = FixedPoint::from_f64_round_down(self.execution_price.price);
+        let price = self.execution_price.as_fixed_point();
         let order0 = commitment_witness0.order.clone();
         let balance0 = commitment_witness0.balance_send.clone();
         let balance_receive0 = commitment_witness0.balance_receive.clone();
