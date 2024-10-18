@@ -397,7 +397,7 @@ impl HttpServer {
         // --- External Match Routes --- //
 
         // The "/external-match/request" route
-        router.add_unauthenticated_route(
+        router.add_admin_authenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_MATCH_ROUTE.to_string(),
             RequestExternalMatchHandler::new(
