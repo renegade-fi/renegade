@@ -1,5 +1,6 @@
 //! Defines common types that many crates can depend on
 
+use circuit_types::fixed_point::FixedPoint;
 use serde::{Deserialize, Serialize};
 
 pub mod exchange;
@@ -50,6 +51,11 @@ impl TimestampedPrice {
     pub fn new(price: Price) -> Self {
         let timestamp = get_current_time_millis();
         Self { price, timestamp }
+    }
+
+    /// Get the price as a fixed point number
+    pub fn as_fixed_point(&self) -> FixedPoint {
+        FixedPoint::from_f64_round_down(self.price)
     }
 }
 

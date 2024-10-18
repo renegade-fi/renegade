@@ -7,11 +7,11 @@ use std::time::Duration;
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::utils::order_states::record_order_fill;
 use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
 use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
-use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
 use circuits::zk_circuits::valid_match_settle_atomic::{
@@ -23,6 +23,7 @@ use common::types::proof_bundles::{
 };
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
+use common::types::TimestampedPrice;
 use external_api::bus_message::SystemBusMessage;
 use external_api::http::external_match::AtomicMatchApiBundle;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
@@ -176,10 +177,12 @@ impl From<ArbitrumClientError> for SettleMatchExternalTaskError {
 
 /// Describe the settle match external task
 pub struct SettleMatchExternalTask {
+    /// The ID of the order to settle
+    internal_order_id: OrderIdentifier,
     /// The ID of the wallet that the local node matched an order from
     internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
-    execution_price: FixedPoint,
+    execution_price: TimestampedPrice,
     /// The match result from the external matching engine
     match_res: MatchResult,
     /// The validity proofs for the internal order
@@ -226,6 +229,7 @@ impl Task for SettleMatchExternalTask {
             Self::fetch_internal_order_validity_bundle(internal_order_id, &ctx.state).await?;
 
         Ok(Self {
+            internal_order_id,
             internal_wallet_id,
             execution_price,
             match_res,
@@ -371,10 +375,13 @@ impl SettleMatchExternalTask {
     /// considered for atomic matches, but if it does they will fail through
     /// and be discarded
     async fn refresh_wallet(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+        // Record a partial fill for the order after state has updated on-chain
+        self.record_fill().await?;
+
+        // Refresh the wallet
         let wallet_id = self.internal_wallet_id;
         let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
         info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
-
         Ok(())
     }
 
@@ -454,7 +461,7 @@ impl SettleMatchExternalTask {
             internal_party_receive_balance,
             relayer_fee,
             internal_party_fees,
-            price: self.execution_price,
+            price: self.execution_price.as_fixed_point(),
             internal_party_public_shares,
         };
 
@@ -476,5 +483,18 @@ impl SettleMatchExternalTask {
                 .map_err(SettleMatchExternalTaskError::proof_linking)?;
 
         Ok(AtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })
+    }
+
+    /// Record a fill in the internal order's fill history and in the relayer
+    /// metrics
+    async fn record_fill(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+        let match_res = &self.match_res;
+        let price = self.execution_price;
+        record_order_fill(self.internal_order_id, match_res, price, &self.state)
+            .await
+            .map_err(SettleMatchExternalTaskError::State)?;
+
+        renegade_metrics::record_match_volume(match_res);
+        Ok(())
     }
 }

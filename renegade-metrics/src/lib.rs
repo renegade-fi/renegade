@@ -11,3 +11,5 @@ pub mod gauge;
 pub mod global_metrics;
 pub mod helpers;
 pub mod labels;
+
+pub use helpers::*;
