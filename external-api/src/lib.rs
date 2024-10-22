@@ -13,18 +13,20 @@ use serde::{
 };
 use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 
+#[cfg(feature = "auth")]
+pub mod auth;
 pub mod bus_message;
 pub mod http;
 pub mod types;
 pub mod websocket;
 
-/// Header name for the HTTP auth signature
-pub const RENEGADE_AUTH_HEADER_NAME: &str = "renegade-auth";
-/// Header name for the expiration timestamp of a signature
-pub const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "renegade-auth-expiration";
+/// Header name for the HTTP auth signature; lower cased
+pub const RENEGADE_AUTH_HEADER_NAME: &str = "x-renegade-auth";
+/// Header name for the expiration timestamp of a signature; lower cased
+pub const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "x-renegade-auth-expiration";
 
 /// Header name for the HTTP auth HMAC
-pub const RENEGADE_AUTH_HMAC_HEADER_NAME: &str = "renegade-auth-symmetric";
+pub const RENEGADE_AUTH_HMAC_HEADER_NAME: &str = "x-renegade-auth-symmetric";
 
 /// An empty request/response type
 #[derive(Clone, Debug, Eq, PartialEq)]

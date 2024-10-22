@@ -1,21 +1,14 @@
 //! Authentication for admin API
 
-use base64::engine::{general_purpose as b64_general_purpose, Engine};
 use common::types::wallet::keychain::HmacKey;
-use external_api::RENEGADE_AUTH_HMAC_HEADER_NAME;
 use hyper::HeaderMap;
 
-use crate::error::{bad_request, unauthorized, ApiServerError};
+use crate::error::{unauthorized, ApiServerError};
 
-use super::{
-    helpers::{check_auth_timestamp, compute_expiring_hmac, parse_sig_expiration},
-    HMAC_LEN,
+use super::helpers::{
+    check_auth_timestamp, compute_expiring_hmac, parse_hmac, parse_sig_expiration,
 };
 
-/// Error message emitted when the HMAC is missing from the request
-const ERR_HMAC_MISSING: &str = "HMAC is missing from the request";
-/// Error message emitted when the format of an HMAC is invalid
-const ERR_HMAC_FORMAT_INVALID: &str = "HMAC format invalid";
 /// Error message emitted when the HMAC is invalid
 const ERR_HMAC_INVALID: &str = "HMAC invalid";
 
@@ -41,27 +34,15 @@ pub fn authenticate_admin_request(
     Ok(())
 }
 
-/// Parse an HMAC from headers
-fn parse_hmac(headers: &HeaderMap) -> Result<[u8; HMAC_LEN], ApiServerError> {
-    let b64_hmac: &str = headers
-        .get(RENEGADE_AUTH_HMAC_HEADER_NAME)
-        .ok_or_else(|| bad_request(ERR_HMAC_MISSING.to_string()))?
-        .to_str()
-        .map_err(|_| bad_request(ERR_HMAC_FORMAT_INVALID.to_string()))?;
-
-    b64_general_purpose::STANDARD_NO_PAD
-        .decode(b64_hmac)
-        .map_err(|_| bad_request(ERR_HMAC_FORMAT_INVALID.to_string()))?
-        .try_into()
-        .map_err(|_| bad_request(ERR_HMAC_FORMAT_INVALID.to_string()))
-}
-
 #[cfg(test)]
 mod test {
-    use base64::engine::{general_purpose as b64_general_purpose, Engine};
+    use base64::{engine::general_purpose as b64_general_purpose, Engine as B64Engine};
     use common::types::wallet::keychain::HmacKey;
-    use external_api::{RENEGADE_AUTH_HMAC_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};
     use hyper::{header::HeaderValue, HeaderMap};
+
+    use crate::auth::helpers::{
+        RENEGADE_AUTH_HMAC_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME,
+    };
 
     use super::authenticate_admin_request;
 

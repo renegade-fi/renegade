@@ -1,18 +1,12 @@
 //! Authentication for wallet requests based on signatures with `pk_root`
 
-use base64::engine::{general_purpose as b64_general_purpose, Engine};
 use common::types::wallet::keychain::HmacKey;
-use external_api::RENEGADE_AUTH_HEADER_NAME;
 use hyper::HeaderMap;
 
-use crate::error::{bad_request, unauthorized, ApiServerError};
+use crate::error::{unauthorized, ApiServerError};
 
-use super::helpers::{check_auth_timestamp, parse_sig_expiration};
+use super::helpers::{check_auth_timestamp, parse_sig_expiration, parse_signature_from_header};
 
-/// Error displayed when the signature format is invalid
-const ERR_SIG_FORMAT_INVALID: &str = "signature format invalid";
-/// Error displayed when the signature header is missing
-const ERR_SIG_HEADER_MISSING: &str = "signature missing from headers";
 /// Error displayed when signature verification fails on a request
 const ERR_SIG_VERIFICATION_FAILED: &str = "signature verification failed";
 
@@ -29,18 +23,6 @@ pub fn authenticate_wallet_request(
 
     // Recover a public key from the byte packed scalar representing the public key
     validate_expiring_signature(body, expiration, &signature, symmetric_key)
-}
-
-/// Parse a signature from the given header
-fn parse_signature_from_header(headers: &HeaderMap) -> Result<Vec<u8>, ApiServerError> {
-    let b64_signature: &str = headers
-        .get(RENEGADE_AUTH_HEADER_NAME)
-        .ok_or_else(|| bad_request(ERR_SIG_HEADER_MISSING.to_string()))?
-        .to_str()
-        .map_err(|_| bad_request(ERR_SIG_FORMAT_INVALID.to_string()))?;
-    b64_general_purpose::STANDARD_NO_PAD
-        .decode(b64_signature)
-        .map_err(|_| bad_request(ERR_SIG_FORMAT_INVALID.to_string()))
 }
 
 /// A helper to verify a signature on a request body
@@ -69,8 +51,9 @@ fn validate_expiring_signature(
 mod test {
     use base64::engine::{general_purpose as b64_general_purpose, Engine};
     use common::types::wallet::keychain::HmacKey;
-    use external_api::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};
     use hyper::{header::HeaderValue, HeaderMap};
+
+    use crate::auth::helpers::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};
 
     use super::authenticate_wallet_request;
 

@@ -3,9 +3,16 @@ name = "external-api"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+auth = ["http", "thiserror"]
+
 [dependencies]
 # === Arithmetic === #
 num-bigint = { workspace = true }
+
+# === Auth Dependencies === #
+http = { version = "0.2.12", optional = true }
+thiserror = { version = "1.0.61", optional = true }
 
 # === Workspace Dependencies === #
 circuit-types = { path = "../circuit-types" }

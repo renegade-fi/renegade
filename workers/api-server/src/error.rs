@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use external_api::auth::AuthError;
 use hyper::{Body, Response, StatusCode};
 use state::error::StateError;
 
@@ -53,6 +54,12 @@ impl From<ApiServerError> for Response<Body> {
             ),
             _ => build_500_response(err.to_string()),
         }
+    }
+}
+
+impl From<AuthError> for ApiServerError {
+    fn from(value: AuthError) -> Self {
+        ApiServerError::HttpStatusCode(StatusCode::UNAUTHORIZED, value.to_string())
     }
 }
 
