@@ -17,7 +17,8 @@ use external_api::{
     http::{
         admin::{
             AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
-            CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrdersResponse,
+            AdminWalletOrdersResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
+            OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
@@ -129,9 +130,9 @@ impl TypedHandler for AdminTriggerSnapshotHandler {
     }
 }
 
-// ------------------------
-// | Open Orders Handlers |
-// ------------------------
+// ------------------
+// | Order Handlers |
+// ------------------
 
 /// Handler for the GET /v0/admin/open-orders route
 pub struct AdminOpenOrdersHandler {
@@ -174,7 +175,7 @@ impl TypedHandler for AdminOpenOrdersHandler {
     }
 }
 
-/// Handle for the GET /v0/admin/orders/:id/metadata route
+/// Handler for the GET /v0/admin/orders/:id/metadata route
 pub struct AdminOrderMetadataHandler {
     /// A handle to the relayer state
     state: State,
@@ -236,6 +237,44 @@ impl TypedHandler for AdminOrderMetadataHandler {
         }
 
         Ok(AdminOrderMetadataResponse { order })
+    }
+}
+
+// -------------------
+// | Wallet Handlers |
+// -------------------
+
+/// Handler for the GET /v0/admin/wallet/:id/orders route
+pub struct AdminWalletOrdersHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl AdminWalletOrdersHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminWalletOrdersHandler {
+    type Request = EmptyRequestResponse;
+    type Response = AdminWalletOrdersResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+        let wallet =
+            self.state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
+        let order_ids = wallet.orders.keys().cloned().collect();
+
+        Ok(AdminWalletOrdersResponse { orders: order_ids })
     }
 }
 
