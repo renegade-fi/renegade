@@ -1,5 +1,6 @@
 //! Keychain helpers for the wallet
 
+use base64::engine::{general_purpose as b64_general_purpose, Engine};
 use circuit_types::keychain::{
     PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,
     SecretSigningKey,
@@ -23,12 +24,15 @@ use util::{
 
 use super::Wallet;
 
+/// The length of an HMAC key in bytes
+pub const HMAC_KEY_LEN: usize = 32;
+
 /// Type alias for the hmac core implementation
 type HmacSha256 = hmac::Hmac<Sha256>;
 
 /// A type representing a symmetric HMAC key
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HmacKey(pub [u8; 32]);
+pub struct HmacKey(pub [u8; HMAC_KEY_LEN]);
 impl HmacKey {
     /// Create a new HMAC key from a hex string
     pub fn new(hex: &str) -> Result<Self, String> {
@@ -36,14 +40,14 @@ impl HmacKey {
     }
 
     /// Get the inner bytes
-    pub fn inner(&self) -> &[u8; 32] {
+    pub fn inner(&self) -> &[u8; HMAC_KEY_LEN] {
         &self.0
     }
 
     /// Create a new random HMAC key
     pub fn random() -> Self {
         let mut rng = thread_rng();
-        let mut bytes = [0; 32];
+        let mut bytes = [0; HMAC_KEY_LEN];
         rng.fill_bytes(&mut bytes);
 
         Self(bytes)
@@ -57,8 +61,23 @@ impl HmacKey {
     /// Try to convert a hex string to an HMAC key
     pub fn from_hex_string(hex: &str) -> Result<Self, String> {
         let bytes = bytes_from_hex_string(hex)?;
-        if bytes.len() != 32 {
-            return Err(format!("expected 32 byte HMAC key, got {}", bytes.len()));
+        if bytes.len() != HMAC_KEY_LEN {
+            return Err(format!("expected {HMAC_KEY_LEN} byte HMAC key, got {}", bytes.len()));
+        }
+
+        Ok(Self(bytes.try_into().unwrap()))
+    }
+
+    /// Convert the HMAC key to a base64 string
+    pub fn to_base64_string(&self) -> String {
+        b64_general_purpose::STANDARD.encode(self.0)
+    }
+
+    /// Try to convert a base64 string to an HMAC key
+    pub fn from_base64_string(base64: &str) -> Result<Self, String> {
+        let bytes = b64_general_purpose::STANDARD.decode(base64).map_err(|e| e.to_string())?;
+        if bytes.len() != HMAC_KEY_LEN {
+            return Err(format!("expected {HMAC_KEY_LEN} byte HMAC key, got {}", bytes.len()));
         }
 
         Ok(Self(bytes.try_into().unwrap()))
