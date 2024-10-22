@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     http::{external_match::AtomicMatchApiBundle, task::ApiTaskStatus},
-    types::{AdminWalletUpdate, ApiHistoricalTask, ApiWallet},
+    types::{ApiHistoricalTask, ApiWallet},
 };
 
 // ----------------------------
@@ -166,7 +166,10 @@ pub enum SystemBusMessage {
     // --- Admin -- //
     /// A message indicating that a wallet has been updated, intended for
     /// consumption by the admin API
-    AdminWalletUpdate(AdminWalletUpdate),
+    AdminWalletUpdate {
+        /// The ID of the wallet that was updated
+        wallet_id: WalletIdentifier,
+    },
 }
 
 /// A wrapper around a SystemBusMessage containing the topic, used for

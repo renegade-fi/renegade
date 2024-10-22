@@ -11,14 +11,23 @@ use crate::types::{AdminOrderMetadata, ApiOrder};
 
 use super::wallet::WalletUpdateAuthorization;
 
+// Getter routes
+
 /// Check whether the target node is a raft leader
 pub const IS_LEADER_ROUTE: &str = "/v0/admin/is-leader";
-/// Trigger a raft snapshot
-pub const ADMIN_TRIGGER_SNAPSHOT_ROUTE: &str = "/v0/admin/trigger-snapshot";
 /// Get the open orders managed by the node
 pub const ADMIN_OPEN_ORDERS_ROUTE: &str = "/v0/admin/open-orders";
 /// Get the order metadata for a given order
 pub const ADMIN_ORDER_METADATA_ROUTE: &str = "/v0/admin/orders/:order_id/metadata";
+/// Route to get the matching pool for an order
+pub const ADMIN_GET_ORDER_MATCHING_POOL_ROUTE: &str = "/v0/admin/orders/:order_id/matching-pool";
+/// Route to get all the order IDs for a given wallet
+pub const ADMIN_WALLET_ORDER_IDS_ROUTE: &str = "/v0/admin/wallet/:wallet_id/order-ids";
+
+// Setter routes
+
+/// Trigger a raft snapshot
+pub const ADMIN_TRIGGER_SNAPSHOT_ROUTE: &str = "/v0/admin/trigger-snapshot";
 /// Route to create a matching pool
 pub const ADMIN_MATCHING_POOL_CREATE_ROUTE: &str = "/v0/admin/matching_pools/:matching_pool";
 /// Route to destroy a matching pool
@@ -29,10 +38,6 @@ pub const ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE: &str =
     "/v0/admin/wallet/:wallet_id/order-in-pool";
 /// Route to assign an order to a matching pool
 pub const ADMIN_ASSIGN_ORDER_ROUTE: &str = "/v0/admin/orders/:order_id/assign-pool/:matching_pool";
-/// Route to get the matching pool for an order
-pub const ADMIN_GET_ORDER_MATCHING_POOL_ROUTE: &str = "/v0/admin/orders/:order_id/matching-pool";
-/// Route to get all the order IDs for a given wallet
-pub const ADMIN_WALLET_ORDERS_ROUTE: &str = "/v0/admin/wallet/:wallet_id/orders";
 
 /// The response to an "is leader" request
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -75,9 +80,9 @@ pub struct AdminGetOrderMatchingPoolResponse {
     pub matching_pool: MatchingPoolName,
 }
 
-/// The response to a "get wallet orders" request
+/// The response to a "get wallet order IDs" request
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AdminWalletOrdersResponse {
+pub struct AdminWalletOrderIdsResponse {
     /// The order IDs
-    pub orders: Vec<OrderIdentifier>,
+    pub order_ids: Vec<OrderIdentifier>,
 }
