@@ -2,7 +2,7 @@
 
 use circuit_types::Amount;
 use common::types::{
-    wallet::{order_metadata::OrderMetadata, OrderIdentifier, WalletIdentifier},
+    wallet::{order_metadata::OrderMetadata, WalletIdentifier},
     Price,
 };
 use serde::{Deserialize, Serialize};
@@ -20,30 +20,4 @@ pub struct AdminOrderMetadata {
     pub fillable: Option<Amount>,
     /// The price used to calculate the fillable amount
     pub price: Option<Price>,
-}
-
-/// An opaque message type for the admin wallet updates
-/// websocket route, indicating wallet updates without
-/// leaking unnecessary information
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum AdminWalletUpdate {
-    /// Any update to a wallet
-    WalletUpdate {
-        /// The ID of the wallet that was updated
-        wallet_id: WalletIdentifier,
-    },
-    /// An order placement
-    OrderPlacement {
-        /// The ID of the wallet containing the order
-        wallet_id: WalletIdentifier,
-        /// The ID of the order that was placed
-        order_id: OrderIdentifier,
-    },
-    /// An order cancellation
-    OrderCancellation {
-        /// The ID of the wallet containing the order
-        wallet_id: WalletIdentifier,
-        /// The ID of the order that was cancelled
-        order_id: OrderIdentifier,
-    },
 }
