@@ -33,7 +33,7 @@ renegade-compliance-api = { git = "https://github.com/renegade-fi/relayer-extens
 common = { path = "../../common" }
 constants = { path = "../../constants" }
 renegade-crypto = { path = "../../renegade-crypto" }
-external-api = { path = "../../external-api" }
+external-api = { path = "../../external-api", features = ["auth"] }
 gossip-api = { path = "../../gossip-api" }
 job-types = { path = "../job-types" }
 state = { path = "../../state" }

@@ -17,8 +17,6 @@ mod wallet_auth;
 
 /// Error message emitted when the admin API is disabled
 const ERR_ADMIN_API_DISABLED: &str = "Admin API is disabled";
-/// The number of bytes in an HMAC
-const HMAC_LEN: usize = 32;
 
 /// Represents the auth type required for a request
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

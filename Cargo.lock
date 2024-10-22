@@ -3575,6 +3575,7 @@ dependencies = [
  "constants 0.1.0",
  "ethers",
  "hex 0.4.3",
+ "http 0.2.12",
  "itertools 0.10.5",
  "num-bigint",
  "num-traits",
@@ -3582,6 +3583,7 @@ dependencies = [
  "renegade-crypto 0.1.0",
  "serde",
  "serde_json",
+ "thiserror",
  "util 0.1.0",
  "uuid 1.10.0",
 ]
