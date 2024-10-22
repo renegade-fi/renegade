@@ -9,7 +9,10 @@ mod rate_limit;
 mod task;
 mod wallet;
 
-use admin::{AdminGetOrderMatchingPoolHandler, AdminTriggerSnapshotHandler, IsLeaderHandler};
+use admin::{
+    AdminGetOrderMatchingPoolHandler, AdminTriggerSnapshotHandler, AdminWalletOrdersHandler,
+    IsLeaderHandler,
+};
 use async_trait::async_trait;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
@@ -22,7 +25,7 @@ use external_api::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE,
             ADMIN_GET_ORDER_MATCHING_POOL_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
             ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
-            ADMIN_TRIGGER_SNAPSHOT_ROUTE, IS_LEADER_ROUTE,
+            ADMIN_TRIGGER_SNAPSHOT_ROUTE, ADMIN_WALLET_ORDERS_ROUTE, IS_LEADER_ROUTE,
         },
         external_match::REQUEST_EXTERNAL_MATCH_ROUTE,
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
@@ -474,6 +477,13 @@ impl HttpServer {
             &Method::GET,
             ADMIN_ORDER_METADATA_ROUTE.to_string(),
             AdminOrderMetadataHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
+        );
+
+        // The "/admin/wallet/:id/orders" route
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_WALLET_ORDERS_ROUTE.to_string(),
+            AdminWalletOrdersHandler::new(state.clone()),
         );
 
         // The "/admin/matching_pools/:matching_pool" route
