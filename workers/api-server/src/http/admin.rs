@@ -17,7 +17,7 @@ use external_api::{
     http::{
         admin::{
             AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
-            AdminWalletOrdersResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
+            AdminWalletOrderIdsResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
             OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
@@ -244,13 +244,13 @@ impl TypedHandler for AdminOrderMetadataHandler {
 // | Wallet Handlers |
 // -------------------
 
-/// Handler for the GET /v0/admin/wallet/:id/orders route
-pub struct AdminWalletOrdersHandler {
+/// Handler for the GET /v0/admin/wallet/:id/order-ids route
+pub struct AdminWalletOrderIdsHandler {
     /// A handle to the relayer state
     state: State,
 }
 
-impl AdminWalletOrdersHandler {
+impl AdminWalletOrderIdsHandler {
     /// Constructor
     pub fn new(state: State) -> Self {
         Self { state }
@@ -258,9 +258,9 @@ impl AdminWalletOrdersHandler {
 }
 
 #[async_trait]
-impl TypedHandler for AdminWalletOrdersHandler {
+impl TypedHandler for AdminWalletOrderIdsHandler {
     type Request = EmptyRequestResponse;
-    type Response = AdminWalletOrdersResponse;
+    type Response = AdminWalletOrderIdsResponse;
 
     async fn handle_typed(
         &self,
@@ -274,7 +274,7 @@ impl TypedHandler for AdminWalletOrdersHandler {
             self.state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
         let order_ids = wallet.orders.keys().cloned().collect();
 
-        Ok(AdminWalletOrdersResponse { orders: order_ids })
+        Ok(AdminWalletOrderIdsResponse { order_ids })
     }
 }
 
