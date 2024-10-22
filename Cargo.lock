@@ -2184,7 +2184,7 @@ dependencies = [
  "ark-mpc",
  "ark-poly",
  "async-trait",
- "base64 0.13.1",
+ "base64 0.22.1",
  "bimap",
  "circuit-types 0.1.0",
  "circuits 0.1.0",

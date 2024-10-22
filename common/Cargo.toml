@@ -52,7 +52,7 @@ util = { path = "../util" }
 contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
 
 # === Misc Dependencies === #
-base64 = { version = "0.13" }
+base64 = { version = "0.22" }
 bimap = "0.6.2"
 derivative = "2.2"
 indexmap = { workspace = true }
