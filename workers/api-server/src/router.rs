@@ -299,7 +299,7 @@ impl Router {
                 };
 
                 // Auth check and handler
-                if let Err(e) = self.check_auth(*auth, &params_map, &mut req).await {
+                if let Err(e) = self.check_auth(*auth, path, &params_map, &mut req).await {
                     return e.into();
                 }
 
@@ -345,6 +345,7 @@ impl Router {
     async fn check_auth(
         &self,
         auth_type: AuthType,
+        path: &str,
         url_params: &HashMap<String, String>,
         req: &mut Request<Body>,
     ) -> Result<(), ApiServerError> {
@@ -361,11 +362,11 @@ impl Router {
                 // Parse the wallet ID from the URL params
                 let wallet_id = parse_wallet_id_from_params(url_params)?;
                 self.auth_middleware
-                    .authenticate_wallet_request(wallet_id, req.headers(), &req_body)
+                    .authenticate_wallet_request(wallet_id, path, req.headers(), &req_body)
                     .await?;
             },
             AuthType::Admin => {
-                self.auth_middleware.authenticate_admin_request(req.headers(), &req_body)?;
+                self.auth_middleware.authenticate_admin_request(path, req.headers(), &req_body)?;
             },
             AuthType::None => unreachable!(),
         }

@@ -320,7 +320,7 @@ impl WebsocketServer {
 
                 // Validate auth
                 if route_handler.requires_wallet_auth() {
-                    self.authenticate_subscription(&params, &message).await?;
+                    self.authenticate_subscription(topic, &params, &message).await?;
                 }
 
                 // Register the topic subscription in the system bus and in the stream
@@ -368,6 +368,7 @@ impl WebsocketServer {
     /// Authenticate a request by verifying a signature of the body by `sk_root`
     async fn authenticate_subscription(
         &self,
+        topic: &str,
         params: &UrlParams,
         message: &ClientWebsocketMessage,
     ) -> Result<(), ApiServerError> {
@@ -381,7 +382,7 @@ impl WebsocketServer {
             serde_json::to_vec(&message.body).expect("re-serialization should not fail");
 
         self.auth_middleware
-            .authenticate_wallet_request(wallet_id, &headers, &body_serialized)
+            .authenticate_wallet_request(wallet_id, topic, &headers, &body_serialized)
             .await
     }
 
