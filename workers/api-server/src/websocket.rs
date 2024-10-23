@@ -337,7 +337,7 @@ impl WebsocketServer {
                 let (params, route_handler) = self.parse_route_and_params(topic)?;
 
                 // Validate auth
-                self.authenticate_subscription(route_handler.auth_type(), &params, &message)
+                self.authenticate_subscription(route_handler.auth_type(), topic, &params, &message)
                     .await?;
 
                 // Register the topic subscription in the system bus and in the stream
@@ -386,6 +386,7 @@ impl WebsocketServer {
     async fn authenticate_subscription(
         &self,
         auth_type: AuthType,
+        topic: &str,
         params: &UrlParams,
         message: &ClientWebsocketMessage,
     ) -> Result<(), ApiServerError> {
@@ -405,11 +406,11 @@ impl WebsocketServer {
                 // Parse the wallet ID from the params
                 let wallet_id = parse_wallet_id_from_params(params)?;
                 self.auth_middleware
-                    .authenticate_wallet_request(wallet_id, &headers, &body_serialized)
+                    .authenticate_wallet_request(wallet_id, topic, &headers, &body_serialized)
                     .await
             },
             AuthType::Admin => {
-                self.auth_middleware.authenticate_admin_request(&headers, &body_serialized)
+                self.auth_middleware.authenticate_admin_request(topic, &headers, &body_serialized)
             },
             AuthType::None => unreachable!(),
         }
