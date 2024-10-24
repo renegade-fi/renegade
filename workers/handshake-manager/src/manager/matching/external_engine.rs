@@ -26,9 +26,28 @@ use util::err_str;
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 impl HandshakeExecutor {
-    /// Execute an external match
+    /// Encapsulates the logic for the external matching engine in an error
+    /// handler
+    ///
+    /// This allows the engine to respond to the client through the bus even if
+    /// the matching engine fails
     #[instrument(name = "run_external_matching_engine", skip_all)]
     pub async fn run_external_matching_engine(
+        &self,
+        order: Order,
+        response_topic: String,
+    ) -> Result<(), HandshakeManagerError> {
+        match self.run_external_matching_engine_inner(order, response_topic.clone()).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.handle_no_match(response_topic);
+                Err(e)
+            },
+        }
+    }
+
+    /// Execute an external match
+    async fn run_external_matching_engine_inner(
         &self,
         order: Order,
         response_topic: String,

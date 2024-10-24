@@ -243,6 +243,7 @@ impl ClusterId {
     /// public key into a base64 encoded representation than to use the value
     /// directly
     pub fn new(cluster_pubkey: &PublicKey) -> Self {
+        #[allow(deprecated)]
         let encoded_key = base64::encode(cluster_pubkey.as_bytes());
         Self(encoded_key)
     }
@@ -254,6 +255,7 @@ impl ClusterId {
 
     /// Get the public key represented by this cluster
     pub fn get_public_key(&self) -> Result<PublicKey, SignatureError> {
+        #[allow(deprecated)]
         let decoded_key = base64::decode(&self.0).map_err(|_| SignatureError::new())?;
         PublicKey::from_bytes(&decoded_key)
     }
