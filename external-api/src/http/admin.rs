@@ -21,8 +21,9 @@ pub const ADMIN_OPEN_ORDERS_ROUTE: &str = "/v0/admin/open-orders";
 pub const ADMIN_ORDER_METADATA_ROUTE: &str = "/v0/admin/orders/:order_id/metadata";
 /// Route to get the matching pool for an order
 pub const ADMIN_GET_ORDER_MATCHING_POOL_ROUTE: &str = "/v0/admin/orders/:order_id/matching-pool";
-/// Route to get all the order IDs for a given wallet
-pub const ADMIN_WALLET_ORDER_IDS_ROUTE: &str = "/v0/admin/wallet/:wallet_id/order-ids";
+/// Route to get all the matchable order IDs for a given wallet
+pub const ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE: &str =
+    "/v0/admin/wallet/:wallet_id/matchable-order-ids";
 
 // Setter routes
 
@@ -80,9 +81,9 @@ pub struct AdminGetOrderMatchingPoolResponse {
     pub matching_pool: MatchingPoolName,
 }
 
-/// The response to a "get wallet order IDs" request
+/// The response to a "get wallet matchable order IDs" request
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AdminWalletOrderIdsResponse {
+pub struct AdminWalletMatchableOrderIdsResponse {
     /// The order IDs
     pub order_ids: Vec<OrderIdentifier>,
 }

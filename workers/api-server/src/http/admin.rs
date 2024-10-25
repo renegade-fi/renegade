@@ -17,8 +17,8 @@ use external_api::{
     http::{
         admin::{
             AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
-            AdminWalletOrderIdsResponse, CreateOrderInMatchingPoolRequest, IsLeaderResponse,
-            OpenOrdersResponse,
+            AdminWalletMatchableOrderIdsResponse, CreateOrderInMatchingPoolRequest,
+            IsLeaderResponse, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
@@ -244,13 +244,13 @@ impl TypedHandler for AdminOrderMetadataHandler {
 // | Wallet Handlers |
 // -------------------
 
-/// Handler for the GET /v0/admin/wallet/:id/order-ids route
-pub struct AdminWalletOrderIdsHandler {
+/// Handler for the GET /v0/admin/wallet/:id/matchable-order-ids route
+pub struct AdminWalletMatchableOrderIdsHandler {
     /// A handle to the relayer state
     state: State,
 }
 
-impl AdminWalletOrderIdsHandler {
+impl AdminWalletMatchableOrderIdsHandler {
     /// Constructor
     pub fn new(state: State) -> Self {
         Self { state }
@@ -258,9 +258,9 @@ impl AdminWalletOrderIdsHandler {
 }
 
 #[async_trait]
-impl TypedHandler for AdminWalletOrderIdsHandler {
+impl TypedHandler for AdminWalletMatchableOrderIdsHandler {
     type Request = EmptyRequestResponse;
-    type Response = AdminWalletOrderIdsResponse;
+    type Response = AdminWalletMatchableOrderIdsResponse;
 
     async fn handle_typed(
         &self,
@@ -272,9 +272,10 @@ impl TypedHandler for AdminWalletOrderIdsHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let wallet =
             self.state.get_wallet(&wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
-        let order_ids = wallet.orders.keys().cloned().collect();
 
-        Ok(AdminWalletOrderIdsResponse { order_ids })
+        let order_ids = wallet.get_matchable_orders().into_iter().map(|(id, _order)| id).collect();
+
+        Ok(AdminWalletMatchableOrderIdsResponse { order_ids })
     }
 }
 
