@@ -88,7 +88,7 @@ impl HandshakeExecutor {
         let base_addr = base.get_addr().to_string();
         let quote_addr = quote.get_addr().to_string();
         let price_recv = self.request_price(base.clone(), quote.clone())?;
-        let price =
+        let price: TimestampedPrice =
             match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
                 PriceReporterState::Nominal(ref report) => report.into(),
                 err_state => {
@@ -100,7 +100,10 @@ impl HandshakeExecutor {
             };
 
         // Correct the price for decimals
-        let corrected_price = Self::decimal_correct_price(base, quote, price)?;
+        let corrected_price = price
+            .get_decimal_corrected_price(base, quote)
+            .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
+
         Ok(corrected_price)
     }
 }

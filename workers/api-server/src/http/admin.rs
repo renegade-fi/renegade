@@ -11,7 +11,7 @@ use common::types::{
     tasks::UpdateWalletTaskDescriptor,
     token::Token,
     wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
-    Price,
+    Price, TimestampedPrice,
 };
 use external_api::{
     http::{
@@ -551,11 +551,15 @@ async fn get_fillable_amount_and_price(
 
     let (price_tx, price_rx) = oneshot::channel();
     price_reporter_job_queue
-        .send(PriceReporterJob::PeekPrice { base_token, quote_token, channel: price_tx })
+        .send(PriceReporterJob::PeekPrice {
+            base_token: base_token.clone(),
+            quote_token: quote_token.clone(),
+            channel: price_tx,
+        })
         .map_err(internal_error)?;
 
-    let price = match price_rx.await.map_err(internal_error)? {
-        PriceReporterState::Nominal(report) => report.price,
+    let price: TimestampedPrice = match price_rx.await.map_err(internal_error)? {
+        PriceReporterState::Nominal(report) => (&report).into(),
         err_state => {
             return Err(internal_error(format!(
                 "{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {err_state:?}"
@@ -563,7 +567,14 @@ async fn get_fillable_amount_and_price(
         },
     };
 
-    let price_fp = FixedPoint::from_f64_round_down(price);
+    let original_price = price.price;
+    let corrected_price =
+        price.get_decimal_corrected_price(&base_token, &quote_token).map_err(internal_error)?;
 
-    Ok((compute_max_amount(&price_fp, &order.clone().into(), &balance), price))
+    let price_fp = FixedPoint::from_f64_round_down(corrected_price.price);
+
+    // NOTE: While we need to use the decimal-corrected price to compute the
+    // fillable amount, we return the original price to the client, as this is
+    // simpler to interpret
+    Ok((compute_max_amount(&price_fp, &order.clone().into(), &balance), original_price))
 }

@@ -15,6 +15,7 @@ pub mod token;
 pub mod transfer_auth;
 pub mod wallet;
 
+use token::Token;
 use util::get_current_time_millis;
 // Re-export the mock types
 #[cfg(feature = "mocks")]
@@ -56,6 +57,26 @@ impl TimestampedPrice {
     /// Get the price as a fixed point number
     pub fn as_fixed_point(&self) -> FixedPoint {
         FixedPoint::from_f64_round_down(self.price)
+    }
+
+    /// Get the decimal-corrected version of this price for a given token pair
+    pub fn get_decimal_corrected_price(
+        self,
+        base_token: &Token,
+        quote_token: &Token,
+    ) -> Result<TimestampedPrice, String> {
+        let base_decimals = base_token
+            .get_decimals()
+            .ok_or(format!("No decimals for {}", base_token.get_addr()))?;
+        let quote_decimals = quote_token
+            .get_decimals()
+            .ok_or(format!("No decimals for {}", quote_token.get_addr()))?;
+
+        let TimestampedPrice { price: original_price, timestamp } = self;
+        let decimal_diff = quote_decimals as i32 - base_decimals as i32;
+        let corrected_price = original_price * 10f64.powi(decimal_diff);
+
+        Ok(TimestampedPrice { price: corrected_price, timestamp })
     }
 }
 
