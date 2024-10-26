@@ -107,7 +107,7 @@ where
         // Here we round down to the nearest integer
         let expected_quote_amount =
             witness.price1.mul_integer(witness.match_res.base_amount, cs)?;
-        MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+        MultiproverFixedPointGadget::constrain_equal_floor(
             expected_quote_amount,
             witness.match_res.quote_amount,
             fabric,
@@ -318,14 +318,14 @@ where
         let expected_relayer_fee = relayer_fee.mul_integer(received_amount, cs)?;
         let expected_protocol_fee = protocol_fee.mul_integer(received_amount, cs)?;
 
-        MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+        MultiproverFixedPointGadget::constrain_equal_floor(
             expected_relayer_fee,
             fee_take.relayer_fee,
             fabric,
             cs,
         )?;
 
-        MultiproverFixedPointGadget::constrain_equal_integer_ignore_fraction(
+        MultiproverFixedPointGadget::constrain_equal_floor(
             expected_protocol_fee,
             fee_take.protocol_fee,
             fabric,
