@@ -79,12 +79,10 @@ impl HandshakeExecutor {
 
             match midpoint_state {
                 PriceReporterState::Nominal(report) => {
-                    let price = (&report).into();
-                    let corrected_price = Self::decimal_correct_price(
-                        &report.base_token,
-                        &report.quote_token,
-                        price,
-                    )?;
+                    let price: TimestampedPrice = (&report).into();
+                    let corrected_price = price
+                        .get_decimal_corrected_price(&report.base_token, &report.quote_token)
+                        .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
                     midpoint_prices.push((report.base_token, report.quote_token, corrected_price));
                 },
 
@@ -92,12 +90,10 @@ impl HandshakeExecutor {
                 // with large deviation. This largely happens because of Uniswap, and we could
                 // implement a more complex deviation calculation that ignores DEXs
                 PriceReporterState::TooMuchDeviation(report, _) => {
-                    let price = (&report).into();
-                    let corrected_price = Self::decimal_correct_price(
-                        &report.base_token,
-                        &report.quote_token,
-                        price,
-                    )?;
+                    let price: TimestampedPrice = (&report).into();
+                    let corrected_price = price
+                        .get_decimal_corrected_price(&report.base_token, &report.quote_token)
+                        .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
                     midpoint_prices.push((report.base_token, report.quote_token, corrected_price));
                 },
 
@@ -171,26 +167,5 @@ impl HandshakeExecutor {
         }
 
         Ok(true)
-    }
-
-    /// Decimal correct a price for a given token pair
-    pub(super) fn decimal_correct_price(
-        base_token: &Token,
-        quote_token: &Token,
-        ts_price: TimestampedPrice,
-    ) -> Result<TimestampedPrice, HandshakeManagerError> {
-        let base_decimals = base_token.get_decimals().ok_or(HandshakeManagerError::NoPriceData(
-            format!("{ERR_NO_PRICE_STREAM}: {base_token}-{quote_token}"),
-        ))?;
-        let quote_decimals =
-            quote_token.get_decimals().ok_or(HandshakeManagerError::NoPriceData(format!(
-                "{ERR_NO_PRICE_STREAM}: {base_token}-{quote_token}"
-            )))?;
-
-        let original_price = ts_price.price;
-        let decimal_diff = quote_decimals as i32 - base_decimals as i32;
-        let corrected_price = original_price * 10f64.powi(decimal_diff);
-
-        Ok(TimestampedPrice { price: corrected_price, timestamp: ts_price.timestamp })
     }
 }
