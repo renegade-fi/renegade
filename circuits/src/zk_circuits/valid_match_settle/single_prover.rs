@@ -108,7 +108,7 @@ where
         // Here we round down to the nearest integer
         let expected_quote_amount =
             witness.price1.mul_integer(witness.match_res.base_amount, cs)?;
-        FixedPointGadget::constrain_equal_integer_ignore_fraction(
+        FixedPointGadget::constrain_equal_floor(
             expected_quote_amount,
             witness.match_res.quote_amount,
             cs,
@@ -311,17 +311,8 @@ where
         let expected_relayer_fee = relayer_fee.mul_integer(received_amount, cs)?;
         let expected_protocol_fee = protocol_fee.mul_integer(received_amount, cs)?;
 
-        FixedPointGadget::constrain_equal_integer_ignore_fraction(
-            expected_relayer_fee,
-            fee_take.relayer_fee,
-            cs,
-        )?;
-
-        FixedPointGadget::constrain_equal_integer_ignore_fraction(
-            expected_protocol_fee,
-            fee_take.protocol_fee,
-            cs,
-        )
+        FixedPointGadget::constrain_equal_floor(expected_relayer_fee, fee_take.relayer_fee, cs)?;
+        FixedPointGadget::constrain_equal_floor(expected_protocol_fee, fee_take.protocol_fee, cs)
     }
 
     /// Verify that the balance updates to a wallet are valid
