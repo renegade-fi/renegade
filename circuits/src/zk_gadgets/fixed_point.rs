@@ -10,6 +10,7 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
 
 use super::{
     arithmetic::DivRemGadget,
+    bits::{BitRangeGadget, MultiproverBitRangeGadget},
     comparators::{EqGadget, GreaterThanEqZeroGadget, MultiproverGreaterThanEqZeroGadget},
 };
 
@@ -82,6 +83,23 @@ impl FixedPointGadget {
         )
     }
 
+    /// Constrain an integer to be equal to the floor of a fixed point value
+    pub fn constrain_equal_floor(
+        fp: FixedPointVar,
+        integer: Variable,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let one = ScalarField::one();
+        let zero_var = cs.zero();
+
+        // fp - (2^m * integer)
+        let lhs_minus_rhs =
+            cs.lc(&[fp.repr, integer, zero_var, zero_var], &[one, -*TWO_TO_M_SCALAR, one, one])?;
+
+        // This diff must be a positive value representable in at most M bits
+        BitRangeGadget::<{ DEFAULT_FP_PRECISION }>::constrain_bit_range(lhs_minus_rhs, cs)
+    }
+
     // === Arithmetic Ops === //
 
     /// Computes the closest integral value less than the given fixed point
@@ -129,6 +147,26 @@ impl MultiproverFixedPointGadget {
 
         MultiproverGreaterThanEqZeroGadget::<{DEFAULT_FP_PRECISION + 1}>::constrain_greater_than_eq_zero(diff, fabric, cs)
     }
+
+    /// Constrain a fixed point variable to equal an integral variable when
+    /// floored
+    pub fn constrain_equal_floor(
+        fp: FixedPointVar,
+        integer: Variable,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let zero_var = cs.zero();
+        let one = ScalarField::one();
+
+        let lhs_minus_rhs =
+            cs.lc(&[fp.repr, integer, zero_var, zero_var], &[one, -*TWO_TO_M_SCALAR, one, one])?;
+        MultiproverBitRangeGadget::<{ DEFAULT_FP_PRECISION }>::constrain_bit_range(
+            lhs_minus_rhs,
+            fabric,
+            cs,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +177,7 @@ mod test {
         traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
         MpcPlonkCircuit, PlonkCircuit,
     };
+    use constants::Scalar;
     use mpc_relation::traits::Circuit;
     use rand::{thread_rng, Rng};
     use test_helpers::mpc_network::execute_mock_mpc;
@@ -146,6 +185,48 @@ mod test {
     use crate::zk_gadgets::fixed_point::MultiproverFixedPointGadget;
 
     use super::FixedPointGadget;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Generate a random fixed point value
+    fn random_fixed_point() -> FixedPoint {
+        let mut rng = thread_rng();
+        FixedPoint::from_repr(Scalar::random(&mut rng))
+    }
+
+    /// A helper to test the floor method
+    ///
+    /// Returns whether the constraints are satisfied
+    fn floor_test_helper(integer: Scalar, fp: FixedPoint) -> bool {
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let fp_var = fp.create_witness(&mut cs);
+        let floor_var = integer.create_witness(&mut cs);
+        FixedPointGadget::constrain_equal_floor(fp_var, floor_var, &mut cs).unwrap();
+
+        cs.check_circuit_satisfiability(&[]).is_ok()
+    }
+
+    /// A helper to test the floor method in a multiprover context
+    async fn floor_test_helper_mpc(fp: FixedPoint, int: Scalar) -> bool {
+        let (valid, _) = execute_mock_mpc(move |fabric| async move {
+            let mut cs = MpcPlonkCircuit::new(fabric.clone());
+            let fp_var = fp.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
+            let int_var = int.allocate(PARTY0, &fabric).create_shared_witness(&mut cs);
+            MultiproverFixedPointGadget::constrain_equal_floor(fp_var, int_var, &fabric, &mut cs)
+                .unwrap();
+
+            cs.check_circuit_satisfiability(&[]).is_ok()
+        })
+        .await;
+
+        valid
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
 
     /// Test the equality methods
     #[test]
@@ -218,6 +299,72 @@ mod test {
 
         // Validate constraints
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    /// Tests the integer floor equality method
+    ///
+    /// Tests both a single prover and multiprover circuit
+    #[tokio::test]
+    async fn test_integer_floor_equality() {
+        // Test data
+        let mut rng = thread_rng();
+        let test_fp = random_fixed_point();
+        let test_int = test_fp.floor();
+        let test_u64 = rng.gen::<u64>();
+
+        let mut test_cases = vec![];
+        /// A test case for the floor method
+        struct TestCase {
+            fp: FixedPoint,
+            int: Scalar,
+            valid: bool,
+        }
+
+        // Case 1: fp == int -- Valid
+        test_cases.push(TestCase {
+            fp: FixedPoint::from_integer(test_u64),
+            int: test_u64.into(),
+            valid: true,
+        });
+
+        // Case 2: floor(fp) == int -- Valid
+        test_cases.push(TestCase { fp: test_fp, int: test_int, valid: true });
+
+        // Case 3: ceil(fp) == int -- Invalid
+        test_cases.push(TestCase { fp: test_fp, int: test_int + Scalar::one(), valid: false });
+
+        // Case 4: fp = int + 1 -- Invalid (smallest invalid fp)
+        test_cases.push(TestCase {
+            fp: FixedPoint::from_integer(test_u64 + 1),
+            int: test_u64.into(),
+            valid: false,
+        });
+
+        // Case 5: fp = int + 1 - \epsilon -- Valid (largest valid fp)
+        let mut fp = FixedPoint::from_integer(test_u64 + 1);
+        fp.repr -= Scalar::one();
+        test_cases.push(TestCase { fp, int: test_u64.into(), valid: true });
+
+        // Case 6: fp = int + \epsilon -- Valid (smallest valid fp)
+        let mut fp = FixedPoint::from_integer(test_u64);
+        fp.repr += Scalar::one();
+        test_cases.push(TestCase { fp, int: test_u64.into(), valid: true });
+
+        // Case 7: fp = int - \epsilon -- Invalid (largest invalid fp)
+        let mut fp = FixedPoint::from_integer(test_u64);
+        fp.repr -= Scalar::one();
+        test_cases.push(TestCase { fp, int: test_u64.into(), valid: false });
+
+        // Case 8: random fp and random floor value -- Invalid
+        let fp = random_fixed_point();
+        let int = Scalar::random(&mut rng);
+        test_cases.push(TestCase { fp, int, valid: false });
+
+        // Run the tests
+        for test in test_cases {
+            assert!(floor_test_helper(test.int, test.fp) == test.valid);
+            assert!(floor_test_helper_mpc(test.fp, test.int).await == test.valid);
+        }
     }
 
     /// Tests the multiprover equality method
