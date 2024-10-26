@@ -125,7 +125,7 @@ where
         let base_amount = match_res.base_amount;
         let quote_amount = match_res.quote_amount;
         let expected_quote = price.mul_integer(base_amount, cs)?;
-        FixedPointGadget::constrain_equal_integer_ignore_fraction(expected_quote, quote_amount, cs)
+        FixedPointGadget::constrain_equal_floor(expected_quote, quote_amount, cs)
     }
 
     /// Validate that the internal party's balance capitalizes their side of the
@@ -248,11 +248,7 @@ where
 
         // Validate the protocol fee value
         let expected_protocol_fee = statement.protocol_fee.mul_integer(receive_amount, cs)?;
-        FixedPointGadget::constrain_equal_integer_ignore_fraction(
-            expected_protocol_fee,
-            fee_take.protocol_fee,
-            cs,
-        )
+        FixedPointGadget::constrain_equal_floor(expected_protocol_fee, fee_take.protocol_fee, cs)
     }
 }
 
