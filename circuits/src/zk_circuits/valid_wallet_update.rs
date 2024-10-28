@@ -64,6 +64,12 @@ where
             cs,
         )?;
 
+        // Verify that the new blinder has been sampled from the old blinder directly
+        // The blinder stream is seeded by the old blinder's private share
+        let public_blinder = statement.new_public_shares.blinder;
+        let blinder_seed = witness.old_wallet_private_shares.blinder;
+        WalletGadget::validate_public_blinder_from_seed(public_blinder, blinder_seed, cs)?;
+
         // Validate the commitment to the new wallet private shares
         let new_wallet_private_commitment =
             WalletGadget::compute_private_commitment(&witness.new_wallet_private_shares, cs)?;
@@ -528,7 +534,8 @@ pub mod test_helpers {
     };
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_ORDERS,
+        create_multi_opening, create_wallet_shares, create_wallet_shares_with_blinder_seed,
+        MAX_BALANCES, MAX_ORDERS,
     };
 
     use super::{ValidWalletUpdateStatement, ValidWalletUpdateWitness};
@@ -563,10 +570,12 @@ pub mod test_helpers {
         [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         // Construct secret shares of the wallets
+        let mut new_wallet = new_wallet.clone();
         let (old_wallet_private_shares, old_wallet_public_shares) =
             create_wallet_shares(old_wallet);
+        let new_wallet_seed = old_wallet_private_shares.blinder;
         let (new_wallet_private_shares, new_wallet_public_shares) =
-            create_wallet_shares(new_wallet);
+            create_wallet_shares_with_blinder_seed(&mut new_wallet, new_wallet_seed);
 
         // Create dummy openings for the old shares
         let old_shares_commitment =
@@ -1440,5 +1449,36 @@ mod test {
             NO_TRANSFER,
             ExternalTransfer::default()
         ));
+    }
+
+    // --- Misc Invalid Cases --- //
+
+    /// Tests the case in which the new wallet's public blinder share is not
+    /// properly derived from the blinder stream
+    #[test]
+    fn test_incorrect_blinder_share() {
+        let mut rng = thread_rng();
+        let old_wallet = INITIAL_WALLET.clone();
+        let new_wallet = INITIAL_WALLET.clone();
+        let (mut witness, mut statement) =
+            construct_witness_statement::<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>(
+                &old_wallet,
+                &new_wallet,
+                NO_TRANSFER,
+                ExternalTransfer::default(),
+            );
+
+        // Incorrectly blind the new wallet
+        let offset = Scalar::random(&mut rng);
+        witness.new_wallet_private_shares.blinder += offset;
+        statement.new_public_shares.blinder -= offset;
+        statement.new_private_shares_commitment =
+            compute_wallet_private_share_commitment(&witness.new_wallet_private_shares);
+
+        // Check that the constraints are not satisfied
+        let res = check_constraint_satisfaction::<
+            ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
+        >(&witness, &statement);
+        assert!(!res);
     }
 }
