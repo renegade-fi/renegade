@@ -84,6 +84,8 @@ pub struct GetWalletResponse {
 pub struct CreateWalletRequest {
     /// The wallet info to be created
     pub wallet: ApiWallet,
+    /// The blinder seed to use for the wallet
+    pub blinder_seed: BigUint,
 }
 
 /// The response type to a request to create a new wallet
