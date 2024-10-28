@@ -474,7 +474,7 @@ impl NodeStartupTask {
     ) -> Result<(), NodeStartupTaskError> {
         info!("Creating new relayer wallet");
         let wallet = Wallet::new_empty_wallet(wallet_id, blinder_seed, share_seed, keychain);
-        let descriptor = NewWalletTaskDescriptor::new(wallet)
+        let descriptor = NewWalletTaskDescriptor::new(wallet, blinder_seed)
             .map_err(err_str!(NodeStartupTaskError::DeriveWallet))?;
 
         await_task(descriptor.into(), &self.state, self.task_queue.clone())

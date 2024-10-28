@@ -19,6 +19,7 @@ use circuits::zk_circuits::valid_wallet_create::{
 };
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
+use constants::Scalar;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
@@ -146,6 +147,8 @@ impl From<StateError> for NewWalletTaskError {
 pub struct NewWalletTask {
     /// The wallet to create
     pub wallet: Wallet,
+    /// The blinder seed to use for the new wallet
+    pub blinder_seed: Scalar,
     /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
     /// first step
     pub proof_bundle: Option<ValidWalletCreateBundle>,
@@ -172,6 +175,7 @@ impl Task for NewWalletTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         Ok(Self {
             wallet: descriptor.wallet,
+            blinder_seed: descriptor.blinder_seed,
             proof_bundle: None, // Initialize as None since it's not part of the descriptor
             arbitrum_client: ctx.arbitrum_client,
             global_state: ctx.state,
@@ -286,7 +290,10 @@ impl NewWalletTask {
             compute_wallet_private_share_commitment(&self.wallet.private_shares);
 
         (
-            ValidWalletCreateWitness { private_wallet_share: self.wallet.private_shares.clone() },
+            ValidWalletCreateWitness {
+                private_wallet_share: self.wallet.private_shares.clone(),
+                blinder_seed: self.blinder_seed,
+            },
             ValidWalletCreateStatement {
                 private_shares_commitment,
                 public_wallet_shares: self.wallet.blinded_public_shares.clone(),

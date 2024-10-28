@@ -142,6 +142,21 @@ where
     // | Reblind |
     // -----------
 
+    /// Validate the construction of a wallet's new blinder from a seed
+    ///
+    /// This is used to assert that the prover _knows_ the blinder seed, so that
+    /// they may not choose a blinder maliciously to conflict with another
+    /// user's wallet
+    pub fn validate_public_blinder_from_seed<C: Circuit<ScalarField>>(
+        public_blinder: Variable,
+        blinder_seed: Variable,
+        cs: &mut C,
+    ) -> Result<(), CircuitError> {
+        let (new_blinder, new_blinder_private_share) = Self::sample_new_blinder(blinder_seed, cs)?;
+        let expected_public_blinder = cs.sub(new_blinder, new_blinder_private_share)?;
+        cs.enforce_equal(public_blinder, expected_public_blinder)
+    }
+
     /// Sample a new set of private shares and blinder from the CSPRNG
     ///
     /// Returns the new private shares and blinder
@@ -150,10 +165,8 @@ where
         cs: &mut C,
     ) -> Result<(WalletShareVar<MAX_BALANCES, MAX_ORDERS>, Variable), CircuitError> {
         // Sample a new blinder and private share for the blinder
-        let blinder = private_shares.blinder;
-        let mut blinder_samples = PoseidonCSPRNGGadget::sample(blinder, 2 /* num_vals */, cs)?;
-        let new_blinder = blinder_samples.remove(0);
-        let new_blinder_private_share = blinder_samples.remove(0);
+        let seed = private_shares.blinder;
+        let (new_blinder, new_blinder_private_share) = Self::sample_new_blinder(seed, cs)?;
 
         // Sample private secret shares for individual wallet elements, we sample for n
         // - 1 shares because the wallet serialization includes the wallet
@@ -175,6 +188,19 @@ where
         new_shares.blinder = new_blinder_private_share;
 
         Ok((new_shares, new_blinder))
+    }
+
+    /// Sample a new blinder and a new blinder's private share from the CSPRNG
+    pub fn sample_new_blinder<C: Circuit<ScalarField>>(
+        seed: Variable,
+        cs: &mut C,
+    ) -> Result<(Variable, Variable), CircuitError> {
+        // Sample a new blinder and private share for the blinder
+        let mut blinder_samples = PoseidonCSPRNGGadget::sample(seed, 2 /* num_vals */, cs)?;
+        let new_blinder = blinder_samples.remove(0);
+        let new_blinder_private_share = blinder_samples.remove(0);
+
+        Ok((new_blinder, new_blinder_private_share))
     }
 }
 
@@ -282,6 +308,7 @@ mod test {
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::{thread_rng, Rng};
+    use renegade_crypto::hash::PoseidonCSPRNG;
     use std::ops::Neg;
 
     use crate::zk_gadgets::wallet_operations::{FeeGadget, PriceGadget, WalletGadget};
@@ -333,6 +360,42 @@ mod test {
     // ---------
     // | Tests |
     // ---------
+
+    /// Tests the blinder seed validation gadget
+    #[test]
+    fn test_blinder_seed_validation() {
+        let mut rng = thread_rng();
+        let blinder_seed = Scalar::random(&mut rng);
+        let mut csprng = PoseidonCSPRNG::new(blinder_seed);
+
+        let (blinder, blinder_private_share) = csprng.next_tuple().unwrap();
+        let public_blinder = blinder - blinder_private_share;
+
+        // Valid test case
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let public_blinder_var = public_blinder.create_witness(&mut cs);
+        let blinder_seed_var = blinder_seed.create_witness(&mut cs);
+        WalletGadget::<MAX_BALANCES, MAX_ORDERS>::validate_public_blinder_from_seed(
+            public_blinder_var,
+            blinder_seed_var,
+            &mut cs,
+        )
+        .unwrap();
+        assert!(check_satisfaction(&cs));
+
+        // Invalid test case
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let invalid_seed = Scalar::random(&mut rng);
+        let public_blinder_var = public_blinder.create_witness(&mut cs);
+        let invalid_seed_var = invalid_seed.create_witness(&mut cs);
+        WalletGadget::<MAX_BALANCES, MAX_ORDERS>::validate_public_blinder_from_seed(
+            public_blinder_var,
+            invalid_seed_var,
+            &mut cs,
+        )
+        .unwrap();
+        assert!(!check_satisfaction(&cs));
+    }
 
     /// Tests the wallet commitment share gadget
     #[test]

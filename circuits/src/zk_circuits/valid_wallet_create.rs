@@ -50,6 +50,13 @@ where
             WalletGadget::compute_private_commitment(&witness.private_wallet_share, cs)?;
         cs.enforce_equal(commitment, statement.private_shares_commitment)?;
 
+        // Check that the prover knows the blinder seed
+        // This prevents a prover from choosing a blinder maliciously to block another
+        // wallet
+        let public_blinder = statement.public_wallet_shares.blinder;
+        let blinder_seed = witness.blinder_seed;
+        WalletGadget::validate_public_blinder_from_seed(public_blinder, blinder_seed, cs)?;
+
         // Unblind the public shares then reconstruct the wallet
         let wallet = WalletGadget::wallet_from_shares(
             &statement.public_wallet_shares,
@@ -99,6 +106,8 @@ where
 {
     /// The private secret shares of the new wallet
     pub private_wallet_share: WalletShare<MAX_BALANCES, MAX_ORDERS>,
+    /// The blinder seed, used to validate the construction of the blinder
+    pub blinder_seed: Scalar,
 }
 /// A type alias that attached system-wide default generics to the witness type
 pub type SizedValidWalletCreateWitness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS>;
@@ -157,9 +166,12 @@ pub mod test_helpers {
     use circuit_types::{
         balance::Balance, native_helpers::compute_wallet_private_share_commitment, order::Order,
     };
+    use constants::Scalar;
+    use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
-        create_wallet_shares, SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
+        create_wallet_shares_with_blinder_seed, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
+        MAX_ORDERS,
     };
 
     use super::{ValidWalletCreateStatement, ValidWalletCreateWitness};
@@ -194,13 +206,18 @@ pub mod test_helpers {
     pub fn create_witness_statement_from_wallet(
         wallet: &SizedWallet,
     ) -> (SizedWitness, SizedStatement) {
-        let (private_shares, public_shares) = create_wallet_shares(wallet);
+        let mut rng = thread_rng();
+        let blinder_seed = Scalar::random(&mut rng);
+        let mut wallet = wallet.clone();
+        let (private_shares, public_shares) =
+            create_wallet_shares_with_blinder_seed(&mut wallet, blinder_seed);
 
         // Build a commitment to the private secret shares
         let commitment = compute_wallet_private_share_commitment(&private_shares);
 
         // Prove and verify
-        let witness = ValidWalletCreateWitness { private_wallet_share: private_shares };
+        let witness =
+            ValidWalletCreateWitness { private_wallet_share: private_shares, blinder_seed };
         let statement = ValidWalletCreateStatement {
             private_shares_commitment: commitment,
             public_wallet_shares: public_shares,
@@ -214,6 +231,7 @@ pub mod test_helpers {
 pub mod tests {
     use circuit_types::{fixed_point::FixedPoint, FEE_BITS};
     use constants::Scalar;
+    use rand::thread_rng;
 
     use crate::{
         singleprover_prove_and_verify,
@@ -294,6 +312,17 @@ pub mod tests {
         wallet.match_fee = FixedPoint { repr: fee_repr };
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
+        assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
+    }
+
+    /// Test the case in which the public blinder is not correctly constructed
+    /// from the blinder seed
+    #[test]
+    fn test_invalid_public_blinder() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = create_default_witness_statement();
+        witness.blinder_seed = Scalar::random(&mut rng);
+
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));
     }
 }
