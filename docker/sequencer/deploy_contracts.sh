@@ -42,34 +42,48 @@ cargo run \
 
 # Deploy the dummy ERC20 contracts
 # The funding amount here is 1 million of a token with 18 decimal places
-cargo run \
-    --package scripts -- \
-    --priv-key $DEVNET_PKEY \
-    --rpc-url $DEVNET_RPC_URL \
-    --deployments-path $DEPLOYMENTS_PATH \
-    deploy-erc20s \
-    --account-skeys $DEVNET_PKEY \
-    --tickers \
-        WBTC \
-        WETH \
-        BNB \
-        MATIC \
-        LDO \
-        USDC \
-        USDT \
-        LINK \
-        UNI \
-        SUSHI \
-        1INCH \
-        AAVE \
-        COMP \
-        MKR \
-        REN \
-        MANA \
-        ENS \
-        DYDX \
-        CRV \
-    --funding-amount 1000000000000000000000000
+
+erc20s=(
+    "USDC" "USD Coin" 6
+    "USDT" "Tether USD" 6
+    "WBTC" "Wrapped BTC" 8
+    "WETH" "Wrapped Ether" 18
+    "ARB" "Arbitrum" 18
+    "GMX" "GMX" 18
+    "PENDLE" "Pendle" 18
+    "LDO" "Lido DAO Token" 18
+    "LINK" "ChainLink Token" 18
+    "CRV" "Curve DAO Token" 18
+    "UNI" "Uniswap" 18
+    "ZRO" "LayerZero" 18
+    "LPT" "Livepeer Token" 18
+    "GRT" "Graph Token" 18
+    "COMP" "Compound" 18
+    "AAVE" "Aave Token" 18
+    "XAI" "Xai" 18
+    "RDNT" "Radiant" 18
+    "ETHFI" "Ether.fi" 18
+)
+num_tokens=${#erc20s[@]}
+num_fields=3  # Number of fields in each tuple
+
+for ((i=0; i<num_tokens; i+=num_fields)); do
+    symbol="${erc20s[i]}"
+    name="${erc20s[i+1]}"
+    decimals="${erc20s[i+2]}"
+
+    cargo run \
+        --package scripts -- \
+        --priv-key $DEVNET_PKEY \
+        --rpc-url $DEVNET_RPC_URL \
+        --deployments-path $DEPLOYMENTS_PATH \
+        deploy-erc20 \
+        --symbol "$symbol" \
+        --name "$name" \
+        --decimals "$decimals" \
+        --account-skeys $DEVNET_PKEY \
+        --funding-amount 1000000000000000000000000
+done
 
 # If $NO_VERIFY is set, write dummy addresses to the deployments file.
 # Otherwise, deploy the verification keys.
