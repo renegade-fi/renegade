@@ -209,10 +209,12 @@ impl TaskDescriptor {
 #[cfg(any(test, feature = "mocks"))]
 pub mod mocks {
     use circuit_types::keychain::SecretSigningKey;
+    use constants::Scalar;
     use contracts_common::custom_serde::BytesSerializable;
     use ethers::core::utils::keccak256;
     use ethers::signers::Wallet as EthersWallet;
     use k256::ecdsa::SigningKey as K256SigningKey;
+    use rand::thread_rng;
     use util::get_current_time_millis;
 
     use crate::types::{tasks::TaskIdentifier, wallet::Wallet, wallet_mocks::mock_empty_wallet};
@@ -257,12 +259,16 @@ pub mod mocks {
 
     /// Get a dummy task descriptor
     pub fn mock_task_descriptor(queue_key: TaskQueueKey) -> TaskDescriptor {
+        let mut rng = thread_rng();
+
         // Set the wallet ID to the task queue key so we can generate predictable mock
         // queues
         let mut wallet = mock_empty_wallet();
         wallet.wallet_id = queue_key;
-
-        TaskDescriptor::NewWallet(NewWalletTaskDescriptor { wallet })
+        TaskDescriptor::NewWallet(NewWalletTaskDescriptor {
+            wallet,
+            blinder_seed: Scalar::random(&mut rng),
+        })
     }
 }
 
@@ -290,7 +296,7 @@ mod test {
         let mut wallet = mock_empty_wallet();
         wallet.blinded_public_shares.orders[0].amount += Scalar::one();
 
-        NewWalletTaskDescriptor::new(wallet).unwrap();
+        NewWalletTaskDescriptor::new(wallet, Scalar::zero()).unwrap();
     }
 
     /// Tests creating an update wallet task with an invalid shares

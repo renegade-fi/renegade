@@ -292,7 +292,8 @@ impl TypedHandler for CreateWalletHandler {
         wallet.blinded_public_shares = public_shares;
 
         wallet.wallet_id = wallet_id;
-        let task = NewWalletTaskDescriptor::new(wallet).map_err(bad_request)?;
+        let blinder_seed = biguint_to_scalar(&req.blinder_seed);
+        let task = NewWalletTaskDescriptor::new(wallet, blinder_seed).map_err(bad_request)?;
 
         // Check rate limits and enqueue the task
         self.rate_limiter.check_rate_limit(wallet_id).await?;

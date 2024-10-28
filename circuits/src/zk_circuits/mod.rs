@@ -99,7 +99,7 @@ pub mod test_helpers {
     use lazy_static::lazy_static;
     use num_bigint::BigUint;
     use rand::thread_rng;
-    use renegade_crypto::hash::compute_poseidon_hash;
+    use renegade_crypto::hash::{compute_poseidon_hash, PoseidonCSPRNG};
 
     use circuit_types::native_helpers::create_wallet_shares_with_randomness;
 
@@ -198,6 +198,26 @@ pub mod test_helpers {
             blinder_share,
             from_fn(|| Some(Scalar::random(&mut rng))),
         )
+    }
+
+    /// Construct secret shares of a wallet with a given blinder seed
+    pub fn create_wallet_shares_with_blinder_seed<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >(
+        wallet: &mut Wallet<MAX_BALANCES, MAX_ORDERS>,
+        blinder_seed: Scalar,
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let mut rng = thread_rng();
+        let mut csprng = PoseidonCSPRNG::new(blinder_seed);
+        let (blinder, private_share) = csprng.next_tuple().unwrap();
+
+        wallet.blinder = blinder;
+        let shares = from_fn(|| Some(Scalar::random(&mut rng)));
+        create_wallet_shares_with_randomness(wallet, blinder, private_share, shares)
     }
 
     /// Create a multi-item opening in a Merkle tree, do so by constructing the

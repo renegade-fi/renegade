@@ -9,7 +9,7 @@ use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::wallet::Wallet;
 use circuit_types::PlonkCircuit;
-use circuits::zk_circuits::test_helpers::{create_wallet_shares, PUBLIC_KEYS};
+use circuits::zk_circuits::test_helpers::{create_wallet_shares_with_blinder_seed, PUBLIC_KEYS};
 use circuits::zk_circuits::valid_wallet_create::{
     ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
 };
@@ -40,7 +40,7 @@ where
     // Create an empty wallet
     let mut rng = thread_rng();
     let (_, enc) = DecryptionKey::random_pair(&mut rng);
-    let wallet = Wallet::<MAX_BALANCES, MAX_ORDERS> {
+    let mut wallet = Wallet::<MAX_BALANCES, MAX_ORDERS> {
         balances: create_default_arr(),
         orders: create_default_arr(),
         keys: PUBLIC_KEYS.clone(),
@@ -49,11 +49,13 @@ where
         blinder: Scalar::zero(),
     };
 
-    let (private_shares, public_shares) = create_wallet_shares(&wallet);
+    let blinder_seed = Scalar::random(&mut rng);
+    let (private_shares, public_shares) =
+        create_wallet_shares_with_blinder_seed(&mut wallet, blinder_seed);
     let private_shares_commitment = compute_wallet_private_share_commitment(&private_shares);
 
     (
-        ValidWalletCreateWitness { private_wallet_share: private_shares },
+        ValidWalletCreateWitness { private_wallet_share: private_shares, blinder_seed },
         ValidWalletCreateStatement {
             private_shares_commitment,
             public_wallet_shares: public_shares,
