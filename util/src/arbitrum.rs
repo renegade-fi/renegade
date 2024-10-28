@@ -7,12 +7,14 @@ use eyre::{eyre, Result};
 
 /// The deployments key in the `deployments.json` file
 pub const DEPLOYMENTS_KEY: &str = "deployments";
+/// The ERC-20s sub-key in the `deployments.json` file
+pub const ERC20S_KEY: &str = "erc20s";
 /// The darkpool proxy contract key in the `deployments.json` file
 pub const DARKPOOL_PROXY_CONTRACT_KEY: &str = "darkpool_proxy_contract";
-/// The first dummy erc20 contract key in a `deployments.json` file
-pub const DUMMY_ERC20_0_CONTRACT_KEY: &str = "DUMMY1";
-/// The second dummy erc20 contract key in a `deployments.json` file
-pub const DUMMY_ERC20_1_CONTRACT_KEY: &str = "DUMMY2";
+/// The first dummy erc20 ticker
+pub const DUMMY_ERC20_0_TICKER: &str = "DUMMY1";
+/// The second dummy erc20 ticker
+pub const DUMMY_ERC20_1_TICKER: &str = "DUMMY2";
 /// The permit2 contract key in a `deployments.json` file
 pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
 /// The protocol fee that the contract charges on a match
@@ -30,6 +32,19 @@ pub fn parse_addr_from_deployments_file(file_path: &str, contract_key: &str) -> 
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| eyre!("Could not parse {contract_key} address from deployments file"))
+}
+
+/// Parse the address of an ERC-20 contract from the `deployments.json` file
+#[cfg(feature = "mocks")]
+pub fn parse_erc20_addr_from_deployments_file(file_path: &str, ticker: &str) -> Result<String> {
+    let mut file_contents = String::new();
+    File::open(file_path)?.read_to_string(&mut file_contents)?;
+
+    let parsed_json = json::parse(&file_contents)?;
+    parsed_json[DEPLOYMENTS_KEY][ERC20S_KEY][ticker]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| eyre!("Could not parse {ticker} address from deployments file"))
 }
 
 /// Get the protocol fee from the static variable

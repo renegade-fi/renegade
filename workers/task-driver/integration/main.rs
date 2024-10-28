@@ -44,8 +44,9 @@ use test_helpers::{
 };
 use util::{
     arbitrum::{
-        parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_CONTRACT_KEY,
-        DUMMY_ERC20_1_CONTRACT_KEY, PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
+        parse_addr_from_deployments_file, parse_erc20_addr_from_deployments_file,
+        DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_TICKER, DUMMY_ERC20_1_TICKER,
+        PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
     },
     runtime::block_current,
     telemetry::LevelFilter,
@@ -136,14 +137,14 @@ impl From<CliArgs> for IntegrationTestArgs {
             state.clone(),
         );
 
-        let erc20_addr0 = parse_addr_from_deployments_file(
+        let erc20_addr0 = parse_erc20_addr_from_deployments_file(
             &test_args.deployments_path,
-            DUMMY_ERC20_0_CONTRACT_KEY,
+            DUMMY_ERC20_0_TICKER,
         )
         .unwrap();
-        let erc20_addr1 = parse_addr_from_deployments_file(
+        let erc20_addr1 = parse_erc20_addr_from_deployments_file(
             &test_args.deployments_path,
-            DUMMY_ERC20_1_CONTRACT_KEY,
+            DUMMY_ERC20_1_TICKER,
         )
         .unwrap();
         let permit2_addr =
