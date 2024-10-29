@@ -177,6 +177,11 @@ impl Order {
         }
     }
 
+    /// Get the pair and side of the order
+    pub fn pair_and_side(&self) -> (BigUint, BigUint, OrderSide) {
+        (self.base_mint.clone(), self.quote_mint.clone(), self.side)
+    }
+
     /// Determines whether the given price is within the allowable range for the
     /// order
     pub fn price_in_range(&self, price: FixedPoint) -> bool {
