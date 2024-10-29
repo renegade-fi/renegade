@@ -14,6 +14,7 @@ pub struct NewWalletTaskDescriptor {
     /// The wallet to create
     pub wallet: Wallet,
     /// The blinder seed to use for the new wallet
+    #[serde(default)]
     pub blinder_seed: Scalar,
 }
 
