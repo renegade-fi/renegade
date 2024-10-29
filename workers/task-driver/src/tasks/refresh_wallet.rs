@@ -339,12 +339,15 @@ fn matchup_order_ids(
         // Find an order in the existing wallet that matches the refreshed order and
         // hasn't been used yet to overwrite a refreshed order
         let maybe_order = existing.orders.iter().find(|(id, existing_order)| {
-            existing_order == refreshed_order && !used_existing_ids.contains(id)
+            let same_pair_side = existing_order.pair_and_side() == refreshed_order.pair_and_side();
+            let not_already_matched = !used_existing_ids.contains(id);
+            same_pair_side && not_already_matched
         });
 
         if let Some((existing_id, existing_order)) = maybe_order {
             *refreshed_id = *existing_id;
             refreshed_order.min_fill_size = existing_order.min_fill_size;
+            refreshed_order.allow_external_matches = existing_order.allow_external_matches;
             used_existing_ids.insert(*existing_id);
         }
     }
@@ -439,5 +442,33 @@ mod tests {
         assert!(refreshed.orders.contains_key(&id1));
         assert!(refreshed.orders.contains_key(&id3));
         assert!(!refreshed.orders.contains_key(&id2));
+    }
+
+    /// Tests matching up order ids after an order has been partially filled
+    #[test]
+    fn test_matchup_order_ids_after_fill() {
+        let mut existing = mock_empty_wallet();
+        let mut refreshed = mock_empty_wallet();
+
+        let id1 = OrderIdentifier::new_v4();
+        let id2 = OrderIdentifier::new_v4();
+        let id3 = OrderIdentifier::new_v4();
+        let id4 = OrderIdentifier::new_v4();
+
+        let order = mock_order();
+        let order2 = mock_order();
+        let mut filled_order = order.clone();
+        filled_order.amount = 0; // Order was completely filled
+
+        existing.orders.insert(id1, order.clone());
+        existing.orders.insert(id2, order2.clone());
+        refreshed.orders.insert(id3, filled_order.clone());
+        refreshed.orders.insert(id4, order.clone()); // The existing order should only match the first order
+
+        matchup_order_ids(&existing, &mut refreshed).unwrap();
+
+        let expected_ids = HashSet::from([id1, id4]);
+        let refreshed_ids: HashSet<_> = refreshed.orders.keys().cloned().collect();
+        assert_eq!(refreshed_ids, expected_ids);
     }
 }
