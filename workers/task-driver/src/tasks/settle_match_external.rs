@@ -12,7 +12,7 @@ use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
 use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
-use circuit_types::r#match::MatchResult;
+use circuit_types::r#match::{ExternalMatchResult, MatchResult};
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
 use circuits::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
@@ -343,8 +343,9 @@ impl SettleMatchExternalTask {
             self.arbitrum_client.gen_atomic_match_settle_calldata(validity_proofs, match_bundle)?;
 
         // Respond to the client via the system bus
+        let external_match_res: ExternalMatchResult = self.match_res.clone().into();
         let match_bundle =
-            AtomicMatchApiBundle { match_result: self.match_res.clone().into(), settlement_tx };
+            AtomicMatchApiBundle { match_result: external_match_res.into(), settlement_tx };
         let message = SystemBusMessage::AtomicMatchFound { match_bundle };
         self.bus.publish(self.atomic_match_bundle_topic.clone(), message);
         Ok(())
