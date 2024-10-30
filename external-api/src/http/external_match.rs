@@ -15,6 +15,7 @@ use common::types::wallet::Order;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
+use util::hex::biguint_to_hex_string;
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
@@ -93,7 +94,39 @@ impl From<ExternalOrder> for Order {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AtomicMatchApiBundle {
     /// The match result
-    pub match_result: ExternalMatchResult,
+    pub match_result: ApiExternalMatchResult,
     /// The transaction which settles the match on-chain
     pub settlement_tx: TypedTransaction,
+}
+
+/// An API server external match result
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiExternalMatchResult {
+    /// The mint of the quote token in the matched asset pair
+    pub quote_mint: String,
+    /// The mint of the base token in the matched asset pair
+    pub base_mint: String,
+    /// The amount of the quote token exchanged by the match
+    pub quote_amount: Amount,
+    /// The amount of the base token exchanged by the match
+    pub base_amount: Amount,
+    /// The direction of the match
+    pub direction: OrderSide,
+}
+
+impl From<ExternalMatchResult> for ApiExternalMatchResult {
+    fn from(result: ExternalMatchResult) -> Self {
+        let quote_mint = biguint_to_hex_string(&result.quote_mint);
+        let base_mint = biguint_to_hex_string(&result.base_mint);
+        // Convert the match direction to the side of the external party
+        let direction = if result.direction { OrderSide::Buy } else { OrderSide::Sell };
+
+        Self {
+            quote_mint,
+            base_mint,
+            quote_amount: result.quote_amount,
+            base_amount: result.base_amount,
+            direction,
+        }
+    }
 }
