@@ -210,7 +210,19 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Delete an order from the order book
     pub fn delete_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
-        self.inner().delete(ORDERS_TABLE, &order_key(order_id)).map(|_| ())
+        let order_key = order_key(order_id);
+        let order_info = self.get_order_info(order_id)?.ok_or(order_not_found(order_id))?;
+        self.inner().delete(ORDERS_TABLE, &order_key)?;
+
+        // Remove from the nullifier set
+        self.remove_from_nullifier_set(order_info.public_share_nullifier, order_id)?;
+        if order_info.local {
+            self.remove_local_order(order_id)?;
+        }
+
+        // Remove from the priority table
+        self.inner().delete(PRIORITIES_TABLE, order_id)?;
+        Ok(())
     }
 
     /// Nullify the orders indexed by the given nullifier
@@ -218,7 +230,8 @@ impl<'db> StateTxn<'db, RW> {
         // Delete all orders
         let orders = self.get_orders_by_nullifier(nullifier)?;
         for order_id in orders {
-            self.delete_order(&order_id)?;
+            let order_key = order_key(&order_id);
+            self.inner().delete(ORDERS_TABLE, &order_key)?;
         }
 
         // Delete the index for the nullifier
@@ -249,13 +262,6 @@ impl<'db> StateTxn<'db, RW> {
     pub fn remove_local_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
         let key = locally_managed_key();
         self.remove_from_set(ORDERS_TABLE, &key, order_id)
-    }
-
-    /// Mark an order as cancelled
-    pub fn mark_order_cancelled(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
-        let mut order = self.get_order_info_or_err(order_id)?;
-        order.transition_cancelled();
-        self.write_order(&order)
     }
 
     // --- Helpers --- //
@@ -295,7 +301,10 @@ mod test {
     use itertools::Itertools;
     use rand::thread_rng;
 
-    use crate::{test_helpers::mock_db, ORDERS_TABLE, PRIORITIES_TABLE};
+    use crate::{
+        applicator::order_book::OrderPriority, test_helpers::mock_db, ORDERS_TABLE,
+        PRIORITIES_TABLE,
+    };
 
     /// Tests adding an order to the order book
     #[test]
@@ -478,5 +487,37 @@ mod test {
         assert!(local_orders.contains(&order1.id));
         assert!(!local_orders.contains(&order2.id));
         assert_eq!(local_orders.len(), 1);
+    }
+
+    /// Tests deleting an order
+    #[test]
+    fn test_delete_order() {
+        let db = mock_db();
+        db.create_table(ORDERS_TABLE).unwrap();
+        db.create_table(PRIORITIES_TABLE).unwrap();
+
+        // Write an order to the book
+        let order = dummy_network_order();
+        let tx = db.new_write_tx().unwrap();
+        tx.write_order(&order).unwrap();
+        tx.commit().unwrap();
+
+        // Delete the order
+        let tx = db.new_write_tx().unwrap();
+        tx.delete_order(&order.id).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the order is deleted
+        let tx = db.new_read_tx().unwrap();
+        assert!(!tx.contains_order(&order.id).unwrap());
+
+        let nullifier_orders = tx.get_orders_by_nullifier(order.public_share_nullifier).unwrap();
+        assert!(nullifier_orders.is_empty());
+
+        let local_orders = tx.get_local_orders().unwrap();
+        assert!(!local_orders.contains(&order.id));
+
+        let priority = tx.inner().read::<_, OrderPriority>(PRIORITIES_TABLE, &order.id).unwrap();
+        assert!(priority.is_none());
     }
 }
