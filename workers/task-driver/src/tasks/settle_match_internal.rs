@@ -255,7 +255,7 @@ impl Task for SettleMatchInternalTask {
                 self.update_proofs().await?;
                 self.task_state = SettleMatchInternalTaskState::Completed;
 
-                record_match_volume(&self.match_result);
+                record_match_volume(&self.match_result, false /* is_external_match */);
             },
 
             SettleMatchInternalTaskState::Completed => {

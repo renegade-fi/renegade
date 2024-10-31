@@ -495,7 +495,7 @@ impl SettleMatchExternalTask {
             .await
             .map_err(SettleMatchExternalTaskError::State)?;
 
-        renegade_metrics::record_match_volume(match_res);
+        renegade_metrics::record_match_volume(match_res, true /* is_external_match */);
         Ok(())
     }
 }

@@ -6,9 +6,9 @@ use num_bigint::BigUint;
 use util::hex::biguint_to_hex_addr;
 
 use crate::labels::{
-    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
-    MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS,
-    WITHDRAWAL_VOLUME_METRIC,
+    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, EXTERNAL_MATCH_METRIC_TAG, FEES_COLLECTED_METRIC,
+    MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS,
+    NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
 };
 
 #[cfg(feature = "tx-metrics")]
@@ -34,11 +34,24 @@ fn get_asset_and_volume(mint: &BigUint, amount: u128) -> (String, f64) {
 
 /// Record a volume metric (e.g. deposit, withdrawal, trade)
 fn record_volume(mint: &BigUint, amount: u128, volume_metric_name: &'static str) {
+    record_volume_with_tags(mint, amount, volume_metric_name, &[] /* extra_labels */);
+}
+
+/// Record a volume metric with the given extra tags
+fn record_volume_with_tags(
+    mint: &BigUint,
+    amount: u128,
+    volume_metric_name: &'static str,
+    extra_labels: &[(String, String)],
+) {
     let (asset, volume) = get_asset_and_volume(mint, amount);
+    let mut labels = vec![(ASSET_METRIC_TAG.to_string(), asset)];
+    let extra_labels = extra_labels.iter().map(|(k, v)| (k.clone(), v.clone()));
+    labels.extend(extra_labels);
 
     // We use a gauge metric here to be able to capture a float value
     // for the volume
-    metrics::gauge!(volume_metric_name, ASSET_METRIC_TAG => asset).set(volume);
+    metrics::gauge!(volume_metric_name, labels.as_slice()).set(volume);
 }
 
 /// If an external transfer is present, record the count and volume metrics for
@@ -62,9 +75,16 @@ pub fn maybe_record_transfer_metrics(transfer: &Option<ExternalTransferWithAuth>
 }
 
 /// Record the volume of base/quote assets moved in a match
-pub fn record_match_volume(match_result: &MatchResult) {
-    record_volume(&match_result.base_mint, match_result.base_amount, MATCH_BASE_VOLUME_METRIC);
-    record_volume(&match_result.quote_mint, match_result.quote_amount, MATCH_QUOTE_VOLUME_METRIC);
+pub fn record_match_volume(res: &MatchResult, is_external_match: bool) {
+    // Label the match as external in the metric
+    let labels = if is_external_match {
+        vec![(EXTERNAL_MATCH_METRIC_TAG.to_string(), "true".to_string())]
+    } else {
+        vec![]
+    };
+
+    record_volume_with_tags(&res.base_mint, res.base_amount, MATCH_BASE_VOLUME_METRIC, &labels);
+    record_volume_with_tags(&res.quote_mint, res.quote_amount, MATCH_QUOTE_VOLUME_METRIC, &labels);
 }
 
 /// Record the volume of a fee settlement into the relayer's wallet
