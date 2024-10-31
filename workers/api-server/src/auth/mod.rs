@@ -4,6 +4,7 @@ use common::types::wallet::{keychain::HmacKey, WalletIdentifier};
 use external_api::auth::validate_expiring_auth;
 use hyper::HeaderMap;
 use state::State;
+use tracing::warn;
 
 use crate::{
     error::{not_found, ApiServerError},
@@ -71,7 +72,9 @@ impl AuthMiddleware {
             return Ok(());
         }
 
-        authenticate_wallet_request(headers, payload, &symmetric_key)
+        authenticate_wallet_request(headers, payload, &symmetric_key)?;
+        warn!("Use of v1 wallet auth will be deprecated soon");
+        Ok(())
     }
 
     /// Authenticate a wallet request using v2 auth
@@ -102,7 +105,9 @@ impl AuthMiddleware {
             return Ok(());
         }
 
-        authenticate_admin_request(admin_key, headers, payload)
+        authenticate_admin_request(admin_key, headers, payload)?;
+        warn!("Use of v1 admin auth will be deprecated soon");
+        Ok(())
     }
 
     /// Authenticate an admin request using v2 auth
