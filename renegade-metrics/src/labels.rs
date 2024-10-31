@@ -55,3 +55,5 @@ pub const NUM_INFLIGHT_TXS_METRIC: &str = "num_inflight_txs";
 
 /// Metric tag for the asset of a deposit/withdrawal
 pub const ASSET_METRIC_TAG: &str = "asset";
+/// Metric tag for whether a match is external
+pub const EXTERNAL_MATCH_METRIC_TAG: &str = "is_external_match";
