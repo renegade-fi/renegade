@@ -28,7 +28,7 @@ use job_types::{
 };
 use serde::Serialize;
 use state::{error::StateError, State};
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 use util::{
     arbitrum::{PROTOCOL_FEE, PROTOCOL_PUBKEY},
     err_str,
@@ -36,6 +36,7 @@ use util::{
 
 use crate::{
     await_task,
+    state_migration::remove_phantom_orders,
     task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
@@ -67,6 +68,8 @@ pub enum NodeStartupTaskState {
     RefreshState,
     /// Join an existing raft
     JoinRaft,
+    /// Run any state migrations
+    RunningStateMigrations,
     /// The task is completed
     Completed,
 }
@@ -91,6 +94,7 @@ impl Display for NodeStartupTaskState {
             Self::SetupRelayerWallet => write!(f, "Setup Relayer Wallet"),
             Self::RefreshState => write!(f, "Refresh State"),
             Self::JoinRaft => write!(f, "Join Raft"),
+            Self::RunningStateMigrations => write!(f, "Running State Migrations"),
             Self::Completed => write!(f, "Completed"),
         }
     }
@@ -234,10 +238,14 @@ impl Task for NodeStartupTask {
             },
             NodeStartupTaskState::RefreshState => {
                 self.refresh_state().await?;
-                self.task_state = NodeStartupTaskState::Completed;
+                self.task_state = NodeStartupTaskState::RunningStateMigrations;
             },
             NodeStartupTaskState::JoinRaft => {
                 self.join_raft().await?;
+                self.task_state = NodeStartupTaskState::RunningStateMigrations;
+            },
+            NodeStartupTaskState::RunningStateMigrations => {
+                self.run_state_migrations().await?;
                 self.task_state = NodeStartupTaskState::Completed;
             },
             NodeStartupTaskState::Completed => {
@@ -425,6 +433,26 @@ impl NodeStartupTask {
         self.state.await_promotion().await.map_err(err_str!(NodeStartupTaskError::State))?;
         info!("promoted to voter");
 
+        Ok(())
+    }
+
+    /// Run state migrations that need to happen on the next node startup
+    ///
+    /// These migrations are necessarily not permanent parts of the codebase,
+    /// but rather intended to cleanup state, initialize new tables, etc.
+    ///
+    /// Migrations should be idempotent for safety
+    async fn run_state_migrations(&mut self) -> Result<(), NodeStartupTaskError> {
+        // Remove phantom orders in the order book
+        let state = self.state.clone();
+        tokio::task::spawn(async move {
+            info!("removing phantom orders...");
+            if let Err(e) = remove_phantom_orders(&state).await {
+                error!("error removing phantom orders: {e}");
+            } else {
+                info!("done removing phantom orders");
+            }
+        });
         Ok(())
     }
 
