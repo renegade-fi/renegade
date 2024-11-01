@@ -18,6 +18,7 @@ pub mod driver;
 pub mod error;
 mod running_task;
 pub mod simulation;
+pub mod state_migration;
 pub mod task_state;
 pub mod tasks;
 pub mod traits;

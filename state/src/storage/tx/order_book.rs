@@ -230,8 +230,7 @@ impl<'db> StateTxn<'db, RW> {
         // Delete all orders
         let orders = self.get_orders_by_nullifier(nullifier)?;
         for order_id in orders {
-            let order_key = order_key(&order_id);
-            self.inner().delete(ORDERS_TABLE, &order_key)?;
+            self.delete_order(&order_id)?;
         }
 
         // Delete the index for the nullifier
