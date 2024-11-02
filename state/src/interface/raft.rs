@@ -21,7 +21,7 @@ impl StateInner {
 
     /// Whether the state machine was recovered from a snapshot
     pub fn was_recovered_from_snapshot(&self) -> bool {
-        self.recovered_from_snapshot
+        self.config.recovered_from_snapshot
     }
 
     /// Whether the raft is initialized (has non-empty voters)

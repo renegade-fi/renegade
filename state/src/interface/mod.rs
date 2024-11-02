@@ -30,6 +30,7 @@ use util::{err_str, raw_err_str};
 
 use crate::{
     applicator::{StateApplicator, StateApplicatorConfig},
+    caching::order_cache::OrderBookCache,
     notifications::{OpenNotifications, ProposalWaiter},
     replication::{
         get_raft_id,
@@ -93,13 +94,29 @@ pub async fn create_global_state(
     Ok(Arc::new(state))
 }
 
-/// The inner state struct, wrapped in an `Arc` to allow for efficient clones
-#[derive(Clone)]
-pub struct StateInner {
+/// The runtime config of the state
+#[derive(Clone, Default)]
+pub struct StateConfig {
     /// Whether the state machine recovered from a snapshot
     pub(crate) recovered_from_snapshot: bool,
     /// Whether or not the node allows local peers when adding to the peer index
     pub(crate) allow_local: bool,
+}
+
+impl StateConfig {
+    /// Construct a new state config from a relayer config
+    pub fn new(relayer_config: &RelayerConfig) -> Self {
+        Self { recovered_from_snapshot: false, allow_local: relayer_config.allow_local }
+    }
+}
+
+/// The inner state struct, wrapped in an `Arc` to allow for efficient clones
+#[derive(Clone)]
+pub struct StateInner {
+    /// The runtime config of the state
+    pub(crate) config: StateConfig,
+    /// The order book cache
+    pub(crate) order_cache: Arc<OrderBookCache>,
     /// A handle on the database
     pub(crate) db: Arc<DB>,
     /// The system bus for sending notifications to other workers
@@ -143,7 +160,7 @@ impl StateInner {
     /// The base constructor allowing for the variadic constructors above
     #[allow(clippy::too_many_arguments)]
     pub async fn new_with_network<N: P2PNetworkFactory>(
-        config: &RelayerConfig,
+        relayer_config: &RelayerConfig,
         raft_config: RaftClientConfig,
         network: N,
         task_queue: TaskDriverQueue,
@@ -153,7 +170,7 @@ impl StateInner {
         failure_send: WorkerFailureSender,
     ) -> Result<Self, StateError> {
         // Open up the DB
-        let db_config = DbConfig::new_with_path(&config.db_path);
+        let db_config = DbConfig::new_with_path(&relayer_config.db_path);
         let db = DB::new(&db_config).map_err(StateError::Db)?;
         let db = Arc::new(db);
 
@@ -164,8 +181,8 @@ impl StateInner {
 
         // Setup the state machine
         let applicator_config = StateApplicatorConfig {
-            allow_local: config.allow_local,
-            cluster_id: config.cluster_id.clone(),
+            allow_local: relayer_config.allow_local,
+            cluster_id: relayer_config.cluster_id.clone(),
             task_queue,
             handshake_manager_queue,
             db: db.clone(),
@@ -173,7 +190,7 @@ impl StateInner {
         };
         let applicator = StateApplicator::new(applicator_config).map_err(StateError::Applicator)?;
         let notifications = OpenNotifications::new();
-        let sm_config = StateMachineConfig::new(config.raft_snapshot_path.clone());
+        let sm_config = StateMachineConfig::new(relayer_config.raft_snapshot_path.clone());
         let sm = StateMachine::new(sm_config, notifications.clone(), applicator).await?;
         let recovered_from_snapshot = sm.recovered_from_snapshot;
 
@@ -183,15 +200,17 @@ impl StateInner {
             .map_err(StateError::Replication)?;
 
         // Setup the node metadata from the config
+        let mut config = StateConfig::new(relayer_config);
+        config.recovered_from_snapshot = recovered_from_snapshot;
         let this = Self {
-            allow_local: config.allow_local,
+            config,
+            order_cache: Arc::new(OrderBookCache::new()),
             db,
             bus: system_bus,
             notifications,
             raft,
-            recovered_from_snapshot,
         };
-        this.setup_node_metadata(config).await?;
+        this.setup_node_metadata(relayer_config).await?;
         this.setup_core_panic_timer(system_clock, failure_send).await?;
         this.setup_membership_sync_timer(system_clock).await?;
 
