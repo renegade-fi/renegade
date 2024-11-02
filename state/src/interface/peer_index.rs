@@ -156,7 +156,7 @@ impl StateInner {
                     let is_me = peer.peer_id == my_id;
 
                     // Do not index the peer if the given address is not dialable
-                    if !peer.is_dialable(this.allow_local) {
+                    if !peer.is_dialable(this.config.allow_local) {
                         continue;
                     }
 

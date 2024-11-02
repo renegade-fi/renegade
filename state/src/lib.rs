@@ -30,6 +30,7 @@ use replication::{NodeId, RaftNode};
 use serde::{Deserialize, Serialize};
 
 pub mod applicator;
+pub mod caching;
 mod interface;
 pub mod notifications;
 pub mod replication;
@@ -233,6 +234,7 @@ pub mod test_helpers {
     use tempfile::tempdir;
 
     use crate::{
+        caching::order_cache::OrderBookCache,
         notifications::OpenNotifications,
         replication::{
             get_raft_id,
@@ -241,7 +243,7 @@ pub mod test_helpers {
             RaftNode,
         },
         storage::db::{DbConfig, DB},
-        State, StateInner, StateTransition,
+        State, StateConfig, StateInner, StateTransition,
     };
 
     /// Sleep for the given number of ms
@@ -369,13 +371,15 @@ pub mod test_helpers {
         // underlying DB
         let client = node.get_client().clone();
         let db = node.clone_db();
+        let config = StateConfig { allow_local: true, ..Default::default() };
+        let order_cache = Arc::new(OrderBookCache::new());
         let state = StateInner {
-            allow_local: true,
+            config,
+            order_cache,
             db,
             raft: client,
             bus: SystemBus::new(),
             notifications: OpenNotifications::new(),
-            recovered_from_snapshot: false,
         };
 
         // Configure the node
