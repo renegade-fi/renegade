@@ -214,7 +214,15 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                 },
                 EntryPayload::Normal(proposal) => {
                     let Proposal { id, transition } = proposal;
-                    let res = self.applicator.handle_state_transition(transition);
+
+                    // DB methods will naturally block the applicator without throwing an error, so
+                    // we must spawn a blocking thread for each update
+                    let applicator = self.applicator.clone();
+                    let res = tokio::task::spawn_blocking(move || {
+                        applicator.handle_state_transition(transition)
+                    })
+                    .await
+                    .map_err(|e| new_apply_error(log_id, e))?;
 
                     match res {
                         Err(StateApplicatorError::Rejected(msg)) => {
