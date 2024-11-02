@@ -31,11 +31,12 @@ pub fn new_log_write_error(
 }
 
 /// Convert an error applying a log into a raft error
-pub fn new_apply_error(
+#[allow(clippy::needless_pass_by_value)]
+pub fn new_apply_error<T: ToString>(
     log_id: LogId<NodeId>,
-    err: String,
+    err: T,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
-    let io_err = IoError::new(IoErrorKind::Other, err);
+    let io_err = IoError::new(IoErrorKind::Other, err.to_string());
     RaftStorageError::from_io_error(ErrorSubject::Apply(log_id), ErrorVerb::Write, io_err)
 }
 

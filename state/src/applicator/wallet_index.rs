@@ -4,7 +4,7 @@ use common::types::{
     network_order::NetworkOrder,
     wallet::{
         order_metadata::{OrderMetadata, OrderState},
-        Wallet,
+        Order, OrderIdentifier, Wallet,
     },
 };
 use external_api::bus_message::{wallet_topic, SystemBusMessage, ADMIN_WALLET_UPDATES_TOPIC};
@@ -65,7 +65,6 @@ impl StateApplicator {
         tx.commit()?;
 
         // Push updates to the bus
-
         let wallet_topic = wallet_topic(&wallet.wallet_id);
         self.system_bus().publish(
             wallet_topic,
@@ -141,38 +140,66 @@ impl StateApplicator {
         let wallet_id = wallet.wallet_id;
         for (id, o) in wallet.get_nonzero_orders() {
             if !old_orders.contains(&id) {
-                let new_state = OrderMetadata::new(id, o);
-                self.update_order_metadata_with_tx(new_state, tx)?;
+                self.handle_new_order(id, o, tx)?;
             }
         }
 
         // Cancelled orders
         for id in old_orders {
             if !wallet.contains_order(&id) {
-                let mut old_meta = tx
+                let old_meta = tx
                     .get_order_metadata(wallet_id, id)?
                     .ok_or(StateApplicatorError::MissingEntry(ERR_NO_METADATA))?;
 
                 // Only update the state if it has not already entered a terminal state
                 if !old_meta.state.is_terminal() {
-                    // Update the order metadata to reflect the order's cancellation
-                    old_meta.state = OrderState::Cancelled;
-                    self.update_order_metadata_with_tx(old_meta, tx)?;
-
-                    // Remove the order from its matching pool
-                    tx.remove_order_from_matching_pool(&id)?;
-
-                    // Remove the order from the order book
-                    if tx.get_order_info(&id)?.is_some() {
-                        tx.delete_order(&id)?;
-                    }
+                    self.handle_cancelled_order(old_meta, tx)?;
                 }
             }
         }
 
         Ok(())
     }
+
+    /// Handle a new order
+    fn handle_new_order(&self, id: OrderIdentifier, o: Order, tx: &StateTxn<RW>) -> Result<()> {
+        // Mark the order as externally matchable in the order book cache
+        if o.allow_external_matches {
+            self.order_cache().add_externally_enabled_order_blocking(id);
+        }
+
+        // Update the order metadata to reflect the new order
+        let new_state = OrderMetadata::new(id, o);
+        self.update_order_metadata_with_tx(new_state, tx)?;
+
+        Ok(())
+    }
+
+    /// Handle a cancelled order
+    fn handle_cancelled_order(&self, mut meta: OrderMetadata, tx: &StateTxn<RW>) -> Result<()> {
+        // Remove the order from the order book cache
+        let id = meta.id;
+        self.order_cache().remove_order_blocking(id);
+
+        // Update the order metadata to reflect the order's cancellation
+        meta.state = OrderState::Cancelled;
+        self.update_order_metadata_with_tx(meta, tx)?;
+
+        // Remove the order from its matching pool
+        tx.remove_order_from_matching_pool(&id)?;
+
+        // Remove the order from the order book
+        if tx.get_order_info(&id)?.is_some() {
+            tx.delete_order(&id)?;
+        }
+
+        Ok(())
+    }
 }
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(all(test, feature = "all-tests"))]
 pub(crate) mod test {
