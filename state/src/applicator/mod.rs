@@ -8,7 +8,7 @@ use external_api::bus_message::SystemBusMessage;
 use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
 use system_bus::SystemBus;
 
-use crate::{storage::db::DB, StateTransition};
+use crate::{caching::order_cache::OrderBookCache, storage::db::DB, StateTransition};
 
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
@@ -43,6 +43,8 @@ pub struct StateApplicatorConfig {
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
     pub handshake_manager_queue: HandshakeManagerQueue,
+    /// The order book cache
+    pub order_cache: Arc<OrderBookCache>,
     /// A handle to the database underlying the storage layer
     pub db: Arc<DB>,
     /// A handle to the system bus used for internal pubsub
@@ -121,6 +123,11 @@ impl StateApplicator {
     fn system_bus(&self) -> &SystemBus<SystemBusMessage> {
         &self.config.system_bus
     }
+
+    /// Get a reference to the order cache
+    fn order_cache(&self) -> &OrderBookCache {
+        &self.config.order_cache
+    }
 }
 
 /// Test helpers for mock state applicator
@@ -135,7 +142,7 @@ pub mod test_helpers {
     };
     use system_bus::SystemBus;
 
-    use crate::test_helpers::mock_db;
+    use crate::{caching::order_cache::OrderBookCache, test_helpers::mock_db};
 
     use super::{StateApplicator, StateApplicatorConfig};
 
@@ -155,6 +162,7 @@ pub mod test_helpers {
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
+            order_cache: Arc::new(OrderBookCache::new()),
             db: Arc::new(mock_db()),
             handshake_manager_queue,
             system_bus: SystemBus::new(),

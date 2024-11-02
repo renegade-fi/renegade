@@ -180,11 +180,13 @@ impl StateInner {
         tx.commit()?;
 
         // Setup the state machine
+        let order_cache = Arc::new(OrderBookCache::new());
         let applicator_config = StateApplicatorConfig {
             allow_local: relayer_config.allow_local,
             cluster_id: relayer_config.cluster_id.clone(),
             task_queue,
             handshake_manager_queue,
+            order_cache: order_cache.clone(),
             db: db.clone(),
             system_bus: system_bus.clone(),
         };
@@ -202,14 +204,7 @@ impl StateInner {
         // Setup the node metadata from the config
         let mut config = StateConfig::new(relayer_config);
         config.recovered_from_snapshot = recovered_from_snapshot;
-        let this = Self {
-            config,
-            order_cache: Arc::new(OrderBookCache::new()),
-            db,
-            bus: system_bus,
-            notifications,
-            raft,
-        };
+        let this = Self { config, order_cache, db, bus: system_bus, notifications, raft };
         this.setup_node_metadata(relayer_config).await?;
         this.setup_core_panic_timer(system_clock, failure_send).await?;
         this.setup_membership_sync_timer(system_clock).await?;

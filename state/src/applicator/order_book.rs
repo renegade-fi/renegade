@@ -104,6 +104,8 @@ impl StateApplicator {
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING))?;
         tx.commit()?;
 
+        // Mark the order as locally matchable in the order book cache
+        self.order_cache().add_matchable_order_blocking(order_id);
         self.system_bus().publish(
             ORDER_STATE_CHANGE_TOPIC.to_string(),
             SystemBusMessage::OrderStateChange { order: order_info },
