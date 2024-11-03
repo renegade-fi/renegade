@@ -24,7 +24,7 @@ impl StateInner {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
             let wallet_id = tx
-                .get_wallet_for_order(&oid)?
+                .get_wallet_id_for_order(&oid)?
                 .ok_or(StateError::Db(StorageError::NotFound(ERR_MISSING_WALLET.to_string())))?;
             let md = res_some!(tx.get_order_metadata(wallet_id, oid)?);
             Ok(Some(md))

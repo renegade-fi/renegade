@@ -3,6 +3,7 @@
 use circuit_types::wallet::Nullifier;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
 use libmdbx::{TransactionKind, RW};
+use util::res_some;
 
 use crate::{
     storage::error::StorageError, NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
@@ -33,12 +34,21 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         self.inner().read(WALLETS_TABLE, wallet_id)
     }
 
-    /// Get the wallet managing a given order
-    pub fn get_wallet_for_order(
+    /// Get the wallet ID managing a given order
+    pub fn get_wallet_id_for_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<WalletIdentifier>, StorageError> {
         self.inner().read(ORDER_TO_WALLET_TABLE, order_id)
+    }
+
+    /// Get the wallet for a given order
+    pub fn get_wallet_for_order(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<Option<Wallet>, StorageError> {
+        let wallet_id = res_some!(self.get_wallet_id_for_order(order_id)?);
+        self.get_wallet(&wallet_id)
     }
 
     /// Get the wallet associated with a given nullifier
@@ -214,7 +224,7 @@ mod test {
 
     /// Tests adding a wallet for an order then retrieving it
     #[test]
-    fn test_get_wallet_for_order() {
+    fn test_get_wallet_id_for_order() {
         let db = mock_db();
         db.create_table(ORDER_TO_WALLET_TABLE).unwrap();
 
@@ -232,11 +242,11 @@ mod test {
 
         // Check all order mappings
         let tx = db.new_read_tx().unwrap();
-        let wallet_res1 = tx.get_wallet_for_order(&order_id1).unwrap();
+        let wallet_res1 = tx.get_wallet_id_for_order(&order_id1).unwrap();
         assert_eq!(wallet_res1, Some(wallet_id1));
-        let wallet_res2 = tx.get_wallet_for_order(&order_id2).unwrap();
+        let wallet_res2 = tx.get_wallet_id_for_order(&order_id2).unwrap();
         assert_eq!(wallet_res2, Some(wallet_id1));
-        let wallet_res3 = tx.get_wallet_for_order(&order_id3).unwrap();
+        let wallet_res3 = tx.get_wallet_id_for_order(&order_id3).unwrap();
         assert_eq!(wallet_res3, Some(wallet_id2));
     }
 
