@@ -31,7 +31,7 @@ impl StateApplicator {
         tx: &StateTxn<RW>,
     ) -> Result<(), StateApplicatorError> {
         let wallet = tx
-            .get_wallet_for_order(&meta.id)?
+            .get_wallet_id_for_order(&meta.id)?
             .ok_or(StateApplicatorError::MissingEntry(ERR_MISSING_WALLET))?;
 
         // Add the order to the history if it doesn't exist

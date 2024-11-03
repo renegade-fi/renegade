@@ -252,7 +252,13 @@ impl StateMachine {
         self.write_snapshot_metadata(meta)?;
 
         let db_clone = self.db_owned();
-        let jh = tokio::task::spawn_blocking(move || Self::copy_db_data(&snapshot_db, &db_clone));
+        let order_cache_clone = self.applicator.config.order_cache.clone();
+        let jh = tokio::task::spawn_blocking(move || {
+            Self::copy_db_data(&snapshot_db, &db_clone)?;
+            order_cache_clone.backfill_from_db(&db_clone)?;
+
+            Ok(())
+        });
         jh.await.map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
     }
 
@@ -318,15 +324,63 @@ impl StateMachine {
 
 #[cfg(test)]
 mod tests {
-    use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
+    use std::sync::Arc;
+
+    use common::types::{
+        proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
+        wallet::{OrderIdentifier, Wallet},
+        wallet_mocks::{mock_empty_wallet, mock_order},
+    };
     use libmdbx::Error as MdbxError;
 
     use crate::{
         replication::test_helpers::mock_state_machine, storage::error::StorageError,
-        test_helpers::mock_db, WALLETS_TABLE,
+        test_helpers::mock_db, StateTransition, WALLETS_TABLE,
     };
 
     use super::*;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Add a wallet to the state machine
+    async fn add_wallet_to_sm(sm: &StateMachine, wallet: Wallet) {
+        let transition = StateTransition::AddWallet { wallet };
+        apply_test_transition(sm, transition).await;
+    }
+
+    /// Update a wallet in the state machine
+    async fn update_wallet_in_sm(sm: &StateMachine, wallet: Wallet) {
+        let transition = StateTransition::UpdateWallet { wallet };
+        apply_test_transition(sm, transition).await;
+    }
+
+    /// Add a dummy validity proof to an order in the state machine
+    async fn add_dummy_validity_proof_to_sm(sm: &StateMachine, order_id: OrderIdentifier) {
+        let bundle = dummy_validity_proof_bundle();
+        let witness = dummy_validity_witness_bundle();
+        let transition =
+            StateTransition::AddOrderValidityBundle { order_id, proof: bundle, witness };
+        apply_test_transition(sm, transition).await;
+    }
+
+    /// Apply a state transition to a given state machine
+    ///
+    /// This helper spawns the task on the blocking pool to avoid blocking the
+    /// testing runtime
+    async fn apply_test_transition(sm: &StateMachine, transition: StateTransition) {
+        let app = sm.applicator.clone();
+        let boxed = Box::new(transition);
+        tokio::task::spawn_blocking(move || app.handle_state_transition(boxed))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
 
     /// Tests snapshotting and recovering a DB from a snapshot
     #[tokio::test]
@@ -475,5 +529,65 @@ mod tests {
 
         assert_eq!(value1, v1);
         assert_eq!(value2, None);
+    }
+
+    /// Tests that applying a snapshot properly backfills the order cache
+    #[tokio::test]
+    async fn test_apply_snapshot_order_cache() {
+        let snapshot_sm = mock_state_machine().await;
+        let mut target_sm = mock_state_machine().await;
+        let order_cache = target_sm.applicator.config.order_cache.clone();
+
+        // Create three orders, the first allows external matches and is ready for match
+        // The second does not allow external matches, but is read for matching
+        // The third is neither ready for matching nor allows external matches
+        let oid1 = OrderIdentifier::new_v4();
+        let oid2 = OrderIdentifier::new_v4();
+        let oid3 = OrderIdentifier::new_v4();
+        let mut order1 = mock_order();
+        let mut order2 = mock_order();
+        let mut order3 = mock_order();
+        order1.allow_external_matches = true;
+        order2.allow_external_matches = false;
+        order3.allow_external_matches = false;
+
+        // Add two wallets containing these orders
+        let mut wallet1 = mock_empty_wallet();
+        add_wallet_to_sm(&snapshot_sm, wallet1.clone()).await;
+        wallet1.add_order(oid1, order1).unwrap();
+
+        let mut wallet2 = mock_empty_wallet();
+        add_wallet_to_sm(&snapshot_sm, wallet2.clone()).await;
+        wallet2.add_order(oid2, order2).unwrap();
+        wallet2.add_order(oid3, order3).unwrap();
+
+        update_wallet_in_sm(&snapshot_sm, wallet1).await;
+        update_wallet_in_sm(&snapshot_sm, wallet2).await;
+
+        // Add validity proofs for the first two orders so that they are ready for match
+        add_dummy_validity_proof_to_sm(&snapshot_sm, oid1).await;
+        add_dummy_validity_proof_to_sm(&snapshot_sm, oid2).await;
+
+        // Update the target state machine from the snapshot
+        let snapshot_db = Arc::try_unwrap(snapshot_sm.applicator.config.db)
+            .unwrap_or_else(|_| panic!("Failed to unwrap DB")); // Take the DB
+        let meta = SnapshotMeta::default();
+
+        let test_tx = snapshot_db.new_read_tx().unwrap();
+        let wallets = test_tx.get_all_wallets().unwrap();
+        assert_eq!(wallets.len(), 2);
+        test_tx.commit().unwrap();
+
+        target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
+
+        // Check that the order cache has the correct orders
+        let matchable_orders = order_cache.matchable_orders().await;
+        assert_eq!(matchable_orders.len(), 2);
+        assert!(matchable_orders.contains(&oid1));
+        assert!(matchable_orders.contains(&oid2));
+
+        let external_matchable_orders = order_cache.externally_matchable_orders().await;
+        assert_eq!(external_matchable_orders.len(), 1);
+        assert!(external_matchable_orders.contains(&oid1));
     }
 }

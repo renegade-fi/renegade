@@ -8,6 +8,8 @@ use std::collections::HashSet;
 use common::types::wallet::OrderIdentifier;
 use tokio::sync::RwLock;
 
+use crate::storage::{db::DB, error::StorageError};
+
 /// The order book cache
 #[derive(Default)]
 pub struct OrderBookCache {
@@ -111,6 +113,35 @@ impl OrderBookCache {
     /// Remove an externally enabled order in a blocking fashion
     pub fn remove_externally_enabled_order_blocking(&self, order: OrderIdentifier) {
         self.externally_enabled_orders.blocking_write().remove(&order);
+    }
+
+    /// Backfill the order cache from a DB
+    ///
+    /// This method may be used to populate the cache on startup
+    pub fn backfill_from_db(&self, db: &DB) -> Result<(), StorageError> {
+        let tx = db.new_read_tx()?;
+        let orders = tx.get_local_orders()?;
+        for order_id in orders.into_iter() {
+            // Fetch order info and check if the order is ready for matching
+            let info = match tx.get_order_info(&order_id)? {
+                Some(info) => info,
+                None => continue,
+            };
+
+            if info.local && info.ready_for_match() {
+                self.add_matchable_order_blocking(order_id);
+            }
+
+            // Check if the order allows external matches
+            if let Some(wallet) = tx.get_wallet_for_order(&order_id)?
+                && let Some(order) = wallet.get_order(&order_id)
+                && order.allow_external_matches
+            {
+                self.add_externally_enabled_order_blocking(order_id);
+            }
+        }
+
+        Ok(())
     }
 }
 

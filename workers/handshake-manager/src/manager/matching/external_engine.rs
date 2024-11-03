@@ -115,9 +115,6 @@ impl HandshakeExecutor {
     }
 
     /// Get the match candidates for an external order
-    ///
-    /// TODO: Replace this with a correct implementation that filters out orders
-    /// which do not consent to external matching
     async fn get_external_match_candidates(
         &self,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {

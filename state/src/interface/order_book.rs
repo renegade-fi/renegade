@@ -365,7 +365,7 @@ impl StateInner {
     ) -> Result<bool, StateError> {
         // Check that there are no tasks in the queue for the containing wallet
         // This avoids unnecessary preemptions or possible dropped matches
-        let wallet_id = match tx.get_wallet_for_order(order_id)? {
+        let wallet_id = match tx.get_wallet_id_for_order(order_id)? {
             None => return Ok(false),
             Some(wallet) => wallet,
         };
