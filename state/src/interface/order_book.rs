@@ -184,17 +184,13 @@ impl StateInner {
     }
 
     /// Get a list of order IDs that are locally managed and ready for match
-    ///
-    /// TODO: Optimize this if necessary, possibly by caching this list
     #[instrument(name = "get_locally_matchable_orders", skip_all)]
     pub async fn get_locally_matchable_orders(&self) -> Result<Vec<OrderIdentifier>, StateError> {
-        self.with_read_tx(|tx| {
-            // Get all the local orders
-            let local_order_ids = tx.get_local_orders()?;
-
+        let matchable_orders = self.order_cache.matchable_orders().await;
+        self.with_read_tx(move |tx| {
             let mut res = Vec::new();
-            for id in local_order_ids.into_iter() {
-                if Self::is_order_matchable(&id, tx)? {
+            for id in matchable_orders.into_iter() {
+                if Self::is_task_queue_free(&id, tx)? {
                     res.push(id);
                 }
             }
@@ -211,18 +207,16 @@ impl StateInner {
         &self,
         matching_pool: MatchingPoolName,
     ) -> Result<Vec<OrderIdentifier>, StateError> {
+        let matchable_orders = self.order_cache.matchable_orders().await;
         self.with_read_tx(move |tx| {
-            // Get all the local orders
-            let local_order_ids = tx.get_local_orders()?;
-
             let mut res = Vec::new();
-            for id in local_order_ids.into_iter() {
+            for id in matchable_orders.into_iter() {
                 let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
                 if order_matching_pool != matching_pool {
                     continue;
                 }
 
-                if Self::is_order_matchable(&id, tx)? {
+                if Self::is_task_queue_free(&id, tx)? {
                     res.push(id);
                 }
             }
@@ -234,25 +228,17 @@ impl StateInner {
 
     /// Get the set of orders that are ready for a match and allow external
     /// matches
-    ///
-    /// TODO: We do this by adding a filter beyond what the normal matching
-    /// engine does, i.e. by reading out the order. Check if performance for
-    /// this method is sufficient
     #[instrument(name = "get_externally_matchable_orders", skip_all)]
     pub async fn get_externally_matchable_orders(
         &self,
     ) -> Result<Vec<OrderIdentifier>, StateError> {
-        self.with_read_tx(|tx| {
+        let externally_matchable_orders = self.order_cache.externally_matchable_orders().await;
+        self.with_read_tx(move |tx| {
             let mut orders = Vec::new();
-            for id in tx.get_local_orders()?.iter() {
-                // First check that the order is matchable
-                if !Self::is_order_matchable(id, tx)? {
-                    continue;
-                }
-
-                // Then check that the order allows external matches
-                if Self::is_order_externally_matchable(id, tx)? {
-                    orders.push(*id);
+            for id in externally_matchable_orders.into_iter() {
+                // Check that the task queue is free
+                if Self::is_task_queue_free(&id, tx)? {
+                    orders.push(id);
                 }
             }
 
@@ -371,50 +357,22 @@ impl StateInner {
 // -----------
 
 impl StateInner {
-    /// Checks whether or not a locally managed order is matchable
-    fn is_order_matchable<T: TransactionKind>(
+    /// Checks that a task queue is empty and not paused for a wallet containing
+    /// an order
+    fn is_task_queue_free<T: TransactionKind>(
         order_id: &OrderIdentifier,
         tx: &StateTxn<T>,
     ) -> Result<bool, StateError> {
-        let order_info = tx.get_order_info(order_id)?;
-        if order_info.is_none() {
-            return Ok(false);
-        }
-
-        let info = order_info.unwrap();
-
         // Check that there are no tasks in the queue for the containing wallet
         // This avoids unnecessary preemptions or possible dropped matches
-        let wallet_id = match tx.get_wallet_for_order(&info.id)? {
+        let wallet_id = match tx.get_wallet_for_order(order_id)? {
             None => return Ok(false),
             Some(wallet) => wallet,
         };
 
-        if !tx.is_queue_empty(&wallet_id)? || tx.is_queue_paused(&wallet_id)? {
-            return Ok(false);
-        }
-
-        // Check that the order itself is ready for a match
-        Ok(info.ready_for_match())
-    }
-
-    /// Checks whether an order is externally matchable
-    fn is_order_externally_matchable<T: TransactionKind>(
-        id: &OrderIdentifier,
-        tx: &StateTxn<T>,
-    ) -> Result<bool, StateError> {
-        // Fetch the wallet and pull the order from it
-        let wallet_id = match tx.get_wallet_for_order(id)? {
-            None => return Ok(false),
-            Some(wallet) => wallet,
-        };
-
-        let order = tx.get_wallet(&wallet_id)?.and_then(|w| w.get_order(id).cloned());
-        if order.is_none() {
-            return Ok(false);
-        }
-
-        Ok(order.unwrap().allow_external_matches)
+        let empty = tx.is_queue_empty(&wallet_id)?;
+        let paused = tx.is_queue_paused(&wallet_id)?;
+        Ok(empty && !paused)
     }
 }
 
