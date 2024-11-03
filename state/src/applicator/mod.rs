@@ -125,7 +125,7 @@ impl StateApplicator {
     }
 
     /// Get a reference to the order cache
-    fn order_cache(&self) -> &OrderBookCache {
+    pub(crate) fn order_cache(&self) -> &OrderBookCache {
         &self.config.order_cache
     }
 }

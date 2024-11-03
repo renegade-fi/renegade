@@ -211,7 +211,7 @@ impl TypedHandler for AdminOrderMetadataHandler {
 
         let wallet_id = self
             .state
-            .get_wallet_for_order(&order_id)
+            .get_wallet_id_for_order(&order_id)
             .await?
             .ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
 

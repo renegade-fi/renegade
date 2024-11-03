@@ -191,7 +191,7 @@ impl HandshakeExecutor {
         order_id: &OrderIdentifier,
     ) -> Result<WalletIdentifier, HandshakeManagerError> {
         self.state
-            .get_wallet_for_order(order_id)
+            .get_wallet_id_for_order(order_id)
             .await?
             .ok_or_else(|| HandshakeManagerError::state(ERR_NO_WALLET))
     }
@@ -208,10 +208,9 @@ impl HandshakeExecutor {
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_ORDER.to_string()))?;
 
         let wallet = match state.get_wallet_for_order(&order.id).await? {
-            Some(wallet) => state.get_wallet(&wallet).await?,
-            None => None,
-        }
-        .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
+            Some(wallet) => wallet,
+            None => return Err(HandshakeManagerError::State(ERR_NO_WALLET.to_string())),
+        };
 
         Ok((order, wallet))
     }

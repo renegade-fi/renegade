@@ -87,7 +87,7 @@ impl StateApplicator {
 
         // Update the order metadata into the `Matching` state
         let wallet = tx
-            .get_wallet_for_order(&order_id)?
+            .get_wallet_id_for_order(&order_id)?
             .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
         let mut meta = tx
             .get_order_metadata(wallet, order_id)?

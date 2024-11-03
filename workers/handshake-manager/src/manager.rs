@@ -468,7 +468,7 @@ impl HandshakeExecutor {
         // Enqueue a task to settle the match
         let wallet_id = self
             .state
-            .get_wallet_for_order(&handshake_state.local_order_id)
+            .get_wallet_id_for_order(&handshake_state.local_order_id)
             .await?
             .ok_or_else(|| HandshakeManagerError::State(ERR_NO_WALLET.to_string()))?;
 

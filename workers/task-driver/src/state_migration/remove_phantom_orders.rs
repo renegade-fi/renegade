@@ -59,14 +59,7 @@ async fn find_missing_local_orders(state: &State) -> Result<Vec<OrderIdentifier>
 /// Check whether an order is missing from its wallet
 async fn check_order_missing(state: &State, order_id: &OrderIdentifier) -> Result<bool, String> {
     // Check that the order has a wallet ID mapped to it
-    let wallet_id = state.get_wallet_for_order(order_id).await?;
-    if wallet_id.is_none() {
-        return Ok(true);
-    }
-
-    // Check that the wallet exists and contains the order
-    let wallet_id = wallet_id.unwrap();
-    let maybe_wallet = state.get_wallet(&wallet_id).await?;
+    let maybe_wallet = state.get_wallet_for_order(order_id).await?;
     if maybe_wallet.is_none() || !maybe_wallet.unwrap().contains_order(order_id) {
         return Ok(true);
     }

@@ -55,8 +55,7 @@ impl StateInner {
     ) -> Result<Option<Order>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let wallet_id = res_some!(tx.get_wallet_for_order(&id)?);
-            let wallet = res_some!(tx.get_wallet(&wallet_id)?);
+            let wallet = res_some!(tx.get_wallet_for_order(&id)?);
             Ok(wallet.orders.get(&id).cloned())
         })
         .await
@@ -69,8 +68,7 @@ impl StateInner {
     ) -> Result<Option<(Order, Balance)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
-            let wallet_id = res_some!(tx.get_wallet_for_order(&id)?);
-            let wallet = res_some!(tx.get_wallet(&wallet_id)?);
+            let wallet = res_some!(tx.get_wallet_for_order(&id)?);
             let order = res_some!(wallet.orders.get(&id)).clone();
 
             // Get the balance that capitalizes the order
@@ -81,15 +79,28 @@ impl StateInner {
         .await
     }
 
-    /// Get the wallet that contains the given order ID
-    pub async fn get_wallet_for_order(
+    /// Get the wallet ID that contains the given order ID
+    pub async fn get_wallet_id_for_order(
         &self,
         order_id: &OrderIdentifier,
     ) -> Result<Option<WalletIdentifier>, StateError> {
         let oid = *order_id;
         self.with_read_tx(move |tx| {
-            let wallet_id = tx.get_wallet_for_order(&oid)?;
+            let wallet_id = tx.get_wallet_id_for_order(&oid)?;
             Ok(wallet_id)
+        })
+        .await
+    }
+
+    /// Get the wallet that contains the given order ID
+    pub async fn get_wallet_for_order(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<Option<Wallet>, StateError> {
+        let oid = *order_id;
+        self.with_read_tx(move |tx| {
+            let wallet = tx.get_wallet_for_order(&oid)?;
+            Ok(wallet)
         })
         .await
     }
