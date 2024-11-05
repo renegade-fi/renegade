@@ -10,6 +10,7 @@ use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::contract::EthLogDecode;
+use ethers::types::Transaction;
 use ethers::{
     middleware::Middleware,
     prelude::StreamExt,
@@ -18,7 +19,7 @@ use ethers::{
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
-use tracing::{error, instrument};
+use tracing::{error, info, instrument};
 use util::err_str;
 
 use crate::abi::{processAtomicMatchSettleCall, MerkleInsertionFilter, NullifierSpentFilter};
@@ -39,6 +40,17 @@ use crate::{
 };
 
 use super::ArbitrumClient;
+
+/// A list of known selectors for the darkpool contract
+const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 7] = [
+    <newWalletCall as SolCall>::SELECTOR,
+    <updateWalletCall as SolCall>::SELECTOR,
+    <processMatchSettleCall as SolCall>::SELECTOR,
+    <processAtomicMatchSettleCall as SolCall>::SELECTOR,
+    <settleOnlineRelayerFeeCall as SolCall>::SELECTOR,
+    <settleOfflineFeeCall as SolCall>::SELECTOR,
+    <redeemFeeCall as SolCall>::SELECTOR,
+];
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
@@ -183,7 +195,6 @@ impl ArbitrumClient {
 
     /// Fetch and parse the public secret shares from the calldata of the
     /// transaction that updated the wallet with the given blinder
-    // TODO: Add support for nested calls
     #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
     pub async fn fetch_public_shares_for_blinder(
         &self,
@@ -194,7 +205,7 @@ impl ArbitrumClient {
             .await?
             .ok_or(ArbitrumClientError::BlinderNotFound)?;
 
-        let tx = self
+        let tx: Transaction = self
             .get_darkpool_client()
             .client()
             .get_transaction(tx_hash)
@@ -204,24 +215,80 @@ impl ArbitrumClient {
 
         let calldata: Vec<u8> = tx.input.to_vec();
         let selector: [u8; 4] = calldata[..SELECTOR_LEN].try_into().unwrap();
+        if KNOWN_SELECTORS.contains(&selector) {
+            Self::parse_shares_from_selector_and_calldata(
+                selector,
+                &calldata,
+                public_blinder_share,
+                true, // validate
+            )
+        } else {
+            info!("unknown selector {selector:?}, searching calldata...");
+            self.fetch_public_shares_for_unknown_selector(&calldata, public_blinder_share)
+        }
+    }
+
+    /// Attempt to fetch public shares from an unknown selector
+    ///
+    /// TODO: Upgrade RPC provider and use transaction tracing API instead
+    fn fetch_public_shares_for_unknown_selector(
+        &self,
+        calldata: &[u8],
+        public_blinder_share: Scalar,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+        // Try to find a known selector in the calldata
+        let mut selector_and_offset = None;
+        for target_selector in KNOWN_SELECTORS {
+            if let Some((offset, _)) = calldata
+                .windows(SELECTOR_LEN)
+                .enumerate()
+                .find(|(_, window)| window == &target_selector)
+            {
+                selector_and_offset = Some((target_selector, offset));
+                break;
+            }
+        }
+
+        if let Some((selector, offset)) = selector_and_offset {
+            let data = &calldata[offset..];
+            // We do not validate the calldata here because it may be embedded in a tx
+            Self::parse_shares_from_selector_and_calldata(
+                selector,
+                data,
+                public_blinder_share,
+                false, // validate
+            )
+        } else {
+            error!("could not find known selector in calldata");
+            Err(ArbitrumClientError::InvalidSelector)
+        }
+    }
+
+    /// Parse wallet shares given a selector and calldata
+    fn parse_shares_from_selector_and_calldata(
+        selector: [u8; SELECTOR_LEN],
+        calldata: &[u8],
+        public_blinder_share: Scalar,
+        validate: bool,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
         match selector {
-            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(&calldata),
-            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(&calldata),
+            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
+            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
             <processMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_match_settle(&calldata, public_blinder_share)
+                parse_shares_from_process_match_settle(calldata, public_blinder_share)
             },
             <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_atomic_match_settle(&calldata)
+                parse_shares_from_process_atomic_match_settle(calldata, validate)
             },
             <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_online_relayer_fee(&calldata, public_blinder_share)
+                parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
             },
             <settleOfflineFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_offline_fee(&calldata)
+                parse_shares_from_settle_offline_fee(calldata)
             },
-            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(&calldata),
-            sel => {
-                error!("invalid selector when parsing public shares: {sel:?}");
+            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
+            _ => {
+                error!("invalid selector when parsing public shares: {selector:?}");
                 Err(ArbitrumClientError::InvalidSelector)
             },
         }

@@ -111,8 +111,9 @@ pub fn parse_shares_from_process_match_settle(
 /// Parses wallet shares from the calldata of a `processAtomicMatchSettle` call
 pub fn parse_shares_from_process_atomic_match_settle(
     calldata: &[u8],
+    validate: bool,
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
-    let call = processAtomicMatchSettleCall::abi_decode(calldata, true /* validate */)
+    let call = processAtomicMatchSettleCall::abi_decode(calldata, validate)
         .map_err(err_str!(ArbitrumClientError::Serde))?;
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
