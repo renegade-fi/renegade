@@ -10,6 +10,7 @@ use clap::Parser;
 use common::types::{
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
+    token::Token,
     wallet::keychain::HmacKey,
 };
 use ed25519_dalek::Keypair as DalekKeypair;
@@ -419,6 +420,12 @@ impl RelayerConfig {
     /// If it does not, the relayer may skip the wallet creation/lookup step
     pub fn needs_relayer_wallet(&self) -> bool {
         self.auto_redeem_fees
+    }
+
+    /// Get the minimum fill size as a decimal adjusted USDC value
+    pub fn min_fill_size_decimal_adjusted(&self) -> f64 {
+        let token = Token::from_ticker("USDC");
+        token.convert_to_decimal(self.min_fill_size)
     }
 
     /// Configure the telemetry layers from the relayer config

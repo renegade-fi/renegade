@@ -404,9 +404,11 @@ impl HttpServer {
             &Method::POST,
             REQUEST_EXTERNAL_MATCH_ROUTE.to_string(),
             RequestExternalMatchHandler::new(
+                config.min_order_size,
                 handshake_queue,
                 config.system_bus.clone(),
                 state.clone(),
+                config.price_reporter_work_queue.clone(),
             ),
         );
 
