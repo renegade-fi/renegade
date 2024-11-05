@@ -53,6 +53,8 @@ pub struct ApiServerConfig {
     pub wallet_task_rate_limit: u32,
     /// The minimum usdc denominated value for a deposit or withdrawal
     pub min_transfer_amount: f64,
+    /// The minimum usdc denominated order size
+    pub min_order_size: f64,
     /// The URL of the compliance service to use for wallet screening
     ///
     /// Compliance screening is disabled if this is not set

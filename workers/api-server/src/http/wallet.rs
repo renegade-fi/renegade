@@ -115,7 +115,7 @@ pub(crate) fn maybe_rotate_root_key(
 ///
 /// Note that this function may have precision issues for large balances, it is
 /// intended as a simple implementation at the expense of some precision
-async fn get_usdc_denominated_value(
+pub(crate) async fn get_usdc_denominated_value(
     mint: &BigUint,
     amount: Amount,
     price_reporter_queue: &PriceReporterQueue,

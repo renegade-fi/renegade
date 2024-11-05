@@ -14,10 +14,15 @@ use async_trait::async_trait;
 use common::types::wallet::Order;
 use external_api::{
     bus_message::SystemBusMessage,
-    http::external_match::{AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse},
+    http::external_match::{
+        AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse, ExternalOrder,
+    },
 };
 use hyper::HeaderMap;
-use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
+use job_types::{
+    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
+    price_reporter::PriceReporterQueue,
+};
 use state::State;
 use system_bus::SystemBus;
 
@@ -25,6 +30,8 @@ use crate::{
     error::{bad_request, internal_error, no_content, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
 };
+
+use super::wallet::get_usdc_denominated_value;
 
 // ------------------
 // | Error Messages |
@@ -64,28 +71,54 @@ async fn await_external_match_response(
     }
 }
 
+/// Check the USDC denominated value of an external order and assert that it is
+/// greater than the configured minimum size
+async fn check_external_order_size(
+    o: &ExternalOrder,
+    min_order_size: f64,
+    price_queue: &PriceReporterQueue,
+) -> Result<(), ApiServerError> {
+    let usdc_value = get_usdc_denominated_value(&o.base_mint, o.amount, price_queue).await?;
+
+    // If we cannot fetch a price, do not block the order
+    if let Some(usdc_value) = usdc_value {
+        if usdc_value < min_order_size {
+            let msg = format!("order value too small, ${usdc_value} < ${min_order_size}");
+            return Err(bad_request(msg));
+        }
+    }
+
+    Ok(())
+}
+
 // ------------------
 // | Route Handlers |
 // ------------------
 
 /// The handler for the `POST /external-match/request` route
 pub struct RequestExternalMatchHandler {
+    /// The minimum usdc denominated order size
+    min_order_size: f64,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
     /// A handle on the system bus
     bus: SystemBus<SystemBusMessage>,
     /// A handle on the relayer state
     state: State,
+    /// The price reporter queue
+    price_queue: PriceReporterQueue,
 }
 
 impl RequestExternalMatchHandler {
     /// Create a new handler
     pub fn new(
+        min_order_size: f64,
         handshake_queue: HandshakeManagerQueue,
         bus: SystemBus<SystemBusMessage>,
         state: State,
+        price_queue: PriceReporterQueue,
     ) -> Self {
-        Self { handshake_queue, bus, state }
+        Self { min_order_size, handshake_queue, bus, state, price_queue }
     }
 }
 
@@ -106,6 +139,10 @@ impl TypedHandler for RequestExternalMatchHandler {
         if !enabled {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
+
+        // Check that the external order is large enough
+        check_external_order_size(&req.external_order, self.min_order_size, &self.price_queue)
+            .await?;
 
         // Forward a request to the handshake manager for an external match
         let order: Order = req.external_order.into();

@@ -84,6 +84,7 @@ async fn main() -> Result<(), CoordinatorError> {
         .expect("error parsing command line args");
     let setup_config = args.clone();
     args.configure_telemetry().expect("failed to configure telemetry");
+    let min_order_size = args.min_fill_size_decimal_adjusted();
 
     info!(
         "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
@@ -320,6 +321,7 @@ async fn main() -> Result<(), CoordinatorError> {
         websocket_port: args.websocket_port,
         admin_api_key: args.admin_api_key,
         min_transfer_amount: args.min_transfer_amount,
+        min_order_size,
         compliance_service_url: args.compliance_service_url,
         wallet_task_rate_limit: args.wallet_task_rate_limit,
         network_sender: network_sender.clone(),
