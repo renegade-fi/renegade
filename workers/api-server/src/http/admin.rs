@@ -7,11 +7,10 @@
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
-    exchange::PriceReporterState,
     tasks::UpdateWalletTaskDescriptor,
     token::Token,
     wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
-    Price, TimestampedPrice,
+    Price,
 };
 use external_api::{
     http::{
@@ -28,10 +27,9 @@ use external_api::{
 use hyper::HeaderMap;
 use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
-    price_reporter::{PriceReporterJob, PriceReporterQueue},
+    price_reporter::PriceReporterQueue,
 };
 use state::State;
-use tokio::sync::oneshot;
 use util::matching_engine::compute_max_amount;
 
 use crate::{
@@ -549,27 +547,16 @@ async fn get_fillable_amount_and_price(
     let base_addr = base_token.get_addr().to_string();
     let quote_addr = quote_token.get_addr().to_string();
 
-    let (price_tx, price_rx) = oneshot::channel();
-    price_reporter_job_queue
-        .send(PriceReporterJob::PeekPrice {
-            base_token: base_token.clone(),
-            quote_token: quote_token.clone(),
-            channel: price_tx,
-        })
-        .map_err(internal_error)?;
+    let ts_price = price_reporter_job_queue
+        .peek_price(base_token.clone(), quote_token.clone())
+        .await
+        .map_err(|e| {
+            internal_error(format!("{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {e}"))
+        })?;
 
-    let price: TimestampedPrice = match price_rx.await.map_err(internal_error)? {
-        PriceReporterState::Nominal(report) => (&report).into(),
-        err_state => {
-            return Err(internal_error(format!(
-                "{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {err_state:?}"
-            )))
-        },
-    };
-
-    let original_price = price.price;
+    let original_price = ts_price.price;
     let corrected_price =
-        price.get_decimal_corrected_price(&base_token, &quote_token).map_err(internal_error)?;
+        ts_price.get_decimal_corrected_price(&base_token, &quote_token).map_err(internal_error)?;
 
     let price_fp = FixedPoint::from_f64_round_down(corrected_price.price);
 

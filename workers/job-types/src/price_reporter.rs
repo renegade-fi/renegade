@@ -1,4 +1,5 @@
 //! Defines all possible jobs for the PriceReporter.
+use common::types::TimestampedPrice;
 use common::types::{exchange::PriceReporterState, token::Token};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioUnboundedSender};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver, Sender as TokioSender};
@@ -7,15 +8,60 @@ use util::metered_channels::MeteredTokioReceiver;
 /// The name of the price reporter queue, used to label queue length metrics
 const PRICE_REPORTER_QUEUE_NAME: &str = "price_reporter";
 
-/// The queue type for the price reporter
-pub type PriceReporterQueue = TokioUnboundedSender<PriceReporterJob>;
 /// The queue receiver type for the price reporter
 pub type PriceReporterReceiver = MeteredTokioReceiver<PriceReporterJob>;
 
 /// Create a new price reporter queue and receiver
 pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver) {
     let (send, recv) = unbounded_channel();
-    (send, MeteredTokioReceiver::new(recv, PRICE_REPORTER_QUEUE_NAME))
+    (send.into(), MeteredTokioReceiver::new(recv, PRICE_REPORTER_QUEUE_NAME))
+}
+
+/// The queue type for the price reporter
+#[derive(Clone)]
+pub struct PriceReporterQueue {
+    /// The inner sender
+    inner: TokioUnboundedSender<PriceReporterJob>,
+}
+
+impl From<TokioUnboundedSender<PriceReporterJob>> for PriceReporterQueue {
+    fn from(inner: TokioUnboundedSender<PriceReporterJob>) -> Self {
+        Self { inner }
+    }
+}
+
+impl PriceReporterQueue {
+    /// Send a job to the price reporter
+    pub fn send(&self, job: PriceReporterJob) -> Result<(), String> {
+        self.inner.send(job).map_err(|e| format!("failed to send price reporter job: {e}"))
+    }
+
+    /// Peek a timestamped price from the price reporter
+    pub async fn peek_price(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+    ) -> Result<TimestampedPrice, String> {
+        let report = self.peek_price_report(base_token, quote_token).await?;
+        report.price()
+    }
+
+    /// Peek a full price report from the price reporter
+    pub async fn peek_price_report(
+        &self,
+        base_token: Token,
+        quote_token: Token,
+    ) -> Result<PriceReporterState, String> {
+        let (job, recv) = PriceReporterJob::peek_price(base_token, quote_token);
+        self.send(job)?;
+        recv.await.map_err(|e| format!("failed to receive price report: {e}"))
+    }
+
+    /// Stream a price for the given token pair
+    pub fn stream_price(&self, base_token: Token, quote_token: Token) -> Result<(), String> {
+        let job = PriceReporterJob::StreamPrice { base_token, quote_token };
+        self.send(job)
+    }
 }
 
 /// All possible jobs that the PriceReporter accepts.

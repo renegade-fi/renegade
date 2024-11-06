@@ -9,11 +9,12 @@
 //! for consenting liquidity on a given token pair.
 
 use circuit_types::{
-    fixed_point::FixedPoint, max_price, order::OrderSide, r#match::ExternalMatchResult, Amount,
+    fixed_point::FixedPoint, order::OrderSide, r#match::ExternalMatchResult, Amount,
 };
 use common::types::wallet::Order;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
+use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::hex::biguint_to_hex_string;
 
@@ -65,27 +66,47 @@ pub struct ExternalOrder {
     pub base_mint: BigUint,
     /// The side of the market this order is on
     pub side: OrderSide,
-    /// The amount of the order
-    pub amount: Amount,
+    /// The base amount of the order
+    #[serde(default, alias = "amount")]
+    pub base_amount: Amount,
+    /// The quote amount of the order
+    #[serde(default)]
+    pub quote_amount: Amount,
     /// The minimum fill size for the order
     #[serde(default)]
     pub min_fill_size: Amount,
 }
 
-impl From<ExternalOrder> for Order {
-    fn from(order: ExternalOrder) -> Self {
-        let worst_case_price =
-            if order.side == OrderSide::Buy { max_price() } else { FixedPoint::from_integer(0) };
-
+impl ExternalOrder {
+    /// Convert the external order to the standard `Order` type used throughout
+    /// the relayer
+    ///
+    /// We need the price here to convert a quote denominated order into a base
+    /// denominated order
+    pub fn to_order_with_price(&self, price: FixedPoint) -> Order {
+        let base_amount = self.get_base_amount(price);
         Order {
-            quote_mint: order.quote_mint,
-            base_mint: order.base_mint,
-            side: order.side,
-            amount: order.amount,
-            min_fill_size: order.min_fill_size,
-            worst_case_price,
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            side: self.side,
+            amount: base_amount,
+            min_fill_size: self.min_fill_size,
+            worst_case_price: price,
             allow_external_matches: true,
         }
+    }
+
+    /// Get the base amount of the order implied by the external order
+    ///
+    /// The price here is expected to be decimal corrected; i.e. multiplied by
+    /// the decimal diff for the two tokens
+    fn get_base_amount(&self, price: FixedPoint) -> Amount {
+        if self.base_amount != 0 {
+            return self.base_amount;
+        }
+
+        let implied_base_amount = FixedPoint::floor_div_int(self.quote_amount, price);
+        scalar_to_u128(&implied_base_amount)
     }
 }
 
