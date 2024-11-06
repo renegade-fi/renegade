@@ -2,6 +2,7 @@
 //! emitted by the darkpool contract
 
 use std::cmp::Reverse;
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use alloy_sol_types::SolCall;
@@ -10,7 +11,10 @@ use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::contract::EthLogDecode;
-use ethers::types::Transaction;
+use ethers::types::{
+    CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
+    GethTraceFrame, NameOrAddress, Transaction,
+};
 use ethers::{
     middleware::Middleware,
     prelude::StreamExt,
@@ -193,107 +197,6 @@ impl ArbitrumClient {
             .ok_or(ArbitrumClientError::CommitmentNotFound)
     }
 
-    /// Fetch and parse the public secret shares from the calldata of the
-    /// transaction that updated the wallet with the given blinder
-    #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
-    pub async fn fetch_public_shares_for_blinder(
-        &self,
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
-        let tx_hash = self
-            .get_public_blinder_tx(public_blinder_share)
-            .await?
-            .ok_or(ArbitrumClientError::BlinderNotFound)?;
-
-        let tx: Transaction = self
-            .get_darkpool_client()
-            .client()
-            .get_transaction(tx_hash)
-            .await
-            .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxNotFound(tx_hash.to_string()))?;
-
-        let calldata: Vec<u8> = tx.input.to_vec();
-        let selector: [u8; 4] = calldata[..SELECTOR_LEN].try_into().unwrap();
-        if KNOWN_SELECTORS.contains(&selector) {
-            Self::parse_shares_from_selector_and_calldata(
-                selector,
-                &calldata,
-                public_blinder_share,
-                true, // validate
-            )
-        } else {
-            info!("unknown selector {selector:?}, searching calldata...");
-            self.fetch_public_shares_for_unknown_selector(&calldata, public_blinder_share)
-        }
-    }
-
-    /// Attempt to fetch public shares from an unknown selector
-    ///
-    /// TODO: Upgrade RPC provider and use transaction tracing API instead
-    fn fetch_public_shares_for_unknown_selector(
-        &self,
-        calldata: &[u8],
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
-        // Try to find a known selector in the calldata
-        let mut selector_and_offset = None;
-        for target_selector in KNOWN_SELECTORS {
-            if let Some((offset, _)) = calldata
-                .windows(SELECTOR_LEN)
-                .enumerate()
-                .find(|(_, window)| window == &target_selector)
-            {
-                selector_and_offset = Some((target_selector, offset));
-                break;
-            }
-        }
-
-        if let Some((selector, offset)) = selector_and_offset {
-            let data = &calldata[offset..];
-            // We do not validate the calldata here because it may be embedded in a tx
-            Self::parse_shares_from_selector_and_calldata(
-                selector,
-                data,
-                public_blinder_share,
-                false, // validate
-            )
-        } else {
-            error!("could not find known selector in calldata");
-            Err(ArbitrumClientError::InvalidSelector)
-        }
-    }
-
-    /// Parse wallet shares given a selector and calldata
-    fn parse_shares_from_selector_and_calldata(
-        selector: [u8; SELECTOR_LEN],
-        calldata: &[u8],
-        public_blinder_share: Scalar,
-        validate: bool,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
-        match selector {
-            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
-            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
-            <processMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_match_settle(calldata, public_blinder_share)
-            },
-            <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_atomic_match_settle(calldata, validate)
-            },
-            <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
-            },
-            <settleOfflineFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_offline_fee(calldata)
-            },
-            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
-            _ => {
-                error!("invalid selector when parsing public shares: {selector:?}");
-                Err(ArbitrumClientError::InvalidSelector)
-            },
-        }
-    }
-
     /// Await a nullifier spent event on a given nullifier
     #[instrument(skip_all, err, fields(nullifier = %nullifier))]
     pub async fn await_nullifier_spent(
@@ -322,6 +225,144 @@ impl ArbitrumClient {
             },
             Err(_) => {
                 Err(ArbitrumClientError::EventQuerying(ERR_NULLIFIER_SPENT_TIMEOUT.to_string()))
+            },
+        }
+    }
+
+    /// Fetch and parse the public secret shares from the calldata of the
+    /// transaction that updated the wallet with the given blinder
+    #[instrument(skip_all, err, fields(public_blinder_share = %public_blinder_share))]
+    pub async fn fetch_public_shares_for_blinder(
+        &self,
+        public_blinder_share: Scalar,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+        let tx_hash = self
+            .get_public_blinder_tx(public_blinder_share)
+            .await?
+            .ok_or(ArbitrumClientError::BlinderNotFound)?;
+
+        let tx: Transaction = self
+            .get_darkpool_client()
+            .client()
+            .get_transaction(tx_hash)
+            .await
+            .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxNotFound(tx_hash.to_string()))?;
+
+        let calldata: Vec<u8> = tx.input.to_vec();
+        let selector: [u8; 4] = calldata[..SELECTOR_LEN].try_into().unwrap();
+        if KNOWN_SELECTORS.contains(&selector) {
+            Self::parse_shares_from_selector_and_calldata(selector, &calldata, public_blinder_share)
+        } else {
+            info!("unknown selector {selector:?}, searching calldata...");
+            self.fetch_public_shares_for_unknown_selector(tx_hash, public_blinder_share).await
+        }
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Fetch the public shares from a transaction that has an unknown selector
+    async fn fetch_public_shares_for_unknown_selector(
+        &self,
+        tx_hash: TxHash,
+        public_blinder_share: Scalar,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+        // Parse the call trace for calls to the darkpool contract
+        let trace = self.fetch_call_trace(tx_hash).await?;
+        let calls = self.find_darkpool_subcalls(&trace);
+        if calls.is_empty() {
+            let hash_str = format!("{tx_hash:#x}");
+            return Err(ArbitrumClientError::DarkpoolSubcallNotFound(hash_str));
+        }
+
+        // Attempt to parse public shares from the calldata of each call
+        for call in calls {
+            let data = call.input;
+            let selector = data[..SELECTOR_LEN].try_into().unwrap();
+            let public_share = Self::parse_shares_from_selector_and_calldata(
+                selector,
+                &data,
+                public_blinder_share,
+            )?;
+
+            if public_share.blinder == public_blinder_share {
+                return Ok(public_share);
+            }
+        }
+
+        Err(ArbitrumClientError::InvalidSelector)
+    }
+
+    /// Fetch the call trace for a given transaction
+    async fn fetch_call_trace(&self, tx_hash: TxHash) -> Result<GethTrace, ArbitrumClientError> {
+        // Fetch a call trace for the transaction
+        let options = GethDebugTracingOptions {
+            tracer: Some(GethDebugTracerType::BuiltInTracer(
+                GethDebugBuiltInTracerType::CallTracer,
+            )),
+            ..Default::default()
+        };
+
+        self.client()
+            .debug_trace_transaction(tx_hash, options)
+            .await
+            .map_err(err_str!(ArbitrumClientError::TxQuerying))
+    }
+
+    /// Find all darkpool sub-calls in a call trace
+    fn find_darkpool_subcalls(&self, trace: &GethTrace) -> Vec<CallFrame> {
+        let darkpool = self.get_darkpool_client().address();
+        let global_call_frame = match trace {
+            GethTrace::Known(GethTraceFrame::CallTracer(frame)) => frame,
+            _ => return vec![],
+        };
+
+        // BFS the call tree to find all calls to the darkpool contract
+        let mut darkpool_calls = vec![];
+        let mut calls = VecDeque::from([global_call_frame]);
+        while let Some(call) = calls.pop_front() {
+            match call.to {
+                Some(NameOrAddress::Address(addr)) if addr == darkpool => {
+                    darkpool_calls.push(call.clone());
+                },
+                _ => {},
+            }
+
+            if let Some(sub_calls) = &call.calls {
+                calls.extend(sub_calls);
+            }
+        }
+
+        darkpool_calls
+    }
+
+    /// Parse wallet shares given a selector and calldata
+    fn parse_shares_from_selector_and_calldata(
+        selector: [u8; SELECTOR_LEN],
+        calldata: &[u8],
+        public_blinder_share: Scalar,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+        match selector {
+            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
+            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
+            <processMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_match_settle(calldata, public_blinder_share)
+            },
+            <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_atomic_match_settle(calldata)
+            },
+            <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
+                parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
+            },
+            <settleOfflineFeeCall as SolCall>::SELECTOR => {
+                parse_shares_from_settle_offline_fee(calldata)
+            },
+            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
+            _ => {
+                error!("invalid selector when parsing public shares: {selector:?}");
+                Err(ArbitrumClientError::InvalidSelector)
             },
         }
     }
