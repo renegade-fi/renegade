@@ -9,6 +9,8 @@ pub enum ArbitrumClientError {
     Config(ArbitrumClientConfigError),
     /// Error thrown when a contract call fails
     ContractInteraction(String),
+    /// Error thrown when a darkpool sub-call cannot be found in a tx
+    DarkpoolSubcallNotFound(String),
     /// Error thrown when serializing/deserializing calldata/retdata
     Serde(String),
     /// Error thrown when converting between relayer & smart contract types
