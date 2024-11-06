@@ -104,9 +104,8 @@ impl MockPriceReporter {
 
 #[cfg(test)]
 mod test {
-    use common::types::{exchange::PriceReporterState, token::Token};
-    use job_types::price_reporter::{new_price_reporter_queue, PriceReporterJob};
-    use tokio::sync::oneshot::channel;
+    use common::types::token::Token;
+    use job_types::price_reporter::new_price_reporter_queue;
 
     use crate::mock::{setup_mock_token_remap, MockPriceReporter};
 
@@ -123,22 +122,10 @@ mod test {
         reporter.run();
 
         // Request a price
-        let (resp_send, resp_recv) = channel();
-        let job = PriceReporterJob::PeekPrice {
-            base_token: Token::from_ticker("WETH"),
-            quote_token: Token::from_ticker("USDC"),
-            channel: resp_send,
-        };
+        let base = Token::from_ticker("WETH");
+        let quote = Token::from_ticker("USDC");
+        let resp = price_sender.peek_price(base, quote).await.unwrap();
 
-        price_sender.send(job).unwrap();
-
-        // Check the response
-        let resp = resp_recv.await.unwrap();
-        match resp {
-            PriceReporterState::Nominal(report) => {
-                assert_eq!(report.price, PRICE);
-            },
-            _ => panic!("unexpected response: {resp:?}"),
-        };
+        assert_eq!(resp.price, PRICE);
     }
 }

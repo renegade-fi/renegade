@@ -3,17 +3,12 @@
 use async_trait::async_trait;
 use external_api::http::price_report::{GetPriceReportRequest, GetPriceReportResponse};
 use hyper::HeaderMap;
-use job_types::price_reporter::PriceReporterJob;
-use tokio::sync::oneshot::channel;
 
 use crate::{
     error::{internal_error, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
     worker::ApiServerConfig,
 };
-
-/// Error message for when a price report is not found
-const ERR_NO_PRICE_REPORT: &str = "No price report found for the given pair";
 
 // ------------------
 // | Route Handlers |
@@ -46,18 +41,13 @@ impl TypedHandler for PriceReportHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let (price_reporter_state_sender, price_reporter_state_receiver) = channel();
-        self.config
+        let price_report = self
+            .config
             .price_reporter_work_queue
-            .send(PriceReporterJob::PeekPrice {
-                base_token: req.base_token.clone(),
-                quote_token: req.quote_token.clone(),
-                channel: price_reporter_state_sender,
-            })
-            .unwrap();
+            .peek_price_report(req.base_token.clone(), req.quote_token.clone())
+            .await
+            .map_err(internal_error)?;
 
-        let price_report =
-            price_reporter_state_receiver.await.map_err(|_| internal_error(ERR_NO_PRICE_REPORT))?;
         Ok(GetPriceReportResponse { price_report })
     }
 }

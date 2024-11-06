@@ -43,10 +43,7 @@ pub fn init_price_streams(
         }
 
         price_reporter_job_queue
-            .send(PriceReporterJob::StreamPrice {
-                base_token: base.clone(),
-                quote_token: quote.clone(),
-            })
+            .stream_price(base.clone(), quote.clone())
             .map_err(err_str!(HandshakeManagerError::PriceReporter))?;
     }
 

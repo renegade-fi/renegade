@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::{token::Token, Price};
+use super::{token::Token, Price, TimestampedPrice};
 
 /// List of all supported exchanges
 pub static ALL_EXCHANGES: &[Exchange] =
@@ -87,6 +87,17 @@ pub enum PriceReporterState {
     TooMuchDeviation(PriceReport, f64),
     /// No reporter state, price pair is unsupported
     UnsupportedPair(Token, Token),
+}
+
+impl PriceReporterState {
+    /// Get the price for a given reporter state, converting non-nominal states
+    /// to error
+    pub fn price(&self) -> Result<TimestampedPrice, String> {
+        match self {
+            PriceReporterState::Nominal(report) => Ok(TimestampedPrice::new(report.price)),
+            _ => Err(format!("{self:?}")),
+        }
+    }
 }
 
 /// The state of an ExchangeConnection. Note that the ExchangeConnection itself
