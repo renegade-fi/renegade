@@ -94,6 +94,7 @@ impl StateApplicator {
 
         // Handle new orders and previous orders that are not cancelled
         self.handle_new_and_cancelled_orders(wallet, tx)?;
+        self.update_external_order_cache(wallet);
 
         // Change the state of each active order in the wallet to `Created`
         // to reflect that validity proofs have not been created yet
@@ -163,11 +164,6 @@ impl StateApplicator {
 
     /// Handle a new order
     fn handle_new_order(&self, id: OrderIdentifier, o: Order, tx: &StateTxn<RW>) -> Result<()> {
-        // Mark the order as externally matchable in the order book cache
-        if o.allow_external_matches {
-            self.order_cache().add_externally_enabled_order_blocking(id);
-        }
-
         // Update the order metadata to reflect the new order
         let new_state = OrderMetadata::new(id, o);
         self.update_order_metadata_with_tx(new_state, tx)?;
@@ -194,6 +190,21 @@ impl StateApplicator {
         }
 
         Ok(())
+    }
+
+    /// Update the externally enabled order cache for an updated wallet
+    ///
+    /// Remove all orders that are not externally enabled, and add all those
+    /// that are
+    fn update_external_order_cache(&self, wallet: &Wallet) {
+        let order_cache = self.order_cache();
+        for (id, order) in wallet.get_nonzero_orders().into_iter() {
+            if order.allow_external_matches {
+                order_cache.add_externally_enabled_order_blocking(id);
+            } else {
+                order_cache.remove_externally_enabled_order_blocking(id);
+            }
+        }
     }
 }
 
