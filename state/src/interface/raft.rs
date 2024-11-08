@@ -86,6 +86,7 @@ impl StateInner {
     }
 
     /// Deserialize a raft request from bytes
+    #[instrument(name = "deserialize_raft_request", skip_all, fields(msg_size = msg_bytes.len()), err)]
     pub fn deserialize_raft_request(msg_bytes: &[u8]) -> Result<RaftRequest, StateError> {
         ciborium::de::from_reader(msg_bytes).map_err(err_str!(StateError::Serde))
     }
