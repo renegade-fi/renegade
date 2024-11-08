@@ -17,7 +17,8 @@ use openraft::{
     RaftNetwork, RaftNetworkFactory,
 };
 use serde::{Deserialize, Serialize};
-use util::err_str;
+use tracing::instrument;
+use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{ciborium_serialize, error::StateError, Proposal};
 
@@ -69,8 +70,11 @@ pub enum RaftResponse {
 
 impl RaftResponse {
     /// Serialize a raft response to bytes
+    #[instrument(name = "RaftResponse::to_bytes", skip_all, fields(size), err)]
     pub fn to_bytes(&self) -> Result<Vec<u8>, StateError> {
-        ciborium_serialize(self).map_err(err_str!(StateError::Serde))
+        let buf = ciborium_serialize(self).map_err(err_str!(StateError::Serde))?;
+        backfill_trace_field("size", buf.len());
+        Ok(buf)
     }
 
     /// Convert the response to an append entries request
