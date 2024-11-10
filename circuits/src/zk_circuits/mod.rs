@@ -265,7 +265,7 @@ pub mod test_helpers {
 
     /// A recursive helper to compute a multi-opening for a set of leaves
     ///
-    /// Returns the root and a set of paths, where path[i] is hte path for
+    /// Returns the root and a set of paths, where path[i] is the path for
     /// leaves[i]
     fn create_multi_opening_helper(
         mut leaves: Vec<Scalar>,
