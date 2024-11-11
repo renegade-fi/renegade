@@ -472,6 +472,8 @@ impl MockNodeController {
     /// Add an API server to the mock node
     pub fn with_api_server(self) -> Self {
         let config = &self.config;
+        let arbitrum_client =
+            self.arbitrum_client.clone().expect("Arbitrum client not initialized");
         let network_sender = self.network_queue.0.clone();
         let state = self.state.clone().expect("State not initialized");
         let system_bus = self.bus.clone();
@@ -488,6 +490,7 @@ impl MockNodeController {
             min_order_size: config.min_fill_size_decimal_adjusted(),
             compliance_service_url: config.compliance_service_url.clone(),
             wallet_task_rate_limit: config.wallet_task_rate_limit,
+            arbitrum_client,
             network_sender,
             state,
             system_bus,

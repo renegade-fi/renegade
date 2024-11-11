@@ -406,6 +406,7 @@ impl HttpServer {
             RequestExternalMatchHandler::new(
                 config.min_order_size,
                 handshake_queue,
+                config.arbitrum_client.clone(),
                 config.system_bus.clone(),
                 state.clone(),
                 config.price_reporter_work_queue.clone(),

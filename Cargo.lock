@@ -263,6 +263,7 @@ dependencies = [
  "constants 0.1.0",
  "crossbeam",
  "ecdsa 0.16.9",
+ "ethers",
  "external-api 0.1.0",
  "futures",
  "futures-util",
