@@ -324,6 +324,7 @@ async fn main() -> Result<(), CoordinatorError> {
         min_order_size,
         compliance_service_url: args.compliance_service_url,
         wallet_task_rate_limit: args.wallet_task_rate_limit,
+        arbitrum_client: arbitrum_client.clone(),
         network_sender: network_sender.clone(),
         state: global_state.clone(),
         system_bus,

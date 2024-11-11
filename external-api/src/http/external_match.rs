@@ -34,6 +34,9 @@ pub const REQUEST_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/request-exte
 /// The request type for requesting an external match
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalMatchRequest {
+    /// Whether or not to include gas estimation in the response
+    #[serde(default)]
+    pub do_gas_estimation: bool,
     /// The external order
     pub external_order: ExternalOrder,
 }

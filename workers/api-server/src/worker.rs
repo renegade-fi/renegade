@@ -1,5 +1,6 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
+use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::{
     types::{wallet::keychain::HmacKey, CancelChannel},
@@ -59,6 +60,8 @@ pub struct ApiServerConfig {
     ///
     /// Compliance screening is disabled if this is not set
     pub compliance_service_url: Option<String>,
+    /// A handle on the Arbitrum RPC client
+    pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// The worker job queue for the PriceReporter

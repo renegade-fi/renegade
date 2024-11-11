@@ -10,8 +10,10 @@
 
 use std::time::Duration;
 
+use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::types::{token::Token, wallet::Order};
+use ethers::middleware::Middleware;
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
@@ -55,6 +57,8 @@ const ERR_EXTERNAL_ORDER_ZERO_SIZE: &str = "external order has zero size";
 /// The error message emitted when an external order specifies both the quote
 /// and base size
 const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote and base size";
+/// The error message emitted when the gas estimation fails
+const ERR_GAS_ESTIMATION_FAILED: &str = "gas estimation failed";
 
 // -----------
 // | Helpers |
@@ -135,6 +139,8 @@ pub struct RequestExternalMatchHandler {
     min_order_size: f64,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
+    /// A handle on the Arbitrum RPC client
+    arbitrum_client: ArbitrumClient,
     /// A handle on the system bus
     bus: SystemBus<SystemBusMessage>,
     /// A handle on the relayer state
@@ -148,11 +154,12 @@ impl RequestExternalMatchHandler {
     pub fn new(
         min_order_size: f64,
         handshake_queue: HandshakeManagerQueue,
+        arbitrum_client: ArbitrumClient,
         bus: SystemBus<SystemBusMessage>,
         state: State,
         price_queue: PriceReporterQueue,
     ) -> Self {
-        Self { min_order_size, handshake_queue, bus, state, price_queue }
+        Self { min_order_size, handshake_queue, arbitrum_client, bus, state, price_queue }
     }
 }
 
@@ -184,9 +191,20 @@ impl TypedHandler for RequestExternalMatchHandler {
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
 
-        let match_bundle = await_external_match_response(response_topic, &self.bus)
+        let mut match_bundle = await_external_match_response(response_topic, &self.bus)
             .await?
             .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
+
+        // Estimate gas for the settlement tx if requested
+        if req.do_gas_estimation {
+            let client = self.arbitrum_client.client();
+            let gas = client
+                .estimate_gas(&match_bundle.settlement_tx, None /* block */)
+                .await
+                .map_err(|_| internal_error(ERR_GAS_ESTIMATION_FAILED))?;
+            match_bundle.settlement_tx.set_gas(gas);
+        }
+
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
