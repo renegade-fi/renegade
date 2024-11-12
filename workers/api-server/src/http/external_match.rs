@@ -13,7 +13,10 @@ use std::time::Duration;
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::types::{token::Token, wallet::Order};
-use ethers::middleware::Middleware;
+use ethers::{
+    middleware::Middleware,
+    types::{transaction::eip2718::TypedTransaction, U256},
+};
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
@@ -28,6 +31,7 @@ use job_types::{
 use num_traits::Zero;
 use state::State;
 use system_bus::SystemBus;
+use tracing::warn;
 
 use crate::{
     error::{bad_request, internal_error, no_content, ApiServerError},
@@ -36,12 +40,14 @@ use crate::{
 
 use super::wallet::get_usdc_denominated_value;
 
+/// The gas estimation to use if fetching a gas estimation fails
+const DEFAULT_GAS_ESTIMATION: u64 = 4_000_000; // 4m
+/// The timeout waiting for an external match to be generated
+const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
+
 // ------------------
 // | Error Messages |
 // ------------------
-
-/// The timeout waiting for an external match to be generated
-const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The error message returned when atomic matches are disabled
 const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
@@ -57,8 +63,6 @@ const ERR_EXTERNAL_ORDER_ZERO_SIZE: &str = "external order has zero size";
 /// The error message emitted when an external order specifies both the quote
 /// and base size
 const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote and base size";
-/// The error message emitted when the gas estimation fails
-const ERR_GAS_ESTIMATION_FAILED: &str = "gas estimation failed";
 
 // -----------
 // | Helpers |
@@ -161,6 +165,29 @@ impl RequestExternalMatchHandler {
     ) -> Self {
         Self { min_order_size, handshake_queue, arbitrum_client, bus, state, price_queue }
     }
+
+    /// Estimate the gas for a given external match transaction
+    pub(super) async fn estimate_gas(
+        &self,
+        mut tx: TypedTransaction,
+    ) -> Result<U256, ApiServerError> {
+        // To estimate gas without reverts, we would need to approve the ERC20 transfers
+        // due in the transaction before estimating. This is infeasible, so we mock the
+        // sender as the _darkpool itself_, which will automatically have an approval
+        // for itself. This can still fail if a transfer exceeds the darkpool's balance,
+        // in which case we fall back to the default gas estimation below
+        let darkpool_addr = self.arbitrum_client.get_darkpool_client().address();
+        tx.set_from(darkpool_addr);
+
+        let client = self.arbitrum_client.client();
+        match client.estimate_gas(&tx, None /* block */).await {
+            Ok(gas) => Ok(gas),
+            Err(e) => {
+                warn!("gas estimation failed for external match: {e}");
+                Ok(DEFAULT_GAS_ESTIMATION.into())
+            },
+        }
+    }
 }
 
 #[async_trait]
@@ -197,11 +224,7 @@ impl TypedHandler for RequestExternalMatchHandler {
 
         // Estimate gas for the settlement tx if requested
         if req.do_gas_estimation {
-            let client = self.arbitrum_client.client();
-            let gas = client
-                .estimate_gas(&match_bundle.settlement_tx, None /* block */)
-                .await
-                .map_err(|_| internal_error(ERR_GAS_ESTIMATION_FAILED))?;
+            let gas = self.estimate_gas(match_bundle.settlement_tx.clone()).await?;
             match_bundle.settlement_tx.set_gas(gas);
         }
 
