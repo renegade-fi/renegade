@@ -8,6 +8,7 @@ use system_clock::SystemClockError;
 
 /// An error type at the coordinator level
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum CoordinatorError {
     /// An error setting up the connection to the Arbitrum RPC node
     Arbitrum(String),

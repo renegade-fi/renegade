@@ -4,6 +4,7 @@ use common::types::{
     exchange::PriceReport,
     gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
+    proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
     tasks::TaskIdentifier,
     token::Token,
     wallet::{
@@ -14,7 +15,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::{
-    http::{external_match::AtomicMatchApiBundle, task::ApiTaskStatus},
+    http::task::ApiTaskStatus,
     types::{ApiHistoricalTask, ApiWallet},
 };
 
@@ -157,8 +158,10 @@ pub enum SystemBusMessage {
     /// engine, and consumed by the API server which will forward the bundle
     /// to its client
     AtomicMatchFound {
-        /// The atomic match bundle that should be forwarded to the client
-        match_bundle: AtomicMatchApiBundle,
+        /// The match bundle
+        match_bundle: AtomicMatchSettleBundle,
+        /// The validity proofs for the internal party
+        validity_proofs: OrderValidityProofBundle,
     },
     /// A message indicating that no atomic match was found for a request
     NoAtomicMatchFound,

@@ -27,8 +27,11 @@ pub const RATE: usize = 2;
 pub const CAPACITY: usize = 1;
 
 /// The alpha constant used to parameterize the S-box in the Poseidon
-/// permutation As per: https://eprint.iacr.org/2019/458.pdf this is the
-/// smallest value alpha such that x^alpha is invertible in the scalar field,
+/// permutation
+///
+/// As per: https://eprint.iacr.org/2019/458.pdf this is the smallest value
+/// alpha such that x^alpha is invertible in the scalar field, equivalently
+/// gcd(alpha, p-1) = 1
 /// equivalently gcd(alpha, p-1) = 1
 pub const ALPHA: u64 = 5;
 

@@ -1,7 +1,8 @@
-//! Defines tests for macros in the `circuit_macros` crate. We do this so that
-//! we may define the bulk of the traits, data structures, etc outside of the
-//! `circuit-macros` crate; as a proc-macro crate cannot export non proc-macro
-//! items
+//! Tests for the `circuit_type` macro
+//!
+//! We add these here so that we may define the bulk of the traits, data
+//! structures, etc outside of the `circuit-macros` crate; as a proc-macro crate
+//! cannot export non proc-macro items
 
 #[allow(clippy::missing_docs_in_private_items)]
 #[cfg(test)]

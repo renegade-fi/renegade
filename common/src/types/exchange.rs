@@ -100,9 +100,11 @@ impl PriceReporterState {
     }
 }
 
-/// The state of an ExchangeConnection. Note that the ExchangeConnection itself
-/// simply streams news PriceReports, and the task of determining if the
-/// PriceReports have yet to arrive is the job of the PriceReporter
+/// The state of an ExchangeConnection
+///
+/// The ExchangeConnection itself simply streams news PriceReports, and the
+/// task of determining if the PriceReports have yet to arrive is the job of
+/// the PriceReporter
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ExchangeConnectionState {
     /// The ExchangeConnection is reporting as normal.

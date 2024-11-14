@@ -277,7 +277,7 @@ impl PayRelayerFeeTask {
     }
 
     /// Submit a `settle_relayer_fee` transaction to the contract
-    async fn submit_payment(&mut self) -> Result<(), PayRelayerFeeTaskError> {
+    async fn submit_payment(&self) -> Result<(), PayRelayerFeeTaskError> {
         let proof = self.proof.clone().unwrap();
 
         // Sign the commitment to the new wallet, authorizing the fee receipt
@@ -318,7 +318,7 @@ impl PayRelayerFeeTask {
     ///
     /// The recipient (relayer) wallet does not need to be updated as it holds
     /// no orders
-    async fn update_validity_proofs(&mut self) -> Result<(), PayRelayerFeeTaskError> {
+    async fn update_validity_proofs(&self) -> Result<(), PayRelayerFeeTaskError> {
         update_wallet_validity_proofs(
             &self.new_sender_wallet,
             self.proof_queue.clone(),

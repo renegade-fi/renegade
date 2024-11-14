@@ -1,4 +1,6 @@
-//! Defines the `VALID REBLIND` circuit, which proves:
+//! The `VALID REBLIND` circuit
+//!
+//! This circuit proves:
 //!     1. State inclusion validity of the input
 //!     2. CSPRNG execution integrity to sample new wallet blinders
 //!     3. Re-blinding of a wallet using the sampled blinders

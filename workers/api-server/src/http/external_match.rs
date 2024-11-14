@@ -8,11 +8,16 @@
 //! Endpoints here allow permissioned solvers, searchers, etc to "ping the pool"
 //! for consenting liquidity on a given token pair.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use common::types::{token::Token, wallet::Order};
+use common::types::{
+    proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
+    token::Token,
+    wallet::Order,
+};
+use constants::{NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use ethers::{
     middleware::Middleware,
     types::{transaction::eip2718::TypedTransaction, U256},
@@ -28,10 +33,12 @@ use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
     price_reporter::PriceReporterQueue,
 };
+use num_bigint::BigUint;
 use num_traits::Zero;
 use state::State;
 use system_bus::SystemBus;
 use tracing::warn;
+use util::hex::biguint_from_hex_string;
 
 use crate::{
     error::{bad_request, internal_error, no_content, ApiServerError},
@@ -68,23 +75,6 @@ const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote 
 // | Helpers |
 // -----------
 
-/// Await a response from the external matching engine
-async fn await_external_match_response(
-    response_topic: String,
-    bus: &SystemBus<SystemBusMessage>,
-) -> Result<Option<AtomicMatchApiBundle>, ApiServerError> {
-    let mut rx = bus.subscribe(response_topic);
-    let msg = tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
-        .await
-        .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))?;
-
-    match msg {
-        SystemBusMessage::AtomicMatchFound { match_bundle } => Ok(Some(match_bundle)),
-        SystemBusMessage::NoAtomicMatchFound => Ok(None),
-        _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
-    }
-}
-
 /// Check the USDC denominated value of an external order and assert that it is
 /// greater than the configured minimum size
 async fn check_external_order_size(
@@ -107,7 +97,7 @@ async fn check_external_order_size(
 
 /// Convert an external order to an internal order
 async fn external_order_to_internal_order(
-    o: &ExternalOrder,
+    mut o: ExternalOrder,
     price_queue: &PriceReporterQueue,
 ) -> Result<Order, ApiServerError> {
     // External order must specify non-zero size
@@ -122,7 +112,13 @@ async fn external_order_to_internal_order(
         return Err(bad_request(ERR_EXTERNAL_ORDER_BOTH_SIZE));
     }
 
-    let base = Token::from_addr_biguint(&o.base_mint);
+    let base = if o.trades_native_asset() {
+        let native_wrapper = get_native_asset_wrapper_token();
+        o.base_mint = biguint_from_hex_string(&native_wrapper.get_addr()).unwrap();
+        native_wrapper
+    } else {
+        Token::from_addr_biguint(&o.base_mint)
+    };
     let quote = Token::from_addr_biguint(&o.quote_mint);
 
     let ts_price =
@@ -131,6 +127,16 @@ async fn external_order_to_internal_order(
         ts_price.get_decimal_corrected_price(&base, &quote).map_err(internal_error)?;
     let order = o.to_order_with_price(decimal_corrected_price.as_fixed_point());
     Ok(order)
+}
+
+/// Get the token representing a wrapper on the native asset
+fn get_native_asset_wrapper_token() -> Token {
+    Token::from_ticker(NATIVE_ASSET_WRAPPER_TICKER)
+}
+
+/// Get the native asset address as a `BigUint`
+fn get_native_asset_address() -> BigUint {
+    biguint_from_hex_string(NATIVE_ASSET_ADDRESS).unwrap()
 }
 
 // ------------------
@@ -188,6 +194,72 @@ impl RequestExternalMatchHandler {
             },
         }
     }
+
+    /// Await a response from the external matching engine and build a
+    /// settlement transaction from the response
+    async fn await_external_match_response(
+        &self,
+        response_topic: String,
+        do_gas_estimation: bool,
+        order: &ExternalOrder,
+    ) -> Result<Option<AtomicMatchApiBundle>, ApiServerError> {
+        // Await a response from the external matching engine
+        let mut rx = self.bus.subscribe(response_topic);
+        let msg = tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
+            .await
+            .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))?;
+        let (match_bundle, validity_proofs) = match msg {
+            SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
+                (match_bundle, validity_proofs)
+            },
+            SystemBusMessage::NoAtomicMatchFound => return Ok(None),
+            _ => return Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        };
+
+        // Build an API bundle
+        let res =
+            self.build_api_bundle(do_gas_estimation, order, match_bundle, validity_proofs).await?;
+        Ok(Some(res))
+    }
+
+    /// Build an API bundle from an atomic match bundle and internal party
+    /// validity proofs
+    async fn build_api_bundle(
+        &self,
+        do_gas_estimation: bool,
+        order: &ExternalOrder,
+        mut match_bundle: AtomicMatchSettleBundle,
+        validity_proofs: OrderValidityProofBundle,
+    ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        // If the order trades the native asset, replace WETH with ETH
+        let is_native = order.trades_native_asset();
+        let bundle = Arc::make_mut(&mut match_bundle.atomic_match_proof);
+        if is_native {
+            bundle.statement.match_result.base_mint = get_native_asset_address();
+        }
+
+        // Build a settlement transaction for the match
+        let mut settlement_tx = self
+            .arbitrum_client
+            .gen_atomic_match_settle_calldata(&validity_proofs, &match_bundle)
+            .map_err(internal_error)?;
+
+        // If the order _sells_ the native asset, the value of the transaction should
+        // match the base amount sold by the external party
+        if is_native && order.side.is_sell() {
+            let base_amount = match_bundle.atomic_match_proof.statement.match_result.base_amount;
+            settlement_tx.set_value(base_amount);
+        }
+
+        // Estimate gas for the settlement tx if requested
+        if do_gas_estimation {
+            let gas = self.estimate_gas(settlement_tx.clone()).await?;
+            settlement_tx.set_gas(gas);
+        }
+
+        let match_result = match_bundle.atomic_match_proof.statement.match_result.clone().into();
+        Ok(AtomicMatchApiBundle { match_result, settlement_tx })
+    }
 }
 
 #[async_trait]
@@ -210,7 +282,8 @@ impl TypedHandler for RequestExternalMatchHandler {
 
         // Check that the external order is large enough
         let price_queue = &self.price_queue;
-        let order = external_order_to_internal_order(&req.external_order, price_queue).await?;
+        let external_order = &req.external_order;
+        let order = external_order_to_internal_order(external_order.clone(), price_queue).await?;
         check_external_order_size(&order, self.min_order_size, price_queue).await?;
 
         let (job, response_topic) = HandshakeManagerJob::new_external_matching_job(order);
@@ -218,16 +291,10 @@ impl TypedHandler for RequestExternalMatchHandler {
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
 
-        let mut match_bundle = await_external_match_response(response_topic, &self.bus)
+        let match_bundle = self
+            .await_external_match_response(response_topic, req.do_gas_estimation, external_order)
             .await?
             .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
-
-        // Estimate gas for the settlement tx if requested
-        if req.do_gas_estimation {
-            let gas = self.estimate_gas(match_bundle.settlement_tx.clone()).await?;
-            match_bundle.settlement_tx.set_gas(gas);
-        }
-
         Ok(ExternalMatchResponse { match_bundle })
     }
 }

@@ -1,6 +1,4 @@
 //! Auth helpers for the external API
-#![cfg(feature = "auth")]
-
 mod auth_helpers;
 mod error;
 

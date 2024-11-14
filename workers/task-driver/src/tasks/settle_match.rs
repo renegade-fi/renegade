@@ -1,12 +1,9 @@
+//! The settle match task
+//!
 //! Broadly this breaks down into the following steps:
-//!     - Build the notes that result from the match and encrypt them
-//!     - Submit these notes and the relevant proofs to the contract in a
-//!       `match` transaction
-//!     - Await transaction finality, then lookup the notes in the commitment
-//!       tree
-//!     - Build a settlement proof, and submit this to the contract in a
-//!       `settle` transaction
-//!     - Await finality then update the wallets into the relayer-global state
+//! - Submit the match transaction
+//! - Update the wallet's state
+//! - Update the validity proofs for the wallet's orders
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};

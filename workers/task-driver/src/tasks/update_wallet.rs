@@ -305,7 +305,7 @@ impl UpdateWalletTask {
 
     /// Submit the `update_wallet` transaction to the contract and await
     /// finality
-    async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
+    async fn submit_tx(&self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         let transfer_auth = self.transfer.as_ref().map(|t| t.transfer_auth.clone());
         self.arbitrum_client

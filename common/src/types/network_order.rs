@@ -108,11 +108,10 @@ impl NetworkOrder {
     /// Transitions the state of an order from `Received` to `Verified` by
     /// attaching two validity proofs:
     ///   1. `VALID REBLIND`: Commits to a valid reblinding of the wallet that
-    ///      will
-    ///     be revealed upon successful match. Proved per-wallet.
+    ///      will be revealed upon successful match. Proved per-wallet.
     ///   2. `VALID COMMITMENTS`: Proves the state elements used as input to the
-    ///      matching
-    ///     engine are valid (orders, balances, fees, etc). Proved per-order.
+    ///      matching engine are valid (orders, balances, fees, etc). Proved
+    ///      per-order.
     pub fn attach_validity_proofs(&mut self, validity_proofs: OrderValidityProofBundle) {
         self.state = NetworkOrderState::Verified;
         self.public_share_nullifier =

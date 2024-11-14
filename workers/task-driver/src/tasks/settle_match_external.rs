@@ -12,7 +12,7 @@ use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
 use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
-use circuit_types::r#match::{ExternalMatchResult, MatchResult};
+use circuit_types::r#match::MatchResult;
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
 use circuits::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
@@ -25,7 +25,6 @@ use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use common::types::TimestampedPrice;
 use external_api::bus_message::SystemBusMessage;
-use external_api::http::external_match::AtomicMatchApiBundle;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
@@ -335,26 +334,20 @@ impl SettleMatchExternalTask {
     }
 
     /// Forward the atomic match settle bundle to the system bus
-    fn forward_atomic_match_bundle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+    fn forward_atomic_match_bundle(&self) -> Result<(), SettleMatchExternalTaskError> {
         // Build the atomic settlement bundle
-        let match_bundle = self.atomic_match_bundle.as_ref().unwrap();
-        let validity_proofs = &self.internal_order_validity_bundle;
-        let settlement_tx =
-            self.arbitrum_client.gen_atomic_match_settle_calldata(validity_proofs, match_bundle)?;
-
-        // Respond to the client via the system bus
-        let external_match_res: ExternalMatchResult = self.match_res.clone().into();
-        let match_bundle =
-            AtomicMatchApiBundle { match_result: external_match_res.into(), settlement_tx };
-        let message = SystemBusMessage::AtomicMatchFound { match_bundle };
+        let match_bundle = self.atomic_match_bundle.clone().unwrap();
+        let validity_proofs = self.internal_order_validity_bundle.clone();
+        let message = SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs };
         self.bus.publish(self.atomic_match_bundle_topic.clone(), message);
+
         Ok(())
     }
 
     /// Await the result of the atomic match settlement to be submitted on-chain
     ///
     /// Returns `true` if the settlement succeeded on-chain, `false` otherwise
-    async fn await_settlement(&mut self) -> Result<bool, SettleMatchExternalTaskError> {
+    async fn await_settlement(&self) -> Result<bool, SettleMatchExternalTaskError> {
         let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
         let nullifier = valid_reblind.original_shares_nullifier;
         let res =
@@ -375,7 +368,7 @@ impl SettleMatchExternalTask {
     /// The wallet should have no other tasks enqueued by virtue of it being
     /// considered for atomic matches, but if it does they will fail through
     /// and be discarded
-    async fn refresh_wallet(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+    async fn refresh_wallet(&self) -> Result<(), SettleMatchExternalTaskError> {
         // Record a partial fill for the order after state has updated on-chain
         self.record_fill().await?;
 
@@ -488,7 +481,7 @@ impl SettleMatchExternalTask {
 
     /// Record a fill in the internal order's fill history and in the relayer
     /// metrics
-    async fn record_fill(&mut self) -> Result<(), SettleMatchExternalTaskError> {
+    async fn record_fill(&self) -> Result<(), SettleMatchExternalTaskError> {
         let match_res = &self.match_res;
         let price = self.execution_price;
         record_order_fill(self.internal_order_id, match_res, price, &self.state)

@@ -89,7 +89,7 @@ impl<T: Task> RunnableTask<T> {
 
     /// Attempts to transition the state of the underlying task in the consensus
     /// engine. If this method fails the driver should abort the task
-    pub async fn transition_state(&mut self) -> Result<(), StateError> {
+    pub async fn transition_state(&self) -> Result<(), StateError> {
         let task_id = self.task_id;
         let name = self.task.name();
         let new_state = self.state();

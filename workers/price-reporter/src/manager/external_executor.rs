@@ -1,5 +1,8 @@
-//! Defines the ExternalPriceReporterExecutor, a handler that is responsible for
-//! executing individual PriceReporterJobs. This is used when the relayer opts
+//! The external price reporter executor
+//!
+//! Defines the ExternalPriceReporterExecutor, a handler that is responsible
+//! for executing individual PriceReporterJobs. This is used when the relayer
+//! opts for streaming prices from an external price reporter service.
 //! for streaming prices from an external price reporter service.
 
 use std::{str::FromStr, time::Duration};

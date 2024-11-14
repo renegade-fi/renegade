@@ -442,7 +442,7 @@ impl NodeStartupTask {
     /// but rather intended to cleanup state, initialize new tables, etc.
     ///
     /// Migrations should be idempotent for safety
-    fn run_state_migrations(&mut self) -> Result<(), NodeStartupTaskError> {
+    fn run_state_migrations(&self) -> Result<(), NodeStartupTaskError> {
         // Remove phantom orders in the order book
         let state = self.state.clone();
         tokio::task::spawn(async move {

@@ -1,5 +1,6 @@
-//! A task defining the flow to create a new wallet, at a high level the steps
-//! are:
+//! A take to create a new wallet
+//!
+//! At a high level the steps are:
 //!     1. Index the wallet locally
 //!     2. Prove `VALID WALLET CREATE` for the wallet
 //!     3. Submit this on-chain and await transaction success
@@ -253,7 +254,7 @@ impl NewWalletTask {
     }
 
     /// Submit the newly created wallet on-chain with proof of validity
-    async fn submit_wallet_tx(&mut self) -> Result<(), NewWalletTaskError> {
+    async fn submit_wallet_tx(&self) -> Result<(), NewWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         self.arbitrum_client
             .new_wallet(&proof)

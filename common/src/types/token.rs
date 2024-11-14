@@ -1,3 +1,5 @@
+//! Represents a token in the Renegade system
+//!
 //! The Token is the cross-exchange abstraction of a fungible token. Since many
 //! different exchanges define different standards for token names, tickers,
 //! etc., we use the Ethereum mainnet ERC-20 address as the authoritative
@@ -109,8 +111,10 @@ pub const XAI_TICKER: &str = "XAI";
 /// ETHFI ticker
 pub const ETHFI_TICKER: &str = "ETHFI";
 
-/// A helper enum to describe the state of each ticker on each Exchange. Same
-/// means that the ERC-20 and Exchange tickers are the same, Renamed means that
+/// A helper enum to describe the state of each ticker on each Exchange.
+///
+/// `Same` means that the ERC-20 and Exchange tickers are the same, `Renamed`
+/// means that the Exchange ticker is different from the underlying ERC-20, and
 /// the Exchange ticker is different from the underlying ERC-20, and Unsupported
 /// means that the asset is not supported on the Exchange.
 #[derive(Clone, Copy, Debug)]
@@ -123,10 +127,11 @@ pub enum ExchangeTicker {
     Unsupported,
 }
 
-/// The remapping of tickers between exchanges. The layout of `TICKER_NAMES` is
-/// (Renegade Ticker, Binance Ticker, Coinbase Ticker, Kraken Ticker, Okx
-/// Ticker), where "Renegade Ticker" denotes the ticker expected in the Renegade
-/// token remapping used.
+/// The remapping of tickers between exchanges.
+///
+/// The layout of `TICKER_NAMES` is (Renegade Ticker, Binance Ticker, Coinbase
+/// Ticker, Kraken Ticker, Okx Ticker), where "Renegade Ticker" denotes the
+/// ticker expected in the Renegade token remapping used.
 pub static TICKER_NAMES: &[(
     &str,
     ExchangeTicker,
