@@ -269,7 +269,7 @@ impl PayOfflineFeeTask {
     }
 
     /// Submit the `settle_offline_fee` transaction for the balance
-    async fn submit_payment(&mut self) -> Result<(), PayOfflineFeeTaskError> {
+    async fn submit_payment(&self) -> Result<(), PayOfflineFeeTaskError> {
         let proof = self.proof.clone().unwrap();
         self.arbitrum_client
             .settle_offline_fee(&proof)
@@ -302,7 +302,7 @@ impl PayOfflineFeeTask {
     }
 
     /// Update the validity proofs for the wallet after fee payment
-    async fn update_validity_proofs(&mut self) -> Result<(), PayOfflineFeeTaskError> {
+    async fn update_validity_proofs(&self) -> Result<(), PayOfflineFeeTaskError> {
         update_wallet_validity_proofs(
             &self.new_wallet,
             self.proof_queue.clone(),

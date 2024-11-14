@@ -310,7 +310,7 @@ impl SettleMatchInternalTask {
     }
 
     /// Submit the match transaction
-    async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
+    async fn submit_match(&self) -> Result<(), SettleMatchInternalTaskError> {
         // Transition both orders to the `SettlingMatch` state
         transition_order_settling(self.order_id1, &self.state)
             .await

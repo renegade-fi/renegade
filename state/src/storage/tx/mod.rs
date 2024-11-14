@@ -1,3 +1,5 @@
+//! Transaction interfaces for the relayer state
+//!
 //! This module defines two transaction interfaces:
 //!     - A low level `DbTxn` interface that exposes a key-value interface
 //!     - A high level `StateTxn` interface that exposes a state machine

@@ -1,5 +1,9 @@
-//! Defines the VALID MATCH SETTLE ATOMIC circuit which verifies a match
-//! between two parties; one internal and one external. An internal party is one
+//! The `VALID MATCH SETTLE ATOMIC` circuit
+//!
+//! This circuit verifies a match between two parties; one internal and one
+//! external. An internal party is one with state committed into the darkpool,
+//! while an external party is one whose funds sit outside the darkpool, on the
+//! host chain.
 //! with state committed into the darkpool, while an external party is one whose
 //! funds sit outside the darkpool, on the host chain.
 //!

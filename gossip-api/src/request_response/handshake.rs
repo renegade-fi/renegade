@@ -72,8 +72,11 @@ pub struct ProposeMatchCandidate {
     pub price_vector: PriceVector,
 }
 
-/// Reject a proposed match candidate, this can happen for a number of
-/// reasons; e.g. the local peer has already cached the proposed order
+/// Reject a proposed match candidate,
+///
+/// This can happen for a number of reasons; e.g. the local peer has already
+/// cached the proposed order pair as matched, or the local peer has not yet
+/// validated the order's proofs
 /// pair as matched, or the local peer has not yet validated the order's proofs
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RejectMatchCandidate {

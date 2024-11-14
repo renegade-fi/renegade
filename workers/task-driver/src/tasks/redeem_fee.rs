@@ -271,7 +271,7 @@ impl RedeemFeeTask {
     }
 
     /// Submit a `redeem_fee` transaction to the contract
-    async fn submit_redemption(&mut self) -> Result<(), RedeemFeeError> {
+    async fn submit_redemption(&self) -> Result<(), RedeemFeeError> {
         let proof = self.proof.as_ref().unwrap();
 
         // Sign a commitment to the new wallet after redemption

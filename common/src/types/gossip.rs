@@ -83,7 +83,7 @@ impl PeerInfo {
     ) -> Self {
         // Generate an auth signature for the cluster
         let mut hash_digest = Sha512::new();
-        hash_digest.update(&serde_json::to_vec(&peer_id).unwrap());
+        hash_digest.update(serde_json::to_vec(&peer_id).unwrap());
         let sig = cluster_keypair.sign_prehashed(hash_digest, None /* context */).unwrap();
 
         Self::new(peer_id, cluster_id, addr, sig.to_bytes().to_vec())
@@ -97,7 +97,7 @@ impl PeerInfo {
 
         // Hash the peer ID and verify the signature
         let mut hash_digest = Sha512::new();
-        hash_digest.update(&serde_json::to_vec(&self.peer_id).unwrap());
+        hash_digest.update(serde_json::to_vec(&self.peer_id).unwrap());
         pubkey.verify_prehashed(hash_digest, None, &sig)
     }
 

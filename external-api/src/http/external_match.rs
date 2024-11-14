@@ -12,11 +12,12 @@ use circuit_types::{
     fixed_point::FixedPoint, order::OrderSide, r#match::ExternalMatchResult, Amount,
 };
 use common::types::wallet::Order;
+use constants::NATIVE_ASSET_ADDRESS;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
-use util::hex::biguint_to_hex_string;
+use util::hex::{biguint_from_hex_string, biguint_to_hex_string};
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
@@ -81,6 +82,12 @@ pub struct ExternalOrder {
 }
 
 impl ExternalOrder {
+    /// Returns whether the order is for the chain-native asset
+    pub fn trades_native_asset(&self) -> bool {
+        let native_mint = biguint_from_hex_string(NATIVE_ASSET_ADDRESS).unwrap();
+        self.base_mint == native_mint
+    }
+
     /// Convert the external order to the standard `Order` type used throughout
     /// the relayer
     ///

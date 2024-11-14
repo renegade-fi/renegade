@@ -8,7 +8,9 @@ use circuit_types::{
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
-/// Auth data for validating a deposit, namely a [Permit2 permitTransferFrom](https://docs.uniswap.org/contracts/permit2/reference/signature-transfer#single-permittransferfrom)
+/// Auth data for validating a deposit
+///
+/// Namely a [Permit2 permitTransferFrom](https://docs.uniswap.org/contracts/permit2/reference/signature-transfer#single-permittransferfrom)
 /// signature, and the signed fields that cannot be extracted from the external
 /// transfer.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -216,7 +216,7 @@ impl RefreshWalletTask {
     /// Find the wallet in contract storage
     ///
     /// Returns `true` if the wallet is up to date, `false` otherwise
-    async fn find_wallet(&mut self) -> Result<bool, RefreshWalletTaskError> {
+    async fn find_wallet(&self) -> Result<bool, RefreshWalletTaskError> {
         // First, check if the wallet's public blinder is used on-chain
         // If not, the local view of the wallet is up to date and we can use the
         // shares we have locally
@@ -248,7 +248,7 @@ impl RefreshWalletTask {
     }
 
     /// Update validity proofs for the wallet
-    async fn update_validity_proofs(&mut self) -> Result<(), RefreshWalletTaskError> {
+    async fn update_validity_proofs(&self) -> Result<(), RefreshWalletTaskError> {
         let wallet = self.get_wallet().await?;
         update_wallet_validity_proofs(
             &wallet,

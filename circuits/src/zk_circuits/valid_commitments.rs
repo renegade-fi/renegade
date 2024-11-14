@@ -1,8 +1,10 @@
-//! Defines the VALID COMMITMENTS circuit which leaks indices of balances and
-//! orders that will need to be updated upon a successful match. Specifically,
-//! the circuit verifies that balances, orders, etc are contained in a wallet at
-//! the claimed index. These balances, orders, etc are then linked to the
-//! settlement proofs upon a successful match.
+//! The `VALID COMMITMENTS` circuit
+//!
+//! This circuit which leaks indices of balances and orders that will need to be
+//! updated upon a successful match. Specifically, the circuit verifies that
+//! balances, orders, etc are contained in a wallet at the claimed index. These
+//! balances, orders, etc are then linked to the settlement proofs upon a
+//! successful match.
 //!
 //! Note that the wallet's state inclusion in the global Merkle tree is proven
 //! in a linked proof of `VALID REBLIND`.

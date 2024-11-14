@@ -18,7 +18,10 @@ pub const RELAYER_METRICS_PREFIX: &str = "renegade_relayer";
 /// flushed out over UDP
 pub const METRICS_BUFFER_SIZE: usize = 1024;
 /// The size (in # of elements) of the queue which the metrics exporter
-/// maintains. If the queue is full, metrics data will be dropped.
+/// maintains.
+///
+/// If the queue is full, metrics data will be dropped.
+///
 /// We effectively want an unbounded queue, but the `StatsdBuilder` doesn't
 /// support this, so we set a suffiiently large value here.
 pub const METRICS_QUEUE_SIZE: usize = 1024 * 1024;

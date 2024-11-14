@@ -122,6 +122,12 @@ pub const MAINNET_DEPLOY_BLOCK: u64 = 249416532;
 /// The number of bytes in an Arbitrum address
 pub const ADDRESS_BYTE_LENGTH: usize = 20;
 
+/// The address used to represent the native asset (ETH) on Arbitrum
+pub const NATIVE_ASSET_ADDRESS: &str = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+/// The ticker of the native asset's wrapper token
+pub const NATIVE_ASSET_WRAPPER_TICKER: &str = "WETH";
+
 // ----------------------
 // | Pubsub Topic Names |
 // ----------------------
