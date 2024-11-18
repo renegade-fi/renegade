@@ -120,7 +120,7 @@ impl ExternalPriceReporterExecutor {
                     }
 
                     tokio::spawn({
-                        let mut self_clone = self.clone();
+                        let self_clone = self.clone();
                         let msg_out_tx = msg_out_tx.clone();
                         async move {
                             if let Err(e) = self_clone.handle_job(job, msg_out_tx).await {
@@ -193,7 +193,7 @@ impl ExternalPriceReporterExecutor {
 
     /// Handles a job for the PriceReporter worker.
     pub(super) async fn handle_job(
-        &mut self,
+        &self,
         job: PriceReporterJob,
         msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {

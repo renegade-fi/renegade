@@ -20,6 +20,7 @@ members = [
 	"util",
 	"workers/api-server",
 	"workers/chain-events",
+	"workers/event-manager",
 	"workers/gossip-server",
 	"workers/handshake-manager",
 	"workers/handshake-manager-tests",

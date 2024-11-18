@@ -193,7 +193,7 @@ impl ExchangeConnectionManager {
     }
 
     /// Start the exchange connection manager
-    pub async fn execution_loop(mut self) -> Result<(), ExchangeConnectionError> {
+    pub async fn execution_loop(self) -> Result<(), ExchangeConnectionError> {
         // Start a keepalive timer
         let delay = tokio::time::sleep(Duration::from_millis(KEEPALIVE_INTERVAL_MS));
         tokio::pin!(delay);
@@ -258,7 +258,7 @@ impl ExchangeConnectionManager {
     /// Handles an error streaming through the exchange connection, attempting
     /// to reconnect until retry attempts are exhausted
     async fn handle_connection_error(
-        &mut self,
+        &self,
         e: ExchangeConnectionError,
         connection: &mut Box<dyn ExchangeConnection>,
     ) {
@@ -326,7 +326,7 @@ impl ExchangeConnectionManager {
 
     /// Retries an exchange connection after it has failed
     async fn retry_connection(
-        &mut self,
+        &self,
     ) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
         // Increment the retry count and filter out old requests
         let now = Instant::now();
