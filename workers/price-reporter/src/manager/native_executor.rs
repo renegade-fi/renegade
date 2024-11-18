@@ -68,7 +68,7 @@ impl PriceReporterExecutor {
                     }
 
                     tokio::spawn({
-                        let mut self_clone = self.clone();
+                        let self_clone = self.clone();
                         async move {
                             if let Err(e) = self_clone.handle_job(job).await {
                                 error!("Error in PriceReporter execution loop: {e}");
@@ -87,10 +87,7 @@ impl PriceReporterExecutor {
     }
 
     /// Handles a job for the PriceReporter worker.
-    pub(super) async fn handle_job(
-        &mut self,
-        job: PriceReporterJob,
-    ) -> Result<(), PriceReporterError> {
+    pub(super) async fn handle_job(&self, job: PriceReporterJob) -> Result<(), PriceReporterError> {
         match job {
             PriceReporterJob::StreamPrice { base_token, quote_token } => {
                 self.stream_price(base_token, quote_token).await
@@ -108,7 +105,7 @@ impl PriceReporterExecutor {
 
     /// Handler for StreamPrice job
     async fn stream_price(
-        &mut self,
+        &self,
         base_token: Token,
         quote_token: Token,
     ) -> Result<(), PriceReporterError> {
@@ -128,7 +125,7 @@ impl PriceReporterExecutor {
 
     /// Handler for PeekPrice job
     async fn peek_price(
-        &mut self,
+        &self,
         base_token: Token,
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
@@ -136,7 +133,7 @@ impl PriceReporterExecutor {
         // Spawn a task to stream the price. If all of the required streams are already
         // initialized, this will be a no-op.
         tokio::spawn({
-            let mut self_clone = self.clone();
+            let self_clone = self.clone();
             let base_token = base_token.clone();
             let quote_token = quote_token.clone();
             async move { self_clone.stream_price(base_token, quote_token).await }
@@ -156,7 +153,7 @@ impl PriceReporterExecutor {
     /// Initializes a connection to an exchange for the given token pair
     /// by spawning a new ExchangeConnectionManager.
     async fn start_exchange_connection(
-        &mut self,
+        &self,
         exchange: Exchange,
         base_token: Token,
         quote_token: Token,

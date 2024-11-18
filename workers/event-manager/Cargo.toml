@@ -1,0 +1,14 @@
+[package]
+name = "event-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+# === Workspace Dependencies === #
+common = { path = "../../common" }
+circuit-types = { path = "../../circuit-types" }
+
+# === Misc Dependencies === #
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+serde = { workspace = true }
