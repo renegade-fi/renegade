@@ -7,7 +7,10 @@ use circuit_types::{
     transfers::ExternalTransfer,
     Amount,
 };
-use common::types::wallet::{Order, OrderIdentifier, WalletIdentifier};
+use common::types::{
+    wallet::{Order, OrderIdentifier, WalletIdentifier},
+    MatchingPoolName,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -50,6 +53,8 @@ pub struct WalletCreationEvent {
 
     /// The ID of the wallet that was created
     pub wallet_id: WalletIdentifier,
+    /// The wallet's symmetric key, encrypted at rest and base64-encoded
+    pub encrypted_symmetric_key: String,
 }
 
 /// An external transfer event
@@ -80,6 +85,8 @@ pub struct OrderPlacementEvent {
     pub order_id: OrderIdentifier,
     /// The placed order
     pub order: Order,
+    /// The matching pool to which the order was assigned
+    pub matching_pool: MatchingPoolName,
 }
 
 /// An order update event
@@ -96,6 +103,8 @@ pub struct OrderUpdateEvent {
     pub order_id: OrderIdentifier,
     /// The updated order
     pub order: Order,
+    /// The matching pool to which the order was assigned
+    pub matching_pool: MatchingPoolName,
 }
 
 /// An order cancellation event
