@@ -12,6 +12,7 @@ use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
 use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
+use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
 use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
 use circuits::zk_circuits::valid_match_settle_atomic::{
@@ -435,8 +436,10 @@ impl SettleMatchExternalTask {
 
         // Compute the fees due by the external party in the match
         let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
+
+        // TODO: We set the external party's relayer fee to 0 for now, check on this
         let external_party_fees = compute_fee_obligation(
-            relayer_fee,
+            FixedPoint::default(),
             internal_party_order.side.opposite(),
             &self.match_res,
         );
