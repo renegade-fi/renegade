@@ -43,7 +43,7 @@ util = { path = "../util" }
 renegade-metrics = { path = "../renegade-metrics" }
 
 # === Serde === #
-serde = { workspace = true }
+serde = { version = "=1.0.197" }
 serde_with = "3.4"
 postcard = { version = "1", features = ["alloc"] }
 

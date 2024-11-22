@@ -75,7 +75,7 @@ async-trait = "0.1"
 eyre = "0.6"
 indexmap = "2.0.2"
 itertools = "0.10"
-serde = { version = "=1.0.197" }
+serde = { version = "1.0" }
 serde_json = "1.0.64"
 tracing = "0.1"
 metrics = "=0.22.3"
