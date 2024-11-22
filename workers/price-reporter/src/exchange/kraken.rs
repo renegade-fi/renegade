@@ -25,7 +25,7 @@ use super::{
     connection::{
         parse_json_field_array, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
     },
-    InitializablePriceStream, PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker, InitializablePriceStream, PriceStreamType,
 };
 
 // -------------
@@ -131,8 +131,11 @@ impl ExchangeConnection for KrakenConnection {
         let (mut write, read) = ws_connect(url).await?;
 
         // Subscribe to the asset pair spread topic
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Kraken);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Kraken);
+        let base_ticker =
+            get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Kraken)?;
+        let quote_ticker =
+            get_quote_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Kraken)?;
+
         let pair = format!("{}/{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "event": "subscribe",
@@ -181,8 +184,15 @@ impl ExchangeConnection for KrakenConnection {
             return Ok(false);
         }
 
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Kraken);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Kraken);
+        let base_ticker = match base_token.get_exchange_ticker(Exchange::Kraken) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+        let quote_ticker = match quote_token.get_exchange_ticker(Exchange::Kraken) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+
         let pair = format!("{}/{}", base_ticker, quote_ticker);
 
         // Query the `AssetPairs` endpoint about the pair

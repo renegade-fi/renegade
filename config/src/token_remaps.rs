@@ -6,9 +6,11 @@ use std::collections::HashMap;
 
 use arbitrum_client::constants::Chain;
 use bimap::BiMap;
-use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS, USD_TICKER};
+use common::types::{
+    exchange::Exchange,
+    token::{ADDR_DECIMALS_MAP, EXCHANGE_SUPPORT_MAP, TOKEN_REMAPS, USD_TICKER},
+};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 use util::raw_err_str;
 
 /// The base URL for raw token remap files
@@ -41,6 +43,9 @@ struct TokenInfo {
     address: String,
     /// The number of decimals the token uses in the ERC20 representation
     decimals: u8,
+    /// The exchanges that list the token, along with the ticker that we should
+    /// use to fetch the token's price from the exchange
+    supported_exchanges: HashMap<Exchange, String>,
 }
 
 impl TokenRemap {
@@ -52,6 +57,16 @@ impl TokenRemap {
     /// Convert the token mapping into a map of token addresses to decimals
     pub fn to_decimal_map(&self) -> HashMap<String, u8> {
         self.tokens.iter().map(|info| (info.address.clone(), info.decimals)).collect()
+    }
+
+    /// Convert the token mapping into a map of token tickers to the set of
+    /// exchanges that list the token, along with the ticker that we should use
+    /// to fetch the token's price from the exchange
+    pub fn to_exchange_support_map(&self) -> HashMap<String, HashMap<Exchange, String>> {
+        self.tokens
+            .iter()
+            .map(|info| (info.ticker.clone(), info.supported_exchanges.clone()))
+            .collect()
     }
 }
 
@@ -66,30 +81,36 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     }?;
     lowercase_addresses(&mut map);
 
+    let usd_ticker = USD_TICKER.to_string();
+
     // Update the static token remap with the given one
     let mut remap = map.to_remap();
     // Insert a dummy token w/ the "USD" ticker so that we can fetch USD-quoted
     // prices from exchanges that support this.
-    remap.insert(ZERO_ADDRESS.to_string(), USD_TICKER.to_string());
+    remap.insert(ZERO_ADDRESS.to_string(), usd_ticker.clone());
 
-    match TOKEN_REMAPS.get() {
-        Some(_) => {
-            warn!("Token remap already set, cannot override");
-        },
-        None => TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}"))?,
-    };
+    TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}"))?;
 
     // Update the static decimals map with the decimals in the token remap
     let decimals_map = map.to_decimal_map();
-    match ADDR_DECIMALS_MAP.get() {
-        Some(_) => {
-            warn!("Token decimals map already set, cannot override");
-            Ok(())
-        },
-        None => ADDR_DECIMALS_MAP
-            .set(decimals_map)
-            .map_err(raw_err_str!("Failed to set token decimals map: {:?}")),
-    }
+    ADDR_DECIMALS_MAP
+        .set(decimals_map)
+        .map_err(raw_err_str!("Failed to set token decimals map: {:?}"))?;
+
+    // Set up exchange support map, be sure to add coinbase/kraken support for dummy
+    // USD token
+    let mut exchange_support_map = map.to_exchange_support_map();
+    // Insert exchange support for the dummy USD token
+    exchange_support_map.insert(
+        usd_ticker.clone(),
+        [(Exchange::Coinbase, usd_ticker.clone()), (Exchange::Kraken, usd_ticker)]
+            .into_iter()
+            .collect(),
+    );
+
+    EXCHANGE_SUPPORT_MAP
+        .set(exchange_support_map)
+        .map_err(raw_err_str!("Failed to set exchange support map: {:?}"))
 }
 
 /// Lowercase all addresses in the remap
@@ -118,7 +139,7 @@ fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
 
 #[cfg(test)]
 mod test {
-    use std::fs::File;
+    use std::{collections::HashMap, fs::File};
 
     use arbitrum_client::constants::Chain;
     use common::types::token::TOKEN_REMAPS;
@@ -153,6 +174,7 @@ mod test {
                 ticker: "RNG".to_string(),
                 address: "0x1234".to_string(),
                 decimals: 18,
+                supported_exchanges: HashMap::new(),
             }],
         };
 

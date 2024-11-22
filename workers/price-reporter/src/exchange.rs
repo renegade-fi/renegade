@@ -69,6 +69,32 @@ pub async fn supports_pair(
     })
 }
 
+/// Get the exchange ticker for the base token in the given pair
+pub fn get_base_exchange_ticker(
+    base_token: Token,
+    quote_token: Token,
+    exchange: Exchange,
+) -> Result<String, ExchangeConnectionError> {
+    base_token.get_exchange_ticker(exchange).ok_or(ExchangeConnectionError::UnsupportedPair(
+        base_token,
+        quote_token,
+        exchange,
+    ))
+}
+
+/// Get the exchange ticker for the quote token in the given pair
+pub fn get_quote_exchange_ticker(
+    base_token: Token,
+    quote_token: Token,
+    exchange: Exchange,
+) -> Result<String, ExchangeConnectionError> {
+    quote_token.get_exchange_ticker(exchange).ok_or(ExchangeConnectionError::UnsupportedPair(
+        base_token,
+        quote_token,
+        exchange,
+    ))
+}
+
 /// The type that a price stream should return
 pub type PriceStreamType = Result<Price, ExchangeConnectionError>;
 

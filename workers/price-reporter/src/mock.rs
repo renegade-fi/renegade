@@ -4,7 +4,7 @@ use std::thread;
 
 use bimap::BiMap;
 use common::types::exchange::{PriceReport, PriceReporterState};
-use common::types::token::{Token, TICKER_NAMES, TOKEN_REMAPS};
+use common::types::token::{Token, TOKEN_REMAPS, USDC_TICKER, USDT_TICKER, USD_TICKER};
 use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
@@ -14,17 +14,39 @@ use util::get_current_time_millis;
 
 use crate::errors::PriceReporterError;
 
+/// Ticker names to use in setting up the mock token remap
+const MOCK_TICKER_NAMES: &[&str] = &[
+    USDC_TICKER,
+    USDT_TICKER,
+    USD_TICKER,
+    "WBTC",
+    "WETH",
+    "ARB",
+    "GMX",
+    "PENDLE",
+    "LDO",
+    "LINK",
+    "CRV",
+    "UNI",
+    "ZRO",
+    "LPT",
+    "GRT",
+    "COMP",
+    "AAVE",
+    "XAI",
+    "RDNT",
+    "ETHFI",
+];
+
 /// Setup the static token remap as a mock for testing
 #[allow(unused_must_use)]
 pub fn setup_mock_token_remap() {
     // Setup the mock token map
     let mut token_map = BiMap::new();
-    for (i, token_data) in TICKER_NAMES.iter().enumerate() {
-        // Pull the ticker, the index 0 field
-        let ticker = token_data.0.to_string();
+    for (i, &ticker) in MOCK_TICKER_NAMES.iter().enumerate() {
         let addr = format!("{i:x}");
 
-        token_map.insert(addr, ticker);
+        token_map.insert(addr, ticker.to_string());
     }
 
     // Do not unwrap in case another test set the remap

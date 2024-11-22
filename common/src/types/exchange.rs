@@ -9,10 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{token::Token, Price, TimestampedPrice};
 
-/// List of all supported exchanges
-pub static ALL_EXCHANGES: &[Exchange] =
-    &[Exchange::Binance, Exchange::Coinbase, Exchange::Kraken, Exchange::Okx, Exchange::UniswapV3];
-
 /// The identifier of an exchange
 #[allow(clippy::missing_docs_in_private_items, missing_docs)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
