@@ -24,7 +24,8 @@ use super::{
         parse_json_field, parse_json_field_array, parse_json_from_message, ws_connect,
         ExchangeConnection,
     },
-    Exchange, InitializablePriceStream, PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker, Exchange, InitializablePriceStream,
+    PriceStreamType,
 };
 
 // -------------
@@ -127,8 +128,11 @@ impl ExchangeConnection for OkxConnection {
         let (mut write, read) = ws_connect(url).await?;
 
         // Subscribe to the asset pair's bbo tick-by-tick stream
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Okx);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Okx);
+        let base_ticker =
+            get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Okx)?;
+        let quote_ticker =
+            get_quote_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Okx)?;
+
         let pair = format!("{}-{}", base_ticker, quote_ticker);
         let subscribe_str = json!({
             "op": "subscribe",
@@ -181,8 +185,15 @@ impl ExchangeConnection for OkxConnection {
             return Ok(false);
         }
 
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Okx);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Okx);
+        let base_ticker = match base_token.get_exchange_ticker(Exchange::Okx) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+        let quote_ticker = match quote_token.get_exchange_ticker(Exchange::Okx) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+
         let instrument = format!("{}-{}", base_ticker, quote_ticker);
 
         // Query the `instruments` endpoint about the pair

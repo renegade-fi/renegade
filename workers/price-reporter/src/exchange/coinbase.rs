@@ -29,7 +29,8 @@ use super::{
     connection::{
         parse_json_field, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
     },
-    Exchange, InitializablePriceStream, PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker, Exchange, InitializablePriceStream,
+    PriceStreamType,
 };
 
 // -------------
@@ -101,13 +102,15 @@ impl CoinbaseConnection {
 
     /// Construct the websocket subscription message with HMAC authentication
     fn construct_subscribe_message(
-        base_token: &Token,
-        quote_token: &Token,
+        base_token: Token,
+        quote_token: Token,
         api_key: &str,
         api_secret: &str,
-    ) -> String {
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Coinbase);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Coinbase);
+    ) -> Result<String, ExchangeConnectionError> {
+        let base_ticker =
+            get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Coinbase)?;
+        let quote_ticker = get_quote_exchange_ticker(base_token, quote_token, Exchange::Coinbase)?;
+
         let product_ids = format!("{}-{}", base_ticker, quote_ticker);
 
         // Authenticate the request with the API key
@@ -117,7 +120,7 @@ impl CoinbaseConnection {
             HMAC::mac(format!("{}{}{}", timestamp, channel, product_ids), api_secret);
 
         let signature = hex::encode(signature_bytes);
-        json!({
+        let subscribe_msg = json!({
             "type": "subscribe",
             "product_ids": [ product_ids ],
             "channel": channel,
@@ -125,7 +128,9 @@ impl CoinbaseConnection {
             "timestamp": timestamp,
             "signature": signature,
         })
-        .to_string()
+        .to_string();
+
+        Ok(subscribe_msg)
     }
 
     /// Parse a midpoint price from a websocket message
@@ -218,7 +223,7 @@ impl ExchangeConnection for CoinbaseConnection {
             .expect("Coinbase API secret expected in config, found None");
 
         let authenticated_subscribe_msg =
-            Self::construct_subscribe_message(&base_token, &quote_token, &api_key, &api_secret);
+            Self::construct_subscribe_message(base_token, quote_token, &api_key, &api_secret)?;
 
         // Setup the topic subscription
         writer
@@ -266,8 +271,15 @@ impl ExchangeConnection for CoinbaseConnection {
             return Ok(false);
         }
 
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Coinbase);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Coinbase);
+        let base_ticker = match base_token.get_exchange_ticker(Exchange::Coinbase) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+        let quote_ticker = match quote_token.get_exchange_ticker(Exchange::Coinbase) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+
         let product_id = format!("{}-{}", base_ticker, quote_ticker);
 
         // Query the `products` endpoint about the pair

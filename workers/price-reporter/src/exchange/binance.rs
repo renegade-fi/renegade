@@ -27,7 +27,7 @@ use super::{
     connection::{
         parse_json_field, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
     },
-    InitializablePriceStream, PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker, InitializablePriceStream, PriceStreamType,
 };
 
 // -------------
@@ -65,15 +65,23 @@ pub struct BinanceConnection {
 
 impl BinanceConnection {
     /// Construct the websocket url for the given asset pair
-    fn websocket_url(base_token: &Token, quote_token: &Token) -> Url {
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
-        Url::parse(&format!(
+    fn websocket_url(
+        base_token: Token,
+        quote_token: Token,
+    ) -> Result<Url, ExchangeConnectionError> {
+        let base_ticker =
+            get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Binance)?;
+
+        let quote_ticker = get_quote_exchange_ticker(base_token, quote_token, Exchange::Binance)?;
+
+        let url = Url::parse(&format!(
             "{BINANCE_WS_BASE_URL}/{}{}@bookTicker",
             base_ticker.to_lowercase(),
             quote_ticker.to_lowercase()
         ))
-        .expect("url parse should not fail on valid format string")
+        .expect("url parse should not fail on valid format string");
+
+        Ok(url)
     }
 
     /// Fetch a one-off price report by polling the Binance REST API
@@ -82,8 +90,10 @@ impl BinanceConnection {
         quote_token: Token,
     ) -> Result<PriceReport, ExchangeConnectionError> {
         // Make the request
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
+        let base_ticker =
+            get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Binance)?;
+        let quote_ticker =
+            get_quote_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Binance)?;
         let request_url = format!(
             "{BINANCE_REST_BASE_URL}/ticker/bookTicker?symbol={}{}",
             base_ticker, quote_ticker
@@ -156,7 +166,7 @@ impl ExchangeConnection for BinanceConnection {
             Self::fetch_price_report(base_token.clone(), quote_token.clone()).await?;
 
         // Connect to the websocket
-        let url = Self::websocket_url(&base_token, &quote_token);
+        let url = Self::websocket_url(base_token, quote_token)?;
         let (write, read) = ws_connect(url).await?;
 
         // Map the stream to process midpoint prices
@@ -196,8 +206,15 @@ impl ExchangeConnection for BinanceConnection {
             return Ok(false);
         }
 
-        let base_ticker = base_token.get_exchange_ticker(Exchange::Binance);
-        let quote_ticker = quote_token.get_exchange_ticker(Exchange::Binance);
+        let base_ticker = match base_token.get_exchange_ticker(Exchange::Binance) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+        let quote_ticker = match quote_token.get_exchange_ticker(Exchange::Binance) {
+            Some(ticker) => ticker,
+            None => return Ok(false),
+        };
+
         let symbol = format!("{}{}", base_ticker, quote_ticker);
 
         // Query the `exchangeInfo` endpoint about the pair
