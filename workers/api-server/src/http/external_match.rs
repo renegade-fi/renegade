@@ -16,7 +16,7 @@ use circuit_types::r#match::ExternalMatchResult;
 use common::types::{
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
     token::Token,
-    wallet::Order,
+    wallet::{keychain::HmacKey, Order},
 };
 use constants::{NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use ethers::{
@@ -26,8 +26,8 @@ use ethers::{
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
-        AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse, ExternalOrder,
-        ExternalQuoteRequest, ExternalQuoteResponse,
+        ApiExternalQuote, AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse,
+        ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, SignedExternalQuote,
     },
 };
 use hyper::HeaderMap;
@@ -40,7 +40,7 @@ use num_traits::Zero;
 use state::State;
 use system_bus::SystemBus;
 use tracing::warn;
-use util::hex::biguint_from_hex_string;
+use util::hex::{biguint_from_hex_string, bytes_to_hex_string};
 
 use crate::{
     error::{bad_request, internal_error, no_content, ApiServerError},
@@ -149,6 +149,8 @@ fn get_native_asset_address() -> BigUint {
 pub struct RequestExternalQuoteHandler {
     /// The minimum usdc denominated order size
     min_order_size: f64,
+    /// The admin key, used to sign quotes
+    admin_key: HmacKey,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
     /// The price reporter queue
@@ -163,12 +165,13 @@ impl RequestExternalQuoteHandler {
     /// Create a new handler
     pub fn new(
         min_order_size: f64,
+        admin_key: HmacKey,
         handshake_queue: HandshakeManagerQueue,
         price_queue: PriceReporterQueue,
         state: State,
         bus: SystemBus<SystemBusMessage>,
     ) -> Self {
-        Self { min_order_size, handshake_queue, price_queue, state, bus }
+        Self { min_order_size, admin_key, handshake_queue, price_queue, state, bus }
     }
 
     /// Await a quote response from the external matching engine
@@ -186,6 +189,19 @@ impl RequestExternalQuoteHandler {
             SystemBusMessage::NoAtomicMatchFound => Ok(None),
             _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
         }
+    }
+
+    /// Sign an external quote
+    fn sign_external_quote(
+        &self,
+        quote: ExternalMatchResult,
+    ) -> Result<SignedExternalQuote, ApiServerError> {
+        let quote = ApiExternalQuote::from(quote);
+        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
+        let signature = self.admin_key.compute_mac(&quote_bytes);
+        let signature_hex = bytes_to_hex_string(&signature);
+
+        Ok(SignedExternalQuote { quote, signature: signature_hex })
     }
 }
 
@@ -216,11 +232,12 @@ impl TypedHandler for RequestExternalQuoteHandler {
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
 
         // Await a quote response from the external matching engine
-        let quote = self
+        let match_res = self
             .await_quote_response(response_topic)
             .await?
             .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
-        Ok(ExternalQuoteResponse { match_result: quote.into() })
+        let signed_quote = self.sign_external_quote(match_res)?;
+        Ok(ExternalQuoteResponse { signed_quote })
     }
 }
 

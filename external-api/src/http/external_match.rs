@@ -17,7 +17,10 @@ use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
-use util::hex::{biguint_from_hex_string, biguint_to_hex_string};
+use util::{
+    get_current_time_millis,
+    hex::{biguint_from_hex_string, biguint_to_hex_string},
+};
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
@@ -61,8 +64,8 @@ pub struct ExternalQuoteRequest {
 /// The response type for a quote on an external order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalQuoteResponse {
-    /// The match result
-    pub match_result: ApiExternalMatchResult,
+    /// The signed quote
+    pub signed_quote: SignedExternalQuote,
 }
 
 // ------------------
@@ -174,6 +177,58 @@ impl From<ExternalMatchResult> for ApiExternalMatchResult {
             quote_amount: result.quote_amount,
             base_amount: result.base_amount,
             direction,
+        }
+    }
+}
+
+/// A signed quote for an external order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SignedExternalQuote {
+    /// The quote
+    pub quote: ApiExternalQuote,
+    /// The signature
+    pub signature: String,
+}
+
+/// A quote for an external order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiExternalQuote {
+    /// The mint of the quote token in the matched asset pair
+    pub quote_mint: String,
+    /// The mint of the base token in the matched asset pair
+    pub base_mint: String,
+    /// The amount of the quote token exchanged by the match
+    pub quote_amount: Amount,
+    /// The amount of the base token exchanged by the match
+    pub base_amount: Amount,
+    /// The direction of the match
+    pub direction: OrderSide,
+    /// The price of the match
+    pub price: f64,
+    /// The timestamp of the quote
+    pub timestamp: u64,
+}
+
+impl From<ExternalMatchResult> for ApiExternalQuote {
+    fn from(result: ExternalMatchResult) -> Self {
+        let quote_mint = biguint_to_hex_string(&result.quote_mint);
+        let base_mint = biguint_to_hex_string(&result.base_mint);
+        let direction = if result.direction { OrderSide::Buy } else { OrderSide::Sell };
+
+        // Calculate implied price as quote_amount / base_amount
+        let base_amt_f64 = result.base_amount as f64;
+        let quote_amt_f64 = result.quote_amount as f64;
+        let price = quote_amt_f64 / base_amt_f64;
+        let timestamp = get_current_time_millis();
+
+        Self {
+            quote_mint,
+            base_mint,
+            quote_amount: result.quote_amount,
+            base_amount: result.base_amount,
+            direction,
+            price,
+            timestamp,
         }
     }
 }

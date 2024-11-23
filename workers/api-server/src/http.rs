@@ -17,6 +17,7 @@ use async_trait::async_trait;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     tasks::TaskIdentifier,
+    wallet::keychain::HmacKey,
     MatchingPoolName,
 };
 use external_api::{
@@ -400,11 +401,14 @@ impl HttpServer {
         // --- External Match Routes --- //
 
         // The "/external-match/quote" route
+        // The endpoint will be disabled if no admin key is set, hence the dummy value
+        let admin_key = config.admin_api_key.unwrap_or(HmacKey::random());
         router.add_admin_authenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_QUOTE_ROUTE.to_string(),
             RequestExternalQuoteHandler::new(
                 config.min_order_size,
+                admin_key,
                 handshake_queue.clone(),
                 config.price_reporter_work_queue.clone(),
                 state.clone(),
