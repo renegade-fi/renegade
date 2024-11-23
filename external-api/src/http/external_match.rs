@@ -25,6 +25,8 @@ use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 // | HTTP Routes |
 // ---------------
 
+/// The route for requesting a quote on an external match
+pub const REQUEST_EXTERNAL_QUOTE_ROUTE: &str = "/v0/matching-engine/quote";
 /// The route for requesting an atomic match
 pub const REQUEST_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/request-external-match";
 
@@ -47,6 +49,20 @@ pub struct ExternalMatchRequest {
 pub struct ExternalMatchResponse {
     /// The match bundle
     pub match_bundle: AtomicMatchApiBundle,
+}
+
+/// The request type for a quote on an external order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExternalQuoteRequest {
+    /// The external order
+    pub external_order: ExternalOrder,
+}
+
+/// The response type for a quote on an external order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExternalQuoteResponse {
+    /// The match result
+    pub match_result: ApiExternalMatchResult,
 }
 
 // ------------------

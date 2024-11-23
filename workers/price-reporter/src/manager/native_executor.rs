@@ -116,7 +116,6 @@ impl PriceReporterExecutor {
 
         for (exchange, base, quote) in req_streams {
             self.start_exchange_connection(exchange, base, quote)
-                .await
                 .map_err(PriceReporterError::ExchangeConnection)?;
         }
 
@@ -152,7 +151,7 @@ impl PriceReporterExecutor {
 
     /// Initializes a connection to an exchange for the given token pair
     /// by spawning a new ExchangeConnectionManager.
-    async fn start_exchange_connection(
+    fn start_exchange_connection(
         &self,
         exchange: Exchange,
         base_token: Token,

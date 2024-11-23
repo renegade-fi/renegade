@@ -12,6 +12,7 @@ use std::{sync::Arc, time::Duration};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
+use circuit_types::r#match::ExternalMatchResult;
 use common::types::{
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
     token::Token,
@@ -26,6 +27,7 @@ use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
         AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse, ExternalOrder,
+        ExternalQuoteRequest, ExternalQuoteResponse,
     },
 };
 use hyper::HeaderMap;
@@ -142,6 +144,85 @@ fn get_native_asset_address() -> BigUint {
 // ------------------
 // | Route Handlers |
 // ------------------
+
+/// The handler for the `GET /external-match/quote` route
+pub struct RequestExternalQuoteHandler {
+    /// The minimum usdc denominated order size
+    min_order_size: f64,
+    /// The handshake manager's queue
+    handshake_queue: HandshakeManagerQueue,
+    /// The price reporter queue
+    price_queue: PriceReporterQueue,
+    /// A handle on the relayer state
+    state: State,
+    /// The system bus
+    bus: SystemBus<SystemBusMessage>,
+}
+
+impl RequestExternalQuoteHandler {
+    /// Create a new handler
+    pub fn new(
+        min_order_size: f64,
+        handshake_queue: HandshakeManagerQueue,
+        price_queue: PriceReporterQueue,
+        state: State,
+        bus: SystemBus<SystemBusMessage>,
+    ) -> Self {
+        Self { min_order_size, handshake_queue, price_queue, state, bus }
+    }
+
+    /// Await a quote response from the external matching engine
+    async fn await_quote_response(
+        &self,
+        response_topic: String,
+    ) -> Result<Option<ExternalMatchResult>, ApiServerError> {
+        let mut rx = self.bus.subscribe(response_topic);
+        let msg = tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
+            .await
+            .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))?;
+
+        match msg {
+            SystemBusMessage::ExternalOrderQuote { quote } => Ok(Some(quote)),
+            SystemBusMessage::NoAtomicMatchFound => Ok(None),
+            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for RequestExternalQuoteHandler {
+    type Request = ExternalQuoteRequest;
+    type Response = ExternalQuoteResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Check that atomic matches are enabled
+        let enabled = self.state.get_atomic_matches_enabled().await?;
+        if !enabled {
+            return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
+        }
+
+        let order = external_order_to_internal_order(req.external_order, &self.price_queue).await?;
+        check_external_order_size(&order, self.min_order_size, &self.price_queue).await?;
+
+        let (job, response_topic) = HandshakeManagerJob::get_external_quote(order);
+        self.handshake_queue
+            .send(job)
+            .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
+
+        // Await a quote response from the external matching engine
+        let quote = self
+            .await_quote_response(response_topic)
+            .await?
+            .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
+        Ok(ExternalQuoteResponse { match_result: quote.into() })
+    }
+}
 
 /// The handler for the `POST /external-match/request` route
 pub struct RequestExternalMatchHandler {
@@ -286,7 +367,7 @@ impl TypedHandler for RequestExternalMatchHandler {
         let order = external_order_to_internal_order(external_order.clone(), price_queue).await?;
         check_external_order_size(&order, self.min_order_size, price_queue).await?;
 
-        let (job, response_topic) = HandshakeManagerJob::new_external_matching_job(order);
+        let (job, response_topic) = HandshakeManagerJob::get_external_match_bundle(order);
         self.handshake_queue
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;

@@ -9,7 +9,11 @@
 
 use std::collections::HashSet;
 
-use circuit_types::{balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
+use circuit_types::{
+    balance::Balance,
+    fixed_point::FixedPoint,
+    r#match::{ExternalMatchResult, MatchResult},
+};
 use common::types::{
     tasks::SettleExternalMatchTaskDescriptor,
     token::Token,
@@ -36,8 +40,12 @@ impl HandshakeExecutor {
         &self,
         order: Order,
         response_topic: String,
+        only_quote: bool,
     ) -> Result<(), HandshakeManagerError> {
-        match self.run_external_matching_engine_inner(order, response_topic.clone()).await {
+        match self
+            .run_external_matching_engine_inner(order, response_topic.clone(), only_quote)
+            .await
+        {
             Ok(()) => Ok(()),
             Err(e) => {
                 self.handle_no_match(response_topic);
@@ -51,6 +59,7 @@ impl HandshakeExecutor {
         &self,
         order: Order,
         response_topic: String,
+        only_quote: bool,
     ) -> Result<(), HandshakeManagerError> {
         let base = Token::from_addr_biguint(&order.base_mint);
         let quote = Token::from_addr_biguint(&order.quote_mint);
@@ -86,26 +95,10 @@ impl HandshakeExecutor {
             // internal order's direction, make sure this is the case. The core engine logic
             // may match the external order as the first party
             match_res.direction = order.side.opposite().match_direction();
-            let settle_res = self
-                .try_settle_external_match(
-                    other_order_id,
-                    ts_price,
-                    match_res,
-                    response_topic.clone(),
-                )
-                .await;
-
-            match settle_res {
-                Ok(()) => {
-                    // Stop matching if a match was found
-                    return Ok(());
-                },
-                Err(e) => {
-                    error!(
-                        "external match settlement failed on internal order {}: {e}",
-                        other_order_id,
-                    );
-                },
+            let id = other_order_id;
+            let topic = response_topic.clone();
+            if self.handle_match(id, ts_price, match_res, only_quote, topic).await.is_ok() {
+                return Ok(());
             }
 
             // If matching failed, remove the other order from the candidate set
@@ -114,6 +107,38 @@ impl HandshakeExecutor {
 
         self.handle_no_match(response_topic);
         Ok(())
+    }
+
+    /// Run a match against a single order
+    async fn handle_match(
+        &self,
+        other_order_id: OrderIdentifier,
+        price: TimestampedPrice,
+        match_res: MatchResult,
+        only_quote: bool,
+        response_topic: String,
+    ) -> Result<(), HandshakeManagerError> {
+        // If the request only requires a quote, we can stop here
+        if only_quote {
+            self.forward_quote(response_topic.clone(), match_res);
+            return Ok(());
+        }
+
+        // Otherwise, settle the match by building an atomic match bundle
+        let settle_res = self
+            .try_settle_external_match(other_order_id, price, match_res, response_topic.clone())
+            .await;
+
+        match settle_res {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                error!(
+                    "external match settlement failed on internal order {}: {e}",
+                    other_order_id,
+                );
+                Err(e)
+            },
+        }
     }
 
     /// Get the match candidates for an external order
@@ -146,6 +171,14 @@ impl HandshakeExecutor {
         rx.await
             .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
             .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
+    }
+
+    /// Forward a quote to the client
+    fn forward_quote(&self, response_topic: String, quote: MatchResult) {
+        info!("forwarding quote to client");
+        let external_res = ExternalMatchResult::from(quote);
+        let response = SystemBusMessage::ExternalOrderQuote { quote: external_res };
+        self.system_bus.publish(response_topic, response);
     }
 
     /// Mock a balance for an external order
