@@ -55,9 +55,11 @@ impl HandshakeExecutor {
         let base = Token::from_addr_biguint(&order.base_mint);
         let quote = Token::from_addr_biguint(&order.quote_mint);
         info!(
-            "Running external matching engine for {}/{}",
+            "Running external matching engine for {} {}/{} with size {}",
+            order.side,
             base.get_ticker().unwrap_or_default(),
-            quote.get_ticker().unwrap_or_default()
+            quote.get_ticker().unwrap_or_default(),
+            order.amount
         );
 
         // Get all orders that consent to external matching

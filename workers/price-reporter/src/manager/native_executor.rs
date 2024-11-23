@@ -166,6 +166,11 @@ impl PriceReporterExecutor {
             self.price_stream_states.clone(),
         );
 
-        conn_manager.execution_loop().await
+        tokio::spawn(async move {
+            if let Err(e) = conn_manager.execution_loop().await {
+                error!("Error in PriceReporter execution loop: {e}");
+            }
+        });
+        Ok(())
     }
 }
