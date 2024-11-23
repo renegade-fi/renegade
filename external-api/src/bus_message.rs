@@ -1,5 +1,6 @@
 //! Defines types broadcast onto the system bus and thereby websockets
 
+use circuit_types::r#match::ExternalMatchResult;
 use common::types::{
     exchange::PriceReport,
     gossip::{PeerInfo, WrappedPeerId},
@@ -151,6 +152,11 @@ pub enum SystemBusMessage {
     },
 
     // --- Jobs --- //
+    /// A message containing a quote for an external order
+    ExternalOrderQuote {
+        /// The quote
+        quote: ExternalMatchResult,
+    },
     /// A message containing an atomic match settlement bundle for an external
     /// caller to execute
     ///

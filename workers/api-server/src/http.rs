@@ -27,7 +27,7 @@ use external_api::{
             ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
             ADMIN_TRIGGER_SNAPSHOT_ROUTE, ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
         },
-        external_match::REQUEST_EXTERNAL_MATCH_ROUTE,
+        external_match::{REQUEST_EXTERNAL_MATCH_ROUTE, REQUEST_EXTERNAL_QUOTE_ROUTE},
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
@@ -44,7 +44,7 @@ use external_api::{
     },
     EmptyRequestResponse,
 };
-use external_match::RequestExternalMatchHandler;
+use external_match::{RequestExternalMatchHandler, RequestExternalQuoteHandler};
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
@@ -398,6 +398,19 @@ impl HttpServer {
         );
 
         // --- External Match Routes --- //
+
+        // The "/external-match/quote" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            REQUEST_EXTERNAL_QUOTE_ROUTE.to_string(),
+            RequestExternalQuoteHandler::new(
+                config.min_order_size,
+                handshake_queue.clone(),
+                config.price_reporter_work_queue.clone(),
+                state.clone(),
+                config.system_bus.clone(),
+            ),
+        );
 
         // The "/external-match/request" route
         router.add_admin_authenticated_route(
