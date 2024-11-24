@@ -18,7 +18,6 @@ use arbitrum_client::{
 };
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
-use common::types::token::{ADDR_DECIMALS_MAP, TOKEN_REMAPS};
 use crossbeam::channel::Sender as CrossbeamSender;
 use ethers::{
     middleware::Middleware,
@@ -201,10 +200,6 @@ fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
 
 /// Setup code for the integration tests
 fn setup_integration_tests(test_args: &CliArgs) {
-    // Setup token remaps, this is used in metrics collection, will panic if not set
-    TOKEN_REMAPS.set(Default::default()).unwrap();
-    ADDR_DECIMALS_MAP.set(Default::default()).unwrap();
-
     // Set the protocol fee and pubkey
     let protocol_fee = FixedPoint::from_f64_round_down(0.0006); // 6 bps
     PROTOCOL_FEE.set(protocol_fee).expect("protocol fee already set");

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use common::types::{
     exchange::PriceReporterState,
-    token::{Token, TOKEN_REMAPS, USDC_TICKER},
+    token::{read_token_remap, Token, USDC_TICKER},
     wallet::OrderIdentifier,
     TimestampedPrice,
 };
@@ -35,7 +35,7 @@ pub fn init_price_streams(
 ) -> Result<(), HandshakeManagerError> {
     let quote = Token::from_ticker(USDC_TICKER);
 
-    for (addr, _) in TOKEN_REMAPS.get().unwrap().iter() {
+    for (addr, _) in read_token_remap().iter() {
         let base = Token::from_addr(addr);
         if base == quote {
             // Skip the USDC-USDC pair
@@ -53,16 +53,21 @@ pub fn init_price_streams(
 impl HandshakeExecutor {
     /// Fetch a price vector from the price reporter
     pub(super) async fn fetch_price_vector(&self) -> Result<PriceVector, HandshakeManagerError> {
-        // Enqueue jobs in the price manager to snapshot the midpoint for each pair
-        let token_maps = TOKEN_REMAPS.get().unwrap();
-        let quote = Token::from_ticker(USDC_TICKER);
+        // Enqueue jobs in the price manager to snapshot the midpoint for each pair.
+        // We do this in a separate scope to avoid holding the read lock on the token
+        // remap across an await point.
+        let channels = {
+            let token_maps = read_token_remap();
+            let quote = Token::from_ticker(USDC_TICKER);
 
-        let mut channels = Vec::with_capacity(token_maps.len());
-        for (base_addr, _ticker) in token_maps.iter() {
-            let base = Token::from_addr(base_addr);
-            let receiver = self.request_price(base, quote.clone())?;
-            channels.push(receiver);
-        }
+            let mut channels = Vec::with_capacity(token_maps.len());
+            for (base_addr, _ticker) in token_maps.iter() {
+                let base = Token::from_addr(base_addr);
+                let receiver = self.request_price(base, quote.clone())?;
+                channels.push(receiver);
+            }
+            channels
+        };
 
         // Wait for the price reporter to respond with the midpoint prices for each pair
         let mut midpoint_prices = Vec::new();

@@ -543,7 +543,13 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         info!("Refreshing token mapping from repo");
-        setup_token_remaps(None /* remap_file */, self.chain).map_err(internal_error)?;
+
+        let chain = self.chain;
+        tokio::task::spawn_blocking(move || setup_token_remaps(None /* remap_file */, chain))
+            .await
+            .map_err(internal_error) // Tokio join error
+            .and_then(|r| r.map_err(internal_error))?; // Token remap setup error
+
         Ok(EmptyRequestResponse {})
     }
 }
