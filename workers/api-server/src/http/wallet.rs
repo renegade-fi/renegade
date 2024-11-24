@@ -6,7 +6,6 @@ use circuit_types::{
     SizedWallet as SizedCircuitWallet,
 };
 use common::types::{
-    exchange::PriceReporterState,
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
         RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
@@ -30,7 +29,7 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
-use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
+use job_types::price_reporter::PriceReporterQueue;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use renegade_crypto::fields::biguint_to_scalar;
@@ -39,7 +38,6 @@ use task_driver::simulation::simulate_wallet_tasks;
 use util::{
     err_str,
     hex::{biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string},
-    res_some,
 };
 
 use crate::{
@@ -130,15 +128,9 @@ pub(crate) async fn get_usdc_denominated_value(
     }
 
     // Peek at the price report from the price reporter
-    let (job, recv) = PriceReporterJob::peek_price(base_token, quote_token);
-    price_reporter_queue.send(job).map_err(internal_error)?;
-    let state = recv.await.map_err(internal_error)?;
-
-    let maybe_price = match state {
-        PriceReporterState::Nominal(report) => Some(report.price),
-        _ => None,
-    };
-    let price = res_some!(maybe_price);
+    let ts_price =
+        price_reporter_queue.peek_price(base_token, quote_token).await.map_err(internal_error)?;
+    let price = ts_price.price;
 
     // Compute the usdc denominated value
     let value = amount_with_decimals * price;

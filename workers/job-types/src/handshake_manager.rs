@@ -128,16 +128,16 @@ pub enum HandshakeManagerJob {
 impl HandshakeManagerJob {
     /// Get a quote for an external order
     pub fn get_external_quote(order: Order) -> (Self, String) {
-        Self::new_external_matching_job(order, true /* quote_only */)
+        Self::new_external_match_job(order, true /* quote_only */)
     }
 
     /// Run the external matching engine and create a bundle
     pub fn get_external_match_bundle(order: Order) -> (Self, String) {
-        Self::new_external_matching_job(order, false /* quote_only */)
+        Self::new_external_match_job(order, false /* quote_only */)
     }
 
     /// Create a new external matching job
-    pub fn new_external_matching_job(order: Order, quote_only: bool) -> (Self, String) {
+    pub fn new_external_match_job(order: Order, quote_only: bool) -> (Self, String) {
         let topic = gen_atomic_match_response_topic();
         (
             Self::ExternalMatchingEngine {

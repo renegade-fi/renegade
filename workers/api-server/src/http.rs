@@ -45,7 +45,9 @@ use external_api::{
     },
     EmptyRequestResponse,
 };
-use external_match::{RequestExternalMatchHandler, RequestExternalQuoteHandler};
+use external_match::{
+    ExternalMatchProcessor, RequestExternalMatchHandler, RequestExternalQuoteHandler,
+};
 use hyper::{
     server::conn::AddrStream,
     service::{make_service_fn, service_fn},
@@ -400,34 +402,28 @@ impl HttpServer {
 
         // --- External Match Routes --- //
 
+        let processor = ExternalMatchProcessor::new(
+            config.min_order_size,
+            handshake_queue,
+            config.arbitrum_client.clone(),
+            config.system_bus.clone(),
+            config.price_reporter_work_queue.clone(),
+        );
+
         // The "/external-match/quote" route
         // The endpoint will be disabled if no admin key is set, hence the dummy value
         let admin_key = config.admin_api_key.unwrap_or(HmacKey::random());
         router.add_admin_authenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_QUOTE_ROUTE.to_string(),
-            RequestExternalQuoteHandler::new(
-                config.min_order_size,
-                admin_key,
-                handshake_queue.clone(),
-                config.price_reporter_work_queue.clone(),
-                state.clone(),
-                config.system_bus.clone(),
-            ),
+            RequestExternalQuoteHandler::new(admin_key, processor.clone(), state.clone()),
         );
 
         // The "/external-match/request" route
         router.add_admin_authenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_MATCH_ROUTE.to_string(),
-            RequestExternalMatchHandler::new(
-                config.min_order_size,
-                handshake_queue,
-                config.arbitrum_client.clone(),
-                config.system_bus.clone(),
-                state.clone(),
-                config.price_reporter_work_queue.clone(),
-            ),
+            RequestExternalMatchHandler::new(processor, state.clone()),
         );
 
         // --- Orderbook Routes --- //

@@ -77,60 +77,6 @@ const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote 
 // | Helpers |
 // -----------
 
-/// Check the USDC denominated value of an external order and assert that it is
-/// greater than the configured minimum size
-async fn check_external_order_size(
-    o: &Order,
-    min_order_size: f64,
-    price_queue: &PriceReporterQueue,
-) -> Result<(), ApiServerError> {
-    let usdc_value = get_usdc_denominated_value(&o.base_mint, o.amount, price_queue).await?;
-
-    // If we cannot fetch a price, do not block the order
-    if let Some(usdc_value) = usdc_value {
-        if usdc_value < min_order_size {
-            let msg = format!("order value too small, ${usdc_value} < ${min_order_size}");
-            return Err(bad_request(msg));
-        }
-    }
-
-    Ok(())
-}
-
-/// Convert an external order to an internal order
-async fn external_order_to_internal_order(
-    mut o: ExternalOrder,
-    price_queue: &PriceReporterQueue,
-) -> Result<Order, ApiServerError> {
-    // External order must specify non-zero size
-    let quote_zero = o.quote_amount.is_zero();
-    let base_zero = o.base_amount.is_zero();
-    if quote_zero && base_zero {
-        return Err(bad_request(ERR_EXTERNAL_ORDER_ZERO_SIZE));
-    }
-
-    // Only one of quote or base should specify the size
-    if !quote_zero && !base_zero {
-        return Err(bad_request(ERR_EXTERNAL_ORDER_BOTH_SIZE));
-    }
-
-    let base = if o.trades_native_asset() {
-        let native_wrapper = get_native_asset_wrapper_token();
-        o.base_mint = biguint_from_hex_string(&native_wrapper.get_addr()).unwrap();
-        native_wrapper
-    } else {
-        Token::from_addr_biguint(&o.base_mint)
-    };
-    let quote = Token::from_addr_biguint(&o.quote_mint);
-
-    let ts_price =
-        price_queue.peek_price(base.clone(), quote.clone()).await.map_err(internal_error)?;
-    let decimal_corrected_price =
-        ts_price.get_decimal_corrected_price(&base, &quote).map_err(internal_error)?;
-    let order = o.to_order_with_price(decimal_corrected_price.as_fixed_point());
-    Ok(order)
-}
-
 /// Get the token representing a wrapper on the native asset
 fn get_native_asset_wrapper_token() -> Token {
     Token::from_ticker(NATIVE_ASSET_WRAPPER_TICKER)
@@ -141,108 +87,17 @@ fn get_native_asset_address() -> BigUint {
     biguint_from_hex_string(NATIVE_ASSET_ADDRESS).unwrap()
 }
 
-// ------------------
-// | Route Handlers |
-// ------------------
+// ----------------------------
+// | External Match Processor |
+// ----------------------------
 
-/// The handler for the `GET /external-match/quote` route
-pub struct RequestExternalQuoteHandler {
-    /// The minimum usdc denominated order size
-    min_order_size: f64,
-    /// The admin key, used to sign quotes
-    admin_key: HmacKey,
-    /// The handshake manager's queue
-    handshake_queue: HandshakeManagerQueue,
-    /// The price reporter queue
-    price_queue: PriceReporterQueue,
-    /// A handle on the relayer state
-    state: State,
-    /// The system bus
-    bus: SystemBus<SystemBusMessage>,
-}
-
-impl RequestExternalQuoteHandler {
-    /// Create a new handler
-    pub fn new(
-        min_order_size: f64,
-        admin_key: HmacKey,
-        handshake_queue: HandshakeManagerQueue,
-        price_queue: PriceReporterQueue,
-        state: State,
-        bus: SystemBus<SystemBusMessage>,
-    ) -> Self {
-        Self { min_order_size, admin_key, handshake_queue, price_queue, state, bus }
-    }
-
-    /// Await a quote response from the external matching engine
-    async fn await_quote_response(
-        &self,
-        response_topic: String,
-    ) -> Result<Option<ExternalMatchResult>, ApiServerError> {
-        let mut rx = self.bus.subscribe(response_topic);
-        let msg = tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
-            .await
-            .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))?;
-
-        match msg {
-            SystemBusMessage::ExternalOrderQuote { quote } => Ok(Some(quote)),
-            SystemBusMessage::NoAtomicMatchFound => Ok(None),
-            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
-        }
-    }
-
-    /// Sign an external quote
-    fn sign_external_quote(
-        &self,
-        quote: ExternalMatchResult,
-    ) -> Result<SignedExternalQuote, ApiServerError> {
-        let quote = ApiExternalQuote::from(quote);
-        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
-        let signature = self.admin_key.compute_mac(&quote_bytes);
-        let signature_hex = bytes_to_hex_string(&signature);
-
-        Ok(SignedExternalQuote { quote, signature: signature_hex })
-    }
-}
-
-#[async_trait]
-impl TypedHandler for RequestExternalQuoteHandler {
-    type Request = ExternalQuoteRequest;
-    type Response = ExternalQuoteResponse;
-
-    async fn handle_typed(
-        &self,
-        _headers: HeaderMap,
-        req: Self::Request,
-        _params: UrlParams,
-        _query_params: QueryParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        // Check that atomic matches are enabled
-        let enabled = self.state.get_atomic_matches_enabled().await?;
-        if !enabled {
-            return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
-        }
-
-        let order = external_order_to_internal_order(req.external_order, &self.price_queue).await?;
-        check_external_order_size(&order, self.min_order_size, &self.price_queue).await?;
-
-        let (job, response_topic) = HandshakeManagerJob::get_external_quote(order);
-        self.handshake_queue
-            .send(job)
-            .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
-
-        // Await a quote response from the external matching engine
-        let match_res = self
-            .await_quote_response(response_topic)
-            .await?
-            .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
-        let signed_quote = self.sign_external_quote(match_res)?;
-        Ok(ExternalQuoteResponse { signed_quote })
-    }
-}
-
-/// The handler for the `POST /external-match/request` route
-pub struct RequestExternalMatchHandler {
+/// The `ExternalMatchProcessor` is responsible for processing external matches
+/// originating from the api layer
+///
+/// It is responsible for fetching prices, interacting with the handshake
+/// manager, gas estimation, etc
+#[derive(Clone)]
+pub struct ExternalMatchProcessor {
     /// The minimum usdc denominated order size
     min_order_size: f64,
     /// The handshake manager's queue
@@ -251,23 +106,28 @@ pub struct RequestExternalMatchHandler {
     arbitrum_client: ArbitrumClient,
     /// A handle on the system bus
     bus: SystemBus<SystemBusMessage>,
-    /// A handle on the relayer state
-    state: State,
     /// The price reporter queue
     price_queue: PriceReporterQueue,
 }
 
-impl RequestExternalMatchHandler {
-    /// Create a new handler
+impl ExternalMatchProcessor {
+    /// Create a new processor
     pub fn new(
         min_order_size: f64,
         handshake_queue: HandshakeManagerQueue,
         arbitrum_client: ArbitrumClient,
         bus: SystemBus<SystemBusMessage>,
-        state: State,
         price_queue: PriceReporterQueue,
     ) -> Self {
-        Self { min_order_size, handshake_queue, arbitrum_client, bus, state, price_queue }
+        Self { min_order_size, handshake_queue, arbitrum_client, bus, price_queue }
+    }
+
+    /// Await the next bus message on a topic
+    async fn await_bus_message(&self, topic: String) -> Result<SystemBusMessage, ApiServerError> {
+        let mut rx = self.bus.subscribe(topic);
+        tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
+            .await
+            .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))
     }
 
     /// Estimate the gas for a given external match transaction
@@ -293,31 +153,114 @@ impl RequestExternalMatchHandler {
         }
     }
 
-    /// Await a response from the external matching engine and build a
-    /// settlement transaction from the response
-    async fn await_external_match_response(
-        &self,
-        response_topic: String,
-        do_gas_estimation: bool,
-        order: &ExternalOrder,
-    ) -> Result<Option<AtomicMatchApiBundle>, ApiServerError> {
-        // Await a response from the external matching engine
-        let mut rx = self.bus.subscribe(response_topic);
-        let msg = tokio::time::timeout(EXTERNAL_MATCH_TIMEOUT, rx.next_message())
-            .await
-            .map_err(|_| internal_error(ERR_EXTERNAL_MATCH_TIMEOUT))?;
-        let (match_bundle, validity_proofs) = match msg {
-            SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
-                (match_bundle, validity_proofs)
-            },
-            SystemBusMessage::NoAtomicMatchFound => return Ok(None),
-            _ => return Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
-        };
+    // --- Order Validation & Conversion --- //
 
-        // Build an API bundle
-        let res =
-            self.build_api_bundle(do_gas_estimation, order, match_bundle, validity_proofs).await?;
-        Ok(Some(res))
+    /// Get an internal order from an external order given a price
+    async fn external_order_to_internal_order(
+        &self,
+        mut o: ExternalOrder,
+    ) -> Result<Order, ApiServerError> {
+        // External order must specify non-zero size
+        let quote_zero = o.quote_amount.is_zero();
+        let base_zero = o.base_amount.is_zero();
+        if quote_zero && base_zero {
+            return Err(bad_request(ERR_EXTERNAL_ORDER_ZERO_SIZE));
+        }
+
+        // Only one of quote or base should specify the size
+        if !quote_zero && !base_zero {
+            return Err(bad_request(ERR_EXTERNAL_ORDER_BOTH_SIZE));
+        }
+
+        // Get the tokens being traded, swapping WETH for ETH if necessary
+        let base = if o.trades_native_asset() {
+            let native_wrapper = get_native_asset_wrapper_token();
+            o.base_mint = biguint_from_hex_string(&native_wrapper.get_addr()).unwrap();
+            native_wrapper
+        } else {
+            Token::from_addr_biguint(&o.base_mint)
+        };
+        let quote = Token::from_addr_biguint(&o.quote_mint);
+
+        // Fetch a price for the pair
+        let decimal_corrected_price = self
+            .price_queue
+            .peek_price(base.clone(), quote.clone())
+            .await
+            .and_then(|p| p.get_decimal_corrected_price(&base, &quote))
+            .map(|p| p.as_fixed_point())
+            .map_err(internal_error)?;
+        let order = o.to_order_with_price(decimal_corrected_price);
+        self.check_external_order_size(&order).await?;
+        Ok(order)
+    }
+
+    /// Check the USDC denominated value of an external order and assert that it
+    /// is greater than the configured minimum size
+    async fn check_external_order_size(&self, o: &Order) -> Result<(), ApiServerError> {
+        let usdc_value =
+            get_usdc_denominated_value(&o.base_mint, o.amount, &self.price_queue).await?;
+
+        // If we cannot fetch a price, do not block the order
+        let min_size = self.min_order_size;
+        if let Some(usdc_value) = usdc_value {
+            if usdc_value < min_size {
+                let msg = format!("order value too small, ${usdc_value} < ${min_size}");
+                return Err(bad_request(msg));
+            }
+        }
+
+        Ok(())
+    }
+
+    // --- Handshake Manager Interactions --- //
+
+    /// Request a quote from the external matching engine
+    async fn request_external_quote(
+        &self,
+        external_order: ExternalOrder,
+    ) -> Result<ExternalMatchResult, ApiServerError> {
+        let resp = self.request_handshake_manager(external_order, true /* quote_only */).await?;
+        match resp {
+            SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
+            SystemBusMessage::ExternalOrderQuote { quote } => Ok(quote),
+            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        }
+    }
+
+    /// Request an external match for a given order
+    async fn request_match_bundle(
+        &self,
+        external_order: ExternalOrder,
+    ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        let resp =
+            self.request_handshake_manager(external_order.clone(), false /* quote_only */).await?;
+        match resp {
+            SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
+            SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
+                self.build_api_bundle(false, &external_order, match_bundle, validity_proofs).await
+            },
+            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        }
+    }
+
+    /// Request a quote from the external matching engine
+    ///
+    /// Returns the bus message that was sent by the handshake manager
+    async fn request_handshake_manager(
+        &self,
+        order: ExternalOrder,
+        quote_only: bool,
+    ) -> Result<SystemBusMessage, ApiServerError> {
+        let order = self.external_order_to_internal_order(order).await?;
+        self.check_external_order_size(&order).await?;
+
+        let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, quote_only);
+        self.handshake_queue
+            .send(job)
+            .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
+
+        self.await_bus_message(response_topic).await
     }
 
     /// Build an API bundle from an atomic match bundle and internal party
@@ -360,6 +303,79 @@ impl RequestExternalMatchHandler {
     }
 }
 
+// ------------------
+// | Route Handlers |
+// ------------------
+
+/// The handler for the `GET /external-match/quote` route
+pub struct RequestExternalQuoteHandler {
+    /// The admin key, used to sign quotes
+    admin_key: HmacKey,
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+    /// A handle on the relayer state
+    state: State,
+}
+
+impl RequestExternalQuoteHandler {
+    /// Create a new handler
+    pub fn new(admin_key: HmacKey, processor: ExternalMatchProcessor, state: State) -> Self {
+        Self { admin_key, processor, state }
+    }
+
+    /// Sign an external quote
+    fn sign_external_quote(
+        &self,
+        quote: ExternalMatchResult,
+    ) -> Result<SignedExternalQuote, ApiServerError> {
+        let quote = ApiExternalQuote::from(quote);
+        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
+        let signature = self.admin_key.compute_mac(&quote_bytes);
+        let signature_hex = bytes_to_hex_string(&signature);
+
+        Ok(SignedExternalQuote { quote, signature: signature_hex })
+    }
+}
+
+#[async_trait]
+impl TypedHandler for RequestExternalQuoteHandler {
+    type Request = ExternalQuoteRequest;
+    type Response = ExternalQuoteResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Check that atomic matches are enabled
+        let enabled = self.state.get_atomic_matches_enabled().await?;
+        if !enabled {
+            return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
+        }
+
+        let match_res = self.processor.request_external_quote(req.external_order).await?;
+        let signed_quote = self.sign_external_quote(match_res)?;
+        Ok(ExternalQuoteResponse { signed_quote })
+    }
+}
+
+/// The handler for the `POST /external-match/request` route
+pub struct RequestExternalMatchHandler {
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+    /// A handle on the relayer state
+    state: State,
+}
+
+impl RequestExternalMatchHandler {
+    /// Create a new handler
+    pub fn new(processor: ExternalMatchProcessor, state: State) -> Self {
+        Self { processor, state }
+    }
+}
+
 #[async_trait]
 impl TypedHandler for RequestExternalMatchHandler {
     type Request = ExternalMatchRequest;
@@ -379,20 +395,7 @@ impl TypedHandler for RequestExternalMatchHandler {
         }
 
         // Check that the external order is large enough
-        let price_queue = &self.price_queue;
-        let external_order = &req.external_order;
-        let order = external_order_to_internal_order(external_order.clone(), price_queue).await?;
-        check_external_order_size(&order, self.min_order_size, price_queue).await?;
-
-        let (job, response_topic) = HandshakeManagerJob::get_external_match_bundle(order);
-        self.handshake_queue
-            .send(job)
-            .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
-
-        let match_bundle = self
-            .await_external_match_response(response_topic, req.do_gas_estimation, external_order)
-            .await?
-            .ok_or_else(|| no_content(NO_ATOMIC_MATCH_FOUND))?;
+        let match_bundle = self.processor.request_match_bundle(req.external_order).await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
