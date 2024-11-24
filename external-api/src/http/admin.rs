@@ -39,6 +39,8 @@ pub const ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE: &str =
     "/v0/admin/wallet/:wallet_id/order-in-pool";
 /// Route to assign an order to a matching pool
 pub const ADMIN_ASSIGN_ORDER_ROUTE: &str = "/v0/admin/orders/:order_id/assign-pool/:matching_pool";
+/// Route to refresh the token mapping
+pub const ADMIN_REFRESH_TOKEN_MAPPING_ROUTE: &str = "/v0/admin/refresh-token-mapping";
 
 /// The response to an "is leader" request
 #[derive(Clone, Debug, Serialize, Deserialize)]

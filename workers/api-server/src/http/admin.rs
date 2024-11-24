@@ -4,6 +4,7 @@
 // | Admin Route Handlers |
 // ------------------------
 
+use arbitrum_client::constants::Chain;
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
@@ -12,6 +13,7 @@ use common::types::{
     wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
     Price,
 };
+use config::setup_token_remaps;
 use external_api::{
     http::{
         admin::{
@@ -30,6 +32,7 @@ use job_types::{
     price_reporter::PriceReporterQueue,
 };
 use state::State;
+use tracing::info;
 use util::matching_engine::compute_max_amount;
 
 use crate::{
@@ -511,6 +514,37 @@ impl TypedHandler for AdminGetOrderMatchingPoolHandler {
         let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
 
         Ok(AdminGetOrderMatchingPoolResponse { matching_pool })
+    }
+}
+
+/// Handler for the POST /v0/admin/refresh-token-mapping route
+pub struct AdminRefreshTokenMappingHandler {
+    /// The chain to fetch a token mapping for
+    chain: Chain,
+}
+
+impl AdminRefreshTokenMappingHandler {
+    /// Constructor
+    pub fn new(chain: Chain) -> Self {
+        Self { chain }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminRefreshTokenMappingHandler {
+    type Request = EmptyRequestResponse;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        info!("Refreshing token mapping from repo");
+        setup_token_remaps(None /* remap_file */, self.chain).map_err(internal_error)?;
+        Ok(EmptyRequestResponse {})
     }
 }
 

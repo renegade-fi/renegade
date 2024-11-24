@@ -30,6 +30,7 @@ tokio = { workspace = true }
 arbitrum-client = { path = "../../arbitrum-client" }
 circuit-types = { path = "../../circuit-types" }
 renegade-compliance-api = { git = "https://github.com/renegade-fi/relayer-extensions", package = "compliance-api" }
+config = { path = "../../config" }
 common = { path = "../../common" }
 constants = { path = "../../constants" }
 renegade-crypto = { path = "../../renegade-crypto" }
