@@ -1,6 +1,6 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
-use arbitrum_client::client::ArbitrumClient;
+use arbitrum_client::{client::ArbitrumClient, constants::Chain};
 use async_trait::async_trait;
 use common::{
     types::{wallet::keychain::HmacKey, CancelChannel},
@@ -56,6 +56,8 @@ pub struct ApiServerConfig {
     pub min_transfer_amount: f64,
     /// The minimum usdc denominated order size
     pub min_order_size: f64,
+    /// The chain that the relayer is running on
+    pub chain: Chain,
     /// The URL of the compliance service to use for wallet screening
     ///
     /// Compliance screening is disabled if this is not set

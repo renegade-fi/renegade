@@ -260,6 +260,7 @@ dependencies = [
  "circuit-types 0.1.0",
  "common 0.1.0",
  "compliance-api",
+ "config",
  "constants 0.1.0",
  "crossbeam",
  "ecdsa 0.16.9",

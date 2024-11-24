@@ -322,6 +322,7 @@ async fn main() -> Result<(), CoordinatorError> {
         admin_api_key: args.admin_api_key,
         min_transfer_amount: args.min_transfer_amount,
         min_order_size,
+        chain: args.chain_id,
         compliance_service_url: args.compliance_service_url,
         wallet_task_rate_limit: args.wallet_task_rate_limit,
         arbitrum_client: arbitrum_client.clone(),
