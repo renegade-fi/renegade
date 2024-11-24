@@ -5,10 +5,9 @@
 use std::collections::HashMap;
 
 use arbitrum_client::constants::Chain;
-use bimap::BiMap;
 use common::types::{
     exchange::Exchange,
-    token::{ADDR_DECIMALS_MAP, EXCHANGE_SUPPORT_MAP, TOKEN_REMAPS, USD_TICKER},
+    token::{write_exchange_support, write_token_decimals_map, write_token_remap, USD_TICKER},
 };
 use serde::{Deserialize, Serialize};
 use util::raw_err_str;
@@ -49,24 +48,60 @@ struct TokenInfo {
 }
 
 impl TokenRemap {
-    /// Convert the token mapping into a map of token addresses to ticker
-    pub fn to_remap(&self) -> BiMap<String, String> {
-        self.tokens.iter().map(|info| (info.address.clone(), info.ticker.clone())).collect()
+    /// Set the static mapping of token addresses to tickers using the token
+    /// mapping
+    pub fn set_token_remap(&self) {
+        let mut token_remap = write_token_remap();
+
+        // Clear the existing static token remapping so that it can be completely
+        // overwritten
+        token_remap.clear();
+
+        for info in &self.tokens {
+            token_remap.insert(info.address.clone(), info.ticker.clone());
+        }
+
+        // Insert a dummy token w/ the "USD" ticker so that we can fetch USD-quoted
+        // prices from exchanges that support this.
+        token_remap.insert(ZERO_ADDRESS.to_string(), USD_TICKER.to_string());
     }
 
-    /// Convert the token mapping into a map of token addresses to decimals
-    pub fn to_decimal_map(&self) -> HashMap<String, u8> {
-        self.tokens.iter().map(|info| (info.address.clone(), info.decimals)).collect()
+    /// Set the static mapping of token addresses to decimals using the token
+    /// mapping
+    pub fn set_decimal_map(&self) {
+        let mut decimals_map = write_token_decimals_map();
+
+        // Clear the existing decimal mapping so that it can be completely overwritten
+        decimals_map.clear();
+
+        for info in &self.tokens {
+            decimals_map.insert(info.address.clone(), info.decimals);
+        }
     }
 
-    /// Convert the token mapping into a map of token tickers to the set of
+    /// Set the static exchange support mapping using the token mapping,
+    /// The exchange support mapping maps token tickers to the set of
     /// exchanges that list the token, along with the ticker that we should use
     /// to fetch the token's price from the exchange
-    pub fn to_exchange_support_map(&self) -> HashMap<String, HashMap<Exchange, String>> {
-        self.tokens
-            .iter()
-            .map(|info| (info.ticker.clone(), info.supported_exchanges.clone()))
-            .collect()
+    pub fn set_exchange_support_map(&self) {
+        let mut exchange_support_map = write_exchange_support();
+
+        // Clear the existing exchange support map so that it can be completely
+        // overwritten
+        exchange_support_map.clear();
+
+        for info in &self.tokens {
+            exchange_support_map.insert(info.ticker.clone(), info.supported_exchanges.clone());
+        }
+
+        // Insert exchange support for the dummy USD token
+        let usd_ticker = USD_TICKER.to_string();
+        exchange_support_map.insert(
+            usd_ticker.clone(),
+            [(Exchange::Coinbase, usd_ticker.clone()), (Exchange::Kraken, usd_ticker)]
+                .into_iter()
+                .collect(),
+        );
     }
 }
 
@@ -81,36 +116,17 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     }?;
     lowercase_addresses(&mut map);
 
-    let usd_ticker = USD_TICKER.to_string();
-
     // Update the static token remap with the given one
-    let mut remap = map.to_remap();
-    // Insert a dummy token w/ the "USD" ticker so that we can fetch USD-quoted
-    // prices from exchanges that support this.
-    remap.insert(ZERO_ADDRESS.to_string(), usd_ticker.clone());
-
-    TOKEN_REMAPS.set(remap).map_err(raw_err_str!("Failed to set token remap: {:?}"))?;
+    map.set_token_remap();
 
     // Update the static decimals map with the decimals in the token remap
-    let decimals_map = map.to_decimal_map();
-    ADDR_DECIMALS_MAP
-        .set(decimals_map)
-        .map_err(raw_err_str!("Failed to set token decimals map: {:?}"))?;
+    map.set_decimal_map();
 
-    // Set up exchange support map, be sure to add coinbase/kraken support for dummy
-    // USD token
-    let mut exchange_support_map = map.to_exchange_support_map();
-    // Insert exchange support for the dummy USD token
-    exchange_support_map.insert(
-        usd_ticker.clone(),
-        [(Exchange::Coinbase, usd_ticker.clone()), (Exchange::Kraken, usd_ticker)]
-            .into_iter()
-            .collect(),
-    );
+    // Update the static exchange support map with the supported exchanges
+    // in the token remap
+    map.set_exchange_support_map();
 
-    EXCHANGE_SUPPORT_MAP
-        .set(exchange_support_map)
-        .map_err(raw_err_str!("Failed to set exchange support map: {:?}"))
+    Ok(())
 }
 
 /// Lowercase all addresses in the remap
@@ -142,7 +158,7 @@ mod test {
     use std::{collections::HashMap, fs::File};
 
     use arbitrum_client::constants::Chain;
-    use common::types::token::TOKEN_REMAPS;
+    use common::types::token::read_token_remap;
     use tempfile::{tempdir, TempDir};
 
     use crate::token_remaps::parse_remap_from_file;
@@ -205,15 +221,14 @@ mod test {
 
         // Check the remap
         let token = &remap.tokens[0];
-        assert_eq!(TOKEN_REMAPS.get().unwrap().get_by_left(&token.address), Some(&token.ticker));
+        let token_remap = read_token_remap();
+        assert_eq!(token_remap.get_by_left(&token.address), Some(&token.ticker));
 
         // Check the remap in a separate thread
         let handle = std::thread::spawn(move || {
             let token = &remap.tokens[0];
-            assert_eq!(
-                TOKEN_REMAPS.get().unwrap().get_by_left(&token.address),
-                Some(&token.ticker)
-            );
+            let token_remap = read_token_remap();
+            assert_eq!(token_remap.get_by_left(&token.address), Some(&token.ticker));
         });
         handle.join().unwrap();
     }

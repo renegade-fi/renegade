@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
-    sync::OnceLock,
+    sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use util::hex::biguint_to_hex_addr;
 
@@ -35,7 +35,11 @@ use super::exchange::Exchange;
 /// given token.
 /// The type is a mapping from exchanges to the ticker used to fetch the
 /// token's price from that exchange
-type ExchangeSupport = HashMap<Exchange, String>;
+pub type ExchangeSupport = HashMap<Exchange, String>;
+
+/// A type alias representing an `RwLock` wrapped in a `LazyLock`,
+/// allowing for it to be used as a primitive for mutable static variables
+type RwStatic<T> = LazyLock<RwLock<T>>;
 
 // ----------------
 // | Quote Tokens |
@@ -58,15 +62,18 @@ pub const STABLECOIN_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
 
 /// The token remapping for the given environment, maps from the token address
 /// to the ticker of the token
-pub static TOKEN_REMAPS: OnceLock<BiMap<String, String>> = OnceLock::new();
+pub static TOKEN_REMAPS: RwStatic<BiMap<String, String>> =
+    RwStatic::new(|| RwLock::new(BiMap::new()));
 
 /// The decimal mapping for the given environment, maps from the token address
 /// to the number of decimals the token uses (fixed-point offset)
-pub static ADDR_DECIMALS_MAP: OnceLock<HashMap<String, u8>> = OnceLock::new();
+pub static ADDR_DECIMALS_MAP: RwStatic<HashMap<String, u8>> =
+    RwStatic::new(|| RwLock::new(HashMap::new()));
 
 /// The mapping from ERC-20 ticker to the set of exchanges that list the token,
 /// along with the the ticker used to fetch the token's price from the exchange
-pub static EXCHANGE_SUPPORT_MAP: OnceLock<HashMap<String, ExchangeSupport>> = OnceLock::new();
+pub static EXCHANGE_SUPPORT_MAP: RwStatic<HashMap<String, ExchangeSupport>> =
+    RwStatic::new(|| RwLock::new(HashMap::new()));
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20
 /// asset.
@@ -96,9 +103,8 @@ impl Token {
 
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
-        let addr = TOKEN_REMAPS
-            .get()
-            .unwrap()
+        let token_remap = read_token_remap();
+        let addr = token_remap
             .get_by_right(ticker)
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
 
@@ -113,13 +119,15 @@ impl Token {
     /// Returns the ERC-20 ticker, if available. Note that it is OK if certain
     /// Tickers do not have any ERC-20 ticker, as we support long-tail
     /// assets.
-    pub fn get_ticker(&self) -> Option<&str> {
-        TOKEN_REMAPS.get().unwrap().get_by_left(&self.get_addr()).map(|x| x.as_str())
+    pub fn get_ticker(&self) -> Option<String> {
+        let token_remap = read_token_remap();
+        token_remap.get_by_left(&self.get_addr()).cloned()
     }
 
     /// Returns the ERC-20 `decimals` field, if available.
     pub fn get_decimals(&self) -> Option<u8> {
-        ADDR_DECIMALS_MAP.get().unwrap().get(&self.get_addr()).copied()
+        let addr_decimals_map = read_token_decimals_map();
+        addr_decimals_map.get(&self.get_addr()).copied()
     }
 
     /// Returns true if the Token has a Renegade-native ticker.
@@ -129,7 +137,7 @@ impl Token {
 
     /// Returns true if the Token is a stablecoin.
     pub fn is_stablecoin(&self) -> bool {
-        self.get_ticker().map_or(false, |ticker| STABLECOIN_TICKERS.contains(&ticker))
+        self.get_ticker().map_or(false, |ticker| STABLECOIN_TICKERS.contains(&ticker.as_str()))
     }
 
     /// Returns the set of Exchanges that support this token.
@@ -140,8 +148,8 @@ impl Token {
         }
 
         let ticker = self.get_ticker().unwrap();
-        let mut supported_exchanges: HashSet<Exchange> = get_exchange_support()
-            .get(ticker)
+        let mut supported_exchanges: HashSet<Exchange> = read_exchange_support()
+            .get(&ticker)
             .map(|exchanges| exchanges.keys().copied().collect())
             .unwrap_or_default();
         supported_exchanges.insert(Exchange::UniswapV3);
@@ -160,8 +168,8 @@ impl Token {
         }
 
         let ticker = self.get_ticker().unwrap();
-        get_exchange_support()
-            .get(ticker)
+        read_exchange_support()
+            .get(&ticker)
             .and_then(|supported_exchanges| supported_exchanges.get(&exchange).cloned())
     }
 
@@ -180,10 +188,34 @@ impl Token {
 // | HELPERS |
 // -----------
 
-/// Returns a reference to the exchange support map,
-/// unwrapping the `OnceLock`.
-pub fn get_exchange_support<'a>() -> &'a HashMap<String, ExchangeSupport> {
-    EXCHANGE_SUPPORT_MAP.get().unwrap()
+/// Returns a read lock quard to the token remap
+pub fn read_token_remap<'a>() -> RwLockReadGuard<'a, BiMap<String, String>> {
+    TOKEN_REMAPS.read().expect("Token remap lock poisoned")
+}
+
+/// Returns a read lock quard to the decimal map
+pub fn read_token_decimals_map<'a>() -> RwLockReadGuard<'a, HashMap<String, u8>> {
+    ADDR_DECIMALS_MAP.read().expect("Decimal map lock poisoned")
+}
+
+/// Returns a read lock quard to the exchange support map
+pub fn read_exchange_support<'a>() -> RwLockReadGuard<'a, HashMap<String, ExchangeSupport>> {
+    EXCHANGE_SUPPORT_MAP.read().expect("Exchange support map lock poisoned")
+}
+
+/// Returns a write lock quard to the token remap
+pub fn write_token_remap<'a>() -> RwLockWriteGuard<'a, BiMap<String, String>> {
+    TOKEN_REMAPS.write().expect("Token remap lock poisoned")
+}
+
+/// Returns a write lock quard to the decimal map
+pub fn write_token_decimals_map<'a>() -> RwLockWriteGuard<'a, HashMap<String, u8>> {
+    ADDR_DECIMALS_MAP.write().expect("Decimal map lock poisoned")
+}
+
+/// Returns a write lock quard to the exchange support map
+pub fn write_exchange_support<'a>() -> RwLockWriteGuard<'a, HashMap<String, ExchangeSupport>> {
+    EXCHANGE_SUPPORT_MAP.write().expect("Exchange support map lock poisoned")
 }
 
 /// Returns true if the given pair of Tokens is named, indicating that

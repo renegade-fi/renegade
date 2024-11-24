@@ -2,9 +2,8 @@
 
 use std::thread;
 
-use bimap::BiMap;
 use common::types::exchange::{PriceReport, PriceReporterState};
-use common::types::token::{Token, TOKEN_REMAPS, USDC_TICKER, USDT_TICKER, USD_TICKER};
+use common::types::token::{write_token_remap, Token, USDC_TICKER, USDT_TICKER, USD_TICKER};
 use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
@@ -42,15 +41,12 @@ const MOCK_TICKER_NAMES: &[&str] = &[
 #[allow(unused_must_use)]
 pub fn setup_mock_token_remap() {
     // Setup the mock token map
-    let mut token_map = BiMap::new();
+    let mut token_map = write_token_remap();
     for (i, &ticker) in MOCK_TICKER_NAMES.iter().enumerate() {
         let addr = format!("{i:x}");
 
         token_map.insert(addr, ticker.to_string());
     }
-
-    // Do not unwrap in case another test set the remap
-    TOKEN_REMAPS.set(token_map);
 }
 
 /// The mock price reporter, reports a constant price

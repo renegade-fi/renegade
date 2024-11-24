@@ -26,7 +26,7 @@ use crate::{global_metrics::IN_FLIGHT_TASKS, labels::NUM_COMPLETED_TASKS_METRIC}
 /// lossy f64 conversion via the associated number of decimals
 fn get_asset_and_volume(mint: &BigUint, amount: u128) -> (String, f64) {
     let token = Token::from_addr_biguint(mint);
-    let asset = token.get_ticker().unwrap_or(&biguint_to_hex_addr(mint)).to_string();
+    let asset = token.get_ticker().unwrap_or(biguint_to_hex_addr(mint));
     let volume = token.convert_to_decimal(amount);
 
     (asset, volume)
