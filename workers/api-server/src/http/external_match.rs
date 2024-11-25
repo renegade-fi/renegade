@@ -12,13 +12,14 @@ use std::{sync::Arc, time::Duration};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::r#match::ExternalMatchResult;
+use circuit_types::r#match::{ExternalMatchResult, FeeTake};
 use common::types::{
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
     token::Token,
     wallet::{keychain::HmacKey, Order},
+    TimestampedPrice,
 };
-use constants::{NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
+use constants::{Scalar, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use ethers::{
     middleware::Middleware,
     types::{transaction::eip2718::TypedTransaction, U256},
@@ -26,8 +27,9 @@ use ethers::{
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
-        ApiExternalQuote, AtomicMatchApiBundle, ExternalMatchRequest, ExternalMatchResponse,
-        ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, SignedExternalQuote,
+        ApiExternalQuote, AssembleExternalMatchRequest, AtomicMatchApiBundle, ExternalMatchRequest,
+        ExternalMatchResponse, ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse,
+        SignedExternalQuote,
     },
 };
 use hyper::HeaderMap;
@@ -37,10 +39,15 @@ use job_types::{
 };
 use num_bigint::BigUint;
 use num_traits::Zero;
+use renegade_crypto::fields::scalar_to_u128;
 use state::State;
 use system_bus::SystemBus;
 use tracing::warn;
-use util::hex::{biguint_from_hex_string, bytes_to_hex_string};
+use util::{
+    arbitrum::get_protocol_fee,
+    get_current_time_millis,
+    hex::{biguint_from_hex_string, bytes_from_hex_string, bytes_to_hex_string},
+};
 
 use crate::{
     error::{bad_request, internal_error, no_content, ApiServerError},
@@ -53,6 +60,8 @@ use super::wallet::get_usdc_denominated_value;
 const DEFAULT_GAS_ESTIMATION: u64 = 4_000_000; // 4m
 /// The timeout waiting for an external match to be generated
 const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// The maximum age of a quote before it is considered expired
+const MAX_QUOTE_AGE: u64 = 10_000; // 10 seconds
 
 // ------------------
 // | Error Messages |
@@ -72,6 +81,10 @@ const ERR_EXTERNAL_ORDER_ZERO_SIZE: &str = "external order has zero size";
 /// The error message emitted when an external order specifies both the quote
 /// and base size
 const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote and base size";
+/// The error message emitted when a quote is expired
+const ERR_QUOTE_EXPIRED: &str = "quote expired";
+/// The error message emitted when a quote signature is invalid
+const ERR_INVALID_QUOTE_SIGNATURE: &str = "invalid quote signature";
 
 // -----------
 // | Helpers |
@@ -220,10 +233,42 @@ impl ExternalMatchProcessor {
         &self,
         external_order: ExternalOrder,
     ) -> Result<ExternalMatchResult, ApiServerError> {
-        let resp = self.request_handshake_manager(external_order, true /* quote_only */).await?;
+        let resp = self
+            .request_handshake_manager(
+                external_order,
+                true, // quote_only
+                None, // price
+            )
+            .await?;
+
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
             SystemBusMessage::ExternalOrderQuote { quote } => Ok(quote),
+            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        }
+    }
+
+    /// Assemble an external match quote into a settlement bundle
+    async fn assemble_external_match(
+        &self,
+        gas_estimation: bool,
+        signed_quote: SignedExternalQuote,
+    ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        let price = TimestampedPrice::from(signed_quote.quote.price);
+        let order = signed_quote.quote.order;
+        let resp = self
+            .request_handshake_manager(
+                order.clone(),
+                false, // quote_only
+                Some(price),
+            )
+            .await?;
+
+        match resp {
+            SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
+            SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
+                self.build_api_bundle(gas_estimation, &order, match_bundle, validity_proofs).await
+            },
             _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
         }
     }
@@ -234,8 +279,14 @@ impl ExternalMatchProcessor {
         gas_estimation: bool,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let resp =
-            self.request_handshake_manager(external_order.clone(), false /* quote_only */).await?;
+        let resp = self
+            .request_handshake_manager(
+                external_order.clone(),
+                false, // quote_only
+                None,  // price
+            )
+            .await?;
+
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
             SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
@@ -258,11 +309,13 @@ impl ExternalMatchProcessor {
         &self,
         order: ExternalOrder,
         quote_only: bool,
+        price: Option<TimestampedPrice>,
     ) -> Result<SystemBusMessage, ApiServerError> {
         let order = self.external_order_to_internal_order(order).await?;
         self.check_external_order_size(&order).await?;
 
-        let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, quote_only);
+        let (job, response_topic) =
+            HandshakeManagerJob::new_external_match_job(order, quote_only, price);
         self.handshake_queue
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;
@@ -332,14 +385,27 @@ impl RequestExternalQuoteHandler {
     /// Sign an external quote
     fn sign_external_quote(
         &self,
-        quote: ExternalMatchResult,
+        order: ExternalOrder,
+        match_res: &ExternalMatchResult,
     ) -> Result<SignedExternalQuote, ApiServerError> {
-        let quote = ApiExternalQuote::from(quote);
+        // Estimate the fees for the match
+        let fees = self.estimate_fee_take(match_res);
+        let quote = ApiExternalQuote::new(order, match_res, fees);
         let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
         let signature = self.admin_key.compute_mac(&quote_bytes);
         let signature_hex = bytes_to_hex_string(&signature);
 
         Ok(SignedExternalQuote { quote, signature: signature_hex })
+    }
+
+    /// Estimate the fee take for a given match
+    fn estimate_fee_take(&self, match_res: &ExternalMatchResult) -> FeeTake {
+        let protocol_fee = get_protocol_fee();
+        let (_, receive_amount) = match_res.external_party_receive();
+        let receive_amount_scalar = Scalar::from(receive_amount);
+        let protocol_fee = (protocol_fee * receive_amount_scalar).floor();
+
+        FeeTake { relayer_fee: 0, protocol_fee: scalar_to_u128(&protocol_fee) }
     }
 }
 
@@ -361,9 +427,73 @@ impl TypedHandler for RequestExternalQuoteHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
-        let match_res = self.processor.request_external_quote(req.external_order).await?;
-        let signed_quote = self.sign_external_quote(match_res)?;
+        let order = req.external_order;
+        let match_res = self.processor.request_external_quote(order.clone()).await?;
+        let signed_quote = self.sign_external_quote(order, &match_res)?;
         Ok(ExternalQuoteResponse { signed_quote })
+    }
+}
+
+/// The handler for the `POST /external-match/assemble` route
+pub struct AssembleExternalMatchHandler {
+    /// The admin key, used to verify signatures
+    admin_key: HmacKey,
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+    /// A handle on the relayer state
+    state: State,
+}
+
+impl AssembleExternalMatchHandler {
+    /// Create a new handler
+    pub fn new(admin_key: HmacKey, processor: ExternalMatchProcessor, state: State) -> Self {
+        Self { admin_key, processor, state }
+    }
+
+    /// Validate a quote
+    fn validate_quote(&self, signed_quote: &SignedExternalQuote) -> Result<(), ApiServerError> {
+        // Check that quote has not expired
+        let current_time = get_current_time_millis();
+        let quote = &signed_quote.quote;
+        let quote_age = current_time.saturating_sub(quote.timestamp);
+        if quote_age > MAX_QUOTE_AGE {
+            return Err(bad_request(ERR_QUOTE_EXPIRED));
+        }
+
+        // Check the quote signature
+        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
+        let mac_bytes = bytes_from_hex_string(&signed_quote.signature).map_err(internal_error)?;
+        if !self.admin_key.verify_mac(&quote_bytes, &mac_bytes) {
+            return Err(bad_request(ERR_INVALID_QUOTE_SIGNATURE));
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AssembleExternalMatchHandler {
+    type Request = AssembleExternalMatchRequest;
+    type Response = ExternalMatchResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Check that atomic matches are enabled
+        let enabled = self.state.get_atomic_matches_enabled().await?;
+        if !enabled {
+            return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
+        }
+
+        // Validate the quote then execute it
+        self.validate_quote(&req.signed_quote)?;
+        let match_bundle =
+            self.processor.assemble_external_match(req.do_gas_estimation, req.signed_quote).await?;
+        Ok(ExternalMatchResponse { match_bundle })
     }
 }
 

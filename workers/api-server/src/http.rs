@@ -29,7 +29,10 @@ use external_api::{
             ADMIN_REFRESH_TOKEN_MAPPING_ROUTE, ADMIN_TRIGGER_SNAPSHOT_ROUTE,
             ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
         },
-        external_match::{REQUEST_EXTERNAL_MATCH_ROUTE, REQUEST_EXTERNAL_QUOTE_ROUTE},
+        external_match::{
+            ASSEMBLE_EXTERNAL_MATCH_ROUTE, REQUEST_EXTERNAL_MATCH_ROUTE,
+            REQUEST_EXTERNAL_QUOTE_ROUTE,
+        },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
@@ -47,7 +50,8 @@ use external_api::{
     EmptyRequestResponse,
 };
 use external_match::{
-    ExternalMatchProcessor, RequestExternalMatchHandler, RequestExternalQuoteHandler,
+    AssembleExternalMatchHandler, ExternalMatchProcessor, RequestExternalMatchHandler,
+    RequestExternalQuoteHandler,
 };
 use hyper::{
     server::conn::AddrStream,
@@ -418,6 +422,13 @@ impl HttpServer {
             &Method::POST,
             REQUEST_EXTERNAL_QUOTE_ROUTE.to_string(),
             RequestExternalQuoteHandler::new(admin_key, processor.clone(), state.clone()),
+        );
+
+        // The "/external-match/assemble" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ASSEMBLE_EXTERNAL_MATCH_ROUTE.to_string(),
+            AssembleExternalMatchHandler::new(admin_key, processor.clone(), state.clone()),
         );
 
         // The "/external-match/request" route

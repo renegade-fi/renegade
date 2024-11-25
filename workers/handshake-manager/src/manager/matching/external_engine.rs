@@ -41,9 +41,21 @@ impl HandshakeExecutor {
         order: Order,
         response_topic: String,
         only_quote: bool,
+        price: Option<TimestampedPrice>,
     ) -> Result<(), HandshakeManagerError> {
+        // Sample an execution price if one is not provided
+        let ts_price = match price {
+            Some(price) => price,
+            None => {
+                let base = Token::from_addr_biguint(&order.base_mint);
+                let quote = Token::from_addr_biguint(&order.quote_mint);
+                self.get_execution_price(&base, &quote).await?
+            },
+        };
+
+        // Run the matching engine
         match self
-            .run_external_matching_engine_inner(order, response_topic.clone(), only_quote)
+            .run_external_matching_engine_inner(order, response_topic.clone(), only_quote, ts_price)
             .await
         {
             Ok(()) => Ok(()),
@@ -60,6 +72,7 @@ impl HandshakeExecutor {
         order: Order,
         response_topic: String,
         only_quote: bool,
+        ts_price: TimestampedPrice,
     ) -> Result<(), HandshakeManagerError> {
         let base = Token::from_addr_biguint(&order.base_mint);
         let quote = Token::from_addr_biguint(&order.quote_mint);
@@ -73,7 +86,6 @@ impl HandshakeExecutor {
 
         // Get all orders that consent to external matching
         let mut matchable_orders = self.get_external_match_candidates().await?;
-        let ts_price = self.get_execution_price(&base, &quote).await?;
         let price = ts_price.as_fixed_point();
 
         // Mock a balance for the external order, assuming it's fully capitalized
