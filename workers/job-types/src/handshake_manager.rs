@@ -5,6 +5,7 @@ use circuit_types::wallet::Nullifier;
 use common::types::{
     gossip::WrappedPeerId,
     wallet::{Order, OrderIdentifier},
+    TimestampedPrice,
 };
 use constants::SystemCurveGroup;
 use external_api::bus_message::gen_atomic_match_response_topic;
@@ -62,6 +63,12 @@ pub enum HandshakeManagerJob {
         /// Whether or not to only generate a quote, without proving validity
         /// for the order's match
         only_quote: bool,
+        /// The price to use for the external match. If `None`, the price will
+        /// be sampled by the engine
+        ///
+        /// This is used to fulfill a previously committed-to quote at the
+        /// api-layer
+        price: Option<TimestampedPrice>,
     },
     /// Process a handshake request
     ProcessHandshakeMessage {
@@ -128,22 +135,35 @@ pub enum HandshakeManagerJob {
 impl HandshakeManagerJob {
     /// Get a quote for an external order
     pub fn get_external_quote(order: Order) -> (Self, String) {
-        Self::new_external_match_job(order, true /* quote_only */)
+        Self::new_external_match_job(order, true /* quote_only */, None /* price */)
+    }
+
+    /// Get an external match bundle with a previously committed-to price
+    pub fn get_external_match_bundle_with_price(
+        order: Order,
+        price: TimestampedPrice,
+    ) -> (Self, String) {
+        Self::new_external_match_job(order, false /* quote_only */, Some(price))
     }
 
     /// Run the external matching engine and create a bundle
     pub fn get_external_match_bundle(order: Order) -> (Self, String) {
-        Self::new_external_match_job(order, false /* quote_only */)
+        Self::new_external_match_job(order, false /* quote_only */, None /* price */)
     }
 
     /// Create a new external matching job
-    pub fn new_external_match_job(order: Order, quote_only: bool) -> (Self, String) {
+    pub fn new_external_match_job(
+        order: Order,
+        quote_only: bool,
+        price: Option<TimestampedPrice>,
+    ) -> (Self, String) {
         let topic = gen_atomic_match_response_topic();
         (
             Self::ExternalMatchingEngine {
                 order,
                 response_topic: topic.clone(),
                 only_quote: quote_only,
+                price,
             },
             topic,
         )

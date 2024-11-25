@@ -10,11 +10,12 @@
 
 use circuit_types::{
     fixed_point::FixedPoint,
+    max_price,
     order::OrderSide,
     r#match::{ExternalMatchResult, FeeTake},
     Amount,
 };
-use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
+use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order, TimestampedPrice};
 use constants::NATIVE_ASSET_ADDRESS;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
@@ -33,6 +34,8 @@ use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 /// The route for requesting a quote on an external match
 pub const REQUEST_EXTERNAL_QUOTE_ROUTE: &str = "/v0/matching-engine/quote";
+/// The route to assemble an external match quote into a settlement bundle
+pub const ASSEMBLE_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/assemble-external-match";
 /// The route for requesting an atomic match
 pub const REQUEST_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/request-external-match";
 
@@ -67,6 +70,17 @@ pub struct ExternalQuoteRequest {
 /// The response type for a quote on an external order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalQuoteResponse {
+    /// The signed quote
+    pub signed_quote: SignedExternalQuote,
+}
+
+/// The request type for assembling an external match quote into a settlement
+/// bundle
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AssembleExternalMatchRequest {
+    /// Whether or not to include gas estimation in the response
+    #[serde(default)]
+    pub do_gas_estimation: bool,
     /// The signed quote
     pub signed_quote: SignedExternalQuote,
 }
@@ -117,13 +131,18 @@ impl ExternalOrder {
     /// denominated order
     pub fn to_order_with_price(&self, price: FixedPoint) -> Order {
         let base_amount = self.get_base_amount(price);
+        let worst_case_price = match self.side {
+            OrderSide::Buy => max_price(),
+            OrderSide::Sell => FixedPoint::from_integer(0),
+        };
+
         Order {
             quote_mint: self.quote_mint.clone(),
             base_mint: self.base_mint.clone(),
             side: self.side,
             amount: base_amount,
             min_fill_size: self.min_fill_size,
-            worst_case_price: price,
+            worst_case_price,
             allow_external_matches: true,
         }
     }
@@ -237,30 +256,54 @@ pub struct SignedExternalQuote {
     pub signature: String,
 }
 
+impl SignedExternalQuote {
+    /// Get the match result from the quote
+    pub fn match_result(&self) -> ApiExternalMatchResult {
+        self.quote.match_result.clone()
+    }
+
+    /// Get the fees from the quote
+    pub fn fees(&self) -> FeeTake {
+        self.quote.fees
+    }
+
+    /// Get the receive amount from the quote
+    pub fn receive_amount(&self) -> ApiExternalAssetTransfer {
+        self.quote.receive.clone()
+    }
+
+    /// Get the send amount from the quote
+    pub fn send_amount(&self) -> ApiExternalAssetTransfer {
+        self.quote.send.clone()
+    }
+}
+
 /// A quote for an external order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiExternalQuote {
-    /// The mint of the quote token in the matched asset pair
-    pub quote_mint: String,
-    /// The mint of the base token in the matched asset pair
-    pub base_mint: String,
-    /// The amount of the quote token exchanged by the match
-    pub quote_amount: Amount,
-    /// The amount of the base token exchanged by the match
-    pub base_amount: Amount,
-    /// The direction of the match
-    pub direction: OrderSide,
+    /// The external order
+    pub order: ExternalOrder,
+    /// The match result
+    pub match_result: ApiExternalMatchResult,
+    /// The estimated fees for the match
+    pub fees: FeeTake,
+    /// The amount sent by the external party
+    pub send: ApiExternalAssetTransfer,
+    /// The amount received by the external party, net of fees
+    pub receive: ApiExternalAssetTransfer,
     /// The price of the match
-    pub price: f64,
+    pub price: ApiTimestampedPrice,
     /// The timestamp of the quote
     pub timestamp: u64,
 }
 
-impl From<ExternalMatchResult> for ApiExternalQuote {
-    fn from(result: ExternalMatchResult) -> Self {
-        let quote_mint = biguint_to_hex_string(&result.quote_mint);
-        let base_mint = biguint_to_hex_string(&result.base_mint);
-        let direction = if result.direction { OrderSide::Buy } else { OrderSide::Sell };
+impl ApiExternalQuote {
+    /// Create a new quote from an external match result and order
+    pub fn new(order: ExternalOrder, result: &ExternalMatchResult, fees: FeeTake) -> Self {
+        // Compute the sent and received assets
+        let (send_mint, send_amount) = result.external_party_send();
+        let (receive_mint, mut receive_amount) = result.external_party_receive();
+        receive_amount -= fees.total();
 
         // Calculate implied price as quote_amount / base_amount
         let base_amt_f64 = result.base_amount as f64;
@@ -269,13 +312,43 @@ impl From<ExternalMatchResult> for ApiExternalQuote {
         let timestamp = get_current_time_millis();
 
         Self {
-            quote_mint,
-            base_mint,
-            quote_amount: result.quote_amount,
-            base_amount: result.base_amount,
-            direction,
-            price,
+            order,
+            match_result: result.clone().into(),
+            fees,
+            send: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_string(&send_mint),
+                amount: send_amount,
+            },
+            receive: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_string(&receive_mint),
+                amount: receive_amount,
+            },
+            price: TimestampedPrice::new(price).into(),
             timestamp,
         }
+    }
+}
+
+/// The price of a quote
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiTimestampedPrice {
+    /// The price, serialized as a string to prevent floating point precision
+    /// issues
+    pub price: String,
+    /// The timestamp, in milliseconds since the epoch
+    pub timestamp: u64,
+}
+
+impl From<TimestampedPrice> for ApiTimestampedPrice {
+    fn from(ts_price: TimestampedPrice) -> Self {
+        let price = ts_price.price.to_string();
+        Self { price, timestamp: ts_price.timestamp }
+    }
+}
+
+impl From<ApiTimestampedPrice> for TimestampedPrice {
+    fn from(api_price: ApiTimestampedPrice) -> Self {
+        let price = api_price.price.parse::<f64>().unwrap();
+        Self { price, timestamp: api_price.timestamp }
     }
 }
