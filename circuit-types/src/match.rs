@@ -133,7 +133,31 @@ pub struct ExternalMatchResult {
     ///   base
     /// - `false` implies that the internal party buys the base and sells the
     ///   quote
+    ///
+    /// In effect, this flag can be thought of as `external_party_buys_base`
     pub direction: bool,
+}
+
+impl ExternalMatchResult {
+    /// Get the receive mint and amount of the external party
+    pub fn external_party_receive(&self) -> (Address, Amount) {
+        // If direction is true, the external party buys the base
+        if self.direction {
+            (self.base_mint.clone(), self.base_amount)
+        } else {
+            (self.quote_mint.clone(), self.quote_amount)
+        }
+    }
+
+    /// Get the send mint and amount of the external party
+    pub fn external_party_send(&self) -> (Address, Amount) {
+        // If direction is true, the external party sells the quote
+        if self.direction {
+            (self.quote_mint.clone(), self.quote_amount)
+        } else {
+            (self.base_mint.clone(), self.base_amount)
+        }
+    }
 }
 
 impl From<MatchResult> for ExternalMatchResult {

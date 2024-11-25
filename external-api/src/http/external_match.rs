@@ -9,9 +9,12 @@
 //! for consenting liquidity on a given token pair.
 
 use circuit_types::{
-    fixed_point::FixedPoint, order::OrderSide, r#match::ExternalMatchResult, Amount,
+    fixed_point::FixedPoint,
+    order::OrderSide,
+    r#match::{ExternalMatchResult, FeeTake},
+    Amount,
 };
-use common::types::wallet::Order;
+use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
 use constants::NATIVE_ASSET_ADDRESS;
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
@@ -145,8 +148,52 @@ impl ExternalOrder {
 pub struct AtomicMatchApiBundle {
     /// The match result
     pub match_result: ApiExternalMatchResult,
+    /// The fees owed by the external party
+    pub fees: FeeTake,
+    /// The transfer received by the external party, net of fees
+    pub receive: ApiExternalAssetTransfer,
+    /// The transfer sent by the external party
+    pub send: ApiExternalAssetTransfer,
     /// The transaction which settles the match on-chain
     pub settlement_tx: TypedTransaction,
+}
+
+impl AtomicMatchApiBundle {
+    /// Create a new bundle from a `VALID MATCH SETTLE ATOMIC` bundle and a
+    /// settlement transaction
+    pub fn new(match_bundle: &AtomicMatchSettleBundle, settlement_tx: TypedTransaction) -> Self {
+        let statement = &match_bundle.atomic_match_proof.statement;
+        let match_result = statement.match_result.clone();
+        let fees = statement.external_party_fees;
+
+        // Compute the received and sent assets net of fees
+        let (received_mint, mut received_amount) = match_result.external_party_receive();
+        received_amount -= fees.total();
+        let (sent_mint, sent_amount) = match_result.external_party_send();
+
+        Self {
+            match_result: ApiExternalMatchResult::from(match_result),
+            fees,
+            receive: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_string(&received_mint),
+                amount: received_amount,
+            },
+            send: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_string(&sent_mint),
+                amount: sent_amount,
+            },
+            settlement_tx,
+        }
+    }
+}
+
+/// An asset transfer from an external party
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiExternalAssetTransfer {
+    /// The mint of the asset
+    pub mint: String,
+    /// The amount of the asset
+    pub amount: Amount,
 }
 
 /// An API server external match result
