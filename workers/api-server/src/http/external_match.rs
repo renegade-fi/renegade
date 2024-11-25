@@ -298,8 +298,7 @@ impl ExternalMatchProcessor {
             settlement_tx.set_gas(gas);
         }
 
-        let match_result = match_bundle.atomic_match_proof.statement.match_result.clone().into();
-        Ok(AtomicMatchApiBundle { match_result, settlement_tx })
+        Ok(AtomicMatchApiBundle::new(&match_bundle, settlement_tx))
     }
 }
 

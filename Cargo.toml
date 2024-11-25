@@ -40,7 +40,8 @@ lto = true
 debug = true
 
 [profile.release]
-opt-level = 3 # Full optimizations
+opt-level = 3     # Full optimizations
+codegen-units = 1
 lto = true
 
 [workspace.dependencies]
