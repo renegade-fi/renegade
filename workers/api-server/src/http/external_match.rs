@@ -231,6 +231,7 @@ impl ExternalMatchProcessor {
     /// Request an external match for a given order
     async fn request_match_bundle(
         &self,
+        gas_estimation: bool,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         let resp =
@@ -238,7 +239,13 @@ impl ExternalMatchProcessor {
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
             SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
-                self.build_api_bundle(false, &external_order, match_bundle, validity_proofs).await
+                self.build_api_bundle(
+                    gas_estimation,
+                    &external_order,
+                    match_bundle,
+                    validity_proofs,
+                )
+                .await
             },
             _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
         }
@@ -394,7 +401,8 @@ impl TypedHandler for RequestExternalMatchHandler {
         }
 
         // Check that the external order is large enough
-        let match_bundle = self.processor.request_match_bundle(req.external_order).await?;
+        let match_bundle =
+            self.processor.request_match_bundle(req.do_gas_estimation, req.external_order).await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
