@@ -428,7 +428,11 @@ impl TypedHandler for RequestExternalQuoteHandler {
         }
 
         let order = req.external_order;
-        let match_res = self.processor.request_external_quote(order.clone()).await?;
+        let mut match_res = self.processor.request_external_quote(order.clone()).await?;
+
+        if order.trades_native_asset() {
+            match_res.base_mint = get_native_asset_address();
+        }
         let signed_quote = self.sign_external_quote(order, &match_res)?;
         Ok(ExternalQuoteResponse { signed_quote })
     }
