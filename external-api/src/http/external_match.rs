@@ -16,7 +16,7 @@ use circuit_types::{
     Amount,
 };
 use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order, TimestampedPrice};
-use constants::NATIVE_ASSET_ADDRESS;
+use constants::{Scalar, NATIVE_ASSET_ADDRESS};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u128;
@@ -131,6 +131,10 @@ impl ExternalOrder {
     /// denominated order
     pub fn to_order_with_price(&self, price: FixedPoint) -> Order {
         let base_amount = self.get_base_amount(price);
+        let mut min_fill_size = self.get_min_fill_in_base(price);
+        min_fill_size = u128::min(min_fill_size, base_amount); // Ensure min fill size is not greater than the order size
+
+        // If the min fill size is zero, set it to the base amount
         let worst_case_price = match self.side {
             OrderSide::Buy => max_price(),
             OrderSide::Sell => FixedPoint::from_integer(0),
@@ -141,7 +145,7 @@ impl ExternalOrder {
             base_mint: self.base_mint.clone(),
             side: self.side,
             amount: base_amount,
-            min_fill_size: self.min_fill_size,
+            min_fill_size,
             worst_case_price,
             allow_external_matches: true,
         }
@@ -158,6 +162,22 @@ impl ExternalOrder {
 
         let implied_base_amount = FixedPoint::floor_div_int(self.quote_amount, price);
         scalar_to_u128(&implied_base_amount)
+    }
+
+    /// Get the min fill size in units of the base token
+    ///
+    /// If the order size is specified in the `base_amount` field, this is
+    /// trivial. If instead the order size is specified in the `quote_amount`
+    /// field, we must convert through the price
+    fn get_min_fill_in_base(&self, price: FixedPoint) -> Amount {
+        let min_fill = self.min_fill_size;
+        if self.base_amount != 0 {
+            return min_fill;
+        }
+
+        // Add one to round up
+        let div = FixedPoint::floor_div_int(min_fill, price) + Scalar::one();
+        scalar_to_u128(&div)
     }
 }
 
