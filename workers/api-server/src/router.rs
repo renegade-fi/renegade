@@ -4,7 +4,10 @@ use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
 use common::types::wallet::keychain::HmacKey;
-use hyper::{body::to_bytes, Body, HeaderMap, Method, Request, Response, StatusCode, Uri};
+use hyper::{
+    body::to_bytes, header::CONTENT_TYPE, Body, HeaderMap, Method, Request, Response, StatusCode,
+    Uri,
+};
 use itertools::Itertools;
 use matchit::Router as MatchRouter;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -156,7 +159,9 @@ impl<
 
         // Forward to the typed handler
         let res = self.handle_typed(headers, req_body, url_params, query_params).await;
-        let builder = Response::builder().header("Access-Control-Allow-Origin", "*");
+        let builder = Response::builder()
+            .header("Access-Control-Allow-Origin", "*")
+            .header(CONTENT_TYPE, "application/json");
         match res {
             Ok(resp) => {
                 // Serialize the response into a body. We explicitly allow for all cross-origin
@@ -310,7 +315,6 @@ impl Router {
         };
 
         tracing::Span::current().record("http.status_code", res.status().as_str());
-
         res
     }
 
