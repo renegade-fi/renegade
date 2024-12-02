@@ -34,7 +34,9 @@ use external_api::{
             REQUEST_EXTERNAL_QUOTE_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
-        order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
+        order_book::{
+            GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE, GET_SUPPORTED_TOKENS_ROUTE,
+        },
         price_report::PRICE_REPORT_ROUTE,
         task::{GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         task_history::TASK_HISTORY_ROUTE,
@@ -60,6 +62,7 @@ use hyper::{
 };
 use num_bigint::BigUint;
 use num_traits::Num;
+use order_book::GetSupportedTokensHandler;
 use rate_limit::WalletTaskRateLimiter;
 use state::State;
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
@@ -452,6 +455,13 @@ impl HttpServer {
             &Method::GET,
             GET_NETWORK_ORDER_BY_ID_ROUTE.to_string(),
             GetNetworkOrderByIdHandler::new(state.clone()),
+        );
+
+        // The "/supported-tokens" route
+        router.add_unauthenticated_route(
+            &Method::GET,
+            GET_SUPPORTED_TOKENS_ROUTE.to_string(),
+            GetSupportedTokensHandler,
         );
 
         // --- Network Routes --- //

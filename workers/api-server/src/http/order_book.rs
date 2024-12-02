@@ -1,8 +1,12 @@
 //! Groups routes and handlers for order book API operations
 
 use async_trait::async_trait;
+use common::types::token::{read_token_remap, USDT_TICKER, USD_TICKER};
 use external_api::{
-    http::order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
+    http::order_book::{
+        GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, GetSupportedTokensResponse,
+    },
+    types::ApiToken,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
@@ -15,6 +19,9 @@ use crate::{
 };
 
 use super::parse_order_id_from_params;
+
+/// Tokens filtered from the supported token endpoint
+const FILTERED_TOKENS: [&str; 2] = [USD_TICKER, USDT_TICKER];
 
 // ------------------
 // | Error Messages |
@@ -93,5 +100,32 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
         } else {
             Err(not_found(ERR_ORDER_NOT_FOUND.to_string()))
         }
+    }
+}
+
+/// Handler for the GET /supported-tokens route
+#[derive(Clone)]
+pub struct GetSupportedTokensHandler;
+
+#[async_trait]
+impl TypedHandler for GetSupportedTokensHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetSupportedTokensResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let token_map = read_token_remap();
+        let tokens = token_map
+            .iter()
+            .map(|(addr, sym)| ApiToken::new(addr.clone(), sym.clone()))
+            .filter(|token| !FILTERED_TOKENS.contains(&token.symbol.as_str()))
+            .collect_vec();
+
+        Ok(GetSupportedTokensResponse { tokens })
     }
 }
