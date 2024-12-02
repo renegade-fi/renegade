@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::types::ApiNetworkOrder;
+use crate::types::{ApiNetworkOrder, ApiToken};
 
 // ---------------
 // | HTTP Routes |
@@ -12,6 +12,9 @@ use crate::types::ApiNetworkOrder;
 pub const GET_NETWORK_ORDERS_ROUTE: &str = "/v0/order_book/orders";
 /// Returns the network order information of the specified order
 pub const GET_NETWORK_ORDER_BY_ID_ROUTE: &str = "/v0/order_book/orders/:order_id";
+
+/// Returns the supported token list
+pub const GET_SUPPORTED_TOKENS_ROUTE: &str = "/v0/supported-tokens";
 
 // -------------
 // | API Types |
@@ -29,4 +32,11 @@ pub struct GetNetworkOrdersResponse {
 pub struct GetNetworkOrderByIdResponse {
     /// The requested network order
     pub order: ApiNetworkOrder,
+}
+
+/// The response type to fetch the supported token list
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetSupportedTokensResponse {
+    /// The supported tokens
+    pub tokens: Vec<ApiToken>,
 }
