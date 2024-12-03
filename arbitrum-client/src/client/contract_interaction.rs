@@ -370,7 +370,8 @@ impl ArbitrumClient {
         ))
     }
 
-    /// Build `process_atomic_match_settle` from calldata serialized values
+    /// Build a `process_atomic_match_settle` transaction from calldata
+    /// serialized values
     fn build_atomic_match_from_serialized_data(
         &self,
         receiver: Option<Address>,

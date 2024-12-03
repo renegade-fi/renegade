@@ -26,8 +26,10 @@ use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{error, info, instrument};
 use util::err_str;
 
-use crate::abi::{processAtomicMatchSettleCall, MerkleInsertionFilter, NullifierSpentFilter};
-use crate::helpers::parse_shares_from_process_atomic_match_settle;
+use crate::abi::{
+    processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall, MerkleInsertionFilter,
+    NullifierSpentFilter,
+};
 use crate::{
     abi::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
@@ -37,20 +39,23 @@ use crate::{
     constants::SELECTOR_LEN,
     errors::ArbitrumClientError,
     helpers::{
-        parse_shares_from_new_wallet, parse_shares_from_process_match_settle,
-        parse_shares_from_redeem_fee, parse_shares_from_settle_offline_fee,
-        parse_shares_from_settle_online_relayer_fee, parse_shares_from_update_wallet,
+        parse_shares_from_new_wallet, parse_shares_from_process_atomic_match_settle,
+        parse_shares_from_process_atomic_match_settle_with_receiver,
+        parse_shares_from_process_match_settle, parse_shares_from_redeem_fee,
+        parse_shares_from_settle_offline_fee, parse_shares_from_settle_online_relayer_fee,
+        parse_shares_from_update_wallet,
     },
 };
 
 use super::ArbitrumClient;
 
 /// A list of known selectors for the darkpool contract
-const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 7] = [
+const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 8] = [
     <newWalletCall as SolCall>::SELECTOR,
     <updateWalletCall as SolCall>::SELECTOR,
     <processMatchSettleCall as SolCall>::SELECTOR,
     <processAtomicMatchSettleCall as SolCall>::SELECTOR,
+    <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR,
     <settleOnlineRelayerFeeCall as SolCall>::SELECTOR,
     <settleOfflineFeeCall as SolCall>::SELECTOR,
     <redeemFeeCall as SolCall>::SELECTOR,
@@ -352,6 +357,9 @@ impl ArbitrumClient {
             },
             <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
                 parse_shares_from_process_atomic_match_settle(calldata)
+            },
+            <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_atomic_match_settle_with_receiver(calldata)
             },
             <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
                 parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
