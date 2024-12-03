@@ -21,7 +21,9 @@ use ethers::{
     abi::Detokenize,
     contract::ContractCall,
     providers::Middleware,
-    types::{transaction::eip2718::TypedTransaction, BlockNumber, TransactionReceipt},
+    types::{
+        transaction::eip2718::TypedTransaction, Address, BlockNumber, Bytes, TransactionReceipt,
+    },
 };
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{info, instrument};
@@ -312,6 +314,7 @@ impl ArbitrumClient {
     /// the external party
     pub fn gen_atomic_match_settle_calldata(
         &self,
+        receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &AtomicMatchSettleBundle,
     ) -> Result<TypedTransaction, ArbitrumClientError> {
@@ -358,17 +361,44 @@ impl ArbitrumClient {
         let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
 
         // Generate the calldata for `process_atomic_match_settle`
-        let tx = self
-            .get_darkpool_client()
-            .process_atomic_match_settle(
-                internal_party_match_payload_calldata,
-                valid_match_settle_atomic_statement_calldata,
-                match_proofs_calldata,
-                match_link_proofs_calldata,
-            )
-            .tx;
+        Ok(self.build_atomic_match_from_serialized_data(
+            receiver_address,
+            internal_party_match_payload_calldata,
+            valid_match_settle_atomic_statement_calldata,
+            match_proofs_calldata,
+            match_link_proofs_calldata,
+        ))
+    }
 
-        Ok(tx)
+    /// Build `process_atomic_match_settle` from calldata serialized values
+    fn build_atomic_match_from_serialized_data(
+        &self,
+        receiver: Option<Address>,
+        internal_party_match_payload_calldata: Bytes,
+        valid_match_settle_atomic_statement_calldata: Bytes,
+        match_proofs_calldata: Bytes,
+        match_link_proofs_calldata: Bytes,
+    ) -> TypedTransaction {
+        if let Some(receiver) = receiver {
+            self.get_darkpool_client()
+                .process_atomic_match_settle_with_receiver(
+                    receiver,
+                    internal_party_match_payload_calldata,
+                    valid_match_settle_atomic_statement_calldata,
+                    match_proofs_calldata,
+                    match_link_proofs_calldata,
+                )
+                .tx
+        } else {
+            self.get_darkpool_client()
+                .process_atomic_match_settle(
+                    internal_party_match_payload_calldata,
+                    valid_match_settle_atomic_statement_calldata,
+                    match_proofs_calldata,
+                    match_link_proofs_calldata,
+                )
+                .tx
+        }
     }
 
     /// Call the `settle_online_relayer_fee` contract method with the given

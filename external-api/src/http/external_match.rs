@@ -49,6 +49,9 @@ pub struct ExternalMatchRequest {
     /// Whether or not to include gas estimation in the response
     #[serde(default)]
     pub do_gas_estimation: bool,
+    /// The receiver address of the match, if not the message sender
+    #[serde(default)]
+    pub receiver_address: Option<String>,
     /// The external order
     pub external_order: ExternalOrder,
 }
@@ -81,6 +84,9 @@ pub struct AssembleExternalMatchRequest {
     /// Whether or not to include gas estimation in the response
     #[serde(default)]
     pub do_gas_estimation: bool,
+    /// The receiver address of the match, if not the message sender
+    #[serde(default)]
+    pub receiver_address: Option<String>,
     /// The signed quote
     pub signed_quote: SignedExternalQuote,
 }
