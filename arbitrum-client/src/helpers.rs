@@ -23,8 +23,9 @@ use util::err_str;
 
 use crate::{
     abi::{
-        newWalletCall, processAtomicMatchSettleCall, processMatchSettleCall, redeemFeeCall,
-        settleOfflineFeeCall, settleOnlineRelayerFeeCall, updateWalletCall,
+        newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
+        processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
+        updateWalletCall,
     },
     errors::ArbitrumClientError,
 };
@@ -114,6 +115,23 @@ pub fn parse_shares_from_process_atomic_match_settle(
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
     let call = processAtomicMatchSettleCall::abi_decode(calldata, true /* validate */)
         .map_err(err_str!(ArbitrumClientError::Serde))?;
+    let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
+        &call.valid_match_settle_atomic_statement,
+    )?;
+
+    let mut shares = statement.internal_party_modified_shares.into_iter().map(Scalar::new);
+    Ok(SizedWalletShare::from_scalars(&mut shares))
+}
+
+/// Parses wallet shares from the calldata of a
+/// `processAtomicMatchSettleWithReceiver` call
+pub fn parse_shares_from_process_atomic_match_settle_with_receiver(
+    calldata: &[u8],
+) -> Result<SizedWalletShare, ArbitrumClientError> {
+    let call =
+        processAtomicMatchSettleWithReceiverCall::abi_decode(calldata, true /* validate */)
+            .map_err(|e| ArbitrumClientError::Serde(e.to_string()))?;
+
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
     )?;
