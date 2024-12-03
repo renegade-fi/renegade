@@ -22,7 +22,7 @@ use common::types::{
 use constants::{Scalar, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use ethers::{
     middleware::Middleware,
-    types::{transaction::eip2718::TypedTransaction, U256},
+    types::{transaction::eip2718::TypedTransaction, Address, U256},
 };
 use external_api::{
     bus_message::SystemBusMessage,
@@ -98,6 +98,11 @@ fn get_native_asset_wrapper_token() -> Token {
 /// Get the native asset address as a `BigUint`
 fn get_native_asset_address() -> BigUint {
     biguint_from_hex_string(NATIVE_ASSET_ADDRESS).unwrap()
+}
+
+/// Parse a receiver address from an optional string
+fn parse_receiver_address(receiver: Option<String>) -> Result<Option<Address>, ApiServerError> {
+    receiver.map(|r| r.parse::<Address>()).transpose().map_err(bad_request)
 }
 
 // ----------------------------
@@ -252,6 +257,7 @@ impl ExternalMatchProcessor {
     async fn assemble_external_match(
         &self,
         gas_estimation: bool,
+        receiver: Option<Address>,
         signed_quote: SignedExternalQuote,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         let price = TimestampedPrice::from(signed_quote.quote.price);
@@ -267,7 +273,14 @@ impl ExternalMatchProcessor {
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
             SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
-                self.build_api_bundle(gas_estimation, &order, match_bundle, validity_proofs).await
+                self.build_api_bundle(
+                    gas_estimation,
+                    receiver,
+                    &order,
+                    match_bundle,
+                    validity_proofs,
+                )
+                .await
             },
             _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
         }
@@ -277,6 +290,7 @@ impl ExternalMatchProcessor {
     async fn request_match_bundle(
         &self,
         gas_estimation: bool,
+        receiver: Option<Address>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         let resp = self
@@ -292,6 +306,7 @@ impl ExternalMatchProcessor {
             SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs } => {
                 self.build_api_bundle(
                     gas_estimation,
+                    receiver,
                     &external_order,
                     match_bundle,
                     validity_proofs,
@@ -328,6 +343,7 @@ impl ExternalMatchProcessor {
     async fn build_api_bundle(
         &self,
         do_gas_estimation: bool,
+        receiver: Option<Address>,
         order: &ExternalOrder,
         mut match_bundle: AtomicMatchSettleBundle,
         validity_proofs: OrderValidityProofBundle,
@@ -342,7 +358,7 @@ impl ExternalMatchProcessor {
         // Build a settlement transaction for the match
         let mut settlement_tx = self
             .arbitrum_client
-            .gen_atomic_match_settle_calldata(&validity_proofs, &match_bundle)
+            .gen_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
             .map_err(internal_error)?;
 
         // If the order _sells_ the native asset, the value of the transaction should
@@ -495,8 +511,11 @@ impl TypedHandler for AssembleExternalMatchHandler {
 
         // Validate the quote then execute it
         self.validate_quote(&req.signed_quote)?;
-        let match_bundle =
-            self.processor.assemble_external_match(req.do_gas_estimation, req.signed_quote).await?;
+        let receiver = parse_receiver_address(req.receiver_address)?;
+        let match_bundle = self
+            .processor
+            .assemble_external_match(req.do_gas_estimation, receiver, req.signed_quote)
+            .await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
@@ -535,8 +554,11 @@ impl TypedHandler for RequestExternalMatchHandler {
         }
 
         // Check that the external order is large enough
-        let match_bundle =
-            self.processor.request_match_bundle(req.do_gas_estimation, req.external_order).await?;
+        let receiver = parse_receiver_address(req.receiver_address)?;
+        let match_bundle = self
+            .processor
+            .request_match_bundle(req.do_gas_estimation, receiver, req.external_order)
+            .await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
