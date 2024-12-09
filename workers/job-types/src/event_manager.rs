@@ -1,4 +1,5 @@
-//! Type definitions for system events handled by the event manager.
+//! Job types for the event manager, representing system events to be received &
+//! exported by the event manager worker
 
 use std::time::SystemTime;
 
@@ -12,7 +13,27 @@ use common::types::{
     MatchingPoolName, TimestampedPrice,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
+use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
+
+// ---------------
+// | Queue Types |
+// ---------------
+
+/// The name of the event manager queue, used to label queue length metrics
+const EVENT_MANAGER_QUEUE_NAME: &str = "event_manager";
+
+/// The queue sender type to send events to the event manager
+pub type EventManagerQueue = TokioSender<RelayerEvent>;
+/// The queue receiver type to receive events in the event manager
+pub type EventManagerReceiver = MeteredTokioReceiver<RelayerEvent>;
+
+/// Create a new event manager queue and receiver
+pub fn new_event_manager_queue() -> (EventManagerQueue, EventManagerReceiver) {
+    let (send, recv) = unbounded_channel();
+    (send, MeteredTokioReceiver::new(recv, EVENT_MANAGER_QUEUE_NAME))
+}
 
 // ------------------------
 // | Top-level Event Enum |

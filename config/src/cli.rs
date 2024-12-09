@@ -174,7 +174,8 @@ pub struct Cli {
     /// Whether to record historical state locally
     #[clap(long, value_parser)]
     pub record_historical_state: bool,
-    /// The address to export relayer events to, in multiaddr format
+    /// The address to export relayer events to, in multiaddr format.
+    /// If ommitted, the event manager is disabled.
     #[clap(long, value_parser)]
     pub event_export_addr: Option<String>,
     /// The maximum number of wallet operations a user is allowed to perform per hour
@@ -355,7 +356,8 @@ pub struct RelayerConfig {
     pub raft_snapshot_path: String,
     /// Whether to record historical state locally
     pub record_historical_state: bool,
-    /// The address to export relayer events to, in multiaddr format
+    /// The address to export relayer events to, in multiaddr format.
+    /// If ommitted, the event manager is disabled.
     pub event_export_addr: Option<Multiaddr>,
     /// The maximum number of wallet operations a user is allowed to perform per
     /// hour
