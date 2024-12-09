@@ -97,7 +97,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     }
 
     // Parse the event export address, if there is one
-    let event_export_addr = cli_args
+    let event_export_addr: Option<Multiaddr> = cli_args
         .event_export_addr
         .map(|addr| addr.parse().expect("Invalid address passed as --event-export-addr"));
 

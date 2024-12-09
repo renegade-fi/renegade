@@ -21,8 +21,8 @@ use arbitrum_client::{
     constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
 };
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
-use common::default_wrapper::default_option;
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
+use common::{default_wrapper::default_option, types::new_cancel_channel};
 use constants::{in_bootstrap_mode, VERSION};
 use event_manager::worker::{EventManager, EventManagerConfig};
 use external_api::bus_message::SystemBusMessage;
@@ -45,7 +45,7 @@ use error::CoordinatorError;
 use metrics_sampler::setup_metrics_samplers;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
-use tokio::{select, sync::watch};
+use tokio::select;
 use tracing::info;
 
 use crate::setup::node_setup;
@@ -193,7 +193,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<TaskDriver>(&mut task_driver, &task_driver_failure_sender);
 
     // Start the proof generation module
-    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = watch::channel(());
+    let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = new_cancel_channel();
     let mut proof_manager = ProofManager::new(ProofManagerConfig {
         job_queue: proof_generation_worker_receiver,
         cancel_channel: proof_manager_cancel_receiver,
@@ -206,7 +206,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<ProofManager>(&mut proof_manager, &proof_manager_failure_sender);
 
     // Start the network manager
-    let (network_cancel_sender, network_cancel_receiver) = watch::channel(());
+    let (network_cancel_sender, network_cancel_receiver) = new_cancel_channel();
     let network_manager_config = NetworkManagerConfig {
         port: args.p2p_port,
         bind_addr: args.bind_addr,
@@ -230,7 +230,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<NetworkManager>(&mut network_manager, &network_failure_sender);
 
     // Start the gossip server
-    let (gossip_cancel_sender, gossip_cancel_receiver) = watch::channel(());
+    let (gossip_cancel_sender, gossip_cancel_receiver) = new_cancel_channel();
     let mut gossip_server = GossipServer::new(GossipServerConfig {
         local_peer_id: network_manager.local_peer_id,
         local_addr: network_manager.local_addr.clone(),
@@ -256,7 +256,7 @@ async fn main() -> Result<(), CoordinatorError> {
     node_setup(&setup_config, task_sender.clone()).await?;
 
     // Start the event manager
-    let (event_manager_cancel_sender, event_manager_cancel_receiver) = watch::channel(());
+    let (event_manager_cancel_sender, event_manager_cancel_receiver) = new_cancel_channel();
     let mut event_manager = EventManager::new(EventManagerConfig {
         event_export_addr: args.event_export_addr,
         event_queue: event_manager_receiver,
@@ -272,7 +272,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // --- Workers Setup Phase --- //
 
     // Start the handshake manager
-    let (handshake_cancel_sender, handshake_cancel_receiver) = watch::channel(());
+    let (handshake_cancel_sender, handshake_cancel_receiver) = new_cancel_channel();
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         min_fill_size: args.min_fill_size,
         state: global_state.clone(),
@@ -291,7 +291,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<HandshakeManager>(&mut handshake_manager, &handshake_failure_sender);
 
     // Start the price reporter manager
-    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = watch::channel(());
+    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = new_cancel_channel();
     let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
         system_bus: system_bus.clone(),
         job_receiver: Some(price_reporter_worker_receiver).into(),
@@ -313,7 +313,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
 
     // Start the on-chain event listener
-    let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = watch::channel(());
+    let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = new_cancel_channel();
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
         max_root_staleness: args.max_merkle_staleness,
         arbitrum_client: chain_listener_arbitrum_client,
@@ -331,7 +331,7 @@ async fn main() -> Result<(), CoordinatorError> {
     watch_worker::<OnChainEventListener>(&mut chain_listener, &chain_listener_failure_sender);
 
     // Start the API server
-    let (api_cancel_sender, api_cancel_receiver) = watch::channel(());
+    let (api_cancel_sender, api_cancel_receiver) = new_cancel_channel();
     let mut api_server = ApiServer::new(ApiServerConfig {
         http_port: args.http_port,
         websocket_port: args.websocket_port,
