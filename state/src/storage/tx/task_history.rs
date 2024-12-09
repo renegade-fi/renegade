@@ -24,6 +24,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         &self,
         key: &TaskQueueKey,
     ) -> Result<Vec<HistoricalTask>, StorageError> {
+        self.check_task_history_enabled()?;
+
         let key = task_history_key(key);
         let mut tasks: Vec<HistoricalTask> =
             self.inner.read(TASK_HISTORY_TABLE, &key)?.unwrap_or_default();
@@ -42,6 +44,15 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         tasks.truncate(n);
         Ok(tasks)
     }
+
+    /// Check that the task history table is enabled, throwing an error if not
+    fn check_task_history_enabled(&self) -> Result<(), StorageError> {
+        if !self.get_historical_state_enabled()? {
+            return Err(StorageError::TableDisabled(String::from(TASK_HISTORY_TABLE)));
+        }
+
+        Ok(())
+    }
 }
 
 // -----------
@@ -55,6 +66,8 @@ impl<'db> StateTxn<'db, RW> {
         key: &TaskQueueKey,
         task: HistoricalTask,
     ) -> Result<(), StorageError> {
+        self.check_task_history_enabled()?;
+
         let mut tasks = self.get_task_history(key)?;
 
         // Push to the front to keep the most recent tasks first

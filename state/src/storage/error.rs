@@ -21,6 +21,11 @@ pub enum StorageError {
     OpenDb(MdbxError),
     /// Failure opening a table in the database
     OpenTable(MdbxError),
+    /// Attempt to access a disabled table, which may be the case if it is
+    /// used to track state for a feature that is disabled in the relayer.
+    /// An example of this is the order history table being disabled if the
+    /// relayer is not configured to record historical state.
+    TableDisabled(String),
     /// An uncategorized error
     Other(String),
     /// Error serializing a value for storage

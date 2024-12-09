@@ -54,7 +54,7 @@ impl Worker for EventManager {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        vec![self.handle.take().unwrap()]
+        vec![]
     }
 
     fn cleanup(&mut self) -> Result<(), Self::Error> {
@@ -62,6 +62,6 @@ impl Worker for EventManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
-        todo!()
+        Ok(())
     }
 }

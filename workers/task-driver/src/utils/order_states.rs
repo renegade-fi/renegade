@@ -15,6 +15,10 @@ pub async fn transition_order_settling(
     order_id: OrderIdentifier,
     state: &State,
 ) -> Result<(), String> {
+    if !state.historical_state_enabled().await? {
+        return Ok(());
+    }
+
     let mut metadata =
         state.get_order_metadata(&order_id).await?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;
     metadata.state = OrderState::SettlingMatch;
@@ -30,6 +34,10 @@ pub async fn record_order_fill(
     price: TimestampedPrice,
     state: &State,
 ) -> Result<(), String> {
+    if !state.historical_state_enabled().await? {
+        return Ok(());
+    }
+
     // Get the order metadata
     let mut metadata =
         state.get_order_metadata(&order_id).await?.ok_or(ERR_NO_ORDER_METADATA.to_string())?;

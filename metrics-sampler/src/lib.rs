@@ -15,6 +15,7 @@ use raft_metrics_sampler::RaftMetricsSampler;
 use sampler::{AsyncMetricSampler, MetricSampler};
 use state::State;
 use system_clock::{SystemClock, SystemClockError};
+use util::err_str;
 
 pub mod churn_metrics_sampler;
 pub mod onboarding_metrics_sampler;
@@ -28,8 +29,13 @@ pub async fn setup_metrics_samplers(
     price_reporter_job_queue: PriceReporterQueue,
 ) -> Result<(), SystemClockError> {
     RaftMetricsSampler::new(state.clone()).register(system_clock).await?;
-    OnboardingMetricsSampler::new(state.clone()).register(system_clock).await?;
-    CancellationMetricsSampler::new(state, price_reporter_job_queue).register(system_clock).await?;
+    if state.historical_state_enabled().await.map_err(err_str!(SystemClockError))? {
+        OnboardingMetricsSampler::new(state.clone()).register(system_clock).await?;
+
+        CancellationMetricsSampler::new(state, price_reporter_job_queue)
+            .register(system_clock)
+            .await?;
+    }
 
     Ok(())
 }
