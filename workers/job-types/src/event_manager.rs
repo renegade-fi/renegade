@@ -72,8 +72,8 @@ pub struct WalletCreationEvent {
 
     /// The ID of the wallet that was created
     pub wallet_id: WalletIdentifier,
-    /// The wallet's symmetric key, encrypted at rest and base64-encoded
-    pub encrypted_symmetric_key: String,
+    /// The wallet's symmetric key, base64-encoded
+    pub symmetric_key: String,
 }
 
 /// An external transfer event

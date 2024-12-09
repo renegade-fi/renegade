@@ -39,6 +39,9 @@ const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
 const EXTERNAL_FEE_ADDR_KEY: &str = "external-fee-addr";
 /// The key for the local relayer's auto-redeem fees flag in the node metadata
 const AUTO_REDEEM_FEES_KEY: &str = "auto-redeem-fees";
+/// The key for the local relayer's historical state enabled flag in the node
+/// metadata table
+const HISTORICAL_STATE_ENABLED_KEY: &str = "historical-state-enabled";
 
 // -----------
 // | Helpers |
@@ -120,6 +123,13 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
             .read(NODE_METADATA_TABLE, &AUTO_REDEEM_FEES_KEY.to_string())?
             .ok_or_else(|| err_not_found(AUTO_REDEEM_FEES_KEY))
     }
+
+    /// Get the local relayer's historical state enabled flag
+    pub fn get_historical_state_enabled(&self) -> Result<bool, StorageError> {
+        self.inner()
+            .read(NODE_METADATA_TABLE, &HISTORICAL_STATE_ENABLED_KEY.to_string())?
+            .ok_or_else(|| err_not_found(HISTORICAL_STATE_ENABLED_KEY))
+    }
 }
 
 // -----------
@@ -175,5 +185,10 @@ impl<'db> StateTxn<'db, RW> {
             &AUTO_REDEEM_FEES_KEY.to_string(),
             &auto_redeem_fees,
         )
+    }
+
+    /// Set the local relayer's historical state enabled flag
+    pub fn set_historical_state_enabled(&self, enabled: bool) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &HISTORICAL_STATE_ENABLED_KEY.to_string(), &enabled)
     }
 }

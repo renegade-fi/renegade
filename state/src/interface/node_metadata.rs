@@ -81,6 +81,11 @@ impl StateInner {
         self.with_read_tx(|tx| tx.get_auto_redeem_fees().map_err(StateError::Db)).await
     }
 
+    /// Get the local relayer's historical state enabled flag
+    pub async fn get_historical_state_enabled(&self) -> Result<bool, StateError> {
+        self.with_read_tx(|tx| tx.get_historical_state_enabled().map_err(StateError::Db)).await
+    }
+
     // -----------
     // | Setters |
     // -----------
@@ -138,6 +143,7 @@ impl StateInner {
         let need_relayer_wallet = config.needs_relayer_wallet();
         let relayer_wallet_id =
             derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
+        let historical_state_enabled = config.record_historical_state;
 
         self.with_write_tx(move |tx| {
             tx.create_table(NODE_METADATA_TABLE)?;
@@ -159,6 +165,9 @@ impl StateInner {
                 let fee = FixedPoint::from_f64_round_down(entry.fee);
                 tx.set_relayer_fee(&entry.wallet_id, fee)?;
             }
+
+            // Set whether or not historical state is enabled
+            tx.set_historical_state_enabled(historical_state_enabled)?;
 
             Ok(())
         })

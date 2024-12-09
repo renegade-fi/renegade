@@ -274,6 +274,7 @@ pub mod test_helpers {
         // Setup the tables
         let tx = db.new_write_tx().unwrap();
         tx.setup_tables().unwrap();
+        tx.set_historical_state_enabled(true).unwrap();
         tx.commit().unwrap();
 
         db

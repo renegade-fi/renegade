@@ -40,6 +40,8 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         &self,
         wallet_id: &WalletIdentifier,
     ) -> Result<Vec<OrderMetadata>, StorageError> {
+        self.check_order_history_enabled()?;
+
         let key = order_history_key(wallet_id);
         let mut orders: Vec<OrderMetadata> =
             self.inner.read(ORDER_HISTORY_TABLE, &key)?.unwrap_or_default();
@@ -57,6 +59,15 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         let mut orders = self.get_order_history(wallet_id)?;
         orders.truncate(n);
         Ok(orders)
+    }
+
+    /// Check that the order history table is enabled, throwing an error if not
+    fn check_order_history_enabled(&self) -> Result<(), StorageError> {
+        if !self.get_historical_state_enabled()? {
+            return Err(StorageError::TableDisabled(String::from(ORDER_HISTORY_TABLE)));
+        }
+
+        Ok(())
     }
 }
 
@@ -106,6 +117,8 @@ impl<'db> StateTxn<'db, RW> {
         wallet_id: &WalletIdentifier,
         orders: Vec<OrderMetadata>,
     ) -> Result<(), StorageError> {
+        self.check_order_history_enabled()?;
+
         let key = order_history_key(wallet_id);
         self.inner.write(ORDER_HISTORY_TABLE, &key, &orders)?;
         Ok(())
