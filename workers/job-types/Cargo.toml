@@ -24,6 +24,7 @@ util = { path = "../../util" }
 crossbeam = { workspace = true }
 tokio = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
+serde = { workspace = true }
 
 [dev-dependencies]
 lazy_static = { workspace = true }
