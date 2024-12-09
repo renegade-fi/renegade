@@ -172,7 +172,8 @@ pub struct Cli {
     #[clap(long, value_parser, default_value = "/raft_snapshots")]
     pub raft_snapshot_path: String,
     /// Whether to record historical state locally
-    #[clap(long, value_parser)]
+    // TODO: Unset default `true` once event export implementation is complete
+    #[clap(long, value_parser, default_value = "true")]
     pub record_historical_state: bool,
     /// The address to export relayer events to, in multiaddr format.
     /// If ommitted, the event manager is disabled.

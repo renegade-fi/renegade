@@ -34,6 +34,8 @@ const DEFAULT_TASK_HISTORY_LEN: usize = 50;
 
 /// Error message displayed when a given task cannot be found
 const ERR_TASK_NOT_FOUND: &str = "task not found";
+/// Error message emitted when historical state is disabled
+const ERR_HISTORICAL_STATE_DISABLED: &str = "historical state is disabled";
 
 /// -----------------------
 /// | Task Route Handlers |
@@ -138,6 +140,10 @@ impl TypedHandler for GetTaskHistoryHandler {
         params: UrlParams,
         mut query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        if !self.state.historical_state_enabled().await? {
+            return Err(bad_request(ERR_HISTORICAL_STATE_DISABLED));
+        }
+
         // Lookup the task status in the task driver's state
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let len = query_params

@@ -66,6 +66,8 @@ const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 const ERR_BALANCE_NOT_FOUND: &str = "balance not found in wallet";
 /// Error message emitted when price data cannot be found for a token pair
 const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
+/// Error message emitted when historical state is disabled
+const ERR_HISTORICAL_STATE_DISABLED: &str = "historical state is disabled";
 
 // -----------------------
 // | Raft Route Handlers |
@@ -203,6 +205,10 @@ impl TypedHandler for AdminOrderMetadataHandler {
         params: UrlParams,
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        if !self.state.historical_state_enabled().await? {
+            return Err(bad_request(ERR_HISTORICAL_STATE_DISABLED));
+        }
+
         let order_id = parse_order_id_from_params(&params)?;
         let order_metadata = self
             .state
@@ -451,14 +457,6 @@ impl TypedHandler for AdminAssignOrderToMatchingPoolHandler {
         let order_id = parse_order_id_from_params(&params)?;
         let matching_pool = parse_matching_pool_from_url_params(&params)?;
 
-        // Check that the order exists. We do this by checking the order
-        // metadata, as filled orders (which a client may still want to reassign
-        // ahead of subsequent order updates) are removed from the network
-        // orderbook.
-        if self.state.get_order_metadata(&order_id).await?.is_none() {
-            return Err(not_found(ERR_ORDER_NOT_FOUND));
-        }
-
         // Check that the matching pool exists
         if !self.state.matching_pool_exists(matching_pool.clone()).await? {
             return Err(not_found(ERR_NO_MATCHING_POOL));
@@ -502,15 +500,6 @@ impl TypedHandler for AdminGetOrderMatchingPoolHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let order_id = parse_order_id_from_params(&params)?;
-
-        // Check that the order exists. We do this by checking the order
-        // metadata, as filled orders (which a client may still want to
-        // see the matching pool of, ahead of subsequent order updates)
-        // are removed from the network orderbook.
-        if self.state.get_order_metadata(&order_id).await?.is_none() {
-            return Err(not_found(ERR_ORDER_NOT_FOUND));
-        }
-
         let matching_pool = self.state.get_matching_pool_for_order(&order_id).await?;
 
         Ok(AdminGetOrderMatchingPoolResponse { matching_pool })
