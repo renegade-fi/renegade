@@ -551,7 +551,9 @@ impl StateApplicator {
         task: QueuedTask,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
-        if let Some(t) = HistoricalTask::from_queued_task(key, task) {
+        if let Some(t) = HistoricalTask::from_queued_task(key, task)
+            && tx.get_historical_state_enabled()?
+        {
             tx.append_task_to_history(&key, t)?;
         }
 

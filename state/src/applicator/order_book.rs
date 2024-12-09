@@ -11,10 +11,11 @@ use common::types::{
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
+use libmdbx::RW;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::applicator::error::StateApplicatorError;
+use crate::{applicator::error::StateApplicatorError, storage::tx::StateTxn};
 
 use super::{return_type::ApplicatorReturnType, Result, StateApplicator};
 
@@ -85,18 +86,8 @@ impl StateApplicator {
         tx.attach_validity_proof(&order_id, proof)?;
         tx.attach_validity_witness(&order_id, witness)?;
 
-        // Update the order metadata into the `Matching` state
-        let wallet = tx
-            .get_wallet_id_for_order(&order_id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
-        let mut meta = tx
-            .get_order_metadata(wallet, order_id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_ORDER_META_MISSING))?;
-
-        if !meta.state.is_terminal() {
-            meta.state = OrderState::Matching;
-        }
-        self.update_order_metadata_with_tx(meta, &tx)?;
+        // Transition the order into a `Matching` state
+        self.transition_order_matching(order_id, &tx)?;
 
         // Get the order info for update message
         let order_info = tx
@@ -111,6 +102,35 @@ impl StateApplicator {
             SystemBusMessage::OrderStateChange { order: order_info },
         );
         Ok(ApplicatorReturnType::None)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Update the order metadata into the `Matching` state, if historical state
+    /// is enabled
+    fn transition_order_matching(
+        &self,
+        order_id: OrderIdentifier,
+        tx: &StateTxn<RW>,
+    ) -> Result<()> {
+        if tx.get_historical_state_enabled()? {
+            let wallet = tx
+                .get_wallet_id_for_order(&order_id)?
+                .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
+
+            let mut meta = tx
+                .get_order_metadata(wallet, order_id)?
+                .ok_or(StateApplicatorError::MissingEntry(ERR_ORDER_META_MISSING))?;
+
+            if !meta.state.is_terminal() {
+                meta.state = OrderState::Matching;
+            }
+            self.update_order_metadata_with_tx(meta, tx)?;
+        }
+
+        Ok(())
     }
 }
 
