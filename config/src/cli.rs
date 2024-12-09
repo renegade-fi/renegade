@@ -171,6 +171,12 @@ pub struct Cli {
     /// The path at which to save raft snapshots
     #[clap(long, value_parser, default_value = "/raft_snapshots")]
     pub raft_snapshot_path: String,
+    /// Whether to record historical state locally
+    #[clap(long, value_parser)]
+    pub record_historical_state: bool,
+    /// The address to export relayer events to, in multiaddr format
+    #[clap(long, value_parser)]
+    pub event_export_addr: Option<String>,
     /// The maximum number of wallet operations a user is allowed to perform per hour
     /// 
     /// Defaults to 500
@@ -347,6 +353,10 @@ pub struct RelayerConfig {
     pub db_path: String,
     /// The path at which to save raft snapshots
     pub raft_snapshot_path: String,
+    /// Whether to record historical state locally
+    pub record_historical_state: bool,
+    /// The address to export relayer events to, in multiaddr format
+    pub event_export_addr: Option<Multiaddr>,
     /// The maximum number of wallet operations a user is allowed to perform per
     /// hour
     pub wallet_task_rate_limit: u32,
@@ -471,6 +481,8 @@ impl Clone for RelayerConfig {
             p2p_key: self.p2p_key.clone(),
             db_path: self.db_path.clone(),
             raft_snapshot_path: self.raft_snapshot_path.clone(),
+            record_historical_state: self.record_historical_state,
+            event_export_addr: self.event_export_addr.clone(),
             wallet_task_rate_limit: self.wallet_task_rate_limit,
             min_transfer_amount: self.min_transfer_amount,
             max_merkle_staleness: self.max_merkle_staleness,
