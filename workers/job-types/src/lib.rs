@@ -1,5 +1,6 @@
 //! Groups worker job types to expose them as a third party crate to the workers
 
+pub mod event_manager;
 pub mod gossip_server;
 pub mod handshake_manager;
 pub mod network_manager;

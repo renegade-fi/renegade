@@ -86,17 +86,20 @@ impl StateApplicator {
         tx.attach_validity_witness(&order_id, witness)?;
 
         // Update the order metadata into the `Matching` state
-        let wallet = tx
-            .get_wallet_id_for_order(&order_id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
-        let mut meta = tx
-            .get_order_metadata(wallet, order_id)?
-            .ok_or(StateApplicatorError::MissingEntry(ERR_ORDER_META_MISSING))?;
+        if tx.get_historical_state_enabled()? {
+            let wallet = tx
+                .get_wallet_id_for_order(&order_id)?
+                .ok_or(StateApplicatorError::MissingEntry(ERR_WALLET_MISSING))?;
 
-        if !meta.state.is_terminal() {
-            meta.state = OrderState::Matching;
+            let mut meta = tx
+                .get_order_metadata(wallet, order_id)?
+                .ok_or(StateApplicatorError::MissingEntry(ERR_ORDER_META_MISSING))?;
+
+            if !meta.state.is_terminal() {
+                meta.state = OrderState::Matching;
+            }
+            self.update_order_metadata_with_tx(meta, &tx)?;
         }
-        self.update_order_metadata_with_tx(meta, &tx)?;
 
         // Get the order info for update message
         let order_info = tx

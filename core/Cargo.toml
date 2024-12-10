@@ -33,6 +33,7 @@ job-types = { path = "../workers/job-types" }
 network-manager = { path = "../workers/network-manager" }
 price-reporter = { path = "../workers/price-reporter" }
 proof-manager = { path = "../workers/proof-manager" }
+event-manager = { path = "../workers/event-manager" }
 state = { path = "../state" }
 system-bus = { path = "../system-bus" }
 system-clock = { path = "../system-clock" }

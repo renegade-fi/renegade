@@ -21,6 +21,8 @@ pub enum StorageError {
     OpenDb(MdbxError),
     /// Failure opening a table in the database
     OpenTable(MdbxError),
+    /// Attempt to access a disabled table
+    TableDisabled(String),
     /// An uncategorized error
     Other(String),
     /// Error serializing a value for storage

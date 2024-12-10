@@ -10,4 +10,5 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 
-pub mod event_types;
+pub mod error;
+pub mod worker;

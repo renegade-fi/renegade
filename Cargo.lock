@@ -3580,10 +3580,12 @@ dependencies = [
 name = "event-manager"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "circuit-types 0.1.0",
  "common 0.1.0",
- "serde",
- "uuid 1.11.0",
+ "job-types",
+ "libp2p",
+ "tokio",
 ]
 
 [[package]]
@@ -5130,6 +5132,7 @@ dependencies = [
  "lazy_static",
  "libp2p",
  "libp2p-core",
+ "serde",
  "tokio",
  "util 0.1.0",
  "uuid 1.11.0",
@@ -7896,6 +7899,7 @@ dependencies = [
  "constants 0.1.0",
  "crossbeam",
  "ethers",
+ "event-manager",
  "external-api 0.1.0",
  "gossip-api",
  "gossip-server",

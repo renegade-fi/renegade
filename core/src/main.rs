@@ -24,15 +24,16 @@ use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::default_wrapper::default_option;
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use constants::{in_bootstrap_mode, VERSION};
+use event_manager::worker::{EventManager, EventManagerConfig};
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
-use job_types::gossip_server::new_gossip_server_queue;
 use job_types::handshake_manager::new_handshake_manager_queue;
 use job_types::network_manager::new_network_manager_queue;
 use job_types::price_reporter::new_price_reporter_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
+use job_types::{event_manager::new_event_manager_queue, gossip_server::new_gossip_server_queue};
 use network_manager::{worker::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::ExchangeConnectionsConfig;
 use price_reporter::{manager::PriceReporter, worker::PriceReporterConfig};
@@ -106,6 +107,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();
+    let (_event_manager_sender, event_manager_receiver) = new_event_manager_queue();
 
     // Construct a global state
     let (state_failure_send, mut state_failure_recv) = new_worker_failure_channel();
@@ -253,6 +255,20 @@ async fn main() -> Result<(), CoordinatorError> {
     // relayer's wallet
     node_setup(&setup_config, task_sender.clone()).await?;
 
+    // Start the event manager
+    let (event_manager_cancel_sender, event_manager_cancel_receiver) = watch::channel(());
+    let mut event_manager = EventManager::new(EventManagerConfig {
+        event_export_addr: args.event_export_addr,
+        event_queue: event_manager_receiver,
+        cancel_channel: event_manager_cancel_receiver,
+    })
+    .await
+    .expect("failed to build event manager");
+    event_manager.start().expect("failed to start event manager");
+    let (event_manager_failure_sender, mut event_manager_failure_receiver) =
+        new_worker_failure_channel();
+    watch_worker::<EventManager>(&mut event_manager, &event_manager_failure_sender);
+
     // --- Workers Setup Phase --- //
 
     // Start the handshake manager
@@ -385,6 +401,11 @@ async fn main() -> Result<(), CoordinatorError> {
                     proof_manager_cancel_sender.send(())
                         .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
                     proof_manager = recover_worker(proof_manager)?;
+                }
+                _ = event_manager_failure_receiver.recv() => {
+                    event_manager_cancel_sender.send(())
+                        .map_err(|err| CoordinatorError::CancelSend(err.to_string()))?;
+                    event_manager = recover_worker(event_manager)?;
                 }
             };
         }
