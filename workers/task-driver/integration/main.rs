@@ -26,6 +26,7 @@ use ethers::{
 };
 use helpers::new_mock_task_driver;
 use job_types::{
+    event_manager::{new_event_manager_queue, EventManagerReceiver},
     network_manager::{new_network_manager_queue, NetworkManagerReceiver},
     proof_manager::{new_proof_manager_queue, ProofManagerJob},
     task_driver::{new_task_driver_queue, TaskDriverQueue},
@@ -98,6 +99,10 @@ struct IntegrationTestArgs {
     ///
     /// Held here to avoid closing the channel on `Drop`
     _network_receiver: Arc<NetworkManagerReceiver>,
+    /// A receiver for the event manager's work queue
+    ///
+    /// Held here to avoid closing the channel on `Drop`
+    _event_receiver: Arc<EventManagerReceiver>,
     /// A reference to the global state of the mock proof manager
     state: State,
     /// The job queue for the mock proof manager
@@ -126,6 +131,9 @@ impl From<CliArgs> for IntegrationTestArgs {
         let (task_queue, task_recv) = new_task_driver_queue();
         let state = block_current(setup_global_state_mock(task_queue.clone()));
 
+        // Create a mock event sender and receiver
+        let (event_queue, event_receiver) = new_event_manager_queue();
+
         // Start a task driver
         new_mock_task_driver(
             task_recv,
@@ -133,6 +141,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             arbitrum_client.clone(),
             network_sender,
             proof_job_queue.clone(),
+            event_queue,
             state.clone(),
         );
 
@@ -156,6 +165,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             permit2_addr,
             arbitrum_client,
             _network_receiver: Arc::new(network_receiver),
+            _event_receiver: Arc::new(event_receiver),
             proof_job_queue,
             state,
             task_queue,

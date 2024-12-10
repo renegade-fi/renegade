@@ -28,6 +28,7 @@ use futures::Future;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::{
+    event_manager::{new_event_manager_queue, EventManagerQueue, EventManagerReceiver},
     gossip_server::{
         new_gossip_server_queue, GossipServerJob, GossipServerQueue, GossipServerReceiver,
     },
@@ -117,6 +118,8 @@ pub struct MockNodeController {
     price_queue: (PriceReporterQueue, DefaultOption<PriceReporterReceiver>),
     /// The proof generation queue
     proof_queue: (ProofManagerQueue, DefaultOption<ProofManagerReceiver>),
+    /// The event manager queue
+    event_queue: (EventManagerQueue, DefaultOption<EventManagerReceiver>),
     /// The task manager queue
     task_queue: (TaskDriverQueue, DefaultOption<TaskDriverReceiver>),
 }
@@ -132,6 +135,7 @@ impl MockNodeController {
         let (handshake_send, handshake_recv) = new_handshake_manager_queue();
         let (price_sender, price_recv) = new_price_reporter_queue();
         let (proof_gen_sender, proof_gen_recv) = new_proof_manager_queue();
+        let (event_sender, event_recv) = new_event_manager_queue();
         let (task_sender, task_recv) = new_task_driver_queue();
 
         Self {
@@ -146,6 +150,7 @@ impl MockNodeController {
             handshake_queue: (handshake_send, default_option(handshake_recv)),
             price_queue: (price_sender, default_option(price_recv)),
             proof_queue: (proof_gen_sender, default_option(proof_gen_recv)),
+            event_queue: (event_sender, default_option(event_recv)),
             task_queue: (task_sender, default_option(task_recv)),
         }
     }
@@ -294,6 +299,7 @@ impl MockNodeController {
             self.arbitrum_client.clone().expect("Arbitrum client not initialized");
         let network_queue = self.network_queue.0.clone();
         let proof_queue = self.proof_queue.0.clone();
+        let event_queue = self.event_queue.0.clone();
         let bus = self.bus.clone();
         let state = self.state.clone().expect("State not initialized");
 
@@ -303,6 +309,7 @@ impl MockNodeController {
             arbitrum_client,
             network_queue,
             proof_queue,
+            event_queue,
             bus,
             state,
         );

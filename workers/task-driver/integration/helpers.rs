@@ -18,6 +18,7 @@ use constants::Scalar;
 use ethers::{middleware::Middleware, types::Address};
 use eyre::Result;
 use job_types::{
+    event_manager::EventManagerQueue,
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
     task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue, TaskDriverReceiver},
@@ -215,6 +216,7 @@ pub fn new_mock_task_driver(
     arbitrum_client: ArbitrumClient,
     network_queue: NetworkManagerQueue,
     proof_queue: ProofManagerQueue,
+    event_queue: EventManagerQueue,
     state: State,
 ) {
     let bus = SystemBus::new();
@@ -234,6 +236,7 @@ pub fn new_mock_task_driver(
         arbitrum_client,
         network_queue,
         proof_queue,
+        event_queue,
         state,
     };
 
