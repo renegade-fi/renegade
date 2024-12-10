@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use common::{default_wrapper::DefaultOption, worker::Worker};
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
+    event_manager::EventManagerQueue,
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
     task_driver::{TaskDriverQueue, TaskDriverReceiver},
@@ -39,6 +40,8 @@ pub struct TaskDriverConfig {
     pub network_queue: NetworkManagerQueue,
     /// A sender to the proof manager's work queue
     pub proof_queue: ProofManagerQueue,
+    /// A sender to the event manager's work queue
+    pub event_queue: EventManagerQueue,
     /// The system bus to publish task updates onto
     pub system_bus: SystemBus<SystemBusMessage>,
     /// A handle on the global state
@@ -47,12 +50,14 @@ pub struct TaskDriverConfig {
 
 impl TaskDriverConfig {
     /// Create a new config with default values
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         task_queue: TaskDriverReceiver,
         task_queue_sender: TaskDriverQueue,
         arbitrum_client: ArbitrumClient,
         network_queue: NetworkManagerQueue,
         proof_queue: ProofManagerQueue,
+        event_queue: EventManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         state: State,
     ) -> Self {
@@ -63,6 +68,7 @@ impl TaskDriverConfig {
             arbitrum_client,
             network_queue,
             proof_queue,
+            event_queue,
             system_bus,
             state,
         }

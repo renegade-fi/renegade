@@ -2,7 +2,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
@@ -26,6 +26,7 @@ use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use common::types::TimestampedPrice;
 use external_api::bus_message::SystemBusMessage;
+use job_types::event_manager::{EventManagerQueue, ExternalMatchEvent, RelayerEvent};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
@@ -34,6 +35,7 @@ use system_bus::SystemBus;
 use tracing::{info, instrument, warn};
 use util::arbitrum::get_protocol_fee;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
+use uuid::Uuid;
 
 use super::ERR_NO_VALIDITY_PROOF;
 
@@ -118,6 +120,8 @@ pub enum SettleMatchExternalTaskError {
     ProofLinking(String),
     /// An error interacting with the relayer state
     State(String),
+    /// An error sending an event to the event manager
+    SendEvent(String),
 }
 
 impl SettleMatchExternalTaskError {
@@ -143,6 +147,12 @@ impl SettleMatchExternalTaskError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn state<T: ToString>(msg: T) -> Self {
         Self::State(msg.to_string())
+    }
+
+    /// Construct a `SendEvent` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn send_event<T: ToString>(msg: T) -> Self {
+        Self::SendEvent(msg.to_string())
     }
 }
 
@@ -203,6 +213,8 @@ pub struct SettleMatchExternalTask {
     proof_queue: ProofManagerQueue,
     /// The state of the task
     task_state: SettleMatchExternalTaskState,
+    /// The event queue to send events to
+    event_queue: EventManagerQueue,
 }
 
 #[async_trait]
@@ -242,6 +254,7 @@ impl Task for SettleMatchExternalTask {
             proof_queue: ctx.proof_queue,
             bus: ctx.bus,
             task_state: SettleMatchExternalTaskState::Pending,
+            event_queue: ctx.event_queue,
         })
     }
 
@@ -280,6 +293,7 @@ impl Task for SettleMatchExternalTask {
 
             SettleMatchExternalTaskState::RefreshingWallet => {
                 self.refresh_wallet().await?;
+                self.emit_event()?;
                 self.task_state = SettleMatchExternalTaskState::Completed
             },
 
@@ -493,5 +507,35 @@ impl SettleMatchExternalTask {
 
         renegade_metrics::record_match_volume(match_res, true /* is_external_match */);
         Ok(())
+    }
+
+    /// Emit an external match event to the event manager
+    fn emit_event(&self) -> Result<(), SettleMatchExternalTaskError> {
+        let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
+        let internal_party_order_side = commitments_witness.order.side;
+        let relayer_fee = commitments_witness.relayer_fee;
+
+        let internal_fee_take =
+            compute_fee_obligation(relayer_fee, internal_party_order_side, &self.match_res);
+        let external_fee_take = compute_fee_obligation(
+            FixedPoint::default(),
+            internal_party_order_side.opposite(),
+            &self.match_res,
+        );
+
+        let external_match_result = self.match_res.clone().into();
+
+        let event = RelayerEvent::ExternalMatch(ExternalMatchEvent {
+            event_id: Uuid::new_v4(),
+            event_timestamp: SystemTime::now(),
+            internal_wallet_id: self.internal_wallet_id,
+            internal_order_id: self.internal_order_id,
+            execution_price: self.execution_price,
+            external_match_result,
+            internal_fee_take,
+            external_fee_take,
+        });
+
+        self.event_queue.send(event).map_err(SettleMatchExternalTaskError::send_event)
     }
 }
