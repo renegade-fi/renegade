@@ -166,10 +166,10 @@ pub struct MatchEvent {
     pub execution_price: TimestampedPrice,
     /// The match result
     pub match_result: MatchResult,
-    /// The fees paid on the base asset in this match
-    pub base_fee_take: FeeTake,
-    /// The fees paid on the quote asset in this match
-    pub quote_fee_take: FeeTake,
+    /// The fees paid by the first party in this match
+    pub fee_take0: FeeTake,
+    /// The fees paid by the second party in this match
+    pub fee_take1: FeeTake,
 }
 
 /// An external match event
@@ -188,8 +188,8 @@ pub struct ExternalMatchEvent {
     pub execution_price: TimestampedPrice,
     /// The external match result
     pub external_match_result: ExternalMatchResult,
-    /// The fees paid on the base asset in this match
-    pub base_fee_take: FeeTake,
-    /// The fees paid on the quote asset in this match
-    pub quote_fee_take: FeeTake,
+    /// The fees paid by the internal party
+    pub internal_fee_take: FeeTake,
+    /// The fees paid by the external party
+    pub external_fee_take: FeeTake,
 }

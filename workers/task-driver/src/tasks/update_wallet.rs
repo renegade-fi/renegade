@@ -6,6 +6,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::time::SystemTime;
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
@@ -14,17 +15,27 @@ use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::tasks::WalletUpdateType;
+use common::types::wallet::{Order, OrderIdentifier};
+use common::types::MatchingPoolName;
 use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
+};
+use itertools::Itertools;
+use job_types::event_manager::{
+    EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent,
+    OrderUpdateEvent, RelayerEvent,
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use serde::Serialize;
 use state::error::StateError;
+use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use state::State;
 use tracing::instrument;
+use util::err_str;
+use uuid::Uuid;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
@@ -40,6 +51,13 @@ const ERR_WALLET_MISSING: &str = "wallet not found in global state";
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 /// The new wallet does not correspond to a valid reblinding of the old wallet
 const ERR_INVALID_REBLIND: &str = "new wallet is not a valid reblind of old wallet";
+/// A deposit or withdrawal wallet update type is missing an external transfer
+const ERR_MISSING_TRANSFER: &str = "missing external transfer";
+/// A cancelled order cannot be found in an order cancellation wallet update
+/// type
+const ERR_MISSING_CANCELLED_ORDER: &str = "missing cancelled order";
+/// An order metadata is missing from the global state
+const ERR_MISSING_ORDER_METADATA: &str = "missing order metadata";
 
 // --------------
 // | Task State |
@@ -122,6 +140,8 @@ pub enum UpdateWalletTaskError {
     State(String),
     /// An error while updating validity proofs for a wallet
     UpdatingValidityProofs(String),
+    /// An error occurred sending an event to the event manager
+    SendEvent(String),
 }
 
 impl TaskError for UpdateWalletTaskError {
@@ -179,6 +199,8 @@ pub struct UpdateWalletTask {
     pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task
     pub task_state: UpdateWalletTaskState,
+    /// The event manager queue
+    pub event_queue: EventManagerQueue,
 }
 
 #[async_trait]
@@ -217,6 +239,7 @@ impl Task for UpdateWalletTask {
             global_state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
             task_state: UpdateWalletTaskState::Pending,
+            event_queue: ctx.event_queue,
         })
     }
 
@@ -252,9 +275,10 @@ impl Task for UpdateWalletTask {
             UpdateWalletTaskState::UpdatingValidityProofs => {
                 // Update validity proofs for now-nullified orders
                 self.update_validity_proofs().await?;
-                self.task_state = UpdateWalletTaskState::Completed;
-
+                self.emit_event().await?;
                 maybe_record_transfer_metrics(&self.transfer);
+
+                self.task_state = UpdateWalletTaskState::Completed;
             },
             UpdateWalletTaskState::Completed => {
                 panic!("step() called in state Completed")
@@ -428,5 +452,121 @@ impl UpdateWalletTask {
         } else {
             Ok(0)
         }
+    }
+
+    /// Construct the appropriate event for the given wallet update type
+    /// and emit it to the event manager
+    async fn emit_event(&self) -> Result<(), UpdateWalletTaskError> {
+        let event = match &self.update_type {
+            WalletUpdateType::Deposit { .. } | WalletUpdateType::Withdraw { .. } => {
+                self.construct_external_transfer_event()?
+            },
+            WalletUpdateType::PlaceOrder { order, id, matching_pool } => {
+                self.construct_order_placement_or_update_event(order, id, matching_pool)
+            },
+            WalletUpdateType::CancelOrder { order } => {
+                self.construct_order_cancellation_event(order).await?
+            },
+        };
+
+        self.event_queue.send(event).map_err(err_str!(UpdateWalletTaskError::SendEvent))
+    }
+
+    /// Construct an external transfer event
+    fn construct_external_transfer_event(&self) -> Result<RelayerEvent, UpdateWalletTaskError> {
+        let event_id = Uuid::new_v4();
+        let event_timestamp = SystemTime::now();
+        let wallet_id = self.new_wallet.wallet_id;
+        let transfer = self
+            .transfer
+            .clone()
+            .map(|t| t.external_transfer)
+            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_TRANSFER.to_string()))?;
+
+        Ok(RelayerEvent::ExternalTransfer(ExternalTransferEvent {
+            event_id,
+            event_timestamp,
+            wallet_id,
+            transfer,
+        }))
+    }
+
+    /// Construct either an order placement or an order update event,
+    /// depending on whether the order already exists in the new wallet
+    fn construct_order_placement_or_update_event(
+        &self,
+        order: &Order,
+        order_id: &OrderIdentifier,
+        matching_pool: &Option<MatchingPoolName>,
+    ) -> RelayerEvent {
+        let event_id = Uuid::new_v4();
+        let event_timestamp = SystemTime::now();
+        let wallet_id = self.new_wallet.wallet_id;
+        let order_id = *order_id;
+        let order = order.clone();
+        let matching_pool = matching_pool.clone().unwrap_or(GLOBAL_MATCHING_POOL.to_string());
+
+        if self.old_wallet.contains_order(&order_id) {
+            RelayerEvent::OrderUpdate(OrderUpdateEvent {
+                event_id,
+                event_timestamp,
+                wallet_id,
+                order_id,
+                order,
+                matching_pool,
+            })
+        } else {
+            RelayerEvent::OrderPlacement(OrderPlacementEvent {
+                event_id,
+                event_timestamp,
+                wallet_id,
+                order_id,
+                order,
+                matching_pool,
+            })
+        }
+    }
+
+    /// Construct an order cancellation event
+    async fn construct_order_cancellation_event(
+        &self,
+        order: &Order,
+    ) -> Result<RelayerEvent, UpdateWalletTaskError> {
+        let event_id = Uuid::new_v4();
+        let event_timestamp = SystemTime::now();
+        let wallet_id = self.new_wallet.wallet_id;
+        let order = order.clone();
+
+        // Find the ID of the cancelled order
+        let mut new_order_ids = self.new_wallet.get_nonzero_orders().into_keys();
+        let order_id = self
+            .old_wallet
+            .get_nonzero_orders()
+            .into_keys()
+            .find(|id| !new_order_ids.contains(id))
+            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_CANCELLED_ORDER.to_string()))?;
+
+        let amount_remaining = order.amount;
+
+        // TODO: This calculation of filled amount assumes that the cancelled order's
+        // metadata is available. We must ensure this is the case (or
+        // otherwise enable this computation) when we implement tracking of
+        // actively-managed order metadata.
+        let amount_filled = self
+            .global_state
+            .get_order_metadata(&order_id)
+            .await?
+            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_ORDER_METADATA.to_string()))?
+            .total_filled();
+
+        Ok(RelayerEvent::OrderCancellation(OrderCancellationEvent {
+            event_id,
+            event_timestamp,
+            wallet_id,
+            order_id,
+            order,
+            amount_remaining,
+            amount_filled,
+        }))
     }
 }
