@@ -10,6 +10,7 @@
 use core::panic;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::time::SystemTime;
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
@@ -21,12 +22,15 @@ use circuits::zk_circuits::valid_wallet_create::{
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use constants::Scalar;
+use job_types::event_manager::{EventManagerQueue, RelayerEvent, WalletCreationEvent};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use tracing::instrument;
+use util::err_str;
+use uuid::Uuid;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
@@ -161,6 +165,8 @@ pub struct NewWalletTask {
     pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task's execution
     pub task_state: NewWalletTaskState,
+    /// The event manager queue
+    pub event_queue: EventManagerQueue,
 }
 
 // -----------------------
@@ -182,6 +188,7 @@ impl Task for NewWalletTask {
             global_state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
             task_state: NewWalletTaskState::Pending, // Initialize to the initial state
+            event_queue: ctx.event_queue,
         })
     }
 
@@ -207,8 +214,10 @@ impl Task for NewWalletTask {
                 // Find the authentication path via contract events, and index this
                 // in the global state
                 self.find_merkle_path().await?;
-                self.task_state = NewWalletTaskState::Completed;
+                self.emit_event()?;
                 metrics::counter!(NUM_NEW_WALLETS_METRIC).increment(1);
+
+                self.task_state = NewWalletTaskState::Completed;
             },
             NewWalletTaskState::Completed => {
                 panic!("step() called in completed state")
@@ -300,5 +309,17 @@ impl NewWalletTask {
                 public_wallet_shares: self.wallet.blinded_public_shares.clone(),
             },
         )
+    }
+
+    /// Emit a wallet creation event to the event manager
+    fn emit_event(&self) -> Result<(), NewWalletTaskError> {
+        let event = RelayerEvent::WalletCreation(WalletCreationEvent {
+            event_id: Uuid::new_v4(),
+            event_timestamp: SystemTime::now(),
+            wallet_id: self.wallet.wallet_id,
+            symmetric_key: self.wallet.key_chain.symmetric_key().to_base64_string(),
+        });
+
+        self.event_queue.send(event).map_err(err_str!(NewWalletTaskError::SendMessage))
     }
 }

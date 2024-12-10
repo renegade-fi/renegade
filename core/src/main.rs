@@ -107,7 +107,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();
-    let (_event_manager_sender, event_manager_receiver) = new_event_manager_queue();
+    let (event_manager_sender, event_manager_receiver) = new_event_manager_queue();
 
     // Construct a global state
     let (state_failure_send, mut state_failure_recv) = new_worker_failure_channel();
@@ -181,6 +181,7 @@ async fn main() -> Result<(), CoordinatorError> {
         arbitrum_client.clone(),
         network_sender.clone(),
         proof_generation_worker_sender.clone(),
+        event_manager_sender,
         system_bus.clone(),
         global_state.clone(),
     );
