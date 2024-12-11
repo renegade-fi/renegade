@@ -10,7 +10,6 @@
 use core::panic;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::time::SystemTime;
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
@@ -30,7 +29,6 @@ use state::error::StateError;
 use state::State;
 use tracing::instrument;
 use util::err_str;
-use uuid::Uuid;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
@@ -313,12 +311,10 @@ impl NewWalletTask {
 
     /// Emit a wallet creation event to the event manager
     fn emit_event(&self) -> Result<(), NewWalletTaskError> {
-        let event = RelayerEvent::WalletCreation(WalletCreationEvent {
-            event_id: Uuid::new_v4(),
-            event_timestamp: SystemTime::now(),
-            wallet_id: self.wallet.wallet_id,
-            symmetric_key: self.wallet.key_chain.symmetric_key().to_base64_string(),
-        });
+        let event = RelayerEvent::WalletCreation(WalletCreationEvent::new(
+            self.wallet.wallet_id,
+            self.wallet.key_chain.symmetric_key().to_base64_string(),
+        ));
 
         self.event_queue.send(event).map_err(err_str!(NewWalletTaskError::SendMessage))
     }
