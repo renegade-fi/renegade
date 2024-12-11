@@ -3,7 +3,6 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::time::SystemTime;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
@@ -28,7 +27,7 @@ use common::types::{
     wallet::Wallet,
 };
 use constants::Scalar;
-use job_types::event_manager::{EventManagerQueue, MatchEvent, RelayerEvent};
+use job_types::event_manager::{EventManagerQueue, MatchEvent, PartyMatchData, RelayerEvent};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::record_match_volume;
@@ -42,7 +41,6 @@ use util::err_str;
 use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
 };
-use uuid::Uuid;
 
 use super::ERR_AWAITING_PROOF;
 
@@ -571,20 +569,25 @@ impl SettleMatchInternalTask {
         let fee_take0 = compute_fee_obligation(relayer_fee0, order_side0, &self.match_result);
         let fee_take1 = compute_fee_obligation(relayer_fee1, order_side1, &self.match_result);
 
+        let party_data0 = PartyMatchData {
+            wallet_id: self.wallet_id1,
+            order_id: self.order_id1,
+            fee_take: fee_take0,
+        };
+        let party_data1 = PartyMatchData {
+            wallet_id: self.wallet_id2,
+            order_id: self.order_id2,
+            fee_take: fee_take1,
+        };
+
         let match_result = self.match_result.clone();
 
-        let event = RelayerEvent::Match(MatchEvent {
-            event_id: Uuid::new_v4(),
-            event_timestamp: SystemTime::now(),
-            wallet_id0: self.wallet_id1,
-            wallet_id1: self.wallet_id2,
-            order_id0: self.order_id1,
-            order_id1: self.order_id2,
-            execution_price: self.execution_price,
+        let event = RelayerEvent::Match(MatchEvent::new(
+            party_data0,
+            party_data1,
+            self.execution_price,
             match_result,
-            fee_take0,
-            fee_take1,
-        });
+        ));
 
         self.event_queue.send(event).map_err(err_str!(SettleMatchInternalTaskError::SendEvent))
     }
