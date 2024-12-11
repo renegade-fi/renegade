@@ -11,4 +11,5 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 
 pub mod error;
+pub mod manager;
 pub mod worker;

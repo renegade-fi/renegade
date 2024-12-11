@@ -6,7 +6,6 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::time::SystemTime;
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
@@ -35,7 +34,6 @@ use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use state::State;
 use tracing::instrument;
 use util::err_str;
-use uuid::Uuid;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
@@ -462,7 +460,7 @@ impl UpdateWalletTask {
                 self.construct_external_transfer_event()?
             },
             WalletUpdateType::PlaceOrder { order, id, matching_pool } => {
-                self.construct_order_placement_or_update_event(order, id, matching_pool)
+                self.construct_order_placement_or_update_event(id, order, matching_pool)
             },
             WalletUpdateType::CancelOrder { order } => {
                 self.construct_order_cancellation_event(order).await?
@@ -474,8 +472,6 @@ impl UpdateWalletTask {
 
     /// Construct an external transfer event
     fn construct_external_transfer_event(&self) -> Result<RelayerEvent, UpdateWalletTaskError> {
-        let event_id = Uuid::new_v4();
-        let event_timestamp = SystemTime::now();
         let wallet_id = self.new_wallet.wallet_id;
         let transfer = self
             .transfer
@@ -483,47 +479,36 @@ impl UpdateWalletTask {
             .map(|t| t.external_transfer)
             .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_TRANSFER.to_string()))?;
 
-        Ok(RelayerEvent::ExternalTransfer(ExternalTransferEvent {
-            event_id,
-            event_timestamp,
-            wallet_id,
-            transfer,
-        }))
+        Ok(RelayerEvent::ExternalTransfer(ExternalTransferEvent::new(wallet_id, transfer)))
     }
 
     /// Construct either an order placement or an order update event,
     /// depending on whether the order already exists in the new wallet
     fn construct_order_placement_or_update_event(
         &self,
-        order: &Order,
         order_id: &OrderIdentifier,
+        order: &Order,
         matching_pool: &Option<MatchingPoolName>,
     ) -> RelayerEvent {
-        let event_id = Uuid::new_v4();
-        let event_timestamp = SystemTime::now();
         let wallet_id = self.new_wallet.wallet_id;
         let order_id = *order_id;
         let order = order.clone();
         let matching_pool = matching_pool.clone().unwrap_or(GLOBAL_MATCHING_POOL.to_string());
 
         if self.old_wallet.contains_order(&order_id) {
-            RelayerEvent::OrderUpdate(OrderUpdateEvent {
-                event_id,
-                event_timestamp,
+            RelayerEvent::OrderUpdate(OrderUpdateEvent::new(
                 wallet_id,
                 order_id,
                 order,
                 matching_pool,
-            })
+            ))
         } else {
-            RelayerEvent::OrderPlacement(OrderPlacementEvent {
-                event_id,
-                event_timestamp,
+            RelayerEvent::OrderPlacement(OrderPlacementEvent::new(
                 wallet_id,
                 order_id,
                 order,
                 matching_pool,
-            })
+            ))
         }
     }
 
@@ -532,8 +517,6 @@ impl UpdateWalletTask {
         &self,
         order: &Order,
     ) -> Result<RelayerEvent, UpdateWalletTaskError> {
-        let event_id = Uuid::new_v4();
-        let event_timestamp = SystemTime::now();
         let wallet_id = self.new_wallet.wallet_id;
         let order = order.clone();
 
@@ -559,14 +542,12 @@ impl UpdateWalletTask {
             .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_ORDER_METADATA.to_string()))?
             .total_filled();
 
-        Ok(RelayerEvent::OrderCancellation(OrderCancellationEvent {
-            event_id,
-            event_timestamp,
+        Ok(RelayerEvent::OrderCancellation(OrderCancellationEvent::new(
             wallet_id,
             order_id,
             order,
             amount_remaining,
             amount_filled,
-        }))
+        )))
     }
 }

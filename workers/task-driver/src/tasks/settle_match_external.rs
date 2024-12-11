@@ -2,7 +2,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
@@ -26,7 +26,9 @@ use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use common::types::TimestampedPrice;
 use external_api::bus_message::SystemBusMessage;
-use job_types::event_manager::{EventManagerQueue, ExternalMatchEvent, RelayerEvent};
+use job_types::event_manager::{
+    EventManagerQueue, ExternalMatchEvent, PartyMatchData, RelayerEvent,
+};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
@@ -35,7 +37,6 @@ use system_bus::SystemBus;
 use tracing::{info, instrument, warn};
 use util::arbitrum::get_protocol_fee;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
-use uuid::Uuid;
 
 use super::ERR_NO_VALIDITY_PROOF;
 
@@ -514,9 +515,15 @@ impl SettleMatchExternalTask {
         let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
         let internal_party_order_side = commitments_witness.order.side;
         let relayer_fee = commitments_witness.relayer_fee;
-
         let internal_fee_take =
             compute_fee_obligation(relayer_fee, internal_party_order_side, &self.match_res);
+
+        let internal_party_data = PartyMatchData {
+            wallet_id: self.internal_wallet_id,
+            order_id: self.internal_order_id,
+            fee_take: internal_fee_take,
+        };
+
         let external_fee_take = compute_fee_obligation(
             FixedPoint::default(),
             internal_party_order_side.opposite(),
@@ -525,16 +532,12 @@ impl SettleMatchExternalTask {
 
         let external_match_result = self.match_res.clone().into();
 
-        let event = RelayerEvent::ExternalMatch(ExternalMatchEvent {
-            event_id: Uuid::new_v4(),
-            event_timestamp: SystemTime::now(),
-            internal_wallet_id: self.internal_wallet_id,
-            internal_order_id: self.internal_order_id,
-            execution_price: self.execution_price,
-            external_match_result,
-            internal_fee_take,
+        let event = RelayerEvent::ExternalMatch(ExternalMatchEvent::new(
+            internal_party_data,
             external_fee_take,
-        });
+            self.execution_price,
+            external_match_result,
+        ));
 
         self.event_queue.send(event).map_err(SettleMatchExternalTaskError::send_event)
     }
