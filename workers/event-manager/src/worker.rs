@@ -7,7 +7,7 @@ use common::{types::CancelChannel, worker::Worker};
 use job_types::event_manager::EventManagerReceiver;
 use libp2p::Multiaddr;
 
-use crate::error::EventManagerError;
+use crate::{error::EventManagerError, manager::EventManager};
 
 // ----------
 // | Config |
@@ -22,18 +22,6 @@ pub struct EventManagerConfig {
     /// The channel on which the coordinator may mandate that the
     /// event manager cancel its execution
     pub cancel_channel: CancelChannel,
-}
-
-// ----------
-// | Worker |
-// ----------
-
-/// The event manager worker
-pub struct EventManager {
-    /// The configuration for the event manager
-    pub config: EventManagerConfig,
-    /// The handle on the event manager
-    pub handle: Option<JoinHandle<EventManagerError>>,
 }
 
 #[async_trait]

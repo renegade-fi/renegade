@@ -3583,9 +3583,13 @@ dependencies = [
  "async-trait",
  "circuit-types 0.1.0",
  "common 0.1.0",
+ "constants 0.1.0",
  "job-types",
  "libp2p",
+ "serde_json",
  "tokio",
+ "tracing",
+ "util 0.1.0",
 ]
 
 [[package]]
