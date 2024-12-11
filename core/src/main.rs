@@ -24,7 +24,7 @@ use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use common::{default_wrapper::default_option, types::new_cancel_channel};
 use constants::{in_bootstrap_mode, VERSION};
-use event_manager::worker::{EventManager, EventManagerConfig};
+use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
