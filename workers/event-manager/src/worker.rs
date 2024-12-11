@@ -1,13 +1,29 @@
 //! Defines the worker implementation for the event manager
 
-use std::thread::JoinHandle;
+use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use common::{types::CancelChannel, worker::Worker};
 use job_types::event_manager::EventManagerReceiver;
 use libp2p::Multiaddr;
+use tokio::runtime::Builder as RuntimeBuilder;
+use tracing::info;
+use util::err_str;
 
-use crate::error::EventManagerError;
+use crate::{
+    error::EventManagerError,
+    manager::{EventManager, EventManagerExecutor},
+};
+
+// -------------
+// | Constants |
+// -------------
+
+/// The number of threads to use for the event manager.
+///
+/// We only need one thread as no parallel tasks are spawned
+/// by the event manager.
+const EVENT_MANAGER_N_THREADS: usize = 1;
 
 // ----------
 // | Config |
@@ -24,25 +40,14 @@ pub struct EventManagerConfig {
     pub cancel_channel: CancelChannel,
 }
 
-// ----------
-// | Worker |
-// ----------
-
-/// The event manager worker
-pub struct EventManager {
-    /// The configuration for the event manager
-    pub config: EventManagerConfig,
-    /// The handle on the event manager
-    pub handle: Option<JoinHandle<EventManagerError>>,
-}
-
 #[async_trait]
 impl Worker for EventManager {
     type WorkerConfig = EventManagerConfig;
     type Error = EventManagerError;
 
     async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        Ok(Self { config, handle: None })
+        let executor = EventManagerExecutor::new(config);
+        Ok(Self { executor: Some(executor), handle: None })
     }
 
     fn name(&self) -> String {
@@ -54,7 +59,7 @@ impl Worker for EventManager {
     }
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
-        vec![]
+        vec![self.handle.take().unwrap()]
     }
 
     fn cleanup(&mut self) -> Result<(), Self::Error> {
@@ -62,6 +67,24 @@ impl Worker for EventManager {
     }
 
     fn start(&mut self) -> Result<(), Self::Error> {
+        info!("Starting event manager executor...");
+
+        let executor = self.executor.take().unwrap();
+        let executor_handle = Builder::new()
+            .name("event-manager-executor-main".to_string())
+            .spawn(move || {
+                let runtime = RuntimeBuilder::new_multi_thread()
+                    .worker_threads(EVENT_MANAGER_N_THREADS)
+                    .enable_all()
+                    .build()
+                    .unwrap();
+
+                runtime.block_on(executor.execution_loop()).err().unwrap()
+            })
+            .map_err(err_str!(EventManagerError::SetupError))?;
+
+        self.handle = Some(executor_handle);
+
         Ok(())
     }
 }

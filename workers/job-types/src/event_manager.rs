@@ -76,6 +76,14 @@ pub struct WalletCreationEvent {
     pub symmetric_key: String,
 }
 
+impl WalletCreationEvent {
+    /// Creates a new wallet creation event
+    pub fn new(wallet_id: WalletIdentifier, symmetric_key: String) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+        Self { event_id, event_timestamp, wallet_id, symmetric_key }
+    }
+}
+
 /// An external transfer event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalTransferEvent {
@@ -88,6 +96,14 @@ pub struct ExternalTransferEvent {
     pub wallet_id: WalletIdentifier,
     /// The transfer that occurred
     pub transfer: ExternalTransfer,
+}
+
+impl ExternalTransferEvent {
+    /// Creates a new external transfer event
+    pub fn new(wallet_id: WalletIdentifier, transfer: ExternalTransfer) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+        Self { event_id, event_timestamp, wallet_id, transfer }
+    }
 }
 
 /// An order placement event
@@ -108,6 +124,19 @@ pub struct OrderPlacementEvent {
     pub matching_pool: MatchingPoolName,
 }
 
+impl OrderPlacementEvent {
+    /// Creates a new order placement event
+    pub fn new(
+        wallet_id: WalletIdentifier,
+        order_id: OrderIdentifier,
+        order: Order,
+        matching_pool: MatchingPoolName,
+    ) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+        Self { event_id, event_timestamp, wallet_id, order_id, order, matching_pool }
+    }
+}
+
 /// An order update event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderUpdateEvent {
@@ -124,6 +153,19 @@ pub struct OrderUpdateEvent {
     pub order: Order,
     /// The matching pool to which the order was assigned
     pub matching_pool: MatchingPoolName,
+}
+
+impl OrderUpdateEvent {
+    /// Creates a new order update event
+    pub fn new(
+        wallet_id: WalletIdentifier,
+        order_id: OrderIdentifier,
+        order: Order,
+        matching_pool: MatchingPoolName,
+    ) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+        Self { event_id, event_timestamp, wallet_id, order_id, order, matching_pool }
+    }
 }
 
 /// An order cancellation event
@@ -144,6 +186,28 @@ pub struct OrderCancellationEvent {
     pub amount_remaining: Amount,
     /// The filled amount of the base asset in the order
     pub amount_filled: Amount,
+}
+
+impl OrderCancellationEvent {
+    /// Creates a new order cancellation event
+    pub fn new(
+        wallet_id: WalletIdentifier,
+        order_id: OrderIdentifier,
+        order: Order,
+        amount_remaining: Amount,
+        amount_filled: Amount,
+    ) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+        Self {
+            event_id,
+            event_timestamp,
+            wallet_id,
+            order_id,
+            order,
+            amount_remaining,
+            amount_filled,
+        }
+    }
 }
 
 /// A match event
@@ -172,6 +236,47 @@ pub struct MatchEvent {
     pub fee_take1: FeeTake,
 }
 
+/// A convenience type encapsulating the event data for a single party in a
+/// match
+pub struct PartyMatchData {
+    /// The ID of the party's wallet
+    pub wallet_id: WalletIdentifier,
+    /// The ID of the party's order
+    pub order_id: OrderIdentifier,
+    /// The fees paid by the party
+    pub fee_take: FeeTake,
+}
+
+impl MatchEvent {
+    /// Creates a new match event
+    pub fn new(
+        party_data0: PartyMatchData,
+        party_data1: PartyMatchData,
+        execution_price: TimestampedPrice,
+        match_result: MatchResult,
+    ) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+
+        let PartyMatchData { wallet_id: wallet_id0, order_id: order_id0, fee_take: fee_take0 } =
+            party_data0;
+        let PartyMatchData { wallet_id: wallet_id1, order_id: order_id1, fee_take: fee_take1 } =
+            party_data1;
+
+        Self {
+            event_id,
+            event_timestamp,
+            wallet_id0,
+            wallet_id1,
+            order_id0,
+            order_id1,
+            execution_price,
+            match_result,
+            fee_take0,
+            fee_take1,
+        }
+    }
+}
+
 /// An external match event
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalMatchEvent {
@@ -192,4 +297,42 @@ pub struct ExternalMatchEvent {
     pub internal_fee_take: FeeTake,
     /// The fees paid by the external party
     pub external_fee_take: FeeTake,
+}
+
+impl ExternalMatchEvent {
+    /// Creates a new external match event
+    pub fn new(
+        internal_party_data: PartyMatchData,
+        external_fee_take: FeeTake,
+        execution_price: TimestampedPrice,
+        external_match_result: ExternalMatchResult,
+    ) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+
+        let PartyMatchData {
+            wallet_id: internal_wallet_id,
+            order_id: internal_order_id,
+            fee_take: internal_fee_take,
+        } = internal_party_data;
+
+        Self {
+            event_id,
+            event_timestamp,
+            internal_wallet_id,
+            internal_order_id,
+            execution_price,
+            external_match_result,
+            internal_fee_take,
+            external_fee_take,
+        }
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Generates a new event ID and timestamp
+fn get_event_id_and_timestamp() -> (Uuid, SystemTime) {
+    (Uuid::new_v4(), SystemTime::now())
 }
