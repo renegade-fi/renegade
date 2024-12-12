@@ -6,9 +6,9 @@ use std::{path::Path, thread::JoinHandle};
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::event_manager::EventManagerReceiver;
-use libp2p::{multiaddr::Protocol, Multiaddr};
 use tokio::{io::AsyncWriteExt, net::UnixStream};
 use tracing::{info, warn};
+use url::Url;
 use util::{err_str, runtime::sleep_forever_async};
 
 use crate::{error::EventManagerError, worker::EventManagerConfig};
@@ -16,6 +16,9 @@ use crate::{error::EventManagerError, worker::EventManagerConfig};
 // -------------
 // | Constants |
 // -------------
+
+/// The Unix socket URL scheme
+const UNIX_SCHEME: &str = "unix";
 
 /// The error message for when the event export address is not a Unix socket
 const ERR_NON_UNIX_EVENT_EXPORT_ADDRESS: &str =
@@ -38,7 +41,7 @@ pub struct EventManagerExecutor {
     /// The channel on which to receive events
     event_queue: EventManagerReceiver,
     /// The address to export relayer events to
-    event_export_addr: Option<Multiaddr>,
+    event_export_addr: Option<Url>,
     /// The channel on which the coordinator may cancel event manager execution
     cancel_channel: CancelChannel,
 }
@@ -46,7 +49,8 @@ pub struct EventManagerExecutor {
 impl EventManagerExecutor {
     /// Constructs a new event manager executor
     pub fn new(config: EventManagerConfig) -> Self {
-        let EventManagerConfig { event_queue, event_export_addr, cancel_channel } = config;
+        let EventManagerConfig { event_queue, event_export_url: event_export_addr, cancel_channel } =
+            config;
 
         Self { event_queue, event_export_addr, cancel_channel }
     }
@@ -59,16 +63,7 @@ impl EventManagerExecutor {
             return Ok(None);
         }
 
-        let mut event_export_addr = self.event_export_addr.take().unwrap();
-        let unix_path =
-            match event_export_addr.pop().expect("event export address must not be empty") {
-                Protocol::Unix(path) => path.to_string(),
-                _ => {
-                    return Err(EventManagerError::InvalidEventExportAddr(
-                        ERR_NON_UNIX_EVENT_EXPORT_ADDRESS.to_string(),
-                    ))
-                },
-            };
+        let unix_path = extract_unix_socket_path(&self.event_export_addr.take().unwrap())?;
 
         let socket = UnixStream::connect(Path::new(&unix_path))
             .await
@@ -107,5 +102,15 @@ impl EventManagerExecutor {
                 }
             }
         }
+    }
+}
+
+/// Extracts a Unix socket path from the event export URL
+pub fn extract_unix_socket_path(event_export_url: &Url) -> Result<String, EventManagerError> {
+    match event_export_url.scheme() {
+        UNIX_SCHEME => Ok(event_export_url.path().to_string()),
+        _ => Err(EventManagerError::InvalidEventExportAddr(
+            ERR_NON_UNIX_EVENT_EXPORT_ADDRESS.to_string(),
+        )),
     }
 }
