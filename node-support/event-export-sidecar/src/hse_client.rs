@@ -24,14 +24,14 @@ const EVENT_SUBMISSION_PATH: &str = "/event";
 // ----------
 
 /// A client for the historical state engine
-pub struct HseClient {
+pub struct HistoricalStateClient {
     /// The base URL of the historical state engine
     base_url: String,
     /// The auth key for the historical state engine
     auth_key: HmacKey,
 }
 
-impl HseClient {
+impl HistoricalStateClient {
     /// Create a new historical state engine client
     pub fn new(base_url: String, auth_key: HmacKey) -> Self {
         Self { base_url, auth_key }
@@ -40,7 +40,7 @@ impl HseClient {
     /// Submit an event to the historical state engine
     pub async fn submit_event(&self, event: &RelayerEvent) -> Result<(), Error> {
         send_authenticated_request(
-            &format!("{}{}", self.base_url, EVENT_SUBMISSION_PATH),
+            &self.base_url,
             EVENT_SUBMISSION_PATH,
             Method::POST,
             event,

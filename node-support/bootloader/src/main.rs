@@ -51,6 +51,10 @@ const ENV_ADMIN_KEY: &str = "ADMIN_API_KEY";
 const ENV_FUNDS_MANAGER_URL: &str = "FUNDS_MANAGER_URL";
 /// The funds manager api key
 const ENV_FUNDS_MANAGER_KEY: &str = "FUNDS_MANAGER_KEY";
+/// The historical state engine URL
+const ENV_HISTORICAL_STATE_URL: &str = "HISTORICAL_STATE_URL";
+/// The historical state engine auth key
+const ENV_HISTORICAL_STATE_KEY: &str = "HISTORICAL_STATE_KEY";
 
 // --- Constants --- //
 
@@ -82,7 +86,9 @@ const WHITELIST_PATH: &str = "/whitelist.json";
 const DEFAULT_AWS_REGION: &str = "us-east-2";
 
 /// The location of the snapshot sidecar binary
-const SIDECAR_BIN: &str = "/bin/snapshot-sidecar";
+const SNAPSHOT_SIDECAR_BIN: &str = "/bin/snapshot-sidecar";
+/// The location of the event export sidecar binary
+const EVENT_EXPORT_SIDECAR_BIN: &str = "/bin/event-export-sidecar";
 /// The location of the relayer binary
 const RELAYER_BIN: &str = "/bin/renegade-relayer";
 
@@ -101,24 +107,42 @@ async fn main() -> Result<(), String> {
     modify_config(whitelist).await?;
     download_snapshot(&s3_client).await?;
 
-    // Start both the snapshot sidecar and the relayer
+    // Start the snapshot sidecar, event export sidecar, and the relayer
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
-    let mut sidecar = Command::new(SIDECAR_BIN)
+    let mut snapshot_sidecar = Command::new(SNAPSHOT_SIDECAR_BIN)
         .args(["--config-path", CONFIG_PATH])
         .args(["--bucket", &bucket])
         .spawn()
         .expect("Failed to start snapshot sidecar process");
+
+    let hse_url = read_env_var::<String>(ENV_HISTORICAL_STATE_URL)?;
+    let hse_key = read_env_var::<String>(ENV_HISTORICAL_STATE_KEY)?;
+    let mut event_export_sidecar = Command::new(EVENT_EXPORT_SIDECAR_BIN)
+        .args(["--config-path", CONFIG_PATH])
+        .args(["--hse-url", &hse_url])
+        .args(["--hse-key", &hse_key])
+        .spawn()
+        .expect("Failed to start event export sidecar process");
+
     let mut relayer = Command::new(RELAYER_BIN)
         .args(["--config-file", CONFIG_PATH])
         .spawn()
         .expect("Failed to start relayer process");
 
-    let sidecar_result = sidecar.wait();
+    let snapshot_sidecar_result = snapshot_sidecar.wait();
+    let event_export_sidecar_result = event_export_sidecar.wait();
     let relayer_result = relayer.wait();
-    let (sidecar_result, relayer_result) = tokio::try_join!(sidecar_result, relayer_result)
-        .expect("Either snapshot sidecar or relayer process encountered an error");
+    let (snapshot_sidecar_result, event_export_sidecar_result, relayer_result) = tokio::try_join!(
+        snapshot_sidecar_result,
+        event_export_sidecar_result,
+        relayer_result
+    )
+    .expect(
+        "Either snapshot sidecar, event export sidecar, or relayer process encountered an error",
+    );
 
-    error!("sidecar exited with: {:?}", sidecar_result);
+    error!("snapshot sidecar exited with: {:?}", snapshot_sidecar_result);
+    error!("event export sidecar exited with: {:?}", event_export_sidecar_result);
     error!("relayer exited with: {:?}", relayer_result);
     Ok(())
 }
