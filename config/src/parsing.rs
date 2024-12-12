@@ -96,10 +96,9 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
-    // Parse the event export address, if there is one
-    let event_export_addr: Option<Multiaddr> = cli_args
-        .event_export_addr
-        .map(|addr| addr.parse().expect("Invalid address passed as --event-export-addr"));
+    // Parse the event export URL, if there is one
+    let event_export_url: Option<Url> =
+        cli_args.event_export_url.map(|url| url.parse().expect("Invalid event export URL"));
 
     // Parse the price reporter URL, if there is one
     let price_reporter_url = cli_args
@@ -130,7 +129,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         db_path: cli_args.db_path,
         raft_snapshot_path: cli_args.raft_snapshot_path,
         record_historical_state: cli_args.record_historical_state,
-        event_export_addr,
+        event_export_url,
         wallet_task_rate_limit: cli_args.wallet_task_rate_limit,
         min_transfer_amount: cli_args.min_transfer_amount,
         bind_addr: cli_args.bind_addr,

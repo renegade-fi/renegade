@@ -5,9 +5,9 @@ use std::thread::{Builder, JoinHandle};
 use async_trait::async_trait;
 use common::{types::CancelChannel, worker::Worker};
 use job_types::event_manager::EventManagerReceiver;
-use libp2p::Multiaddr;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::info;
+use url::Url;
 use util::err_str;
 
 use crate::{
@@ -31,8 +31,8 @@ const EVENT_MANAGER_N_THREADS: usize = 1;
 
 /// The configuration for the event manager
 pub struct EventManagerConfig {
-    /// The address to export relayer events to
-    pub event_export_addr: Option<Multiaddr>,
+    /// The URL to export relayer events to
+    pub event_export_url: Option<Url>,
     /// The queue on which to receive events
     pub event_queue: EventManagerReceiver,
     /// The channel on which the coordinator may mandate that the

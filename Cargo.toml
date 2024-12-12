@@ -12,6 +12,7 @@ members = [
 	"gossip-api",
 	"mock-node",
 	"node-support/snapshot-sidecar",
+	"node-support/event-export-sidecar",
 	"node-support/bootloader",
 	"renegade-crypto",
 	"state",
