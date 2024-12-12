@@ -9,7 +9,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tracing::{error, info, warn};
 use url::Url;
 
-use crate::hse_client::HseClient;
+use crate::hse_client::HistoricalStateClient;
 
 // -------------
 // | Constants |
@@ -34,12 +34,12 @@ pub struct EventSocket {
     path: String,
 
     /// The historical state engine client
-    hse_client: HseClient,
+    hse_client: HistoricalStateClient,
 }
 
 impl EventSocket {
     /// Creates a new event socket from the given URL
-    pub async fn new(url: &Url, hse_client: HseClient) -> Result<Self, Error> {
+    pub async fn new(url: &Url, hse_client: HistoricalStateClient) -> Result<Self, Error> {
         let path = extract_unix_socket_path(url)?;
         let socket = Self::establish_socket_connection(&path).await?;
         Ok(Self { socket, path, hse_client })
