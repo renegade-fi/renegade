@@ -238,6 +238,7 @@ pub struct MatchEvent {
 
 /// A convenience type encapsulating the event data for a single party in a
 /// match
+#[derive(Clone, Copy)]
 pub struct PartyMatchData {
     /// The ID of the party's wallet
     pub wallet_id: WalletIdentifier,

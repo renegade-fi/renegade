@@ -16,7 +16,7 @@ use common::types::wallet::keychain::HmacKey;
 use config::parsing::parse_config_from_file;
 use event_socket::EventSocket;
 use eyre::Error;
-use hse_client::HseClient;
+use hse_client::HistoricalStateClient;
 use tracing::{info, warn};
 
 // -------
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Error> {
 
     // Construct HSE client
     let hse_key = HmacKey::from_base64_string(&cli.hse_key).expect("invalid hse key");
-    let hse_client = HseClient::new(cli.hse_url, hse_key);
+    let hse_client = HistoricalStateClient::new(cli.hse_url, hse_key);
 
     let event_socket =
         EventSocket::new(&relayer_config.event_export_url.unwrap(), hse_client).await?;

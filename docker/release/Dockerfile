@@ -37,12 +37,16 @@ ARG CARGO_FEATURES="default"
 # Build only the dependencies to cache them in this layer
 RUN cargo chef cook --release --recipe-path recipe.json --features "$CARGO_FEATURES"
 
-# Build the bootloader
 COPY . .
+
+# Build the bootloader
 RUN cargo build --release --package bootloader
 
 # Build the snapshot sidecar
 RUN cargo build --release --package snapshot-sidecar
+
+# Build the event export sidecar
+RUN cargo build --release --package event-export-sidecar
 
 # Build the relayer
 RUN cargo build --release --bin renegade-relayer --features "$CARGO_FEATURES"
@@ -58,6 +62,7 @@ RUN apt-get update && \
 # Copy the binaries from the build stage
 COPY --from=builder /build/target/release/bootloader /bin/bootloader
 COPY --from=builder /build/target/release/snapshot-sidecar /bin/snapshot-sidecar
+COPY --from=builder /build/target/release/event-export-sidecar /bin/event-export-sidecar
 COPY --from=builder /build/target/release/renegade-relayer /bin/renegade-relayer
 
 # Set the bootloader as the entrypoint
