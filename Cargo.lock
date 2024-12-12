@@ -3556,6 +3556,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-export-sidecar"
+version = "0.1.0"
+dependencies = [
+ "clap 4.5.21",
+ "common 0.1.0",
+ "config",
+ "event-manager",
+ "external-api 0.1.0",
+ "eyre",
+ "job-types",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "event-listener"
 version = "5.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3585,10 +3604,11 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "job-types",
- "libp2p",
  "serde_json",
+ "thiserror",
  "tokio",
  "tracing",
+ "url",
  "util 0.1.0",
 ]
 

@@ -8,9 +8,6 @@ edition = "2021"
 async-trait = { workspace = true }
 tokio = { workspace = true }
 
-# === Networking === #
-libp2p = { workspace = true }
-
 # === Workspace Dependencies === #
 common = { path = "../../common" }
 constants = { path = "../../constants" }
@@ -19,5 +16,7 @@ job-types = { path = "../job-types" }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #
+url = "2.4"
 tracing = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { version = "1.0.61" }

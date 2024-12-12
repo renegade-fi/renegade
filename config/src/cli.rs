@@ -99,6 +99,10 @@ pub struct Cli {
     ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api 
     #[clap(long, value_parser)]
     pub compliance_service_url: Option<String>,
+    /// The URL to export relayer events to.
+    /// If ommitted, the event manager is disabled.
+    #[clap(long, value_parser)]
+    pub event_export_url: Option<String>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -175,10 +179,6 @@ pub struct Cli {
     // TODO: Unset default `true` once event export implementation is complete
     #[clap(long, value_parser, default_value = "true")]
     pub record_historical_state: bool,
-    /// The address to export relayer events to, in multiaddr format.
-    /// If ommitted, the event manager is disabled.
-    #[clap(long, value_parser)]
-    pub event_export_addr: Option<String>,
     /// The maximum number of wallet operations a user is allowed to perform per hour
     /// 
     /// Defaults to 500
@@ -306,6 +306,9 @@ pub struct RelayerConfig {
     /// The API of the compliance service must match that defined here:
     ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api
     pub compliance_service_url: Option<String>,
+    /// The URL to export relayer events to.
+    /// If ommitted, the event manager is disabled.
+    pub event_export_url: Option<Url>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -357,9 +360,6 @@ pub struct RelayerConfig {
     pub raft_snapshot_path: String,
     /// Whether to record historical state locally
     pub record_historical_state: bool,
-    /// The address to export relayer events to, in multiaddr format.
-    /// If ommitted, the event manager is disabled.
-    pub event_export_addr: Option<Multiaddr>,
     /// The maximum number of wallet operations a user is allowed to perform per
     /// hour
     pub wallet_task_rate_limit: u32,
@@ -485,7 +485,7 @@ impl Clone for RelayerConfig {
             db_path: self.db_path.clone(),
             raft_snapshot_path: self.raft_snapshot_path.clone(),
             record_historical_state: self.record_historical_state,
-            event_export_addr: self.event_export_addr.clone(),
+            event_export_url: self.event_export_url.clone(),
             wallet_task_rate_limit: self.wallet_task_rate_limit,
             min_transfer_amount: self.min_transfer_amount,
             max_merkle_staleness: self.max_merkle_staleness,
