@@ -26,6 +26,7 @@ use std::collections::VecDeque;
 use libmdbx::{
     Error as MdbxError, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW,
 };
+use tracing::instrument;
 
 use crate::ALL_TABLES;
 
@@ -59,6 +60,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     }
 
     /// Commit the transaction
+    #[instrument(skip(self))]
     pub fn commit(self) -> Result<(), StorageError> {
         self.inner.commit()
     }

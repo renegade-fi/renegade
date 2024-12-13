@@ -67,6 +67,7 @@ serde_json = "1.0"
 slog = { version = "2.2", features = ["max_level_trace"] }
 tempfile = { version = "3.8", optional = true }
 tracing = { workspace = true, features = ["log"] }
+tracing-opentelemetry = { workspace = true }
 tracing-slog = "0.2"
 tui = "0.19"
 tui-logger = "0.8"
