@@ -25,7 +25,7 @@ use job_types::{
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
-use tracing::error;
+use tracing::{error, info_span, Instrument};
 use util::{err_str, raw_err_str};
 
 use crate::{
@@ -304,10 +304,14 @@ impl StateInner {
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
             let tx = db.new_read_tx()?;
+            let _fn_span = tracing::info_span!("db_read_operation").entered();
             let res = f(&tx)?;
+            drop(_fn_span); // End the operation span before committing
+
             tx.commit()?;
             Ok(res)
         })
+        .instrument(info_span!("db_read_thread"))
         .await
         .map_err(err_str!(StateError::Runtime))?
     }
@@ -325,10 +329,14 @@ impl StateInner {
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
             let tx = db.new_write_tx()?;
+            let _fn_span = tracing::info_span!("db_write_operation").entered();
             let res = f(&tx)?;
+            drop(_fn_span); // End the operation span before committing
+
             tx.commit()?;
             Ok(res)
         })
+        .instrument(info_span!("db_write_thread"))
         .await
         .map_err(err_str!(StateError::Runtime))?
     }
