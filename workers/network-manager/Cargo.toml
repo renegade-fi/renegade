@@ -36,5 +36,5 @@ util = { path = "../../util" }
 itertools = "0.11"
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-opentelemetry = "0.22"
+tracing-opentelemetry = { workspace = true }
 uuid = "1.1.2"

@@ -7,6 +7,7 @@ use std::{ops::Bound, path::Path};
 
 use libmdbx::{Database, Geometry, WriteMap, RO, RW};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use util::err_str;
 
 use crate::{ciborium_serialize, NUM_TABLES};
@@ -149,24 +150,28 @@ impl DB {
     }
 
     /// Create a new read-only transaction
+    #[instrument(skip(self))]
     pub fn new_read_tx(&self) -> Result<StateTxn<RO>, StorageError> {
         let txn = self.new_raw_read_tx()?;
         Ok(StateTxn::new(txn))
     }
 
     /// Create a new raw read-only transaction
+    #[instrument(skip(self))]
     pub fn new_raw_read_tx(&self) -> Result<DbTxn<RO>, StorageError> {
         let txn = self.db.begin_ro_txn().map_err(StorageError::BeginTx)?;
         Ok(DbTxn::new(txn))
     }
 
     /// Create a new read-write transaction
+    #[instrument(skip(self))]
     pub fn new_write_tx(&self) -> Result<StateTxn<RW>, StorageError> {
         let txn = self.new_raw_write_tx()?;
         Ok(StateTxn::new(txn))
     }
 
     /// Create a new read-write transaction
+    #[instrument(skip(self))]
     pub fn new_raw_write_tx(&self) -> Result<DbTxn<RW>, StorageError> {
         self.db.begin_rw_txn().map_err(StorageError::BeginTx).map(DbTxn::new)
     }

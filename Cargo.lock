@@ -9068,6 +9068,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-slog",
  "tui",
  "tui-logger",
