@@ -161,13 +161,27 @@ impl ExternalOrder {
     ///
     /// The price here is expected to be decimal corrected; i.e. multiplied by
     /// the decimal diff for the two tokens
-    fn get_base_amount(&self, price: FixedPoint) -> Amount {
+    pub fn get_base_amount(&self, price: FixedPoint) -> Amount {
         if self.base_amount != 0 {
             return self.base_amount;
         }
 
         let implied_base_amount = FixedPoint::floor_div_int(self.quote_amount, price);
         scalar_to_u128(&implied_base_amount)
+    }
+
+    /// Get the quote amount of the order implied by the external order
+    ///
+    /// The price here is expected to be decimal corrected; i.e. multiplied by
+    /// the decimal diff for the two tokens
+    pub fn get_quote_amount(&self, price: FixedPoint) -> Amount {
+        if self.quote_amount != 0 {
+            return self.quote_amount;
+        }
+
+        let base_amount_scalar = Scalar::from(self.base_amount);
+        let implied_quote_amount = price * base_amount_scalar;
+        scalar_to_u128(&implied_quote_amount.floor())
     }
 
     /// Get the min fill size in units of the base token
