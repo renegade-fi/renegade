@@ -42,9 +42,9 @@ enum Destination {
         #[clap(short, long, default_value = "us-east-2")]
         region: String,
 
-        /// The name of the SQS queue to send events to
+        /// The URL of the SQS queue to send events to
         #[clap(short, long)]
-        queue_name: String,
+        queue_url: String,
     },
     /// Use the historical state engine directly as the destination
     Hse {

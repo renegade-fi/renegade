@@ -5,9 +5,7 @@ use std::time::Duration;
 use common::types::wallet::keychain::HmacKey;
 use external_api::auth::add_expiring_auth_to_headers;
 use eyre::{eyre, Error};
-use job_types::event_manager::RelayerEvent;
 use reqwest::{header::HeaderMap, Client, Method, Response};
-use serde::Serialize;
 
 // -------------
 // | Constants |
@@ -38,7 +36,7 @@ impl HistoricalStateClient {
     }
 
     /// Submit an event to the historical state engine
-    pub async fn submit_event(&self, event: &RelayerEvent) -> Result<(), Error> {
+    pub async fn submit_event(&self, event: Vec<u8>) -> Result<(), Error> {
         send_authenticated_request(
             &self.base_url,
             EVENT_SUBMISSION_PATH,
@@ -56,19 +54,17 @@ impl HistoricalStateClient {
 // -----------
 
 /// Send a request w/ an expiring auth header
-async fn send_authenticated_request<Req: Serialize>(
+async fn send_authenticated_request(
     url: &str,
     path: &str,
     method: Method,
-    body: &Req,
+    body: Vec<u8>,
     key: &HmacKey,
 ) -> Result<Response, Error> {
     let expiration = Duration::from_millis(SIG_EXPIRATION_BUFFER_MS);
 
-    let body_bytes = serde_json::to_vec(body).expect("failed to serialize request body");
-
     let mut headers = HeaderMap::new();
-    add_expiring_auth_to_headers(path, &mut headers, &body_bytes, key, expiration);
+    add_expiring_auth_to_headers(path, &mut headers, &body, key, expiration);
 
     let route = format!("{}{}", url, path);
     let response = send_request(&route, method, body, headers).await?;
@@ -76,16 +72,16 @@ async fn send_authenticated_request<Req: Serialize>(
 }
 
 /// Send a basic HTTP request
-async fn send_request<Req: Serialize>(
+async fn send_request(
     route: &str,
     method: Method,
-    body: &Req,
+    body: Vec<u8>,
     headers: HeaderMap,
 ) -> Result<Response, Error> {
     let response = Client::new()
         .request(method, route)
         .headers(headers)
-        .json(body)
+        .body(body)
         .send()
         .await
         .map_err(|e| eyre!("Failed to send request: {e}"))?;

@@ -3598,7 +3598,6 @@ dependencies = [
  "event-manager",
  "external-api 0.1.0",
  "eyre",
- "job-types",
  "reqwest 0.11.27",
  "serde",
  "serde_json",

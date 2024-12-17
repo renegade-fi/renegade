@@ -2,10 +2,11 @@
 
 use std::{fs, io, path::Path};
 
+use aws_config::Region;
+use aws_sdk_sqs::Client as SqsClient;
 use common::types::wallet::keychain::HmacKey;
 use event_manager::manager::extract_unix_socket_path;
 use eyre::{eyre, Error};
-use job_types::event_manager::RelayerEvent;
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{error, info, warn};
 use url::Url;
@@ -19,21 +20,20 @@ use crate::{hse_client::HistoricalStateClient, Destination};
 /// The maximum message size to read from the event export socket
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
 
-// ----------------
+// ---------------
 // | Destination |
-// ----------------
+// ---------------
 
-/// The destination to export events to
+/// The configured destination to export events to
 enum ConfiguredDestination {
     /// The historical state engine
     Hse(HistoricalStateClient),
     /// An AWS SQS queue
     Sqs {
-        /// The region in which the SQS queue is located
-        region: String,
-
-        /// The name of the SQS queue to send events to
-        queue_name: String,
+        /// The SQS client
+        client: SqsClient,
+        /// The URL of the SQS queue
+        queue_url: String,
     },
 }
 
@@ -61,12 +61,14 @@ impl EventSocket {
     pub async fn new(url: &Url, destination: Destination) -> Result<Self, Error> {
         let path = extract_unix_socket_path(url)?;
         let socket = Self::establish_socket_connection(&path).await?;
-        let destination = Self::configure_destination(destination)?;
+        let destination = Self::configure_destination(destination).await?;
         Ok(Self { socket, path, destination })
     }
 
     /// Configures the destination for the event socket
-    fn configure_destination(destination: Destination) -> Result<ConfiguredDestination, Error> {
+    async fn configure_destination(
+        destination: Destination,
+    ) -> Result<ConfiguredDestination, Error> {
         match destination {
             Destination::Hse { hse_url, hse_key } => {
                 // Construct HSE client
@@ -77,8 +79,10 @@ impl EventSocket {
 
                 Ok(ConfiguredDestination::Hse(hse_client))
             },
-            Destination::Sqs { region, queue_name } => {
-                Ok(ConfiguredDestination::Sqs { region, queue_name })
+            Destination::Sqs { region, queue_url } => {
+                let config = aws_config::from_env().region(Region::new(region)).load().await;
+                let client = SqsClient::new(&config);
+                Ok(ConfiguredDestination::Sqs { client, queue_url })
             },
         }
     }
@@ -114,7 +118,7 @@ impl EventSocket {
                 },
                 Ok(n) => {
                     let msg = &buf[..n];
-                    if let Err(e) = self.handle_relayer_event(msg).await {
+                    if let Err(e) = self.handle_relayer_event(msg.to_vec()).await {
                         // Events that fail to be submitted are effectively dropped here.
                         // We can consider retry logic or a local dead-letter queue, but
                         // for now we keep things simple.
@@ -132,16 +136,14 @@ impl EventSocket {
     }
 
     /// Handles an event received from the event export socket
-    async fn handle_relayer_event(&self, msg: &[u8]) -> Result<(), Error> {
-        let event = serde_json::from_slice::<RelayerEvent>(msg)?;
-
+    async fn handle_relayer_event(&self, msg: Vec<u8>) -> Result<(), Error> {
         match &self.destination {
             ConfiguredDestination::Hse(hse_client) => {
-                hse_client.submit_event(&event).await?;
+                hse_client.submit_event(msg).await?;
             },
-            ConfiguredDestination::Sqs { .. } => {
-                // TODO: Implement SQS destination
-                warn!("SQS destination not implemented");
+            ConfiguredDestination::Sqs { client, queue_url } => {
+                let msg = String::from_utf8(msg)?;
+                client.send_message().queue_url(queue_url).message_body(msg).send().await?;
             },
         }
 
