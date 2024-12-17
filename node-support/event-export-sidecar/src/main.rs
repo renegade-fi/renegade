@@ -11,12 +11,10 @@
 mod event_socket;
 mod hse_client;
 
-use clap::Parser;
-use common::types::wallet::keychain::HmacKey;
+use clap::{Parser, Subcommand};
 use config::parsing::parse_config_from_file;
 use event_socket::EventSocket;
 use eyre::Error;
-use hse_client::HistoricalStateClient;
 use tracing::{info, warn};
 
 // -------
@@ -29,12 +27,35 @@ struct Cli {
     /// The path to the relayer's config
     #[clap(long)]
     config_path: String,
-    /// The historical state engine URL
-    #[clap(long)]
-    hse_url: String,
-    /// The historical state engine auth key, in base64 format
-    #[clap(long)]
-    hse_key: String,
+
+    /// The destination for the events
+    #[clap(subcommand)]
+    destination: Destination,
+}
+
+/// The destination for the events
+#[derive(Debug, Subcommand)]
+enum Destination {
+    /// Use an AWS SQS queue as the destination
+    Sqs {
+        /// The region in which the SQS queue is located
+        #[clap(short, long, default_value = "us-east-2")]
+        region: String,
+
+        /// The name of the SQS queue to send events to
+        #[clap(short, long)]
+        queue_name: String,
+    },
+    /// Use the historical state engine directly as the destination
+    Hse {
+        /// The historical state engine URL
+        #[clap(long)]
+        hse_url: String,
+
+        /// The historical state engine auth key, in base64 format
+        #[clap(long)]
+        hse_key: String,
+    },
 }
 
 #[tokio::main]
@@ -50,12 +71,8 @@ async fn main() -> Result<(), Error> {
         return Ok(());
     }
 
-    // Construct HSE client
-    let hse_key = HmacKey::from_base64_string(&cli.hse_key).expect("invalid hse key");
-    let hse_client = HistoricalStateClient::new(cli.hse_url, hse_key);
-
     let event_socket =
-        EventSocket::new(&relayer_config.event_export_url.unwrap(), hse_client).await?;
+        EventSocket::new(&relayer_config.event_export_url.unwrap(), cli.destination).await?;
 
     info!("Event export sidecar connected to socket, awaiting events...");
 

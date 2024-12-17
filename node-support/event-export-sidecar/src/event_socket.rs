@@ -2,6 +2,7 @@
 
 use std::{fs, io, path::Path};
 
+use common::types::wallet::keychain::HmacKey;
 use event_manager::manager::extract_unix_socket_path;
 use eyre::{eyre, Error};
 use job_types::event_manager::RelayerEvent;
@@ -9,7 +10,7 @@ use tokio::net::{UnixListener, UnixStream};
 use tracing::{error, info, warn};
 use url::Url;
 
-use crate::hse_client::HistoricalStateClient;
+use crate::{hse_client::HistoricalStateClient, Destination};
 
 // -------------
 // | Constants |
@@ -17,6 +18,24 @@ use crate::hse_client::HistoricalStateClient;
 
 /// The maximum message size to read from the event export socket
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
+
+// ----------------
+// | Destination |
+// ----------------
+
+/// The destination to export events to
+enum ConfiguredDestination {
+    /// The historical state engine
+    Hse(HistoricalStateClient),
+    /// An AWS SQS queue
+    Sqs {
+        /// The region in which the SQS queue is located
+        region: String,
+
+        /// The name of the SQS queue to send events to
+        queue_name: String,
+    },
+}
 
 // ----------------
 // | Event Socket |
@@ -33,16 +52,35 @@ pub struct EventSocket {
     /// The path to the Unix socket
     path: String,
 
-    /// The historical state engine client
-    hse_client: HistoricalStateClient,
+    /// The destination to export events to
+    destination: ConfiguredDestination,
 }
 
 impl EventSocket {
     /// Creates a new event socket from the given URL
-    pub async fn new(url: &Url, hse_client: HistoricalStateClient) -> Result<Self, Error> {
+    pub async fn new(url: &Url, destination: Destination) -> Result<Self, Error> {
         let path = extract_unix_socket_path(url)?;
         let socket = Self::establish_socket_connection(&path).await?;
-        Ok(Self { socket, path, hse_client })
+        let destination = Self::configure_destination(destination)?;
+        Ok(Self { socket, path, destination })
+    }
+
+    /// Configures the destination for the event socket
+    fn configure_destination(destination: Destination) -> Result<ConfiguredDestination, Error> {
+        match destination {
+            Destination::Hse { hse_url, hse_key } => {
+                // Construct HSE client
+                let hse_key = HmacKey::from_base64_string(&hse_key)
+                    .map_err(|e| eyre!("invalid HSE key: {e}"))?;
+
+                let hse_client = HistoricalStateClient::new(hse_url, hse_key);
+
+                Ok(ConfiguredDestination::Hse(hse_client))
+            },
+            Destination::Sqs { region, queue_name } => {
+                Ok(ConfiguredDestination::Sqs { region, queue_name })
+            },
+        }
     }
 
     /// Sets up a Unix socket listening on the given path
@@ -96,7 +134,16 @@ impl EventSocket {
     /// Handles an event received from the event export socket
     async fn handle_relayer_event(&self, msg: &[u8]) -> Result<(), Error> {
         let event = serde_json::from_slice::<RelayerEvent>(msg)?;
-        self.hse_client.submit_event(&event).await?;
+
+        match &self.destination {
+            ConfiguredDestination::Hse(hse_client) => {
+                hse_client.submit_event(&event).await?;
+            },
+            ConfiguredDestination::Sqs { .. } => {
+                // TODO: Implement SQS destination
+                warn!("SQS destination not implemented");
+            },
+        }
 
         Ok(())
     }
