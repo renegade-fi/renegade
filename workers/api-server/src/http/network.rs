@@ -67,6 +67,18 @@ impl TypedHandler for GetNetworkTopologyHandler {
             peers_by_cluster.entry(peer.cluster_id.clone()).or_default().push(peer);
         }
 
+        // Mark the local cluster's leader as such
+        if let Some(leader_id) = self.state.get_leader()
+            && let Some(peers) = peers_by_cluster.get_mut(&local_cluster_id)
+        {
+            let leader_str = leader_id.to_string();
+            peers.iter_mut().for_each(|peer| {
+                if peer.id == leader_str {
+                    peer.is_leader = true;
+                }
+            });
+        }
+
         // Reformat into response
         Ok(GetNetworkTopologyResponse { local_cluster_id, network: peers_by_cluster.into() })
     }

@@ -48,6 +48,12 @@ pub struct Peer {
     pub cluster_id: String,
     /// The dialable, libp2p address of the peer
     pub addr: String,
+    /// Whether or not the peer is believed to be the raft leader for its
+    /// cluster
+    ///
+    /// For remote clusters, this will always be false, as a local peer will not
+    /// generally have visibility into remote raft state
+    pub is_leader: bool,
 }
 
 impl From<IndexedPeerInfo> for Peer {
@@ -56,6 +62,7 @@ impl From<IndexedPeerInfo> for Peer {
             id: peer_info.get_peer_id().to_string(),
             cluster_id: peer_info.get_cluster_id().to_string(),
             addr: peer_info.get_addr().to_string(),
+            is_leader: false,
         }
     }
 }
