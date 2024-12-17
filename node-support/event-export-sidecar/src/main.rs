@@ -9,9 +9,8 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 
 mod event_socket;
-mod hse_client;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use config::parsing::parse_config_from_file;
 use event_socket::EventSocket;
 use eyre::Error;
@@ -28,34 +27,13 @@ struct Cli {
     #[clap(long)]
     config_path: String,
 
-    /// The destination for the events
-    #[clap(subcommand)]
-    destination: Destination,
-}
+    /// The region in which the SQS queue is located
+    #[clap(short, long, default_value = "us-east-2")]
+    region: String,
 
-/// The destination for the events
-#[derive(Debug, Subcommand)]
-enum Destination {
-    /// Use an AWS SQS queue as the destination
-    Sqs {
-        /// The region in which the SQS queue is located
-        #[clap(short, long, default_value = "us-east-2")]
-        region: String,
-
-        /// The URL of the SQS queue to send events to
-        #[clap(short, long)]
-        queue_url: String,
-    },
-    /// Use the historical state engine directly as the destination
-    Hse {
-        /// The historical state engine URL
-        #[clap(long)]
-        hse_url: String,
-
-        /// The historical state engine auth key, in base64 format
-        #[clap(long)]
-        hse_key: String,
-    },
+    /// The URL of the SQS queue to send events to
+    #[clap(short, long)]
+    queue_url: String,
 }
 
 #[tokio::main]
@@ -72,7 +50,8 @@ async fn main() -> Result<(), Error> {
     }
 
     let event_socket =
-        EventSocket::new(&relayer_config.event_export_url.unwrap(), cli.destination).await?;
+        EventSocket::new(&relayer_config.event_export_url.unwrap(), cli.queue_url, cli.region)
+            .await?;
 
     info!("Event export sidecar connected to socket, awaiting events...");
 

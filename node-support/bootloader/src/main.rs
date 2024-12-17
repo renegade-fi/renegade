@@ -51,10 +51,8 @@ const ENV_ADMIN_KEY: &str = "ADMIN_API_KEY";
 const ENV_FUNDS_MANAGER_URL: &str = "FUNDS_MANAGER_URL";
 /// The funds manager api key
 const ENV_FUNDS_MANAGER_KEY: &str = "FUNDS_MANAGER_KEY";
-/// The historical state engine URL
-const ENV_HISTORICAL_STATE_URL: &str = "HISTORICAL_STATE_URL";
-/// The historical state engine auth key
-const ENV_HISTORICAL_STATE_KEY: &str = "HISTORICAL_STATE_KEY";
+/// The SQS queue URL
+const ENV_SQS_QUEUE_URL: &str = "SQS_QUEUE_URL";
 
 // --- Constants --- //
 
@@ -115,12 +113,11 @@ async fn main() -> Result<(), String> {
         .spawn()
         .expect("Failed to start snapshot sidecar process");
 
-    let hse_url = read_env_var::<String>(ENV_HISTORICAL_STATE_URL)?;
-    let hse_key = read_env_var::<String>(ENV_HISTORICAL_STATE_KEY)?;
+    let sqs_queue_url = read_env_var::<String>(ENV_SQS_QUEUE_URL)?;
     let mut event_export_sidecar = Command::new(EVENT_EXPORT_SIDECAR_BIN)
         .args(["--config-path", CONFIG_PATH])
-        .args(["--hse-url", &hse_url])
-        .args(["--hse-key", &hse_key])
+        .args(["--queue-url", &sqs_queue_url])
+        .args(["--region", DEFAULT_AWS_REGION])
         .spawn()
         .expect("Failed to start event export sidecar process");
 
