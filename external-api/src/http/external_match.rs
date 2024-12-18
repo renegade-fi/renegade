@@ -87,6 +87,9 @@ pub struct AssembleExternalMatchRequest {
     /// The receiver address of the match, if not the message sender
     #[serde(default)]
     pub receiver_address: Option<String>,
+    /// The updated order if any changes have been made
+    #[serde(default)]
+    pub updated_order: Option<ExternalOrder>,
     /// The signed quote
     pub signed_quote: SignedExternalQuote,
 }
