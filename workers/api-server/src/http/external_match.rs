@@ -85,6 +85,10 @@ const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote 
 const ERR_QUOTE_EXPIRED: &str = "quote expired";
 /// The error message emitted when a quote signature is invalid
 const ERR_INVALID_QUOTE_SIGNATURE: &str = "invalid quote signature";
+/// The error message emitted when an order update changes the pair
+const ERR_PAIR_CHANGED: &str = "order update must not change the token pair";
+/// The error message emitted when an order update changes the side
+const ERR_SIDE_CHANGED: &str = "order update must not change the side";
 
 // -----------
 // | Helpers |
@@ -258,10 +262,9 @@ impl ExternalMatchProcessor {
         &self,
         gas_estimation: bool,
         receiver: Option<Address>,
-        signed_quote: SignedExternalQuote,
+        price: TimestampedPrice,
+        order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let price = TimestampedPrice::from(signed_quote.quote.price);
-        let order = signed_quote.quote.order;
         let resp = self
             .request_handshake_manager(
                 order.clone(),
@@ -489,6 +492,31 @@ impl AssembleExternalMatchHandler {
 
         Ok(())
     }
+
+    /// Validate an order update
+    ///
+    /// Amounts are allowed to change, as is `min_fill_size`, but the order side
+    /// and pair is not
+    fn validate_order_update(
+        &self,
+        new_order: &ExternalOrder,
+        old_order: &ExternalOrder,
+    ) -> Result<(), ApiServerError> {
+        // Check that the mints are the same
+        let base_mint_changed = new_order.base_mint != old_order.base_mint;
+        let quote_mint_changed = new_order.quote_mint != old_order.quote_mint;
+        if base_mint_changed || quote_mint_changed {
+            return Err(bad_request(ERR_PAIR_CHANGED));
+        }
+
+        // Check that the side is the same
+        let side_changed = new_order.side != old_order.side;
+        if side_changed {
+            return Err(bad_request(ERR_SIDE_CHANGED));
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -509,12 +537,22 @@ impl TypedHandler for AssembleExternalMatchHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
+        // Validate the order update if one is present
+        let old_order = req.signed_quote.quote.order.clone();
+        let order = if let Some(updated_order) = req.updated_order {
+            self.validate_order_update(&updated_order, &old_order)?;
+            updated_order
+        } else {
+            old_order
+        };
+
         // Validate the quote then execute it
         self.validate_quote(&req.signed_quote)?;
         let receiver = parse_receiver_address(req.receiver_address)?;
+        let price = TimestampedPrice::from(req.signed_quote.quote.price);
         let match_bundle = self
             .processor
-            .assemble_external_match(req.do_gas_estimation, receiver, req.signed_quote)
+            .assemble_external_match(req.do_gas_estimation, receiver, price, order)
             .await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
