@@ -23,7 +23,7 @@ use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::{
     get_current_time_millis,
-    hex::{biguint_from_hex_string, biguint_to_hex_string},
+    hex::{biguint_from_hex_string, biguint_to_hex_addr},
 };
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
@@ -237,11 +237,11 @@ impl AtomicMatchApiBundle {
             match_result: ApiExternalMatchResult::from(match_result),
             fees,
             receive: ApiExternalAssetTransfer {
-                mint: biguint_to_hex_string(&received_mint),
+                mint: biguint_to_hex_addr(&received_mint),
                 amount: received_amount,
             },
             send: ApiExternalAssetTransfer {
-                mint: biguint_to_hex_string(&sent_mint),
+                mint: biguint_to_hex_addr(&sent_mint),
                 amount: sent_amount,
             },
             settlement_tx,
@@ -275,8 +275,8 @@ pub struct ApiExternalMatchResult {
 
 impl From<ExternalMatchResult> for ApiExternalMatchResult {
     fn from(result: ExternalMatchResult) -> Self {
-        let quote_mint = biguint_to_hex_string(&result.quote_mint);
-        let base_mint = biguint_to_hex_string(&result.base_mint);
+        let quote_mint = biguint_to_hex_addr(&result.quote_mint);
+        let base_mint = biguint_to_hex_addr(&result.base_mint);
         // Convert the match direction to the side of the external party
         let direction = if result.direction { OrderSide::Buy } else { OrderSide::Sell };
 
@@ -359,11 +359,11 @@ impl ApiExternalQuote {
             match_result: result.clone().into(),
             fees,
             send: ApiExternalAssetTransfer {
-                mint: biguint_to_hex_string(&send_mint),
+                mint: biguint_to_hex_addr(&send_mint),
                 amount: send_amount,
             },
             receive: ApiExternalAssetTransfer {
-                mint: biguint_to_hex_string(&receive_mint),
+                mint: biguint_to_hex_addr(&receive_mint),
                 amount: receive_amount,
             },
             price: TimestampedPrice::new(price).into(),
