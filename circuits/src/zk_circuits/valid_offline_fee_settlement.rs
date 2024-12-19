@@ -212,7 +212,7 @@ where
 
         // The keys, match fee, and managing cluster should be the same
         EqGadget::constrain_eq(&old_wallet.keys, &new_wallet.keys, cs)?;
-        EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&old_wallet.max_match_fee, &new_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)?;
 
         // Check the balance updates
@@ -731,7 +731,7 @@ mod test {
 
         // Modify the match fee
         let mut statement = original_statement.clone();
-        statement.updated_wallet_public_shares.match_fee.repr += Scalar::one();
+        statement.updated_wallet_public_shares.max_match_fee.repr += Scalar::one();
 
         assert!(!check_constraints_satisfied(&statement, &witness));
 

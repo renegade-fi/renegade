@@ -199,7 +199,7 @@ where
 
         // The keys, match fee and managing cluster key should remain the same
         EqGadget::constrain_eq(&old_wallet.keys, &new_wallet.keys, cs)?;
-        EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&old_wallet.max_match_fee, &new_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)?;
 
         // The balances should remain the same except for the balance that pays the fee
@@ -242,7 +242,7 @@ where
         EqGadget::constrain_eq(&old_wallet.orders, &new_wallet.orders, cs)?;
 
         // The match fee and managing cluster key should remain the same
-        EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&old_wallet.max_match_fee, &new_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)?;
 
         // The match key must be the same as the old wallet, but the root key may
@@ -822,7 +822,7 @@ mod test {
 
         // Modify the match fee
         let mut statement = original_statement.clone();
-        statement.sender_updated_public_shares.match_fee.repr += Scalar::one();
+        statement.sender_updated_public_shares.max_match_fee.repr += Scalar::one();
         assert!(!check_constraints_satisfied(&statement, &witness));
 
         // Modify the managing cluster
@@ -904,7 +904,7 @@ mod test {
 
         // Modify the match fee
         let mut statement = original_statement.clone();
-        statement.recipient_updated_public_shares.match_fee.repr += Scalar::one();
+        statement.recipient_updated_public_shares.max_match_fee.repr += Scalar::one();
         assert!(!check_constraints_satisfied(&statement, &witness));
 
         // Modify the managing cluster

@@ -103,7 +103,7 @@ async fn setup_wallet_with_order_balance(
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
     let mut wallet = mock_empty_wallet();
-    wallet.match_fee = FixedPoint::from_f64_round_down(RELAYER_FEE);
+    wallet.max_match_fee = FixedPoint::from_f64_round_down(RELAYER_FEE);
     wallet.managing_cluster = managing_cluster;
 
     // Add the balance and order into the wallet
@@ -208,7 +208,7 @@ async fn dummy_match_bundle(
     let order0 = wallet1.orders.first().unwrap().1.clone();
     let balance0 = wallet1.balances.first().unwrap().1.clone();
     let balance_receive0 = Balance::new_from_mint(order0.receive_mint().clone());
-    let relayer_fee0 = wallet1.match_fee;
+    let relayer_fee0 = wallet1.max_match_fee;
     let amount0 = compute_max_amount(&price, &order0.clone().into(), &balance0);
     let party0_public_shares = wallet1.blinded_public_shares.clone();
     *wallet1.balances.get_index_mut(party0_indices.balance_receive).unwrap() =
@@ -217,7 +217,7 @@ async fn dummy_match_bundle(
     let order1 = wallet2.orders.first().unwrap().1.clone();
     let balance1 = wallet2.balances.first().unwrap().1.clone();
     let balance_receive1 = Balance::new_from_mint(order1.receive_mint().clone());
-    let relayer_fee1 = wallet2.match_fee;
+    let relayer_fee1 = wallet2.max_match_fee;
     let amount1 = compute_max_amount(&price, &order1.clone().into(), &balance1);
     let party1_public_shares = wallet2.blinded_public_shares.clone();
     *wallet2.balances.get_index_mut(party1_indices.balance_receive).unwrap() =

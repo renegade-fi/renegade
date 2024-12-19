@@ -161,8 +161,8 @@ fn run_match_settle_with_amounts(
 
     let wallet0 = w0.allocate(PARTY0, fabric);
     let wallet1 = w1.allocate(PARTY0, fabric);
-    let relayer_fee0 = w0.match_fee.allocate(PARTY0, fabric);
-    let relayer_fee1 = w1.match_fee.allocate(PARTY0, fabric);
+    let relayer_fee0 = w0.max_match_fee.allocate(PARTY0, fabric);
+    let relayer_fee1 = w1.max_match_fee.allocate(PARTY0, fabric);
     let party0_pre_shares = pre_public_shares1.allocate(PARTY0, fabric);
     let party1_pre_shares = pre_public_shares2.allocate(PARTY0, fabric);
 

@@ -13,7 +13,7 @@ impl Wallet {
         order_id: &OrderIdentifier,
     ) -> Result<(), String> {
         // Subtract the matched volume from the order
-        let match_fee = self.match_fee;
+        let match_fee = self.max_match_fee;
         let order = self.get_order_mut(order_id).unwrap();
         order.amount =
             order.amount.checked_sub(match_res.base_amount).expect("order volume underflow");

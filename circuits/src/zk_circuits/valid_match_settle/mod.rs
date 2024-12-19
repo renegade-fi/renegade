@@ -288,8 +288,8 @@ pub mod test_helpers {
         let (_, party1_public_shares) = create_wallet_shares(&wallet2);
 
         // Compute the fee obligations of both parties
-        let party0_fees = compute_fee_obligation(wallet1.match_fee, o1.side, &match_res);
-        let party1_fees = compute_fee_obligation(wallet2.match_fee, o2.side, &match_res);
+        let party0_fees = compute_fee_obligation(wallet1.max_match_fee, o1.side, &match_res);
+        let party1_fees = compute_fee_obligation(wallet2.max_match_fee, o2.side, &match_res);
 
         // Update the wallets
         let mut party0_modified_shares = party0_public_shares.clone();
@@ -318,14 +318,14 @@ pub mod test_helpers {
                 order0: o1,
                 balance0: wallet1.balances[party0_indices.balance_send].clone(),
                 balance_receive0: wallet1.balances[party0_indices.balance_receive].clone(),
-                relayer_fee0: wallet1.match_fee,
+                relayer_fee0: wallet1.max_match_fee,
                 price0: price,
                 party0_fees,
                 amount0,
                 order1: o2,
                 balance1: wallet2.balances[party1_indices.balance_send].clone(),
                 balance_receive1: wallet2.balances[party1_indices.balance_receive].clone(),
-                relayer_fee1: wallet2.match_fee,
+                relayer_fee1: wallet2.max_match_fee,
                 price1: price,
                 party1_fees,
                 amount1,
@@ -354,7 +354,7 @@ pub mod test_helpers {
     {
         let mut wallet = Wallet {
             keys: INITIAL_WALLET.keys.clone(),
-            match_fee: INITIAL_WALLET.match_fee,
+            max_match_fee: INITIAL_WALLET.max_match_fee,
             managing_cluster: INITIAL_WALLET.managing_cluster,
             ..Default::default()
         };
@@ -866,7 +866,7 @@ mod tests {
 
         // Modify the match fee
         let mut statement = original_statement.clone();
-        statement.party0_modified_shares.match_fee.repr += Scalar::one();
+        statement.party0_modified_shares.max_match_fee.repr += Scalar::one();
 
         assert!(!check_constraint_satisfaction::<SizedValidMatchSettle>(
             &witness.clone(),

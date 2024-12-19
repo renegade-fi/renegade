@@ -133,7 +133,7 @@ where
         // Note that the keys are allowed to change to enable key rotation. The actual
         // wallet transition is authorized by a signature from the old root key
         // (checked on-chain) so rotation is protected outside of the circuit
-        EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&old_wallet.max_match_fee, &new_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)
     }
 
@@ -1420,7 +1420,7 @@ mod test {
         let old_wallet = INITIAL_WALLET.clone();
         let mut new_wallet = INITIAL_WALLET.clone();
 
-        new_wallet.match_fee = new_wallet.match_fee + Scalar::one();
+        new_wallet.max_match_fee = new_wallet.max_match_fee + Scalar::one();
 
         assert!(!constraints_satisfied_on_wallets(
             &old_wallet,

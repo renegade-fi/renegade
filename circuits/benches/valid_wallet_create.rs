@@ -44,7 +44,7 @@ where
         balances: create_default_arr(),
         orders: create_default_arr(),
         keys: PUBLIC_KEYS.clone(),
-        match_fee: FixedPoint::from_integer(0),
+        max_match_fee: FixedPoint::from_integer(0),
         managing_cluster: enc,
         blinder: Scalar::zero(),
     };
