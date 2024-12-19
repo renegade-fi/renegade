@@ -147,7 +147,7 @@ pub(crate) fn construct_order_commitment_proof(
         augmented_public_shares,
         order,
         balance_send,
-        relayer_fee: augmented_wallet.match_fee,
+        relayer_fee: augmented_wallet.max_match_fee,
         balance_receive,
     };
 

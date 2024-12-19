@@ -52,7 +52,7 @@ pub fn mock_empty_wallet() -> Wallet {
             secret_keys: PrivateKeyChain { sk_root, sk_match, symmetric_key },
         },
         blinder: Scalar::random(&mut rng),
-        match_fee: FixedPoint::from_integer(0),
+        max_match_fee: FixedPoint::from_integer(0),
         managing_cluster: managing_cluster_key,
         private_shares: SizedWalletShare::from_scalars(&mut iter::repeat_with(|| {
             Scalar::random(&mut rng)

@@ -133,7 +133,7 @@ where
         EqGadget::constrain_eq(&old_wallet.orders, &new_wallet.orders, cs)?;
 
         // The match fee and managing cluster key should remain the same
-        EqGadget::constrain_eq(&old_wallet.match_fee, &new_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&old_wallet.max_match_fee, &new_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(&old_wallet.managing_cluster, &new_wallet.managing_cluster, cs)?;
 
         // The match key should remain the same, the root key may rotate, and the nonce
@@ -705,7 +705,7 @@ mod test {
 
         // Modify the match fee
         let mut statement = original_statement.clone();
-        statement.new_wallet_public_shares.match_fee.repr += Scalar::one();
+        statement.new_wallet_public_shares.max_match_fee.repr += Scalar::one();
 
         assert!(!check_constraints_satisfied(&witness, &statement));
 
