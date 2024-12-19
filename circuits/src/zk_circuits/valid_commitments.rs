@@ -17,7 +17,7 @@ use crate::{
         VALID_REBLIND_COMMITMENTS_LINK,
     },
     zk_gadgets::{
-        comparators::{EqGadget, EqVecGadget, EqZeroGadget},
+        comparators::{EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqGadget},
         wallet_operations::{OrderGadget, WalletGadget},
     },
     SingleProverCircuit,
@@ -30,7 +30,7 @@ use circuit_types::{
     r#match::OrderSettlementIndices,
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::{WalletShare, WalletVar},
-    PlonkCircuit,
+    PlonkCircuit, FEE_BITS,
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
@@ -81,7 +81,13 @@ where
 
         // The advertised relayer take rate in the witness should equal the authorized
         // take rate in the wallet
-        EqGadget::constrain_eq(&witness.relayer_fee, &base_wallet.match_fee, cs)?;
+        let relayer_fee_repr = witness.relayer_fee.repr;
+        let max_match_fee_repr = base_wallet.max_match_fee.repr;
+        GreaterThanEqGadget::<FEE_BITS>::constrain_greater_than_eq(
+            max_match_fee_repr,
+            relayer_fee_repr,
+            cs,
+        )?;
 
         // Verify that the wallets are the same other than a possibly augmented balance
         // of zero for the received mint of the order. This augmented balance
@@ -183,7 +189,7 @@ where
         EqGadget::constrain_eq(&base_wallet.keys, &augmented_wallet.keys, cs)?;
 
         // Match fee, managing cluster, and blinder should be equal
-        EqGadget::constrain_eq(&base_wallet.match_fee, &augmented_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&base_wallet.max_match_fee, &augmented_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(
             &base_wallet.managing_cluster,
             &augmented_wallet.managing_cluster,
@@ -502,7 +508,7 @@ pub mod test_helpers {
             public_secret_shares: public_share.clone(),
             augmented_public_shares,
             order,
-            relayer_fee: wallet.match_fee,
+            relayer_fee: wallet.max_match_fee,
             balance_send,
             balance_receive,
         };
@@ -556,7 +562,7 @@ pub mod test_helpers {
 mod test {
     use circuit_types::{
         balance::{Balance, BalanceShare},
-        fixed_point::FixedPointShare,
+        fixed_point::{FixedPoint, FixedPointShare},
         order::{OrderShare, OrderSide},
         traits::{SecretShareType, SingleProverCircuit},
         Address,
@@ -659,6 +665,21 @@ mod test {
         assert!(check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
     }
 
+    /// Test the case in which a prover charges a lower fee than the wallet's
+    /// configured maximum
+    #[test]
+    fn test_valid_commitments__valid_augmentation__lower_fee() {
+        let wallet = UNAUGMENTED_WALLET.clone();
+        let (mut witness, statement) = create_witness_and_statement(&wallet);
+
+        // Prover charges a lower fee than the wallet's configured maximum
+        let max_fee = witness.relayer_fee.to_f64();
+        let new_fee = FixedPoint::from_f64_round_down(max_fee / 2.);
+        witness.relayer_fee = new_fee;
+
+        assert!(check_constraint_satisfaction::<SizedCommitments>(&witness, &statement))
+    }
+
     // ------------------------
     // | Invalid Augmentation |
     // ------------------------
@@ -754,7 +775,7 @@ mod test {
 
         // Modify the match fee in the wallet
         let mut rng = thread_rng();
-        witness.augmented_public_shares.match_fee =
+        witness.augmented_public_shares.max_match_fee =
             FixedPointShare { repr: Scalar::random(&mut rng) };
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
@@ -762,12 +783,12 @@ mod test {
     /// Tests the case in which the prover provides an incorrect relayer fee in
     /// the witness
     #[test]
-    fn test_invalid_commitments__wrong_relayer_fee() {
+    fn test_invalid_commitments__higher_fee() {
         let wallet = INITIAL_WALLET.clone();
         let (mut witness, statement) = create_witness_and_statement(&wallet);
 
         // Modify the relayer fee in the witness
-        witness.relayer_fee = witness.relayer_fee + Scalar::one();
+        witness.relayer_fee.repr += Scalar::one(); // one above the configured maximum
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }
 

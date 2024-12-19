@@ -55,7 +55,8 @@ pub struct Wallet {
     /// The wallet blinder, used to blind secret shares the wallet holds
     pub blinder: Scalar,
     /// The match fee that the owner has authorized the relayer to take
-    pub match_fee: FixedPoint,
+    #[serde(alias = "match_fee")]
+    pub max_match_fee: FixedPoint,
     /// The key of the cluster that the wallet has delegated management to
     pub managing_cluster: EncryptionKey,
     /// The private secret shares of the wallet
@@ -81,7 +82,7 @@ impl From<Wallet> for SizedCircuitWallet {
             balances: wallet.get_balances_list(),
             orders,
             keys: wallet.key_chain.public_keys,
-            match_fee: wallet.match_fee,
+            max_match_fee: wallet.max_match_fee,
             managing_cluster: wallet.managing_cluster,
             blinder: wallet.blinder,
         }
@@ -104,7 +105,7 @@ impl Wallet {
             wallet_id,
             orders: KeyedList::new(),
             balances: KeyedList::new(),
-            match_fee: FixedPoint::from_integer(0),
+            max_match_fee: FixedPoint::from_integer(0),
             managing_cluster: EncryptionKey::default(),
             key_chain,
             blinded_public_shares: dummy_shares.clone(),
@@ -166,7 +167,7 @@ impl Wallet {
                 .map(|b| (b.mint.clone(), b))
                 .collect(),
             key_chain,
-            match_fee: recovered_wallet.match_fee,
+            max_match_fee: recovered_wallet.max_match_fee,
             managing_cluster: recovered_wallet.managing_cluster,
             blinder: recovered_wallet.blinder,
             private_shares,

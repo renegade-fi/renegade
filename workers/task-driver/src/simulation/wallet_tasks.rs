@@ -141,7 +141,7 @@ fn simulate_settle_internal_match(
         .cloned()
         .ok_or(TaskSimulationError::InvalidTask(ERR_ORDER_MISSING))?;
 
-    let fees = compute_fee_obligation(wallet.match_fee, my_order.side, &desc.match_result);
+    let fees = compute_fee_obligation(wallet.max_match_fee, my_order.side, &desc.match_result);
 
     // Get the new public and private shares
     let witness =
