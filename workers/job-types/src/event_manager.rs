@@ -58,6 +58,47 @@ pub enum RelayerEvent {
     ExternalMatch(ExternalMatchEvent),
 }
 
+impl RelayerEvent {
+    /// Returns the event ID
+    pub fn event_id(&self) -> Uuid {
+        match self {
+            RelayerEvent::WalletCreation(event) => event.event_id,
+            RelayerEvent::ExternalTransfer(event) => event.event_id,
+            RelayerEvent::OrderPlacement(event) => event.event_id,
+            RelayerEvent::OrderUpdate(event) => event.event_id,
+            RelayerEvent::OrderCancellation(event) => event.event_id,
+            RelayerEvent::Match(event) => event.event_id,
+            RelayerEvent::ExternalMatch(event) => event.event_id,
+        }
+    }
+
+    /// Returns the event timestamp
+    pub fn event_timestamp(&self) -> SystemTime {
+        match self {
+            RelayerEvent::WalletCreation(event) => event.event_timestamp,
+            RelayerEvent::ExternalTransfer(event) => event.event_timestamp,
+            RelayerEvent::OrderPlacement(event) => event.event_timestamp,
+            RelayerEvent::OrderUpdate(event) => event.event_timestamp,
+            RelayerEvent::OrderCancellation(event) => event.event_timestamp,
+            RelayerEvent::Match(event) => event.event_timestamp,
+            RelayerEvent::ExternalMatch(event) => event.event_timestamp,
+        }
+    }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        match self {
+            RelayerEvent::WalletCreation(event) => event.describe(),
+            RelayerEvent::ExternalTransfer(event) => event.describe(),
+            RelayerEvent::OrderPlacement(event) => event.describe(),
+            RelayerEvent::OrderUpdate(event) => event.describe(),
+            RelayerEvent::OrderCancellation(event) => event.describe(),
+            RelayerEvent::Match(event) => event.describe(),
+            RelayerEvent::ExternalMatch(event) => event.describe(),
+        }
+    }
+}
+
 // --------------------------
 // | Individual Event Types |
 // --------------------------
@@ -82,6 +123,11 @@ impl WalletCreationEvent {
         let (event_id, event_timestamp) = get_event_id_and_timestamp();
         Self { event_id, event_timestamp, wallet_id, symmetric_key }
     }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("WalletCreation({})", self.event_id)
+    }
 }
 
 /// An external transfer event
@@ -103,6 +149,11 @@ impl ExternalTransferEvent {
     pub fn new(wallet_id: WalletIdentifier, transfer: ExternalTransfer) -> Self {
         let (event_id, event_timestamp) = get_event_id_and_timestamp();
         Self { event_id, event_timestamp, wallet_id, transfer }
+    }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("ExternalTransfer({})", self.event_id)
     }
 }
 
@@ -135,6 +186,11 @@ impl OrderPlacementEvent {
         let (event_id, event_timestamp) = get_event_id_and_timestamp();
         Self { event_id, event_timestamp, wallet_id, order_id, order, matching_pool }
     }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("OrderPlacement({})", self.event_id)
+    }
 }
 
 /// An order update event
@@ -165,6 +221,11 @@ impl OrderUpdateEvent {
     ) -> Self {
         let (event_id, event_timestamp) = get_event_id_and_timestamp();
         Self { event_id, event_timestamp, wallet_id, order_id, order, matching_pool }
+    }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("OrderUpdate({})", self.event_id)
     }
 }
 
@@ -207,6 +268,11 @@ impl OrderCancellationEvent {
             amount_remaining,
             amount_filled,
         }
+    }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("OrderCancellation({})", self.event_id)
     }
 }
 
@@ -276,6 +342,11 @@ impl MatchEvent {
             fee_take1,
         }
     }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("Match({})", self.event_id)
+    }
 }
 
 /// An external match event
@@ -326,6 +397,11 @@ impl ExternalMatchEvent {
             internal_fee_take,
             external_fee_take,
         }
+    }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("ExternalMatch({})", self.event_id)
     }
 }
 
