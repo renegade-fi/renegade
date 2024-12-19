@@ -81,7 +81,7 @@ where
 
         // The advertised relayer take rate in the witness should equal the authorized
         // take rate in the wallet
-        EqGadget::constrain_eq(&witness.relayer_fee, &base_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&witness.relayer_fee, &base_wallet.max_match_fee, cs)?;
 
         // Verify that the wallets are the same other than a possibly augmented balance
         // of zero for the received mint of the order. This augmented balance
@@ -183,7 +183,7 @@ where
         EqGadget::constrain_eq(&base_wallet.keys, &augmented_wallet.keys, cs)?;
 
         // Match fee, managing cluster, and blinder should be equal
-        EqGadget::constrain_eq(&base_wallet.match_fee, &augmented_wallet.match_fee, cs)?;
+        EqGadget::constrain_eq(&base_wallet.max_match_fee, &augmented_wallet.max_match_fee, cs)?;
         EqGadget::constrain_eq(
             &base_wallet.managing_cluster,
             &augmented_wallet.managing_cluster,
@@ -502,7 +502,7 @@ pub mod test_helpers {
             public_secret_shares: public_share.clone(),
             augmented_public_shares,
             order,
-            relayer_fee: wallet.match_fee,
+            relayer_fee: wallet.max_match_fee,
             balance_send,
             balance_receive,
         };
@@ -754,7 +754,7 @@ mod test {
 
         // Modify the match fee in the wallet
         let mut rng = thread_rng();
-        witness.augmented_public_shares.match_fee =
+        witness.augmented_public_shares.max_match_fee =
             FixedPointShare { repr: Scalar::random(&mut rng) };
         assert!(!check_constraint_satisfaction::<SizedCommitments>(&witness, &statement));
     }

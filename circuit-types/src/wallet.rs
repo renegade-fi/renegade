@@ -56,7 +56,8 @@ where
     pub keys: PublicKeyChain,
     /// The match fee authorized by the wallet owner that the relayer may take
     /// on a match
-    pub match_fee: FixedPoint,
+    #[serde(alias = "match_fee")]
+    pub max_match_fee: FixedPoint,
     /// The public key of the cluster that this wallet has been delegated to for
     /// matches
     ///
@@ -82,7 +83,7 @@ where
                 .unwrap(),
             orders: (0..MAX_ORDERS).map(|_| Order::default()).collect_vec().try_into().unwrap(),
             keys: PublicKeyChain::default(),
-            match_fee: FixedPoint::from_integer(0),
+            max_match_fee: FixedPoint::from_integer(0),
             managing_cluster: EncryptionKey::default(),
             blinder: Scalar::zero(),
         }

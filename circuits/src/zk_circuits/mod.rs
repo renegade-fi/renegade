@@ -150,7 +150,7 @@ pub mod test_helpers {
             balances: INITIAL_BALANCES.clone(),
             orders: INITIAL_ORDERS.clone(),
             keys: PUBLIC_KEYS.clone(),
-            match_fee: FixedPoint::from_f64_round_down(0.002), // 20 bps
+            max_match_fee: FixedPoint::from_f64_round_down(0.002), // 20 bps
             managing_cluster: DecryptionKey::random_pair(&mut thread_rng()).1,
             blinder: Scalar::from(42u64)
         };

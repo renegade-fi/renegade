@@ -65,7 +65,7 @@ where
         )?;
 
         // Verify that the match fee is a valid fee take
-        FeeGadget::constrain_valid_fee(wallet.match_fee, cs)?;
+        FeeGadget::constrain_valid_fee(wallet.max_match_fee, cs)?;
 
         // Verify that the orders and balances are zero'd
         Self::verify_zero_wallet(wallet, cs)
@@ -309,7 +309,7 @@ pub mod tests {
     fn test_invalid_match_fee() {
         let mut wallet = create_empty_wallet();
         let fee_repr = Scalar::from(2u8).pow(FEE_BITS as u64); // max fee plus one
-        wallet.match_fee = FixedPoint { repr: fee_repr };
+        wallet.max_match_fee = FixedPoint { repr: fee_repr };
 
         let (witness, statement) = create_witness_statement_from_wallet(&wallet);
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement));

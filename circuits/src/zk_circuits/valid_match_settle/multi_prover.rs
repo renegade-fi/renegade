@@ -472,7 +472,11 @@ where
             &post_update_shares.managing_cluster,
             cs,
         )?;
-        EqGadget::constrain_eq(&pre_update_shares.match_fee, &post_update_shares.match_fee, cs)?;
+        EqGadget::constrain_eq(
+            &pre_update_shares.max_match_fee,
+            &post_update_shares.max_match_fee,
+            cs,
+        )?;
         EqGadget::constrain_eq(&pre_update_shares.keys, &post_update_shares.keys, cs)?;
         EqGadget::constrain_eq(&pre_update_shares.blinder, &post_update_shares.blinder, cs)
     }

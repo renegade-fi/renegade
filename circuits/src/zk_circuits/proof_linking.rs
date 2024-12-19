@@ -654,12 +654,12 @@ mod test {
         let mut new_public_shares1 = public_share.clone();
 
         let party0_fees = compute_fee_obligation(
-            wallet.match_fee,
+            wallet.max_match_fee,
             match_witness.order0.side,
             &match_witness.match_res,
         );
         let party1_fees = compute_fee_obligation(
-            wallet.match_fee,
+            wallet.max_match_fee,
             match_witness.order1.side,
             &match_witness.match_res,
         );
