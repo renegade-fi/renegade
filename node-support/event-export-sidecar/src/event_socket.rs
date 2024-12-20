@@ -6,6 +6,7 @@ use aws_config::Region;
 use aws_sdk_sqs::Client as SqsClient;
 use event_manager::manager::extract_unix_socket_path;
 use eyre::{eyre, Error};
+use job_types::event_manager::RelayerEvent;
 use tokio::net::{UnixListener, UnixStream};
 use tracing::{error, info, warn};
 use url::Url;
@@ -101,8 +102,19 @@ impl EventSocket {
 
     /// Handles an event received from the event export socket
     async fn handle_relayer_event(&self, msg: Vec<u8>) -> Result<(), Error> {
+        let event: RelayerEvent = serde_json::from_slice(&msg)?;
+        let event_id = event.event_id();
+        let wallet_id = event.wallet_id();
+
         let msg = String::from_utf8(msg)?;
-        self.sqs_client.send_message().queue_url(&self.queue_url).message_body(msg).send().await?;
+        self.sqs_client
+            .send_message()
+            .queue_url(&self.queue_url)
+            .message_deduplication_id(event_id)
+            .message_group_id(wallet_id)
+            .message_body(msg)
+            .send()
+            .await?;
 
         Ok(())
     }

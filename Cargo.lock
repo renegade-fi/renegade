@@ -3596,6 +3596,8 @@ dependencies = [
  "config",
  "event-manager",
  "eyre",
+ "job-types",
+ "serde_json",
  "tokio",
  "tracing",
  "url",

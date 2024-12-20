@@ -13,6 +13,7 @@ aws-sdk-sqs = "1.50.0"
 
 # === Workspace Dependencies === #
 config = { path = "../../config" }
+job-types = { path = "../../workers/job-types" }
 event-manager = { path = "../../workers/event-manager" }
 
 # === Misc Dependencies === #
@@ -20,3 +21,4 @@ url = "2.4"
 clap = { version = "4", features = ["derive"] }
 tracing = { workspace = true }
 eyre = { workspace = true }
+serde_json = { workspace = true }

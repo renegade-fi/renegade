@@ -85,6 +85,19 @@ impl RelayerEvent {
         }
     }
 
+    /// Returns the ID of the wallet for which the event occurred
+    pub fn wallet_id(&self) -> WalletIdentifier {
+        match self {
+            RelayerEvent::WalletCreation(event) => event.wallet_id,
+            RelayerEvent::ExternalTransfer(event) => event.wallet_id,
+            RelayerEvent::OrderPlacement(event) => event.wallet_id,
+            RelayerEvent::OrderUpdate(event) => event.wallet_id,
+            RelayerEvent::OrderCancellation(event) => event.wallet_id,
+            RelayerEvent::Fill(event) => event.wallet_id,
+            RelayerEvent::ExternalFill(event) => event.internal_wallet_id,
+        }
+    }
+
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
         match self {
