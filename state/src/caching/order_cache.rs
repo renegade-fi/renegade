@@ -10,17 +10,19 @@ use tokio::sync::RwLock;
 
 use crate::storage::{db::DB, error::StorageError};
 
+use super::RwLockHashSet;
+
 /// The order book cache
 #[derive(Default)]
 pub struct OrderBookCache {
     /// The set of open orders which are matchable and locally managed
-    matchable_orders: RwLock<HashSet<OrderIdentifier>>,
+    matchable_orders: RwLockHashSet<OrderIdentifier>,
     /// The set of local orders which have external matches enabled
     ///
     /// This may not be a subset of `matchable_orders`, some externally
     /// matchable orders may not be yet matchable, e.g. if they are waiting for
     /// validity proofs
-    externally_enabled_orders: RwLock<HashSet<OrderIdentifier>>,
+    externally_enabled_orders: RwLockHashSet<OrderIdentifier>,
 }
 
 impl OrderBookCache {
