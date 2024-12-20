@@ -29,7 +29,7 @@ use super::{
 /// The default cluster name
 const DEFAULT_CLUSTER_NAME: &str = "relayer-raft-cluster";
 /// The default heartbeat interval for the raft client
-const DEFAULT_HEARTBEAT_INTERVAL: u64 = 1_000; // 1 second
+const DEFAULT_HEARTBEAT_INTERVAL: u64 = 1_500; // 1.5 second
 /// The default election timeout min
 const DEFAULT_ELECTION_TIMEOUT_MIN: u64 = 10_000; // 10 seconds
 /// The default election timeout max
@@ -45,6 +45,8 @@ const DEFAULT_PROMOTION_TIMEOUT_MS: u64 = 5 * 60 * 1000;
 const DEFAULT_LEADER_ELECTION_TIMEOUT_MS: u64 = 30_000; // 30 seconds
 /// The default max chunk size for snapshots
 const DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE: u64 = 10 * 1024 * 1024; // 10MiB
+/// The default max number of logs to keep in a snapshot
+const DEFAULT_MAX_IN_SNAPSHOT_LOG_TO_KEEP: u64 = 50;
 /// The default timeout to use when sending `InstallSnapshot` RPCs
 const DEFAULT_INSTALL_SNAPSHOT_TIMEOUT_MS: u64 = 60_000; // 1 minute
 /// The default max number of log entries in an `AppendEntries` payload
@@ -79,6 +81,9 @@ pub struct RaftClientConfig {
     pub initial_nodes: Vec<(NodeId, RaftNode)>,
     /// The maximum size of snapshot chunks in bytes
     pub snapshot_max_chunk_size: u64,
+    /// The maximum number of logs to keep that are already included in
+    /// the snapshot
+    pub max_in_snapshot_log_to_keep: u64,
     /// The timeout on individual `InstallSnapshot` RPC calls
     pub install_snapshot_timeout: u64,
     /// The maximum number of log entries in an `AppendEntries` payload
@@ -98,6 +103,7 @@ impl Default for RaftClientConfig {
             snapshot_path: "./raft-snapshots".to_string(),
             initial_nodes: vec![],
             snapshot_max_chunk_size: DEFAULT_SNAPSHOT_MAX_CHUNK_SIZE,
+            max_in_snapshot_log_to_keep: DEFAULT_MAX_IN_SNAPSHOT_LOG_TO_KEEP,
             install_snapshot_timeout: DEFAULT_INSTALL_SNAPSHOT_TIMEOUT_MS,
             max_payload_entries: DEFAULT_MAX_PAYLOAD_ENTRIES,
         }
@@ -131,6 +137,7 @@ impl RaftClient {
             election_timeout_min: config.election_timeout_min,
             election_timeout_max: config.election_timeout_max,
             snapshot_max_chunk_size: config.snapshot_max_chunk_size,
+            max_in_snapshot_log_to_keep: config.max_in_snapshot_log_to_keep,
             install_snapshot_timeout: config.install_snapshot_timeout,
             max_payload_entries: config.max_payload_entries,
             ..Default::default()
