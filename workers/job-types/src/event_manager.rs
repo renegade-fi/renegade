@@ -52,10 +52,10 @@ pub enum RelayerEvent {
     OrderUpdate(OrderUpdateEvent),
     /// An order cancellation event
     OrderCancellation(OrderCancellationEvent),
-    /// A match event
-    Match(MatchEvent),
-    /// An external match event
-    ExternalMatch(ExternalMatchEvent),
+    /// A fill event
+    Fill(FillEvent),
+    /// An external fill event
+    ExternalFill(ExternalFillEvent),
 }
 
 impl RelayerEvent {
@@ -67,8 +67,8 @@ impl RelayerEvent {
             RelayerEvent::OrderPlacement(event) => event.event_id,
             RelayerEvent::OrderUpdate(event) => event.event_id,
             RelayerEvent::OrderCancellation(event) => event.event_id,
-            RelayerEvent::Match(event) => event.event_id,
-            RelayerEvent::ExternalMatch(event) => event.event_id,
+            RelayerEvent::Fill(event) => event.event_id,
+            RelayerEvent::ExternalFill(event) => event.event_id,
         }
     }
 
@@ -80,8 +80,8 @@ impl RelayerEvent {
             RelayerEvent::OrderPlacement(event) => event.event_timestamp,
             RelayerEvent::OrderUpdate(event) => event.event_timestamp,
             RelayerEvent::OrderCancellation(event) => event.event_timestamp,
-            RelayerEvent::Match(event) => event.event_timestamp,
-            RelayerEvent::ExternalMatch(event) => event.event_timestamp,
+            RelayerEvent::Fill(event) => event.event_timestamp,
+            RelayerEvent::ExternalFill(event) => event.event_timestamp,
         }
     }
 
@@ -93,8 +93,8 @@ impl RelayerEvent {
             RelayerEvent::OrderPlacement(event) => event.describe(),
             RelayerEvent::OrderUpdate(event) => event.describe(),
             RelayerEvent::OrderCancellation(event) => event.describe(),
-            RelayerEvent::Match(event) => event.describe(),
-            RelayerEvent::ExternalMatch(event) => event.describe(),
+            RelayerEvent::Fill(event) => event.describe(),
+            RelayerEvent::ExternalFill(event) => event.describe(),
         }
     }
 }
@@ -276,117 +276,83 @@ impl OrderCancellationEvent {
     }
 }
 
-/// A match event
+/// A fill event on an order, resulting from an internal match
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MatchEvent {
+pub struct FillEvent {
     /// The event ID
     pub event_id: Uuid,
     /// The time at which the event occurred
     pub event_timestamp: SystemTime,
 
-    /// The ID of the first wallet in the match
-    pub wallet_id0: WalletIdentifier,
-    /// The ID of the second wallet in the match
-    pub wallet_id1: WalletIdentifier,
-    /// The ID of the first order in the match
-    pub order_id0: OrderIdentifier,
-    /// The ID of the second order in the match
-    pub order_id1: OrderIdentifier,
-    /// The price at which the match was executed
+    /// The ID of the wallet containing the filled order
+    pub wallet_id: WalletIdentifier,
+    /// The ID of the order that received the fill
+    pub order_id: OrderIdentifier,
+    /// The price at which the fill was executed
     pub execution_price: TimestampedPrice,
     /// The match result
     pub match_result: MatchResult,
-    /// The fees paid by the first party in this match
-    pub fee_take0: FeeTake,
-    /// The fees paid by the second party in this match
-    pub fee_take1: FeeTake,
-}
-
-/// A convenience type encapsulating the event data for a single party in a
-/// match
-#[derive(Clone, Copy)]
-pub struct PartyMatchData {
-    /// The ID of the party's wallet
-    pub wallet_id: WalletIdentifier,
-    /// The ID of the party's order
-    pub order_id: OrderIdentifier,
-    /// The fees paid by the party
+    /// The fees paid as a result of the fill
     pub fee_take: FeeTake,
 }
 
-impl MatchEvent {
-    /// Creates a new match event
+impl FillEvent {
+    /// Creates a new fill event
     pub fn new(
-        party_data0: PartyMatchData,
-        party_data1: PartyMatchData,
+        wallet_id: WalletIdentifier,
+        order_id: OrderIdentifier,
         execution_price: TimestampedPrice,
         match_result: MatchResult,
+        fee_take: FeeTake,
     ) -> Self {
         let (event_id, event_timestamp) = get_event_id_and_timestamp();
-
-        let PartyMatchData { wallet_id: wallet_id0, order_id: order_id0, fee_take: fee_take0 } =
-            party_data0;
-        let PartyMatchData { wallet_id: wallet_id1, order_id: order_id1, fee_take: fee_take1 } =
-            party_data1;
-
         Self {
             event_id,
             event_timestamp,
-            wallet_id0,
-            wallet_id1,
-            order_id0,
-            order_id1,
+            wallet_id,
+            order_id,
             execution_price,
             match_result,
-            fee_take0,
-            fee_take1,
+            fee_take,
         }
     }
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("Match({})", self.event_id)
+        format!("Fill({})", self.event_id)
     }
 }
 
-/// An external match event
+/// A fill event on an order, resulting from an external match
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExternalMatchEvent {
+pub struct ExternalFillEvent {
     /// The event ID
     pub event_id: Uuid,
     /// The time at which the event occurred
     pub event_timestamp: SystemTime,
 
-    /// The ID of the internal wallet in the match
+    /// The ID of the internal wallet containing the filled order
     pub internal_wallet_id: WalletIdentifier,
-    /// The ID of the internal wallet order in the match
+    /// The ID of the internal order that received the fill
     pub internal_order_id: OrderIdentifier,
-    /// The price at which the match was executed
+    /// The price at which the fill was executed
     pub execution_price: TimestampedPrice,
     /// The external match result
     pub external_match_result: ExternalMatchResult,
-    /// The fees paid by the internal party
+    /// The fees paid by the internal party as a result of the fill
     pub internal_fee_take: FeeTake,
-    /// The fees paid by the external party
-    pub external_fee_take: FeeTake,
 }
 
-impl ExternalMatchEvent {
-    /// Creates a new external match event
+impl ExternalFillEvent {
+    /// Creates a new external fill event
     pub fn new(
-        internal_party_data: PartyMatchData,
-        external_fee_take: FeeTake,
+        internal_wallet_id: WalletIdentifier,
+        internal_order_id: OrderIdentifier,
         execution_price: TimestampedPrice,
         external_match_result: ExternalMatchResult,
+        internal_fee_take: FeeTake,
     ) -> Self {
         let (event_id, event_timestamp) = get_event_id_and_timestamp();
-
-        let PartyMatchData {
-            wallet_id: internal_wallet_id,
-            order_id: internal_order_id,
-            fee_take: internal_fee_take,
-        } = internal_party_data;
-
         Self {
             event_id,
             event_timestamp,
@@ -395,13 +361,12 @@ impl ExternalMatchEvent {
             execution_price,
             external_match_result,
             internal_fee_take,
-            external_fee_take,
         }
     }
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("ExternalMatch({})", self.event_id)
+        format!("ExternalFill({})", self.event_id)
     }
 }
 
