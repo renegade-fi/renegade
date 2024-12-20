@@ -260,7 +260,7 @@ impl Task for SettleMatchInternalTask {
 
             SettleMatchInternalTaskState::UpdatingValidityProofs => {
                 self.update_proofs().await?;
-                self.emit_event()?;
+                self.emit_events()?;
                 record_match_volume(&self.match_result, false /* is_external_match */);
 
                 self.task_state = SettleMatchInternalTaskState::Completed;
@@ -555,8 +555,8 @@ impl SettleMatchInternalTask {
         })
     }
 
-    /// Emit a match event to the event manager
-    fn emit_event(&self) -> Result<(), SettleMatchInternalTaskError> {
+    /// Emit a pair of fill events to the event manager
+    fn emit_events(&self) -> Result<(), SettleMatchInternalTaskError> {
         let commitment_witness0 = &self.order1_validity_witness.commitment_witness;
         let commitment_witness1 = &self.order2_validity_witness.commitment_witness;
 

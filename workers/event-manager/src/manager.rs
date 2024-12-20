@@ -5,8 +5,10 @@ use std::{path::Path, thread::JoinHandle};
 
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
+use futures::sink::SinkExt;
 use job_types::event_manager::EventManagerReceiver;
-use tokio::{io::AsyncWriteExt, net::UnixStream};
+use tokio::net::UnixStream;
+use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
 use tracing::{info, warn};
 use url::Url;
 use util::{err_str, runtime::sleep_forever_async};
@@ -23,6 +25,13 @@ const UNIX_SCHEME: &str = "unix";
 /// The error message for when the event export address is not a Unix socket
 const ERR_NON_UNIX_EVENT_EXPORT_ADDRESS: &str =
     "Only Unix socket event export addresses are currently supported";
+
+// ---------------------
+// | Convenience Types |
+// ---------------------
+
+/// A framed sink over a Unix socket
+type FramedUnixSink = FramedWrite<UnixStream, LengthDelimitedCodec>;
 
 // ----------------------
 // | Manager / Executor |
@@ -58,7 +67,9 @@ impl EventManagerExecutor {
     /// Constructs the export sink for the event manager.
     ///
     /// Currently, only Unix socket export addresses are supported.
-    pub async fn construct_export_sink(&mut self) -> Result<Option<UnixStream>, EventManagerError> {
+    pub async fn construct_export_sink(
+        &mut self,
+    ) -> Result<Option<FramedUnixSink>, EventManagerError> {
         if self.event_export_addr.is_none() {
             return Ok(None);
         }
@@ -69,7 +80,9 @@ impl EventManagerExecutor {
             .await
             .map_err(err_str!(EventManagerError::SocketConnection))?;
 
-        Ok(Some(socket))
+        let framed_socket = FramedWrite::new(socket, LengthDelimitedCodec::new());
+
+        Ok(Some(framed_socket))
     }
 
     /// The main execution loop; receives events and exports them to the
@@ -93,7 +106,8 @@ impl EventManagerExecutor {
 
                     let sink = sink.as_mut().unwrap();
                     let event_bytes = serde_json::to_vec(&event).map_err(err_str!(EventManagerError::Serialize))?;
-                    sink.write_all(&event_bytes).await.map_err(err_str!(EventManagerError::SocketWrite))?;
+
+                    sink.send(event_bytes.into()).await.map_err(err_str!(EventManagerError::SocketWrite))?;
                 },
 
                 _ = self.cancel_channel.changed() => {
