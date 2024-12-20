@@ -1,21 +1,24 @@
 //! A managed Unix listener that removes the socket file when dropped
 
-use std::{fs, io, path::Path};
+use std::{fs, path::Path};
 
 use aws_config::Region;
 use aws_sdk_sqs::Client as SqsClient;
 use event_manager::manager::extract_unix_socket_path;
 use eyre::{eyre, Error};
+use job_types::event_manager::RelayerEvent;
 use tokio::net::{UnixListener, UnixStream};
+use tokio_stream::StreamExt;
+use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
 use tracing::{error, info, warn};
 use url::Url;
 
-// -------------
-// | Constants |
-// -------------
+// ---------------------
+// | Convenience Types |
+// ---------------------
 
-/// The maximum message size to read from the event export socket
-const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
+/// A framed stream over a Unix socket
+type FramedUnixStream = FramedRead<UnixStream, LengthDelimitedCodec>;
 
 // ----------------
 // | Event Socket |
@@ -27,7 +30,7 @@ const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
 /// The socket file is removed when the socket is dropped.
 pub struct EventSocket {
     /// The underlying Unix socket
-    socket: UnixStream,
+    socket: FramedUnixStream,
 
     /// The path to the Unix socket
     path: String,
@@ -53,56 +56,51 @@ impl EventSocket {
 
     /// Sets up a Unix socket listening on the given path
     /// and awaits a single connection on it
-    async fn establish_socket_connection(path: &str) -> Result<UnixStream, Error> {
+    async fn establish_socket_connection(path: &str) -> Result<FramedUnixStream, Error> {
         let listener = UnixListener::bind(Path::new(path))?;
 
         // We only expect one connection, so we can just block on it
         info!("Waiting for event export socket connection...");
         match listener.accept().await {
-            Ok((socket, _)) => Ok(socket),
+            Ok((socket, _)) => {
+                let framed_socket = FramedRead::new(socket, LengthDelimitedCodec::new());
+                Ok(framed_socket)
+            },
             Err(e) => Err(eyre!("error accepting Unix socket connection: {e}")),
         }
     }
 
     /// Listens for events on the socket and submits them to the historical
     /// state engine
-    pub async fn listen_for_events(&self) -> Result<(), Error> {
-        loop {
-            // Wait for the socket to be readable
-            self.socket.readable().await?;
-
-            let mut buf = [0; MAX_MESSAGE_SIZE];
-
-            // Try to read data, this may still fail with `WouldBlock`
-            // if the readiness event is a false positive.
-            match self.socket.try_read(&mut buf) {
-                Ok(0) => {
-                    warn!("Event export socket closed");
-                    return Ok(());
-                },
-                Ok(n) => {
-                    let msg = &buf[..n];
-                    if let Err(e) = self.handle_relayer_event(msg.to_vec()).await {
-                        // Events that fail to be submitted are effectively dropped here.
-                        // We can consider retry logic or a local dead-letter queue, but
-                        // for now we keep things simple.
-                        error!("Error handling relayer event: {e}");
-                    }
-                },
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    continue;
-                },
-                Err(e) => {
-                    return Err(e.into());
-                },
+    pub async fn listen_for_events(&mut self) -> Result<(), Error> {
+        while let Some(msg) = self.socket.try_next().await? {
+            if let Err(e) = self.handle_relayer_event(msg.to_vec()).await {
+                // Events that fail to be submitted are effectively dropped here.
+                // We can consider retry logic or a local dead-letter queue, but
+                // for now we keep things simple.
+                error!("Error handling relayer event: {e}");
             }
         }
+
+        warn!("Event export socket closed");
+        Ok(())
     }
 
     /// Handles an event received from the event export socket
     async fn handle_relayer_event(&self, msg: Vec<u8>) -> Result<(), Error> {
+        let event: RelayerEvent = serde_json::from_slice(&msg)?;
+        let event_id = event.event_id();
+        let wallet_id = event.wallet_id();
+
         let msg = String::from_utf8(msg)?;
-        self.sqs_client.send_message().queue_url(&self.queue_url).message_body(msg).send().await?;
+        self.sqs_client
+            .send_message()
+            .queue_url(&self.queue_url)
+            .message_deduplication_id(event_id)
+            .message_group_id(wallet_id)
+            .message_body(msg)
+            .send()
+            .await?;
 
         Ok(())
     }

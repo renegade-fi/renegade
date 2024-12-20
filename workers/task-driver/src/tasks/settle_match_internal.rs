@@ -27,7 +27,7 @@ use common::types::{
     wallet::Wallet,
 };
 use constants::Scalar;
-use job_types::event_manager::{EventManagerQueue, MatchEvent, PartyMatchData, RelayerEvent};
+use job_types::event_manager::{EventManagerQueue, FillEvent, RelayerEvent};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::record_match_volume;
@@ -260,7 +260,7 @@ impl Task for SettleMatchInternalTask {
 
             SettleMatchInternalTaskState::UpdatingValidityProofs => {
                 self.update_proofs().await?;
-                self.emit_event()?;
+                self.emit_events()?;
                 record_match_volume(&self.match_result, false /* is_external_match */);
 
                 self.task_state = SettleMatchInternalTaskState::Completed;
@@ -555,8 +555,8 @@ impl SettleMatchInternalTask {
         })
     }
 
-    /// Emit a match event to the event manager
-    fn emit_event(&self) -> Result<(), SettleMatchInternalTaskError> {
+    /// Emit a pair of fill events to the event manager
+    fn emit_events(&self) -> Result<(), SettleMatchInternalTaskError> {
         let commitment_witness0 = &self.order1_validity_witness.commitment_witness;
         let commitment_witness1 = &self.order2_validity_witness.commitment_witness;
 
@@ -569,26 +569,26 @@ impl SettleMatchInternalTask {
         let fee_take0 = compute_fee_obligation(relayer_fee0, order_side0, &self.match_result);
         let fee_take1 = compute_fee_obligation(relayer_fee1, order_side1, &self.match_result);
 
-        let party_data0 = PartyMatchData {
-            wallet_id: self.wallet_id1,
-            order_id: self.order_id1,
-            fee_take: fee_take0,
-        };
-        let party_data1 = PartyMatchData {
-            wallet_id: self.wallet_id2,
-            order_id: self.order_id2,
-            fee_take: fee_take1,
-        };
-
-        let match_result = self.match_result.clone();
-
-        let event = RelayerEvent::Match(MatchEvent::new(
-            party_data0,
-            party_data1,
+        let fill_event0 = RelayerEvent::Fill(FillEvent::new(
+            self.wallet_id1,
+            self.order_id1,
             self.execution_price,
-            match_result,
+            self.match_result.clone(),
+            fee_take0,
+        ));
+        let fill_event1 = RelayerEvent::Fill(FillEvent::new(
+            self.wallet_id2,
+            self.order_id2,
+            self.execution_price,
+            self.match_result.clone(),
+            fee_take1,
         ));
 
-        self.event_queue.send(event).map_err(err_str!(SettleMatchInternalTaskError::SendEvent))
+        self.event_queue
+            .send(fill_event0)
+            .map_err(err_str!(SettleMatchInternalTaskError::SendEvent))?;
+        self.event_queue
+            .send(fill_event1)
+            .map_err(err_str!(SettleMatchInternalTaskError::SendEvent))
     }
 }

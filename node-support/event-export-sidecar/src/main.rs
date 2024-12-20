@@ -49,7 +49,7 @@ async fn main() -> Result<(), Error> {
         return Ok(());
     }
 
-    let event_socket =
+    let mut event_socket =
         EventSocket::new(&relayer_config.event_export_url.unwrap(), cli.queue_url, cli.region)
             .await?;
 

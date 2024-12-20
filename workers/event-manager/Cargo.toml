@@ -7,6 +7,7 @@ edition = "2021"
 # === Async + Concurrency === #
 async-trait = { workspace = true }
 tokio = { workspace = true }
+futures = { workspace = true }
 
 # === Workspace Dependencies === #
 common = { path = "../../common" }
@@ -20,3 +21,4 @@ url = "2.4"
 tracing = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { version = "1.0.61" }
+tokio-util = "0.7"
