@@ -20,7 +20,7 @@ use tracing_opentelemetry::OtelData;
 
 use tracing_serde::AsSerde;
 use tracing_subscriber::fmt::format::Writer;
-use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields};
+use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, FormattedFields};
 use tracing_subscriber::registry::{LookupSpan, SpanRef};
 
 /// A trace or span ID in the format expected by Datadog
@@ -122,6 +122,19 @@ where
             serializer = visitor.take_serializer()?;
 
             if let Some(ref span_ref) = ctx.lookup_current() {
+                // Record current span fields, inspired by:
+                // https://github.com/tokio-rs/tracing/blob/tracing-subscriber-0.3.19/tracing-subscriber/src/fmt/format/json.rs#L168-L207
+                if let Some(fmt_fields) = span_ref.extensions().get::<FormattedFields<N>>() {
+                    if let Ok(serde_json::Value::Object(fields)) =
+                        serde_json::from_str::<serde_json::Value>(fmt_fields)
+                    {
+                        for (key, value) in fields {
+                            serializer.serialize_entry(&key, &value)?;
+                        }
+                    }
+                }
+
+                // Record trace ID and span ID, if present
                 if let Some(trace_info) = lookup_trace_info(span_ref) {
                     serializer.serialize_entry("dd.span_id", &trace_info.span_id)?;
                     serializer.serialize_entry("dd.trace_id", &trace_info.trace_id)?;
