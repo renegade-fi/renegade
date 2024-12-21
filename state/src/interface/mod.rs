@@ -19,8 +19,8 @@ use config::RelayerConfig;
 use crossbeam::channel::Sender as UnboundedSender;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
-    handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
-    task_driver::TaskDriverQueue,
+    event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
+    network_manager::NetworkManagerQueue, task_driver::TaskDriverQueue,
 };
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
@@ -72,11 +72,13 @@ pub type ProposalQueue = UnboundedSender<Proposal>;
 pub type State = Arc<StateInner>;
 
 /// Create a new state instance and wrap it in an `Arc`
+#[allow(clippy::too_many_arguments)]
 pub async fn create_global_state(
     config: &RelayerConfig,
     network_queue: NetworkManagerQueue,
     task_queue: TaskDriverQueue,
     handshake_manager_queue: HandshakeManagerQueue,
+    event_queue: EventManagerQueue,
     system_bus: SystemBus<SystemBusMessage>,
     system_clock: &SystemClock,
     failure_send: WorkerFailureSender,
@@ -86,6 +88,7 @@ pub async fn create_global_state(
         network_queue,
         task_queue,
         handshake_manager_queue,
+        event_queue,
         system_bus,
         system_clock,
         failure_send,
@@ -133,11 +136,13 @@ impl StateInner {
     // ----------------
 
     /// Construct a new default state handle using the `GossipNetwork`
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         config: &RelayerConfig,
         network_queue: NetworkManagerQueue,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
+        event_queue: EventManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         system_clock: &SystemClock,
         failure_send: WorkerFailureSender,
@@ -150,6 +155,7 @@ impl StateInner {
             net,
             task_queue,
             handshake_manager_queue,
+            event_queue,
             system_bus,
             system_clock,
             failure_send,
@@ -165,6 +171,7 @@ impl StateInner {
         network: N,
         task_queue: TaskDriverQueue,
         handshake_manager_queue: HandshakeManagerQueue,
+        event_queue: EventManagerQueue,
         system_bus: SystemBus<SystemBusMessage>,
         system_clock: &SystemClock,
         failure_send: WorkerFailureSender,
@@ -186,6 +193,7 @@ impl StateInner {
             cluster_id: relayer_config.cluster_id.clone(),
             task_queue,
             handshake_manager_queue,
+            event_queue,
             order_cache: order_cache.clone(),
             db: db.clone(),
             system_bus: system_bus.clone(),

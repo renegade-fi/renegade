@@ -116,6 +116,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender.clone(),
         task_sender.clone(),
         handshake_worker_sender.clone(),
+        event_manager_sender.clone(),
         system_bus.clone(),
         &system_clock,
         state_failure_send,

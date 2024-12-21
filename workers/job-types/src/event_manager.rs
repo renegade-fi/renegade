@@ -9,6 +9,7 @@ use circuit_types::{
     Amount,
 };
 use common::types::{
+    tasks::{HistoricalTask, TaskQueueKey},
     wallet::{Order, OrderIdentifier, WalletIdentifier},
     MatchingPoolName, TimestampedPrice,
 };
@@ -56,6 +57,8 @@ pub enum RelayerEvent {
     Fill(FillEvent),
     /// An external fill event
     ExternalFill(ExternalFillEvent),
+    /// A task completion
+    TaskCompletion(TaskCompletionEvent),
 }
 
 impl RelayerEvent {
@@ -69,6 +72,7 @@ impl RelayerEvent {
             RelayerEvent::OrderCancellation(event) => event.event_id,
             RelayerEvent::Fill(event) => event.event_id,
             RelayerEvent::ExternalFill(event) => event.event_id,
+            RelayerEvent::TaskCompletion(event) => event.event_id,
         }
     }
 
@@ -82,6 +86,7 @@ impl RelayerEvent {
             RelayerEvent::OrderCancellation(event) => event.event_timestamp,
             RelayerEvent::Fill(event) => event.event_timestamp,
             RelayerEvent::ExternalFill(event) => event.event_timestamp,
+            RelayerEvent::TaskCompletion(event) => event.event_timestamp,
         }
     }
 
@@ -95,6 +100,7 @@ impl RelayerEvent {
             RelayerEvent::OrderCancellation(event) => event.wallet_id,
             RelayerEvent::Fill(event) => event.wallet_id,
             RelayerEvent::ExternalFill(event) => event.internal_wallet_id,
+            RelayerEvent::TaskCompletion(event) => event.task_queue_key,
         }
     }
 
@@ -108,6 +114,7 @@ impl RelayerEvent {
             RelayerEvent::OrderCancellation(event) => event.describe(),
             RelayerEvent::Fill(event) => event.describe(),
             RelayerEvent::ExternalFill(event) => event.describe(),
+            RelayerEvent::TaskCompletion(event) => event.describe(),
         }
     }
 }
@@ -380,6 +387,33 @@ impl ExternalFillEvent {
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
         format!("ExternalFill({})", self.event_id)
+    }
+}
+
+/// A task completion event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskCompletionEvent {
+    /// The event ID
+    pub event_id: Uuid,
+    /// The time at which the event occurred
+    pub event_timestamp: SystemTime,
+
+    /// The key of the queue in which the task was executed
+    pub task_queue_key: TaskQueueKey,
+    /// The historical task that was completed
+    pub historical_task: HistoricalTask,
+}
+
+impl TaskCompletionEvent {
+    /// Creates a new task completion event
+    pub fn new(task_queue_key: TaskQueueKey, historical_task: HistoricalTask) -> Self {
+        let (event_id, event_timestamp) = get_event_id_and_timestamp();
+        Self { event_id, event_timestamp, task_queue_key, historical_task }
+    }
+
+    /// Returns a human-readable description of the event
+    pub fn describe(&self) -> String {
+        format!("TaskCompletion({})", self.event_id)
     }
 }
 
