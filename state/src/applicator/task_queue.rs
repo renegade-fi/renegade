@@ -11,7 +11,8 @@ use external_api::{
     types::ApiHistoricalTask,
 };
 use job_types::{
-    event_manager::TaskCompletionEvent, handshake_manager::HandshakeManagerJob,
+    event_manager::{RelayerEvent, TaskCompletionEvent},
+    handshake_manager::HandshakeManagerJob,
     task_driver::TaskDriverJob,
 };
 use libmdbx::{TransactionKind, RW};
@@ -153,7 +154,8 @@ impl StateApplicator {
             .get_task_assignment(&task_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
 
-        let task = Self::pop_and_record_task(&key, success, &tx)?
+        let task = self
+            .pop_and_record_task(&key, success, &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
 
         // If the task failed, clear the rest of the queue, as subsequent tasks will
@@ -348,7 +350,8 @@ impl StateApplicator {
         // Resume the queue, and pop the preemptive task that was added when the queue
         // was paused
         tx.resume_task_queue(&key)?;
-        let task = Self::pop_and_record_task(&key, success, tx)?
+        let task = self
+            .pop_and_record_task(&key, success, tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
 
         // If the task failed, clear the rest of the queue, as subsequent tasks will
@@ -453,7 +456,12 @@ impl StateApplicator {
         task: &QueuedTask,
         tx: &StateTxn<'_, T>,
     ) -> Result<()> {
-        if Self::is_executor(&task.id, tx)? {
+        let my_peer_id = tx.get_peer_id()?;
+        let executor = tx
+            .get_task_assignment(&task.id)?
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
+
+        if executor == my_peer_id {
             self.config
                 .task_queue
                 .send(TaskDriverJob::Run(task.clone()))
@@ -518,6 +526,7 @@ impl StateApplicator {
     ///
     /// Returns the task
     fn pop_and_record_task(
+        &self,
         key: &TaskQueueKey,
         success: bool,
         tx: &StateTxn<'_, RW>,
@@ -536,7 +545,7 @@ impl StateApplicator {
         }
 
         // Add the task to history and remove its node assignment
-        Self::maybe_append_historical_task(*key, task.clone(), tx)?;
+        self.maybe_append_historical_task(*key, task.clone(), tx)?;
         if let Some(executor) = tx.get_task_assignment(&task.id)? {
             tx.remove_assigned_task(&executor, &task.id)?;
         }
@@ -545,18 +554,28 @@ impl StateApplicator {
 
     /// Append a task to the task history if it should be stored
     fn maybe_append_historical_task(
+        &self,
         key: TaskQueueKey,
         task: QueuedTask,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
-        if let Some(t) = HistoricalTask::from_queued_task(key, task)
-            && tx.get_historical_state_enabled()?
-        {
-            tx.append_task_to_history(&key, t.clone())?;
+        if let Some(t) = HistoricalTask::from_queued_task(key, task) {
+            if tx.get_historical_state_enabled()? {
+                tx.append_task_to_history(&key, t.clone())?;
+            }
 
-            if Self::is_executor(&t.id, tx)? {
-                let _event = TaskCompletionEvent::new(key, t);
-                // TODO: Send event to event manager
+            // Emit a task completion event to the event manager
+            // _only if the local peer is the executor_,
+            // to avoid duplicate events across the cluster
+            let my_peer_id = tx.get_peer_id()?;
+            let maybe_executor = tx.get_task_assignment(&t.id)?;
+            let is_executor = maybe_executor.is_some_and(|e| e == my_peer_id);
+
+            if is_executor {
+                let event = RelayerEvent::TaskCompletion(TaskCompletionEvent::new(key, t));
+                if let Err(e) = self.config.event_queue.send(event) {
+                    error!("error sending task completion event: {e}");
+                }
             }
         }
 
@@ -572,7 +591,7 @@ impl StateApplicator {
         // Mark all tasks as failed, append to history, and publish updates
         for mut task in cleared_tasks {
             task.state = QueuedTaskState::Failed;
-            Self::maybe_append_historical_task(key, task.clone(), tx)?;
+            self.maybe_append_historical_task(key, task.clone(), tx)?;
             self.publish_task_updates(key, &task);
 
             if let Some(peer_id) = tx.get_task_assignment(&task.id)? {
@@ -581,19 +600,6 @@ impl StateApplicator {
         }
 
         Ok(())
-    }
-
-    /// Whether the local node is the executor of the given task
-    fn is_executor<T: TransactionKind>(
-        task_id: &TaskIdentifier,
-        tx: &StateTxn<'_, T>,
-    ) -> Result<bool> {
-        let my_peer_id = tx.get_peer_id()?;
-        let executor = tx
-            .get_task_assignment(task_id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
-
-        Ok(my_peer_id == executor)
     }
 }
 

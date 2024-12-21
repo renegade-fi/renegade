@@ -225,6 +225,7 @@ pub mod test_helpers {
     use common::worker::new_worker_failure_channel;
     use config::RelayerConfig;
     use job_types::{
+        event_manager::new_event_manager_queue,
         handshake_manager::new_handshake_manager_queue,
         task_driver::{new_task_driver_queue, TaskDriverQueue},
     };
@@ -323,6 +324,7 @@ pub mod test_helpers {
             MockRaft::create_raft(2 /* n_nodes */, network_delay_ms, false /* init */).await;
         let net = raft.new_network_client();
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
+        let (event_queue, _recv) = new_event_manager_queue();
         let (failure_send, _failure_recv) = new_worker_failure_channel();
 
         // Add a client to the mock raft as leader
@@ -333,6 +335,7 @@ pub mod test_helpers {
             net,
             task_queue,
             handshake_manager_queue,
+            event_queue,
             SystemBus::new(),
             &SystemClock::new().await,
             failure_send,

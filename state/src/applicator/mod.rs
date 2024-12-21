@@ -5,7 +5,10 @@ use std::sync::Arc;
 
 use common::types::gossip::ClusterId;
 use external_api::bus_message::SystemBusMessage;
-use job_types::{handshake_manager::HandshakeManagerQueue, task_driver::TaskDriverQueue};
+use job_types::{
+    event_manager::EventManagerQueue, handshake_manager::HandshakeManagerQueue,
+    task_driver::TaskDriverQueue,
+};
 use system_bus::SystemBus;
 
 use crate::{caching::order_cache::OrderBookCache, storage::db::DB, StateTransition};
@@ -43,6 +46,8 @@ pub struct StateApplicatorConfig {
     pub task_queue: TaskDriverQueue,
     /// The handshake manager's work queue
     pub handshake_manager_queue: HandshakeManagerQueue,
+    /// The event manager's work queue
+    pub event_queue: EventManagerQueue,
     /// The order book cache
     pub order_cache: Arc<OrderBookCache>,
     /// A handle to the database underlying the storage layer
@@ -137,6 +142,7 @@ pub mod test_helpers {
 
     use common::types::gossip::ClusterId;
     use job_types::{
+        event_manager::new_event_manager_queue,
         handshake_manager::new_handshake_manager_queue,
         task_driver::{new_task_driver_queue, TaskDriverQueue},
     };
@@ -159,12 +165,16 @@ pub mod test_helpers {
         let (handshake_manager_queue, _recv) = new_handshake_manager_queue();
         mem::forget(_recv);
 
+        let (event_queue, _recv) = new_event_manager_queue();
+        mem::forget(_recv);
+
         let config = StateApplicatorConfig {
             allow_local: true,
             task_queue,
             order_cache: Arc::new(OrderBookCache::new()),
             db: Arc::new(mock_db()),
             handshake_manager_queue,
+            event_queue,
             system_bus: SystemBus::new(),
             cluster_id: ClusterId::from_str("test-cluster").unwrap(),
         };

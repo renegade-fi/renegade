@@ -271,6 +271,7 @@ impl MockNodeController {
         let network_queue = self.network_queue.0.clone();
         let task_sender = self.task_queue.0.clone();
         let handshake_queue = self.handshake_queue.0.clone();
+        let event_queue = self.event_queue.0.clone();
         let bus = self.bus.clone();
         let clock = self.clock.clone();
         let (failure_send, failure_recv) = new_worker_failure_channel();
@@ -280,6 +281,7 @@ impl MockNodeController {
             network_queue,
             task_sender,
             handshake_queue,
+            event_queue,
             bus,
             &clock,
             failure_send,
