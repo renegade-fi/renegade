@@ -10,7 +10,10 @@ use external_api::{
     http::task::ApiTaskStatus,
     types::ApiHistoricalTask,
 };
-use job_types::{handshake_manager::HandshakeManagerJob, task_driver::TaskDriverJob};
+use job_types::{
+    event_manager::TaskCompletionEvent, handshake_manager::HandshakeManagerJob,
+    task_driver::TaskDriverJob,
+};
 use libmdbx::{TransactionKind, RW};
 use tracing::{error, info, instrument, warn};
 use util::err_str;
@@ -450,12 +453,7 @@ impl StateApplicator {
         task: &QueuedTask,
         tx: &StateTxn<'_, T>,
     ) -> Result<()> {
-        let my_peer_id = tx.get_peer_id()?;
-        let executor = tx
-            .get_task_assignment(&task.id)?
-            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
-
-        if executor == my_peer_id {
+        if Self::is_executor(&task.id, tx)? {
             self.config
                 .task_queue
                 .send(TaskDriverJob::Run(task.clone()))
@@ -537,11 +535,11 @@ impl StateApplicator {
             task.state = QueuedTaskState::Failed;
         }
 
-        // Remove the task's node assignment and add it to history
+        // Add the task to history and remove its node assignment
+        Self::maybe_append_historical_task(*key, task.clone(), tx)?;
         if let Some(executor) = tx.get_task_assignment(&task.id)? {
             tx.remove_assigned_task(&executor, &task.id)?;
         }
-        Self::maybe_append_historical_task(*key, task.clone(), tx)?;
         Ok(Some(task))
     }
 
@@ -554,7 +552,12 @@ impl StateApplicator {
         if let Some(t) = HistoricalTask::from_queued_task(key, task)
             && tx.get_historical_state_enabled()?
         {
-            tx.append_task_to_history(&key, t)?;
+            tx.append_task_to_history(&key, t.clone())?;
+
+            if Self::is_executor(&t.id, tx)? {
+                let _event = TaskCompletionEvent::new(key, t);
+                // TODO: Send event to event manager
+            }
         }
 
         Ok(())
@@ -578,6 +581,19 @@ impl StateApplicator {
         }
 
         Ok(())
+    }
+
+    /// Whether the local node is the executor of the given task
+    fn is_executor<T: TransactionKind>(
+        task_id: &TaskIdentifier,
+        tx: &StateTxn<'_, T>,
+    ) -> Result<bool> {
+        let my_peer_id = tx.get_peer_id()?;
+        let executor = tx
+            .get_task_assignment(task_id)?
+            .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
+
+        Ok(my_peer_id == executor)
     }
 }
 
