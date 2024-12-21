@@ -85,11 +85,36 @@ impl OrderMetadataIndex {
         let sorted_vec = entry.entry(side).or_insert_with(SortedVec::new);
 
         // Remove the old entry
-        let idx = sorted_vec.find_index(|(_, oid)| *oid == order_id).unwrap();
-        sorted_vec.vec.remove(idx);
+        if let Some(idx) = sorted_vec.find_index(|(_, oid)| *oid == order_id) {
+            sorted_vec.remove(idx);
+        }
 
         // Insert the new entry (this will maintain the sort order)
         sorted_vec.insert((matchable_amount, order_id));
+    }
+
+    /// Remove an order from the index
+    ///
+    /// Note that we do not clean up sub-index entries when their
+    /// lists become empty.
+    pub async fn remove_order(&self, order_id: &OrderIdentifier) -> Option<()> {
+        // Remove from the reverse index
+        let mut reverse_index = self.reverse_index.write().await;
+        reverse_index.remove(order_id);
+
+        // Get the pair and side from the reverse index
+        let (pair, side) = self.get_pair_and_side(order_id).await?;
+
+        // Remove from the main index
+        let mut index = self.index.write().await;
+        let side_index = index.get_mut(&pair)?;
+        let sorted_vec = side_index.get_mut(&side)?;
+
+        if let Some(idx) = sorted_vec.find_index(|(_, oid)| oid == order_id) {
+            sorted_vec.remove(idx);
+        }
+
+        Some(())
     }
 }
 
@@ -142,6 +167,11 @@ impl<T: Ord> SortedVec<T> {
             Err(i) => i,
         };
         self.vec.insert(index, element);
+    }
+
+    /// Remove an element from the vector
+    pub fn remove(&mut self, index: usize) -> T {
+        self.vec.remove(index)
     }
 }
 
@@ -359,5 +389,68 @@ mod order_index_tests {
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0], order_id2); // 300
         assert_eq!(orders[1], order_id1); // 200
+    }
+
+    #[tokio::test]
+    async fn test_remove_order() {
+        let index = OrderMetadataIndex::new();
+        let order_id = OrderIdentifier::new_v4();
+        let order = mock_order();
+        let pair = order.pair();
+
+        // Add an order
+        index.add_order(order_id, &order, 100).await;
+
+        // Verify it was added
+        let orders = index.get_orders(&pair, order.side).await;
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0], order_id);
+
+        // Remove the order
+        let result = index.remove_order(&order_id).await;
+        assert!(result.is_some());
+
+        // Verify it was removed
+        let orders = index.get_orders(&pair, order.side).await;
+        assert!(orders.is_empty());
+
+        // Verify it was removed from reverse index
+        let pair_and_side = index.get_pair_and_side(&order_id).await;
+        assert!(pair_and_side.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_remove_nonexistent_order() {
+        let index = OrderMetadataIndex::new();
+        let order_id = OrderIdentifier::new_v4();
+
+        // Try to remove a nonexistent order
+        let result = index.remove_order(&order_id).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_remove_order_maintains_sort() {
+        let index = OrderMetadataIndex::new();
+        let order = mock_order();
+        let pair = order.pair();
+
+        // Add three orders
+        let order_id1 = OrderIdentifier::new_v4();
+        let order_id2 = OrderIdentifier::new_v4();
+        let order_id3 = OrderIdentifier::new_v4();
+
+        index.add_order(order_id1, &order, 300).await;
+        index.add_order(order_id2, &order, 200).await;
+        index.add_order(order_id3, &order, 100).await;
+
+        // Remove the middle order
+        index.remove_order(&order_id2).await;
+
+        // Verify remaining orders are still sorted
+        let orders = index.get_orders(&pair, OrderSide::Buy).await;
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0], order_id1); // 300
+        assert_eq!(orders[1], order_id3); // 100
     }
 }
