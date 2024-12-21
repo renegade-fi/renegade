@@ -22,13 +22,19 @@ type OrderSideIndex = HashMap<OrderSide, SortedVec<(Amount, OrderIdentifier)>>;
 pub struct OrderMetadataIndex {
     /// The mapping from pair -> side -> (matchable_amount, order_id)
     index: RwLockHashMap<Pair, OrderSideIndex>,
+    /// A reverse mapping from order_id to pair and side
+    ///
+    /// This is used to efficiently query the index by order_id for updates and
+    /// deletion
+    reverse_index: RwLockHashMap<OrderIdentifier, (Pair, OrderSide)>,
 }
 
 impl OrderMetadataIndex {
     /// Construct a new order metadata index
     pub fn new() -> Self {
         let index = RwLock::new(HashMap::new());
-        Self { index }
+        let reverse_index = RwLock::new(HashMap::new());
+        Self { index, reverse_index }
     }
 
     // --- Getters --- //
@@ -43,6 +49,11 @@ impl OrderMetadataIndex {
         }
     }
 
+    /// Get the pair and side for a given order_id
+    pub async fn get_pair_and_side(&self, order_id: &OrderIdentifier) -> Option<(Pair, OrderSide)> {
+        self.reverse_index.read().await.get(order_id).cloned()
+    }
+
     // --- Setters --- //
 
     /// Add an order to the index
@@ -54,8 +65,31 @@ impl OrderMetadataIndex {
     ) {
         let (pair, side) = order.pair_and_side();
         let mut index = self.index.write().await;
-        let entry = index.entry(pair).or_insert_with(OrderSideIndex::new);
+        let entry = index.entry(pair.clone()).or_insert_with(OrderSideIndex::new);
         entry.entry(side).or_insert_with(SortedVec::new).insert((matchable_amount, order_id));
+
+        // Update the reverse index
+        let mut reverse_index = self.reverse_index.write().await;
+        reverse_index.insert(order_id, (pair, side));
+    }
+
+    /// Update the matchable amount for an order
+    pub async fn update_matchable_amount(
+        &self,
+        order_id: OrderIdentifier,
+        matchable_amount: Amount,
+    ) {
+        let (pair, side) = self.get_pair_and_side(&order_id).await.unwrap();
+        let mut index = self.index.write().await;
+        let entry = index.entry(pair).or_insert_with(OrderSideIndex::new);
+        let sorted_vec = entry.entry(side).or_insert_with(SortedVec::new);
+
+        // Remove the old entry
+        let idx = sorted_vec.find_index(|(_, oid)| *oid == order_id).unwrap();
+        sorted_vec.vec.remove(idx);
+
+        // Insert the new entry (this will maintain the sort order)
+        sorted_vec.insert((matchable_amount, order_id));
     }
 }
 
@@ -73,8 +107,19 @@ impl<T: Ord> SortedVec<T> {
 
     // --- Getters --- //
 
+    /// Get the element at index i
+    #[cfg(test)]
+    pub fn get(&self, i: usize) -> Option<&T> {
+        self.vec.get(i)
+    }
+
+    /// Find the index of an element in the vector using the given filter method
+    pub fn find_index(&self, filter: impl Fn(&T) -> bool) -> Option<usize> {
+        self.vec.iter().position(filter)
+    }
+
     /// Get the vector
-    #[allow(unused)]
+    #[cfg(test)]
     pub fn vec(&self) -> &Vec<T> {
         &self.vec
     }
@@ -258,5 +303,61 @@ mod order_index_tests {
         assert!(orders1_incorrect_side.is_empty());
         assert_eq!(orders2_correct_side.len(), 2);
         assert!(orders2_incorrect_side.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_update_matchable_amount() {
+        let index = OrderMetadataIndex::new();
+        let order_id = OrderIdentifier::new_v4();
+        let order = mock_order();
+        let pair = order.pair();
+
+        // Add an order with an initial matchable amount
+        let initial_amount = 100;
+        index.add_order(order_id, &order, initial_amount).await;
+
+        // Update the matchable amount
+        let updated_amount = 200;
+        index.update_matchable_amount(order_id, updated_amount).await;
+
+        // Get the orders and verify the order is in the correct position
+        let orders = index.get_orders(&pair, order.side).await;
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0], order_id);
+
+        // Verify the updated amount by checking the internal state
+        let index_map = index.index.read().await;
+        let side_index = index_map.get(&pair).unwrap();
+        let sorted_vec = side_index.get(&OrderSide::Buy).unwrap();
+        assert_eq!(sorted_vec.get(0).unwrap().0, updated_amount);
+    }
+
+    #[tokio::test]
+    async fn test_update_matchable_amount_sort_order() {
+        let index = OrderMetadataIndex::new();
+        let order = mock_order();
+        let pair = order.pair();
+
+        // Add two orders with initial amounts
+        let order_id1 = OrderIdentifier::new_v4();
+        let order_id2 = OrderIdentifier::new_v4();
+
+        index.add_order(order_id1, &order, 200).await;
+        index.add_order(order_id2, &order, 100).await;
+
+        // Verify initial sort order (descending by amount)
+        let orders = index.get_orders(&pair, OrderSide::Buy).await;
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0], order_id1); // 200
+        assert_eq!(orders[1], order_id2); // 100
+
+        // Update order2's amount to be larger than order1
+        index.update_matchable_amount(order_id2, 300).await;
+
+        // Verify the sort order has changed
+        let orders = index.get_orders(&pair, OrderSide::Buy).await;
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0], order_id2); // 300
+        assert_eq!(orders[1], order_id1); // 200
     }
 }
