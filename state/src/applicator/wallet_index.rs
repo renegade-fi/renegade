@@ -198,9 +198,9 @@ impl StateApplicator {
     /// that are
     fn update_external_order_cache(&self, wallet: &Wallet) {
         let order_cache = self.order_cache();
-        for (id, order) in wallet.get_nonzero_orders().into_iter() {
+        for (id, order) in wallet.get_matchable_orders().into_iter() {
             if order.allow_external_matches {
-                order_cache.add_externally_enabled_order_blocking(id);
+                order_cache.mark_order_externally_matchable_blocking(id);
             } else {
                 order_cache.remove_externally_enabled_order_blocking(id);
             }
