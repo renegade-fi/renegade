@@ -5,106 +5,98 @@
 
 use std::collections::HashSet;
 
-use common::types::wallet::OrderIdentifier;
+use circuit_types::{order::OrderSide, Amount};
+use common::types::wallet::{Order, OrderIdentifier, Pair};
 use tokio::sync::RwLock;
+use tracing::instrument;
 
 use crate::storage::{db::DB, error::StorageError};
 
-use super::RwLockHashSet;
+use super::{order_metadata_index::OrderMetadataIndex, RwLockHashSet};
+
+/// A filter for querying the order book cache
+#[derive(Clone)]
+pub struct OrderBookFilter {
+    /// The pair to filter on
+    pair: Pair,
+    /// The side to filter on
+    side: OrderSide,
+    /// Whether to only accept externally matchable orders
+    external: bool,
+}
+
+impl OrderBookFilter {
+    /// Construct a new order book filter
+    pub fn new(pair: Pair, side: OrderSide, external: bool) -> Self {
+        Self { pair, side, external }
+    }
+}
 
 /// The order book cache
 #[derive(Default)]
 pub struct OrderBookCache {
-    /// The set of open orders which are matchable and locally managed
-    matchable_orders: RwLockHashSet<OrderIdentifier>,
     /// The set of local orders which have external matches enabled
     ///
     /// This may not be a subset of `matchable_orders`, some externally
     /// matchable orders may not be yet matchable, e.g. if they are waiting for
     /// validity proofs
     externally_enabled_orders: RwLockHashSet<OrderIdentifier>,
+    /// The index of order metadata
+    order_metadata_index: OrderMetadataIndex,
 }
 
 impl OrderBookCache {
     /// Construct a new order book cache
     pub fn new() -> Self {
         Self {
-            matchable_orders: RwLock::new(HashSet::new()),
             externally_enabled_orders: RwLock::new(HashSet::new()),
+            order_metadata_index: OrderMetadataIndex::new(),
         }
     }
 
     // --- Getters --- //
 
-    /// Get the set of matchable orders
-    pub async fn matchable_orders(&self) -> Vec<OrderIdentifier> {
-        self.matchable_orders.read().await.iter().copied().collect()
-    }
-
-    /// Get the set of matchable orders in a blocking fashion
-    pub fn matchable_orders_blocking(&self) -> Vec<OrderIdentifier> {
-        self.matchable_orders.blocking_read().iter().copied().collect()
-    }
-
-    /// Get the set of externally matchable orders
-    ///
-    /// This is the intersection of `matchable_orders` and
-    /// `externally_enabled_orders`
-    pub async fn externally_matchable_orders(&self) -> Vec<OrderIdentifier> {
-        let matchable = self.matchable_orders.read().await;
-        let external = self.externally_enabled_orders.read().await;
-        matchable.intersection(&external).copied().collect()
-    }
-
-    /// Get the set of externally matchable orders in a blocking fashion
-    pub fn externally_matchable_orders_blocking(&self) -> Vec<OrderIdentifier> {
-        let matchable = self.matchable_orders.blocking_read();
-        let external = self.externally_enabled_orders.blocking_read();
-        matchable.intersection(&external).copied().collect()
+    /// Get orders matching a filter
+    pub async fn get_orders(&self, filter: OrderBookFilter) -> Vec<OrderIdentifier> {
+        let orders = self.order_metadata_index.get_orders(&filter.pair, filter.side).await;
+        if filter.external {
+            let externally_matchable = self.externally_enabled_orders.read().await;
+            orders.into_iter().filter(|id| externally_matchable.contains(id)).collect()
+        } else {
+            orders
+        }
     }
 
     // --- Setters --- //
 
-    /// Add a matchable order
-    pub async fn add_matchable_order(&self, order: OrderIdentifier) {
-        self.matchable_orders.write().await.insert(order);
+    /// Add an order to the cache
+    pub async fn add_order(&self, id: OrderIdentifier, order: &Order, matchable_amount: Amount) {
+        self.order_metadata_index.add_order(id, order, matchable_amount).await;
+        if order.allow_external_matches {
+            self.externally_enabled_orders.write().await.insert(id);
+        }
     }
 
-    /// Add a matchable order in a blocking fashion
-    pub fn add_matchable_order_blocking(&self, order: OrderIdentifier) {
-        self.matchable_orders.blocking_write().insert(order);
-    }
-
-    /// Add an externally enabled order
-    pub async fn add_externally_enabled_order(&self, order: OrderIdentifier) {
+    /// Mark an order as externally matchable
+    pub async fn mark_order_externally_matchable(&self, order: OrderIdentifier) {
         self.externally_enabled_orders.write().await.insert(order);
     }
 
-    /// Add an externally enabled order in a blocking fashion
-    pub fn add_externally_enabled_order_blocking(&self, order: OrderIdentifier) {
+    /// Mark an order as externally matchable in a blocking fashion
+    pub fn mark_order_externally_matchable_blocking(&self, order: OrderIdentifier) {
         self.externally_enabled_orders.blocking_write().insert(order);
     }
 
     /// Remove an order from the cache entirely
     pub async fn remove_order(&self, order: OrderIdentifier) {
-        self.matchable_orders.write().await.remove(&order);
         self.externally_enabled_orders.write().await.remove(&order);
+        self.order_metadata_index.remove_order(&order).await;
     }
 
     /// Remove an order in a blocking fashion
     pub fn remove_order_blocking(&self, order: OrderIdentifier) {
-        self.remove_matchable_order_blocking(order);
         self.remove_externally_enabled_order_blocking(order);
-    }
-
-    /// Remove a matchable order
-    pub async fn remove_matchable_order(&self, order: OrderIdentifier) {
-        self.matchable_orders.write().await.remove(&order);
-    }
-
-    /// Remove a matchable order in a blocking fashion
-    pub fn remove_matchable_order_blocking(&self, order: OrderIdentifier) {
-        self.matchable_orders.blocking_write().remove(&order);
+        todo!("re-implement write paths for order book cache");
     }
 
     /// Remove an externally enabled order
@@ -120,7 +112,8 @@ impl OrderBookCache {
     /// Backfill the order cache from a DB
     ///
     /// This method may be used to populate the cache on startup
-    pub fn backfill_from_db(&self, db: &DB) -> Result<(), StorageError> {
+    #[instrument(skip(self, db))]
+    pub async fn hydrate_from_db(&self, db: &DB) -> Result<(), StorageError> {
         let tx = db.new_read_tx()?;
         let orders = tx.get_local_orders()?;
         for order_id in orders.into_iter() {
@@ -131,15 +124,20 @@ impl OrderBookCache {
             };
 
             if info.local && info.ready_for_match() {
-                self.add_matchable_order_blocking(order_id);
-            }
+                // Get the order itself
+                let wallet = match tx.get_wallet_for_order(&order_id)? {
+                    Some(wallet) => wallet,
+                    None => continue,
+                };
 
-            // Check if the order allows external matches
-            if let Some(wallet) = tx.get_wallet_for_order(&order_id)?
-                && let Some(order) = wallet.get_order(&order_id)
-                && order.allow_external_matches
-            {
-                self.add_externally_enabled_order_blocking(order_id);
+                let order = match wallet.get_order(&order_id) {
+                    Some(order) => order,
+                    None => continue,
+                };
+
+                let matchable_amount =
+                    wallet.get_balance_for_order(order).map(|b| b.amount).unwrap_or_default();
+                self.add_order(order_id, order, matchable_amount).await;
             }
         }
 
@@ -149,90 +147,121 @@ impl OrderBookCache {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashSet;
-    use std::hash::Hash;
+    use super::*;
+    use common::types::wallet_mocks::mock_order;
 
-    use super::OrderBookCache;
-    use uuid::Uuid;
+    /// Tests getting an order by pair
+    #[tokio::test]
+    async fn test_get_orders_basic() {
+        let cache = OrderBookCache::new();
+        let order_id = OrderIdentifier::new_v4();
+        let order = mock_order();
 
-    /// Returns whether two vectors contain the same elements, ignoring order
-    fn same_elements<T: Eq + Hash>(a: Vec<T>, b: Vec<T>) -> bool {
-        let a: HashSet<_> = a.into_iter().collect();
-        let b: HashSet<_> = b.into_iter().collect();
-        a == b
+        // Add an order to the cache
+        cache.add_order(order_id, &order, 100 /* matchable_amount */).await;
+
+        let filter = OrderBookFilter::new(order.pair(), order.side, false /* external */);
+        let orders = cache.get_orders(filter.clone()).await;
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0], order_id);
+
+        // Remove the order from the cache
+        cache.remove_order(order_id).await;
+        let orders = cache.get_orders(filter).await;
+        assert_eq!(orders.len(), 0);
     }
 
-    /// Tests the `get_matchable_orders` method
-    #[test]
-    fn test_get_matchable_orders() {
+    /// Tests getting multiple orders by their pair
+    #[tokio::test]
+    async fn test_get_orders_multiple() {
         let cache = OrderBookCache::new();
-        let order1 = Uuid::new_v4();
-        let order2 = Uuid::new_v4();
+        let order_id1 = OrderIdentifier::new_v4();
+        let order_id2 = OrderIdentifier::new_v4();
+        let order_id3 = OrderIdentifier::new_v4();
+        let order = mock_order();
 
-        // Add the first order as matchable and the second as externally enabled
-        cache.add_matchable_order_blocking(order1);
-        cache.add_externally_enabled_order_blocking(order2);
+        cache.add_order(order_id1, &order, 100 /* matchable_amount */).await;
+        cache.add_order(order_id2, &order, 300 /* matchable_amount */).await;
+        cache.add_order(order_id3, &order, 200 /* matchable_amount */).await;
 
-        assert_eq!(cache.matchable_orders_blocking(), vec![order1]);
+        let filter = OrderBookFilter::new(order.pair(), order.side, false /* external */);
+        let orders = cache.get_orders(filter.clone()).await;
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders, vec![order_id2, order_id3, order_id1]);
 
-        // Remove the second order, this should not affect the matchable orders
-        cache.remove_order_blocking(order2);
-        assert_eq!(cache.matchable_orders_blocking(), vec![order1]);
-
-        // Remove the first order, the matchable orders should now be empty
-        cache.remove_matchable_order_blocking(order1);
-        assert_eq!(cache.matchable_orders_blocking(), vec![]);
+        // Remove the middle order
+        cache.remove_order(order_id3).await;
+        let orders = cache.get_orders(filter).await;
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders, vec![order_id2, order_id1]);
     }
 
-    /// Tests the `externally_matchable_orders` method
-    #[test]
-    fn test_externally_matchable_orders() {
+    /// Tests getting external orders only
+    #[tokio::test]
+    async fn test_get_orders_external() {
         let cache = OrderBookCache::new();
-        let order1 = Uuid::new_v4();
-        let order2 = Uuid::new_v4();
+        let order_id1 = OrderIdentifier::new_v4();
+        let order_id2 = OrderIdentifier::new_v4();
+        let order_id3 = OrderIdentifier::new_v4();
+        let mut order1 = mock_order();
+        let mut order2 = order1.clone();
+        let mut order3 = order1.clone();
+        order1.allow_external_matches = true;
+        order2.allow_external_matches = false;
+        order3.allow_external_matches = true;
 
-        // Add the first order as externally enabled and the second as matchable
-        cache.add_matchable_order_blocking(order1);
-        cache.add_externally_enabled_order_blocking(order1);
-        cache.add_matchable_order_blocking(order2);
+        cache.add_order(order_id1, &order1, 100 /* matchable_amount */).await;
+        cache.add_order(order_id2, &order2, 200 /* matchable_amount */).await;
+        cache.add_order(order_id3, &order3, 300 /* matchable_amount */).await;
 
-        assert_eq!(cache.externally_matchable_orders_blocking(), vec![order1]);
+        let filter = OrderBookFilter::new(order1.pair(), order1.side, true /* external */);
+        let orders = cache.get_orders(filter.clone()).await;
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders, vec![order_id3, order_id1]);
 
-        // Remove the second order, this should not affect externally enabled orders
-        cache.remove_order_blocking(order2);
-        assert_eq!(cache.externally_matchable_orders_blocking(), vec![order1]);
-
-        // Remove the first order, externally enabled orders should now be empty
-        cache.remove_externally_enabled_order_blocking(order1);
-        assert_eq!(cache.externally_matchable_orders_blocking(), vec![]);
+        // Remove the first order
+        cache.remove_order(order_id1).await;
+        let orders = cache.get_orders(filter).await;
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders, vec![order_id3]);
     }
 
-    /// Tests the `order_cache` methods
-    #[test]
-    fn test_order_cache_multiple() {
+    /// Tests getting orders on different pairs
+    #[tokio::test]
+    async fn test_get_orders_different_pairs() {
         let cache = OrderBookCache::new();
-        let order1 = Uuid::new_v4();
-        let order2 = Uuid::new_v4();
-        let order3 = Uuid::new_v4();
+        let order_id1 = OrderIdentifier::new_v4();
+        let order_id2 = OrderIdentifier::new_v4();
+        let order_id3 = OrderIdentifier::new_v4();
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let order3 = order1.clone();
 
-        // Add orders
-        cache.add_matchable_order_blocking(order1);
-        cache.add_externally_enabled_order_blocking(order2);
-        cache.add_matchable_order_blocking(order3);
-        cache.add_externally_enabled_order_blocking(order3);
+        cache.add_order(order_id1, &order1, 300 /* matchable_amount */).await;
+        cache.add_order(order_id2, &order2, 100 /* matchable_amount */).await;
+        cache.add_order(order_id3, &order3, 200 /* matchable_amount */).await;
 
-        // Two are matchable, only one is externally matchable
-        assert!(same_elements(cache.matchable_orders_blocking(), vec![order1, order3]));
-        assert_eq!(cache.externally_matchable_orders_blocking(), vec![order3]);
+        // Check the first pair
+        let filter1 = OrderBookFilter::new(order1.pair(), order1.side, false /* external */);
+        let orders = cache.get_orders(filter1.clone()).await;
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders, vec![order_id1, order_id3]);
 
-        // Remove the first order, only one is matchable
-        cache.remove_order_blocking(order1);
-        assert_eq!(cache.matchable_orders_blocking(), vec![order3]);
-        assert_eq!(cache.externally_matchable_orders_blocking(), vec![order3]);
+        // Check the second pair
+        let filter2 = OrderBookFilter::new(order2.pair(), order2.side, false /* external */);
+        let orders = cache.get_orders(filter2.clone()).await;
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders, vec![order_id2]);
 
-        // Remove the last order, none are matchable
-        cache.remove_order_blocking(order3);
-        assert_eq!(cache.matchable_orders_blocking(), vec![]);
-        assert_eq!(cache.externally_matchable_orders_blocking(), vec![]);
+        // Remove from the first pair
+        cache.remove_order(order_id1).await;
+        let orders = cache.get_orders(filter1).await;
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders, vec![order_id3]);
+
+        // Remove from the second pair
+        cache.remove_order(order_id2).await;
+        let orders = cache.get_orders(filter2).await;
+        assert_eq!(orders.len(), 0);
     }
 }
