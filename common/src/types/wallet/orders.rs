@@ -5,7 +5,7 @@ use circuit_types::{
     fixed_point::FixedPoint,
     max_price,
     order::{Order as CircuitOrder, OrderSide},
-    validate_amount_bitlength, validate_price_bitlength, Amount,
+    validate_amount_bitlength, validate_price_bitlength, Address, Amount,
 };
 use constants::MAX_ORDERS;
 use itertools::Itertools;
@@ -22,6 +22,16 @@ const ERR_ORDERS_FULL: &str = "orders full";
 const ERR_ORDER_AMOUNT_TOO_LARGE: &str = "amount is too large";
 /// Error message when an order worst case price is too large
 const ERR_ORDER_WORST_CASE_PRICE_TOO_LARGE: &str = "worst case price is too large";
+
+/// A type alias for a pair of tokens
+///
+/// Format is (base, quote)
+pub type Pair = (Address, Address);
+
+/// A method to construct a pair from mints
+pub fn pair_from_mints(base_mint: Address, quote_mint: Address) -> Pair {
+    (base_mint, quote_mint)
+}
 
 // --------------
 // | Order Type |
@@ -177,9 +187,14 @@ impl Order {
         }
     }
 
+    /// Get the pair of the order
+    pub fn pair(&self) -> Pair {
+        pair_from_mints(self.base_mint.clone(), self.quote_mint.clone())
+    }
+
     /// Get the pair and side of the order
-    pub fn pair_and_side(&self) -> (BigUint, BigUint, OrderSide) {
-        (self.base_mint.clone(), self.quote_mint.clone(), self.side)
+    pub fn pair_and_side(&self) -> (Pair, OrderSide) {
+        (self.pair(), self.side)
     }
 
     /// Determines whether the given price is within the allowable range for the

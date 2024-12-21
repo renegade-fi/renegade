@@ -13,7 +13,7 @@ mod orders;
 mod shares;
 mod types;
 
-pub use orders::{Order, OrderBuilder};
+pub use orders::{pair_from_mints, Order, OrderBuilder, Pair};
 pub use types::*;
 
 // ----------------

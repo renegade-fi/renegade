@@ -84,7 +84,7 @@ impl Order {
 }
 
 /// The side of the market a given order is on
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum OrderSide {
     /// Buy side
     #[default]
