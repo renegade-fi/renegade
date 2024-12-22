@@ -49,6 +49,14 @@ impl OrderMetadataIndex {
         }
     }
 
+    /// Get all orders in the index
+    ///
+    /// No sort ordering is guaranteed, given that the units on which individual
+    /// orders are sorted may differ
+    pub async fn get_all_orders(&self) -> Vec<OrderIdentifier> {
+        self.reverse_index.read().await.keys().copied().collect()
+    }
+
     /// Get the pair and side for a given order_id
     pub async fn get_pair_and_side(&self, order_id: &OrderIdentifier) -> Option<(Pair, OrderSide)> {
         self.reverse_index.read().await.get(order_id).cloned()
@@ -98,10 +106,6 @@ impl OrderMetadataIndex {
     /// Note that we do not clean up sub-index entries when their
     /// lists become empty.
     pub async fn remove_order(&self, order_id: &OrderIdentifier) -> Option<()> {
-        // Remove from the reverse index
-        let mut reverse_index = self.reverse_index.write().await;
-        reverse_index.remove(order_id);
-
         // Get the pair and side from the reverse index
         let (pair, side) = self.get_pair_and_side(order_id).await?;
 
@@ -113,6 +117,10 @@ impl OrderMetadataIndex {
         if let Some(idx) = sorted_vec.find_index(|(_, oid)| oid == order_id) {
             sorted_vec.remove(idx);
         }
+
+        // Remove from the reverse index
+        let mut reverse_index = self.reverse_index.write().await;
+        reverse_index.remove(order_id);
 
         Some(())
     }
@@ -255,6 +263,34 @@ mod order_index_tests {
     use super::*;
     use circuit_types::Address;
     use common::types::wallet_mocks::mock_order;
+
+    #[tokio::test]
+    async fn test_get_all_orders() {
+        let index = OrderMetadataIndex::new();
+        let order_id1 = OrderIdentifier::new_v4();
+        let order_id2 = OrderIdentifier::new_v4();
+        let order_id3 = OrderIdentifier::new_v4();
+
+        // Create mock orders
+        let order1 = mock_order();
+        let order2 = mock_order();
+        let order3 = mock_order();
+
+        // Add orders to the index
+        index.add_order(order_id1, &order1, 100).await;
+        index.add_order(order_id2, &order2, 200).await;
+        index.add_order(order_id3, &order3, 300).await;
+
+        // Get all orders and verify
+        let all_orders = index.get_all_orders().await;
+        let mut orders: Vec<OrderIdentifier> = all_orders.into_iter().collect();
+        orders.sort();
+
+        let mut expected = vec![order_id1, order_id2, order_id3];
+        expected.sort();
+
+        assert_eq!(orders, expected);
+    }
 
     #[tokio::test]
     async fn test_empty_index() {

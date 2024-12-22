@@ -17,7 +17,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
 
         if tx.matching_pool_exists(pool_name)? {
-            return Err(StateApplicatorError::Rejected(MATCHING_POOL_EXISTS_ERR.to_string()));
+            return Err(StateApplicatorError::reject(MATCHING_POOL_EXISTS_ERR));
         }
 
         tx.create_matching_pool(pool_name)?;
@@ -34,9 +34,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
 
         if !tx.matching_pool_exists(pool_name)? {
-            return Err(StateApplicatorError::Rejected(
-                MATCHING_POOL_DOES_NOT_EXIST_ERR.to_string(),
-            ));
+            return Err(StateApplicatorError::reject(MATCHING_POOL_DOES_NOT_EXIST_ERR));
         }
 
         tx.destroy_matching_pool(pool_name)?;

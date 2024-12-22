@@ -256,7 +256,8 @@ impl StateMachine {
         let order_cache_clone = self.applicator.config.order_cache.clone();
         let jh = tokio::task::spawn_blocking(move || {
             Self::copy_db_data(&snapshot_db, &db_clone)?;
-            tokio::spawn(async move {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(async move {
                 if let Err(e) = order_cache_clone.hydrate_from_db(&snapshot_db).await {
                     error!("error hydrating order cache from snapshot: {e}");
                 };
@@ -339,8 +340,8 @@ mod tests {
     use libmdbx::Error as MdbxError;
 
     use crate::{
-        replication::test_helpers::mock_state_machine, storage::error::StorageError,
-        test_helpers::mock_db, StateTransition, WALLETS_TABLE,
+        caching::order_cache::OrderBookFilter, replication::test_helpers::mock_state_machine,
+        storage::error::StorageError, test_helpers::mock_db, StateTransition, WALLETS_TABLE,
     };
 
     use super::*;
@@ -559,12 +560,12 @@ mod tests {
         // Add two wallets containing these orders
         let mut wallet1 = mock_empty_wallet();
         add_wallet_to_sm(&snapshot_sm, wallet1.clone()).await;
-        wallet1.add_order(oid1, order1).unwrap();
+        wallet1.add_order(oid1, order1.clone()).unwrap();
 
         let mut wallet2 = mock_empty_wallet();
         add_wallet_to_sm(&snapshot_sm, wallet2.clone()).await;
-        wallet2.add_order(oid2, order2).unwrap();
-        wallet2.add_order(oid3, order3).unwrap();
+        wallet2.add_order(oid2, order2.clone()).unwrap();
+        wallet2.add_order(oid3, order3.clone()).unwrap();
 
         update_wallet_in_sm(&snapshot_sm, wallet1).await;
         update_wallet_in_sm(&snapshot_sm, wallet2).await;
@@ -586,15 +587,21 @@ mod tests {
         target_sm.update_from_snapshot(&meta, snapshot_db).await.unwrap();
 
         // Check that the order cache has the correct orders
-        todo!("Fix this test")
-        // let matchable_orders = order_cache.matchable_orders().await;
-        // assert_eq!(matchable_orders.len(), 2);
-        // assert!(matchable_orders.contains(&oid1));
-        // assert!(matchable_orders.contains(&oid2));
+        let order1_filter =
+            OrderBookFilter::new(order1.pair(), order1.side, true /* external */);
+        let matchable_orders = order_cache.get_orders(order1_filter).await;
+        assert_eq!(matchable_orders.len(), 1);
+        assert!(matchable_orders.contains(&oid1));
 
-        // let external_matchable_orders =
-        // order_cache.externally_matchable_orders().await;
-        // assert_eq!(external_matchable_orders.len(), 1);
-        // assert!(external_matchable_orders.contains(&oid1));
+        let order2_filter =
+            OrderBookFilter::new(order2.pair(), order2.side, false /* external */);
+        let matchable_orders = order_cache.get_orders(order2_filter).await;
+        assert_eq!(matchable_orders.len(), 1);
+        assert!(matchable_orders.contains(&oid2));
+
+        let order3_filter =
+            OrderBookFilter::new(order3.pair(), order3.side, false /* external */);
+        let matchable_orders = order_cache.get_orders(order3_filter).await;
+        assert_eq!(matchable_orders.len(), 0);
     }
 }

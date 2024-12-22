@@ -15,7 +15,7 @@ use crate::storage::{db::DB, error::StorageError};
 use super::{order_metadata_index::OrderMetadataIndex, RwLockHashSet};
 
 /// A filter for querying the order book cache
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OrderBookFilter {
     /// The pair to filter on
     pair: Pair,
@@ -67,6 +67,11 @@ impl OrderBookCache {
         }
     }
 
+    /// Get all orders that match any filter
+    pub async fn get_all_orders(&self) -> Vec<OrderIdentifier> {
+        self.order_metadata_index.get_all_orders().await
+    }
+
     // --- Setters --- //
 
     /// Add an order to the cache
@@ -74,6 +79,16 @@ impl OrderBookCache {
         self.order_metadata_index.add_order(id, order, matchable_amount).await;
         if order.allow_external_matches {
             self.externally_enabled_orders.write().await.insert(id);
+        }
+    }
+
+    /// Add an order to the cache in a blocking fashion
+    pub fn add_order_blocking(&self, id: OrderIdentifier, order: &Order, matchable_amount: Amount) {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(self.add_order(id, order, matchable_amount));
+
+        if order.allow_external_matches {
+            self.externally_enabled_orders.blocking_write().insert(id);
         }
     }
 
@@ -95,8 +110,10 @@ impl OrderBookCache {
 
     /// Remove an order in a blocking fashion
     pub fn remove_order_blocking(&self, order: OrderIdentifier) {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(self.remove_order(order));
+
         self.remove_externally_enabled_order_blocking(order);
-        todo!("re-implement write paths for order book cache");
     }
 
     /// Remove an externally enabled order

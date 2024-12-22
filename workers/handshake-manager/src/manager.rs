@@ -384,7 +384,7 @@ impl HandshakeExecutor {
         let locked_handshake_cache = self.handshake_cache.read().await;
 
         // Shuffle the locally managed orders to avoid always matching the same order
-        let mut local_verified_orders = self.state.get_locally_matchable_orders().await.ok()?;
+        let mut local_verified_orders = self.state.get_all_matchable_orders().await.ok()?;
         let mut rng = thread_rng();
         local_verified_orders.shuffle(&mut rng);
 
