@@ -55,8 +55,6 @@ pub fn new_network_error(err: ReplicationV2Error) -> RPCError<NodeId, Node, Raft
 }
 
 /// The error type emitted by the replication interface
-///
-/// TODO: Rename
 #[derive(Debug)]
 pub enum ReplicationV2Error {
     /// An error deserializing a raft response

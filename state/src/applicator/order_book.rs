@@ -1,9 +1,5 @@
 //! Applicator methods for the network order book, separated out for
 //! discoverability
-//!
-//! TODO: For the order book in particular, it is likely to our advantage to
-//! index orders outside of the DB as well in an in-memory data structure for
-//! efficient lookup
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
@@ -93,11 +89,19 @@ impl StateApplicator {
         let order_info = tx
             .get_order_info(&order_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_ORDER_MISSING))?;
+        let wallet = tx
+            .get_wallet_for_order(&order_id)?
+            .ok_or_else(|| StateApplicatorError::reject(ERR_WALLET_MISSING))?;
         tx.commit()?;
 
-        // Mark the order as locally matchable in the order book cache
-        todo!("re-implement write paths for order book cache");
-        // self.order_cache().add_matchable_order_blocking(order_id);
+        // Cache the order
+        let order = wallet
+            .get_order(&order_id)
+            .ok_or_else(|| StateApplicatorError::reject(ERR_ORDER_MISSING))?;
+        let matchable_amount = wallet.get_matchable_amount_for_order(order);
+        self.order_cache().add_order_blocking(order_id, order, matchable_amount);
+
+        // Publish the order state change
         self.system_bus().publish(
             ORDER_STATE_CHANGE_TOPIC.to_string(),
             SystemBusMessage::OrderStateChange { order: order_info },
@@ -151,23 +155,34 @@ mod test {
     use crate::applicator::test_helpers::mock_applicator;
 
     /// Test adding a validity proof to an order
-    #[test]
-    fn test_add_validity_proof() {
-        let applicator = mock_applicator();
+    ///
+    /// Run in a Tokio test as lower level components assume a Tokio runtime
+    /// exists
+    #[tokio::test]
+    async fn test_add_validity_proof() {
+        let base_applicator = mock_applicator();
 
         // Add an order via a wallet
         let mut wallet = mock_empty_wallet();
         let order_id = OrderIdentifier::new_v4();
         wallet.add_order(order_id, mock_order()).unwrap();
-        applicator.update_wallet(&wallet).unwrap();
+        let applicator = base_applicator.clone();
+        tokio::task::spawn_blocking(move || applicator.update_wallet(&wallet).unwrap())
+            .await
+            .unwrap();
 
         // Then add a validity proof
         let proof = dummy_validity_proof_bundle();
         let witness = dummy_validity_witness_bundle();
-        applicator.add_order_validity_proof(order_id, proof, witness).unwrap();
+        let applicator = base_applicator.clone();
+        tokio::task::spawn_blocking(move || {
+            applicator.add_order_validity_proof(order_id, proof, witness).unwrap()
+        })
+        .await
+        .unwrap();
 
         // Verify that the order's state is updated
-        let db = applicator.db();
+        let db = base_applicator.db();
         let tx = db.new_read_tx().unwrap();
         let order = tx.get_order_info(&order_id).unwrap().unwrap();
 

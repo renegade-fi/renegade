@@ -29,6 +29,8 @@ use util::err_str;
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
+use super::matching_order_filter;
+
 impl HandshakeExecutor {
     /// Encapsulates the logic for the external matching engine in an error
     /// handler
@@ -85,7 +87,7 @@ impl HandshakeExecutor {
         );
 
         // Get all orders that consent to external matching
-        let mut matchable_orders = self.get_external_match_candidates().await?;
+        let mut matchable_orders = self.get_external_match_candidates(&order).await?;
         let price = ts_price.as_fixed_point();
 
         // Mock a balance for the external order, assuming it's fully capitalized
@@ -156,8 +158,10 @@ impl HandshakeExecutor {
     /// Get the match candidates for an external order
     async fn get_external_match_candidates(
         &self,
+        order: &Order,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
-        let matchable_orders = self.state.get_externally_matchable_orders().await?;
+        let filter = matching_order_filter(order, true /* external */);
+        let matchable_orders = self.state.get_matchable_orders(filter).await?;
         Ok(HashSet::from_iter(matchable_orders))
     }
 

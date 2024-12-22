@@ -169,9 +169,9 @@ impl TypedHandler for AdminOpenOrdersHandler {
                     return Err(not_found(ERR_NO_MATCHING_POOL));
                 }
 
-                self.state.get_locally_matchable_orders_in_matching_pool(matching_pool).await?
+                self.state.get_all_orders_in_matching_pool(matching_pool).await?
             } else {
-                self.state.get_locally_matchable_orders().await?
+                self.state.get_all_matchable_orders().await?
             };
 
         Ok(OpenOrdersResponse { orders: order_ids })

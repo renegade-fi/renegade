@@ -7,7 +7,7 @@ use common::types::{
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
-    wallet::{OrderIdentifier, Wallet, WalletIdentifier},
+    wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
     TimestampedPrice,
 };
 use job_types::task_driver::TaskDriverJob;
@@ -21,6 +21,8 @@ use crate::{
         HandshakeExecutor,
     },
 };
+
+use super::matching_order_filter;
 
 /// Error emitted when proofs of validity cannot be found for an order
 const ERR_MISSING_PROOFS: &str = "validity proofs not found in global state";
@@ -60,7 +62,8 @@ impl HandshakeExecutor {
 
         // Try to find a match iteratively, we wrap this in a retry loop in case
         // settlement fails on a match
-        let mut match_candidates = self.get_internal_match_candidates(order_id, &wallet).await?;
+        let mut match_candidates =
+            self.get_internal_match_candidates(order_id, &my_order, &wallet).await?;
         while !match_candidates.is_empty() {
             let (other_order_id, match_res) = match self
                 .find_match(&my_order, &my_balance, price, match_candidates.clone())
@@ -106,12 +109,14 @@ impl HandshakeExecutor {
     async fn get_internal_match_candidates(
         &self,
         order_id: OrderIdentifier,
+        order: &Order,
         wallet: &Wallet,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
         // Filter by matching pool
         let my_pool_name = self.state.get_matching_pool_for_order(&order_id).await?;
+        let filter = matching_order_filter(order, false /* external */);
         let other_orders =
-            self.state.get_locally_matchable_orders_in_matching_pool(my_pool_name).await?;
+            self.state.get_matchable_orders_in_matching_pool(my_pool_name, filter).await?;
         let mut orders_set = HashSet::from_iter(other_orders);
 
         // Filter out orders from the same wallet

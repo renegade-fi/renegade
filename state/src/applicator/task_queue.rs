@@ -135,18 +135,18 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::Rejected(invalid_task_id(task_id)))?;
+            .ok_or_else(|| StateApplicatorError::reject(invalid_task_id(task_id)))?;
 
         // If the task being popped is not at the top of the queue, reject the
         // transition
         let queued_tasks = tx.get_queued_tasks(&key)?;
         let top_of_queue = queued_tasks.first();
         if top_of_queue.is_none() || top_of_queue.unwrap().id != task_id {
-            return Err(StateApplicatorError::Rejected(task_not_in_queue(task_id, key)));
+            return Err(StateApplicatorError::reject(task_not_in_queue(task_id, key)));
         }
 
         if tx.is_queue_paused(&key)? {
-            return Err(StateApplicatorError::Rejected(queue_paused(key)));
+            return Err(StateApplicatorError::reject(queue_paused(key)));
         }
 
         // Pop the task from the queue, remove its assignment, and add it to history
@@ -196,7 +196,7 @@ impl StateApplicator {
         let tx = self.db().new_write_tx()?;
         let key = tx
             .get_queue_key_for_task(&task_id)?
-            .ok_or_else(|| StateApplicatorError::Rejected(invalid_task_id(task_id)))?;
+            .ok_or_else(|| StateApplicatorError::reject(invalid_task_id(task_id)))?;
 
         // If the top task on the queue is not the same as the one being transitioned,
         // reject the transition
@@ -205,11 +205,11 @@ impl StateApplicator {
         if let Some(top_task) = top_task
             && top_task.id != task_id
         {
-            return Err(StateApplicatorError::Rejected(task_not_running(task_id)));
+            return Err(StateApplicatorError::reject(task_not_running(task_id)));
         }
 
         if tx.is_queue_paused(&key)? {
-            return Err(StateApplicatorError::Rejected(already_paused(key)));
+            return Err(StateApplicatorError::reject(already_paused(key)));
         }
 
         tx.transition_task(&key, state)?;
@@ -269,7 +269,7 @@ impl StateApplicator {
             if task.state.is_committed() {
                 error!("cannot preempt committed task: {}", task.id);
                 let err_msg = already_committed(key);
-                return Err(StateApplicatorError::Rejected(err_msg));
+                return Err(StateApplicatorError::reject(err_msg));
             }
 
             // Otherwise transition the task to queued
@@ -280,7 +280,7 @@ impl StateApplicator {
         // If the queue is already paused, a preemptive task is already
         // running, with which we should not conflict
         if tx.is_queue_paused(&key)? {
-            return Err(StateApplicatorError::Rejected(already_paused(key)));
+            return Err(StateApplicatorError::reject(already_paused(key)));
         }
 
         // Pause the queue
@@ -415,7 +415,7 @@ impl StateApplicator {
             // error in the case described
             let queue_key = tx
                 .get_queue_key_for_task(&task_id)?
-                .ok_or_else(|| StateApplicatorError::Rejected(ERR_NO_KEY.to_string()))?;
+                .ok_or_else(|| StateApplicatorError::reject(ERR_NO_KEY.to_string()))?;
             tx.transition_task(&queue_key, new_running_state())?;
             self.maybe_start_task(&task, &tx)?;
         }

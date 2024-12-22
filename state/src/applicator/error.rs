@@ -30,6 +30,14 @@ pub enum StateApplicatorError {
     QueuePaused(WalletIdentifier),
 }
 
+impl StateApplicatorError {
+    /// Build a rejection message
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn reject<T: ToString>(msg: T) -> Self {
+        Self::Rejected(msg.to_string())
+    }
+}
+
 impl Display for StateApplicatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")

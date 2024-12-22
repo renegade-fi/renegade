@@ -74,6 +74,15 @@ impl Wallet {
         Some(balance)
     }
 
+    /// Get the matchable amount for a given order, in terms of the order's
+    /// sell asset
+    pub fn get_matchable_amount_for_order(&self, order: &Order) -> Amount {
+        let order_mint = order.send_mint();
+        let amount = self.get_balance(order_mint).map(|b| b.amount).unwrap_or_default();
+
+        amount
+    }
+
     /// Return whether the wallet has any fees to pay
     pub fn has_outstanding_fees(&self) -> bool {
         self.balances.values().any(|balance| balance.fees().total() > 0)

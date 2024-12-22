@@ -25,6 +25,7 @@ use tracing::instrument;
 use util::res_some;
 
 use crate::{
+    caching::order_cache::OrderBookFilter,
     error::StateError,
     notifications::ProposalWaiter,
     storage::{error::StorageError, tx::StateTxn},
@@ -183,72 +184,72 @@ impl StateInner {
         .await
     }
 
+    /// Get a list of matchable orders matching the given filter
+    #[instrument(name = "get_matchable_orders", skip_all, fields(filter = ?filter))]
+    pub async fn get_matchable_orders(
+        &self,
+        filter: OrderBookFilter,
+    ) -> Result<Vec<OrderIdentifier>, StateError> {
+        let candidates = self.order_cache.get_orders(filter).await;
+        self.filter_matchable_orders(candidates, None /* matching_pool */).await
+    }
+
     /// Get a list of order IDs that are locally managed and ready for match
     #[instrument(name = "get_locally_matchable_orders", skip_all)]
-    pub async fn get_locally_matchable_orders(&self) -> Result<Vec<OrderIdentifier>, StateError> {
-        todo!("Fix this method");
-        // let matchable_orders = self.order_cache.matchable_orders().await;
-        // self.with_read_tx(move |tx| {
-        //     let mut res = Vec::new();
-        //     for id in matchable_orders.into_iter() {
-        //         if Self::is_task_queue_free(&id, tx)? {
-        //             res.push(id);
-        //         }
-        //     }
-
-        //     Ok(res)
-        // })
-        // .await
+    pub async fn get_all_matchable_orders(&self) -> Result<Vec<OrderIdentifier>, StateError> {
+        let candidates = self.order_cache.get_all_orders().await;
+        self.filter_matchable_orders(candidates, None /* matching_pool */).await
     }
 
     /// Get a list of order IDs that are locally managed and ready for match in
     /// the given matching pool
-    #[instrument(name = "get_locally_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool))]
-    pub async fn get_locally_matchable_orders_in_matching_pool(
+    #[instrument(name = "get_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool))]
+    pub async fn get_matchable_orders_in_matching_pool(
+        &self,
+        matching_pool: MatchingPoolName,
+        filter: OrderBookFilter,
+    ) -> Result<Vec<OrderIdentifier>, StateError> {
+        let candidates = self.order_cache.get_orders(filter).await;
+        self.filter_matchable_orders(candidates, Some(matching_pool)).await
+    }
+
+    /// Get all order IDs in a given matching pool
+    #[instrument(name = "get_all_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool))]
+    pub async fn get_all_orders_in_matching_pool(
         &self,
         matching_pool: MatchingPoolName,
     ) -> Result<Vec<OrderIdentifier>, StateError> {
-        todo!("Fix this method");
-        // let matchable_orders = self.order_cache.matchable_orders().await;
-        // self.with_read_tx(move |tx| {
-        //     let mut res = Vec::new();
-        //     for id in matchable_orders.into_iter() {
-        //         let order_matching_pool =
-        // tx.get_matching_pool_for_order(&id)?;         if
-        // order_matching_pool != matching_pool {             continue;
-        //         }
-
-        //         if Self::is_task_queue_free(&id, tx)? {
-        //             res.push(id);
-        //         }
-        //     }
-
-        //     Ok(res)
-        // })
-        // .await
+        let candidates = self.order_cache.get_all_orders().await;
+        self.filter_matchable_orders(candidates, Some(matching_pool)).await
     }
 
-    /// Get the set of orders that are ready for a match and allow external
-    /// matches
-    #[instrument(name = "get_externally_matchable_orders", skip_all)]
-    pub async fn get_externally_matchable_orders(
+    /// Filter a set of matchable orders candidates
+    ///
+    /// Provides two checks:
+    /// - Filters out orders with non-empty task queues
+    /// - Filters out orders in incorrect matching pools
+    async fn filter_matchable_orders(
         &self,
+        orders: Vec<OrderIdentifier>,
+        matching_pool: Option<MatchingPoolName>,
     ) -> Result<Vec<OrderIdentifier>, StateError> {
-        todo!("Fix this method");
-        // let externally_matchable_orders =
-        // self.order_cache.externally_matchable_orders().await;
-        // self.with_read_tx(move |tx| {
-        //     let mut orders = Vec::new();
-        //     for id in externally_matchable_orders.into_iter() {
-        //         // Check that the task queue is free
-        //         if Self::is_task_queue_free(&id, tx)? {
-        //             orders.push(id);
-        //         }
-        //     }
+        self.with_read_tx(move |tx| {
+            let mut res = Vec::new();
+            for id in orders.into_iter() {
+                if let Some(ref pool) = matching_pool {
+                    let order_matching_pool = tx.get_matching_pool_for_order(&id)?;
+                    if order_matching_pool != *pool {
+                        continue;
+                    }
+                }
 
-        //     Ok(orders)
-        // })
-        // .await
+                if Self::is_task_queue_free(&id, tx)? {
+                    res.push(id);
+                }
+            }
+            Ok(res)
+        })
+        .await
     }
 
     /// Choose an order to handshake with according to their priorities
