@@ -322,4 +322,6 @@ pub struct PayFeesResponse {
 pub struct GetOrderHistoryResponse {
     /// A history of orders in the wallet
     pub orders: Vec<OrderMetadata>,
+    /// A token to use for pagination in subsequent requests
+    pub pagination_token: Option<String>,
 }

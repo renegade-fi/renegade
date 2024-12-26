@@ -20,4 +20,6 @@ pub const TASK_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/task-history";
 pub struct GetTaskHistoryResponse {
     /// A list of historical tasks
     pub tasks: Vec<ApiHistoricalTask>,
+    /// A token to use for pagination in subsequent requests
+    pub pagination_token: Option<String>,
 }

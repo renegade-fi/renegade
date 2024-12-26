@@ -1073,6 +1073,6 @@ impl TypedHandler for GetOrderHistoryHandler {
             .unwrap_or(DEFAULT_ORDER_HISTORY_LEN);
 
         let orders = self.state.get_order_history(len, &wallet_id).await.map_err(internal_error)?;
-        Ok(GetOrderHistoryResponse { orders })
+        Ok(GetOrderHistoryResponse { orders, pagination_token: None })
     }
 }
