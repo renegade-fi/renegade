@@ -157,6 +157,6 @@ impl TypedHandler for GetTaskHistoryHandler {
         let tasks = self.state.get_task_history(len, &wallet_id).await?;
         let api_tasks: Vec<ApiHistoricalTask> = tasks.into_iter().map(|t| t.into()).collect();
 
-        Ok(GetTaskHistoryResponse { tasks: api_tasks })
+        Ok(GetTaskHistoryResponse { tasks: api_tasks, pagination_token: None })
     }
 }
