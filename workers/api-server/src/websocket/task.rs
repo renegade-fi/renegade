@@ -98,6 +98,9 @@ impl WebsocketTopicHandler for TaskHistoryHandler {
         _topic: String,
         route_params: &UrlParams,
     ) -> Result<TopicReader<SystemBusMessage>, ApiServerError> {
+        // We allow this topic to be accessible even when historical state is disabled,
+        // as it is a reliable source of task status updates
+
         // Parse the wallet ID from the route params
         let wallet_id = parse_wallet_id_from_params(route_params)?;
 

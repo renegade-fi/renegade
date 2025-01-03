@@ -66,8 +66,6 @@ const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 const ERR_BALANCE_NOT_FOUND: &str = "balance not found in wallet";
 /// Error message emitted when price data cannot be found for a token pair
 const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
-/// Error message emitted when historical state is disabled
-const ERR_HISTORICAL_STATE_DISABLED: &str = "historical state is disabled";
 
 // -----------------------
 // | Raft Route Handlers |
@@ -205,10 +203,6 @@ impl TypedHandler for AdminOrderMetadataHandler {
         params: UrlParams,
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        if !self.state.historical_state_enabled().await? {
-            return Err(bad_request(ERR_HISTORICAL_STATE_DISABLED));
-        }
-
         let order_id = parse_order_id_from_params(&params)?;
         let order_metadata = self
             .state

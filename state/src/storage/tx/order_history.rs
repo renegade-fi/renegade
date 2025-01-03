@@ -40,8 +40,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         &self,
         wallet_id: &WalletIdentifier,
     ) -> Result<Vec<OrderMetadata>, StorageError> {
-        self.check_order_history_enabled()?;
-
         let key = order_history_key(wallet_id);
         let mut orders: Vec<OrderMetadata> =
             self.inner.read(ORDER_HISTORY_TABLE, &key)?.unwrap_or_default();
@@ -59,15 +57,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         let mut orders = self.get_order_history(wallet_id)?;
         orders.truncate(n);
         Ok(orders)
-    }
-
-    /// Check that the order history table is enabled, throwing an error if not
-    fn check_order_history_enabled(&self) -> Result<(), StorageError> {
-        if !self.get_historical_state_enabled()? {
-            return Err(StorageError::TableDisabled(String::from(ORDER_HISTORY_TABLE)));
-        }
-
-        Ok(())
     }
 }
 
@@ -110,6 +99,22 @@ impl<'db> StateTxn<'db, RW> {
         self.write_order_history(wallet_id, orders)
     }
 
+    /// Remove an order from order history
+    pub fn remove_order_from_history(
+        &self,
+        wallet_id: &WalletIdentifier,
+        order_id: &OrderIdentifier,
+    ) -> Result<(), StorageError> {
+        let mut orders = self.get_order_history(wallet_id)?;
+        let index = orders.iter().position(|o| &o.id == order_id);
+        if index.is_none() {
+            return Err(StorageError::Other(ERR_ORDER_NOT_FOUND.to_string()));
+        }
+
+        orders.remove(index.unwrap());
+        self.write_order_history(wallet_id, orders)
+    }
+
     /// Write the order history for a given wallet
     #[allow(clippy::needless_pass_by_value)]
     fn write_order_history(
@@ -117,8 +122,6 @@ impl<'db> StateTxn<'db, RW> {
         wallet_id: &WalletIdentifier,
         orders: Vec<OrderMetadata>,
     ) -> Result<(), StorageError> {
-        self.check_order_history_enabled()?;
-
         let key = order_history_key(wallet_id);
         self.inner.write(ORDER_HISTORY_TABLE, &key, &orders)?;
         Ok(())
@@ -224,5 +227,53 @@ mod tests {
         let tx = db.new_read_tx().unwrap();
         let order = tx.get_order_metadata(wallet_id, updated_order.id).unwrap().unwrap();
         assert_eq!(order, updated_order);
+    }
+
+    /// Test removing an order from history
+    #[test]
+    fn test_remove_order() {
+        const N: usize = 100;
+        let db = mock_db();
+        let wallet_id = Uuid::new_v4();
+        let mut history = random_order_history(N);
+
+        // Setup the history
+        let tx = db.new_write_tx().unwrap();
+        for order_md in history.iter().cloned() {
+            tx.push_order_history(&wallet_id, order_md).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Choose a random order
+        let mut rng = rand::thread_rng();
+        let index = rng.gen_range(0..history.len());
+        let order_id = history[index].id;
+
+        // Check that the order can be fetched
+        let tx = db.new_read_tx().unwrap();
+        let res = tx.get_order_metadata(wallet_id, order_id).unwrap();
+        tx.commit().unwrap();
+        assert!(res.is_some());
+
+        // Remove the order
+        let tx = db.new_write_tx().unwrap();
+        tx.remove_order_from_history(&wallet_id, &order_id).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the order can no longer be fetched
+        let tx = db.new_read_tx().unwrap();
+        let res = tx.get_order_metadata(wallet_id, order_id).unwrap();
+        tx.commit().unwrap();
+        assert!(res.is_none());
+
+        // Check that the remaining orders are unchanged
+
+        // Filter out the removed order & sort the history by descending creation time
+        history.retain(|o| o.id != order_id);
+        history.sort_by_key(|o| Reverse(o.created));
+
+        let tx = db.new_read_tx().unwrap();
+        let orders = tx.get_order_history(&wallet_id).unwrap();
+        assert_eq!(orders, history);
     }
 }

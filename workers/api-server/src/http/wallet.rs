@@ -159,6 +159,9 @@ const ERR_MIN_WITHDRAWAL_AMOUNT: &str = "cannot withdraw less than the minimum a
 /// the minimum allowed
 const ERR_MIN_DEPOSIT_AMOUNT: &str = "cannot deposit less than the minimum allowed amount";
 
+/// Error message emitted when historical state is disabled
+const ERR_HISTORICAL_STATE_DISABLED: &str = "historical state is disabled";
+
 // -------------------------
 // | Wallet Route Handlers |
 // -------------------------
@@ -1064,6 +1067,10 @@ impl TypedHandler for GetOrderHistoryHandler {
         params: UrlParams,
         mut query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        if !self.state.historical_state_enabled().await? {
+            return Err(bad_request(ERR_HISTORICAL_STATE_DISABLED));
+        }
+
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let len = query_params
             .remove(ORDER_HISTORY_LEN_PARAM)
