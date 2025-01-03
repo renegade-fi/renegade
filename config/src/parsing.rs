@@ -299,8 +299,15 @@ fn read_config_file(path: &str) -> Result<Vec<String>, String> {
 
         // Parse the values for this TOML entry into a CLI-style vector of strings
         let values: Vec<String> = match value {
-            // Just the flag, i.e. --flag
-            Value::Boolean(_) => vec![cli_arg],
+            // Just the flag, i.e. --flag, if the value is true.
+            // Otherwise, omit the flag
+            Value::Boolean(val) => {
+                if *val {
+                    vec![cli_arg]
+                } else {
+                    vec![]
+                }
+            },
             // Parse all values into multiple repetitions, i.e. --key val1 --key val2 ...
             Value::Array(arr) => {
                 let mut res: Vec<String> = Vec::new();

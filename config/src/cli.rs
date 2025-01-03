@@ -176,8 +176,7 @@ pub struct Cli {
     #[clap(long, value_parser, default_value = "/raft_snapshots")]
     pub raft_snapshot_path: String,
     /// Whether to record historical state locally
-    // TODO: Unset default `true` once event export implementation is complete
-    #[clap(long, value_parser, default_value = "true")]
+    #[clap(long, value_parser)]
     pub record_historical_state: bool,
     /// The maximum number of wallet operations a user is allowed to perform per hour
     /// 
