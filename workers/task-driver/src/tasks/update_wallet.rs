@@ -199,6 +199,11 @@ pub struct UpdateWalletTask {
     pub task_state: UpdateWalletTaskState,
     /// The event manager queue
     pub event_queue: EventManagerQueue,
+    /// The pending event to emit after the task is complete.
+    /// We construct this event before emitting it, as we may need to
+    /// access state that is deleted by the end of the task to do so
+    /// (e.g., in the case of an order cancellation).
+    pub completion_event: Option<RelayerEvent>,
 }
 
 #[async_trait]
@@ -225,7 +230,7 @@ impl Task for UpdateWalletTask {
             return Err(UpdateWalletTaskError::InvalidShares(ERR_INVALID_REBLIND.to_string()));
         }
 
-        Ok(Self {
+        let mut task = Self {
             update_type: descriptor.description,
             transfer: descriptor.transfer,
             old_wallet,
@@ -238,7 +243,13 @@ impl Task for UpdateWalletTask {
             proof_manager_work_queue: ctx.proof_queue,
             task_state: UpdateWalletTaskState::Pending,
             event_queue: ctx.event_queue,
-        })
+            completion_event: None,
+        };
+
+        // Prepare the completion event
+        task.prepare_completion_event().await?;
+
+        Ok(task)
     }
 
     #[allow(clippy::blocks_in_conditions)]
@@ -273,7 +284,7 @@ impl Task for UpdateWalletTask {
             UpdateWalletTaskState::UpdatingValidityProofs => {
                 // Update validity proofs for now-nullified orders
                 self.update_validity_proofs().await?;
-                self.emit_event().await?;
+                self.emit_event()?;
                 maybe_record_transfer_metrics(&self.transfer);
 
                 self.task_state = UpdateWalletTaskState::Completed;
@@ -452,9 +463,16 @@ impl UpdateWalletTask {
         }
     }
 
-    /// Construct the appropriate event for the given wallet update type
-    /// and emit it to the event manager
-    async fn emit_event(&self) -> Result<(), UpdateWalletTaskError> {
+    /// Emit the completion event to the event manager
+    fn emit_event(&mut self) -> Result<(), UpdateWalletTaskError> {
+        self.event_queue
+            .send(self.completion_event.take().unwrap())
+            .map_err(err_str!(UpdateWalletTaskError::SendEvent))
+    }
+
+    /// Construct the event to emit after the task is complete & record
+    /// it in the task
+    async fn prepare_completion_event(&mut self) -> Result<(), UpdateWalletTaskError> {
         let event = match &self.update_type {
             WalletUpdateType::Deposit { .. } | WalletUpdateType::Withdraw { .. } => {
                 self.construct_external_transfer_event()?
@@ -467,7 +485,8 @@ impl UpdateWalletTask {
             },
         };
 
-        self.event_queue.send(event).map_err(err_str!(UpdateWalletTaskError::SendEvent))
+        self.completion_event = Some(event);
+        Ok(())
     }
 
     /// Construct an external transfer event
@@ -531,10 +550,6 @@ impl UpdateWalletTask {
 
         let amount_remaining = order.amount;
 
-        // TODO: This calculation of filled amount assumes that the cancelled order's
-        // metadata is available. We must ensure this is the case (or
-        // otherwise enable this computation) when we implement tracking of
-        // actively-managed order metadata.
         let amount_filled = self
             .global_state
             .get_order_metadata(&order_id)
