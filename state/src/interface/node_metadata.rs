@@ -7,6 +7,7 @@ use common::types::{
 };
 use config::{RelayerConfig, RelayerFeeKey};
 use libp2p::{core::Multiaddr, identity::Keypair};
+use tracing::warn;
 use util::res_some;
 
 use crate::{error::StateError, StateInner, NODE_METADATA_TABLE};
@@ -144,6 +145,10 @@ impl StateInner {
         let relayer_wallet_id =
             derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
         let historical_state_enabled = config.record_historical_state;
+
+        if !historical_state_enabled {
+            warn!("Historical state is disabled")
+        }
 
         self.with_write_tx(move |tx| {
             tx.create_table(NODE_METADATA_TABLE)?;

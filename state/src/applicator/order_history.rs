@@ -3,7 +3,7 @@
 use crate::storage::tx::StateTxn;
 
 use super::{error::StateApplicatorError, return_type::ApplicatorReturnType, StateApplicator};
-use common::types::wallet::order_metadata::{OrderMetadata, OrderState};
+use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
 use libmdbx::RW;
 
@@ -34,19 +34,30 @@ impl StateApplicator {
             .get_wallet_id_for_order(&meta.id)?
             .ok_or(StateApplicatorError::MissingEntry(ERR_MISSING_WALLET))?;
 
-        // Add the order to the history if it doesn't exist
         let old_meta = tx.get_order_metadata(wallet, meta.id)?;
         match old_meta {
+            // Add the order to the history if it doesn't exist
             None => tx.push_order_history(&wallet, meta.clone())?,
             Some(old_meta) => {
-                tx.update_order_metadata(&wallet, meta.clone())?;
+                let became_terminal = !old_meta.state.is_terminal() && meta.state.is_terminal();
 
-                // If the order was just filled, remove it from the set of local open orders
-                // as it is no longer matchable
-                if !matches!(old_meta.state, OrderState::Filled)
-                    && matches!(meta.state, OrderState::Filled)
-                {
+                let order_history_enabled = tx.get_historical_state_enabled()?;
+
+                // Always update order metadata if order history is enabled, otherwise
+                // only update it for non-terminal orders
+                if order_history_enabled || !became_terminal {
+                    tx.update_order_metadata(&wallet, meta.clone())?;
+                }
+
+                if became_terminal {
+                    // Remove the order from the set of local open
+                    // orders as it is no longer matchable
                     tx.remove_local_order(&meta.id)?;
+
+                    // Remove the order from order history if history is disabled
+                    if !order_history_enabled {
+                        tx.remove_order_from_history(&wallet, &meta.id)?;
+                    }
                 }
             },
         }
@@ -61,7 +72,9 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod tests {
-    use common::types::{wallet_mocks::mock_order, TimestampedPrice};
+    use common::types::{
+        wallet::order_metadata::OrderState, wallet_mocks::mock_order, TimestampedPrice,
+    };
     use uuid::Uuid;
 
     use crate::applicator::test_helpers::mock_applicator;
