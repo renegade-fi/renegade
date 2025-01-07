@@ -21,9 +21,9 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
-    sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
-use util::hex::biguint_to_hex_addr;
+use util::{concurrency::RwStatic, hex::biguint_to_hex_addr};
 
 use super::exchange::Exchange;
 
@@ -36,10 +36,6 @@ use super::exchange::Exchange;
 /// The type is a mapping from exchanges to the ticker used to fetch the
 /// token's price from that exchange
 pub type ExchangeSupport = HashMap<Exchange, String>;
-
-/// A type alias representing an `RwLock` wrapped in a `LazyLock`,
-/// allowing for it to be used as a primitive for mutable static variables
-type RwStatic<T> = LazyLock<RwLock<T>>;
 
 // ----------------
 // | Quote Tokens |

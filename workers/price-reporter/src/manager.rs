@@ -8,19 +8,18 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
-use common::{
-    new_async_shared,
-    types::{
-        exchange::{Exchange, PriceReport, PriceReporterState},
-        token::{default_exchange_stable, is_pair_named, Token},
-        Price,
-    },
-    AsyncShared,
+use common::types::{
+    exchange::{Exchange, PriceReport, PriceReporterState},
+    token::{default_exchange_stable, is_pair_named, Token},
+    Price,
 };
 use external_api::bus_message::{price_report_topic, SystemBusMessage};
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
-use util::get_current_time_millis;
+use util::{
+    concurrency::{new_async_shared, AsyncShared},
+    get_current_time_millis,
+};
 
 use crate::{errors::PriceReporterError, worker::PriceReporterConfig};
 

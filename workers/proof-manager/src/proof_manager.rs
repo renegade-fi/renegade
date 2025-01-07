@@ -44,7 +44,7 @@ use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
 use tracing::{error, info, info_span, instrument};
-use util::{err_str, runtime::sleep_forever_blocking};
+use util::{concurrency::runtime::sleep_forever_blocking, err_str};
 
 use super::error::ProofManagerError;
 

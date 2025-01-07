@@ -71,8 +71,8 @@ pub fn get_raft_id(peer_id: &WrappedPeerId) -> u64 {
 pub mod test_helpers {
     use std::{collections::HashMap, sync::Arc, time::Duration};
 
-    use common::{new_async_shared, AsyncShared};
     use itertools::Itertools;
+    use util::concurrency::{new_async_shared, AsyncShared};
 
     use crate::{
         applicator::test_helpers::mock_applicator, notifications::OpenNotifications,

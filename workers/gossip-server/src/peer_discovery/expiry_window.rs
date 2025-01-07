@@ -7,8 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::{new_async_shared, types::gossip::WrappedPeerId, AsyncShared};
+use common::types::gossip::WrappedPeerId;
 use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
+use util::concurrency::{new_async_shared, AsyncShared};
 
 /// The amount of time other cluster peers are allowed to give liveness
 /// attestations for an expiry candidate

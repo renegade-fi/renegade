@@ -3,18 +3,15 @@
 use std::collections::{HashMap, HashSet};
 
 use super::error::HandshakeManagerError;
-use common::{
-    new_async_shared,
-    types::{
-        handshake::{ConnectionRole, HandshakeState},
-        wallet::OrderIdentifier,
-        TimestampedPrice,
-    },
-    AsyncShared,
+use common::types::{
+    handshake::{ConnectionRole, HandshakeState},
+    wallet::OrderIdentifier,
+    TimestampedPrice,
 };
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use state::State;
+use util::concurrency::{new_async_shared, AsyncShared};
 use uuid::Uuid;
 
 /// Error message thrown when a nullifier cannot be found

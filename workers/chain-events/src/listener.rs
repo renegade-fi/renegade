@@ -16,7 +16,7 @@ use job_types::{
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
 use tracing::{error, info};
-use util::runtime::sleep_forever_async;
+use util::concurrency::runtime::sleep_forever_async;
 
 use super::error::OnChainEventListenerError;
 

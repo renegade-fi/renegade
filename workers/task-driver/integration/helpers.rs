@@ -38,7 +38,7 @@ use test_helpers::{
         transfer_auth::gen_transfer_with_auth,
     },
 };
-use util::runtime::block_current;
+use util::concurrency::runtime::block_current;
 
 use crate::IntegrationTestArgs;
 

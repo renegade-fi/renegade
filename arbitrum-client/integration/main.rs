@@ -32,7 +32,7 @@ use test_helpers::{
 };
 use util::{
     arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
-    runtime::block_current,
+    concurrency::runtime::block_current,
     telemetry::LevelFilter,
 };
 

@@ -7,9 +7,7 @@ mod request_response;
 
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
-    new_async_shared,
     types::{gossip::WrappedPeerId, wallet::keychain::HmacKey, CancelChannel},
-    AsyncShared,
 };
 use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
@@ -24,6 +22,7 @@ use libp2p::{
 };
 use state::State;
 use tracing::{debug, error, info};
+use util::concurrency::{new_async_shared, AsyncShared};
 
 use std::sync::{atomic::AtomicBool, Arc};
 
