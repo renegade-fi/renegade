@@ -33,8 +33,10 @@ use state::error::StateError;
 use state::State;
 use system_bus::SystemBus;
 use tracing::{info, instrument, warn};
-use util::arbitrum::get_protocol_fee;
-use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
+use util::arbitrum::get_external_match_fee;
+use util::matching_engine::{
+    apply_match_to_shares, compute_fee_obligation, compute_fee_obligation_with_protocol_fee,
+};
 
 use super::ERR_NO_VALIDITY_PROOF;
 
@@ -436,8 +438,13 @@ impl SettleMatchExternalTask {
         let relayer_fee = commitments_witness.relayer_fee;
 
         // Compute the update to the internal party's state
-        let internal_party_fees =
-            compute_fee_obligation(relayer_fee, internal_party_order.side, &self.match_res);
+        let protocol_fee = get_external_match_fee(&self.match_res.base_mint);
+        let internal_party_fees = compute_fee_obligation_with_protocol_fee(
+            relayer_fee,
+            protocol_fee,
+            internal_party_order.side,
+            &self.match_res,
+        );
         let mut internal_party_modified_shares = internal_party_public_shares.clone();
         apply_match_to_shares(
             &mut internal_party_modified_shares,
@@ -451,8 +458,9 @@ impl SettleMatchExternalTask {
         let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
 
         // TODO: We set the external party's relayer fee to 0 for now, check on this
-        let external_party_fees = compute_fee_obligation(
-            FixedPoint::default(),
+        let external_party_fees = compute_fee_obligation_with_protocol_fee(
+            FixedPoint::default(), // relayer_fee
+            protocol_fee,
             internal_party_order.side.opposite(),
             &self.match_res,
         );
@@ -462,7 +470,7 @@ impl SettleMatchExternalTask {
             external_party_fees,
             internal_party_modified_shares,
             internal_party_indices,
-            protocol_fee: get_protocol_fee(),
+            protocol_fee,
             relayer_fee_address,
         };
         let witness = SizedValidMatchSettleAtomicWitness {
