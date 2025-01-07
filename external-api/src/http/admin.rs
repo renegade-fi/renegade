@@ -41,6 +41,8 @@ pub const ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE: &str =
 pub const ADMIN_ASSIGN_ORDER_ROUTE: &str = "/v0/admin/orders/:order_id/assign-pool/:matching_pool";
 /// Route to refresh the token mapping
 pub const ADMIN_REFRESH_TOKEN_MAPPING_ROUTE: &str = "/v0/admin/refresh-token-mapping";
+/// Route to refresh the external match fee constants from the contract
+pub const ADMIN_REFRESH_EXTERNAL_MATCH_FEES_ROUTE: &str = "/v0/admin/refresh-external-match-fees";
 
 /// The response to an "is leader" request
 #[derive(Clone, Debug, Serialize, Deserialize)]
