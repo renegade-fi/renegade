@@ -260,7 +260,12 @@ pub mod test_helpers {
 
     /// Create a mock relayer config for testing
     pub fn mock_relayer_config() -> RelayerConfig {
-        RelayerConfig { db_path: tmp_db_path(), allow_local: true, ..Default::default() }
+        RelayerConfig {
+            db_path: tmp_db_path(),
+            allow_local: true,
+            record_historical_state: true,
+            ..Default::default()
+        }
     }
 
     /// Create a mock database in a temporary location
