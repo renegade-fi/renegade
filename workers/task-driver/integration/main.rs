@@ -48,7 +48,7 @@ use util::{
         DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_TICKER, DUMMY_ERC20_1_TICKER,
         PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
     },
-    runtime::block_current,
+    concurrency::runtime::block_current,
     telemetry::LevelFilter,
 };
 

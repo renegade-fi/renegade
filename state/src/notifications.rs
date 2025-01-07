@@ -3,13 +3,13 @@
 //!
 //! The underlying raft node will dequeue a proposal and apply it to the state
 //! machine. Only then will the notification be sent to the worker.
-use common::{new_async_shared, AsyncShared};
 use futures::{ready, Future};
 use std::{
     collections::HashMap,
     pin::Pin,
     task::{Context, Poll},
 };
+use util::concurrency::{new_async_shared, AsyncShared};
 use uuid::Uuid;
 
 use crate::{applicator::return_type::ApplicatorReturnType, error::StateError};

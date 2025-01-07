@@ -3,16 +3,15 @@
 
 use std::{collections::HashMap, fmt::Debug, time::Duration};
 
-use common::{
-    new_shared,
-    types::{tasks::TaskDescriptor, tasks::TaskIdentifier, wallet::WalletIdentifier},
-    Shared,
-};
+use common::types::{tasks::TaskDescriptor, tasks::TaskIdentifier, wallet::WalletIdentifier};
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::{error, info, instrument, warn};
-use util::telemetry::helpers::backfill_trace_field;
+use util::{
+    concurrency::{new_shared, Shared},
+    telemetry::helpers::backfill_trace_field,
+};
 
 use crate::{
     error::TaskDriverError,

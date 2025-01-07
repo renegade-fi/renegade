@@ -1,9 +1,16 @@
 //! Utils relating to Starknet interaction
 
-use std::{fs::File, io::Read, sync::OnceLock};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::Read,
+    sync::{OnceLock, RwLock},
+};
 
-use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint};
+use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, Address};
 use eyre::{eyre, Result};
+
+use crate::concurrency::RwStatic;
 
 /// The deployments key in the `deployments.json` file
 pub const DEPLOYMENTS_KEY: &str = "deployments";
@@ -19,6 +26,11 @@ pub const DUMMY_ERC20_1_TICKER: &str = "DUMMY2";
 pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
 /// The protocol fee that the contract charges on a match
 pub static PROTOCOL_FEE: OnceLock<FixedPoint> = OnceLock::new();
+/// The protocol fee overrides for an external match
+///
+/// Maps a mint to the fee override if one exists
+pub static PROTOCOL_FEE_OVERRIDES: RwStatic<HashMap<Address, FixedPoint>> =
+    RwStatic::new(|| RwLock::new(HashMap::new()));
 /// The protocol's public encryption key used for paying fees
 pub static PROTOCOL_PUBKEY: OnceLock<EncryptionKey> = OnceLock::new();
 
@@ -63,6 +75,20 @@ pub fn get_protocol_fee() -> FixedPoint {
     {
         *fee.expect("Protocol fee not set")
     }
+}
+
+/// Get the external match fee override for the given mint
+///
+/// Defaults to the protocol base fee if no override exists
+pub fn get_external_match_fee(mint: &Address) -> FixedPoint {
+    let fee_override =
+        PROTOCOL_FEE_OVERRIDES.read().expect("fee override lock poisoned").get(mint).cloned();
+    fee_override.unwrap_or(get_protocol_fee())
+}
+
+/// Set the external match fee override for the given mint
+pub fn set_external_match_fee(mint: &Address, fee: FixedPoint) {
+    PROTOCOL_FEE_OVERRIDES.write().expect("fee override lock poisoned").insert(mint.clone(), fee);
 }
 
 /// Get the protocol encryption key from the static variable

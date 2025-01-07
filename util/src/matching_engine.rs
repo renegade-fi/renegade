@@ -204,11 +204,22 @@ pub fn compute_fee_obligation(
     side: OrderSide,
     match_res: &MatchResult,
 ) -> FeeTake {
+    let protocol_fee = get_protocol_fee();
+    compute_fee_obligation_with_protocol_fee(relayer_fee, protocol_fee, side, match_res)
+}
+
+/// Compute the fee obligation with a given protocol fee
+pub fn compute_fee_obligation_with_protocol_fee(
+    relayer_fee: FixedPoint,
+    protocol_fee: FixedPoint,
+    side: OrderSide,
+    match_res: &MatchResult,
+) -> FeeTake {
     let (_mint, receive_amount) = match_res.receive_mint_amount(side);
     let receive_amount = Scalar::from(receive_amount);
 
     let relayer_take = (relayer_fee * receive_amount).floor();
-    let protocol_take = (get_protocol_fee() * receive_amount).floor();
+    let protocol_take = (protocol_fee * receive_amount).floor();
 
     FeeTake {
         relayer_fee: scalar_to_u128(&relayer_take),

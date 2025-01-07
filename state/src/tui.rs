@@ -26,7 +26,7 @@ use tui_logger::{
     init_logger, TuiLoggerLevelOutput, TuiLoggerSmartWidget, TuiLoggerWidget,
     TuiWidgetEvent as LoggerEvent, TuiWidgetState as SmartLoggerState,
 };
-use util::{get_current_time_millis, runtime::block_current};
+use util::{concurrency::runtime::block_current, get_current_time_millis};
 
 use std::io;
 

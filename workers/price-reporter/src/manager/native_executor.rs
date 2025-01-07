@@ -10,7 +10,7 @@ use constants::in_bootstrap_mode;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::sync::oneshot::Sender as TokioSender;
 use tracing::{error, info, info_span, warn, Instrument};
-use util::runtime::sleep_forever_async;
+use util::concurrency::runtime::sleep_forever_async;
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},

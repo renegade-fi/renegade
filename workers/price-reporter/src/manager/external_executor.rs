@@ -34,7 +34,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::{error, info, info_span, warn, Instrument};
 use tungstenite::Message;
 use url::Url;
-use util::{err_str, get_current_time_millis, runtime::sleep_forever_async};
+use util::{concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},

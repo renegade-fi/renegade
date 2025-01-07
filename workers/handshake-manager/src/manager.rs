@@ -8,7 +8,6 @@ pub(crate) mod scheduler;
 use circuit_types::{r#match::MatchResult, Amount};
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
-    new_async_shared,
     types::{
         gossip::WrappedPeerId,
         handshake::{ConnectionRole, HandshakeState},
@@ -45,7 +44,10 @@ use state::State;
 use std::thread::JoinHandle;
 use system_bus::SystemBus;
 use tracing::{error, info, info_span, instrument, Instrument};
-use util::{err_str, get_current_time_millis, runtime::sleep_forever_async};
+use util::{
+    concurrency::{new_async_shared, runtime::sleep_forever_async},
+    err_str, get_current_time_millis,
+};
 use uuid::Uuid;
 
 pub(super) use price_agreement::init_price_streams;

@@ -17,8 +17,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common::AsyncShared;
 use lru::LruCache;
+use util::concurrency::AsyncShared;
 
 /// A type alias for a HandshakeCache shared between threads
 pub(super) type SharedHandshakeCache<O> = AsyncShared<HandshakeCache<O>>;

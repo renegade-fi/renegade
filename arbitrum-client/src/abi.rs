@@ -14,7 +14,7 @@ abigen!(
         function isPublicBlinderUsed(uint256 memory blinder) external view returns (bool)
         function getRoot() external view returns (uint256)
         function getFee() external view returns (uint256)
-        function getPubkey() external view returns (uint256[2])
+        function getExternalMatchFeeForAsset(address memory asset) external view returns (uint256)function getPubkey() external view returns (uint256[2])
         function getProtocolExternalFeeCollectionAddress() external view returns (address)
         function rootInHistory(uint256 memory root) external view returns (bool)
 
@@ -46,6 +46,7 @@ abigen!(
         function isPublicBlinderUsed(uint256 memory blinder) external view returns (bool)
         function getRoot() external view returns (uint256)
         function getFee() external view returns (uint256)
+        function getExternalMatchFeeForAsset(address memory asset) external view returns (uint256)
         function getPubkey() external view returns (uint256[2])
         function getProtocolExternalFeeCollectionAddress() external view returns (address)
         function rootInHistory(uint256 memory root) external view returns (bool)

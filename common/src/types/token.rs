@@ -16,14 +16,18 @@
 //! In general, Named Tokens use all exchanges where they are listed, whereas
 //! Unnamed Tokens only use Uniswap V3 for the price feed.
 use bimap::BiMap;
+use ethers::types::Address;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
-    sync::{LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
-use util::hex::biguint_to_hex_addr;
+use util::{
+    concurrency::RwStatic,
+    hex::{biguint_from_hex_string, biguint_to_hex_addr},
+};
 
 use super::exchange::Exchange;
 
@@ -36,10 +40,6 @@ use super::exchange::Exchange;
 /// The type is a mapping from exchanges to the ticker used to fetch the
 /// token's price from that exchange
 pub type ExchangeSupport = HashMap<Exchange, String>;
-
-/// A type alias representing an `RwLock` wrapped in a `LazyLock`,
-/// allowing for it to be used as a primitive for mutable static variables
-type RwStatic<T> = LazyLock<RwLock<T>>;
 
 // ----------------
 // | Quote Tokens |
@@ -114,6 +114,16 @@ impl Token {
     /// Returns the ERC-20 address.
     pub fn get_addr(&self) -> String {
         self.addr.to_lowercase()
+    }
+
+    /// Get a `BigUint` representation of the token address
+    pub fn get_addr_biguint(&self) -> BigUint {
+        biguint_from_hex_string(&self.get_addr()).expect("invalid token address in mapping")
+    }
+
+    /// Get the ethers compatible address
+    pub fn get_ethers_address(&self) -> Address {
+        self.addr.parse::<Address>().expect("invalid token address in mapping")
     }
 
     /// Returns the ERC-20 ticker, if available. Note that it is OK if certain
@@ -191,6 +201,11 @@ impl Token {
 /// Returns a read lock quard to the token remap
 pub fn read_token_remap<'a>() -> RwLockReadGuard<'a, BiMap<String, String>> {
     TOKEN_REMAPS.read().expect("Token remap lock poisoned")
+}
+
+/// Get all tokens in the remap
+pub fn get_all_tokens() -> Vec<Token> {
+    read_token_remap().left_values().map(|addr| Token::from_addr(addr)).collect()
 }
 
 /// Returns a read lock quard to the decimal map

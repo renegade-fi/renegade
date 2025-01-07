@@ -8,7 +8,7 @@ use constants::in_bootstrap_mode;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use state::State;
 use tracing::info;
-use util::{err_str, runtime::sleep_forever_async};
+use util::{concurrency::runtime::sleep_forever_async, err_str};
 
 use crate::error::HandshakeManagerError;
 

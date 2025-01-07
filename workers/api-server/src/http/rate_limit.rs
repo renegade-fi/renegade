@@ -1,10 +1,10 @@
 //! Per wallet task rate limiting implementation
 
-use common::{new_async_shared, types::wallet::WalletIdentifier, AsyncShared};
+use crate::error::ApiServerError;
+use common::types::wallet::WalletIdentifier;
 use ratelimit_meter::{DirectRateLimiter, LeakyBucket};
 use std::{collections::HashMap, num::NonZeroU32, time::Duration};
-
-use crate::error::ApiServerError;
+use util::concurrency::{new_async_shared, AsyncShared};
 
 /// The rate limiter type for a single wallet
 type WalletLimiter = DirectRateLimiter<LeakyBucket>;

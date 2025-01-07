@@ -11,7 +11,7 @@ use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
 use tracing::{info, warn};
 use url::Url;
-use util::{err_str, runtime::sleep_forever_async};
+use util::{concurrency::runtime::sleep_forever_async, err_str};
 
 use crate::{error::EventManagerError, worker::EventManagerConfig};
 

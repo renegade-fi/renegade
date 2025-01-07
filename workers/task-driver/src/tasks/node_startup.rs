@@ -11,6 +11,7 @@ use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use async_trait::async_trait;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor},
+    token::get_all_tokens,
     wallet::{
         derivation::{
             derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
@@ -30,7 +31,7 @@ use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::{error, info, instrument};
 use util::{
-    arbitrum::{PROTOCOL_FEE, PROTOCOL_PUBKEY},
+    arbitrum::{set_external_match_fee, PROTOCOL_FEE, PROTOCOL_PUBKEY},
     err_str,
 };
 
@@ -301,6 +302,9 @@ impl NodeStartupTask {
             .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
         info!("Fetched protocol fee and protocol pubkey from on-chain");
 
+        // Fetch the external match fee overrides for each mint
+        self.setup_external_match_fees().await?;
+
         // Set the values in their constant refs
         PROTOCOL_FEE.set(protocol_fee).expect("protocol fee already set");
         PROTOCOL_PUBKEY.set(protocol_key).expect("protocol pubkey already set");
@@ -530,6 +534,21 @@ impl NodeStartupTask {
         // Enqueue the task and wait for the log entry to be persisted
         let (_id, waiter) = self.state.append_task(descriptor.into()).await?;
         waiter.await?;
+
+        Ok(())
+    }
+
+    /// Setup the external match fee overrides for all tokens
+    async fn setup_external_match_fees(&self) -> Result<(), NodeStartupTaskError> {
+        for token in get_all_tokens() {
+            // Fetch the fee override from the contract
+            let addr = token.get_ethers_address();
+            let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
+
+            // Write the fee into the mapping
+            let addr_bigint = token.get_addr_biguint();
+            set_external_match_fee(&addr_bigint, fee);
+        }
 
         Ok(())
     }
