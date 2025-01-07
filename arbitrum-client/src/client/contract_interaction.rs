@@ -76,6 +76,20 @@ impl ArbitrumClient {
             .map(|r| FixedPoint::from_repr(u256_to_scalar(&r)))
     }
 
+    /// Get the external match fee override for the given mint
+    #[instrument(skip_all, err, fields(mint = %mint))]
+    pub async fn get_external_match_fee(
+        &self,
+        mint: Address,
+    ) -> Result<FixedPoint, ArbitrumClientError> {
+        self.get_darkpool_client()
+            .get_external_match_fee_for_asset(mint)
+            .call()
+            .await
+            .map_err(err_str!(ArbitrumClientError::ContractInteraction))
+            .map(|r| FixedPoint::from_repr(u256_to_scalar(&r)))
+    }
+
     /// Get the public encryption key used for protocol fees
     #[instrument(skip_all, err)]
     pub async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, ArbitrumClientError> {
