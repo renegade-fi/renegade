@@ -4,12 +4,12 @@
 // | Admin Route Handlers |
 // ------------------------
 
-use arbitrum_client::constants::Chain;
+use arbitrum_client::{client::ArbitrumClient, constants::Chain};
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
     tasks::UpdateWalletTaskDescriptor,
-    token::Token,
+    token::{get_all_tokens, Token},
     wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
     Price,
 };
@@ -33,7 +33,7 @@ use job_types::{
 };
 use state::State;
 use tracing::info;
-use util::matching_engine::compute_max_amount;
+use util::{arbitrum::set_external_match_fee, matching_engine::compute_max_amount};
 
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},
@@ -532,6 +532,44 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
             .await
             .map_err(internal_error) // Tokio join error
             .and_then(|r| r.map_err(internal_error))?; // Token remap setup error
+
+        Ok(EmptyRequestResponse {})
+    }
+}
+
+/// Handler for the POST /v0/admin/refresh-external-match-fees route
+pub struct AdminRefreshExternalMatchFeesHandler {
+    /// A handle to the relayer state
+    arbitrum_client: ArbitrumClient,
+}
+
+impl AdminRefreshExternalMatchFeesHandler {
+    /// Constructor
+    pub fn new(arbitrum_client: ArbitrumClient) -> Self {
+        Self { arbitrum_client }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AdminRefreshExternalMatchFeesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = EmptyRequestResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        info!("Refreshing external match fees from contract");
+
+        for token in get_all_tokens() {
+            let addr = token.get_ethers_address();
+            let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
+
+            set_external_match_fee(&token.get_addr_biguint(), fee);
+        }
 
         Ok(EmptyRequestResponse {})
     }

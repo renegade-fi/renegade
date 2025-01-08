@@ -2,6 +2,7 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use arbitrum_client::errors::ArbitrumClientError;
 use external_api::auth::AuthError;
 use hyper::{Body, Response, StatusCode};
 use state::error::StateError;
@@ -39,6 +40,12 @@ impl Display for ApiServerError {
 impl From<StateError> for ApiServerError {
     fn from(value: StateError) -> Self {
         ApiServerError::State(value)
+    }
+}
+
+impl From<ArbitrumClientError> for ApiServerError {
+    fn from(value: ArbitrumClientError) -> Self {
+        internal_error(value)
     }
 }
 
