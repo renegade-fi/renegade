@@ -86,8 +86,14 @@ impl TelemetryBuilder {
         datadog_enabled: bool,
         statsd_host: &str,
         statsd_port: u16,
+        config: Option<metrics::MetricsConfig>,
     ) -> Result<Self, TelemetrySetupError> {
-        metrics::configure_metrics_statsd_recorder(datadog_enabled, statsd_host, statsd_port)?;
+        metrics::configure_metrics_statsd_recorder_with_config(
+            datadog_enabled,
+            statsd_host,
+            statsd_port,
+            &config.unwrap_or_default(),
+        )?;
 
         Ok(self.with_layer(metrics_tracing_context::MetricsLayer::new()))
     }
@@ -111,6 +117,28 @@ pub fn configure_telemetry(
     statsd_host: &str,
     statsd_port: u16,
 ) -> Result<(), TelemetrySetupError> {
+    configure_telemetry_with_metrics_config(
+        datadog_enabled,
+        otlp_enabled,
+        metrics_enabled,
+        collector_endpoint,
+        statsd_host,
+        statsd_port,
+        None,
+    )
+}
+
+/// Configures logging, tracing, and metrics for the relayer with optional
+/// metrics configuration
+pub fn configure_telemetry_with_metrics_config(
+    datadog_enabled: bool,
+    otlp_enabled: bool,
+    metrics_enabled: bool,
+    collector_endpoint: String,
+    statsd_host: &str,
+    statsd_port: u16,
+    metrics_config: Option<metrics::MetricsConfig>,
+) -> Result<(), TelemetrySetupError> {
     let mut telemetry = TelemetryBuilder::default().with_logging(datadog_enabled);
 
     if otlp_enabled {
@@ -118,7 +146,8 @@ pub fn configure_telemetry(
     }
 
     if metrics_enabled {
-        telemetry = telemetry.with_metrics(datadog_enabled, statsd_host, statsd_port)?;
+        telemetry =
+            telemetry.with_metrics(datadog_enabled, statsd_host, statsd_port, metrics_config)?;
     }
 
     telemetry.build();
