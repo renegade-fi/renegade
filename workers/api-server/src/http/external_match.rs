@@ -44,7 +44,7 @@ use state::State;
 use system_bus::SystemBus;
 use tracing::warn;
 use util::{
-    arbitrum::get_protocol_fee,
+    arbitrum::get_external_match_fee,
     get_current_time_millis,
     hex::{biguint_from_hex_string, bytes_from_hex_string, bytes_to_hex_string},
 };
@@ -419,7 +419,7 @@ impl RequestExternalQuoteHandler {
 
     /// Estimate the fee take for a given match
     fn estimate_fee_take(&self, match_res: &ExternalMatchResult) -> FeeTake {
-        let protocol_fee = get_protocol_fee();
+        let protocol_fee = get_external_match_fee(&match_res.base_mint);
         let (_, receive_amount) = match_res.external_party_receive();
         let receive_amount_scalar = Scalar::from(receive_amount);
         let protocol_fee = (protocol_fee * receive_amount_scalar).floor();
