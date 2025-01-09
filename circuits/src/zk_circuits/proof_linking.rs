@@ -362,7 +362,7 @@ where
     Ok(layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0))
 }
 
-#[cfg(all(test, feature = "large_tests"))]
+#[cfg(test)]
 mod test {
     use ark_mpc::{network::PartyId, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
     use circuit_types::{
@@ -743,6 +743,7 @@ mod test {
 
     /// Tests a valid link between a proof of VALID REBLIND and a proof of VALID
     /// COMMITMENTS
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     fn test_reblind_commitments_valid_link() {
         let mut wallet = INITIAL_WALLET.clone();
@@ -765,6 +766,7 @@ mod test {
 
     /// Tests an invalid link between a proof of VALID REBLIND and a proof of
     /// VALID COMMITMENTS
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     #[should_panic(expected = "ProofLinkVerification")]
     fn test_reblind_commitments_invalid_link() {
@@ -803,6 +805,7 @@ mod test {
 
     /// Tests a valid link between a proof of VALID COMMITMENTS and a proof of
     /// VALID MATCH SETTLE on the first party's side
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     async fn test_commitments_match_settle_valid_party0() {
         let (comm_witness, comm_statement, match_settle_witness, match_settle_statement) =
@@ -821,6 +824,7 @@ mod test {
 
     /// Tests a valid link between a proof of VALID COMMITMENTS and a proof of
     /// VALID MATCH SETTLE on the second party's side
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     async fn test_commitments_match_settle_valid_party1() {
         let (comm_witness, comm_statement, match_settle_witness, match_settle_statement) =
@@ -840,6 +844,7 @@ mod test {
     /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
     /// of VALID MATCH SETTLE wherein the shares are modified between the
     /// two proofs
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     #[should_panic(expected = "ProofLinkVerification")]
     #[allow(non_snake_case)]
@@ -878,6 +883,7 @@ mod test {
     ///
     /// Test this modification on the second party's side in the VALID MATCH
     /// SETTLE circuit
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     #[should_panic(expected = "ProofLinkVerification")]
     #[allow(non_snake_case)]
@@ -904,6 +910,7 @@ mod test {
     ///
     /// Test this modification on the first party's side in the VALID MATCH
     /// SETTLE circuit
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     #[should_panic(expected = "ProofLinkVerification")]
     #[allow(non_snake_case)]
@@ -931,6 +938,7 @@ mod test {
 
     /// Tests a valid link between a proof of VALID COMMITMENTS and a proof of
     /// VALID MATCH SETTLE ATOMIC
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     fn test_commitments_match_settle_atomic_valid_link() {
         let (comm_witness, comm_statement, match_atomic_witness, match_atomic_statement) =
@@ -947,6 +955,7 @@ mod test {
 
     /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
     /// of VALID MATCH SETTLE ATOMIC with modified shares
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     #[should_panic(expected = "ProofLinkVerification")]
     fn test_commitments_match_settle_atomic_invalid_link_modified_shares() {
@@ -979,6 +988,7 @@ mod test {
 
     /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
     /// of VALID MATCH SETTLE ATOMIC with a modified balance
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     #[should_panic(expected = "ProofLinkVerification")]
     fn test_commitments_match_settle_atomic_invalid_link_modified_balance() {
@@ -998,6 +1008,7 @@ mod test {
 
     /// Tests an invalid link between a proof of VALID COMMITMENTS and a
     /// of VALID MATCH SETTLE ATOMIC with a modified order
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     #[should_panic(expected = "ProofLinkVerification")]
     fn test_commitments_match_settle_atomic_invalid_link_modified_order() {

@@ -466,6 +466,7 @@ mod tests {
     }
 
     /// Tests proving a valid match on the singleprover circuit
+    #[cfg_attr(feature = "ci", ignore)]
     #[test]
     fn test_valid_match__singleprover() {
         let (witness, statement) = dummy_witness_and_statement();

@@ -1993,8 +1993,6 @@ dependencies = [
  "serde_json",
  "test-helpers",
  "tokio",
- "tracing",
- "tracing-subscriber 0.3.19",
  "util 0.1.0",
 ]
 
