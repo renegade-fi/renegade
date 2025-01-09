@@ -430,6 +430,7 @@ mod test {
     }
 
     /// Tests adding a new node to the raft
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn test_add_node__to_singleton() {

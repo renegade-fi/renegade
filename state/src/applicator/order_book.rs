@@ -140,7 +140,7 @@ impl StateApplicator {
 // | Tests |
 // ---------
 
-#[cfg(all(test, feature = "all-tests"))]
+#[cfg(test)]
 mod test {
     use common::types::{
         network_order::NetworkOrderState,

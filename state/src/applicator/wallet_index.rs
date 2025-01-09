@@ -212,7 +212,7 @@ impl StateApplicator {
 // | Tests |
 // ---------
 
-#[cfg(all(test, feature = "all-tests"))]
+#[cfg(test)]
 pub(crate) mod test {
     use common::types::{
         wallet::Wallet,

@@ -157,7 +157,6 @@ pub async fn multiprover_prove_and_verify<C: MultiProverCircuit>(
         .open_authenticated()
         .await
         .map_err(ProverError::Plonk)?;
-    tracing::log::info!("done proving");
 
     let statement = statement.open().await.map_err(ProverError::Mpc)?;
     C::verify(statement, &proof).map_err(ProverError::Verification)
@@ -189,12 +188,6 @@ pub mod test_helpers {
     use itertools::Itertools;
     use rand::{thread_rng, Rng, RngCore};
     use renegade_crypto::fields::scalar_to_biguint;
-    use tracing_subscriber::{
-        filter::{EnvFilter, LevelFilter},
-        fmt,
-        layer::SubscriberExt,
-        util::SubscriberInitExt,
-    };
     use util::matching_engine::match_orders_with_max_min_amounts;
 
     use crate::zk_circuits::test_helpers::{MAX_BALANCES, MAX_ORDERS};
@@ -217,16 +210,6 @@ pub mod test_helpers {
         ($x:expr) => {
             $crate::test_helpers::joint_open($x).await.unwrap()
         };
-    }
-
-    /// Initialize a logger
-    pub fn init_logger() {
-        let filter_layer =
-            EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy();
-
-        let fmt_layer = fmt::layer();
-
-        tracing_subscriber::registry().with(filter_layer).with(fmt_layer).init();
     }
 
     /// Create a random sequence of field elements
