@@ -33,6 +33,8 @@ const PREFLIGHT_CACHE_TIME: &str = "7200"; // 2 hours, Chromium max
 pub(super) const ERR_WALLET_NOT_FOUND: &str = "wallet not found";
 /// Error message returned when query params are invalid
 const ERR_INVALID_QUERY_PARAMS: &str = "invalid query params";
+/// Error message returned when the path is invalid
+const ERR_INVALID_PATH: &str = "invalid path";
 
 // -----------
 // | Helpers |
@@ -304,7 +306,13 @@ impl Router {
                 };
 
                 // Auth check and handler
-                if let Err(e) = self.check_auth(*auth, path, &params_map, &mut req).await {
+                let path_with_query = match route.path_and_query() {
+                    Some(path_and_query) => path_and_query.as_str(),
+                    None => return build_400_response(ERR_INVALID_PATH.to_string()),
+                };
+
+                if let Err(e) = self.check_auth(*auth, path_with_query, &params_map, &mut req).await
+                {
                     return e.into();
                 }
 

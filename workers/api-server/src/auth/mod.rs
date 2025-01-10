@@ -2,7 +2,7 @@
 
 use common::types::wallet::{keychain::HmacKey, WalletIdentifier};
 use external_api::auth::validate_expiring_auth;
-use hyper::HeaderMap;
+use hyper::{HeaderMap, StatusCode};
 use state::State;
 use tracing::warn;
 
@@ -19,6 +19,8 @@ mod wallet_auth;
 
 /// Error message emitted when the admin API is disabled
 const ERR_ADMIN_API_DISABLED: &str = "Admin API is disabled";
+/// Error message emitted when the path is invalid
+const ERR_INVALID_PATH: &str = "Invalid path";
 
 /// Represents the auth type required for a request
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -72,6 +74,24 @@ impl AuthMiddleware {
             return Ok(());
         }
 
+        // TODO: REMOVE THIS SHIM CODE ONCE CLIENTS ARE UPDATED
+        // Try authenticating the request when the query string is excluded from the
+        // path
+        let path_without_query = path.split('?').next().ok_or(ApiServerError::HttpStatusCode(
+            StatusCode::BAD_REQUEST,
+            ERR_INVALID_PATH.to_string(),
+        ))?;
+        if Self::authenticate_wallet_request_v2(
+            path_without_query,
+            headers,
+            payload,
+            &symmetric_key,
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
+
         authenticate_wallet_request(headers, payload, &symmetric_key)?;
         warn!("Use of v1 wallet auth will be deprecated soon");
         Ok(())
@@ -102,6 +122,19 @@ impl AuthMiddleware {
         // Try v2 auth first, then fall back to v1
         let admin_key = self.admin_key.as_ref().unwrap();
         if Self::authenticate_admin_request_v2(path, headers, payload, admin_key).is_ok() {
+            return Ok(());
+        }
+
+        // TODO: REMOVE THIS SHIM CODE ONCE CLIENTS ARE UPDATED
+        // Try authenticating the request when the query string is excluded from the
+        // path
+        let path_without_query = path.split('?').next().ok_or(ApiServerError::HttpStatusCode(
+            StatusCode::BAD_REQUEST,
+            ERR_INVALID_PATH.to_string(),
+        ))?;
+        if Self::authenticate_admin_request_v2(path_without_query, headers, payload, admin_key)
+            .is_ok()
+        {
             return Ok(());
         }
 
