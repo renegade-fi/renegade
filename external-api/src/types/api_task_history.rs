@@ -32,7 +32,7 @@ fn u128_to_number(value: u128) -> Number {
 // ---------
 
 /// A historical task
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiHistoricalTask {
     /// The id of the task
     pub id: TaskIdentifier,
@@ -69,7 +69,7 @@ impl ApiHistoricalTask {
 ///
 /// Separated out from the task descriptors as the descriptors may contain
 /// runtime information irrelevant for storage
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "task_type")]
 pub enum ApiHistoricalTaskDescription {
     /// A new wallet was created
@@ -117,7 +117,7 @@ impl From<HistoricalTaskDescription> for ApiHistoricalTaskDescription {
 }
 
 /// A type representing a match in a historical task
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiHistoricalMatch {
     /// The base mint matched
     pub base: String,
@@ -142,7 +142,7 @@ impl From<MatchResult> for ApiHistoricalMatch {
 ///
 /// Differentiates between order vs balance updates, and holds fields for
 /// display
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "update_type")]
 pub enum ApiWalletUpdateType {
     /// Deposit a balance
@@ -174,7 +174,7 @@ pub enum ApiWalletUpdateType {
 }
 
 /// Represents an order in a wallet update type
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalletUpdateOrder {
     /// The mint of the base token
     pub base: String,
