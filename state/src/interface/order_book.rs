@@ -22,7 +22,7 @@ use rand::{
     thread_rng,
 };
 use tracing::instrument;
-use util::res_some;
+use util::{res_some, telemetry::helpers::backfill_trace_field};
 
 use crate::{
     caching::order_cache::OrderBookFilter,
@@ -185,13 +185,17 @@ impl StateInner {
     }
 
     /// Get a list of matchable orders matching the given filter
-    #[instrument(name = "get_matchable_orders", skip_all, fields(filter = ?filter))]
+    #[instrument(name = "get_matchable_orders", skip_all, fields(filter = ?filter, num_candidates, num_available))]
     pub async fn get_matchable_orders(
         &self,
         filter: OrderBookFilter,
     ) -> Result<Vec<OrderIdentifier>, StateError> {
         let candidates = self.order_cache.get_orders(filter).await;
-        self.filter_matchable_orders(candidates, None /* matching_pool */).await
+        backfill_trace_field("num_candidates", candidates.len());
+        let filtered = self.filter_matchable_orders(candidates, None /* matching_pool */).await?;
+        backfill_trace_field("num_available", filtered.len());
+
+        Ok(filtered)
     }
 
     /// Get a list of order IDs that are locally managed and ready for match
@@ -203,14 +207,18 @@ impl StateInner {
 
     /// Get a list of order IDs that are locally managed and ready for match in
     /// the given matching pool
-    #[instrument(name = "get_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool))]
+    #[instrument(name = "get_matchable_orders_in_matching_pool", skip_all, fields(matching_pool = ?matching_pool, num_candidates, num_available))]
     pub async fn get_matchable_orders_in_matching_pool(
         &self,
         matching_pool: MatchingPoolName,
         filter: OrderBookFilter,
     ) -> Result<Vec<OrderIdentifier>, StateError> {
         let candidates = self.order_cache.get_orders(filter).await;
-        self.filter_matchable_orders(candidates, Some(matching_pool)).await
+        backfill_trace_field("num_candidates", candidates.len());
+        let filtered = self.filter_matchable_orders(candidates, Some(matching_pool)).await?;
+        backfill_trace_field("num_available", filtered.len());
+
+        Ok(filtered)
     }
 
     /// Get all order IDs in a given matching pool

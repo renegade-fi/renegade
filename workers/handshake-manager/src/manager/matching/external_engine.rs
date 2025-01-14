@@ -25,7 +25,7 @@ use external_api::bus_message::SystemBusMessage;
 use job_types::task_driver::TaskDriverJob;
 use renegade_crypto::fields::scalar_to_u128;
 use tracing::{error, info, instrument};
-use util::err_str;
+use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
@@ -156,12 +156,14 @@ impl HandshakeExecutor {
     }
 
     /// Get the match candidates for an external order
+    #[instrument(name = "get_external_match_candidates", skip_all, fields(num_candidates))]
     async fn get_external_match_candidates(
         &self,
         order: &Order,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
         let filter = matching_order_filter(order, true /* external */);
         let matchable_orders = self.state.get_matchable_orders(filter).await?;
+        backfill_trace_field("num_candidates", matchable_orders.len());
         Ok(HashSet::from_iter(matchable_orders))
     }
 
