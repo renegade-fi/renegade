@@ -6,10 +6,11 @@ use std::{path::Path, thread::JoinHandle};
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use futures::sink::SinkExt;
-use job_types::event_manager::EventManagerReceiver;
+use job_types::event_manager::{EventManagerReceiver, RelayerEvent};
+use renegade_metrics::labels::NUM_EVENT_EXPORT_FAILURES_METRIC;
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use url::Url;
 use util::{concurrency::runtime::sleep_forever_async, err_str};
 
@@ -103,11 +104,12 @@ impl EventManagerExecutor {
                         warn!("EventManager received event while disabled, ignoring...");
                         continue;
                     }
-
                     let sink = sink.as_mut().unwrap();
-                    let event_bytes = serde_json::to_vec(&event).map_err(err_str!(EventManagerError::Serialize))?;
 
-                    sink.send(event_bytes.into()).await.map_err(err_str!(EventManagerError::SocketWrite))?;
+                    if let Err(e) = handle_relayer_event(&event, sink).await {
+                        metrics::counter!(NUM_EVENT_EXPORT_FAILURES_METRIC).increment(1);
+                        error!("Failed to handle relayer event: {e}");
+                    }
                 },
 
                 _ = self.cancel_channel.changed() => {
@@ -117,6 +119,16 @@ impl EventManagerExecutor {
             }
         }
     }
+}
+
+/// Handles a relayer event by exporting it to the configured sink
+async fn handle_relayer_event(
+    event: &RelayerEvent,
+    sink: &mut FramedUnixSink,
+) -> Result<(), EventManagerError> {
+    let event_bytes = serde_json::to_vec(event).map_err(err_str!(EventManagerError::Serialize))?;
+    sink.send(event_bytes.into()).await.map_err(err_str!(EventManagerError::SocketWrite))?;
+    Ok(())
 }
 
 /// Extracts a Unix socket path from the event export URL

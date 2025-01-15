@@ -19,12 +19,14 @@ constants = { path = "../../constants" }
 external-api = { path = "../../external-api" }
 gossip-api = { path = "../../gossip-api" }
 util = { path = "../../util" }
+renegade-metrics = { path = "../../renegade-metrics" }
 
 # === Misc === #
 crossbeam = { workspace = true }
 tokio = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 serde = { workspace = true }
+metrics = { workspace = true }
 
 [dev-dependencies]
 lazy_static = { workspace = true }

@@ -11,7 +11,7 @@ use external_api::{
     types::ApiHistoricalTask,
 };
 use job_types::{
-    event_manager::{RelayerEvent, TaskCompletionEvent},
+    event_manager::{try_send_event, RelayerEvent, TaskCompletionEvent},
     handshake_manager::HandshakeManagerJob,
     task_driver::TaskDriverJob,
 };
@@ -573,7 +573,7 @@ impl StateApplicator {
 
             if is_executor {
                 let event = RelayerEvent::TaskCompletion(TaskCompletionEvent::new(key, t));
-                if let Err(e) = self.config.event_queue.send(event) {
+                if let Err(e) = try_send_event(event, &self.config.event_queue) {
                     error!("error sending task completion event: {e}");
                 }
             }
