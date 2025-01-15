@@ -26,7 +26,9 @@ use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use common::types::TimestampedPrice;
 use external_api::bus_message::SystemBusMessage;
-use job_types::event_manager::{EventManagerQueue, ExternalFillEvent, RelayerEvent};
+use job_types::event_manager::{
+    try_send_event, EventManagerQueue, ExternalFillEvent, RelayerEvent,
+};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
@@ -534,6 +536,6 @@ impl SettleMatchExternalTask {
             internal_fee_take,
         ));
 
-        self.event_queue.send(event).map_err(SettleMatchExternalTaskError::send_event)
+        try_send_event(event, &self.event_queue).map_err(SettleMatchExternalTaskError::send_event)
     }
 }
