@@ -6,10 +6,11 @@ use std::{path::Path, thread::JoinHandle};
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use futures::sink::SinkExt;
-use job_types::event_manager::EventManagerReceiver;
+use job_types::event_manager::{EventManagerReceiver, RelayerEvent};
+use renegade_metrics::labels::NUM_EVENT_EXPORT_FAILURES_METRIC;
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use url::Url;
 use util::{concurrency::runtime::sleep_forever_async, err_str};
 
@@ -105,9 +106,11 @@ impl EventManagerExecutor {
                     }
 
                     let sink = sink.as_mut().unwrap();
-                    let event_bytes = serde_json::to_vec(&event).map_err(err_str!(EventManagerError::Serialize))?;
+                    let event_bytes = try_serialize_event(&event);
 
-                    sink.send(event_bytes.into()).await.map_err(err_str!(EventManagerError::SocketWrite))?;
+                    if let Some(event_bytes) = event_bytes {
+                        try_export_event(event_bytes, sink).await;
+                    }
                 },
 
                 _ = self.cancel_channel.changed() => {
@@ -116,6 +119,32 @@ impl EventManagerExecutor {
                 }
             }
         }
+    }
+}
+
+/// Attempts to serialize an event into a byte array.
+/// If unsuccessful, records a failure metric, logs an error, and returns
+/// `None`.
+fn try_serialize_event(event: &RelayerEvent) -> Option<Vec<u8>> {
+    match serde_json::to_vec(event) {
+        Ok(event_bytes) => Some(event_bytes),
+        Err(e) => {
+            metrics::counter!(NUM_EVENT_EXPORT_FAILURES_METRIC).increment(1);
+            error!("Failed to serialize event: {e}");
+            None
+        },
+    }
+}
+
+/// Attempts to export an event to the configured sink.
+/// If unsuccessful, records a failure metric & logs an error.
+async fn try_export_event(event_bytes: Vec<u8>, sink: &mut FramedUnixSink) {
+    match sink.send(event_bytes.into()).await {
+        Ok(_) => (),
+        Err(e) => {
+            metrics::counter!(NUM_EVENT_EXPORT_FAILURES_METRIC).increment(1);
+            error!("Failed to export event: {e}");
+        },
     }
 }
 

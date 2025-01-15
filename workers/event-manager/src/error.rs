@@ -14,12 +14,6 @@ pub enum EventManagerError {
     /// An error occurred while connecting to the event export socket
     #[error("error connecting to event export socket: {0}")]
     SocketConnection(String),
-    /// An error occurred while serializing an event
-    #[error("error serializing event: {0}")]
-    Serialize(String),
-    /// An error occurred while writing to the event export socket
-    #[error("error writing to event export socket: {0}")]
-    SocketWrite(String),
     /// An error occurred while setting up the event manager
     #[error("error setting up event manager: {0}")]
     SetupError(String),

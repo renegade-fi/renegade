@@ -20,6 +20,14 @@ use url::Url;
 /// A framed stream over a Unix socket
 type FramedUnixStream = FramedRead<UnixStream, LengthDelimitedCodec>;
 
+// -------------
+// | Constants |
+// -------------
+
+/// The metric name for the number of events failed to be exported by the
+/// sidecar
+const NUM_SIDECAR_EXPORT_FAILURES_METRIC: &str = "num_event_sidecar_export_failures";
+
 // ----------------
 // | Event Socket |
 // ----------------
@@ -78,6 +86,7 @@ impl EventSocket {
                 // Events that fail to be submitted are effectively dropped here.
                 // We can consider retry logic or a local dead-letter queue, but
                 // for now we keep things simple.
+                metrics::counter!(NUM_SIDECAR_EXPORT_FAILURES_METRIC).increment(1);
                 error!("Error handling relayer event: {e}");
             }
         }

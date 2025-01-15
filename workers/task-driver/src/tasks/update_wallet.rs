@@ -22,8 +22,8 @@ use common::types::{
 };
 use itertools::Itertools;
 use job_types::event_manager::{
-    EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent,
-    OrderUpdateEvent, RelayerEvent,
+    try_send_event, EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent,
+    OrderPlacementEvent, OrderUpdateEvent, RelayerEvent,
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
@@ -465,8 +465,7 @@ impl UpdateWalletTask {
 
     /// Emit the completion event to the event manager
     fn emit_event(&mut self) -> Result<(), UpdateWalletTaskError> {
-        self.event_queue
-            .send(self.completion_event.take().unwrap())
+        try_send_event(self.completion_event.take().unwrap(), &self.event_queue)
             .map_err(err_str!(UpdateWalletTaskError::SendEvent))
     }
 
