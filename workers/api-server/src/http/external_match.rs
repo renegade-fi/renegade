@@ -34,7 +34,9 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use job_types::{
-    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
+    handshake_manager::{
+        ExternalMatchingEngineOptions, HandshakeManagerJob, HandshakeManagerQueue,
+    },
     price_reporter::PriceReporterQueue,
 };
 use num_bigint::BigUint;
@@ -62,6 +64,10 @@ const DEFAULT_GAS_ESTIMATION: u64 = 4_000_000; // 4m
 const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// The maximum age of a quote before it is considered expired
 const MAX_QUOTE_AGE: u64 = 10_000; // 10 seconds
+/// The validity duration for a match bundle in the assemble flow
+const ASSEMBLE_BUNDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// The validity duration for a match bundle in the direct match flow
+const DIRECT_MATCH_BUNDLE_TIMEOUT: Duration = Duration::from_secs(0);
 
 // ------------------
 // | Error Messages |
@@ -242,13 +248,8 @@ impl ExternalMatchProcessor {
         &self,
         external_order: ExternalOrder,
     ) -> Result<ExternalMatchResult, ApiServerError> {
-        let resp = self
-            .request_handshake_manager(
-                external_order,
-                true, // quote_only
-                None, // price
-            )
-            .await?;
+        let opt = ExternalMatchingEngineOptions::only_quote();
+        let resp = self.request_handshake_manager(external_order, opt).await?;
 
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
@@ -265,13 +266,12 @@ impl ExternalMatchProcessor {
         price: TimestampedPrice,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let resp = self
-            .request_handshake_manager(
-                order.clone(),
-                false, // quote_only
-                Some(price),
-            )
-            .await?;
+        let opt = ExternalMatchingEngineOptions::new(
+            false, // only_quote
+            ASSEMBLE_BUNDLE_TIMEOUT,
+            Some(price),
+        );
+        let resp = self.request_handshake_manager(order.clone(), opt).await?;
 
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
@@ -296,13 +296,12 @@ impl ExternalMatchProcessor {
         receiver: Option<Address>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let resp = self
-            .request_handshake_manager(
-                external_order.clone(),
-                false, // quote_only
-                None,  // price
-            )
-            .await?;
+        let opt = ExternalMatchingEngineOptions::new(
+            false, // only_quote
+            DIRECT_MATCH_BUNDLE_TIMEOUT,
+            None, // price
+        );
+        let resp = self.request_handshake_manager(external_order.clone(), opt).await?;
 
         match resp {
             SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
@@ -326,14 +325,12 @@ impl ExternalMatchProcessor {
     async fn request_handshake_manager(
         &self,
         order: ExternalOrder,
-        quote_only: bool,
-        price: Option<TimestampedPrice>,
+        options: ExternalMatchingEngineOptions,
     ) -> Result<SystemBusMessage, ApiServerError> {
         let order = self.external_order_to_internal_order(order).await?;
         self.check_external_order_size(&order).await?;
 
-        let (job, response_topic) =
-            HandshakeManagerJob::new_external_match_job(order, quote_only, price);
+        let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, options);
         self.handshake_queue
             .send(job)
             .map_err(|_| internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH))?;

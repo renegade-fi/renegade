@@ -54,9 +54,6 @@ pub const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 /// The name of the task
 pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
 
-/// The duration to await an atomic match settlement
-pub const ATOMIC_SETTLEMENT_TIMEOUT: Duration = Duration::from_secs(30);
-
 // --------------
 // | Task State |
 // --------------
@@ -198,6 +195,8 @@ pub struct SettleMatchExternalTask {
     execution_price: TimestampedPrice,
     /// The match result from the external matching engine
     match_res: MatchResult,
+    /// The duration for which the external match bundle is valid
+    bundle_duration: Duration,
     /// The validity proofs for the internal order
     internal_order_validity_bundle: OrderValidityProofBundle,
     /// The validity witness for an internal order
@@ -234,6 +233,7 @@ impl Task for SettleMatchExternalTask {
         }
 
         let SettleExternalMatchTaskDescriptor {
+            bundle_duration,
             internal_order_id,
             internal_wallet_id,
             execution_price,
@@ -248,6 +248,7 @@ impl Task for SettleMatchExternalTask {
             internal_wallet_id,
             execution_price,
             match_res,
+            bundle_duration,
             internal_order_validity_bundle,
             internal_order_validity_witness,
             atomic_match_bundle: None,
@@ -366,10 +367,14 @@ impl SettleMatchExternalTask {
     ///
     /// Returns `true` if the settlement succeeded on-chain, `false` otherwise
     async fn await_settlement(&self) -> Result<bool, SettleMatchExternalTaskError> {
+        if self.bundle_duration.is_zero() {
+            info!("bundle duration is zero, skipping `await_settlement`");
+            return Ok(false);
+        }
+
         let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
         let nullifier = valid_reblind.original_shares_nullifier;
-        let res =
-            self.arbitrum_client.await_nullifier_spent(nullifier, ATOMIC_SETTLEMENT_TIMEOUT).await;
+        let res = self.arbitrum_client.await_nullifier_spent(nullifier, self.bundle_duration).await;
 
         let did_settle = res.is_ok();
         if !did_settle {

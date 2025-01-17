@@ -1,5 +1,7 @@
 //! Jobs consumed by the handshake manager
 
+use std::time::Duration;
+
 use ark_mpc::network::QuicTwoPartyNet;
 use circuit_types::wallet::Nullifier;
 use common::types::{
@@ -17,11 +19,6 @@ use uuid::Uuid;
 
 /// The name of the handshake manager queue, used to label queue length metrics
 const HANDSHAKE_MANAGER_QUEUE_NAME: &str = "handshake_manager";
-
-/// The response type for external matching jobs
-///
-/// TODO: Define this type
-pub type ExternalMatchingResponse = ();
 
 /// The job queue for the handshake manager
 pub type HandshakeManagerQueue = TokioSender<HandshakeManagerJob>;
@@ -60,15 +57,8 @@ pub enum HandshakeManagerJob {
         ///    to use in the task driver, which is not possible
         /// 2. Sending via the bus avoids needing to clone a oneshot to retry
         response_topic: String,
-        /// Whether or not to only generate a quote, without proving validity
-        /// for the order's match
-        only_quote: bool,
-        /// The price to use for the external match. If `None`, the price will
-        /// be sampled by the engine
-        ///
-        /// This is used to fulfill a previously committed-to quote at the
-        /// api-layer
-        price: Option<TimestampedPrice>,
+        /// The options for the external matching engine
+        options: ExternalMatchingEngineOptions,
     },
     /// Process a handshake request
     ProcessHandshakeMessage {
@@ -135,37 +125,69 @@ pub enum HandshakeManagerJob {
 impl HandshakeManagerJob {
     /// Get a quote for an external order
     pub fn get_external_quote(order: Order) -> (Self, String) {
-        Self::new_external_match_job(order, true /* quote_only */, None /* price */)
+        let opt = ExternalMatchingEngineOptions::only_quote();
+        Self::new_external_match_job(order, opt)
     }
 
     /// Get an external match bundle with a previously committed-to price
     pub fn get_external_match_bundle_with_price(
         order: Order,
         price: TimestampedPrice,
+        bundle_duration: Duration,
     ) -> (Self, String) {
-        Self::new_external_match_job(order, false /* quote_only */, Some(price))
+        let opt = ExternalMatchingEngineOptions::new(
+            false, // only_quote
+            bundle_duration,
+            Some(price),
+        );
+        Self::new_external_match_job(order, opt)
     }
 
     /// Run the external matching engine and create a bundle
     pub fn get_external_match_bundle(order: Order) -> (Self, String) {
-        Self::new_external_match_job(order, false /* quote_only */, None /* price */)
+        let opt = ExternalMatchingEngineOptions::default();
+        Self::new_external_match_job(order, opt)
     }
 
     /// Create a new external matching job
     pub fn new_external_match_job(
         order: Order,
-        quote_only: bool,
-        price: Option<TimestampedPrice>,
+        options: ExternalMatchingEngineOptions,
     ) -> (Self, String) {
         let topic = gen_atomic_match_response_topic();
-        (
-            Self::ExternalMatchingEngine {
-                order,
-                response_topic: topic.clone(),
-                only_quote: quote_only,
-                price,
-            },
-            topic,
-        )
+        (Self::ExternalMatchingEngine { order, response_topic: topic.clone(), options }, topic)
+    }
+}
+
+/// Represents options passed to the external matching engine
+#[derive(Clone, Default)]
+pub struct ExternalMatchingEngineOptions {
+    /// Whether or not to only generate a quote, without proving validity
+    /// for the order's match
+    pub only_quote: bool,
+    /// The duration for which a match bundle is valid; i.e. for which the task
+    /// driver should lock the matched wallet's queue
+    pub bundle_duration: Duration,
+    /// The price to use for the external match. If `None`, the price will
+    /// be sampled by the engine
+    ///
+    /// This is used to fulfill a previously committed-to quote at the
+    /// api-layer
+    pub price: Option<TimestampedPrice>,
+}
+
+impl ExternalMatchingEngineOptions {
+    /// Create a new external matching engine options
+    pub fn new(
+        only_quote: bool,
+        bundle_duration: Duration,
+        price: Option<TimestampedPrice>,
+    ) -> Self {
+        Self { only_quote, bundle_duration, price }
+    }
+
+    /// Create a new external matching engine options with only a quote
+    pub fn only_quote() -> Self {
+        Self { only_quote: true, bundle_duration: Duration::from_secs(0), price: None }
     }
 }
