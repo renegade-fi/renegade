@@ -1,5 +1,7 @@
 //! Descriptors for the match settlement tasks
 
+use std::time::Duration;
+
 use circuit_types::r#match::MatchResult;
 use serde::{Deserialize, Serialize};
 
@@ -78,6 +80,8 @@ impl From<SettleMatchInternalTaskDescriptor> for TaskDescriptor {
 /// `SettleExternalMatch` task
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleExternalMatchTaskDescriptor {
+    /// The duration for which the external match bundle is valid
+    pub bundle_duration: Duration,
     /// The ID of the order that the local node matched
     pub internal_order_id: OrderIdentifier,
     /// The ID of the wallet that the local node matched an order from
@@ -93,6 +97,7 @@ pub struct SettleExternalMatchTaskDescriptor {
 impl SettleExternalMatchTaskDescriptor {
     /// Constructor
     pub fn new(
+        bundle_duration: Duration,
         internal_order_id: OrderIdentifier,
         internal_wallet_id: WalletIdentifier,
         execution_price: TimestampedPrice,
@@ -100,6 +105,7 @@ impl SettleExternalMatchTaskDescriptor {
         atomic_match_bundle_topic: String,
     ) -> Self {
         SettleExternalMatchTaskDescriptor {
+            bundle_duration,
             internal_order_id,
             internal_wallet_id,
             atomic_match_bundle_topic,

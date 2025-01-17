@@ -22,7 +22,7 @@ use common::types::{
 };
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
-use job_types::task_driver::TaskDriverJob;
+use job_types::{handshake_manager::ExternalMatchingEngineOptions, task_driver::TaskDriverJob};
 use renegade_crypto::fields::scalar_to_u128;
 use tracing::{error, info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
@@ -42,11 +42,10 @@ impl HandshakeExecutor {
         &self,
         order: Order,
         response_topic: String,
-        only_quote: bool,
-        price: Option<TimestampedPrice>,
+        options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         // Sample an execution price if one is not provided
-        let ts_price = match price {
+        let ts_price = match options.price {
             Some(price) => price,
             None => {
                 let base = Token::from_addr_biguint(&order.base_mint);
@@ -57,7 +56,7 @@ impl HandshakeExecutor {
 
         // Run the matching engine
         match self
-            .run_external_matching_engine_inner(order, response_topic.clone(), only_quote, ts_price)
+            .run_external_matching_engine_inner(order, response_topic.clone(), ts_price, options)
             .await
         {
             Ok(()) => Ok(()),
@@ -73,8 +72,8 @@ impl HandshakeExecutor {
         &self,
         order: Order,
         response_topic: String,
-        only_quote: bool,
         ts_price: TimestampedPrice,
+        options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         let base = Token::from_addr_biguint(&order.base_mint);
         let quote = Token::from_addr_biguint(&order.quote_mint);
@@ -111,7 +110,7 @@ impl HandshakeExecutor {
             match_res.direction = order.side.opposite().match_direction();
             let id = other_order_id;
             let topic = response_topic.clone();
-            if self.handle_match(id, ts_price, match_res, only_quote, topic).await.is_ok() {
+            if self.handle_match(id, ts_price, match_res, topic, options).await.is_ok() {
                 return Ok(());
             }
 
@@ -129,18 +128,24 @@ impl HandshakeExecutor {
         other_order_id: OrderIdentifier,
         price: TimestampedPrice,
         match_res: MatchResult,
-        only_quote: bool,
         response_topic: String,
+        options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         // If the request only requires a quote, we can stop here
-        if only_quote {
+        if options.only_quote {
             self.forward_quote(response_topic.clone(), match_res);
             return Ok(());
         }
 
         // Otherwise, settle the match by building an atomic match bundle
         let settle_res = self
-            .try_settle_external_match(other_order_id, price, match_res, response_topic.clone())
+            .try_settle_external_match(
+                other_order_id,
+                price,
+                match_res,
+                response_topic.clone(),
+                options,
+            )
             .await;
 
         match settle_res {
@@ -174,9 +179,11 @@ impl HandshakeExecutor {
         price: TimestampedPrice,
         match_res: MatchResult,
         response_topic: String,
+        options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         let wallet_id = self.get_wallet_id_for_order(&internal_order_id).await?;
         let task = SettleExternalMatchTaskDescriptor::new(
+            options.bundle_duration,
             internal_order_id,
             wallet_id,
             price,
