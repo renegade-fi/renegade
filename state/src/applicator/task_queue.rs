@@ -155,7 +155,7 @@ impl StateApplicator {
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
 
         let task = self
-            .pop_and_record_task(&key, success, &tx)?
+            .pop_and_record_task(&key, success, Some(executor), &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
 
         // If the task failed, clear the rest of the queue, as subsequent tasks will
@@ -351,7 +351,7 @@ impl StateApplicator {
         // was paused
         tx.resume_task_queue(&key)?;
         let task = self
-            .pop_and_record_task(&key, success, tx)?
+            .pop_and_record_task(&key, success, executor, tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
 
         // If the task failed, clear the rest of the queue, as subsequent tasks will
@@ -529,6 +529,7 @@ impl StateApplicator {
         &self,
         key: &TaskQueueKey,
         success: bool,
+        executor: Option<WrappedPeerId>,
         tx: &StateTxn<'_, RW>,
     ) -> Result<Option<QueuedTask>> {
         // Pop the task
@@ -545,8 +546,8 @@ impl StateApplicator {
         }
 
         // Add the task to history and remove its node assignment
-        self.maybe_append_historical_task(*key, task.clone(), tx)?;
-        if let Some(executor) = tx.get_task_assignment(&task.id)? {
+        self.maybe_append_historical_task(*key, task.clone(), executor, tx)?;
+        if let Some(executor) = executor {
             tx.remove_assigned_task(&executor, &task.id)?;
         }
         Ok(Some(task))
@@ -557,6 +558,7 @@ impl StateApplicator {
         &self,
         key: TaskQueueKey,
         task: QueuedTask,
+        executor: Option<WrappedPeerId>,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
         if let Some(t) = HistoricalTask::from_queued_task(key, task) {
@@ -568,8 +570,7 @@ impl StateApplicator {
             // _only if the local peer is the executor_,
             // to avoid duplicate events across the cluster
             let my_peer_id = tx.get_peer_id()?;
-            let maybe_executor = tx.get_task_assignment(&t.id)?;
-            let is_executor = maybe_executor.is_some_and(|e| e == my_peer_id);
+            let is_executor = executor.is_some_and(|e| e == my_peer_id);
 
             if is_executor {
                 let event = RelayerEvent::TaskCompletion(TaskCompletionEvent::new(key, t));
@@ -591,7 +592,8 @@ impl StateApplicator {
         // Mark all tasks as failed, append to history, and publish updates
         for mut task in cleared_tasks {
             task.state = QueuedTaskState::Failed;
-            self.maybe_append_historical_task(key, task.clone(), tx)?;
+            let executor = tx.get_task_assignment(&task.id)?;
+            self.maybe_append_historical_task(key, task.clone(), executor, tx)?;
             self.publish_task_updates(key, &task);
 
             if let Some(peer_id) = tx.get_task_assignment(&task.id)? {
