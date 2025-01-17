@@ -17,7 +17,7 @@ use job_types::{
 };
 use libmdbx::{TransactionKind, RW};
 use tracing::{error, info, instrument, warn};
-use util::err_str;
+use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::storage::tx::StateTxn;
 
@@ -296,6 +296,7 @@ impl StateApplicator {
     }
 
     /// Resume multiple task queues
+    #[instrument(skip_all, err, fields(task_queue_keys = ?keys))]
     pub fn resume_task_queues(
         &self,
         keys: &[TaskQueueKey],
@@ -525,6 +526,7 @@ impl StateApplicator {
     /// Pop the top task on the queue and add it to the historical state    
     ///
     /// Returns the task
+    #[instrument(skip_all, err, fields(task_id, task_queue_key = %key))]
     fn pop_and_record_task(
         &self,
         key: &TaskQueueKey,
@@ -536,6 +538,8 @@ impl StateApplicator {
             Some(task) => task,
             None => return Ok(None),
         };
+
+        backfill_trace_field("task_id", task.id.to_string());
 
         // Update the status
         if success {
@@ -553,6 +557,7 @@ impl StateApplicator {
     }
 
     /// Append a task to the task history if it should be stored
+    #[instrument(skip_all, err, fields(task_id = %task.id, task_queue_key = %key))]
     fn maybe_append_historical_task(
         &self,
         key: TaskQueueKey,

@@ -10,8 +10,9 @@ use job_types::event_manager::RelayerEvent;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, LengthDelimitedCodec};
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 use url::Url;
+use util::telemetry::helpers::backfill_trace_field;
 
 // ---------------------
 // | Convenience Types |
@@ -96,10 +97,13 @@ impl EventSocket {
     }
 
     /// Handles an event received from the event export socket
+    #[instrument(name = "sidecar_handle_relayer_event", skip_all, err, fields(event))]
     async fn handle_relayer_event(&self, msg: Vec<u8>) -> Result<(), Error> {
         let event: RelayerEvent = serde_json::from_slice(&msg)?;
         let event_id = event.event_id();
         let wallet_id = event.wallet_id();
+
+        backfill_trace_field("event", event.describe());
 
         let msg = String::from_utf8(msg)?;
         self.sqs_client

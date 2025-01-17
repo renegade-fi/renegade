@@ -16,6 +16,7 @@ aws-sdk-sqs = "1.50.0"
 config = { path = "../../config" }
 job-types = { path = "../../workers/job-types" }
 event-manager = { path = "../../workers/event-manager" }
+util = { path = "../../util" }
 
 # === Misc Dependencies === #
 url = "2.4"

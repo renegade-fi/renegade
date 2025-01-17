@@ -3595,6 +3595,7 @@ dependencies = [
  "tokio-util 0.7.13",
  "tracing",
  "url",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -5203,6 +5204,7 @@ dependencies = [
  "renegade-metrics",
  "serde",
  "tokio",
+ "tracing",
  "util 0.1.0",
  "uuid 1.11.0",
 ]

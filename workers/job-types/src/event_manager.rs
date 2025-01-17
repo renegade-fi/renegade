@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use circuit_types::{
     r#match::{ExternalMatchResult, FeeTake, MatchResult},
-    transfers::ExternalTransfer,
+    transfers::{ExternalTransfer, ExternalTransferDirection},
     Amount,
 };
 use common::types::{
@@ -16,6 +16,7 @@ use common::types::{
 use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender as TokioSender};
+use tracing::instrument;
 use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
@@ -40,6 +41,7 @@ pub fn new_event_manager_queue() -> (EventManagerQueue, EventManagerReceiver) {
 /// A helper for sending an event to the event manager queue, recording a
 /// failure metric if the send fails
 #[allow(clippy::result_large_err)]
+#[instrument(skip_all, err, fields(event = event.describe()))]
 pub fn try_send_event(
     event: RelayerEvent,
     queue: &EventManagerQueue,
@@ -161,7 +163,7 @@ impl WalletCreationEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("WalletCreation({})", self.event_id)
+        format!("WalletCreation(event_id={}, wallet_id={})", self.event_id, self.wallet_id)
     }
 }
 
@@ -188,7 +190,12 @@ impl ExternalTransferEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("ExternalTransfer({})", self.event_id)
+        format!(
+            "ExternalTransfer(event_id={}, wallet_id={}, is_withdrawal={})",
+            self.event_id,
+            self.wallet_id,
+            matches!(self.transfer.direction, ExternalTransferDirection::Withdrawal)
+        )
     }
 }
 
@@ -224,7 +231,10 @@ impl OrderPlacementEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("OrderPlacement({})", self.event_id)
+        format!(
+            "OrderPlacement(event_id={}, wallet_id={}, order_id={})",
+            self.event_id, self.wallet_id, self.order_id
+        )
     }
 }
 
@@ -260,7 +270,10 @@ impl OrderUpdateEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("OrderUpdate({})", self.event_id)
+        format!(
+            "OrderUpdate(event_id={}, wallet_id={}, order_id={})",
+            self.event_id, self.wallet_id, self.order_id
+        )
     }
 }
 
@@ -307,7 +320,10 @@ impl OrderCancellationEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("OrderCancellation({})", self.event_id)
+        format!(
+            "OrderCancellation(event_id={}, wallet_id={}, order_id={})",
+            self.event_id, self.wallet_id, self.order_id
+        )
     }
 }
 
@@ -354,7 +370,10 @@ impl FillEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("Fill({})", self.event_id)
+        format!(
+            "Fill(event_id={}, wallet_id={}, order_id={})",
+            self.event_id, self.wallet_id, self.order_id
+        )
     }
 }
 
@@ -401,7 +420,10 @@ impl ExternalFillEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("ExternalFill({})", self.event_id)
+        format!(
+            "ExternalFill(event_id={}, internal_wallet_id={}, internal_order_id={})",
+            self.event_id, self.internal_wallet_id, self.internal_order_id
+        )
     }
 }
 
@@ -428,7 +450,10 @@ impl TaskCompletionEvent {
 
     /// Returns a human-readable description of the event
     pub fn describe(&self) -> String {
-        format!("TaskCompletion({})", self.event_id)
+        format!(
+            "TaskCompletion(event_id={}, task_queue_key={}, task_id={})",
+            self.event_id, self.task_queue_key, self.historical_task.id
+        )
     }
 }
 

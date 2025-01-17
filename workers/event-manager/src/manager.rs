@@ -10,7 +10,7 @@ use job_types::event_manager::{EventManagerReceiver, RelayerEvent};
 use renegade_metrics::labels::NUM_EVENT_EXPORT_FAILURES_METRIC;
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
-use tracing::{error, info, warn};
+use tracing::{error, info, instrument, warn};
 use url::Url;
 use util::{concurrency::runtime::sleep_forever_async, err_str};
 
@@ -122,6 +122,7 @@ impl EventManagerExecutor {
 }
 
 /// Handles a relayer event by exporting it to the configured sink
+#[instrument(skip_all, err, fields(event = %event.describe()))]
 async fn handle_relayer_event(
     event: &RelayerEvent,
     sink: &mut FramedUnixSink,
