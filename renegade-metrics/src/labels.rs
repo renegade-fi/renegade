@@ -49,6 +49,15 @@ pub const NUM_INFLIGHT_PROOFS_METRIC: &str = "num_inflight_proofs";
 /// Metric describing the number of in-flight Arbitrum transactions
 pub const NUM_INFLIGHT_TXS_METRIC: &str = "num_inflight_txs";
 
+// Event metrics
+
+/// Metric describing the number of events failed to be sent to the event
+/// manager
+pub const NUM_EVENT_SEND_FAILURES_METRIC: &str = "num_event_send_failures";
+/// Metric describing the number of events failed to be exported from the event
+/// manager
+pub const NUM_EVENT_EXPORT_FAILURES_METRIC: &str = "num_event_export_failures";
+
 // ---------------
 // | METRIC TAGS |
 // ---------------

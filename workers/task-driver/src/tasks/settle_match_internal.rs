@@ -27,7 +27,7 @@ use common::types::{
     wallet::Wallet,
 };
 use constants::Scalar;
-use job_types::event_manager::{EventManagerQueue, FillEvent, RelayerEvent};
+use job_types::event_manager::{try_send_event, EventManagerQueue, FillEvent, RelayerEvent};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::record_match_volume;
@@ -584,11 +584,9 @@ impl SettleMatchInternalTask {
             fee_take1,
         ));
 
-        self.event_queue
-            .send(fill_event0)
+        try_send_event(fill_event0, &self.event_queue)
             .map_err(err_str!(SettleMatchInternalTaskError::SendEvent))?;
-        self.event_queue
-            .send(fill_event1)
+        try_send_event(fill_event1, &self.event_queue)
             .map_err(err_str!(SettleMatchInternalTaskError::SendEvent))
     }
 }

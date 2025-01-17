@@ -13,8 +13,9 @@ use common::types::{
     wallet::{Order, OrderIdentifier, WalletIdentifier},
     MatchingPoolName, TimestampedPrice,
 };
+use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
+use tokio::sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender as TokioSender};
 use util::metered_channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
@@ -34,6 +35,20 @@ pub type EventManagerReceiver = MeteredTokioReceiver<RelayerEvent>;
 pub fn new_event_manager_queue() -> (EventManagerQueue, EventManagerReceiver) {
     let (send, recv) = unbounded_channel();
     (send, MeteredTokioReceiver::new(recv, EVENT_MANAGER_QUEUE_NAME))
+}
+
+/// A helper for sending an event to the event manager queue, recording a
+/// failure metric if the send fails
+#[allow(clippy::result_large_err)]
+pub fn try_send_event(
+    event: RelayerEvent,
+    queue: &EventManagerQueue,
+) -> Result<(), SendError<RelayerEvent>> {
+    let res = queue.send(event);
+    if res.is_err() {
+        metrics::counter!(NUM_EVENT_SEND_FAILURES_METRIC).increment(1);
+    }
+    res
 }
 
 // ------------------------
