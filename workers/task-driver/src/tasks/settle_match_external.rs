@@ -54,6 +54,10 @@ pub const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 /// The name of the task
 pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
 
+/// The duration for which to wait for settlement on-chain for the purpose of
+/// metrics reporting
+const SETTLEMENT_METRICS_WAIT_TIME: Duration = Duration::from_secs(30);
+
 // --------------
 // | Task State |
 // --------------
@@ -113,6 +117,8 @@ impl Display for SettleMatchExternalTaskState {
 pub enum SettleMatchExternalTaskError {
     /// A dummy error
     Arbitrum(String),
+    /// An error awaiting settlement on-chain
+    AwaitingSettlement(String),
     /// An error enqueuing a job to the proof manager
     EnqueuingJob(String),
     /// An error creating a proof-link between the atomic match settle proof and
@@ -129,6 +135,12 @@ impl SettleMatchExternalTaskError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn arbitrum<T: ToString>(msg: T) -> Self {
         Self::Arbitrum(msg.to_string())
+    }
+
+    /// Construct an `AwaitingSettlement` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn awaiting_settlement<T: ToString>(msg: T) -> Self {
+        Self::AwaitingSettlement(msg.to_string())
     }
 
     /// Construct an `EnqueuingJob` error
@@ -186,6 +198,7 @@ impl From<ArbitrumClientError> for SettleMatchExternalTaskError {
 // -------------------
 
 /// Describe the settle match external task
+#[derive(Clone)]
 pub struct SettleMatchExternalTask {
     /// The ID of the order to settle
     internal_order_id: OrderIdentifier,
@@ -367,20 +380,17 @@ impl SettleMatchExternalTask {
     ///
     /// Returns `true` if the settlement succeeded on-chain, `false` otherwise
     async fn await_settlement(&self) -> Result<bool, SettleMatchExternalTaskError> {
-        if self.bundle_duration.is_zero() {
-            info!("bundle duration is zero, skipping `await_settlement`");
-            return Ok(false);
-        }
+        // We spawn the settlement waiter in a separate thread, to allow the task to
+        // continue before settlement is observed on-chain
+        let self_clone = self.clone();
+        let settlement =
+            tokio::spawn(async move { self_clone.await_settlement_and_record_metrics().await });
 
-        let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
-        let nullifier = valid_reblind.original_shares_nullifier;
-        let res = self.arbitrum_client.await_nullifier_spent(nullifier, self.bundle_duration).await;
-
-        let did_settle = res.is_ok();
-        if !did_settle {
-            warn!("atomic match settlement not observed on-chain");
+        // Wait for the settlement task to complete or timeout after bundle_duration
+        match tokio::time::timeout(self.bundle_duration, settlement).await {
+            Ok(result) => result.map_err(SettleMatchExternalTaskError::awaiting_settlement)?,
+            Err(_) => Ok(false), // timeout
         }
-        Ok(did_settle)
     }
 
     /// Refresh the wallet after the match settlement is witnessed on-chain
@@ -392,9 +402,6 @@ impl SettleMatchExternalTask {
     /// considered for atomic matches, but if it does they will fail through
     /// and be discarded
     async fn refresh_wallet(&self) -> Result<(), SettleMatchExternalTaskError> {
-        // Record a partial fill for the order after state has updated on-chain
-        self.record_fill().await?;
-
         // Refresh the wallet
         let wallet_id = self.internal_wallet_id;
         let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
@@ -508,6 +515,27 @@ impl SettleMatchExternalTask {
                 .map_err(SettleMatchExternalTaskError::proof_linking)?;
 
         Ok(AtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })
+    }
+
+    /// Await settlement on-chain and record metrics
+    async fn await_settlement_and_record_metrics(
+        &self,
+    ) -> Result<bool, SettleMatchExternalTaskError> {
+        let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
+        let nullifier = valid_reblind.original_shares_nullifier;
+        let res = self
+            .arbitrum_client
+            .await_nullifier_spent(nullifier, SETTLEMENT_METRICS_WAIT_TIME)
+            .await;
+
+        let did_settle = res.is_ok();
+        if did_settle {
+            self.record_fill().await?;
+        } else {
+            warn!("atomic match settlement not observed on-chain");
+        }
+
+        Ok(did_settle)
     }
 
     /// Record a fill in the internal order's fill history and in the relayer
