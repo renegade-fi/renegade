@@ -6,25 +6,12 @@
 //!
 //! Each of such waiters will be given a copy of the return value
 
-use common::types::mpc_preprocessing::PairwiseOfflineSetup;
-
 /// The return type from the Applicator
+///
+/// TODO: This is currently empty, deprecate if unnecessary
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ApplicatorReturnType {
-    /// A set of MPC preprocessing values that are ready to be used
-    MpcPrep(PairwiseOfflineSetup),
     /// No return value
     None,
-}
-
-// Downcasting conversions
-
-impl From<ApplicatorReturnType> for PairwiseOfflineSetup {
-    fn from(return_type: ApplicatorReturnType) -> Self {
-        match return_type {
-            ApplicatorReturnType::MpcPrep(setup) => setup,
-            _ => panic!("Expected MpcPrep, got: {return_type:?}"),
-        }
-    }
 }

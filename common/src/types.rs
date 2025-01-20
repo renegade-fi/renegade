@@ -7,7 +7,6 @@ pub mod exchange;
 pub mod gossip;
 pub mod handshake;
 pub mod merkle;
-pub mod mpc_preprocessing;
 pub mod network_order;
 pub mod proof_bundles;
 pub mod tasks;
