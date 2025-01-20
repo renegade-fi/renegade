@@ -9,7 +9,6 @@
 //! they expose
 
 pub mod matching_pools;
-pub mod mpc_preprocessing;
 pub mod node_metadata;
 pub mod order_book;
 pub mod order_history;

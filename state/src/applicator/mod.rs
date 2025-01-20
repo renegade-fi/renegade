@@ -17,7 +17,6 @@ use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 pub mod error;
 pub mod matching_pools;
-pub mod mpc_preprocessing;
 pub mod order_book;
 pub mod order_history;
 pub mod return_type;
@@ -109,12 +108,6 @@ impl StateApplicator {
                 self.resume_task_queues(&keys, success)
             },
             StateTransition::ReassignTasks { from, to } => self.reassign_tasks(&from, &to),
-            StateTransition::AddMpcPreprocessingValues { cluster, values } => {
-                self.add_preprocessing_values(&cluster, &values)
-            },
-            StateTransition::ConsumePreprocessingValues { recipient, cluster, request } => {
-                self.consume_preprocessing_values(recipient, &cluster, &request)
-            },
             _ => unimplemented!("Unsupported state transition forwarded to applicator"),
         }
     }
