@@ -1,23 +1,29 @@
 //! Groups base and derived types for the `Balance` object
 #![allow(clippy::missing_docs_in_private_items, missing_docs)]
 
+use serde::{Deserialize, Serialize};
 use std::ops::Add;
 
-use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, Variable};
-use serde::{Deserialize, Serialize};
+use constants::{Scalar, ScalarField};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::{
+        elgamal::EncryptionKey,
+        traits::{
+            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        },
+        Fabric,
+    },
+    circuit_macros::circuit_type,
+    constants::AuthenticatedScalar,
+    mpc_relation::{traits::Circuit, Variable},
+};
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_addr,
-    elgamal::EncryptionKey,
-    note::Note,
-    r#match::FeeTake,
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
-    },
-    validate_amount_bitlength, Address, Amount, Fabric,
+    biguint_from_hex_string, biguint_to_hex_addr, note::Note, r#match::FeeTake,
+    validate_amount_bitlength, Address, Amount,
 };
 
 /// Error message when a balance amount is too large
@@ -25,7 +31,10 @@ const ERR_BALANCE_AMOUNT_TOO_LARGE: &str = "balance amount is too large";
 
 /// Represents the base type of a balance in tuple holding a reference to the
 /// ERC-20 token and its amount
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
     /// The mint (ERC-20 token address) of the token in the balance
@@ -85,6 +94,7 @@ impl Balance {
     /// Generate a note for the relayer fee on the balance
     ///
     /// Zeros out the relayer fee balance                   
+    #[cfg(feature = "proof-system-types")]
     pub fn create_relayer_note(&mut self, relayer_key: EncryptionKey) -> Note {
         let mint = self.mint.clone();
         let amount = self.relayer_fee_balance;
@@ -96,6 +106,7 @@ impl Balance {
     /// Generate a note for the protocol fee on the balance
     ///
     /// Zeros out the protocol fee balance
+    #[cfg(feature = "proof-system-types")]
     pub fn create_protocol_note(&mut self, protocol_key: EncryptionKey) -> Note {
         let mint = self.mint.clone();
         let amount = self.protocol_fee_balance;

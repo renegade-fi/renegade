@@ -10,44 +10,53 @@
 
 pub mod balance;
 pub mod elgamal;
+#[cfg(feature = "proof-system-types")]
 pub mod errors;
 pub mod fixed_point;
 pub mod keychain;
+#[cfg(feature = "proof-system-types")]
 pub mod macro_tests;
 pub mod r#match;
 pub mod merkle;
 pub mod note;
 pub mod order;
+#[cfg(feature = "proof-system-types")]
 pub mod srs;
+#[cfg(feature = "proof-system-types")]
 pub mod traits;
 pub mod transfers;
 pub mod wallet;
 
 use ark_ff::BigInt;
-use ark_mpc::MpcFabric;
 use bigdecimal::Num;
 use constants::{
-    AuthenticatedScalar, Scalar, ScalarField, SystemCurve, SystemCurveGroup, ADDRESS_BYTE_LENGTH,
-    MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
+    Scalar, ScalarField, ADDRESS_BYTE_LENGTH, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
 };
 use fixed_point::{FixedPoint, DEFAULT_FP_PRECISION};
-use jf_primitives::pcs::prelude::Commitment;
 use merkle::MerkleOpening;
-use mpc_plonk::{
-    multiprover::proof_system::{
-        proof_linking::MultiproverLinkingProof, CollaborativeProof, MpcLinkingHint,
-        MpcPlonkCircuit as GenericMpcPlonkCircuit,
-    },
-    proof_system::{
-        proof_linking::LinkingProof,
-        structs::{LinkingHint, Proof},
-    },
-};
-use mpc_relation::PlonkCircuit as GenericPlonkCircuit;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
-use wallet::{Wallet, WalletShare};
+use wallet::Wallet;
+
+#[cfg(feature = "proof-system-types")]
+use {
+    ark_mpc::MpcFabric,
+    constants::{AuthenticatedScalar, SystemCurve, SystemCurveGroup},
+    jf_primitives::pcs::prelude::Commitment,
+    mpc_plonk::{
+        multiprover::proof_system::{
+            proof_linking::MultiproverLinkingProof, CollaborativeProof, MpcLinkingHint,
+            MpcPlonkCircuit as GenericMpcPlonkCircuit,
+        },
+        proof_system::{
+            proof_linking::LinkingProof,
+            structs::{LinkingHint, Proof},
+        },
+    },
+    mpc_relation::PlonkCircuit as GenericPlonkCircuit,
+    wallet::WalletShare,
+};
 
 // -------------
 // | Constants |
@@ -75,24 +84,34 @@ pub const PRICE_BITS: usize = DEFAULT_FP_PRECISION + 64;
 pub const FEE_BITS: usize = DEFAULT_FP_PRECISION;
 
 /// An MPC fabric with curve generic attached
+#[cfg(feature = "proof-system-types")]
 pub type Fabric = MpcFabric<SystemCurveGroup>;
 /// A circuit type with curve generic attached
+#[cfg(feature = "proof-system-types")]
 pub type PlonkCircuit = GenericPlonkCircuit<ScalarField>;
 /// A circuit type with curve generic attached in a multiprover context
+#[cfg(feature = "proof-system-types")]
 pub type MpcPlonkCircuit = GenericMpcPlonkCircuit<SystemCurveGroup>;
 /// A Plonk proof represented over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type PlonkProof = Proof<SystemCurve>;
 /// A collaborative plonk proof represented over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type CollaborativePlonkProof = CollaborativeProof<SystemCurve>;
 /// A KZG polynomial commitment over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type PolynomialCommitment = Commitment<SystemCurve>;
 /// A proof linking hint defined over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type ProofLinkingHint = LinkingHint<SystemCurve>;
 /// A collaboratively generated proof linking hint defined over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type MpcProofLinkingHint = MpcLinkingHint<SystemCurve>;
 /// A linking proof defined over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type PlonkLinkProof = LinkingProof<SystemCurve>;
 /// A collaboratively generated linking proof defined over the system curve
+#[cfg(feature = "proof-system-types")]
 pub type MpcPlonkLinkProof = MultiproverLinkingProof<SystemCurve>;
 
 // --------------------------
@@ -102,6 +121,7 @@ pub type MpcPlonkLinkProof = MultiproverLinkingProof<SystemCurve>;
 /// A wallet with system-wide default generic parameters attached
 pub type SizedWallet = Wallet<MAX_BALANCES, MAX_ORDERS>;
 /// A wallet share with system-wide default generic parameters attached
+#[cfg(feature = "proof-system-types")]
 pub type SizedWalletShare = WalletShare<MAX_BALANCES, MAX_ORDERS>;
 /// A type alias for the Merkle opening with system-wide default generics
 /// attached
@@ -112,6 +132,7 @@ pub type SizedMerkleOpening = MerkleOpening<MERKLE_HEIGHT>;
 // --------------------
 
 /// A boolean allocated in an MPC network
+#[cfg(feature = "proof-system-types")]
 #[derive(Clone, Debug)]
 pub struct AuthenticatedBool(AuthenticatedScalar);
 
@@ -120,12 +141,14 @@ pub struct AuthenticatedBool(AuthenticatedScalar);
 ///
 /// The values here are eventually constrained in a collaborative proof, so
 /// there is no need to validate them here
+#[cfg(feature = "proof-system-types")]
 impl From<AuthenticatedScalar> for AuthenticatedBool {
     fn from(value: AuthenticatedScalar) -> Self {
         Self(value)
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl From<AuthenticatedBool> for AuthenticatedScalar {
     fn from(value: AuthenticatedBool) -> Self {
         value.0
@@ -250,6 +273,7 @@ where
 
 /// Groups helpers that operate on native types; which correspond to circuitry
 /// defined in this library
+#[cfg(feature = "proof-system-types")]
 pub mod native_helpers {
     use ark_ff::UniformRand;
     use constants::{EmbeddedScalarField, Scalar};

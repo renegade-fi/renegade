@@ -149,7 +149,7 @@ mod test {
 
         // First check the assigned tasks => should be empty
         let assigned_tasks = tx.get_assigned_tasks(&peer_id).unwrap();
-        assert_eq!(assigned_tasks, vec![]);
+        assert!(assigned_tasks.is_empty());
 
         // Add the task to the assigned tasks
         tx.add_assigned_task(&peer_id, &task_id).unwrap();
@@ -166,7 +166,7 @@ mod test {
         // Check the assigned tasks => should be empty
         let assigned_tasks = tx.get_assigned_tasks(&peer_id).unwrap();
         let task_assignment = tx.get_task_assignment(&task_id).unwrap();
-        assert_eq!(assigned_tasks, vec![]);
+        assert!(assigned_tasks.is_empty());
         assert_eq!(task_assignment, None);
     }
 

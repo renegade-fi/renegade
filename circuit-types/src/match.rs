@@ -1,17 +1,22 @@
 //! Groups the type definitions for matches
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    order::OrderSide,
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiproverCircuitBaseType,
+use crate::{order::OrderSide, Address, Amount};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::{
+        traits::{
+            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType,
+        },
+        Fabric,
     },
-    Address, Amount, Fabric,
+    circuit_macros::circuit_type,
+    constants::{AuthenticatedScalar, Scalar, ScalarField},
+    mpc_relation::{traits::Circuit, Variable},
 };
 
 // ----------------
@@ -20,7 +25,10 @@ use crate::{
 
 /// Represents the match result of a matching MPC in the cleartext
 /// in which two tokens are exchanged
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)
+)]
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchResult {
     /// The mint of the order token in the asset pair being matched
@@ -70,7 +78,10 @@ impl MatchResult {
 }
 
 /// The fee takes from a match
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)
+)]
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeeTake {
     /// The fee the relayer takes
@@ -86,6 +97,7 @@ impl FeeTake {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl AuthenticatedFeeTake {
     /// Get the total fee
     pub fn total(&self) -> AuthenticatedScalar {
@@ -95,7 +107,10 @@ impl AuthenticatedFeeTake {
 
 /// The indices that specify where settlement logic should modify the wallet
 /// shares
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)
+)]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct OrderSettlementIndices {
     /// The index of the balance that holds the mint that the wallet will
@@ -116,7 +131,10 @@ pub struct OrderSettlementIndices {
 ///
 /// An external match is one between a darkpool (internal) order and an external
 /// order, facilitated directly by token transfers in the contract
-#[circuit_type(serde, singleprover_circuit)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalMatchResult {
     /// The mint of the quote token in the matched asset pair

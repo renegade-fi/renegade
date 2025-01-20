@@ -4,19 +4,34 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test-helpers = ["mpc-plonk/test-srs"]
+default = ["proof-system-types"]
+# This feature enables rich proof system types that are not necessary for
+# all use cases outside of the relayer, but are used extensively within the
+# relayer
+proof-system-types = [
+    "ark-mpc/default",
+    "circuit-macros",
+    "constants/mpc-types",
+    "dep:jf-primitives",
+    "dep:mpc-plonk",
+    "dep:mpc-relation",
+]
+test-helpers = ["proof-system-types", "mpc-plonk/test-srs"]
 
 [dependencies]
-# === Crytography === #
+# === Cryptography === #
 ark-bn254 = "0.4"
 ark-ff = "0.4"
 ark-ec = "0.4"
-ark-mpc = { workspace = true }
+ark-mpc = { workspace = true, features = ["scalar"] }
 ark-serialize = "0.4"
-jf-primitives = { workspace = true, features = ["std", "parallel"] }
+jf-primitives = { workspace = true, features = [
+    "std",
+    "parallel",
+], optional = true }
 k256 = { version = "0.13", features = ["expose-field"] }
-mpc-plonk = { workspace = true }
-mpc-relation = { workspace = true }
+mpc-plonk = { workspace = true, optional = true }
+mpc-relation = { workspace = true, optional = true }
 
 # === Arithmetic === #
 bigdecimal = "0.3"
@@ -29,8 +44,10 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 
 # === Workspace Crates === #
-circuit-macros = { path = "../circuit-macros" }
-constants = { path = "../constants" }
+circuit-macros = { path = "../circuit-macros", optional = true }
+constants = { path = "../constants", default-features = false, features = [
+    "scalar",
+] }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc === #

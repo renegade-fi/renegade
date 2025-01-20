@@ -1,15 +1,17 @@
 //! Defines native and circuit types for internal/external transfers
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, BoolVar, Variable};
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    traits::{BaseType, CircuitBaseType, CircuitVarType},
-    Address, Amount,
+use crate::{Address, Amount};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
+    circuit_macros::circuit_type,
+    mpc_relation::{traits::Circuit, BoolVar, Variable},
 };
 
 // ----------------------
@@ -18,7 +20,7 @@ use crate::{
 
 /// The base external transfer type, not allocated in a constraint system
 /// or an MPC circuit
-#[circuit_type(serde, singleprover_circuit)]
+#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ExternalTransfer {
     /// The address of the account contract to transfer to/from
@@ -40,6 +42,7 @@ pub enum ExternalTransferDirection {
     Withdrawal,
 }
 
+#[cfg(feature = "proof-system-types")]
 impl BaseType for ExternalTransferDirection {
     const NUM_SCALARS: usize = 1;
 
@@ -56,6 +59,7 @@ impl BaseType for ExternalTransferDirection {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for ExternalTransferDirection {
     type VarType = BoolVar;
 }

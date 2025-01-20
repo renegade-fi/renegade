@@ -1,12 +1,11 @@
 //! Groups error types for the circuits crate
 
+use mpc_plonk::errors::PlonkError;
+use mpc_relation::errors::CircuitError;
 use std::{
     error::Error,
     fmt::{Display, Formatter, Result},
 };
-
-use mpc_plonk::errors::PlonkError;
-use mpc_relation::errors::CircuitError;
 
 /// Represents an error during the course of an MPC circuit execution
 #[derive(Clone, Debug, PartialEq, Eq)]

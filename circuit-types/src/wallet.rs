@@ -4,25 +4,30 @@
 
 use std::ops::Add;
 
-use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use itertools::Itertools;
-use mpc_relation::{traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    elgamal::EncryptionKey,
-    fixed_point::FixedPoint,
-    scalar_from_hex_string, scalar_to_hex_string,
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
-    },
-    Fabric,
+    elgamal::EncryptionKey, fixed_point::FixedPoint, scalar_from_hex_string, scalar_to_hex_string,
 };
 
 use super::{
     balance::Balance, deserialize_array, keychain::PublicKeyChain, order::Order, serialize_array,
+};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::{
+        traits::{
+            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        },
+        Fabric,
+    },
+    circuit_macros::circuit_type,
+    constants::AuthenticatedScalar,
+    mpc_relation::{traits::Circuit, Variable},
 };
 
 /// A commitment to the wallet's secret shares that is entered into the global
@@ -39,7 +44,10 @@ pub type Nullifier = Scalar;
 
 /// Represents the base type of a wallet holding orders, balances, fees, keys
 /// and cryptographic randomness
-#[circuit_type(serde, singleprover_circuit, secret_share, mpc, multiprover_circuit)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, secret_share, mpc, multiprover_circuit)
+)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 where
@@ -90,6 +98,7 @@ where
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShare<MAX_BALANCES, MAX_ORDERS>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
@@ -117,6 +126,7 @@ where
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShareVar<MAX_BALANCES, MAX_ORDERS>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
