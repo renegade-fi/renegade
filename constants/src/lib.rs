@@ -7,9 +7,12 @@
 use std::sync::OnceLock;
 
 use ark_ec::Group;
+#[cfg(feature = "scalar")]
+use ark_mpc::algebra::Scalar as GenericScalar;
+
 #[cfg(feature = "mpc-types")]
 use ark_mpc::algebra::{
-    AuthenticatedScalarResult, CurvePoint as GenericCurvePoint, Scalar as GenericScalar,
+    AuthenticatedScalarResult, CurvePoint as GenericCurvePoint,
     ScalarResult as GenericScalarResult, ScalarShare as GenericScalarShare,
 };
 
@@ -83,7 +86,7 @@ pub type ScalarField = <ark_bn254::G1Projective as Group>::ScalarField;
 pub type EmbeddedScalarField = ark_ed_on_bn254::Fr;
 
 /// The scalar type that the MPC is defined over    
-#[cfg(feature = "mpc-types")]
+#[cfg(feature = "scalar")]
 pub type Scalar = GenericScalar<SystemCurveGroup>;
 
 /// The scalar share type that the MPC is defined over

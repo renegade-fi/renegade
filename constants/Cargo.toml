@@ -5,10 +5,11 @@ edition = "2021"
 
 [features]
 default = ["mpc-types"]
-mpc-types = ["dep:ark-mpc"]
+scalar = ["dep:ark-mpc", "ark-mpc/scalar"]
+mpc-types = ["ark-mpc/types", "scalar"]
 
 [dependencies]
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
-ark-mpc = { workspace = true, optional = true }
+ark-mpc = { workspace = true, optional = true, default-features = false }
 ark-ec = "0.4"
