@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 pub const GET_TASK_STATUS_ROUTE: &str = "/v0/tasks/:task_id";
 /// Get the task queue of a given wallet
 pub const GET_TASK_QUEUE_ROUTE: &str = "/v0/task_queue/:wallet_id";
+/// Get whether or not a given wallet's task queue is paused
+pub const GET_TASK_QUEUE_PAUSED_ROUTE: &str = "/v0/task_queue/:wallet_id/is_paused";
 
 // -------------
 // | API Types |
@@ -51,4 +53,11 @@ impl From<QueuedTask> for ApiTaskStatus {
 pub struct TaskQueueListResponse {
     /// The list of tasks on a wallet
     pub tasks: Vec<ApiTaskStatus>,
+}
+
+/// The response type for a request to fetch whether a task queue is paused
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TaskQueuePausedResponse {
+    /// Whether the task queue is paused
+    pub is_paused: bool,
 }
