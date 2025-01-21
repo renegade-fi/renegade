@@ -328,8 +328,8 @@ dependencies = [
  "itertools 0.12.1",
  "json",
  "lazy_static",
- "mpc-plonk",
- "mpc-relation",
+ "mpc-plonk 0.4.0-pre.0",
+ "mpc-relation 0.4.0-pre.0",
  "num-bigint",
  "num-traits",
  "postcard",
@@ -550,9 +550,44 @@ dependencies = [
 [[package]]
 name = "ark-mpc"
 version = "0.1.2"
+<<<<<<< Updated upstream
 source = "git+https://github.com/renegade-fi/ark-mpc#d0c3a9fef9638b4885bc644d23086a8739944450"
+=======
+>>>>>>> Stashed changes
 dependencies = [
  "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-poly",
+ "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
+ "async-trait",
+ "bytes",
+ "crossbeam",
+ "digest 0.10.7",
+ "futures",
+ "itertools 0.10.5",
+ "kanal",
+ "num-bigint",
+ "num-traits",
+ "quinn",
+ "rand 0.8.5",
+ "rcgen 0.9.3",
+ "rustc-hash",
+ "rustls 0.20.9",
+ "serde",
+ "serde_json",
+ "sha3 0.10.8",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "ark-mpc"
+version = "0.1.2"
+source = "git+https://github.com/renegade-fi/ark-mpc#39593e048a1e3fb9e551fbfb6443fd1c932e9352"
+dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
  "ark-poly",
@@ -1923,7 +1958,7 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "ark-serialize 0.4.2",
  "async-trait",
  "bigdecimal",
@@ -1933,11 +1968,11 @@ dependencies = [
  "futures",
  "hex 0.4.3",
  "itertools 0.10.5",
- "jf-primitives",
+ "jf-primitives 0.4.0-pre.0",
  "k256",
  "lazy_static",
- "mpc-plonk",
- "mpc-relation",
+ "mpc-plonk 0.4.0-pre.0",
+ "mpc-relation 0.4.0-pre.0",
  "num-bigint",
  "num-integer",
  "rand 0.8.5",
@@ -1956,7 +1991,7 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
  "ark-serialize 0.4.2",
  "async-trait",
  "bigdecimal",
@@ -1966,11 +2001,11 @@ dependencies = [
  "futures",
  "hex 0.4.3",
  "itertools 0.10.5",
- "jf-primitives",
+ "jf-primitives 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "k256",
  "lazy_static",
- "mpc-plonk",
- "mpc-relation",
+ "mpc-plonk 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
+ "mpc-relation 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "num-bigint",
  "num-integer",
  "rand 0.8.5",
@@ -1986,7 +2021,7 @@ dependencies = [
  "ark-crypto-primitives",
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "bigdecimal",
  "bitvec 1.0.1",
  "circuit-macros 0.1.0",
@@ -2001,11 +2036,11 @@ dependencies = [
  "futures",
  "inventory",
  "itertools 0.10.5",
- "jf-primitives",
+ "jf-primitives 0.4.0-pre.0",
  "k256",
  "lazy_static",
- "mpc-plonk",
- "mpc-relation",
+ "mpc-plonk 0.4.0-pre.0",
+ "mpc-relation 0.4.0-pre.0",
  "num-bigint",
  "num-integer",
  "rand 0.8.5",
@@ -2025,7 +2060,7 @@ dependencies = [
  "ark-crypto-primitives",
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
  "bigdecimal",
  "bitvec 1.0.1",
  "circuit-macros 0.1.0 (git+https://github.com/renegade-fi/renegade.git)",
@@ -2033,10 +2068,10 @@ dependencies = [
  "constants 0.1.0 (git+https://github.com/renegade-fi/renegade.git)",
  "futures",
  "itertools 0.10.5",
- "jf-primitives",
+ "jf-primitives 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "lazy_static",
- "mpc-plonk",
- "mpc-relation",
+ "mpc-plonk 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
+ "mpc-relation 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "num-bigint",
  "num-integer",
  "rand 0.8.5",
@@ -2224,7 +2259,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "ark-ec",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "ark-poly",
  "async-trait",
  "base64 0.22.1",
@@ -2241,14 +2276,14 @@ dependencies = [
  "hmac",
  "indexmap 2.7.1",
  "itertools 0.10.5",
- "jf-primitives",
+ "jf-primitives 0.4.0-pre.0",
  "k256",
  "lazy_static",
  "libp2p",
  "libp2p-identity",
  "metrics",
- "mpc-plonk",
- "mpc-relation",
+ "mpc-plonk 0.4.0-pre.0",
+ "mpc-relation 0.4.0-pre.0",
  "num-bigint",
  "num-traits",
  "rand 0.8.5",
@@ -2269,7 +2304,7 @@ name = "common"
 version = "0.1.0"
 source = "git+https://github.com/renegade-fi/renegade.git#112f24b33a79f591f1bb4c08ca35f37f63f4df07"
 dependencies = [
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
  "async-trait",
  "base64 0.22.1",
  "bimap",
@@ -2387,7 +2422,7 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ed-on-bn254",
- "ark-mpc",
+ "ark-mpc 0.1.2",
 ]
 
 [[package]]
@@ -2398,7 +2433,7 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ed-on-bn254",
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
 ]
 
 [[package]]
@@ -4287,7 +4322,7 @@ name = "handshake-manager"
 version = "0.1.0"
 dependencies = [
  "arbitrum-client",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "ark-serialize 0.4.2",
  "async-trait",
  "circuit-types 0.1.0",
@@ -4307,7 +4342,7 @@ dependencies = [
  "lazy_static",
  "libp2p",
  "lru 0.11.1",
- "mpc-plonk",
+ "mpc-plonk 0.4.0-pre.0",
  "num-traits",
  "portpicker",
  "proof-manager",
@@ -4329,7 +4364,7 @@ name = "handshake-manager-tests"
 version = "0.1.0"
 dependencies = [
  "arbitrum-client",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "base64 0.13.1",
  "circuit-types 0.1.0",
  "clap 4.5.27",
@@ -5171,6 +5206,49 @@ checksum = "d75a2a4b1b190afb6f5425f10f6a8f959d2ea0b9c2b1d79553551850539e4674"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
+dependencies = [
+ "anyhow",
+ "ark-bls12-377",
+ "ark-bls12-381",
+ "ark-bn254",
+ "ark-bw6-761",
+ "ark-crypto-primitives",
+ "ark-ec",
+ "ark-ed-on-bls12-377",
+ "ark-ed-on-bls12-381",
+ "ark-ed-on-bn254",
+ "ark-ff 0.4.2",
+ "ark-pallas",
+ "ark-poly",
+ "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
+ "blst",
+ "chacha20poly1305",
+ "crypto_kx",
+ "derivative",
+ "digest 0.10.7",
+ "displaydoc",
+ "espresso-systems-common",
+ "hashbrown 0.13.2",
+ "itertools 0.10.5",
+ "jf-utils 0.4.0-pre.0",
+ "merlin",
+ "mpc-relation 0.4.0-pre.0",
+ "num-bigint",
+ "num-traits",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "serde",
+ "sha2 0.10.8",
+ "sha3 0.10.8",
+ "tagged-base64",
+ "typenum",
+ "zeroize",
+]
+
+[[package]]
+name = "jf-primitives"
+version = "0.4.0-pre.0"
 source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#7be2cb7e66e692e7555ec3f469bbb27adc407c52"
 dependencies = [
  "anyhow",
@@ -5197,9 +5275,9 @@ dependencies = [
  "espresso-systems-common",
  "hashbrown 0.13.2",
  "itertools 0.10.5",
- "jf-utils",
+ "jf-utils 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "merlin",
- "mpc-relation",
+ "mpc-relation 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "num-bigint",
  "num-traits",
  "rand_chacha 0.3.1",
@@ -5210,6 +5288,21 @@ dependencies = [
  "tagged-base64",
  "typenum",
  "zeroize",
+]
+
+[[package]]
+name = "jf-utils"
+version = "0.4.0-pre.0"
+dependencies = [
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
+ "digest 0.10.7",
+ "rayon",
+ "serde",
+ "sha2 0.10.8",
+ "tagged-base64",
 ]
 
 [[package]]
@@ -5232,7 +5325,7 @@ dependencies = [
 name = "job-types"
 version = "0.1.0"
 dependencies = [
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "circuit-types 0.1.0",
  "circuits 0.1.0",
  "common 0.1.0",
@@ -6140,12 +6233,11 @@ dependencies = [
 [[package]]
 name = "mpc-plonk"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#7be2cb7e66e692e7555ec3f469bbb27adc407c52"
 dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "ark-poly",
  "ark-serialize 0.4.2",
  "ark-std 0.4.0",
@@ -6158,10 +6250,10 @@ dependencies = [
  "futures",
  "hashbrown 0.13.2",
  "itertools 0.10.5",
- "jf-primitives",
- "jf-utils",
+ "jf-primitives 0.4.0-pre.0",
+ "jf-utils 0.4.0-pre.0",
  "merlin",
- "mpc-relation",
+ "mpc-relation 0.4.0-pre.0",
  "num-bigint",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
@@ -6169,6 +6261,64 @@ dependencies = [
  "serde",
  "sha3 0.10.8",
  "tagged-base64",
+]
+
+[[package]]
+name = "mpc-plonk"
+version = "0.4.0-pre.0"
+source = "git+https://github.com/renegade-fi/mpc-jellyfish.git#7be2cb7e66e692e7555ec3f469bbb27adc407c52"
+dependencies = [
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
+ "ark-poly",
+ "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
+ "async-trait",
+ "derivative",
+ "displaydoc",
+ "downcast-rs",
+ "dyn-clone",
+ "espresso-systems-common",
+ "futures",
+ "hashbrown 0.13.2",
+ "itertools 0.10.5",
+ "jf-primitives 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
+ "jf-utils 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
+ "merlin",
+ "mpc-relation 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
+ "num-bigint",
+ "rand_chacha 0.3.1",
+ "rayon",
+ "serde",
+ "sha3 0.10.8",
+ "tagged-base64",
+]
+
+[[package]]
+name = "mpc-relation"
+version = "0.4.0-pre.0"
+dependencies = [
+ "ark-bls12-377",
+ "ark-bls12-381",
+ "ark-bn254",
+ "ark-bw6-761",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-mpc 0.1.2",
+ "ark-poly",
+ "ark-serialize 0.4.2",
+ "ark-std 0.4.0",
+ "derivative",
+ "displaydoc",
+ "downcast-rs",
+ "dyn-clone",
+ "hashbrown 0.13.2",
+ "itertools 0.10.5",
+ "jf-utils 0.4.0-pre.0",
+ "num-bigint",
+ "rand_chacha 0.3.1",
+ "rayon",
 ]
 
 [[package]]
@@ -6182,7 +6332,7 @@ dependencies = [
  "ark-bw6-761",
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
  "ark-poly",
  "ark-serialize 0.4.2",
  "ark-std 0.4.0",
@@ -6192,7 +6342,7 @@ dependencies = [
  "dyn-clone",
  "hashbrown 0.13.2",
  "itertools 0.10.5",
- "jf-utils",
+ "jf-utils 0.4.0-pre.0 (git+https://github.com/renegade-fi/mpc-jellyfish.git)",
  "num-bigint",
  "rand_chacha 0.3.1",
  "rayon",
@@ -6382,7 +6532,7 @@ dependencies = [
 name = "network-manager"
 version = "0.1.0"
 dependencies = [
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "async-trait",
  "common 0.1.0",
  "ed25519-dalek 1.0.1",
@@ -7503,7 +7653,7 @@ dependencies = [
 name = "proof-manager"
 version = "0.1.0"
 dependencies = [
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "async-trait",
  "circuit-types 0.1.0",
  "circuits 0.1.0",
@@ -7511,7 +7661,7 @@ dependencies = [
  "constants 0.1.0",
  "crossbeam",
  "job-types",
- "mpc-plonk",
+ "mpc-plonk 0.4.0-pre.0",
  "rayon",
  "renegade-metrics",
  "serde",
@@ -7938,7 +8088,7 @@ version = "0.1.0"
 dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "bigdecimal",
  "constants 0.1.0",
  "criterion",
@@ -7959,7 +8109,7 @@ source = "git+https://github.com/renegade-fi/renegade.git#112f24b33a79f591f1bb4c
 dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
  "bigdecimal",
  "constants 0.1.0 (git+https://github.com/renegade-fi/renegade.git)",
  "ethers-core",
@@ -7977,7 +8127,7 @@ version = "0.1.0"
 source = "git+https://github.com/renegade-fi/renegade-dealer.git#ac9053580335557f382194c320d3c979c5a03f19"
 dependencies = [
  "ark-bn254",
- "ark-mpc",
+ "ark-mpc 0.1.2 (git+https://github.com/renegade-fi/ark-mpc)",
  "k256",
  "serde",
  "serde_json",
@@ -9468,7 +9618,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-primitives",
  "arbitrum-client",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "async-trait",
  "circuit-types 0.1.0",
  "circuits 0.1.0",
@@ -9546,7 +9696,7 @@ dependencies = [
  "alloy-sol-types",
  "arbitrum-client",
  "ark-ec",
- "ark-mpc",
+ "ark-mpc 0.1.2",
  "async-trait",
  "circuit-types 0.1.0",
  "common 0.1.0",
