@@ -39,7 +39,7 @@ use external_api::{
             GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE, GET_SUPPORTED_TOKENS_ROUTE,
         },
         price_report::PRICE_REPORT_ROUTE,
-        task::{GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
+        task::{GET_TASK_QUEUE_PAUSED_ROUTE, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         task_history::TASK_HISTORY_ROUTE,
         wallet::{
             BACK_OF_QUEUE_WALLET_ROUTE, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
@@ -67,6 +67,7 @@ use order_book::GetSupportedTokensHandler;
 use rate_limit::WalletTaskRateLimiter;
 use state::State;
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use task::GetTaskQueuePausedHandler;
 use util::get_current_time_millis;
 use uuid::Uuid;
 
@@ -270,6 +271,13 @@ impl HttpServer {
             &Method::GET,
             GET_TASK_QUEUE_ROUTE.to_string(),
             GetTaskQueueHandler::new(state.clone()),
+        );
+
+        // The "/task_queue/:wallet_id/is_paused" route
+        router.add_wallet_authenticated_route(
+            &Method::GET,
+            GET_TASK_QUEUE_PAUSED_ROUTE.to_string(),
+            GetTaskQueuePausedHandler::new(state.clone()),
         );
 
         // The "/wallet/:wallet_id/task-history" route

@@ -7,7 +7,9 @@
 use async_trait::async_trait;
 use external_api::{
     http::{
-        task::{ApiTaskStatus, GetTaskStatusResponse, TaskQueueListResponse},
+        task::{
+            ApiTaskStatus, GetTaskStatusResponse, TaskQueueListResponse, TaskQueuePausedResponse,
+        },
         task_history::GetTaskHistoryResponse,
     },
     types::ApiHistoricalTask,
@@ -111,6 +113,40 @@ impl TypedHandler for GetTaskQueueHandler {
         let api_tasks: Vec<ApiTaskStatus> = tasks.into_iter().map(|t| t.into()).collect();
 
         Ok(TaskQueueListResponse { tasks: api_tasks })
+    }
+}
+
+/// Handler for the GET /task_queue/:wallet_id/is_paused route
+pub struct GetTaskQueuePausedHandler {
+    /// A reference to the global state
+    state: State,
+}
+
+impl GetTaskQueuePausedHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetTaskQueuePausedHandler {
+    type Request = EmptyRequestResponse;
+    type Response = TaskQueuePausedResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let wallet_id = parse_wallet_id_from_params(&params)?;
+
+        // Check if the queue is paused
+        let is_paused = self.state.is_queue_paused(&wallet_id).await?;
+
+        Ok(TaskQueuePausedResponse { is_paused })
     }
 }
 
