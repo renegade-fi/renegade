@@ -4,7 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-auth = ["http", "thiserror"]
+default = ["full-api"]
+auth = ["http", "thiserror", "common/hmac"]
+external-match-api = []
+admin-api = []
+network-api = []
+order-book-api = []
+task-api = []
+wallet-api = []
+full-api = [
+    "common/default",
+    "circuit-types/default",
+    "external-match-api",
+    "admin-api",
+    "network-api",
+    "order-book-api",
+    "task-api",
+    "wallet-api",
+]
 
 [dependencies]
 # === Arithmetic === #
@@ -15,11 +32,11 @@ http = { version = "0.2.12", optional = true }
 thiserror = { version = "1.0.61", optional = true }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types" }
-common = { path = "../common" }
-constants = { path = "../constants" }
+circuit-types = { path = "../circuit-types", default-features = false }
+common = { path = "../common", default-features = false }
+constants = { path = "../constants", default-features = false }
 renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util" }
+util = { path = "../util", default-features = false }
 
 # === Misc Dependencies === #
 base64 = "0.22.1"

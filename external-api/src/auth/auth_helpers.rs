@@ -1,7 +1,7 @@
 //! Auth helpers for the external API
 
 use base64::engine::{general_purpose as b64_general_purpose, Engine};
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use http::{HeaderMap, HeaderValue};
 use itertools::Itertools;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

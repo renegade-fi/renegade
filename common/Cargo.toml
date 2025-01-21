@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["all-types"]
+hmac = []
+wallet = ["hmac", "proof-system-types", "util/matching-engine"]
+proof-system-types = ["dep:circuits", "constants/default"]
+# Types used by the relayer for internal operation
+# We add this feature flag to allow external clients to opt-out of these types
+internal-types = ["dep:circuits", "constants/default"]
+all-types = ["wallet", "proof-system-types", "internal-types", "hmac"]
 mocks = [
     "jf-primitives",
     "mpc-relation",
@@ -42,9 +50,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 # === Workspace Dependencies === #
-circuits = { path = "../circuits" }
-circuit-types = { path = "../circuit-types" }
-constants = { path = "../constants" }
+circuits = { path = "../circuits", optional = true }
+circuit-types = { path = "../circuit-types", default-features = false }
+constants = { path = "../constants", default-features = false }
 renegade-crypto = { path = "../renegade-crypto" }
 util = { path = "../util" }
 

@@ -15,7 +15,7 @@ use circuit_types::{
     r#match::{ExternalMatchResult, FeeTake},
     Amount,
 };
-use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order, TimestampedPrice};
+use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
@@ -27,6 +27,9 @@ use util::{
 };
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
+
+#[cfg(feature = "full-api")]
+use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
 
 // ---------------
 // | HTTP Routes |
@@ -138,6 +141,7 @@ impl ExternalOrder {
     ///
     /// We need the price here to convert a quote denominated order into a base
     /// denominated order
+    #[cfg(feature = "full-api")]
     pub fn to_order_with_price(&self, price: FixedPoint) -> Order {
         let base_amount = self.get_base_amount(price);
         let mut min_fill_size = self.get_min_fill_in_base(price);
@@ -223,6 +227,7 @@ pub struct AtomicMatchApiBundle {
 impl AtomicMatchApiBundle {
     /// Create a new bundle from a `VALID MATCH SETTLE ATOMIC` bundle and a
     /// settlement transaction
+    #[cfg(feature = "full-api")]
     pub fn new(match_bundle: &AtomicMatchSettleBundle, settlement_tx: TypedTransaction) -> Self {
         let statement = &match_bundle.atomic_match_proof.statement;
         let match_result = statement.match_result.clone();

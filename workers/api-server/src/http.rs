@@ -17,8 +17,8 @@ use admin::{
 use async_trait::async_trait;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
+    hmac::HmacKey,
     tasks::TaskIdentifier,
-    wallet::keychain::HmacKey,
     MatchingPoolName,
 };
 use external_api::{

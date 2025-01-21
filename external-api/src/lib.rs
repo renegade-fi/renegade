@@ -15,6 +15,7 @@ use util::hex::{biguint_from_hex_string, biguint_to_hex_addr};
 
 #[cfg(feature = "auth")]
 pub mod auth;
+#[cfg(feature = "full-api")]
 pub mod bus_message;
 pub mod http;
 pub mod types;

@@ -6,7 +6,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use serde::Serialize;
 use sha2::Sha256;
 use tracing::instrument;

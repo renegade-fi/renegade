@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+matching-engine = []
 mocks = []
 metered-channels = []
 
@@ -23,8 +24,8 @@ tokio = { workspace = true }
 crossbeam = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types" }
-constants = { path = "../constants" }
+circuit-types = { path = "../circuit-types", default-features = false }
+constants = { path = "../constants", default-features = false }
 renegade-crypto = { path = "../renegade-crypto" }
 
 # === Misc === #
