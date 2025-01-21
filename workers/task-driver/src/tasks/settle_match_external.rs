@@ -10,6 +10,9 @@ use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::record_order_fill;
 use crate::utils::validity_proofs::enqueue_proof_job;
 use arbitrum_client::client::ArbitrumClient;
+use arbitrum_client::constants::{
+    PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR, PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
+};
 use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
@@ -523,9 +526,17 @@ impl SettleMatchExternalTask {
     ) -> Result<bool, SettleMatchExternalTaskError> {
         let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
         let nullifier = valid_reblind.original_shares_nullifier;
+        let selectors = [
+            PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
+            PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
+        ];
         let res = self
             .arbitrum_client
-            .await_nullifier_spent(nullifier, SETTLEMENT_METRICS_WAIT_TIME)
+            .await_nullifier_spent_from_selectors(
+                nullifier,
+                &selectors,
+                SETTLEMENT_METRICS_WAIT_TIME,
+            )
             .await;
 
         let did_settle = res.is_ok();
