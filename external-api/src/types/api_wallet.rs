@@ -10,9 +10,12 @@ use circuit_types::{
 };
 use common::{
     keyed_list::KeyedList,
-    types::wallet::{
-        keychain::{HmacKey, KeyChain, PrivateKeyChain},
-        Order, OrderIdentifier, Wallet, WalletIdentifier,
+    types::{
+        hmac::HmacKey,
+        wallet::{
+            keychain::{KeyChain, PrivateKeyChain},
+            Order, OrderIdentifier, Wallet, WalletIdentifier,
+        },
     },
 };
 use itertools::Itertools;

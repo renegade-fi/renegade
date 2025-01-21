@@ -4,7 +4,7 @@ use base64::engine::{general_purpose as b64_general_purpose, Engine};
 use external_api::auth::HMAC_LEN;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use hyper::HeaderMap;
 
 use crate::error::{bad_request, unauthorized, ApiServerError};

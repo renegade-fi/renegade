@@ -3,7 +3,7 @@
 use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use hyper::{
     body::to_bytes, header::CONTENT_TYPE, Body, HeaderMap, Method, Request, Response, StatusCode,
     Uri,

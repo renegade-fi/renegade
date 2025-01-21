@@ -1,8 +1,7 @@
 //! Pubsub API definitions for the gossip protocol
 
+use common::types::hmac::HmacKey;
 use serde::{Deserialize, Serialize};
-
-use common::types::wallet::keychain::HmacKey;
 
 use crate::{check_hmac, create_hmac, GossipDestination};
 

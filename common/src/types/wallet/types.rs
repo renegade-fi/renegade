@@ -8,11 +8,7 @@ use std::{
     },
 };
 
-use circuit_types::{
-    balance::Balance, elgamal::EncryptionKey, fixed_point::FixedPoint,
-    native_helpers::create_wallet_shares_with_randomness, order::Order as CircuitOrder,
-    traits::BaseType, SizedWallet as SizedCircuitWallet, SizedWalletShare,
-};
+use circuit_types::{balance::Balance, elgamal::EncryptionKey, fixed_point::FixedPoint};
 use constants::Scalar;
 use derivative::Derivative;
 use itertools::Itertools;
@@ -26,6 +22,12 @@ use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
 use super::{
     keychain::{KeyChain, PrivateKeyChain},
     orders::Order,
+};
+
+#[cfg(feature = "proof-system-types")]
+use circuit_types::{
+    native_helpers::create_wallet_shares_with_randomness, order::Order as CircuitOrder,
+    traits::BaseType, SizedWallet as SizedCircuitWallet, SizedWalletShare,
 };
 
 /// A type alias for the wallet identifier type, currently a UUID
@@ -91,6 +93,7 @@ impl From<Wallet> for SizedCircuitWallet {
 
 impl Wallet {
     /// Create a new empty wallet from the given seed information
+    #[cfg(feature = "all-types")]
     pub fn new_empty_wallet(
         wallet_id: WalletIdentifier,
         blinder_seed: Scalar,

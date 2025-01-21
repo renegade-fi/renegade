@@ -1,6 +1,6 @@
 //! The request/response API types for the gossip protocol
 
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use util::telemetry::propagation::{trace_context_headers, TraceContextHeaders};

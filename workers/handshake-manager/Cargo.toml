@@ -28,7 +28,7 @@ gossip-api = { path = "../../gossip-api" }
 state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
 test-helpers = { path = "../../test-helpers" }
-util = { path = "../../util" }
+util = { path = "../../util", features = ["matching-engine"] }
 renegade-metrics = { path = "../../renegade-metrics" }
 
 # === Misc Dependencies === #

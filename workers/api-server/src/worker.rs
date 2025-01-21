@@ -3,7 +3,7 @@
 use arbitrum_client::{client::ArbitrumClient, constants::Chain};
 use async_trait::async_trait;
 use common::{
-    types::{wallet::keychain::HmacKey, CancelChannel},
+    types::{hmac::HmacKey, CancelChannel},
     worker::Worker,
 };
 use external_api::bus_message::SystemBusMessage;

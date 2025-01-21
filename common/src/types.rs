@@ -3,15 +3,28 @@
 use circuit_types::fixed_point::FixedPoint;
 use serde::{Deserialize, Serialize};
 
-pub mod exchange;
+// --- Internal Types --- //
+#[cfg(feature = "internal-types")]
 pub mod gossip;
+#[cfg(feature = "internal-types")]
 pub mod handshake;
-pub mod merkle;
+#[cfg(feature = "internal-types")]
 pub mod network_order;
+#[cfg(feature = "internal-types")]
 pub mod proof_bundles;
+#[cfg(feature = "internal-types")]
 pub mod tasks;
-pub mod token;
+#[cfg(feature = "internal-types")]
 pub mod transfer_auth;
+
+// --- External Types --- //
+pub mod exchange;
+#[cfg(feature = "hmac")]
+pub mod hmac;
+#[cfg(feature = "wallet")]
+pub mod merkle;
+pub mod token;
+#[cfg(feature = "wallet")]
 pub mod wallet;
 
 use token::Token;

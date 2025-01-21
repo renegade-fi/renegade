@@ -6,7 +6,8 @@ use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
-    wallet::{keychain::HmacKey, WalletIdentifier},
+    hmac::HmacKey,
+    wallet::WalletIdentifier,
 };
 use constants::set_bootstrap_mode;
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};

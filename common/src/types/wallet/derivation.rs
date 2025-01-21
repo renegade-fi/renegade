@@ -11,8 +11,10 @@ use num_bigint::BigUint;
 use num_traits::Num;
 use util::raw_err_str;
 
+use crate::types::hmac::HmacKey;
+
 use super::{
-    keychain::{HmacKey, KeyChain, PrivateKeyChain},
+    keychain::{KeyChain, PrivateKeyChain},
     WalletIdentifier,
 };
 

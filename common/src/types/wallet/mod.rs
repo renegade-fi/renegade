@@ -5,6 +5,7 @@
 mod balances;
 pub mod derivation;
 pub mod keychain;
+#[cfg(feature = "proof-system-types")]
 mod r#match;
 #[cfg(feature = "mocks")]
 pub mod mocks;

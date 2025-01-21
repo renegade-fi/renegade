@@ -47,7 +47,7 @@ lto = true
 
 [workspace.dependencies]
 # === Arithmetic + Cryptography === #
-ark-mpc = { git = "https://github.com/renegade-fi/ark-mpc" }
+ark-mpc = { git = "https://github.com/renegade-fi/ark-mpc", default-features = false }
 mpc-plonk = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
 mpc-relation = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }
 jf-primitives = { git = "https://github.com/renegade-fi/mpc-jellyfish.git" }

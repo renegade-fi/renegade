@@ -14,9 +14,10 @@ use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::r#match::{ExternalMatchResult, FeeTake};
 use common::types::{
+    hmac::HmacKey,
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
     token::Token,
-    wallet::{keychain::HmacKey, Order},
+    wallet::Order,
     TimestampedPrice,
 };
 use constants::{Scalar, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};

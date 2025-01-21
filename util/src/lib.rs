@@ -12,6 +12,7 @@ pub mod arbitrum;
 pub mod concurrency;
 pub mod errors;
 pub mod hex;
+#[cfg(feature = "matching-engine")]
 pub mod matching_engine;
 pub mod metered_channels;
 pub mod networking;

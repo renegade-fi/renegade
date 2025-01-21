@@ -19,10 +19,13 @@ use num_bigint::BigUint;
 use rand::{thread_rng, Rng, RngCore};
 use uuid::Uuid;
 
-use crate::{keyed_list::KeyedList, types::merkle::MerkleAuthenticationPath};
+use crate::{
+    keyed_list::KeyedList,
+    types::{hmac::HmacKey, merkle::MerkleAuthenticationPath},
+};
 
 use super::{
-    keychain::{HmacKey, KeyChain, PrivateKeyChain},
+    keychain::{KeyChain, PrivateKeyChain},
     orders::{Order, OrderBuilder},
     Wallet,
 };

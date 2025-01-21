@@ -10,8 +10,8 @@ use clap::Parser;
 use common::types::{
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
+    hmac::HmacKey,
     token::Token,
-    wallet::keychain::HmacKey,
 };
 use ed25519_dalek::Keypair as DalekKeypair;
 use ethers::signers::LocalWallet;

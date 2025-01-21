@@ -1,6 +1,6 @@
 //! Authentication for admin API
 
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use hyper::HeaderMap;
 
 use crate::error::{unauthorized, ApiServerError};
@@ -37,7 +37,7 @@ pub fn authenticate_admin_request(
 #[cfg(test)]
 mod test {
     use base64::{engine::general_purpose as b64_general_purpose, Engine as B64Engine};
-    use common::types::wallet::keychain::HmacKey;
+    use common::types::hmac::HmacKey;
     use hyper::{header::HeaderValue, HeaderMap};
 
     use crate::auth::helpers::{

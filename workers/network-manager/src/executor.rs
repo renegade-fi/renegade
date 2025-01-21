@@ -7,7 +7,7 @@ mod request_response;
 
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
-    types::{gossip::WrappedPeerId, wallet::keychain::HmacKey, CancelChannel},
+    types::{gossip::WrappedPeerId, hmac::HmacKey, CancelChannel},
 };
 use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;

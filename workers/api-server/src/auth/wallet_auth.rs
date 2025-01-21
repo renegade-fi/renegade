@@ -1,6 +1,6 @@
 //! Authentication for wallet requests based on signatures with `pk_root`
 
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use hyper::HeaderMap;
 
 use crate::error::{unauthorized, ApiServerError};
@@ -50,7 +50,7 @@ fn validate_expiring_signature(
 #[cfg(test)]
 mod test {
     use base64::engine::{general_purpose as b64_general_purpose, Engine};
-    use common::types::wallet::keychain::HmacKey;
+    use common::types::hmac::HmacKey;
     use hyper::{header::HeaderValue, HeaderMap};
 
     use crate::auth::helpers::{RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME};

@@ -9,7 +9,11 @@
 #![deny(clippy::missing_docs_in_private_items)]
 #![feature(generic_const_exprs)]
 
+#[cfg(feature = "internal-types")]
 pub mod default_wrapper;
+#[cfg(feature = "wallet")]
 pub mod keyed_list;
-pub mod types;
+#[cfg(feature = "internal-types")]
 pub mod worker;
+
+pub mod types;

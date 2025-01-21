@@ -6,7 +6,7 @@ use std::thread::{Builder, JoinHandle};
 use async_trait::async_trait;
 use common::default_wrapper::DefaultOption;
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use common::types::wallet::keychain::HmacKey;
+use common::types::hmac::HmacKey;
 use common::types::CancelChannel;
 use common::worker::Worker;
 use ed25519_dalek::Keypair;
