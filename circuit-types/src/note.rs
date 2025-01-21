@@ -3,28 +3,29 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, Variable};
 use rand::thread_rng;
 use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    balance::Balance,
-    elgamal::EncryptionKey,
-    traits::{BaseType, CircuitBaseType, CircuitVarType},
-    Address, Amount,
+use crate::{balance::Balance, elgamal::EncryptionKey, Address, Amount};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
+    circuit_macros::circuit_type,
+    mpc_relation::{traits::Circuit, Variable},
 };
 
 /// The size of the note ciphertext when encrypted
 ///
 /// We do not add the recipient to the cipher as this is the key encrypted
 /// under, so the size is the number of scalars excluding the recipient
+#[cfg(feature = "proof-system-types")]
 pub const NOTE_CIPHERTEXT_SIZE: usize = Note::NUM_SCALARS - EncryptionKey::NUM_SCALARS;
 
 /// A note allocated into the protocol state by one user transferring to another
-#[circuit_type(serde, singleprover_circuit)]
+#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     /// The mint of the note
@@ -39,6 +40,7 @@ pub struct Note {
 
 impl Note {
     /// Constructor
+
     pub fn new(mint: Address, amount: Amount, receiver: EncryptionKey) -> Self {
         // Sample a blinder
         let mut rng = thread_rng();
@@ -48,18 +50,21 @@ impl Note {
     }
 
     /// Compute a commitment to the note
+    #[cfg(feature = "proof-system-types")]
     pub fn commitment(&self) -> Scalar {
         let vals = self.to_scalars();
         compute_poseidon_hash(&vals)
     }
 
     /// Compute the nullifier for the note
+    #[cfg(feature = "proof-system-types")]
     pub fn nullifier(&self) -> Scalar {
         let comm = self.commitment();
         compute_poseidon_hash(&[comm, self.blinder])
     }
 
     /// Get the elements of the note that are encrypted when the note is created
+    #[cfg(feature = "proof-system-types")]
     pub fn plaintext_elements(&self) -> [Scalar; NOTE_CIPHERTEXT_SIZE] {
         [biguint_to_scalar(&self.mint), Scalar::from(self.amount), self.blinder]
     }

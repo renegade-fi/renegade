@@ -2,21 +2,23 @@
 #![allow(clippy::missing_docs_in_private_items)]
 #![allow(missing_docs)]
 
-use circuit_macros::circuit_type;
 use constants::{Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    deserialize_array, serialize_array,
-    traits::{BaseType, CircuitBaseType, CircuitVarType},
+use crate::{deserialize_array, serialize_array};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
+    circuit_macros::circuit_type,
+    mpc_relation::{traits::Circuit, Variable},
 };
 
 /// A type alias for readability
 pub type MerkleRoot = Scalar;
 
 /// A fully specified merkle opening from hashed leaf to root
-#[circuit_type(serde, singleprover_circuit)]
+#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MerkleOpening<const HEIGHT: usize> {
     /// The opening from the leaf node to the root, i.e. the set of sister nodes

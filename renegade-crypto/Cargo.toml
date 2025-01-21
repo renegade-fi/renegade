@@ -5,16 +5,16 @@ edition = "2021"
 
 [features]
 default = ["non-wasm"]
+inline = []
 # We define a feature flag that gates all uses of wasm incompatible dependencies
 # specifically for use in stylus contracts
 non-wasm = [
     "dep:ark-mpc",
     "dep:rand",
-    "constants/mpc-types",
+    "constants/scalar",
     "inline",
     "dep:ethers-core",
 ]
-inline = []
 
 [[bench]]
 name = "elgamal"
@@ -30,7 +30,9 @@ required-features = ["non-wasm"]
 # === Cryptography + Arithmetic === #
 ark-ec = "0.4"
 ark-ff = "0.4"
-ark-mpc = { workspace = true, optional = true }
+ark-mpc = { workspace = true, optional = true, default-features = false, features = [
+    "scalar",
+] }
 bigdecimal = "0.3"
 ethers-core = { version = "2", optional = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }

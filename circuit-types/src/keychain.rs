@@ -3,29 +3,34 @@
 
 use std::{iter, ops::Add};
 
-use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use itertools::Itertools;
 use k256::{
     ecdsa::{SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey},
     elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
     AffinePoint, EncodedPoint, FieldElement as K256FieldElement,
 };
-use mpc_relation::{traits::Circuit, Variable};
 use num_bigint::BigUint;
 use renegade_crypto::{fields::get_scalar_field_modulus, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    scalar_from_hex_string, scalar_to_hex_string,
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
-    },
-    Fabric,
-};
+use crate::{scalar_from_hex_string, scalar_to_hex_string};
 
 use super::{biguint_from_hex_string, biguint_to_hex_string};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::{
+        traits::{
+            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        },
+        Fabric,
+    },
+    circuit_macros::circuit_type,
+    constants::AuthenticatedScalar,
+    mpc_relation::{traits::Circuit, Variable},
+};
 
 /// The number of keys held in a wallet's keychain
 pub const NUM_KEYS: usize = 4;
@@ -46,7 +51,10 @@ pub type PrivateIdentificationKey = Scalar;
 
 /// A public identification key is the image-under-hash of the secret
 /// identification key knowledge of which is proved in a circuit
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct PublicIdentificationKey {
     pub key: Scalar,
@@ -85,7 +93,7 @@ impl From<PublicIdentificationKey> for Scalar {
 
 /// A secret identification key is the hash preimage of the public
 /// identification key
-#[circuit_type(serde, singleprover_circuit)]
+#[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit))]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecretIdentificationKey {
     pub key: Scalar,
@@ -132,7 +140,10 @@ impl From<SecretIdentificationKey> for Scalar {
 
 /// A non-native scalar is an element of a non-native field
 /// (i.e. not Bn254 scalar)
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NonNativeScalar<const SCALAR_WORDS: usize> {
     /// The native `Scalar` words used to represent the scalar
@@ -235,7 +246,10 @@ impl From<&K256FieldElement> for NonNativeScalar<K256_FELT_WORDS> {
 // -----------------
 
 /// A public signing key in uncompressed affine representation
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct PublicSigningKey {
     /// The affine x-coordinate of the public key
@@ -330,7 +344,10 @@ impl From<&K256SigningKey> for SecretSigningKey {
 /// zero-knowledge identification scheme (not necessarily a signature scheme).
 /// Concretely, this currently is setup as `pk_identity` = Hash(`sk_identity`),
 /// and the prover proves knowledge of pre-image in a related circuit
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicKeyChain {
     /// The public root key

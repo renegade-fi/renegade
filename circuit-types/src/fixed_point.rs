@@ -6,10 +6,8 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInteger, Field, PrimeField};
 use bigdecimal::{BigDecimal, FromPrimitive, Num, ToPrimitive};
-use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
+use constants::{Scalar, ScalarField};
 use lazy_static::lazy_static;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use num_bigint::{BigUint, ToBigInt};
 use num_integer::Integer;
 use renegade_crypto::fields::{
@@ -17,13 +15,20 @@ use renegade_crypto::fields::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    scalar,
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+use crate::{scalar, SCALAR_ONE};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::{
+        traits::{
+            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        },
+        Fabric, PlonkCircuit,
     },
-    Fabric, PlonkCircuit, SCALAR_ONE,
+    circuit_macros::circuit_type,
+    constants::AuthenticatedScalar,
+    mpc_relation::{errors::CircuitError, traits::Circuit, Variable},
 };
 
 /// The default fixed point decimal precision in bits
@@ -63,7 +68,10 @@ pub fn right_shift_scalar_by_m(scalar: Scalar) -> Scalar {
 ///
 /// This is useful for centralizing conversion logic to provide an abstract
 /// to_scalar, from_scalar interface to modules that commit to this value
-#[circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct FixedPoint {
     /// The underlying scalar representing the fixed point variable
@@ -287,7 +295,10 @@ impl Sub<FixedPoint> for Scalar {
 // ---------------------------------------------
 
 /// A commitment to a fixed-precision variable
+#[cfg(feature = "proof-system-types")]
 impl Copy for FixedPointVar {}
+
+#[cfg(feature = "proof-system-types")]
 impl FixedPointVar {
     /// Evaluate the given fixed point variable in the constraint system and
     /// return the underlying value as a floating point
@@ -361,12 +372,14 @@ impl FixedPointVar {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl From<AuthenticatedScalar> for AuthenticatedFixedPoint {
     fn from(val: AuthenticatedScalar) -> Self {
         Self { repr: val }
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Mul<&AuthenticatedScalar> for FixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -375,6 +388,7 @@ impl Mul<&AuthenticatedScalar> for FixedPoint {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Mul<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -383,6 +397,7 @@ impl Mul<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Mul<&AuthenticatedFixedPoint> for AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 
@@ -391,6 +406,7 @@ impl Mul<&AuthenticatedFixedPoint> for AuthenticatedScalar {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Add<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -400,6 +416,7 @@ impl Add<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
 }
 
 /// Add a scalar to a fixed-point
+#[cfg(feature = "proof-system-types")]
 impl Add<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -410,6 +427,7 @@ impl Add<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Add<&AuthenticatedFixedPoint> for &AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 
@@ -418,6 +436,7 @@ impl Add<&AuthenticatedFixedPoint> for &AuthenticatedScalar {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Neg for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -426,6 +445,7 @@ impl Neg for &AuthenticatedFixedPoint {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -435,6 +455,7 @@ impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedFixedPoint {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Sub<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     type Output = AuthenticatedFixedPoint;
 
@@ -444,6 +465,7 @@ impl Sub<&AuthenticatedScalar> for &AuthenticatedFixedPoint {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedScalar {
     type Output = AuthenticatedFixedPoint;
 

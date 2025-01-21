@@ -1,26 +1,35 @@
 //! Groups the base type and derived types for the `Order` entity
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_macros::circuit_type;
-use constants::{AuthenticatedScalar, Scalar, ScalarField};
-use mpc_relation::{traits::Circuit, BoolVar, Variable};
+use constants::{Scalar, ScalarField};
 use renegade_crypto::fields::scalar_to_u64;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, ops::Add, str::FromStr};
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_addr,
-    fixed_point::FixedPoint,
-    traits::{
-        BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
-        MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+    biguint_from_hex_string, biguint_to_hex_addr, fixed_point::FixedPoint, Address, Amount,
+};
+
+#[cfg(feature = "proof-system-types")]
+use {
+    crate::{
+        traits::{
+            BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
+            MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
+        },
+        AuthenticatedBool, Fabric,
     },
-    Address, Amount, AuthenticatedBool, Fabric,
+    circuit_macros::circuit_type,
+    constants::AuthenticatedScalar,
+    mpc_relation::{traits::Circuit, BoolVar, Variable},
 };
 
 /// Represents the base type of an open order, including the asset pair, the
 /// amount, price, and direction
-#[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)]
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit, secret_share)
+)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Order {
     /// The mint (ERC-20 contract address) of the quote token
@@ -153,6 +162,7 @@ impl OrderSide {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl BaseType for OrderSide {
     const NUM_SCALARS: usize = 1;
 
@@ -168,14 +178,17 @@ impl BaseType for OrderSide {
     }
 }
 
+#[cfg(feature = "proof-system-types")]
 impl CircuitBaseType for OrderSide {
     type VarType = BoolVar;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl MpcBaseType for OrderSide {
     type AllocatedType = AuthenticatedBool;
 }
 
+#[cfg(feature = "proof-system-types")]
 impl SecretShareBaseType for OrderSide {
     type ShareType = Scalar;
 }
