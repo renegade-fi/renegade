@@ -76,6 +76,12 @@ impl<'db> StateTxn<'db, RW> {
         self.inner.write(TASK_HISTORY_TABLE, &key, &tasks)?;
         Ok(())
     }
+
+    /// Purge the task history for a given task queue
+    pub fn purge_task_history(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
+        let key = task_history_key(key);
+        self.inner.delete(TASK_HISTORY_TABLE, &key).map(|_| ())
+    }
 }
 
 #[cfg(test)]
@@ -140,5 +146,37 @@ mod tests {
         for (a, b) in history.iter().zip(tasks.iter()) {
             assert_eq!(a.id, b.id);
         }
+    }
+
+    /// Tests purging task history
+    #[test]
+    fn test_purge_history() {
+        const N: usize = 100;
+        let db = mock_db();
+        let wallet_id = WalletIdentifier::new_v4();
+
+        let tasks = (0..N).map(|_| mock_historical_task()).collect_vec();
+        let tx = db.new_write_tx().unwrap();
+        for task in tasks.iter() {
+            tx.append_task_to_history(&wallet_id, task.clone()).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Assert current length of task history
+        let tx = db.new_read_tx().unwrap();
+        let history = tx.get_task_history(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(history.len(), N);
+
+        // Purge the history
+        let tx = db.new_write_tx().unwrap();
+        tx.purge_task_history(&wallet_id).unwrap();
+        tx.commit().unwrap();
+
+        // Assert that the history is now empty
+        let tx = db.new_read_tx().unwrap();
+        let history = tx.get_task_history(&wallet_id).unwrap();
+        tx.commit().unwrap();
+        assert!(history.is_empty());
     }
 }
