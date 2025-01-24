@@ -36,6 +36,14 @@ pub enum ArbitrumClientError {
     BlinderNotFound,
 }
 
+impl ArbitrumClientError {
+    /// Create a new event querying error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn event_querying<T: ToString>(msg: T) -> Self {
+        Self::EventQuerying(msg.to_string())
+    }
+}
+
 impl Display for ArbitrumClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")

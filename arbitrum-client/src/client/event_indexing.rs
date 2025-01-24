@@ -30,6 +30,7 @@ use crate::abi::{
     processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall, MerkleInsertionFilter,
     NullifierSpentFilter,
 };
+use crate::constants::{Selector, KNOWN_SELECTORS};
 use crate::{
     abi::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
@@ -48,18 +49,6 @@ use crate::{
 };
 
 use super::ArbitrumClient;
-
-/// A list of known selectors for the darkpool contract
-const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 8] = [
-    <newWalletCall as SolCall>::SELECTOR,
-    <updateWalletCall as SolCall>::SELECTOR,
-    <processMatchSettleCall as SolCall>::SELECTOR,
-    <processAtomicMatchSettleCall as SolCall>::SELECTOR,
-    <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR,
-    <settleOnlineRelayerFeeCall as SolCall>::SELECTOR,
-    <settleOfflineFeeCall as SolCall>::SELECTOR,
-    <redeemFeeCall as SolCall>::SELECTOR,
-];
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
@@ -202,11 +191,21 @@ impl ArbitrumClient {
             .ok_or(ArbitrumClientError::CommitmentNotFound)
     }
 
-    /// Await a nullifier spent event on a given nullifier
-    #[instrument(skip_all, err, fields(nullifier = %nullifier))]
+    /// Await a nullifier spent event on a given nullifier from a given selector
     pub async fn await_nullifier_spent(
         &self,
         nullifier: Nullifier,
+        timeout: Duration,
+    ) -> Result<(), ArbitrumClientError> {
+        self.await_nullifier_spent_from_selectors(nullifier, &[] /* selectors */, timeout).await
+    }
+
+    /// Await a nullifier spent event on a given nullifier
+    #[instrument(skip_all, err, fields(nullifier = %nullifier))]
+    pub async fn await_nullifier_spent_from_selectors(
+        &self,
+        nullifier: Nullifier,
+        selectors: &[Selector],
         timeout: Duration,
     ) -> Result<(), ArbitrumClientError> {
         // Build an event filter on the nullifier
@@ -218,20 +217,33 @@ impl ArbitrumClient {
             .address(address)
             .topic1(nullifier_u256)
             .from_block(self.deploy_block);
-        let mut stream =
-            filter.stream().await.map_err(err_str!(ArbitrumClientError::EventQuerying))?;
+
+        // Create a stream that includes event metadata
+        let mut stream = filter
+            .stream_with_meta()
+            .await
+            .map_err(err_str!(ArbitrumClientError::EventQuerying))?;
 
         // Await the event with a timeout
         let next_event = tokio::time::timeout(timeout, stream.next()).await;
-        match next_event {
-            Ok(Some(_)) => Ok(()),
-            Ok(None) => {
-                Err(ArbitrumClientError::EventQuerying(ERR_EVENT_STREAM_CLOSED.to_string()))
-            },
-            Err(_) => {
-                Err(ArbitrumClientError::EventQuerying(ERR_NULLIFIER_SPENT_TIMEOUT.to_string()))
-            },
+        let (_event, meta) = next_event
+            .map_err(|_| ArbitrumClientError::event_querying(ERR_NULLIFIER_SPENT_TIMEOUT))? // timeout
+            .ok_or(ArbitrumClientError::event_querying(ERR_EVENT_STREAM_CLOSED))? // no event
+            .map_err(err_str!(ArbitrumClientError::event_querying))?; // query error
+        let tx_hash = meta.transaction_hash;
+
+        // Check if the transaction selector matches one of the given selectors
+        // This is not a perfect check; it merely suffices for the ways in which this
+        // method is currently used -- to check for external match events.
+        // If, in the future, we want to filter for more complex transaction shapes, we
+        // can trace subcall events
+        if !selectors.is_empty() && !self.tx_calls_selectors(tx_hash, selectors).await? {
+            return Err(ArbitrumClientError::EventQuerying(
+                "Nullifier spent with wrong selector".to_string(),
+            ));
         }
+
+        Ok(())
     }
 
     /// Fetch and parse the public secret shares from the calldata of the
@@ -268,6 +280,57 @@ impl ArbitrumClient {
     // | Helpers |
     // -----------
 
+    /// Check whether a transaction contains a selector from the given set
+    async fn tx_calls_selectors(
+        &self,
+        tx_hash: TxHash,
+        selectors: &[Selector],
+    ) -> Result<bool, ArbitrumClientError> {
+        // If the top-level selector is known, return whether it is in the set
+        let selector = self.fetch_selector_from_tx(tx_hash).await?;
+        if KNOWN_SELECTORS.contains(&selector) {
+            return Ok(selectors.contains(&selector));
+        }
+
+        // Otherwise, trace the call to find known selectors in the subcalls
+        let calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+        for call in calls {
+            let data = call.input;
+            let subcall_selector = data[..SELECTOR_LEN].try_into().unwrap();
+            if selectors.contains(&subcall_selector) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Fetch the selector from a transaction
+    async fn fetch_selector_from_tx(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<[u8; SELECTOR_LEN], ArbitrumClientError> {
+        let tx: Transaction = self
+            .get_darkpool_client()
+            .client()
+            .get_transaction(tx_hash)
+            .await
+            .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
+            .ok_or(ArbitrumClientError::TxNotFound(tx_hash.to_string()))?;
+
+        // Ensure the input data is at least as long as a selector
+        let input_data = tx.input.as_ref();
+        if input_data.len() < SELECTOR_LEN {
+            return Err(ArbitrumClientError::InvalidSelector);
+        }
+
+        // Parse the selector from the input data
+        let selector = input_data[..SELECTOR_LEN]
+            .try_into()
+            .map_err(|_| ArbitrumClientError::InvalidSelector)?;
+        Ok(selector)
+    }
+
     /// Fetch the public shares from a transaction that has an unknown selector
     async fn fetch_public_shares_for_unknown_selector(
         &self,
@@ -275,8 +338,7 @@ impl ArbitrumClient {
         public_blinder_share: Scalar,
     ) -> Result<SizedWalletShare, ArbitrumClientError> {
         // Parse the call trace for calls to the darkpool contract
-        let trace = self.fetch_call_trace(tx_hash).await?;
-        let calls = self.find_darkpool_subcalls(&trace);
+        let calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
         if calls.is_empty() {
             let hash_str = format!("{tx_hash:#x}");
             return Err(ArbitrumClientError::DarkpoolSubcallNotFound(hash_str));
@@ -298,6 +360,15 @@ impl ArbitrumClient {
         }
 
         Err(ArbitrumClientError::InvalidSelector)
+    }
+
+    /// Fetch the darkpool calls from a given transaction
+    async fn fetch_tx_darkpool_calls(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<Vec<CallFrame>, ArbitrumClientError> {
+        let trace = self.fetch_call_trace(tx_hash).await?;
+        Ok(self.find_darkpool_subcalls(&trace))
     }
 
     /// Fetch the call trace for a given transaction

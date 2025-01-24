@@ -2,11 +2,18 @@
 
 use std::{fmt::Display, marker::PhantomData, str::FromStr};
 
+use alloy_sol_types::SolCall;
 use ark_ff::{BigInt, Fp};
 use constants::{Scalar, MERKLE_HEIGHT};
 use lazy_static::lazy_static;
 use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
+
+use crate::abi::{
+    newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
+    processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
+    updateWalletCall,
+};
 
 /// The chain environment
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -42,8 +49,41 @@ impl FromStr for Chain {
     }
 }
 
+/// A type alias for a selector
+pub type Selector = [u8; SELECTOR_LEN];
 /// The number of bytes in a Solidity function selector
 pub const SELECTOR_LEN: usize = 4;
+/// A list of known selectors for the darkpool contract
+pub(crate) const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 8] = [
+    NEW_WALLET_SELECTOR,
+    UPDATE_WALLET_SELECTOR,
+    PROCESS_MATCH_SETTLE_SELECTOR,
+    PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
+    PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
+    SETTLE_ONLINE_RELAYER_FEE_SELECTOR,
+    SETTLE_OFFLINE_FEE_SELECTOR,
+    REDEEM_FEE_SELECTOR,
+];
+
+/// Selector for `newWallet`
+pub const NEW_WALLET_SELECTOR: [u8; SELECTOR_LEN] = newWalletCall::SELECTOR;
+/// Selector for `updateWallet`
+pub const UPDATE_WALLET_SELECTOR: [u8; SELECTOR_LEN] = updateWalletCall::SELECTOR;
+/// Selector for `processMatchSettle`
+pub const PROCESS_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] = processMatchSettleCall::SELECTOR;
+/// Selector for `processAtomicMatchSettle`
+pub const PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] =
+    processAtomicMatchSettleCall::SELECTOR;
+/// Selector for `processAtomicMatchSettleWithReceiver`
+pub const PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR: [u8; SELECTOR_LEN] =
+    processAtomicMatchSettleWithReceiverCall::SELECTOR;
+/// Selector for `settleOnlineRelayerFee`
+pub const SETTLE_ONLINE_RELAYER_FEE_SELECTOR: [u8; SELECTOR_LEN] =
+    settleOnlineRelayerFeeCall::SELECTOR;
+/// Selector for `settleOfflineFee`
+pub const SETTLE_OFFLINE_FEE_SELECTOR: [u8; SELECTOR_LEN] = settleOfflineFeeCall::SELECTOR;
+/// Selector for `redeemFee`
+pub const REDEEM_FEE_SELECTOR: [u8; SELECTOR_LEN] = redeemFeeCall::SELECTOR;
 
 // The following are used for cases in which runtime type-based event filtering
 // is not possible. In these cases, we must construct filters manually using ABI
