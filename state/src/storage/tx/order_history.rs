@@ -115,6 +115,13 @@ impl<'db> StateTxn<'db, RW> {
         self.write_order_history(wallet_id, orders)
     }
 
+    /// Purges terminal orders from a wallet's order history
+    pub fn purge_terminal_orders(&self, wallet_id: &WalletIdentifier) -> Result<(), StorageError> {
+        let mut orders = self.get_order_history(wallet_id)?;
+        orders.retain(|o| !o.state.is_terminal());
+        self.write_order_history(wallet_id, orders)
+    }
+
     /// Write the order history for a given wallet
     #[allow(clippy::needless_pass_by_value)]
     fn write_order_history(
@@ -258,6 +265,55 @@ mod tests {
         // Remove the order
         let tx = db.new_write_tx().unwrap();
         tx.remove_order_from_history(&wallet_id, &order_id).unwrap();
+        tx.commit().unwrap();
+
+        // Check that the order can no longer be fetched
+        let tx = db.new_read_tx().unwrap();
+        let res = tx.get_order_metadata(wallet_id, order_id).unwrap();
+        tx.commit().unwrap();
+        assert!(res.is_none());
+
+        // Check that the remaining orders are unchanged
+
+        // Filter out the removed order & sort the history by descending creation time
+        history.retain(|o| o.id != order_id);
+        history.sort_by_key(|o| Reverse(o.created));
+
+        let tx = db.new_read_tx().unwrap();
+        let orders = tx.get_order_history(&wallet_id).unwrap();
+        assert_eq!(orders, history);
+    }
+
+    /// Test purging a terminal order
+    #[test]
+    fn test_purge_terminal_order() {
+        const N: usize = 100;
+        let db = mock_db();
+        let wallet_id = Uuid::new_v4();
+        let mut history = random_order_history(N);
+
+        // Choose a random order to mark as terminal (cancelled)
+        let mut rng = rand::thread_rng();
+        let index = rng.gen_range(0..history.len());
+        history[index].state = OrderState::Cancelled;
+        let order_id = history[index].id;
+
+        // Setup the history
+        let tx = db.new_write_tx().unwrap();
+        for order_md in history.iter().cloned() {
+            tx.push_order_history(&wallet_id, order_md).unwrap();
+        }
+        tx.commit().unwrap();
+
+        // Check that the order can be fetched
+        let tx = db.new_read_tx().unwrap();
+        let res = tx.get_order_metadata(wallet_id, order_id).unwrap();
+        tx.commit().unwrap();
+        assert!(res.is_some());
+
+        // Purge terminal orders
+        let tx = db.new_write_tx().unwrap();
+        tx.purge_terminal_orders(&wallet_id).unwrap();
         tx.commit().unwrap();
 
         // Check that the order can no longer be fetched

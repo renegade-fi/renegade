@@ -13,11 +13,6 @@ pub async fn remove_phantom_orders(state: &State) -> Result<(), String> {
     info!("removing {} phantom orders...", phantom_orders.len());
     remove_orders_from_order_book(state, &phantom_orders).await?;
 
-    // Remove all local orders that are not part of a wallet
-    let missing_local_orders = find_missing_local_orders(state).await?;
-    info!("removing {} missing local orders...", missing_local_orders.len());
-    remove_local_orders(state, &missing_local_orders).await?;
-
     Ok(())
 }
 
@@ -35,25 +30,6 @@ async fn find_phantom_orders(state: &State) -> Result<Vec<OrderIdentifier>, Stri
     }
 
     Ok(phantom_orders)
-}
-
-/// Find all local orders that are not part of a wallet
-async fn find_missing_local_orders(state: &State) -> Result<Vec<OrderIdentifier>, String> {
-    let local_orders = state
-        .with_read_tx(|tx| {
-            let orders = tx.get_local_orders()?;
-            Ok(orders)
-        })
-        .await?;
-
-    let mut missing_local_orders = Vec::new();
-    for order_id in local_orders {
-        if check_order_missing(state, &order_id).await? {
-            missing_local_orders.push(order_id);
-        }
-    }
-
-    Ok(missing_local_orders)
 }
 
 /// Check whether an order is missing from its wallet
@@ -87,26 +63,6 @@ async fn remove_orders_from_order_book(
         // Do not abort on error, just log them
         if let Err(e) = res {
             error!("error removing order {order_id}: {e}");
-        }
-    }
-
-    Ok(())
-}
-
-/// Remove a set of orders from the local orders list
-async fn remove_local_orders(state: &State, order_ids: &[OrderIdentifier]) -> Result<(), String> {
-    for order_id in order_ids {
-        let oid = *order_id;
-        let res = state
-            .with_write_tx(move |tx| {
-                tx.remove_local_order(&oid)?;
-                Ok(())
-            })
-            .await;
-
-        // Do not abort on error, just log them
-        if let Err(e) = res {
-            error!("error removing local order {order_id}: {e}");
         }
     }
 
