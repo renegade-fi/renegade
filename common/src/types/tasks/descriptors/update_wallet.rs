@@ -2,7 +2,6 @@
 
 use circuit_types::{keychain::PublicSigningKey, Amount};
 use constants::Scalar;
-use contracts_common::custom_serde::BytesSerializable;
 use ethers::core::types::Signature;
 use ethers::utils::{keccak256, public_key_to_address};
 use k256::ecdsa::VerifyingKey as K256VerifyingKey;
@@ -212,9 +211,7 @@ pub fn verify_wallet_update_signature(
     let key: K256VerifyingKey = key.into();
     let new_wallet_comm = wallet.get_wallet_share_commitment();
 
-    // Serialize the commitment, uses the contract's serialization here:
-    //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
-    let comm_bytes = new_wallet_comm.inner().serialize_to_bytes();
+    let comm_bytes = Wallet::serialize_commitment(new_wallet_comm);
     let digest = keccak256(comm_bytes);
 
     // Verify the signature

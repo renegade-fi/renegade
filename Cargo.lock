@@ -2224,6 +2224,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "ark-ec",
+ "ark-ff 0.4.2",
  "ark-mpc",
  "ark-poly",
  "async-trait",
@@ -2232,7 +2233,6 @@ dependencies = [
  "circuit-types 0.1.0",
  "circuits 0.1.0",
  "constants 0.1.0",
- "contracts-common",
  "crossbeam",
  "derivative",
  "ecdsa 0.16.9",

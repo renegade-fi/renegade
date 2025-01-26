@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = ["all-types"]
 hmac = []
-wallet = ["hmac", "proof-system-types", "util/matching-engine"]
+wallet = ["hmac", "proof-system-types", "util/matching-engine", "ark-ff"]
 proof-system-types = ["dep:circuits", "constants/default"]
 # Types used by the relayer for internal operation
 # We add this feature flag to allow external clients to opt-out of these types
@@ -27,6 +27,7 @@ mocks = [
 ark-mpc = { workspace = true }
 ark-ec = { version = "0.4", optional = true }
 ark-poly = { version = "0.4", optional = true }
+ark-ff = { version = "0.4", optional = true }
 
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
@@ -55,9 +56,6 @@ circuit-types = { path = "../circuit-types", default-features = false }
 constants = { path = "../constants", default-features = false }
 renegade-crypto = { path = "../renegade-crypto" }
 util = { path = "../util" }
-
-# === Contracts Repo Dependencies === #
-contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
 
 # === Misc Dependencies === #
 base64 = { version = "0.22" }

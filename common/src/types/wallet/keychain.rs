@@ -1,11 +1,11 @@
 //! Keychain helpers for the wallet
 
+use ark_ff::{BigInteger, PrimeField};
 use circuit_types::keychain::{
     PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,
     SecretSigningKey,
 };
 use constants::Scalar;
-use contracts_common::custom_serde::BytesSerializable;
 use derivative::Derivative;
 use ethers::{
     core::k256::ecdsa::SigningKey as EthersSigningKey,
@@ -113,7 +113,7 @@ impl Wallet {
         let key = EthersSigningKey::try_from(root_key)?;
 
         // Hash the message and sign it
-        let comm_bytes = commitment.inner().serialize_to_bytes();
+        let comm_bytes = Self::serialize_commitment(commitment);
         let digest = keccak256(comm_bytes);
         let (sig, recovery_id) = key
             .sign_prehash_recoverable(&digest)
@@ -124,6 +124,12 @@ impl Wallet {
             s: U256::from_big_endian(&sig.s().to_bytes()),
             v: recovery_id.to_byte() as u64,
         })
+    }
+
+    /// Serialize the commitment, uses the contract's serialization here:
+    ///  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
+    pub fn serialize_commitment(commitment: Scalar) -> Vec<u8> {
+        commitment.inner().into_bigint().to_bytes_be()
     }
 }
 
