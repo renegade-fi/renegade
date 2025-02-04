@@ -37,7 +37,7 @@ use util::{
 
 use crate::{
     await_task,
-    state_migration::{purge_historical_state, remove_phantom_orders},
+    state_migration::remove_phantom_orders,
     task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
@@ -455,17 +455,6 @@ impl NodeStartupTask {
                 error!("error removing phantom orders: {e}");
             } else {
                 info!("done removing phantom orders");
-            }
-        });
-
-        // Purge historical state for all wallets
-        let state = self.state.clone();
-        tokio::task::spawn(async move {
-            info!("purging historical state for all wallets...");
-            if let Err(e) = purge_historical_state(&state).await {
-                error!("error purging historical state: {e}");
-            } else {
-                info!("done purging historical state");
             }
         });
 
