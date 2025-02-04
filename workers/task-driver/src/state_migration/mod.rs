@@ -5,7 +5,5 @@
 //!
 //! These migrations should be idempotent, and defined as need be
 
-mod purge_historical_state;
 mod remove_phantom_orders;
-pub(crate) use purge_historical_state::purge_historical_state;
 pub(crate) use remove_phantom_orders::remove_phantom_orders;
