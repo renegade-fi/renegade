@@ -397,6 +397,16 @@ impl TaskExecutor {
             if !immediate {
                 let waiter = self.state().pop_task(id, false /* success */).await?;
                 waiter.await?;
+            } else {
+                // Unpause the queues for the affected local wallets
+                if !affected_wallets.is_empty() {
+                    self.state()
+                        .resume_multiple_task_queues(
+                            affected_wallets,
+                            false, // success
+                        )
+                        .await?;
+                }
             }
 
             return Err(e);

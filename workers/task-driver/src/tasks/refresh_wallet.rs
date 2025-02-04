@@ -174,11 +174,15 @@ impl Task for RefreshWalletTask {
             },
 
             RefreshWalletTaskState::FindingWallet => {
-                // If the wallet is up to date, skip creating validity proofs
-                if self.find_wallet().await? {
-                    self.task_state = RefreshWalletTaskState::Completed;
-                } else {
+                // If the wallet is not up to date, or is missing any validity proofs,
+                // we need to create validity proofs for the wallet
+                let should_create_validity_proofs =
+                    !self.find_wallet().await? || self.wallet_missing_validity_proofs().await?;
+
+                if should_create_validity_proofs {
                     self.task_state = RefreshWalletTaskState::CreatingValidityProofs;
+                } else {
+                    self.task_state = RefreshWalletTaskState::Completed;
                 }
             },
 
@@ -318,6 +322,21 @@ impl RefreshWalletTask {
 
         let public_blinder = blinder - private_blinder_share;
         Ok((public_blinder, private_shares))
+    }
+
+    /// Check if the wallet is missing validity proofs for any of its matchable
+    /// orders
+    async fn wallet_missing_validity_proofs(&self) -> Result<bool, RefreshWalletTaskError> {
+        let wallet = self.get_wallet().await?;
+        let matchable_orders = wallet.get_matchable_orders();
+
+        for (order_id, _) in matchable_orders {
+            if self.state.get_validity_proofs(&order_id).await?.is_none() {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }
 
