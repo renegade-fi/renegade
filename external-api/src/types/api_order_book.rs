@@ -44,19 +44,3 @@ impl From<NetworkOrder> for ApiNetworkOrder {
         }
     }
 }
-
-/// A token in the the supported token list
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ApiToken {
-    /// The token address
-    pub address: String,
-    /// The token symbol
-    pub symbol: String,
-}
-
-impl ApiToken {
-    /// Constructor
-    pub fn new(addr: String, sym: String) -> Self {
-        Self { address: addr, symbol: sym }
-    }
-}

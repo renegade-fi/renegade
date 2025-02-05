@@ -3,8 +3,9 @@
 use async_trait::async_trait;
 use common::types::token::{read_token_remap, USDT_TICKER, USD_TICKER};
 use external_api::{
-    http::order_book::{
-        GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, GetSupportedTokensResponse,
+    http::{
+        order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
+        GetSupportedTokensResponse,
     },
     types::ApiToken,
     EmptyRequestResponse,
