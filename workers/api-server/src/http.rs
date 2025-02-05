@@ -35,9 +35,7 @@ use external_api::{
             REQUEST_EXTERNAL_QUOTE_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
-        order_book::{
-            GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE, GET_SUPPORTED_TOKENS_ROUTE,
-        },
+        order_book::{GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE},
         price_report::PRICE_REPORT_ROUTE,
         task::{GET_TASK_QUEUE_PAUSED_ROUTE, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         task_history::TASK_HISTORY_ROUTE,
@@ -48,7 +46,7 @@ use external_api::{
             ORDER_HISTORY_ROUTE, PAY_FEES_ROUTE, REDEEM_NOTE_ROUTE, REFRESH_WALLET_ROUTE,
             UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
         },
-        PingResponse,
+        PingResponse, GET_SUPPORTED_TOKENS_ROUTE,
     },
     EmptyRequestResponse,
 };
