@@ -8,7 +8,6 @@
 #![allow(incomplete_features)]
 #![feature(let_chains)]
 #![feature(generic_const_exprs)]
-#![feature(duration_constructors)]
 
 pub mod errors;
 pub mod exchange;

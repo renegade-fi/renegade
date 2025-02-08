@@ -95,14 +95,15 @@ pub struct CoinbaseConnection {
 /// The order book data stored locally by the connection
 #[derive(Clone, Debug, Default)]
 pub struct CoinbaseOrderBookData {
-    // Note: The reason we use String's for price_level is because using f32 as a key produces
-    // collision issues
-    /// A HashMap representing the local mirroring of Coinbase's order book
-    /// bids.
-    bids: HashMap<String, f32>,
-    /// A HashMap representing the local mirroring of Coinbase's order book
-    /// offers.
-    offers: HashMap<String, f32>,
+    /// The best bid price, we use a string key to avoid key imprecision in
+    /// websocket updates
+    ///
+    /// Maps to the parsed f64 value
+    bids: HashMap<String, f64>,
+    /// The best offer price
+    ///
+    /// Maps to the parsed f64 value
+    offers: HashMap<String, f64>,
 }
 
 impl Stream for CoinbaseConnection {
@@ -134,12 +135,12 @@ impl CoinbaseConnection {
         let base_ticker =
             get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Coinbase)?;
         let quote_ticker = get_quote_exchange_ticker(base_token, quote_token, Exchange::Coinbase)?;
-        let product_ids = format!("{}-{}", base_ticker, quote_ticker);
+        let product_id = format!("{}-{}", base_ticker, quote_ticker);
 
         let channel = "level2";
         let subscribe_msg = json!({
             "type": "subscribe",
-            "product_ids": [ product_ids ],
+            "product_ids": [ product_id ],
             "channel": channel,
             "jwt": jwt,
         })
@@ -200,17 +201,19 @@ impl CoinbaseConnection {
 
             match &side[..] {
                 COINBASE_BID => {
-                    if new_quantity == 0.0 {
+                    if new_quantity == 0. {
                         order_book.bids.remove(&price_level);
                     } else {
-                        order_book.bids.insert(price_level.clone(), new_quantity);
+                        let price_level_f64 = price_level.parse::<f64>().unwrap();
+                        order_book.bids.insert(price_level.clone(), price_level_f64);
                     }
                 },
                 COINBASE_OFFER => {
                     if new_quantity == 0.0 {
                         order_book.offers.remove(&price_level);
                     } else {
-                        order_book.offers.insert(price_level.clone(), new_quantity);
+                        let price_level_f64 = price_level.parse::<f64>().unwrap();
+                        order_book.offers.insert(price_level.clone(), price_level_f64);
                     }
                 },
                 _ => {
@@ -220,13 +223,8 @@ impl CoinbaseConnection {
         }
 
         // Given the new order book, compute the best bid and offer
-        let best_bid =
-            order_book.bids.keys().map(|key| key.parse::<f64>().unwrap()).fold(0.0, f64::max);
-        let best_offer = order_book
-            .offers
-            .keys()
-            .map(|key| key.parse::<f64>().unwrap())
-            .fold(f64::INFINITY, f64::min);
+        let best_bid = order_book.bids.values().copied().fold(0.0, f64::max);
+        let best_offer = order_book.offers.values().copied().fold(f64::INFINITY, f64::min);
 
         // If the best offer is infinite, or the best bid is 0, return None - we don't
         // yet have enough data
