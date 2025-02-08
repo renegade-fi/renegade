@@ -9,11 +9,12 @@ use std::{
 use async_trait::async_trait;
 use common::types::{token::Token, Price};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
-use hmac_sha256::HMAC;
+use jsonwebtoken::{encode, Algorithm, EncodingKey as JwtEncodingKey, Header as JwtHeader};
 use reqwest::{
     header::{CONTENT_TYPE, USER_AGENT},
     Client,
 };
+use serde::Serialize;
 use serde_json::json;
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
@@ -41,6 +42,8 @@ use super::{
 const COINBASE_WS_BASE_URL: &str = "wss://advanced-trade-ws.coinbase.com";
 /// The base URL for the Coinbase REST API
 const COINBASE_REST_BASE_URL: &str = "https://api.exchange.coinbase.com";
+/// The Coinbase developer platform issuer ID
+const CDP_ISSUER_ID: &str = "cdp";
 /// The User-Agent header for Coinbase requests
 const CB_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
@@ -59,6 +62,23 @@ const COINBASE_SIDE: &str = "side";
 const COINBASE_BID: &str = "bid";
 /// The offer side field value
 const COINBASE_OFFER: &str = "offer";
+
+/// The timeout in seconds for the Coinbase JWT
+const COINBASE_JWT_TIMEOUT_SECS: u64 = 60; // 1 minute
+
+/// The claims for the Coinbase JWT
+#[allow(clippy::missing_docs_in_private_items)]
+#[derive(Serialize)]
+struct CoinbaseJwtClaims {
+    #[serde(rename = "sub")]
+    subject: String,
+    #[serde(rename = "iss")]
+    issuer: String,
+    #[serde(rename = "nbf")]
+    not_before: u64,
+    #[serde(rename = "exp")]
+    expires: u64,
+}
 
 // ----------------------
 // | Connection Handler |
@@ -104,33 +124,50 @@ impl CoinbaseConnection {
     fn construct_subscribe_message(
         base_token: Token,
         quote_token: Token,
-        api_key: &str,
-        api_secret: &str,
+        config: &ExchangeConnectionsConfig,
     ) -> Result<String, ExchangeConnectionError> {
+        let key_name = config.coinbase_key_name.as_ref().expect("coinbase API not configured");
+        let key_secret = config.coinbase_key_secret.as_ref().expect("coinbase API not configured");
+        let jwt = Self::construct_jwt(key_name, key_secret)?;
+
+        // Build a subscription request for the given product
         let base_ticker =
             get_base_exchange_ticker(base_token.clone(), quote_token.clone(), Exchange::Coinbase)?;
         let quote_ticker = get_quote_exchange_ticker(base_token, quote_token, Exchange::Coinbase)?;
-
         let product_ids = format!("{}-{}", base_ticker, quote_ticker);
 
-        // Authenticate the request with the API key
         let channel = "level2";
-        let timestamp = get_current_time_seconds().to_string();
-        let signature_bytes =
-            HMAC::mac(format!("{}{}{}", timestamp, channel, product_ids), api_secret);
-
-        let signature = hex::encode(signature_bytes);
         let subscribe_msg = json!({
             "type": "subscribe",
             "product_ids": [ product_ids ],
             "channel": channel,
-            "api_key": api_key,
-            "timestamp": timestamp,
-            "signature": signature,
+            "jwt": jwt,
         })
         .to_string();
 
         Ok(subscribe_msg)
+    }
+
+    /// Construct a JWT for the Coinbase advanced trade API
+    fn construct_jwt(key_name: &str, key_secret: &str) -> Result<String, ExchangeConnectionError> {
+        // Parse the key secret as a PEM-encoded EC private key
+        let key = JwtEncodingKey::from_ec_pem(key_secret.as_bytes())
+            .map_err(err_str!(ExchangeConnectionError::Crypto))?;
+
+        // Build the JWT header and claims
+        let mut header = JwtHeader::new(Algorithm::ES256);
+        header.kid = Some(key_name.to_string());
+
+        let now = get_current_time_seconds();
+        let expires = now + COINBASE_JWT_TIMEOUT_SECS;
+        let claims = CoinbaseJwtClaims {
+            subject: key_name.to_string(),
+            issuer: CDP_ISSUER_ID.to_string(),
+            not_before: now,
+            expires,
+        };
+
+        encode(&header, &claims, &key).map_err(err_str!(ExchangeConnectionError::Crypto))
     }
 
     /// Parse a midpoint price from a websocket message
@@ -212,18 +249,8 @@ impl ExchangeConnection for CoinbaseConnection {
         let url = Self::websocket_url();
         let (mut writer, read) = ws_connect(url).await?;
 
-        // Subscribe to the order book
-        let api_key = config
-            .coinbase_api_key
-            .clone()
-            .expect("Coinbase API key expected in config, found None");
-        let api_secret = config
-            .coinbase_api_secret
-            .clone()
-            .expect("Coinbase API secret expected in config, found None");
-
         let authenticated_subscribe_msg =
-            Self::construct_subscribe_message(base_token, quote_token, &api_key, &api_secret)?;
+            Self::construct_subscribe_message(base_token, quote_token, config)?;
 
         // Setup the topic subscription
         writer
