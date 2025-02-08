@@ -421,8 +421,8 @@ impl MockNodeController {
 
         let conf = PriceReporterConfig {
             exchange_conn_config: ExchangeConnectionsConfig {
-                coinbase_api_key: config.coinbase_api_key.clone(),
-                coinbase_api_secret: config.coinbase_api_secret.clone(),
+                coinbase_key_name: config.coinbase_key_name.clone(),
+                coinbase_key_secret: config.coinbase_key_secret.clone(),
                 eth_websocket_addr: config.eth_websocket_addr.clone(),
             },
             price_reporter_url: config.price_reporter_url.clone(),

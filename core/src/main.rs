@@ -299,8 +299,8 @@ async fn main() -> Result<(), CoordinatorError> {
         job_receiver: Some(price_reporter_worker_receiver).into(),
         cancel_channel: price_reporter_cancel_receiver,
         exchange_conn_config: ExchangeConnectionsConfig {
-            coinbase_api_key: args.coinbase_api_key,
-            coinbase_api_secret: args.coinbase_api_secret,
+            coinbase_key_name: args.coinbase_key_name,
+            coinbase_key_secret: args.coinbase_key_secret,
             eth_websocket_addr: args.eth_websocket_addr,
         },
         price_reporter_url: args.price_reporter_url,

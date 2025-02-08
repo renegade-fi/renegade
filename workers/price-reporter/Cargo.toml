@@ -8,7 +8,7 @@ mocks = ["bimap"]
 
 [dependencies]
 # === Cryptography === #
-hmac-sha256 = "1.1"
+jsonwebtoken = "9.3"
 
 # === Async + Runtime === #
 async-trait = { workspace = true }
@@ -41,5 +41,6 @@ lazy_static = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 statrs = "0.16"
+thiserror = { workspace = true }
 tracing = { workspace = true }
 url = "2.4"

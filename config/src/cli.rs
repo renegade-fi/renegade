@@ -205,12 +205,14 @@ pub struct Cli {
     // -----------
     // | Secrets |
     // -----------
-    /// The Coinbase API key to use for price streaming
-    #[clap(long = "coinbase-key", value_parser)]
-    pub coinbase_api_key: Option<String>,
+    /// The Coinbase API key name to use for price streaming
+    #[clap(long = "coinbase-key-name", value_parser)]
+    pub coinbase_key_name: Option<String>,
     /// The Coinbase API secret to use for price streaming
-    #[clap(long = "coinbase-secret", value_parser)]
-    pub coinbase_api_secret: Option<String>,
+    /// 
+    /// Expected as a PKCS#8 encoded ES256 private key 
+    #[clap(long = "coinbase-key-secret", value_parser)]
+    pub coinbase_key_secret: Option<String>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     #[clap(long = "eth-websocket", value_parser)]
     pub eth_websocket_addr: Option<String>,
@@ -382,9 +384,9 @@ pub struct RelayerConfig {
     /// The cluster ID, a parsed version of the cluster's pubkey
     pub cluster_id: ClusterId,
     /// The Coinbase API key to use for price streaming
-    pub coinbase_api_key: Option<String>,
+    pub coinbase_key_name: Option<String>,
     /// The Coinbase API secret to use for price streaming
-    pub coinbase_api_secret: Option<String>,
+    pub coinbase_key_secret: Option<String>,
     /// The HTTP addressable Arbitrum JSON-RPC node
     pub rpc_url: Option<String>,
     /// The Arbitrum private keys used to send transactions
@@ -498,8 +500,8 @@ impl Clone for RelayerConfig {
             cluster_symmetric_key: self.cluster_symmetric_key,
             admin_api_key: self.admin_api_key,
             cluster_id: self.cluster_id.clone(),
-            coinbase_api_key: self.coinbase_api_key.clone(),
-            coinbase_api_secret: self.coinbase_api_secret.clone(),
+            coinbase_key_name: self.coinbase_key_name.clone(),
+            coinbase_key_secret: self.coinbase_key_secret.clone(),
             rpc_url: self.rpc_url.clone(),
             arbitrum_private_keys: self.arbitrum_private_keys.clone(),
             fee_key: self.fee_key,
