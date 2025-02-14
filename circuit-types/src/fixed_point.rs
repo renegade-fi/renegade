@@ -103,6 +103,16 @@ impl<'de> Deserialize<'de> for FixedPoint {
 }
 
 impl FixedPoint {
+    /// Create a representation of zero
+    pub fn zero() -> Self {
+        Self { repr: Scalar::zero() }
+    }
+
+    /// Create a representation of one
+    pub fn one() -> Self {
+        Self { repr: Scalar::new(*TWO_TO_M_SCALAR) }
+    }
+
     /// Whether the represented fixed point is negative
     pub fn is_negative(&self) -> bool {
         let neg_threshold = ScalarField::MODULUS_MINUS_ONE_DIV_TWO;

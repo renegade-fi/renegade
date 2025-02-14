@@ -12,7 +12,10 @@ use std::{sync::Arc, time::Duration};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::r#match::{ExternalMatchResult, FeeTake};
+use circuit_types::{
+    fixed_point::FixedPoint,
+    r#match::{ExternalMatchResult, FeeTake},
+};
 use common::types::{
     hmac::HmacKey,
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
@@ -179,10 +182,11 @@ impl ExternalMatchProcessor {
     // --- Order Validation & Conversion --- //
 
     /// Get an internal order from an external order given a price
-    async fn external_order_to_internal_order(
+    async fn external_order_to_internal_order_with_options(
         &self,
         mut o: ExternalOrder,
-    ) -> Result<Order, ApiServerError> {
+        mut options: ExternalMatchingEngineOptions,
+    ) -> Result<(Order, ExternalMatchingEngineOptions), ApiServerError> {
         // Get the tokens being traded, swapping WETH for ETH if necessary
         let base = if o.trades_native_asset() {
             let native_wrapper = get_native_asset_wrapper_token();
@@ -201,9 +205,19 @@ impl ExternalMatchProcessor {
             .and_then(|p| p.get_decimal_corrected_price(&base, &quote))
             .map(|p| p.as_fixed_point())
             .map_err(internal_error)?;
-        let order = o.to_order_with_price(decimal_corrected_price);
+
+        // TODO: Currently we set the relayer fee to zero, remove this
+        let relayer_fee = FixedPoint::zero();
+        let order = o.to_internal_order(decimal_corrected_price, relayer_fee);
+
+        // Enforce an exact quote amount if specified
+        if o.quote_amount != 0 || o.exact_quote_output != 0 {
+            let quote_amount = o.get_quote_amount(decimal_corrected_price, relayer_fee);
+            options = options.with_exact_quote_amount(quote_amount);
+        }
+
         self.check_external_order_size(&order).await?;
-        Ok(order)
+        Ok((order, options))
     }
 
     /// Check the USDC denominated value of an external order and assert that it
@@ -305,7 +319,8 @@ impl ExternalMatchProcessor {
         order: ExternalOrder,
         options: ExternalMatchingEngineOptions,
     ) -> Result<SystemBusMessage, ApiServerError> {
-        let order = self.external_order_to_internal_order(order).await?;
+        let (order, options) =
+            self.external_order_to_internal_order_with_options(order, options).await?;
         self.check_external_order_size(&order).await?;
 
         let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, options);
