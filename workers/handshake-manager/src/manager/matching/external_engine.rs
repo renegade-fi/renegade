@@ -24,12 +24,19 @@ use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{handshake_manager::ExternalMatchingEngineOptions, task_driver::TaskDriverJob};
 use renegade_crypto::fields::scalar_to_u128;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 use super::matching_order_filter;
+
+/// The maximum difference between the matched quote amount and the requested
+/// exact amount that allows the quote amount to be overridden
+///
+/// This is intentionally very low, as the quote amount should only be
+/// overridden for very small differences that amount to rounding
+const MAX_QUOTE_OVERRIDE_DIFF: f64 = 0.000001;
 
 impl HandshakeExecutor {
     /// Encapsulates the logic for the external matching engine in an error
@@ -122,15 +129,30 @@ impl HandshakeExecutor {
         Ok(())
     }
 
+    /// Get the match candidates for an external order
+    #[instrument(name = "get_external_match_candidates", skip_all, fields(num_candidates))]
+    async fn get_external_match_candidates(
+        &self,
+        order: &Order,
+    ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
+        let filter = matching_order_filter(order, true /* external */);
+        let matchable_orders = self.state.get_matchable_orders(filter).await?;
+        backfill_trace_field("num_candidates", matchable_orders.len());
+        Ok(HashSet::from_iter(matchable_orders))
+    }
+
     /// Run a match against a single order
     async fn handle_match(
         &self,
         other_order_id: OrderIdentifier,
         price: TimestampedPrice,
-        match_res: MatchResult,
+        mut match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
+        // Possibly override the quote amount if an exact quote amount is specified
+        self.maybe_override_quote_amount(&mut match_res, options);
+
         // If the request only requires a quote, we can stop here
         if options.only_quote {
             self.forward_quote(response_topic.clone(), match_res);
@@ -160,16 +182,25 @@ impl HandshakeExecutor {
         }
     }
 
-    /// Get the match candidates for an external order
-    #[instrument(name = "get_external_match_candidates", skip_all, fields(num_candidates))]
-    async fn get_external_match_candidates(
+    /// Possibly override the quote amount if an exact quote amount is specified
+    /// and the amount may be overridden
+    fn maybe_override_quote_amount(
         &self,
-        order: &Order,
-    ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
-        let filter = matching_order_filter(order, true /* external */);
-        let matchable_orders = self.state.get_matchable_orders(filter).await?;
-        backfill_trace_field("num_candidates", matchable_orders.len());
-        Ok(HashSet::from_iter(matchable_orders))
+        match_res: &mut MatchResult,
+        options: &ExternalMatchingEngineOptions,
+    ) {
+        let exact_quote = match options.exact_quote_amount {
+            Some(amount) => amount,
+            None => return,
+        };
+
+        let override_diff =
+            (match_res.quote_amount as f64 - exact_quote as f64) / match_res.quote_amount as f64;
+        if override_diff.abs() < MAX_QUOTE_OVERRIDE_DIFF {
+            match_res.quote_amount = exact_quote;
+        } else {
+            warn!("quote difference too large, cannot override with exact quote amount")
+        }
     }
 
     /// Settle an external match

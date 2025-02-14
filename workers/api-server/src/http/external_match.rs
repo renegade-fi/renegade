@@ -249,11 +249,9 @@ impl ExternalMatchProcessor {
         price: TimestampedPrice,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let opt = ExternalMatchingEngineOptions::new(
-            false, // only_quote
-            ASSEMBLE_BUNDLE_TIMEOUT,
-            Some(price),
-        );
+        let opt = ExternalMatchingEngineOptions::new()
+            .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
+            .with_price(price);
         let resp = self.request_handshake_manager(order.clone(), opt).await?;
 
         match resp {
@@ -279,11 +277,8 @@ impl ExternalMatchProcessor {
         receiver: Option<Address>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let opt = ExternalMatchingEngineOptions::new(
-            false, // only_quote
-            DIRECT_MATCH_BUNDLE_TIMEOUT,
-            None, // price
-        );
+        let opt =
+            ExternalMatchingEngineOptions::new().with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT);
         let resp = self.request_handshake_manager(external_order.clone(), opt).await?;
 
         match resp {
