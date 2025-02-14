@@ -41,8 +41,9 @@ util = { path = "../util", default-features = false }
 # === Misc Dependencies === #
 base64 = "0.22.1"
 ethers = { workspace = true }
-itertools = { workspace = true }
 hex = "0.4"
+itertools = { workspace = true }
+num-traits = "0.2.15"
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["arbitrary_precision"] }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }

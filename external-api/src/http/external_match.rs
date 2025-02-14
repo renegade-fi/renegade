@@ -19,6 +19,7 @@ use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
+use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::{
@@ -30,6 +31,15 @@ use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 #[cfg(feature = "full-api")]
 use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
+
+// ------------------
+// | Error Messages |
+// ------------------
+
+/// The error message emitted when an external order specifies both the quote
+/// and base size
+const ERR_MULTIPLE_SIZING_PARAMS: &str =
+    "exactly one of base_amount, quote_amount, or exact_output_amount must be set";
 
 // ---------------
 // | HTTP Routes |
@@ -124,12 +134,31 @@ pub struct ExternalOrder {
     /// The quote amount of the order
     #[serde(default)]
     pub quote_amount: Amount,
+    /// The exact output amount expected from the match
+    #[serde(default)]
+    pub exact_output_amount: Option<Amount>,
     /// The minimum fill size for the order
     #[serde(default)]
     pub min_fill_size: Amount,
 }
 
 impl ExternalOrder {
+    /// Validate the external order
+    pub fn validate(&self) -> Result<(), &'static str> {
+        // Only one of the order sizing options can be set
+        let base_zero = self.base_amount.is_zero();
+        let quote_zero = self.quote_amount.is_zero();
+        let exact_out_some = self.exact_output_amount.is_some();
+
+        // Check that exactly one of the sizing constraints is set
+        let n_sizes_set = (!base_zero as u8) + (!quote_zero as u8) + (exact_out_some as u8);
+        if n_sizes_set != 1 {
+            return Err(ERR_MULTIPLE_SIZING_PARAMS);
+        }
+
+        Ok(())
+    }
+
     /// Returns whether the order is for the chain-native asset
     pub fn trades_native_asset(&self) -> bool {
         let native_mint = biguint_from_hex_string(NATIVE_ASSET_ADDRESS).unwrap();

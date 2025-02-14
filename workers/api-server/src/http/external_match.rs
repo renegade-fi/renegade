@@ -41,7 +41,6 @@ use job_types::{
     price_reporter::PriceReporterQueue,
 };
 use num_bigint::BigUint;
-use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
 use state::State;
 use system_bus::SystemBus;
@@ -83,11 +82,6 @@ const ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH: &str = "failed to process external m
 const NO_ATOMIC_MATCH_FOUND: &str = "no atomic match found";
 /// The error message returned when the external matching engine times out
 const ERR_EXTERNAL_MATCH_TIMEOUT: &str = "external match request timed out";
-/// The error message emitted when an external order specifies zero size
-const ERR_EXTERNAL_ORDER_ZERO_SIZE: &str = "external order has zero size";
-/// The error message emitted when an external order specifies both the quote
-/// and base size
-const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote and base size";
 /// The error message emitted when a quote is expired
 const ERR_QUOTE_EXPIRED: &str = "quote expired";
 /// The error message emitted when a quote signature is invalid
@@ -189,18 +183,6 @@ impl ExternalMatchProcessor {
         &self,
         mut o: ExternalOrder,
     ) -> Result<Order, ApiServerError> {
-        // External order must specify non-zero size
-        let quote_zero = o.quote_amount.is_zero();
-        let base_zero = o.base_amount.is_zero();
-        if quote_zero && base_zero {
-            return Err(bad_request(ERR_EXTERNAL_ORDER_ZERO_SIZE));
-        }
-
-        // Only one of quote or base should specify the size
-        if !quote_zero && !base_zero {
-            return Err(bad_request(ERR_EXTERNAL_ORDER_BOTH_SIZE));
-        }
-
         // Get the tokens being traded, swapping WETH for ETH if necessary
         let base = if o.trades_native_asset() {
             let native_wrapper = get_native_asset_wrapper_token();
@@ -445,6 +427,7 @@ impl TypedHandler for RequestExternalQuoteHandler {
         }
 
         let order = req.external_order;
+        order.validate().map_err(bad_request)?;
         let mut match_res = self.processor.request_external_quote(order.clone()).await?;
 
         if order.trades_native_asset() {
@@ -500,6 +483,9 @@ impl AssembleExternalMatchHandler {
         new_order: &ExternalOrder,
         old_order: &ExternalOrder,
     ) -> Result<(), ApiServerError> {
+        // Validate the new order
+        new_order.validate().map_err(bad_request)?;
+
         // Check that the mints are the same
         let base_mint_changed = new_order.base_mint != old_order.base_mint;
         let quote_mint_changed = new_order.quote_mint != old_order.quote_mint;
@@ -589,12 +575,13 @@ impl TypedHandler for RequestExternalMatchHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
-        // Check that the external order is large enough
+        // Validate the order then request a match bundle
+        let order = req.external_order;
+        order.validate().map_err(bad_request)?;
+
         let receiver = parse_receiver_address(req.receiver_address)?;
-        let match_bundle = self
-            .processor
-            .request_match_bundle(req.do_gas_estimation, receiver, req.external_order)
-            .await?;
+        let match_bundle =
+            self.processor.request_match_bundle(req.do_gas_estimation, receiver, order).await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
 }
