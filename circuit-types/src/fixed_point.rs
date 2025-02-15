@@ -103,6 +103,16 @@ impl<'de> Deserialize<'de> for FixedPoint {
 }
 
 impl FixedPoint {
+    /// Create a representation of zero
+    pub fn zero() -> Self {
+        Self { repr: Scalar::zero() }
+    }
+
+    /// Create a representation of one
+    pub fn one() -> Self {
+        Self { repr: Scalar::new(*TWO_TO_M_SCALAR) }
+    }
+
     /// Whether the represented fixed point is negative
     pub fn is_negative(&self) -> bool {
         let neg_threshold = ScalarField::MODULUS_MINUS_ONE_DIV_TWO;
@@ -186,6 +196,26 @@ impl FixedPoint {
 
         let (q, _r) = val_repr_bigint.div_rem(&self_repr_bigint);
         biguint_to_scalar(&q)
+    }
+
+    /// Divides the given integer by the fixed point value returning the ceiling
+    /// of the quotient
+    ///
+    /// Stated different; returns the minimal integer `a` such that `a * fp >
+    /// val`
+    pub fn ceil_div_int(val: u128, fp: Self) -> Scalar {
+        let val_repr = Scalar::from(val) * Scalar::new(*TWO_TO_M_SCALAR);
+        let val_repr_bigint = scalar_to_biguint(&val_repr);
+        let self_repr_bigint = scalar_to_biguint(&fp.repr);
+
+        let (q, r) = val_repr_bigint.div_rem(&self_repr_bigint);
+        let q_scalar = biguint_to_scalar(&q);
+
+        if r == BigUint::from(0u8) {
+            q_scalar
+        } else {
+            q_scalar + Scalar::one()
+        }
     }
 }
 
@@ -352,9 +382,6 @@ impl FixedPointVar {
 
         Self { repr }
     }
-
-    /// TODO: Implement truncation logic and fixed-point * fixed-point if
-    /// necessary
 
     /// Multiplication with an integer value
     ///

@@ -43,7 +43,7 @@ pub struct Cli {
     pub config_file: Option<String>,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
-    #[clap(long, value_parser, conflicts_with_all = &["coinbase_api_key", "coinbase_api_secret", "eth_websocket_addr"])]
+    #[clap(long, value_parser, conflicts_with_all = &["coinbase_key_name", "coinbase_key_secret", "eth_websocket_addr"])]
     pub price_reporter_url: Option<String>,
 
     // -----------------------------

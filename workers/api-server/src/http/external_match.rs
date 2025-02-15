@@ -12,7 +12,10 @@ use std::{sync::Arc, time::Duration};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::r#match::{ExternalMatchResult, FeeTake};
+use circuit_types::{
+    fixed_point::FixedPoint,
+    r#match::{ExternalMatchResult, FeeTake},
+};
 use common::types::{
     hmac::HmacKey,
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
@@ -41,7 +44,6 @@ use job_types::{
     price_reporter::PriceReporterQueue,
 };
 use num_bigint::BigUint;
-use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
 use state::State;
 use system_bus::SystemBus;
@@ -83,11 +85,6 @@ const ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH: &str = "failed to process external m
 const NO_ATOMIC_MATCH_FOUND: &str = "no atomic match found";
 /// The error message returned when the external matching engine times out
 const ERR_EXTERNAL_MATCH_TIMEOUT: &str = "external match request timed out";
-/// The error message emitted when an external order specifies zero size
-const ERR_EXTERNAL_ORDER_ZERO_SIZE: &str = "external order has zero size";
-/// The error message emitted when an external order specifies both the quote
-/// and base size
-const ERR_EXTERNAL_ORDER_BOTH_SIZE: &str = "external order specifies both quote and base size";
 /// The error message emitted when a quote is expired
 const ERR_QUOTE_EXPIRED: &str = "quote expired";
 /// The error message emitted when a quote signature is invalid
@@ -185,22 +182,11 @@ impl ExternalMatchProcessor {
     // --- Order Validation & Conversion --- //
 
     /// Get an internal order from an external order given a price
-    async fn external_order_to_internal_order(
+    async fn external_order_to_internal_order_with_options(
         &self,
         mut o: ExternalOrder,
-    ) -> Result<Order, ApiServerError> {
-        // External order must specify non-zero size
-        let quote_zero = o.quote_amount.is_zero();
-        let base_zero = o.base_amount.is_zero();
-        if quote_zero && base_zero {
-            return Err(bad_request(ERR_EXTERNAL_ORDER_ZERO_SIZE));
-        }
-
-        // Only one of quote or base should specify the size
-        if !quote_zero && !base_zero {
-            return Err(bad_request(ERR_EXTERNAL_ORDER_BOTH_SIZE));
-        }
-
+        mut options: ExternalMatchingEngineOptions,
+    ) -> Result<(Order, ExternalMatchingEngineOptions), ApiServerError> {
         // Get the tokens being traded, swapping WETH for ETH if necessary
         let base = if o.trades_native_asset() {
             let native_wrapper = get_native_asset_wrapper_token();
@@ -219,9 +205,19 @@ impl ExternalMatchProcessor {
             .and_then(|p| p.get_decimal_corrected_price(&base, &quote))
             .map(|p| p.as_fixed_point())
             .map_err(internal_error)?;
-        let order = o.to_order_with_price(decimal_corrected_price);
+
+        // TODO: Currently we set the relayer fee to zero, remove this
+        let relayer_fee = FixedPoint::zero();
+        let order = o.to_internal_order(decimal_corrected_price, relayer_fee);
+
+        // Enforce an exact quote amount if specified
+        if o.exact_quote_output != 0 {
+            let quote_amount = o.get_quote_amount(decimal_corrected_price, relayer_fee);
+            options = options.with_exact_quote_amount(quote_amount);
+        }
+
         self.check_external_order_size(&order).await?;
-        Ok(order)
+        Ok((order, options))
     }
 
     /// Check the USDC denominated value of an external order and assert that it
@@ -267,11 +263,9 @@ impl ExternalMatchProcessor {
         price: TimestampedPrice,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let opt = ExternalMatchingEngineOptions::new(
-            false, // only_quote
-            ASSEMBLE_BUNDLE_TIMEOUT,
-            Some(price),
-        );
+        let opt = ExternalMatchingEngineOptions::new()
+            .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
+            .with_price(price);
         let resp = self.request_handshake_manager(order.clone(), opt).await?;
 
         match resp {
@@ -297,11 +291,8 @@ impl ExternalMatchProcessor {
         receiver: Option<Address>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let opt = ExternalMatchingEngineOptions::new(
-            false, // only_quote
-            DIRECT_MATCH_BUNDLE_TIMEOUT,
-            None, // price
-        );
+        let opt =
+            ExternalMatchingEngineOptions::new().with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT);
         let resp = self.request_handshake_manager(external_order.clone(), opt).await?;
 
         match resp {
@@ -328,7 +319,8 @@ impl ExternalMatchProcessor {
         order: ExternalOrder,
         options: ExternalMatchingEngineOptions,
     ) -> Result<SystemBusMessage, ApiServerError> {
-        let order = self.external_order_to_internal_order(order).await?;
+        let (order, options) =
+            self.external_order_to_internal_order_with_options(order, options).await?;
         self.check_external_order_size(&order).await?;
 
         let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, options);
@@ -445,6 +437,7 @@ impl TypedHandler for RequestExternalQuoteHandler {
         }
 
         let order = req.external_order;
+        order.validate().map_err(bad_request)?;
         let mut match_res = self.processor.request_external_quote(order.clone()).await?;
 
         if order.trades_native_asset() {
@@ -500,6 +493,9 @@ impl AssembleExternalMatchHandler {
         new_order: &ExternalOrder,
         old_order: &ExternalOrder,
     ) -> Result<(), ApiServerError> {
+        // Validate the new order
+        new_order.validate().map_err(bad_request)?;
+
         // Check that the mints are the same
         let base_mint_changed = new_order.base_mint != old_order.base_mint;
         let quote_mint_changed = new_order.quote_mint != old_order.quote_mint;
@@ -589,12 +585,13 @@ impl TypedHandler for RequestExternalMatchHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
-        // Check that the external order is large enough
+        // Validate the order then request a match bundle
+        let order = req.external_order;
+        order.validate().map_err(bad_request)?;
+
         let receiver = parse_receiver_address(req.receiver_address)?;
-        let match_bundle = self
-            .processor
-            .request_match_bundle(req.do_gas_estimation, receiver, req.external_order)
-            .await?;
+        let match_bundle =
+            self.processor.request_match_bundle(req.do_gas_estimation, receiver, order).await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
 }

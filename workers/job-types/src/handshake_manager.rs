@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use ark_mpc::network::QuicTwoPartyNet;
-use circuit_types::wallet::Nullifier;
+use circuit_types::{wallet::Nullifier, Amount};
 use common::types::{
     gossip::WrappedPeerId,
     wallet::{Order, OrderIdentifier},
@@ -135,11 +135,9 @@ impl HandshakeManagerJob {
         price: TimestampedPrice,
         bundle_duration: Duration,
     ) -> (Self, String) {
-        let opt = ExternalMatchingEngineOptions::new(
-            false, // only_quote
-            bundle_duration,
-            Some(price),
-        );
+        let opt = ExternalMatchingEngineOptions::new()
+            .with_bundle_duration(bundle_duration)
+            .with_price(price);
         Self::new_external_match_job(order, opt)
     }
 
@@ -174,20 +172,42 @@ pub struct ExternalMatchingEngineOptions {
     /// This is used to fulfill a previously committed-to quote at the
     /// api-layer
     pub price: Option<TimestampedPrice>,
+    /// The exact quote amount to use for a full fill
+    pub exact_quote_amount: Option<Amount>,
 }
 
 impl ExternalMatchingEngineOptions {
-    /// Create a new external matching engine options
-    pub fn new(
-        only_quote: bool,
-        bundle_duration: Duration,
-        price: Option<TimestampedPrice>,
-    ) -> Self {
-        Self { only_quote, bundle_duration, price }
+    /// Create a new, default external matching engine options
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create a new external matching engine options with only a quote
     pub fn only_quote() -> Self {
-        Self { only_quote: true, bundle_duration: Duration::from_secs(0), price: None }
+        Self::new().with_only_quote(true)
+    }
+
+    /// Set whether to only generate a quote
+    pub fn with_only_quote(mut self, only_quote: bool) -> Self {
+        self.only_quote = only_quote;
+        self
+    }
+
+    /// Set the bundle duration
+    pub fn with_bundle_duration(mut self, duration: Duration) -> Self {
+        self.bundle_duration = duration;
+        self
+    }
+
+    /// Set the price
+    pub fn with_price(mut self, price: TimestampedPrice) -> Self {
+        self.price = Some(price);
+        self
+    }
+
+    /// Set the exact quote amount
+    pub fn with_exact_quote_amount(mut self, amount: Amount) -> Self {
+        self.exact_quote_amount = Some(amount);
+        self
     }
 }

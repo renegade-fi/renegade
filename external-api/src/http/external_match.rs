@@ -19,9 +19,11 @@ use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
 use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
+use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::{
+    arbitrum::get_external_match_fee,
     get_current_time_millis,
     hex::{biguint_from_hex_string, biguint_to_hex_addr},
 };
@@ -30,6 +32,15 @@ use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 #[cfg(feature = "full-api")]
 use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
+
+// ------------------
+// | Error Messages |
+// ------------------
+
+/// The error message emitted when an external order specifies both the quote
+/// and base size
+const ERR_MULTIPLE_SIZING_PARAMS: &str =
+    "exactly one of base_amount, quote_amount, or exact_output_amount must be set";
 
 // ---------------
 // | HTTP Routes |
@@ -124,12 +135,38 @@ pub struct ExternalOrder {
     /// The quote amount of the order
     #[serde(default)]
     pub quote_amount: Amount,
+    /// The exact output amount of the base token expected from the match
+    #[serde(default)]
+    pub exact_base_output: Amount,
+    /// The exact output amount of the quote token expected from the match
+    #[serde(default)]
+    pub exact_quote_output: Amount,
     /// The minimum fill size for the order
     #[serde(default)]
     pub min_fill_size: Amount,
 }
 
 impl ExternalOrder {
+    /// Validate the external order
+    pub fn validate(&self) -> Result<(), &'static str> {
+        // Only one of the order sizing options can be set
+        let base_zero = self.base_amount.is_zero();
+        let quote_zero = self.quote_amount.is_zero();
+        let exact_base_output = self.exact_base_output != 0;
+        let exact_quote_output = self.exact_quote_output != 0;
+
+        // Check that exactly one of the sizing constraints is set
+        let n_sizes_set = (!base_zero as u8)
+            + (!quote_zero as u8)
+            + (exact_base_output as u8)
+            + (exact_quote_output as u8);
+        if n_sizes_set != 1 {
+            return Err(ERR_MULTIPLE_SIZING_PARAMS);
+        }
+
+        Ok(())
+    }
+
     /// Returns whether the order is for the chain-native asset
     pub fn trades_native_asset(&self) -> bool {
         let native_mint = biguint_from_hex_string(NATIVE_ASSET_ADDRESS).unwrap();
@@ -142,8 +179,8 @@ impl ExternalOrder {
     /// We need the price here to convert a quote denominated order into a base
     /// denominated order
     #[cfg(feature = "full-api")]
-    pub fn to_order_with_price(&self, price: FixedPoint) -> Order {
-        let base_amount = self.get_base_amount(price);
+    pub fn to_internal_order(&self, price: FixedPoint, relayer_fee: FixedPoint) -> Order {
+        let base_amount = self.get_base_amount(price, relayer_fee);
         let mut min_fill_size = self.get_min_fill_in_base(price);
         min_fill_size = u128::min(min_fill_size, base_amount); // Ensure min fill size is not greater than the order size
 
@@ -168,12 +205,22 @@ impl ExternalOrder {
     ///
     /// The price here is expected to be decimal corrected; i.e. multiplied by
     /// the decimal diff for the two tokens
-    pub fn get_base_amount(&self, price: FixedPoint) -> Amount {
+    pub fn get_base_amount(&self, price: FixedPoint, relayer_fee: FixedPoint) -> Amount {
         if self.base_amount != 0 {
             return self.base_amount;
         }
 
-        let implied_base_amount = FixedPoint::floor_div_int(self.quote_amount, price);
+        // If an exact amount is specified, compensate for the fee in the receive amount
+        if self.exact_base_output != 0 && self.side == OrderSide::Buy {
+            let protocol_fee = get_external_match_fee(&self.base_mint);
+            let total_fee = relayer_fee + protocol_fee;
+            return Self::get_match_amount_for_receive(self.exact_base_output, total_fee);
+        } else if self.exact_base_output != 0 {
+            return self.exact_base_output;
+        }
+
+        let quote_amount = self.get_quote_amount(price, relayer_fee);
+        let implied_base_amount = FixedPoint::floor_div_int(quote_amount, price);
         scalar_to_u128(&implied_base_amount)
     }
 
@@ -181,9 +228,18 @@ impl ExternalOrder {
     ///
     /// The price here is expected to be decimal corrected; i.e. multiplied by
     /// the decimal diff for the two tokens
-    pub fn get_quote_amount(&self, price: FixedPoint) -> Amount {
+    pub fn get_quote_amount(&self, price: FixedPoint, relayer_fee: FixedPoint) -> Amount {
         if self.quote_amount != 0 {
             return self.quote_amount;
+        }
+
+        // If an exact amount is specified, compensate for the fee in the receive amount
+        if self.exact_quote_output != 0 && self.side == OrderSide::Sell {
+            let protocol_fee = get_external_match_fee(&self.base_mint);
+            let total_fee = relayer_fee + protocol_fee;
+            return Self::get_match_amount_for_receive(self.exact_quote_output, total_fee);
+        } else if self.exact_quote_output != 0 {
+            return self.exact_quote_output;
         }
 
         let base_amount_scalar = Scalar::from(self.base_amount);
@@ -205,6 +261,17 @@ impl ExternalOrder {
         // Add one to round up
         let div = FixedPoint::floor_div_int(min_fill, price) + Scalar::one();
         scalar_to_u128(&div)
+    }
+
+    /// Get the amount necessary to match the order at such that after fees the
+    /// given amount is received exactly
+    pub(super) fn get_match_amount_for_receive(
+        receive_amount: Amount,
+        total_fee: FixedPoint,
+    ) -> Amount {
+        let one_minus_fee = FixedPoint::one() - total_fee;
+        let match_amount = FixedPoint::floor_div_int(receive_amount, one_minus_fee);
+        scalar_to_u128(&match_amount)
     }
 }
 
@@ -398,5 +465,29 @@ impl From<ApiTimestampedPrice> for TimestampedPrice {
     fn from(api_price: ApiTimestampedPrice) -> Self {
         let price = api_price.price.parse::<f64>().unwrap();
         Self { price, timestamp: api_price.timestamp }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use circuit_types::fixed_point::FixedPoint;
+    use constants::Scalar;
+    use rand::{thread_rng, Rng};
+
+    /// Test the method that computes match amounts for exact receive orders
+    #[test]
+    fn test_get_match_amount_for_receive() {
+        let mut rng = thread_rng();
+        let desired_amount = rng.gen_range(1e10..1e25) as u128;
+        let full_fee = rng.gen_range(0.00001..0.01);
+        let full_fee_fp = FixedPoint::from_f64_round_down(full_fee);
+        let match_amt = ExternalOrder::get_match_amount_for_receive(desired_amount, full_fee_fp);
+
+        // Apply the fee to this amount and ensure the result is the desired amount
+        let match_amt_scalar = Scalar::from(match_amt);
+        let fee_amt = full_fee_fp * match_amt_scalar;
+        let net_amt = match_amt_scalar - fee_amt.floor();
+        assert_eq!(scalar_to_u128(&net_amt), desired_amount);
     }
 }

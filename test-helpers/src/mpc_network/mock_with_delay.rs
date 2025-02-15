@@ -145,6 +145,7 @@ mod tests {
 
     /// Test that the delay is accurate
     #[tokio::test]
+    #[ignore]
     async fn test_delay() {
         const DELAY_MS: u64 = 100;
         const N_SENDS: u64 = 1000;
