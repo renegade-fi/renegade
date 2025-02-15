@@ -474,9 +474,10 @@ impl SettleMatchExternalTask {
 
         // Compute the fees due by the external party in the match
         let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
-        let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
+        let external_party_relayer_fee =
+            FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
         let external_party_fees = compute_fee_obligation_with_protocol_fee(
-            relayer_fee,
+            external_party_relayer_fee,
             protocol_fee,
             internal_party_order.side.opposite(),
             &self.match_res,

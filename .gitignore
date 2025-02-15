@@ -4,6 +4,9 @@
 **/flamegraph.svg
 rustc-ice-*
 
+# Git Patches
+**/*.patch
+
 # Config
 **/no_commit
 **/deployments.json
