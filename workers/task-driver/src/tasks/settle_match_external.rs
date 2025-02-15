@@ -28,6 +28,7 @@ use common::types::proof_bundles::{
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use common::types::TimestampedPrice;
+use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::bus_message::SystemBusMessage;
 use job_types::event_manager::{
     try_send_event, EventManagerQueue, ExternalFillEvent, RelayerEvent,
@@ -473,10 +474,9 @@ impl SettleMatchExternalTask {
 
         // Compute the fees due by the external party in the match
         let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
-
-        // TODO: We set the external party's relayer fee to 0 for now, check on this
+        let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
         let external_party_fees = compute_fee_obligation_with_protocol_fee(
-            FixedPoint::default(), // relayer_fee
+            relayer_fee,
             protocol_fee,
             internal_party_order.side.opposite(),
             &self.match_res,
