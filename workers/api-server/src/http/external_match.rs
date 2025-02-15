@@ -211,7 +211,7 @@ impl ExternalMatchProcessor {
         let order = o.to_internal_order(decimal_corrected_price, relayer_fee);
 
         // Enforce an exact quote amount if specified
-        if o.quote_amount != 0 || o.exact_quote_output != 0 {
+        if o.exact_quote_output != 0 {
             let quote_amount = o.get_quote_amount(decimal_corrected_price, relayer_fee);
             options = options.with_exact_quote_amount(quote_amount);
         }

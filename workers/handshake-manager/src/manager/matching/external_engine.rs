@@ -47,7 +47,7 @@ impl HandshakeExecutor {
     #[instrument(name = "run_external_matching_engine", skip_all)]
     pub async fn run_external_matching_engine(
         &self,
-        order: Order,
+        mut order: Order,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
@@ -60,6 +60,13 @@ impl HandshakeExecutor {
                 self.get_execution_price(&base, &quote).await?
             },
         };
+
+        // If the quote amount is exact, we must modify the order's base amount
+        // accordingly
+        if let Some(quote_amount) = options.exact_quote_amount {
+            let base_amount = FixedPoint::ceil_div_int(quote_amount, ts_price.as_fixed_point());
+            order.amount = scalar_to_u128(&base_amount);
+        }
 
         // Run the matching engine
         match self
