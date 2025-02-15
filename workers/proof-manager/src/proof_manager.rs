@@ -91,7 +91,9 @@ impl ProofManager {
         }
 
         // Preprocess the circuits
-        ProofManager::preprocess_circuits()?;
+        thread_pool.spawn_fifo(|| {
+            ProofManager::preprocess_circuits().unwrap();
+        });
 
         loop {
             // Check the cancel channel before blocking on a job
