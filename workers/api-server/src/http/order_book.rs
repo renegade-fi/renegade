@@ -2,9 +2,12 @@
 
 use async_trait::async_trait;
 use common::types::token::{read_token_remap, USDT_TICKER, USD_TICKER};
+use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     http::{
-        order_book::{GetNetworkOrderByIdResponse, GetNetworkOrdersResponse},
+        order_book::{
+            GetExternalMatchFeeResponse, GetNetworkOrderByIdResponse, GetNetworkOrdersResponse,
+        },
         GetSupportedTokensResponse,
     },
     types::ApiToken,
@@ -13,13 +16,14 @@ use external_api::{
 use hyper::HeaderMap;
 use itertools::Itertools;
 use state::State;
+use util::arbitrum::get_external_match_fee;
 
 use crate::{
     error::{not_found, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
-use super::parse_order_id_from_params;
+use super::{parse_mint_from_params, parse_order_id_from_params};
 
 /// Tokens filtered from the supported token endpoint
 const FILTERED_TOKENS: [&str; 2] = [USD_TICKER, USDT_TICKER];
@@ -128,5 +132,31 @@ impl TypedHandler for GetSupportedTokensHandler {
             .collect_vec();
 
         Ok(GetSupportedTokensResponse { tokens })
+    }
+}
+
+/// Handler for the GET /order_book/external-match-fee route
+#[derive(Clone)]
+pub struct GetExternalMatchFeesHandler;
+
+#[async_trait]
+impl TypedHandler for GetExternalMatchFeesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetExternalMatchFeeResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let asset = parse_mint_from_params(&query_params)?;
+        let relayer_fee = EXTERNAL_MATCH_RELAYER_FEE;
+        let protocol_fee = get_external_match_fee(&asset).to_f64();
+        Ok(GetExternalMatchFeeResponse {
+            protocol_fee: protocol_fee.to_string(),
+            relayer_fee: relayer_fee.to_string(),
+        })
     }
 }

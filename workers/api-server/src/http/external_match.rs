@@ -23,7 +23,9 @@ use common::types::{
     wallet::Order,
     TimestampedPrice,
 };
-use constants::{Scalar, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
+use constants::{
+    Scalar, EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER,
+};
 use ethers::{
     middleware::Middleware,
     types::{transaction::eip2718::TypedTransaction, Address, U256},
@@ -207,7 +209,7 @@ impl ExternalMatchProcessor {
             .map_err(internal_error)?;
 
         // TODO: Currently we set the relayer fee to zero, remove this
-        let relayer_fee = FixedPoint::zero();
+        let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
         let order = o.to_internal_order(decimal_corrected_price, relayer_fee);
 
         // Enforce an exact quote amount if specified
