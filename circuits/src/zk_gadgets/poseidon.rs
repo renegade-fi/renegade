@@ -1,10 +1,17 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
-use ark_ff::One;
+use std::ops::Mul;
+
+use crate::print_wire;
+use ark_ff::{Field, One, Zero};
+use ark_mpc::algebra::FieldWrapper;
 use constants::ScalarField;
 use itertools::Itertools;
-use mpc_relation::{constants::GATE_WIDTH, errors::CircuitError, traits::Circuit, Variable};
+use jf_primitives::rescue::STATE_SIZE;
+use mpc_relation::{
+    constants::GATE_WIDTH, errors::CircuitError, gates::Gate, traits::Circuit, Variable,
+};
 use renegade_crypto::hash::{
     CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, RATE, R_F, R_P, WIDTH as SPONGE_WIDTH,
 };
@@ -43,15 +50,15 @@ impl PoseidonCSPRNGGadget {
     }
 }
 
-// -----------------------
-// | Singleprover Gadget |
-// -----------------------
+// ---------------
+// | Hash Gadget |
+// ---------------
 
 /// A hash gadget that applies a Poseidon hash function to the given constraint
 /// system
 ///
 /// This version of the gadget is used for the single-prover case, i.e. no MPC
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PoseidonHashGadget {
     /// The hash state
     state: Vec<Variable>,
@@ -263,8 +270,7 @@ impl PoseidonHashGadget {
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         self.internal_add_rc(round_number, cs)?;
-        self.internal_sbox(cs)?;
-        self.internal_mds(cs)
+        self.fused_internal_sbox_mds(cs)
     }
 
     /// Add round constants in an internal round
@@ -312,7 +318,152 @@ impl PoseidonHashGadget {
 
         Ok(())
     }
+
+    /// A fused internal sbox and MDS matrix
+    fn fused_internal_sbox_mds<C: Circuit<ScalarField>>(
+        &mut self,
+        cs: &mut C,
+    ) -> Result<(), CircuitError> {
+        let in_wires = self.state.clone();
+
+        // First state element
+        let state_coeff = ScalarField::one();
+        let state_elem = self.state[0];
+        let out_var = self.add_fused_internal_sbox_mds(
+            state_coeff,
+            true, // sbox
+            state_elem,
+            &in_wires,
+            cs,
+        )?;
+        self.state[0] = out_var;
+
+        // Second state element
+        let state_coeff = ScalarField::one();
+        let state_elem = self.state[1];
+        let out_var = self.add_fused_internal_sbox_mds(
+            state_coeff,
+            false, // no sbox
+            state_elem,
+            &in_wires,
+            cs,
+        )?;
+        self.state[1] = out_var;
+
+        // Third state element
+        let state_coeff = ScalarField::from(2u8);
+        let state_elem = self.state[2];
+        let out_var = self.add_fused_internal_sbox_mds(
+            state_coeff,
+            false, // no sbox
+            state_elem,
+            &in_wires,
+            cs,
+        )?;
+        self.state[2] = out_var;
+
+        Ok(())
+    }
+
+    /// Add a fused internal sbox + MDS gate to the constraint system
+    fn add_fused_internal_sbox_mds<C: Circuit<ScalarField>>(
+        &self,
+        state_elem_coeff: ScalarField,
+        apply_sbox: bool,
+        curr_state: Variable,
+        state_vars: &[Variable],
+        cs: &mut C,
+    ) -> Result<Variable, CircuitError> {
+        let gate = FusedInternalSboxMDSGate::new(state_elem_coeff, apply_sbox);
+
+        // Compute the output of the gate
+        let state_curr = cs.witness(curr_state)?;
+        let state0 = cs.witness(state_vars[0])?;
+        let state1 = cs.witness(state_vars[1])?;
+        let state2 = cs.witness(state_vars[2])?;
+        let out = gate.compute_output::<C>(state_curr, state0, state1, state2);
+        let out_var = cs.create_variable(out)?;
+
+        let wires = [curr_state, state_vars[0], state_vars[1], state_vars[2], out_var];
+        cs.insert_gate(&wires, Box::new(gate))?;
+        Ok(out_var)
+    }
 }
+
+// -------------------------
+// | Poseidon Custom Gates |
+// -------------------------
+
+/// Represents a fused internal sbox and the first step in the internal MDS
+/// matmul, summing the inputs
+///
+/// Implements (a_1 * state0^5 + a_2 * state1 + a_3 * state2)
+#[derive(Copy, Clone)]
+struct FusedInternalSboxMDSGate<F: Field> {
+    /// The coefficients of the linear combination
+    state_elem_coeff: F,
+    /// Whether or not to apply the sbox to the state element
+    apply_sbox: bool,
+}
+
+impl<F: Field> FusedInternalSboxMDSGate<F> {
+    /// Create a new fused internal sbox and MDS gate
+    fn new(state_elem_coeff: F, apply_sbox: bool) -> Self {
+        Self { state_elem_coeff, apply_sbox }
+    }
+
+    /// Compute the output of the gate given the input wire assignments
+    fn compute_output<C: Circuit<F>>(
+        &self,
+        state_curr: C::Wire,
+        state0: C::Wire,
+        state1: C::Wire,
+        state2: C::Wire,
+    ) -> C::Wire {
+        let curr_coeff = C::Constant::from_field(&self.state_elem_coeff);
+        let state_elem = if self.apply_sbox { Self::pow5::<C>(state_curr) } else { state_curr };
+        curr_coeff * state_elem + Self::pow5::<C>(state0) + state1 + state2
+    }
+
+    /// Compute the fifth power of a wire
+    fn pow5<C: Circuit<F>>(x: C::Wire) -> C::Wire {
+        let x2 = x.clone() * x.clone();
+        let x4 = x2.clone() * x2.clone();
+        x4 * x
+    }
+}
+
+impl<F: Field> Gate<F> for FusedInternalSboxMDSGate<F> {
+    fn name(&self) -> &'static str {
+        "FusedInternalSboxMDSGate"
+    }
+
+    fn q_hash(&self) -> [F; GATE_WIDTH] {
+        // If we are applying the sbox to the state element, we enable the first
+        // hash gate
+        if self.apply_sbox {
+            [self.state_elem_coeff, F::one(), F::zero(), F::zero()]
+        } else {
+            [F::zero(), F::one(), F::zero(), F::zero()]
+        }
+    }
+
+    fn q_lc(&self) -> [F; GATE_WIDTH] {
+        if self.apply_sbox {
+            [F::zero(), F::zero(), F::one(), F::one()]
+        } else {
+            [self.state_elem_coeff, F::zero(), F::one(), F::one()]
+        }
+    }
+
+    fn q_o(&self) -> F {
+        F::one()
+    }
+}
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod test {
@@ -324,6 +475,21 @@ mod test {
     use renegade_crypto::hash::{compute_poseidon_hash, Poseidon2Sponge};
 
     use crate::zk_gadgets::poseidon::PoseidonHashGadget;
+
+    #[test]
+    fn test_n_constraints() {
+        const N: usize = 100;
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+
+        let input = vec![cs.one()];
+        let expected_output = cs.one();
+        for _ in 0..N {
+            let mut hasher = PoseidonHashGadget::new(cs.zero());
+            hasher.hash(&input, expected_output, &mut cs).unwrap();
+        }
+
+        println!("{}", cs.num_gates());
+    }
 
     /// Tests absorbing a series of elements into the hasher and comparing to
     /// the hasher in `renegade-crypto`
