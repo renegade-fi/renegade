@@ -1,7 +1,7 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
-use std::ops::Mul;
+use std::{marker::PhantomData, ops::Mul};
 
 use crate::print_wire;
 use ark_ff::{Field, One, Zero};
@@ -217,8 +217,7 @@ impl PoseidonHashGadget {
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         self.external_add_rc(round_number, cs)?;
-        self.external_sbox(cs)?;
-        self.external_mds(cs)
+        self.fused_external_sbox_mds(cs)
     }
 
     /// Add round constants in an external round
@@ -317,6 +316,53 @@ impl PoseidonHashGadget {
         self.state[SPONGE_WIDTH - 1] = cs.lc(&lc_wires, &coeffs)?;
 
         Ok(())
+    }
+
+    /// A fused external sbox and MDS matrix
+    fn fused_external_sbox_mds<C: Circuit<ScalarField>>(
+        &mut self,
+        cs: &mut C,
+    ) -> Result<(), CircuitError> {
+        let in_wires = self.state.clone();
+
+        // First state element
+        let state_elem = self.state[0];
+        let out_var = self.add_fused_external_sbox_mds(state_elem, &in_wires, cs)?;
+        self.state[0] = out_var;
+
+        // Second state element
+        let state_elem = self.state[1];
+        let out_var = self.add_fused_external_sbox_mds(state_elem, &in_wires, cs)?;
+        self.state[1] = out_var;
+
+        // Third state element
+        let state_elem = self.state[2];
+        let out_var = self.add_fused_external_sbox_mds(state_elem, &in_wires, cs)?;
+        self.state[2] = out_var;
+
+        Ok(())
+    }
+
+    /// A fused external sbox and MDS matrix
+    fn add_fused_external_sbox_mds<C: Circuit<ScalarField>>(
+        &self,
+        curr_state: Variable,
+        state_vars: &[Variable],
+        cs: &mut C,
+    ) -> Result<Variable, CircuitError> {
+        let state_curr = cs.witness(curr_state)?;
+        let state0 = cs.witness(state_vars[0])?;
+        let state1 = cs.witness(state_vars[1])?;
+        let state2 = cs.witness(state_vars[2])?;
+        let out = FusedExternalSboxMDSGate::<ScalarField>::compute_output::<C>(
+            state_curr, state0, state1, state2,
+        );
+        let out_var = cs.create_variable(out)?;
+
+        let wires = [curr_state, state_vars[0], state_vars[1], state_vars[2], out_var];
+        let gate = Box::new(FusedExternalSboxMDSGate::new());
+        cs.insert_gate(&wires, gate)?;
+        Ok(out_var)
     }
 
     /// A fused internal sbox and MDS matrix
@@ -421,15 +467,8 @@ impl<F: Field> FusedInternalSboxMDSGate<F> {
         state2: C::Wire,
     ) -> C::Wire {
         let curr_coeff = C::Constant::from_field(&self.state_elem_coeff);
-        let state_elem = if self.apply_sbox { Self::pow5::<C>(state_curr) } else { state_curr };
-        curr_coeff * state_elem + Self::pow5::<C>(state0) + state1 + state2
-    }
-
-    /// Compute the fifth power of a wire
-    fn pow5<C: Circuit<F>>(x: C::Wire) -> C::Wire {
-        let x2 = x.clone() * x.clone();
-        let x4 = x2.clone() * x2.clone();
-        x4 * x
+        let state_elem = if self.apply_sbox { pow5::<F, C>(state_curr) } else { state_curr };
+        curr_coeff * state_elem + pow5::<F, C>(state0) + state1 + state2
     }
 }
 
@@ -461,6 +500,54 @@ impl<F: Field> Gate<F> for FusedInternalSboxMDSGate<F> {
     }
 }
 
+/// Represents a fused external sbox and  external MDS matrix multiplication per
+/// state element
+///
+/// Implements a_1^5 + a_2^5 + a_3^5 + a_4^5
+#[derive(Copy, Clone)]
+struct FusedExternalSboxMDSGate<F>(PhantomData<F>);
+impl<F: Field> FusedExternalSboxMDSGate<F> {
+    /// Create a new fused external sbox and MDS gate
+    fn new() -> Self {
+        Self(PhantomData)
+    }
+
+    /// Compute the output of the gate given the input wire assignments
+    fn compute_output<C: Circuit<F>>(
+        state_curr: C::Wire,
+        state0: C::Wire,
+        state1: C::Wire,
+        state2: C::Wire,
+    ) -> C::Wire {
+        let state_curr = pow5::<F, C>(state_curr);
+        let state0 = pow5::<F, C>(state0);
+        let state1 = pow5::<F, C>(state1);
+        let state2 = pow5::<F, C>(state2);
+        state_curr + state0 + state1 + state2
+    }
+}
+
+impl<F: Field> Gate<F> for FusedExternalSboxMDSGate<F> {
+    fn name(&self) -> &'static str {
+        "FusedExternalSboxMDSGate"
+    }
+
+    fn q_hash(&self) -> [F; GATE_WIDTH] {
+        [F::one(), F::one(), F::one(), F::one()]
+    }
+
+    fn q_o(&self) -> F {
+        F::one()
+    }
+}
+
+/// Compute the fifth power of a wire
+fn pow5<F: Field, C: Circuit<F>>(x: C::Wire) -> C::Wire {
+    let x2 = x.clone() * x.clone();
+    let x4 = x2.clone() * x2.clone();
+    x4 * x
+}
+
 // ---------
 // | Tests |
 // ---------
@@ -475,21 +562,6 @@ mod test {
     use renegade_crypto::hash::{compute_poseidon_hash, Poseidon2Sponge};
 
     use crate::zk_gadgets::poseidon::PoseidonHashGadget;
-
-    #[test]
-    fn test_n_constraints() {
-        const N: usize = 100;
-        let mut cs = PlonkCircuit::new_turbo_plonk();
-
-        let input = vec![cs.one()];
-        let expected_output = cs.one();
-        for _ in 0..N {
-            let mut hasher = PoseidonHashGadget::new(cs.zero());
-            hasher.hash(&input, expected_output, &mut cs).unwrap();
-        }
-
-        println!("{}", cs.num_gates());
-    }
 
     /// Tests absorbing a series of elements into the hasher and comparing to
     /// the hasher in `renegade-crypto`
