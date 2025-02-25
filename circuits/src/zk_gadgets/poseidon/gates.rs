@@ -1,7 +1,5 @@
 //! Poseidon hash gadget gates
 
-use std::marker::PhantomData;
-
 use ark_ff::Field;
 use ark_mpc::algebra::FieldWrapper;
 use mpc_relation::{constants::GATE_WIDTH, gates::Gate, traits::Circuit};
@@ -15,15 +13,24 @@ use mpc_relation::{constants::GATE_WIDTH, gates::Gate, traits::Circuit};
 ///
 /// Implements a_1^5 + a_2^5 + a_3^5 + a_4^5
 #[derive(Copy, Clone)]
-pub struct FusedExternalSboxMDSGate<F>(PhantomData<F>);
+pub struct FusedExternalSboxMDSGate<F> {
+    /// A round constant to add after the MDS is applied
+    ///
+    /// This allows the arithmetization to fuse the gates in between rounds
+    /// in the permutation, adding the round constant for the next round after
+    /// the MDS multiplication in the current round
+    round_constant: F,
+}
+
 impl<F: Field> FusedExternalSboxMDSGate<F> {
     /// Create a new fused external sbox and MDS gate
-    pub fn new() -> Self {
-        Self(PhantomData)
+    pub fn new(round_constant: F) -> Self {
+        Self { round_constant }
     }
 
     /// Compute the output of the gate given the input wire assignments
     pub fn compute_output<C: Circuit<F>>(
+        &self,
         state_curr: C::Wire,
         state0: C::Wire,
         state1: C::Wire,
@@ -33,7 +40,9 @@ impl<F: Field> FusedExternalSboxMDSGate<F> {
         let state0 = pow5::<F, C>(state0);
         let state1 = pow5::<F, C>(state1);
         let state2 = pow5::<F, C>(state2);
-        state_curr + state0 + state1 + state2
+        let rc = C::Constant::from_field(&self.round_constant);
+
+        rc + state_curr + state0 + state1 + state2
     }
 }
 
@@ -44,6 +53,10 @@ impl<F: Field> Gate<F> for FusedExternalSboxMDSGate<F> {
 
     fn q_hash(&self) -> [F; GATE_WIDTH] {
         [F::one(), F::one(), F::one(), F::one()]
+    }
+
+    fn q_c(&self) -> F {
+        self.round_constant
     }
 
     fn q_o(&self) -> F {

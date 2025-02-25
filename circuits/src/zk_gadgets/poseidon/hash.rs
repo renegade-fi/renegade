@@ -1,7 +1,7 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
-use ark_ff::One;
+use ark_ff::{One, Zero};
 use constants::ScalarField;
 use itertools::Itertools;
 use mpc_relation::{constants::GATE_WIDTH, errors::CircuitError, traits::Circuit, Variable};
@@ -185,22 +185,43 @@ impl PoseidonHashGadget {
     fn permute<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         // Multiply by the external round matrix
         self.external_mds(cs)?;
+        self.external_add_rc(0, cs)?;
+        self.fused_external_sbox_mds(&FULL_ROUND_CONSTANTS[1], cs)?;
+
+        // --- First Set of External Rounds --- //
 
         // Compute full_rounds / 2 rounds of the permutation
         const HALF: usize = R_F / 2;
-        for round in 0..HALF {
-            self.external_round(round, cs)?;
+        for round in 1..(HALF - 1) {
+            let rc = &FULL_ROUND_CONSTANTS[round + 1];
+            self.fused_external_sbox_mds(rc, cs)?;
         }
+
+        // Last external round
+        let rc = [ScalarField::zero(); 3];
+        self.fused_external_sbox_mds(&rc, cs)?;
+
+        // --- Internal Rounds --- //
 
         // Compute the partial rounds of the permutation
         for round in 0..R_P {
             self.internal_round(round, cs)?;
         }
 
+        // --- Second Set of External Rounds --- //
+
+        self.external_add_rc(HALF, cs)?;
+        self.fused_external_sbox_mds(&FULL_ROUND_CONSTANTS[HALF + 1], cs)?;
+
         // Compute another full_rounds / 2 rounds of the permutation
-        for round in HALF..R_F {
-            self.external_round(round, cs)?;
+        for round in (HALF + 1)..(R_F - 1) {
+            let rc = &FULL_ROUND_CONSTANTS[round + 1];
+            self.fused_external_sbox_mds(rc, cs)?;
         }
+
+        // Last external round
+        let rc = [ScalarField::zero(); 3];
+        self.fused_external_sbox_mds(&rc, cs)?;
 
         Ok(())
     }
@@ -212,7 +233,8 @@ impl PoseidonHashGadget {
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         self.external_add_rc(round_number, cs)?;
-        self.fused_external_sbox_mds(cs)
+        let rc = [ScalarField::zero(); 3];
+        self.fused_external_sbox_mds(&rc, cs)
     }
 
     /// Add round constants in an external round
@@ -224,15 +246,6 @@ impl PoseidonHashGadget {
         let rc = &FULL_ROUND_CONSTANTS[round_number];
         for (state_elem, rc) in self.state.iter_mut().zip(rc.iter()) {
             *state_elem = cs.add_constant(*state_elem, rc)?;
-        }
-
-        Ok(())
-    }
-
-    /// Apply the sbox to the state in an external round
-    fn external_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
-        for state_elem in self.state.iter_mut() {
-            *state_elem = cs.pow5(*state_elem)?;
         }
 
         Ok(())
@@ -279,60 +292,32 @@ impl PoseidonHashGadget {
         Ok(())
     }
 
-    /// Apply the sbox to the state in an internal round
-    fn internal_sbox<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
-        self.state[0] = cs.pow5(self.state[0])?;
-        Ok(())
-    }
-
-    /// Apply the internal MDS matrix M_I to the state
-    ///
-    /// For t = 3, this is the matrix:
-    ///     [2, 1, 1]
-    ///     [1, 2, 1]
-    ///     [1, 1, 3]
-    ///
-    /// This can be done efficiently by adding the sum to each element as in the
-    /// external MDS case but adding an additional copy of the final state
-    /// element
-    fn internal_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
-        let mut coeffs = [ScalarField::one(); GATE_WIDTH];
-        let in_wires = self.state.clone();
-
-        // The first two elements of the state
-        for state_elem in self.state[..SPONGE_WIDTH - 1].iter_mut() {
-            let lc_wires = [*state_elem, in_wires[0], in_wires[1], in_wires[2]];
-            *state_elem = cs.lc(&lc_wires, &coeffs)?;
-        }
-
-        // The last element of the state requires an additional copy of itself
-        coeffs[0] = ScalarField::from(2u8);
-        let lc_wires = [self.state[SPONGE_WIDTH - 1], in_wires[0], in_wires[1], in_wires[2]];
-        self.state[SPONGE_WIDTH - 1] = cs.lc(&lc_wires, &coeffs)?;
-
-        Ok(())
-    }
-
     /// A fused external sbox and MDS matrix
+    ///
+    /// TODO: rename this method to include RCs
     fn fused_external_sbox_mds<C: Circuit<ScalarField>>(
         &mut self,
+        next_round_const: &[ScalarField],
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         let in_wires = self.state.clone();
 
         // First state element
+        let rc = next_round_const[0];
         let state_elem = self.state[0];
-        let out_var = self.add_fused_external_sbox_mds(state_elem, &in_wires, cs)?;
+        let out_var = self.add_fused_external_sbox_mds(rc, state_elem, &in_wires, cs)?;
         self.state[0] = out_var;
 
         // Second state element
+        let rc = next_round_const[1];
         let state_elem = self.state[1];
-        let out_var = self.add_fused_external_sbox_mds(state_elem, &in_wires, cs)?;
+        let out_var = self.add_fused_external_sbox_mds(rc, state_elem, &in_wires, cs)?;
         self.state[1] = out_var;
 
         // Third state element
+        let rc = next_round_const[2];
         let state_elem = self.state[2];
-        let out_var = self.add_fused_external_sbox_mds(state_elem, &in_wires, cs)?;
+        let out_var = self.add_fused_external_sbox_mds(rc, state_elem, &in_wires, cs)?;
         self.state[2] = out_var;
 
         Ok(())
@@ -341,22 +326,22 @@ impl PoseidonHashGadget {
     /// A fused external sbox and MDS matrix
     fn add_fused_external_sbox_mds<C: Circuit<ScalarField>>(
         &self,
+        rc: ScalarField,
         curr_state: Variable,
         state_vars: &[Variable],
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
+        let gate = FusedExternalSboxMDSGate::new(rc);
+
         let state_curr = cs.witness(curr_state)?;
         let state0 = cs.witness(state_vars[0])?;
         let state1 = cs.witness(state_vars[1])?;
         let state2 = cs.witness(state_vars[2])?;
-        let out = FusedExternalSboxMDSGate::<ScalarField>::compute_output::<C>(
-            state_curr, state0, state1, state2,
-        );
+        let out = gate.compute_output::<C>(state_curr, state0, state1, state2);
         let out_var = cs.create_variable(out)?;
 
         let wires = [curr_state, state_vars[0], state_vars[1], state_vars[2], out_var];
-        let gate = Box::new(FusedExternalSboxMDSGate::new());
-        cs.insert_gate(&wires, gate)?;
+        cs.insert_gate(&wires, Box::new(gate))?;
         Ok(out_var)
     }
 
