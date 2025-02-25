@@ -198,23 +198,28 @@ impl PoseidonHashGadget {
         }
 
         // Last external round
-        let rc = [ScalarField::zero(); 3];
+        // Fuse the external MDS with the first internal round's constant
+        let mut rc = [ScalarField::zero(); 3];
+        rc[0] = PARTIAL_ROUND_CONSTANTS[0];
         self.fused_external_sbox_mds(&rc, cs)?;
 
         // --- Internal Rounds --- //
 
         // Compute the partial rounds of the permutation
-        for round in 0..R_P {
-            self.internal_round(round, cs)?;
+        for round in 0..(R_P - 1) {
+            rc[0] = PARTIAL_ROUND_CONSTANTS[round + 1];
+            self.fused_internal_sbox_mds(&rc, cs)?;
         }
+
+        // Last internal round
+        // Fuse the internal MDS with the next external round's constants
+        let rc = FULL_ROUND_CONSTANTS[HALF];
+        self.fused_internal_sbox_mds(&rc, cs)?;
 
         // --- Second Set of External Rounds --- //
 
-        self.external_add_rc(HALF, cs)?;
-        self.fused_external_sbox_mds(&FULL_ROUND_CONSTANTS[HALF + 1], cs)?;
-
         // Compute another full_rounds / 2 rounds of the permutation
-        for round in (HALF + 1)..(R_F - 1) {
+        for round in HALF..(R_F - 1) {
             let rc = &FULL_ROUND_CONSTANTS[round + 1];
             self.fused_external_sbox_mds(rc, cs)?;
         }
@@ -277,7 +282,8 @@ impl PoseidonHashGadget {
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         self.internal_add_rc(round_number, cs)?;
-        self.fused_internal_sbox_mds(cs)
+        todo!("delete this method");
+        // self.fused_internal_sbox_mds(cs)
     }
 
     /// Add round constants in an internal round
@@ -348,16 +354,19 @@ impl PoseidonHashGadget {
     /// A fused internal sbox and MDS matrix
     fn fused_internal_sbox_mds<C: Circuit<ScalarField>>(
         &mut self,
+        next_round_constants: &[ScalarField],
         cs: &mut C,
     ) -> Result<(), CircuitError> {
         let in_wires = self.state.clone();
 
         // First state element
         let state_coeff = ScalarField::one();
+        let next_round_constant = next_round_constants[0];
         let state_elem = self.state[0];
         let out_var = self.add_fused_internal_sbox_mds(
-            state_coeff,
             true, // sbox
+            next_round_constant,
+            state_coeff,
             state_elem,
             &in_wires,
             cs,
@@ -366,10 +375,12 @@ impl PoseidonHashGadget {
 
         // Second state element
         let state_coeff = ScalarField::one();
+        let next_round_constant = next_round_constants[1];
         let state_elem = self.state[1];
         let out_var = self.add_fused_internal_sbox_mds(
-            state_coeff,
             false, // no sbox
+            next_round_constant,
+            state_coeff,
             state_elem,
             &in_wires,
             cs,
@@ -378,10 +389,12 @@ impl PoseidonHashGadget {
 
         // Third state element
         let state_coeff = ScalarField::from(2u8);
+        let next_round_constant = next_round_constants[2];
         let state_elem = self.state[2];
         let out_var = self.add_fused_internal_sbox_mds(
-            state_coeff,
             false, // no sbox
+            next_round_constant,
+            state_coeff,
             state_elem,
             &in_wires,
             cs,
@@ -394,13 +407,14 @@ impl PoseidonHashGadget {
     /// Add a fused internal sbox + MDS gate to the constraint system
     fn add_fused_internal_sbox_mds<C: Circuit<ScalarField>>(
         &self,
-        state_elem_coeff: ScalarField,
         apply_sbox: bool,
+        next_round_constant: ScalarField,
+        state_elem_coeff: ScalarField,
         curr_state: Variable,
         state_vars: &[Variable],
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
-        let gate = FusedInternalSboxMDSGate::new(state_elem_coeff, apply_sbox);
+        let gate = FusedInternalSboxMDSGate::new(apply_sbox, next_round_constant, state_elem_coeff);
 
         // Compute the output of the gate
         let state_curr = cs.witness(curr_state)?;

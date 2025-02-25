@@ -81,16 +81,18 @@ fn pow5<F: Field, C: Circuit<F>>(x: C::Wire) -> C::Wire {
 /// Implements (a_1 * state0^5 + a_2 * state1 + a_3 * state2)
 #[derive(Copy, Clone)]
 pub struct FusedInternalSboxMDSGate<F: Field> {
-    /// The coefficients of the linear combination
-    state_elem_coeff: F,
     /// Whether or not to apply the sbox to the state element
     apply_sbox: bool,
+    /// The round constant to add after the MDS is applied
+    next_round_constant: F,
+    /// The coefficients of the linear combination
+    state_elem_coeff: F,
 }
 
 impl<F: Field> FusedInternalSboxMDSGate<F> {
     /// Create a new fused internal sbox and MDS gate
-    pub fn new(state_elem_coeff: F, apply_sbox: bool) -> Self {
-        Self { state_elem_coeff, apply_sbox }
+    pub fn new(apply_sbox: bool, next_round_constant: F, state_elem_coeff: F) -> Self {
+        Self { apply_sbox, next_round_constant, state_elem_coeff }
     }
 
     /// Compute the output of the gate given the input wire assignments
@@ -103,7 +105,9 @@ impl<F: Field> FusedInternalSboxMDSGate<F> {
     ) -> C::Wire {
         let curr_coeff = C::Constant::from_field(&self.state_elem_coeff);
         let state_elem = if self.apply_sbox { pow5::<F, C>(state_curr) } else { state_curr };
-        curr_coeff * state_elem + pow5::<F, C>(state0) + state1 + state2
+        let rc = C::Constant::from_field(&self.next_round_constant);
+
+        rc + curr_coeff * state_elem + pow5::<F, C>(state0) + state1 + state2
     }
 }
 
@@ -128,6 +132,10 @@ impl<F: Field> Gate<F> for FusedInternalSboxMDSGate<F> {
         } else {
             [self.state_elem_coeff, F::zero(), F::one(), F::one()]
         }
+    }
+
+    fn q_c(&self) -> F {
+        self.next_round_constant
     }
 
     fn q_o(&self) -> F {
