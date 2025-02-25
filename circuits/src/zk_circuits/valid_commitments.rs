@@ -18,7 +18,7 @@ use crate::{
     },
     zk_gadgets::{
         comparators::{EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqGadget},
-        wallet_operations::{OrderGadget, WalletGadget},
+        wallet_operations::{FeeGadget, OrderGadget, WalletGadget},
     },
     SingleProverCircuit,
 };
@@ -83,6 +83,7 @@ where
         // take rate in the wallet
         let relayer_fee_repr = witness.relayer_fee.repr;
         let max_match_fee_repr = base_wallet.max_match_fee.repr;
+        FeeGadget::constrain_valid_fee(witness.relayer_fee, cs)?;
         GreaterThanEqGadget::<FEE_BITS>::constrain_greater_than_eq(
             max_match_fee_repr,
             relayer_fee_repr,
