@@ -184,24 +184,24 @@ impl PoseidonHashGadget {
     #[allow(clippy::missing_docs_in_private_items)]
     fn permute<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         // Multiply by the external round matrix
-        self.external_mds(cs)?;
-        self.external_add_rc(0, cs)?;
-        self.fused_external_sbox_mds(&FULL_ROUND_CONSTANTS[1], cs)?;
+        // self.external_mds(cs)?;
+        // self.external_add_rc(0, cs)?;
+        self.external_mds_with_rc(&FULL_ROUND_CONSTANTS[0], cs)?;
 
         // --- First Set of External Rounds --- //
 
         // Compute full_rounds / 2 rounds of the permutation
         const HALF: usize = R_F / 2;
-        for round in 1..(HALF - 1) {
+        for round in 0..(HALF - 1) {
             let rc = &FULL_ROUND_CONSTANTS[round + 1];
-            self.fused_external_sbox_mds(rc, cs)?;
+            self.fused_external_sbox_mds_with_rc(rc, cs)?;
         }
 
         // Last external round
         // Fuse the external MDS with the first internal round's constant
         let mut rc = [ScalarField::zero(); 3];
         rc[0] = PARTIAL_ROUND_CONSTANTS[0];
-        self.fused_external_sbox_mds(&rc, cs)?;
+        self.fused_external_sbox_mds_with_rc(&rc, cs)?;
 
         // --- Internal Rounds --- //
 
@@ -221,25 +221,14 @@ impl PoseidonHashGadget {
         // Compute another full_rounds / 2 rounds of the permutation
         for round in HALF..(R_F - 1) {
             let rc = &FULL_ROUND_CONSTANTS[round + 1];
-            self.fused_external_sbox_mds(rc, cs)?;
+            self.fused_external_sbox_mds_with_rc(rc, cs)?;
         }
 
         // Last external round
         let rc = [ScalarField::zero(); 3];
-        self.fused_external_sbox_mds(&rc, cs)?;
+        self.fused_external_sbox_mds_with_rc(&rc, cs)?;
 
         Ok(())
-    }
-
-    /// Run an external round on the state
-    fn external_round<C: Circuit<ScalarField>>(
-        &mut self,
-        round_number: usize,
-        cs: &mut C,
-    ) -> Result<(), CircuitError> {
-        self.external_add_rc(round_number, cs)?;
-        let rc = [ScalarField::zero(); 3];
-        self.fused_external_sbox_mds(&rc, cs)
     }
 
     /// Add round constants in an external round
@@ -257,13 +246,6 @@ impl PoseidonHashGadget {
     }
 
     /// Apply the external MDS matrix to the state
-    ///
-    /// For t = 3, this is the circulant matrix `circ(2, 1, 1)`
-    ///
-    /// This is equivalent to doubling each element then adding the other two to
-    /// it, or more efficiently: adding the sum of the elements to each
-    /// individual element. This efficient structure is borrowed from:
-    ///     https://github.com/HorizenLabs/poseidon2/blob/main/plain_implementations/src/poseidon2/poseidon2.rs#L129-L137
     fn external_mds<C: Circuit<ScalarField>>(&mut self, cs: &mut C) -> Result<(), CircuitError> {
         let coeffs = [ScalarField::one(); GATE_WIDTH];
         let in_wires = self.state.clone();
@@ -275,34 +257,43 @@ impl PoseidonHashGadget {
         Ok(())
     }
 
-    /// Run an internal round on the state
-    fn internal_round<C: Circuit<ScalarField>>(
-        &mut self,
-        round_number: usize,
-        cs: &mut C,
-    ) -> Result<(), CircuitError> {
-        self.internal_add_rc(round_number, cs)?;
-        todo!("delete this method");
-        // self.fused_internal_sbox_mds(cs)
-    }
-
-    /// Add round constants in an internal round
-    fn internal_add_rc<C: Circuit<ScalarField>>(
-        &mut self,
-        round_number: usize,
-        cs: &mut C,
-    ) -> Result<(), CircuitError> {
-        let rc = &PARTIAL_ROUND_CONSTANTS[round_number];
-        self.state[0] = cs.add_constant(self.state[0], rc)?;
-
-        Ok(())
-    }
-
-    /// A fused external sbox and MDS matrix
+    /// Apply the external MDS matrix to the state
     ///
-    /// TODO: rename this method to include RCs
-    fn fused_external_sbox_mds<C: Circuit<ScalarField>>(
+    /// For t = 3, this is the circulant matrix `circ(2, 1, 1)`
+    ///
+    /// This is equivalent to doubling each element then adding the other two to
+    /// it, or more efficiently: adding the sum of the elements to each
+    /// individual element. This efficient structure is borrowed from:
+    ///     https://github.com/HorizenLabs/poseidon2/blob/main/plain_implementations/src/poseidon2/poseidon2.rs#L129-L137
+    fn external_mds_with_rc<C: Circuit<ScalarField>>(
         &mut self,
+        next_round_constants: &[ScalarField],
+        cs: &mut C,
+    ) -> Result<(), CircuitError> {
+        self.fused_external_mds_with_rc(false /* sbox */, next_round_constants, cs)
+    }
+
+    /// Execute a fused external sbox and MDS matrix multiplication with a
+    /// trailing round constant
+    fn fused_external_sbox_mds_with_rc<C: Circuit<ScalarField>>(
+        &mut self,
+        next_round_const: &[ScalarField],
+        cs: &mut C,
+    ) -> Result<(), CircuitError> {
+        self.fused_external_mds_with_rc(true /* sbox */, next_round_const, cs)
+    }
+
+    /// A fused external MDS matrix multiplication with a trailing round
+    /// constant
+    ///
+    /// Optionally, the sbox may be applied before the MDS multiplication
+    ///
+    /// The trailing round constant allows successive rounds to fuse in the
+    /// permutation, with this gate finishing one round and adding the round
+    /// constant the defines the start of the next round
+    fn fused_external_mds_with_rc<C: Circuit<ScalarField>>(
+        &mut self,
+        apply_sbox: bool,
         next_round_const: &[ScalarField],
         cs: &mut C,
     ) -> Result<(), CircuitError> {
@@ -311,19 +302,22 @@ impl PoseidonHashGadget {
         // First state element
         let rc = next_round_const[0];
         let state_elem = self.state[0];
-        let out_var = self.add_fused_external_sbox_mds(rc, state_elem, &in_wires, cs)?;
+        let out_var =
+            self.add_fused_external_sbox_mds(apply_sbox, rc, state_elem, &in_wires, cs)?;
         self.state[0] = out_var;
 
         // Second state element
         let rc = next_round_const[1];
         let state_elem = self.state[1];
-        let out_var = self.add_fused_external_sbox_mds(rc, state_elem, &in_wires, cs)?;
+        let out_var =
+            self.add_fused_external_sbox_mds(apply_sbox, rc, state_elem, &in_wires, cs)?;
         self.state[1] = out_var;
 
         // Third state element
         let rc = next_round_const[2];
         let state_elem = self.state[2];
-        let out_var = self.add_fused_external_sbox_mds(rc, state_elem, &in_wires, cs)?;
+        let out_var =
+            self.add_fused_external_sbox_mds(apply_sbox, rc, state_elem, &in_wires, cs)?;
         self.state[2] = out_var;
 
         Ok(())
@@ -332,12 +326,13 @@ impl PoseidonHashGadget {
     /// A fused external sbox and MDS matrix
     fn add_fused_external_sbox_mds<C: Circuit<ScalarField>>(
         &self,
+        apply_sbox: bool,
         rc: ScalarField,
         curr_state: Variable,
         state_vars: &[Variable],
         cs: &mut C,
     ) -> Result<Variable, CircuitError> {
-        let gate = FusedExternalSboxMDSGate::new(rc);
+        let gate = FusedExternalSboxMDSGate::new(apply_sbox, rc);
 
         let state_curr = cs.witness(curr_state)?;
         let state0 = cs.witness(state_vars[0])?;

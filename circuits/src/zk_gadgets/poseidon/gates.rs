@@ -14,6 +14,8 @@ use mpc_relation::{constants::GATE_WIDTH, gates::Gate, traits::Circuit};
 /// Implements a_1^5 + a_2^5 + a_3^5 + a_4^5
 #[derive(Copy, Clone)]
 pub struct FusedExternalSboxMDSGate<F> {
+    /// Whether or not to apply the sbox to the state
+    apply_sbox: bool,
     /// A round constant to add after the MDS is applied
     ///
     /// This allows the arithmetization to fuse the gates in between rounds
@@ -24,8 +26,8 @@ pub struct FusedExternalSboxMDSGate<F> {
 
 impl<F: Field> FusedExternalSboxMDSGate<F> {
     /// Create a new fused external sbox and MDS gate
-    pub fn new(round_constant: F) -> Self {
-        Self { round_constant }
+    pub fn new(apply_sbox: bool, round_constant: F) -> Self {
+        Self { apply_sbox, round_constant }
     }
 
     /// Compute the output of the gate given the input wire assignments
@@ -36,13 +38,22 @@ impl<F: Field> FusedExternalSboxMDSGate<F> {
         state1: C::Wire,
         state2: C::Wire,
     ) -> C::Wire {
-        let state_curr = pow5::<F, C>(state_curr);
-        let state0 = pow5::<F, C>(state0);
-        let state1 = pow5::<F, C>(state1);
-        let state2 = pow5::<F, C>(state2);
-        let rc = C::Constant::from_field(&self.round_constant);
+        let mut elements = vec![state_curr, state0, state1, state2];
+        if self.apply_sbox {
+            elements = Self::pow5_elements::<C>(&elements);
+        }
 
+        let state_curr = elements[0].clone();
+        let state0 = elements[1].clone();
+        let state1 = elements[2].clone();
+        let state2 = elements[3].clone();
+        let rc = C::Constant::from_field(&self.round_constant);
         rc + state_curr + state0 + state1 + state2
+    }
+
+    /// Compute the fifth power of each element in the input vector
+    fn pow5_elements<C: Circuit<F>>(elements: &[C::Wire]) -> Vec<C::Wire> {
+        elements.iter().cloned().map(pow5::<F, C>).collect()
     }
 }
 
@@ -52,7 +63,19 @@ impl<F: Field> Gate<F> for FusedExternalSboxMDSGate<F> {
     }
 
     fn q_hash(&self) -> [F; GATE_WIDTH] {
-        [F::one(), F::one(), F::one(), F::one()]
+        if self.apply_sbox {
+            [F::one(), F::one(), F::one(), F::one()]
+        } else {
+            [F::zero(), F::zero(), F::zero(), F::zero()]
+        }
+    }
+
+    fn q_lc(&self) -> [F; GATE_WIDTH] {
+        if self.apply_sbox {
+            [F::zero(), F::zero(), F::zero(), F::zero()]
+        } else {
+            [F::one(), F::one(), F::one(), F::one()]
+        }
     }
 
     fn q_c(&self) -> F {
