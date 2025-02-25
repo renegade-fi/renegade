@@ -4,14 +4,20 @@ use ark_ff::Field;
 use ark_mpc::algebra::FieldWrapper;
 use mpc_relation::{constants::GATE_WIDTH, gates::Gate, traits::Circuit};
 
-// ------------------------
-// | External Round Gates |
-// ------------------------
+// -----------------------
+// | External Round Gate |
+// -----------------------
 
-/// Represents a fused external sbox and  external MDS matrix multiplication per
-/// state element
+/// Represents a fused external sbox and external MDS matrix multiplication per
+/// state element. Allows for a trailing round constant to be added after the
+/// MDS multiplication.
 ///
-/// Implements a_1^5 + a_2^5 + a_3^5 + a_4^5
+/// For t = 3, the MDS matrix is the circulant matrix `circ(2, 1, 1)`
+///
+/// This is equivalent to doubling each element then adding the other two to
+/// it, or more efficiently: adding the sum of the elements to each
+/// individual element. This efficient structure is borrowed from:
+///     https://github.com/HorizenLabs/poseidon2/blob/main/plain_implementations/src/poseidon2/poseidon2.rs#L129-L137
 #[derive(Copy, Clone)]
 pub struct FusedExternalSboxMDSGate<F> {
     /// Whether or not to apply the sbox to the state
@@ -98,10 +104,17 @@ fn pow5<F: Field, C: Circuit<F>>(x: C::Wire) -> C::Wire {
 // | Internal Round Gates |
 // ------------------------
 
-/// Represents a fused internal sbox and the first step in the internal MDS
-/// matmul, summing the inputs
+/// Represents a fused internal sbox and internal MDS matrix multiplication,
+/// with a trailing round constant
 ///
-/// Implements (a_1 * state0^5 + a_2 * state1 + a_3 * state2)
+/// For t = 3, the internal MDS matrix is the matrix:
+///     [2, 1, 1]
+///     [1, 2, 1]
+///     [1, 1, 3]
+///
+/// This can be evaluated efficiently by adding the sum of all elements to each
+/// element, as in the external MDS case, while also adding an additional copy
+/// of the final state element to itself
 #[derive(Copy, Clone)]
 pub struct FusedInternalSboxMDSGate<F: Field> {
     /// Whether or not to apply the sbox to the state element
