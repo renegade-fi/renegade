@@ -1,8 +1,9 @@
 //! Settles a match into secret shared wallets
 
 use circuit_types::{
+    fees::AuthenticatedFeeTake,
     fixed_point::AuthenticatedFixedPoint,
-    r#match::{AuthenticatedFeeTake, AuthenticatedMatchResult, OrderSettlementIndices},
+    r#match::{AuthenticatedMatchResult, OrderSettlementIndices},
     wallet::AuthenticatedWalletShare,
     Fabric,
 };
@@ -117,9 +118,10 @@ mod test {
 
     use ark_mpc::{PARTY0, PARTY1};
     use circuit_types::{
+        fees::FeeTake,
         fixed_point::FixedPoint,
         order::OrderSide,
-        r#match::{FeeTake, MatchResult, OrderSettlementIndices},
+        r#match::{MatchResult, OrderSettlementIndices},
         traits::{BaseType, MpcBaseType, MpcType},
         SizedWalletShare,
     };

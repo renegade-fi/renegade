@@ -8,9 +8,10 @@ use ark_bn254::g1::Config as G1Config;
 use ark_ec::short_weierstrass::Affine;
 use circuit_types::{
     elgamal::{ElGamalCiphertext, EncryptionKey},
+    fees::FeeTake,
     keychain::PublicSigningKey,
     note::NOTE_CIPHERTEXT_SIZE,
-    r#match::{ExternalMatchResult, FeeTake, OrderSettlementIndices},
+    r#match::{ExternalMatchResult, OrderSettlementIndices},
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
     Amount, PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,

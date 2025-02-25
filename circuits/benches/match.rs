@@ -10,9 +10,10 @@ use std::time::{Duration, Instant};
 use ark_mpc::{PARTY0, PARTY1};
 use circuit_types::{
     balance::Balance,
+    fees::FeeTake,
     fixed_point::FixedPoint,
     order::Order,
-    r#match::{FeeTake, MatchResult},
+    r#match::MatchResult,
     traits::{MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType},
     MpcPlonkCircuit,
 };

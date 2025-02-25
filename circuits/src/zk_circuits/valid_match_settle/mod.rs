@@ -9,9 +9,10 @@ pub mod single_prover;
 
 use circuit_types::{
     balance::Balance,
+    fees::FeeTake,
     fixed_point::FixedPoint,
     order::Order,
-    r#match::{FeeTake, MatchResult, OrderSettlementIndices},
+    r#match::{MatchResult, OrderSettlementIndices},
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiProverCircuit,
         MultiproverCircuitBaseType, SingleProverCircuit,

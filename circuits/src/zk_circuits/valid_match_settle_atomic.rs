@@ -24,9 +24,10 @@ use crate::{
 use circuit_macros::circuit_type;
 use circuit_types::{
     balance::{Balance, BalanceVar},
+    fees::FeeTake,
     fixed_point::{FixedPoint, FixedPointVar},
     order::{Order, OrderVar},
-    r#match::{ExternalMatchResult, ExternalMatchResultVar, FeeTake, OrderSettlementIndices},
+    r#match::{ExternalMatchResult, ExternalMatchResultVar, OrderSettlementIndices},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::WalletShare,
     Address, PlonkCircuit, AMOUNT_BITS,

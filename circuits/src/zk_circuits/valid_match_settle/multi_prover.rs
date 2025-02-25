@@ -3,9 +3,10 @@
 use ark_ff::{One, Zero};
 use circuit_types::{
     balance::BalanceVar,
+    fees::FeeTakeVar,
     fixed_point::{FixedPointVar, DEFAULT_FP_PRECISION},
     order::OrderVar,
-    r#match::{FeeTakeVar, MatchResultVar, OrderSettlementIndicesVar},
+    r#match::{MatchResultVar, OrderSettlementIndicesVar},
     wallet::WalletShareVar,
     Fabric, MpcPlonkCircuit, AMOUNT_BITS,
 };

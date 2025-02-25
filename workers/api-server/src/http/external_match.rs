@@ -12,10 +12,7 @@ use std::{sync::Arc, time::Duration};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::{
-    fixed_point::FixedPoint,
-    r#match::{ExternalMatchResult, FeeTake},
-};
+use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use common::types::{
     hmac::HmacKey,
     proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},

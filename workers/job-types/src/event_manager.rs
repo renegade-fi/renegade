@@ -4,7 +4,8 @@
 use std::time::SystemTime;
 
 use circuit_types::{
-    r#match::{ExternalMatchResult, FeeTake, MatchResult},
+    fees::FeeTake,
+    r#match::{ExternalMatchResult, MatchResult},
     transfers::ExternalTransfer,
     Amount,
 };

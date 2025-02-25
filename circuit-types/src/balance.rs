@@ -22,7 +22,7 @@ use {
 };
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_addr, note::Note, r#match::FeeTake,
+    biguint_from_hex_string, biguint_to_hex_addr, fees::FeeTake, note::Note,
     validate_amount_bitlength, Address, Amount,
 };
 
