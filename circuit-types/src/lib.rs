@@ -12,6 +12,7 @@ pub mod balance;
 pub mod elgamal;
 #[cfg(feature = "proof-system-types")]
 pub mod errors;
+pub mod fees;
 pub mod fixed_point;
 pub mod keychain;
 #[cfg(feature = "proof-system-types")]

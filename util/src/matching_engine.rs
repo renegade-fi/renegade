@@ -2,9 +2,10 @@
 
 use circuit_types::{
     balance::Balance,
+    fees::FeeTake,
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
-    r#match::{FeeTake, MatchResult, OrderSettlementIndices},
+    r#match::{MatchResult, OrderSettlementIndices},
     wallet::WalletShare,
     Amount,
 };

@@ -9,11 +9,8 @@
 //! for consenting liquidity on a given token pair.
 
 use circuit_types::{
-    fixed_point::FixedPoint,
-    max_price,
-    order::OrderSide,
-    r#match::{ExternalMatchResult, FeeTake},
-    Amount,
+    fees::FeeTake, fixed_point::FixedPoint, max_price, order::OrderSide,
+    r#match::ExternalMatchResult, Amount,
 };
 use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};

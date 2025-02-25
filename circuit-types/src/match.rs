@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{order::OrderSide, Address, Amount};
+use crate::{fixed_point::FixedPoint, order::OrderSide, Address, Amount};
 
 #[cfg(feature = "proof-system-types")]
 use {
@@ -74,34 +74,6 @@ impl MatchResult {
             // Sell the base, buy the quote
             OrderSide::Sell => (self.quote_mint.clone(), self.quote_amount),
         }
-    }
-}
-
-/// The fee takes from a match
-#[cfg_attr(
-    feature = "proof-system-types",
-    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)
-)]
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeeTake {
-    /// The fee the relayer takes
-    pub relayer_fee: Amount,
-    /// The fee the protocol takes
-    pub protocol_fee: Amount,
-}
-
-impl FeeTake {
-    /// Get the total fee
-    pub fn total(&self) -> Amount {
-        self.relayer_fee + self.protocol_fee
-    }
-}
-
-#[cfg(feature = "proof-system-types")]
-impl AuthenticatedFeeTake {
-    /// Get the total fee
-    pub fn total(&self) -> AuthenticatedScalar {
-        &self.relayer_fee + &self.protocol_fee
     }
 }
 
@@ -188,4 +160,38 @@ impl From<MatchResult> for ExternalMatchResult {
             direction: value.direction,
         }
     }
+}
+
+// ------------------------
+// | Bounded Match Result |
+// ------------------------
+
+/// A bounded match result is a match result for which the matched amount is
+/// unknown at the time of the match, but is allowed to take on any value
+/// between the bounds configured by the bounded match
+#[cfg_attr(
+    feature = "proof-system-types",
+    circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)
+)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundedMatchResult {
+    /// The mint of the quote token in the matched asset pair
+    pub quote_mint: Address,
+    /// The mint of the base token in the matched asset pair
+    pub base_mint: Address,
+    /// The price at which the match executes
+    pub price: FixedPoint,
+    /// The minimum base amount that can be matched
+    pub min_base_amount: Amount,
+    /// The maximum base amount that can be matched
+    pub max_base_amount: Amount,
+    /// The direction of the match
+    ///
+    /// - `true` implies that the internal party buys the quote and sells the
+    ///   base
+    /// - `false` implies that the internal party buys the base and sells the
+    ///   quote
+    ///
+    /// In effect, this flag can be thought of as `external_party_buys_base`
+    pub direction: bool,
 }
