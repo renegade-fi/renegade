@@ -1,20 +1,15 @@
 //! Groups logic for adding Poseidon hash function constraints to a Bulletproof
 //! constraint system
 
-use std::{marker::PhantomData, ops::Mul};
-
-use crate::print_wire;
-use ark_ff::{Field, One, Zero};
-use ark_mpc::algebra::FieldWrapper;
+use ark_ff::One;
 use constants::ScalarField;
 use itertools::Itertools;
-use jf_primitives::rescue::STATE_SIZE;
-use mpc_relation::{
-    constants::GATE_WIDTH, errors::CircuitError, gates::Gate, traits::Circuit, Variable,
-};
+use mpc_relation::{constants::GATE_WIDTH, errors::CircuitError, traits::Circuit, Variable};
 use renegade_crypto::hash::{
     CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, RATE, R_F, R_P, WIDTH as SPONGE_WIDTH,
 };
+
+use super::gates::{FusedExternalSboxMDSGate, FusedInternalSboxMDSGate};
 
 // -----------------
 // | CSPRNG Gadget |
@@ -433,190 +428,5 @@ impl PoseidonHashGadget {
         let wires = [curr_state, state_vars[0], state_vars[1], state_vars[2], out_var];
         cs.insert_gate(&wires, Box::new(gate))?;
         Ok(out_var)
-    }
-}
-
-// -------------------------
-// | Poseidon Custom Gates |
-// -------------------------
-
-/// Represents a fused internal sbox and the first step in the internal MDS
-/// matmul, summing the inputs
-///
-/// Implements (a_1 * state0^5 + a_2 * state1 + a_3 * state2)
-#[derive(Copy, Clone)]
-struct FusedInternalSboxMDSGate<F: Field> {
-    /// The coefficients of the linear combination
-    state_elem_coeff: F,
-    /// Whether or not to apply the sbox to the state element
-    apply_sbox: bool,
-}
-
-impl<F: Field> FusedInternalSboxMDSGate<F> {
-    /// Create a new fused internal sbox and MDS gate
-    fn new(state_elem_coeff: F, apply_sbox: bool) -> Self {
-        Self { state_elem_coeff, apply_sbox }
-    }
-
-    /// Compute the output of the gate given the input wire assignments
-    fn compute_output<C: Circuit<F>>(
-        &self,
-        state_curr: C::Wire,
-        state0: C::Wire,
-        state1: C::Wire,
-        state2: C::Wire,
-    ) -> C::Wire {
-        let curr_coeff = C::Constant::from_field(&self.state_elem_coeff);
-        let state_elem = if self.apply_sbox { pow5::<F, C>(state_curr) } else { state_curr };
-        curr_coeff * state_elem + pow5::<F, C>(state0) + state1 + state2
-    }
-}
-
-impl<F: Field> Gate<F> for FusedInternalSboxMDSGate<F> {
-    fn name(&self) -> &'static str {
-        "FusedInternalSboxMDSGate"
-    }
-
-    fn q_hash(&self) -> [F; GATE_WIDTH] {
-        // If we are applying the sbox to the state element, we enable the first
-        // hash gate
-        if self.apply_sbox {
-            [self.state_elem_coeff, F::one(), F::zero(), F::zero()]
-        } else {
-            [F::zero(), F::one(), F::zero(), F::zero()]
-        }
-    }
-
-    fn q_lc(&self) -> [F; GATE_WIDTH] {
-        if self.apply_sbox {
-            [F::zero(), F::zero(), F::one(), F::one()]
-        } else {
-            [self.state_elem_coeff, F::zero(), F::one(), F::one()]
-        }
-    }
-
-    fn q_o(&self) -> F {
-        F::one()
-    }
-}
-
-/// Represents a fused external sbox and  external MDS matrix multiplication per
-/// state element
-///
-/// Implements a_1^5 + a_2^5 + a_3^5 + a_4^5
-#[derive(Copy, Clone)]
-struct FusedExternalSboxMDSGate<F>(PhantomData<F>);
-impl<F: Field> FusedExternalSboxMDSGate<F> {
-    /// Create a new fused external sbox and MDS gate
-    fn new() -> Self {
-        Self(PhantomData)
-    }
-
-    /// Compute the output of the gate given the input wire assignments
-    fn compute_output<C: Circuit<F>>(
-        state_curr: C::Wire,
-        state0: C::Wire,
-        state1: C::Wire,
-        state2: C::Wire,
-    ) -> C::Wire {
-        let state_curr = pow5::<F, C>(state_curr);
-        let state0 = pow5::<F, C>(state0);
-        let state1 = pow5::<F, C>(state1);
-        let state2 = pow5::<F, C>(state2);
-        state_curr + state0 + state1 + state2
-    }
-}
-
-impl<F: Field> Gate<F> for FusedExternalSboxMDSGate<F> {
-    fn name(&self) -> &'static str {
-        "FusedExternalSboxMDSGate"
-    }
-
-    fn q_hash(&self) -> [F; GATE_WIDTH] {
-        [F::one(), F::one(), F::one(), F::one()]
-    }
-
-    fn q_o(&self) -> F {
-        F::one()
-    }
-}
-
-/// Compute the fifth power of a wire
-fn pow5<F: Field, C: Circuit<F>>(x: C::Wire) -> C::Wire {
-    let x2 = x.clone() * x.clone();
-    let x4 = x2.clone() * x2.clone();
-    x4 * x
-}
-
-// ---------
-// | Tests |
-// ---------
-
-#[cfg(test)]
-mod test {
-    use circuit_types::{traits::CircuitBaseType, PlonkCircuit};
-    use constants::Scalar;
-    use itertools::Itertools;
-    use mpc_relation::traits::Circuit;
-    use rand::thread_rng;
-    use renegade_crypto::hash::{compute_poseidon_hash, Poseidon2Sponge};
-
-    use crate::zk_gadgets::poseidon::PoseidonHashGadget;
-
-    /// Tests absorbing a series of elements into the hasher and comparing to
-    /// the hasher in `renegade-crypto`
-    #[test]
-    fn test_sponge() {
-        const N: usize = 100;
-        let mut rng = thread_rng();
-        let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
-
-        let expected = compute_poseidon_hash(&values);
-
-        // Constrain the gadget result
-        let mut cs = PlonkCircuit::new_turbo_plonk();
-        let mut gadget = PoseidonHashGadget::new(cs.zero());
-
-        // Allocate the values in the constraint system
-        let input_vars = values.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
-        let output_var = expected.create_public_var(&mut cs);
-
-        gadget.hash(&input_vars, output_var, &mut cs).unwrap();
-
-        // Check that the constraints are satisfied
-        assert!(cs.check_circuit_satisfiability(&[expected.inner()]).is_ok());
-    }
-
-    /// Tests a batch absorb and squeeze of the hasher
-    #[test]
-    fn test_batch_absorb_squeeze() {
-        const N: usize = 5;
-        let mut rng = thread_rng();
-        let absorb_values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
-
-        // Compute the expected result
-        let mut hasher = Poseidon2Sponge::new();
-        hasher.absorb_batch(&absorb_values.iter().map(Scalar::inner).collect_vec());
-        let expected_squeeze_values =
-            hasher.squeeze_batch(N).into_iter().map(Scalar::new).collect_vec();
-
-        // Compute the result in-circuit
-        let mut cs = PlonkCircuit::new_turbo_plonk();
-        let mut gadget = PoseidonHashGadget::new(cs.zero());
-        let absorb_vars = absorb_values.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
-
-        gadget.batch_absorb(&absorb_vars, &mut cs).unwrap();
-        let squeeze_vars = gadget.batch_squeeze(N, &mut cs).unwrap();
-
-        // Check that the squeezed values match the expected values
-        for (squeeze_var, expected_value) in
-            squeeze_vars.into_iter().zip(expected_squeeze_values.into_iter())
-        {
-            let expected_var = expected_value.create_witness(&mut cs);
-            cs.enforce_equal(squeeze_var, expected_var).unwrap();
-        }
-
-        // Check that the constraints are satisfied
-        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
     }
 }
