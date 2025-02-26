@@ -17,7 +17,7 @@ use super::{ValidMatchSettle, ValidMatchSettleStatementVar, ValidMatchSettleWitn
 use crate::zk_gadgets::{
     comparators::{EqGadget, MultiproverEqGadget, MultiproverGreaterThanEqGadget},
     fixed_point::MultiproverFixedPointGadget,
-    select::{CondSelectGadget, CondSelectVectorGadget},
+    select::CondSelectGadget,
     wallet_operations::{MultiproverAmountGadget, MultiproverPriceGadget},
 };
 
@@ -137,8 +137,18 @@ where
 
         // --- Price Protection --- //
         // Check that the execution price is within the user-defined limits
-        Self::verify_price_protection(&witness.price0, &witness.order0, fabric, cs)?;
-        Self::verify_price_protection(&witness.price1, &witness.order1, fabric, cs)
+        MultiproverPriceGadget::verify_price_protection(
+            &witness.price0,
+            &witness.order0,
+            fabric,
+            cs,
+        )?;
+        MultiproverPriceGadget::verify_price_protection(
+            &witness.price1,
+            &witness.order1,
+            fabric,
+            cs,
+        )
     }
 
     /// Check that a balance covers the advertised amount at a given price, and
@@ -175,32 +185,6 @@ where
 
         let new_balance = cs.sub(balance.amount, amount_sold)?;
         MultiproverAmountGadget::constrain_valid_amount(new_balance, fabric, cs)
-    }
-
-    /// Verify the price protection on the orders; i.e. that the executed price
-    /// is not worse than some user-defined limit
-    pub fn verify_price_protection(
-        price: &FixedPointVar,
-        order: &OrderVar,
-        fabric: &Fabric,
-        cs: &mut MpcPlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        // If the order is buy side, verify that the execution price is less
-        // than the limit price. If the order is sell side, verify that the
-        // execution price is greater than the limit price
-        let mut gte_terms = CondSelectVectorGadget::select(
-            &[*price, order.worst_case_price],
-            &[order.worst_case_price, *price],
-            order.side,
-            cs,
-        )?;
-
-        // Constrain the difference to be representable in the maximum number of bits
-        // that a price may take
-        let lhs = gte_terms.remove(0);
-        let rhs = gte_terms.remove(0);
-        let price_improvement = lhs.sub(&rhs, cs);
-        MultiproverPriceGadget::constrain_valid_price(price_improvement, fabric, cs)
     }
 }
 

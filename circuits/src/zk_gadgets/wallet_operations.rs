@@ -16,7 +16,7 @@ use super::{
     bits::{BitRangeGadget, MultiproverBitRangeGadget},
     merkle::PoseidonMerkleHashGadget,
     poseidon::{PoseidonCSPRNGGadget, PoseidonHashGadget},
-    select::CondSelectGadget,
+    select::{CondSelectGadget, CondSelectVectorGadget},
 };
 
 /// Gadget for operating on wallets and wallet shares
@@ -276,6 +276,30 @@ impl PriceGadget {
     ) -> Result<(), CircuitError> {
         BitRangeGadget::<PRICE_BITS>::constrain_bit_range(price.repr, cs)
     }
+
+    /// Validate that an execution price is within the user-defined limits
+    pub fn validate_price_protection(
+        price: &FixedPointVar,
+        order: &OrderVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // If the order is buy side, verify that the execution price is less
+        // than the limit price. If the order is sell side, verify that the
+        // execution price is greater than the limit price
+        let mut gte_terms: Vec<FixedPointVar> = CondSelectVectorGadget::select(
+            &[*price, order.worst_case_price],
+            &[order.worst_case_price, *price],
+            order.side,
+            cs,
+        )?;
+
+        // Constrain the difference to be representable in the maximum number of bits
+        // that a price may take
+        let lhs = gte_terms.remove(0);
+        let rhs = gte_terms.remove(0);
+        let price_improvement = lhs.sub(&rhs, cs);
+        Self::constrain_valid_price(price_improvement, cs)
+    }
 }
 
 /// Constrain a `FixedPoint` value to be a valid price in a multiprover context
@@ -288,6 +312,32 @@ impl MultiproverPriceGadget {
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
         MultiproverBitRangeGadget::<PRICE_BITS>::constrain_bit_range(price.repr, fabric, cs)
+    }
+
+    /// Verify the price protection on the orders; i.e. that the executed price
+    /// is not worse than some user-defined limit
+    pub fn verify_price_protection(
+        price: &FixedPointVar,
+        order: &OrderVar,
+        fabric: &Fabric,
+        cs: &mut MpcPlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // If the order is buy side, verify that the execution price is less
+        // than the limit price. If the order is sell side, verify that the
+        // execution price is greater than the limit price
+        let mut gte_terms = CondSelectVectorGadget::select(
+            &[*price, order.worst_case_price],
+            &[order.worst_case_price, *price],
+            order.side,
+            cs,
+        )?;
+
+        // Constrain the difference to be representable in the maximum number of bits
+        // that a price may take
+        let lhs = gte_terms.remove(0);
+        let rhs = gte_terms.remove(0);
+        let price_improvement = lhs.sub(&rhs, cs);
+        MultiproverPriceGadget::constrain_valid_price(price_improvement, fabric, cs)
     }
 }
 
