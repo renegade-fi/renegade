@@ -516,19 +516,22 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::zk_circuits::{
-        check_constraint_satisfaction,
-        test_helpers::{MAX_BALANCES, MAX_ORDERS},
-        valid_match_settle_atomic::test_helpers::{
-            create_witness_statement, create_witness_statement_buy_side,
-            create_witness_statement_sell_side,
+    use crate::{
+        test_helpers::max_amount,
+        zk_circuits::{
+            check_constraint_satisfaction,
+            test_helpers::{MAX_BALANCES, MAX_ORDERS},
+            valid_match_settle_atomic::test_helpers::{
+                create_witness_statement, create_witness_statement_buy_side,
+                create_witness_statement_sell_side,
+            },
         },
     };
     use bigdecimal::ToPrimitive;
     use circuit_types::{
         fixed_point::FixedPoint,
         traits::{BaseType, CircuitBaseType, SingleProverCircuit},
-        Amount, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
+        PlonkCircuit, PRICE_BITS,
     };
     use constants::Scalar;
     use itertools::Itertools;
@@ -615,11 +618,6 @@ mod test {
         let statement_var = statement.create_public_var(&mut cs);
 
         (witness_var, statement_var, cs)
-    }
-
-    /// Get the maximum amount allowed
-    fn max_amount() -> Amount {
-        (1u128 << AMOUNT_BITS) - 1u128
     }
 
     // -----------------------

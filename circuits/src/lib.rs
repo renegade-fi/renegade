@@ -246,6 +246,11 @@ pub mod test_helpers {
         amt_unreduced % max_amount
     }
 
+    /// Get the maximum amount allowed
+    pub fn max_amount() -> Amount {
+        (1u128 << AMOUNT_BITS) - 1u128
+    }
+
     /// Get a dummy set of wallet shares
     pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     ) -> WalletShare<MAX_BALANCES, MAX_ORDERS>
