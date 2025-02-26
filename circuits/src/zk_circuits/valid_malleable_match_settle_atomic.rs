@@ -477,11 +477,13 @@ mod tests {
         fixed_point::FixedPoint,
         max_price,
         traits::{BaseType, CircuitBaseType, SingleProverCircuit},
+        wallet::WalletShare,
         PlonkCircuit,
     };
     use constants::Scalar;
     use itertools::Itertools;
     use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
+    use rand::{thread_rng, Rng};
     use renegade_crypto::fields::scalar_to_u128;
 
     use crate::{
@@ -803,5 +805,46 @@ mod tests {
         let (mut witness, statement) = create_witness_statement_buy_side();
         witness.internal_party_receive_balance.protocol_fee_balance = max_amount();
         assert!(!check_matching_engine_constraints(&witness, &statement));
+    }
+
+    // -------------------
+    // | Misc Test Cases |
+    // -------------------
+
+    /// Test a price protection violation on the buy side
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_price_protection_violation__buy_side() {
+        let (mut witness, statement) = create_witness_statement_buy_side();
+        let price = statement.bounded_match_result.price;
+
+        witness.internal_party_order.worst_case_price = price - Scalar::one();
+        assert!(!check_constraints(&witness, &statement));
+    }
+
+    /// Test a price protection violation on the sell side
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_price_protection_violation__sell_side() {
+        let (mut witness, statement) = create_witness_statement_sell_side();
+        let price = statement.bounded_match_result.price;
+
+        witness.internal_party_order.worst_case_price = price + Scalar::one();
+        assert!(!check_constraints(&witness, &statement));
+    }
+
+    /// Test a modification to the wallet shares of the external party
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_internal_party_wallet_share_modification() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = create_witness_statement();
+        let mut statement_scalars = statement.internal_party_public_shares.to_scalars();
+        let random_idx = rng.gen_range(0..statement_scalars.len());
+        statement_scalars[random_idx] = Scalar::random(&mut rng);
+
+        statement.internal_party_public_shares =
+            WalletShare::from_scalars(&mut statement_scalars.into_iter());
+        assert!(!check_constraints(&witness, &statement));
     }
 }
