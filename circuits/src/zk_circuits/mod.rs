@@ -94,6 +94,7 @@ pub mod test_helpers {
         merkle::MerkleOpening,
         order::{Order, OrderSide},
         wallet::{Wallet, WalletShare},
+        Address,
     };
     use constants::Scalar;
     use itertools::Itertools;
@@ -180,6 +181,12 @@ pub mod test_helpers {
     // -----------
     // | Helpers |
     // -----------
+
+    /// Get a random address
+    pub(crate) fn random_address() -> Address {
+        let random_u128 = rand::random::<u128>();
+        Address::from_bytes_be(random_u128.to_be_bytes().as_slice())
+    }
 
     /// Construct secret shares of a wallet for testing
     pub fn create_wallet_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(

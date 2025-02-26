@@ -297,6 +297,171 @@ where
 // | Tests |
 // ---------
 
+pub mod test_helpers {
+    //! Helpers for testing the `VALID MALLEABLE MATCH SETTLE ATOMIC` circuit
+
+    use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
+    use rand::{thread_rng, Rng};
+    use renegade_crypto::fields::scalar_to_u128;
+
+    use crate::{
+        test_helpers::random_orders_and_match,
+        zk_circuits::{
+            test_helpers::{create_wallet_shares, random_address},
+            valid_match_settle::test_helpers::build_wallet_and_indices_from_order,
+        },
+    };
+
+    use super::*;
+
+    /// The default relayer fee (4bps)
+    pub const DEFAULT_RELAYER_FEE: f64 = 0.0004;
+    /// The default protocol fee (2bps)
+    pub const DEFAULT_PROTOCOL_FEE: f64 = 0.0002;
+
+    /// Get the default relayer fee
+    pub fn default_relayer_fee() -> FixedPoint {
+        FixedPoint::from_f64_round_down(DEFAULT_RELAYER_FEE)
+    }
+
+    /// Get the default protocol fee
+    pub fn default_protocol_fee() -> FixedPoint {
+        FixedPoint::from_f64_round_down(DEFAULT_PROTOCOL_FEE)
+    }
+
+    /// Get the default fee rates
+    pub fn default_fee_rates() -> FeeTakeRate {
+        FeeTakeRate {
+            relayer_fee_rate: FixedPoint::from_f64_round_down(DEFAULT_RELAYER_FEE),
+            protocol_fee_rate: FixedPoint::from_f64_round_down(DEFAULT_PROTOCOL_FEE),
+        }
+    }
+
+    /// Create a valid witness and statement
+    pub fn create_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
+        ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        // Setup the orders, match, and wallet
+        let (o1, o2, price, mut match_res) = random_orders_and_match();
+        let (internal_order, _external_order) = if rand::random() {
+            (o1, o2)
+        } else {
+            match_res.direction = !match_res.direction;
+            (o2, o1)
+        };
+
+        create_witness_statement_from_order_and_match(price, &internal_order, match_res)
+    }
+
+    /// Create a witness and statement wherein the internal order is a buy
+    pub fn create_witness_statement_buy_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    ) -> (
+        ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (o1, o2, price, mut match_res) = random_orders_and_match();
+        let internal_order = if o1.side.is_buy() {
+            o1
+        } else {
+            match_res.direction = !match_res.direction;
+            o2
+        };
+
+        create_witness_statement_from_order_and_match(price, &internal_order, match_res)
+    }
+
+    /// Create a witness and statement wherein the internal order is a sell
+    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    ) -> (
+        ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (o1, o2, price, mut match_res) = random_orders_and_match();
+        let internal_order = if o1.side.is_sell() {
+            o1
+        } else {
+            match_res.direction = !match_res.direction;
+            o2
+        };
+
+        create_witness_statement_from_order_and_match(price, &internal_order, match_res)
+    }
+
+    /// Create a witness and statement from an internal order and match result
+    pub fn create_witness_statement_from_order_and_match<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >(
+        price: FixedPoint,
+        internal_order: &Order,
+        match_res: MatchResult,
+    ) -> (
+        ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (wallet1, party0_indices) =
+            build_wallet_and_indices_from_order(internal_order, &match_res);
+        let (_, internal_party_public_shares) = create_wallet_shares(&wallet1);
+
+        let internal_party_balance = wallet1.balances[party0_indices.balance_send].clone();
+        let internal_party_receive_balance =
+            wallet1.balances[party0_indices.balance_receive].clone();
+        let witness = ValidMalleableMatchSettleAtomicWitness {
+            internal_party_order: internal_order.clone(),
+            internal_party_balance,
+            internal_party_receive_balance,
+            internal_party_public_shares: internal_party_public_shares.clone(),
+        };
+
+        let bounded_match_result = create_bounded_match_result(price, match_res);
+        let statement = ValidMalleableMatchSettleAtomicStatement {
+            bounded_match_result,
+            external_fee_rates: default_fee_rates(),
+            internal_fee_rates: default_fee_rates(),
+            internal_party_public_shares,
+            relayer_fee_address: random_address(),
+        };
+
+        (witness, statement)
+    }
+
+    /// Create a bounded match result from a match result
+    pub fn create_bounded_match_result(
+        price: FixedPoint,
+        match_res: MatchResult,
+    ) -> BoundedMatchResult {
+        // Sample a random minimum amount
+        let mut rng = thread_rng();
+        let max_base_amount = match_res.base_amount;
+        let min_amt_discount = 1. - rng.gen_range(0.01..0.05); // 1-5% off max
+        let min_base_amount_fp =
+            FixedPoint::from_f64_round_down(min_amt_discount) * Scalar::from(max_base_amount);
+        let min_base_amount = scalar_to_u128(&min_base_amount_fp.floor());
+
+        BoundedMatchResult {
+            quote_mint: match_res.quote_mint,
+            base_mint: match_res.base_mint,
+            price,
+            min_base_amount,
+            max_base_amount,
+            direction: match_res.direction,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,4 +480,6 @@ mod tests {
         println!("Number of gates: {}", n);
         println!("Next power of two: {}", next_power_of_two);
     }
+
+    // --- Valid Circuit Tests --- //
 }

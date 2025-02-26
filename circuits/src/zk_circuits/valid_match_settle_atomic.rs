@@ -347,7 +347,6 @@ pub mod test_helpers {
         fixed_point::FixedPoint,
         order::Order,
         r#match::{ExternalMatchResult, MatchResult},
-        Address,
     };
     use util::{
         arbitrum::get_protocol_fee,
@@ -357,7 +356,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::{
-            test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS},
+            test_helpers::{create_wallet_shares, random_address, MAX_BALANCES, MAX_ORDERS},
             valid_match_settle::test_helpers::build_wallet_and_indices_from_order,
         },
     };
@@ -501,12 +500,6 @@ pub mod test_helpers {
         };
 
         (witness, statement)
-    }
-
-    /// Get a random address
-    fn random_address() -> Address {
-        let random_u128 = rand::random::<u128>();
-        Address::from_bytes_be(random_u128.to_be_bytes().as_slice())
     }
 
     /// Create an external match result from a match result
