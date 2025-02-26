@@ -347,7 +347,6 @@ pub mod test_helpers {
         fixed_point::FixedPoint,
         order::Order,
         r#match::{ExternalMatchResult, MatchResult},
-        Address,
     };
     use util::{
         arbitrum::get_protocol_fee,
@@ -357,7 +356,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::{
-            test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS},
+            test_helpers::{create_wallet_shares, random_address, MAX_BALANCES, MAX_ORDERS},
             valid_match_settle::test_helpers::build_wallet_and_indices_from_order,
         },
     };
@@ -503,12 +502,6 @@ pub mod test_helpers {
         (witness, statement)
     }
 
-    /// Get a random address
-    fn random_address() -> Address {
-        let random_u128 = rand::random::<u128>();
-        Address::from_bytes_be(random_u128.to_be_bytes().as_slice())
-    }
-
     /// Create an external match result from a match result
     fn create_external_match_result(match_res: &MatchResult) -> ExternalMatchResult {
         ExternalMatchResult {
@@ -523,19 +516,22 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
-    use crate::zk_circuits::{
-        check_constraint_satisfaction,
-        test_helpers::{MAX_BALANCES, MAX_ORDERS},
-        valid_match_settle_atomic::test_helpers::{
-            create_witness_statement, create_witness_statement_buy_side,
-            create_witness_statement_sell_side,
+    use crate::{
+        test_helpers::max_amount,
+        zk_circuits::{
+            check_constraint_satisfaction,
+            test_helpers::{MAX_BALANCES, MAX_ORDERS},
+            valid_match_settle_atomic::test_helpers::{
+                create_witness_statement, create_witness_statement_buy_side,
+                create_witness_statement_sell_side,
+            },
         },
     };
     use bigdecimal::ToPrimitive;
     use circuit_types::{
         fixed_point::FixedPoint,
         traits::{BaseType, CircuitBaseType, SingleProverCircuit},
-        Amount, PlonkCircuit, AMOUNT_BITS, PRICE_BITS,
+        PlonkCircuit, PRICE_BITS,
     };
     use constants::Scalar;
     use itertools::Itertools;
@@ -622,11 +618,6 @@ mod test {
         let statement_var = statement.create_public_var(&mut cs);
 
         (witness_var, statement_var, cs)
-    }
-
-    /// Get the maximum amount allowed
-    fn max_amount() -> Amount {
-        (1u128 << AMOUNT_BITS) - 1u128
     }
 
     // -----------------------
