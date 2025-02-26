@@ -351,6 +351,7 @@ mod test {
             compute_wallet_commitment_from_private, compute_wallet_private_share_commitment,
             compute_wallet_share_commitment, compute_wallet_share_nullifier,
         },
+        order::{Order, OrderSide},
         traits::{BaseType, CircuitBaseType},
         PlonkCircuit, SizedWalletShare, AMOUNT_BITS, FEE_BITS, PRICE_BITS,
     };
@@ -405,6 +406,15 @@ mod test {
     /// Check whether the constraints of a constraint system are satisfied
     fn check_satisfaction(cs: &PlonkCircuit) -> bool {
         cs.check_circuit_satisfiability(&[]).is_ok()
+    }
+
+    /// Check price protection constraints on a given order and price
+    fn check_price_protection(order: &Order, price: &FixedPoint) -> bool {
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let order_var = order.create_witness(&mut cs);
+        let price_var = price.create_witness(&mut cs);
+        PriceGadget::validate_price_protection(&price_var, &order_var, &mut cs).unwrap();
+        check_satisfaction(&cs)
     }
 
     // ---------
@@ -601,6 +611,35 @@ mod test {
         PriceGadget::constrain_valid_price(price_var, &mut cs).unwrap();
 
         assert!(!check_satisfaction(&cs));
+    }
+
+    /// Test price protection gadget
+    #[test]
+    fn test_price_protection_gadget() {
+        // Buy side violation
+        let mut rng = thread_rng();
+        let price = FixedPoint::from_f64_round_down(rng.gen_range(0.0..10000.0));
+        let mut order = Order {
+            side: OrderSide::Buy,
+            worst_case_price: price - Scalar::from(1u8),
+            ..Default::default()
+        };
+        assert!(!check_price_protection(&order, &price));
+
+        // Sell side violation
+        order.side = OrderSide::Sell;
+        order.worst_case_price = price + Scalar::from(1u8);
+        assert!(!check_price_protection(&order, &price));
+
+        // Buy side success
+        order.side = OrderSide::Buy;
+        order.worst_case_price = price + Scalar::from(1u8);
+        assert!(check_price_protection(&order, &price));
+
+        // Sell side success
+        order.side = OrderSide::Sell;
+        order.worst_case_price = price - Scalar::from(1u8);
+        assert!(check_price_protection(&order, &price));
     }
 
     /// Test the fee gadget
