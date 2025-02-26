@@ -296,6 +296,7 @@ where
 // | Tests |
 // ---------
 
+#[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     //! Helpers for testing the `VALID MALLEABLE MATCH SETTLE ATOMIC` circuit
 
