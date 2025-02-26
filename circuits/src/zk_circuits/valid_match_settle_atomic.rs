@@ -114,7 +114,7 @@ where
         )?;
 
         // Check that the price is within the user-defined limits
-        Self::validate_price_protection(&witness.price, &witness.internal_party_order, cs)
+        PriceGadget::validate_price_protection(&witness.price, &witness.internal_party_order, cs)
     }
 
     /// Validate the price that the match executed at
@@ -162,30 +162,6 @@ where
 
         let new_balance = cs.sub(internal_party_balance.amount, sell_amount)?;
         AmountGadget::constrain_valid_amount(new_balance, cs)
-    }
-
-    /// Validate that the execution price is within the user-defined limits
-    fn validate_price_protection(
-        price: &FixedPointVar,
-        order: &OrderVar,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        // If the order is buy side, verify that the execution price is less
-        // than the limit price. If the order is sell side, verify that the
-        // execution price is greater than the limit price
-        let mut gte_terms: Vec<FixedPointVar> = CondSelectVectorGadget::select(
-            &[*price, order.worst_case_price],
-            &[order.worst_case_price, *price],
-            order.side,
-            cs,
-        )?;
-
-        // Constrain the difference to be representable in the maximum number of bits
-        // that a price may take
-        let lhs = gte_terms.remove(0);
-        let rhs = gte_terms.remove(0);
-        let price_improvement = lhs.sub(&rhs, cs);
-        PriceGadget::constrain_valid_price(price_improvement, cs)
     }
 
     // --- Settlement Constraints --- //

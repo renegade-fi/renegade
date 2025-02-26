@@ -10,18 +10,26 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
-    balance::Balance,
-    fees::FeeTakeRate,
-    order::Order,
-    r#match::BoundedMatchResult,
+    balance::{Balance, BalanceVar},
+    fees::{FeeTakeRate, FeeTakeRateVar},
+    order::{Order, OrderVar},
+    r#match::{BoundedMatchResult, BoundedMatchResultVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::WalletShare,
-    Address, PlonkCircuit,
+    Address, PlonkCircuit, AMOUNT_BITS,
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
 use serde::{Deserialize, Serialize};
+
+use crate::zk_gadgets::{
+    arithmetic::NoopGadget,
+    comparators::{EqGadget, GreaterThanEqGadget, LessThanGadget},
+    fixed_point::FixedPointGadget,
+    select::CondSelectVectorGadget,
+    wallet_operations::{AmountGadget, FeeGadget, PriceGadget},
+};
 
 /// The circuit implementation of `VALID MALLEABLE MATCH SETTLE ATOMIC`
 pub struct ValidMalleableMatchSettleAtomic<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
@@ -36,17 +44,184 @@ where
 {
     /// The circuit constraints for `VALID MALLEABLE MATCH SETTLE ATOMIC`
     pub fn circuit(
-        statement: ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
-        witness: ValidMalleableMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        statement: &ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMalleableMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        todo!("define constraints")
+        // Constrain the malleable fields
+        Self::constrain_malleable_fields(statement, cs)?;
+        // Type validation on the inputs
+        Self::validate_inputs(statement, witness, cs)?;
+        // Validate the construction of the bounded match result
+        Self::validate_match_result(statement, witness, cs)?;
+        // Validate the price protection
+        PriceGadget::validate_price_protection(
+            &statement.bounded_match_result.price,
+            &witness.internal_party_order,
+            cs,
+        )?;
+
+        // Lastly, we make public the internal party's public shares _before_
+        // modification. These are proof-linked into the witness from `VALID
+        // COMMITMENTS`, but we need to ensure the shares in the witness correspond to
+        // those in the statement
+        EqGadget::constrain_eq(
+            &statement.internal_party_public_shares,
+            &witness.internal_party_public_shares,
+            cs,
+        )
+    }
+
+    /// Constrain the fields that appear in no constraints to prevent them from
+    /// being changed
+    fn constrain_malleable_fields(
+        statement: &ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // The relayer fee address, and both the internal/external fee rates all need
+        // constraints
+        NoopGadget::constrain_noop(&statement.relayer_fee_address, cs)?;
+        NoopGadget::constrain_noop(&statement.internal_fee_rates, cs)?;
+        NoopGadget::constrain_noop(&statement.external_fee_rates, cs)
+    }
+
+    // --- Input Validation --- //
+
+    /// Validate the inputs: bit-lengths, ranges, etc.
+    fn validate_inputs(
+        statement: &ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        _witness: &ValidMalleableMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        Self::type_validate_match_result(&statement.bounded_match_result, cs)?;
+        Self::type_validate_fee_rates(
+            &statement.internal_fee_rates,
+            &statement.external_fee_rates,
+            cs,
+        )
+    }
+
+    /// Validate the match result
+    fn type_validate_match_result(
+        match_res: &BoundedMatchResultVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let min_amt = match_res.min_base_amount;
+        let max_amt = match_res.max_base_amount;
+
+        // The min/max base amounts must be constructed correctly
+        // and the min amount must be less than the max amount
+        AmountGadget::constrain_valid_amount(min_amt, cs)?;
+        AmountGadget::constrain_valid_amount(max_amt, cs)?;
+        LessThanGadget::<AMOUNT_BITS>::constrain_less_than(min_amt, max_amt, cs)?;
+
+        // The price must be a valid price
+        PriceGadget::constrain_valid_price(match_res.price, cs)
+    }
+
+    /// Validate the fee rates
+    fn type_validate_fee_rates(
+        internal_fee: &FeeTakeRateVar,
+        external_fee: &FeeTakeRateVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        FeeGadget::constrain_valid_fee(external_fee.relayer_fee_rate, cs)?;
+        FeeGadget::constrain_valid_fee(external_fee.protocol_fee_rate, cs)?;
+        FeeGadget::constrain_valid_fee(internal_fee.relayer_fee_rate, cs)?;
+        FeeGadget::constrain_valid_fee(internal_fee.protocol_fee_rate, cs)
+    }
+
+    // --- Matching Engine Constraints --- //
+
+    /// Validate the match result
+    fn validate_match_result(
+        statement: &ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMalleableMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        let match_res = &statement.bounded_match_result;
+        let order = &witness.internal_party_order;
+        let send_bal = &witness.internal_party_balance;
+        let recv_bal = &witness.internal_party_receive_balance;
+        let internal_fees = &statement.internal_fee_rates;
+
+        // Check that the match is on the correct pair, in the correct direction
+        cs.enforce_equal(match_res.quote_mint, order.quote_mint)?;
+        cs.enforce_equal(match_res.base_mint, order.base_mint)?;
+        cs.enforce_equal(order.side.into(), match_res.direction.into())?;
+
+        // Check that the max match amount does not exceed the order size
+        let max_amt = match_res.max_base_amount;
+        let order_size = order.amount;
+        LessThanGadget::<AMOUNT_BITS>::constrain_less_than(max_amt, order_size, cs)?;
+
+        // Check that the internal party's capitalization
+        Self::validate_balance_updates(match_res, send_bal, recv_bal, order, internal_fees, cs)
+    }
+
+    /// Check that the internal party's balance capitalizes the maximum match
+    fn validate_balance_updates(
+        match_res: &BoundedMatchResultVar,
+        send_bal: &BalanceVar,
+        recv_bal: &BalanceVar,
+        order: &OrderVar,
+        internal_fees: &FeeTakeRateVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Check that the backing balance capitalizes the maximum match amount
+        let max_base = match_res.max_base_amount;
+        let max_quote_fp = match_res.price.mul_integer(max_base, cs)?;
+        let max_quote = FixedPointGadget::floor(max_quote_fp, cs)?;
+
+        // Select the appropriate amount based on the internal party's side
+        // `order.side = 1` implies that the internal party sells the base asset
+        let max_send_recv = CondSelectVectorGadget::select(
+            &[max_base, max_quote],
+            &[max_quote, max_base],
+            order.side,
+            cs,
+        )?;
+        let max_send = max_send_recv[0];
+        let max_recv = max_send_recv[1];
+
+        Self::validate_match_capitalized(max_send, send_bal, cs)?;
+        Self::validate_receive_balance_overflow(max_recv, recv_bal, internal_fees, cs)
+    }
+
+    /// Validate that the match is capitalized by the internal party'
+    fn validate_match_capitalized(
+        max_send: Variable,
+        send_bal: &BalanceVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(send_bal.amount, max_send, cs)
+    }
+
+    /// Validate that the maximum match does not overflow the internal party's
+    /// receive balance
+    fn validate_receive_balance_overflow(
+        max_recv: Variable,
+        recv_bal: &BalanceVar,
+        fees: &FeeTakeRateVar,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Compute the maximum fees taken in the match
+        let relayer_fee_fp = fees.relayer_fee_rate.mul_integer(max_recv, cs)?;
+        let relayer_fee = FixedPointGadget::floor(relayer_fee_fp, cs)?;
+        let protocol_fee_fp = fees.protocol_fee_rate.mul_integer(max_recv, cs)?;
+        let protocol_fee = FixedPointGadget::floor(protocol_fee_fp, cs)?;
+
+        // Compute the maximum updates to internal party's balance
+        let updated_amount = cs.add(recv_bal.amount, max_recv)?;
+        let updated_relayer_fee = cs.add(recv_bal.relayer_fee_balance, relayer_fee)?;
+        let updated_protocol_fee = cs.add(recv_bal.protocol_fee_balance, protocol_fee)?;
+
+        // Check that none of the values overflow
+        AmountGadget::constrain_valid_amount(updated_amount, cs)?;
+        AmountGadget::constrain_valid_amount(updated_relayer_fee, cs)?;
+        AmountGadget::constrain_valid_amount(updated_protocol_fee, cs)
     }
 }
-
-// ---------------------------
-// | Witness Type Definition |
-// ---------------------------
 
 /// The witness type for `VALID MALLEABLE MATCH SETTLE ATOMIC`
 #[circuit_type(serde, singleprover_circuit)]
@@ -77,7 +252,7 @@ pub struct ValidMalleableMatchSettleAtomicStatement<
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The result of the match
-    pub match_result: BoundedMatchResult,
+    pub bounded_match_result: BoundedMatchResult,
     /// The fee rates charged to the external party
     pub external_fee_rates: FeeTakeRate,
     /// The fee rates charged to the internal party
@@ -114,7 +289,7 @@ where
         statement_var: ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        Self::circuit(statement_var, witness_var, cs).map_err(PlonkError::CircuitError)
+        Self::circuit(&statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
 
@@ -126,5 +301,18 @@ where
 mod tests {
     use super::*;
 
-    // TODO: Add tests
+    /// Print the number of gates in the circuit
+    #[test]
+    fn print_num_gates() {
+        let layout = ValidMalleableMatchSettleAtomic::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n = layout.n_gates;
+        let next_power_of_two = layout.n_gates.next_power_of_two();
+        println!("Number of gates: {}", n);
+        println!("Next power of two: {}", next_power_of_two);
+    }
 }

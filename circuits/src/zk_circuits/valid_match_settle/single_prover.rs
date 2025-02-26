@@ -16,7 +16,7 @@ use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
 use crate::zk_gadgets::{
     comparators::{EqGadget, GreaterThanEqGadget},
     fixed_point::FixedPointGadget,
-    select::{CondSelectGadget, CondSelectVectorGadget},
+    select::CondSelectGadget,
     wallet_operations::{AmountGadget, PriceGadget},
 };
 
@@ -135,8 +135,8 @@ where
 
         // --- Price Protection --- //
         // Check that the execution price is within the user-defined limits
-        Self::verify_price_protection_single_prover(&witness.price0, &witness.order0, cs)?;
-        Self::verify_price_protection_single_prover(&witness.price1, &witness.order1, cs)
+        PriceGadget::validate_price_protection(&witness.price0, &witness.order0, cs)?;
+        PriceGadget::validate_price_protection(&witness.price1, &witness.order1, cs)
     }
 
     /// Check that a balance covers the advertised amount at a given price, and
@@ -171,31 +171,6 @@ where
 
         let new_balance = cs.sub(balance.amount, amount_sold)?;
         AmountGadget::constrain_valid_amount(new_balance, cs)
-    }
-
-    /// Verify the price protection on the orders; i.e. that the executed price
-    /// is not worse than some user-defined limit
-    fn verify_price_protection_single_prover(
-        price: &FixedPointVar,
-        order: &OrderVar,
-        cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
-        // If the order is buy side, verify that the execution price is less
-        // than the limit price. If the order is sell side, verify that the
-        // execution price is greater than the limit price
-        let mut gte_terms: Vec<FixedPointVar> = CondSelectVectorGadget::select(
-            &[*price, order.worst_case_price],
-            &[order.worst_case_price, *price],
-            order.side,
-            cs,
-        )?;
-
-        // Constrain the difference to be representable in the maximum number of bits
-        // that a price may take
-        let lhs = gte_terms.remove(0);
-        let rhs = gte_terms.remove(0);
-        let price_improvement = lhs.sub(&rhs, cs);
-        PriceGadget::constrain_valid_price(price_improvement, cs)
     }
 }
 
