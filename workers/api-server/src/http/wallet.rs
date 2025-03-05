@@ -61,6 +61,10 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 /// to return
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
 
+/// The error message emitted when a price cannot be fetched
+pub(crate) const ERR_FAILED_TO_FETCH_PRICE: &str =
+    "price too stale for matching, try again shortly";
+
 /// Find the wallet in global state and apply any tasks to its state
 pub(crate) async fn find_wallet_for_update(
     wallet_id: WalletIdentifier,
@@ -128,8 +132,10 @@ pub(crate) async fn get_usdc_denominated_value(
     }
 
     // Peek at the price report from the price reporter
-    let ts_price =
-        price_reporter_queue.peek_price(base_token, quote_token).await.map_err(internal_error)?;
+    let ts_price = price_reporter_queue
+        .peek_price(base_token, quote_token)
+        .await
+        .map_err(|_| internal_error(ERR_FAILED_TO_FETCH_PRICE))?;
     let price = ts_price.price;
 
     // Compute the usdc denominated value

@@ -58,7 +58,7 @@ use crate::{
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
-use super::wallet::get_usdc_denominated_value;
+use super::wallet::{get_usdc_denominated_value, ERR_FAILED_TO_FETCH_PRICE};
 
 /// The gas estimation to use if fetching a gas estimation fails
 const DEFAULT_GAS_ESTIMATION: u64 = 4_000_000; // 4m
@@ -203,7 +203,7 @@ impl ExternalMatchProcessor {
             .await
             .and_then(|p| p.get_decimal_corrected_price(&base, &quote))
             .map(|p| p.as_fixed_point())
-            .map_err(internal_error)?;
+            .map_err(|_| internal_error(ERR_FAILED_TO_FETCH_PRICE))?;
 
         // TODO: Currently we set the relayer fee to zero, remove this
         let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
