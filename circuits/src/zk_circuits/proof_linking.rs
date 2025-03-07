@@ -112,7 +112,7 @@ where
 }
 
 /// Get the group layout for the reblind <-> commitments link group
-fn get_reblind_commitments_group_layout<
+pub fn get_reblind_commitments_group_layout<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
@@ -253,7 +253,10 @@ where
 }
 
 /// Get the group layout for the match settle <-> commitments link group
-fn get_commitments_match_settle_group_layout<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+pub fn get_commitments_match_settle_group_layout<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+>(
     party_id: PartyId,
 ) -> Result<GroupLayout, ProverError>
 where
@@ -350,7 +353,7 @@ where
 }
 
 /// Get the group layout for the match settle atomic <-> commitments link group
-fn get_commitments_match_settle_atomic_group_layout<
+pub fn get_commitments_match_settle_atomic_group_layout<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
 >() -> Result<GroupLayout, ProverError>
