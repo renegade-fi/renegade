@@ -67,7 +67,8 @@ const EXTERNAL_MATCH_TIMEOUT: Duration = Duration::from_secs(30);
 /// The maximum age of a quote before it is considered expired
 const MAX_QUOTE_AGE: u64 = 10_000; // 10 seconds
 /// The validity duration for a match bundle in the assemble flow
-const ASSEMBLE_BUNDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// TODO(@joeykraut): Use a non-zero timeout
+const ASSEMBLE_BUNDLE_TIMEOUT: Duration = Duration::from_secs(0);
 /// The validity duration for a match bundle in the direct match flow
 const DIRECT_MATCH_BUNDLE_TIMEOUT: Duration = Duration::from_secs(0);
 
