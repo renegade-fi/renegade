@@ -12,15 +12,21 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     balance::{Balance, BalanceVar},
     fees::{FeeTakeRate, FeeTakeRateVar},
+    fixed_point::{FixedPoint, FixedPointVar},
     order::{Order, OrderVar},
     r#match::{BoundedMatchResult, BoundedMatchResultVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::WalletShare,
-    Address, PlonkCircuit, AMOUNT_BITS,
+    Address, PlonkCircuit, AMOUNT_BITS, FEE_BITS,
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
+use mpc_relation::{
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    Variable,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::{
@@ -30,6 +36,8 @@ use crate::zk_gadgets::{
     select::CondSelectVectorGadget,
     wallet_operations::{AmountGadget, FeeGadget, PriceGadget},
 };
+
+use super::{valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE_LINK0};
 
 /// The circuit implementation of `VALID MALLEABLE MATCH SETTLE ATOMIC`
 pub struct ValidMalleableMatchSettleAtomic<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
@@ -90,13 +98,14 @@ where
     /// Validate the inputs: bit-lengths, ranges, etc.
     pub(super) fn validate_inputs(
         statement: &ValidMalleableMatchSettleAtomicStatementVar<MAX_BALANCES, MAX_ORDERS>,
-        _witness: &ValidMalleableMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMalleableMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         Self::type_validate_match_result(&statement.bounded_match_result, cs)?;
         Self::type_validate_fee_rates(
             &statement.internal_fee_rates,
             &statement.external_fee_rates,
+            &witness.internal_party_relayer_fee,
             cs,
         )
     }
@@ -123,12 +132,23 @@ where
     fn type_validate_fee_rates(
         internal_fee: &FeeTakeRateVar,
         external_fee: &FeeTakeRateVar,
+        internal_party_max_fee: &FixedPointVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         FeeGadget::constrain_valid_fee(external_fee.relayer_fee_rate, cs)?;
         FeeGadget::constrain_valid_fee(external_fee.protocol_fee_rate, cs)?;
         FeeGadget::constrain_valid_fee(internal_fee.relayer_fee_rate, cs)?;
-        FeeGadget::constrain_valid_fee(internal_fee.protocol_fee_rate, cs)
+        FeeGadget::constrain_valid_fee(internal_fee.protocol_fee_rate, cs)?;
+
+        // Ensure that the fee charged to the internal party does not exceed
+        // their maximum authorized fee
+        let max_fee_repr = internal_party_max_fee.repr;
+        let internal_relayer_fee_repr = internal_fee.relayer_fee_rate.repr;
+        GreaterThanEqGadget::<FEE_BITS>::constrain_greater_than_eq(
+            max_fee_repr,
+            internal_relayer_fee_repr,
+            cs,
+        )
     }
 
     // --- Matching Engine Constraints --- //
@@ -232,12 +252,19 @@ pub struct ValidMalleableMatchSettleAtomicWitness<
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The internal party's order
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_order: Order,
     /// The internal party's balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_balance: Balance,
     /// The internal party's receive balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_receive_balance: Balance,
+    /// The internal party's managing relayer fee
+    #[link_groups = "valid_commitments_match_settle0"]
+    pub internal_party_relayer_fee: FixedPoint,
     /// The internal party's public shares before settlement
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 
@@ -279,8 +306,15 @@ where
         format!("VALID MALLEABLE MATCH SETTLE ATOMIC ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
+    /// VALID MALLEABLE MATCH SETTLE ATOMIC has one proof linking group:
+    /// - valid_commitments_match_settle0: The linking group between VALID
+    ///   COMMITMENTS and VALID MATCH SETTLE. We directly use the first layout
+    ///   from the standard match settle circuit here for simplicity
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        Ok(vec![])
+        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+
+        Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
     }
 
     fn apply_constraints(
@@ -433,6 +467,7 @@ pub mod test_helpers {
             internal_party_order: internal_order.clone(),
             internal_party_balance,
             internal_party_receive_balance,
+            internal_party_relayer_fee: wallet1.max_match_fee,
             internal_party_public_shares: internal_party_public_shares.clone(),
         };
 
@@ -684,6 +719,19 @@ mod tests {
         // Invalid internal protocol fee rate
         let mut statement = base_statement;
         statement.internal_fee_rates.protocol_fee_rate = invalid_fee;
+        assert!(!check_type_check_constraints(&witness, &statement));
+    }
+
+    /// Test an invalid fee which exceeds the internal party's maximum
+    /// authorized fee
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_fee__exceeds_max_authorized_fee() {
+        let (witness, mut statement) = create_witness_statement();
+
+        // Set the match fee rate to the maximum fee rate plus epsilon
+        statement.internal_fee_rates.relayer_fee_rate =
+            witness.internal_party_relayer_fee + FixedPoint::from_repr(Scalar::one());
         assert!(!check_type_check_constraints(&witness, &statement));
     }
 
