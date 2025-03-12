@@ -12,6 +12,7 @@ use circuit_macros::circuit_type;
 use circuit_types::{
     balance::{Balance, BalanceVar},
     fees::{FeeTakeRate, FeeTakeRateVar},
+    fixed_point::FixedPoint,
     order::{Order, OrderVar},
     r#match::{BoundedMatchResult, BoundedMatchResultVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
@@ -20,7 +21,12 @@ use circuit_types::{
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, proof_linking::GroupLayout, traits::Circuit, Variable};
+use mpc_relation::{
+    errors::CircuitError,
+    proof_linking::{GroupLayout, LinkableCircuit},
+    traits::Circuit,
+    Variable,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::{
@@ -30,6 +36,8 @@ use crate::zk_gadgets::{
     select::CondSelectVectorGadget,
     wallet_operations::{AmountGadget, FeeGadget, PriceGadget},
 };
+
+use super::{valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE_LINK0};
 
 /// The circuit implementation of `VALID MALLEABLE MATCH SETTLE ATOMIC`
 pub struct ValidMalleableMatchSettleAtomic<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
@@ -232,12 +240,19 @@ pub struct ValidMalleableMatchSettleAtomicWitness<
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The internal party's order
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_order: Order,
     /// The internal party's balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_balance: Balance,
     /// The internal party's receive balance
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_receive_balance: Balance,
+    /// The internal party's managing relayer fee
+    #[link_groups = "valid_commitments_match_settle0"]
+    pub relayer_fee: FixedPoint,
     /// The internal party's public shares before settlement
+    #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 
@@ -279,8 +294,15 @@ where
         format!("VALID MALLEABLE MATCH SETTLE ATOMIC ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
+    /// VALID MALLEABLE MATCH SETTLE ATOMIC has one proof linking group:
+    /// - valid_commitments_match_settle0: The linking group between VALID
+    ///   COMMITMENTS and VALID MATCH SETTLE. We directly use the first layout
+    ///   from the standard match settle circuit here for simplicity
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        Ok(vec![])
+        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+
+        Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
     }
 
     fn apply_constraints(
@@ -433,6 +455,7 @@ pub mod test_helpers {
             internal_party_order: internal_order.clone(),
             internal_party_balance,
             internal_party_receive_balance,
+            relayer_fee: wallet1.max_match_fee,
             internal_party_public_shares: internal_party_public_shares.clone(),
         };
 
