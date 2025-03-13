@@ -17,7 +17,7 @@ use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
-use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle_atomic;
+use circuits::zk_circuits::proof_linking::link_sized_commitments_atomic_match_settle;
 use circuits::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
 };
@@ -515,7 +515,7 @@ impl SettleMatchExternalTask {
 
         let commitments_hint = &self.internal_order_validity_witness.commitment_linking_hint;
         let link_proof =
-            link_sized_commitments_match_settle_atomic(commitments_hint, atomic_match_hint)
+            link_sized_commitments_atomic_match_settle(commitments_hint, atomic_match_hint)
                 .map_err(SettleMatchExternalTaskError::proof_linking)?;
 
         Ok(AtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })

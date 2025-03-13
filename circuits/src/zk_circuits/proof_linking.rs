@@ -135,8 +135,8 @@ where
 ///
 /// These circuits link to `VALID COMMITMENTS` using the same proof-linking
 /// layout As the link between the first party's `VALID COMMITMENTS` and a
-/// standard proof of `VALID MATCH SETTLE`, so we can reuse the helpers build
-/// for the standard match
+/// standard proof of `VALID MATCH SETTLE`, so we can reuse the helpers built
+/// for the standard match settle link
 pub fn link_sized_commitments_atomic_match_settle(
     commitments_link_hint: &ProofLinkingHint,
     atomic_settle_link_hint: &ProofLinkingHint,
@@ -599,23 +599,17 @@ mod test {
     ) -> Result<(), ProverError> {
         // Create a proof of VALID COMMITMENTS and one of VALID MALLEABLE MATCH SETTLE
         // ATOMIC
-        println!("proving commitments");
         let (comm_proof, comm_hint) =
             singleprover_prove_with_hint::<SizedValidCommitments>(comm_witness, comm_statement)?;
-        println!("finished proving commitments");
         let (match_atomic_proof, match_atomic_hint) =
             singleprover_prove_with_hint::<
                 ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>,
             >(match_atomic_witness, match_atomic_statement)?;
 
-        println!("proving match atomic");
-
         let link_proof = link_commitments_atomic_match_settle::<MAX_BALANCES, MAX_ORDERS>(
             &comm_hint,
             &match_atomic_hint,
         )?;
-
-        println!("finished proving match atomic");
 
         // Validate the link proof
         validate_commitments_atomic_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
@@ -785,8 +779,6 @@ mod test {
             relayer_fee_address: Address::default(),
         };
 
-        println!("balance send amt: {}", match_atomic_witness.internal_party_balance.amount);
-
         (comm_witness, comm_statement, match_atomic_witness, match_atomic_statement)
     }
 
@@ -803,7 +795,7 @@ mod test {
 
     /// Build a `BoundedMatchResult` from a `MatchResult`
     ///
-    /// For simplicity, we set min and max to be the same value, these values
+    /// For simplicity, we set min and max to be a small range, these values
     /// are not checked in the proof linking relation anyways
     fn build_bounded_match_result(match_res: MatchResult, price: FixedPoint) -> BoundedMatchResult {
         BoundedMatchResult {
@@ -1118,6 +1110,88 @@ mod test {
     fn test_commitments_malleable_match_settle_atomic_valid_link() {
         let (comm_witness, comm_statement, match_atomic_witness, match_atomic_statement) =
             build_commitments_malleable_match_settle_atomic_data();
+
+        test_commitments_malleable_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
+    /// of VALID MALLEABLE MATCH SETTLE ATOMIC with a modified secret share
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_commitments_malleable_match_settle_atomic__invalid_link__modified_shares() {
+        let (comm_witness, comm_statement, mut match_atomic_witness, mut match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        // Modify the shares
+        let mut rng = thread_rng();
+        let mut modified_shares = match_atomic_witness.internal_party_public_shares.to_scalars();
+        let mut result_shares = match_atomic_statement.internal_party_public_shares.to_scalars();
+        let modification_idx = (0..modified_shares.len()).sample_single(&mut rng);
+
+        let modification = Scalar::random(&mut rng);
+        modified_shares[modification_idx] += modification;
+        result_shares[modification_idx] += modification;
+
+        match_atomic_witness.internal_party_public_shares =
+            WalletShare::from_scalars(&mut modified_shares.into_iter());
+        match_atomic_statement.internal_party_public_shares =
+            WalletShare::from_scalars(&mut result_shares.into_iter());
+
+        test_commitments_malleable_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
+    /// of VALID MALLEABLE MATCH SETTLE ATOMIC with a modified balance
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_commitments_malleable_match_settle_atomic__invalid_link__modified_balance() {
+        let (comm_witness, comm_statement, mut match_atomic_witness, match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        // Modify the balance
+        match_atomic_witness.internal_party_balance.amount += 1;
+        test_commitments_malleable_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
+    /// of VALID MALLEABLE MATCH SETTLE ATOMIC with a modified order
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_commitments_malleable_match_settle_atomic__invalid_link__modified_order() {
+        let (comm_witness, comm_statement, mut match_atomic_witness, match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        // Modify the order
+        let price = &mut match_atomic_witness.internal_party_order.worst_case_price;
+        if match_atomic_witness.internal_party_order.side == OrderSide::Buy {
+            *price = *price + Scalar::one();
+        } else {
+            *price = *price - Scalar::one();
+        }
 
         test_commitments_malleable_match_settle_atomic_singleprover(
             comm_witness,
