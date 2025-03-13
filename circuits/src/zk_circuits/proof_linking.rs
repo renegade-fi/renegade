@@ -21,9 +21,6 @@ use super::{
     VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
 };
 
-// Add these imports at the top of the file
-use super::valid_match_settle_atomic::ValidMatchSettleAtomic;
-
 // ---------------------------------------
 // | Valid Reblind <-> Valid Commitments |
 // ---------------------------------------
@@ -127,8 +124,84 @@ where
 }
 
 // --------------------------------
-// | Commitments <-> Match Settle |
+// | Commitments <-> Match Proofs |
 // --------------------------------
+
+/// Link a proof of `VALID COMMITMENTS` with an atomic match settle proof
+///
+/// There are two atomic match settlement circuits:
+/// - `VALID MATCH SETTLE ATOMIC`
+/// - `VALID MALLEABLE MATCH SETTLE ATOMIC`
+///
+/// These circuits link to `VALID COMMITMENTS` using the same proof-linking
+/// layout As the link between the first party's `VALID COMMITMENTS` and a
+/// standard proof of `VALID MATCH SETTLE`, so we can reuse the helpers built
+/// for the standard match settle link
+pub fn link_sized_commitments_atomic_match_settle(
+    commitments_link_hint: &ProofLinkingHint,
+    atomic_settle_link_hint: &ProofLinkingHint,
+) -> Result<PlonkLinkProof, ProverError> {
+    link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS>(
+        PARTY0,
+        commitments_link_hint,
+        atomic_settle_link_hint,
+    )
+}
+
+/// Link a proof of `VALID COMMITMENTS` into an atomic match settle proof,
+/// with generics sizing constants
+pub fn link_commitments_atomic_match_settle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    commitments_link_hint: &ProofLinkingHint,
+    atomic_settle_link_hint: &ProofLinkingHint,
+) -> Result<PlonkLinkProof, ProverError>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    link_commitments_match_settle::<MAX_BALANCES, MAX_ORDERS>(
+        PARTY0,
+        commitments_link_hint,
+        atomic_settle_link_hint,
+    )
+}
+
+/// Verify a link between a proof of `VALID COMMITMENTS` and an atomic match
+/// settle proof
+///
+/// See the doc comment above for `link_sized_commitments_atomic_match_settle`
+/// for more details
+pub fn validate_sized_commitments_atomic_match_settle_link(
+    link_proof: &PlonkLinkProof,
+    commitments_proof: &PlonkProof,
+    atomic_settle_proof: &PlonkProof,
+) -> Result<(), ProverError> {
+    validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
+        PARTY0,
+        link_proof,
+        commitments_proof,
+        atomic_settle_proof,
+    )
+}
+
+/// Verify a link between a proof of `VALID COMMITMENTS` and an atomic match
+/// settle proof, with generics sizing constants
+pub fn validate_commitments_atomic_match_settle_link<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+>(
+    link_proof: &PlonkLinkProof,
+    commitments_proof: &PlonkProof,
+    atomic_settle_proof: &PlonkProof,
+) -> Result<(), ProverError>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    validate_commitments_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
+        PARTY0,
+        link_proof,
+        commitments_proof,
+        atomic_settle_proof,
+    )
+}
 
 /// Link a proof of VALID COMMITMENTS with a proof of MATCH SETTLE using the
 /// system wide sizing constants in a singleprover context
@@ -274,105 +347,16 @@ where
     Ok(layout.get_group_layout(group_id))
 }
 
-// ---------------------------------------
-// | Commitments <-> Match Settle Atomic |
-// ---------------------------------------
-
-/// Link a proof of VALID COMMITMENTS with a proof of VALID MATCH SETTLE ATOMIC
-/// using the system wide sizing constants
-pub fn link_sized_commitments_match_settle_atomic(
-    commitments_link_hint: &ProofLinkingHint,
-    match_settle_atomic_link_hint: &ProofLinkingHint,
-) -> Result<PlonkLinkProof, ProverError> {
-    link_commitments_match_settle_atomic::<MAX_BALANCES, MAX_ORDERS>(
-        commitments_link_hint,
-        match_settle_atomic_link_hint,
-    )
-}
-
-/// Link a proof of VALID COMMITMENTS with a proof of VALID MATCH SETTLE ATOMIC
-pub fn link_commitments_match_settle_atomic<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    commitments_link_hint: &ProofLinkingHint,
-    match_settle_atomic_link_hint: &ProofLinkingHint,
-) -> Result<PlonkLinkProof, ProverError>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
-    // Get the group layout for the match settle atomic <-> commitments link group
-    let layout = get_commitments_match_settle_atomic_group_layout::<MAX_BALANCES, MAX_ORDERS>()?;
-    let pk = ValidMatchSettleAtomic::<MAX_BALANCES, MAX_ORDERS>::proving_key();
-
-    PlonkKzgSnark::link_proofs::<SolidityTranscript>(
-        commitments_link_hint,
-        match_settle_atomic_link_hint,
-        &layout,
-        &pk.commit_key,
-    )
-    .map_err(ProverError::Plonk)
-}
-
-/// Validate a link between a proof of VALID COMMITMENTS with a proof of VALID
-/// MATCH SETTLE ATOMIC using the system wide sizing constants
-pub fn validate_sized_commitments_match_settle_atomic_link(
-    link_proof: &PlonkLinkProof,
-    commitments_proof: &PlonkProof,
-    match_settle_atomic_proof: &PlonkProof,
-) -> Result<(), ProverError> {
-    validate_commitments_match_settle_atomic_link::<MAX_BALANCES, MAX_ORDERS>(
-        link_proof,
-        commitments_proof,
-        match_settle_atomic_proof,
-    )
-}
-
-/// Validate a link between a proof of VALID MATCH SETTLE ATOMIC with a proof of
-/// VALID COMMITMENTS
-pub fn validate_commitments_match_settle_atomic_link<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
->(
-    link_proof: &PlonkLinkProof,
-    commitments_proof: &PlonkProof,
-    match_settle_atomic_proof: &PlonkProof,
-) -> Result<(), ProverError>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
-    // Get the group layout for the match settle atomic <-> commitments link group
-    let layout = get_commitments_match_settle_atomic_group_layout::<MAX_BALANCES, MAX_ORDERS>()?;
-    let vk = ValidMatchSettleAtomic::<MAX_BALANCES, MAX_ORDERS>::verifying_key();
-
-    PlonkKzgSnark::verify_link_proof::<SolidityTranscript>(
-        commitments_proof,
-        match_settle_atomic_proof,
-        link_proof,
-        &layout,
-        &vk.open_key,
-    )
-    .map_err(ProverError::Plonk)
-}
-
-/// Get the group layout for the match settle atomic <-> commitments link group
-pub fn get_commitments_match_settle_atomic_group_layout<
-    const MAX_BALANCES: usize,
-    const MAX_ORDERS: usize,
->() -> Result<GroupLayout, ProverError>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
-    let layout = ValidMatchSettleAtomic::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()
-        .map_err(ProverError::Plonk)?;
-    Ok(layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0))
-}
-
 #[cfg(test)]
 mod test {
     use ark_mpc::{network::PartyId, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
     use circuit_types::{
         balance::Balance,
         errors::ProverError,
+        fees::FeeTakeRate,
+        fixed_point::FixedPoint,
         order::OrderSide,
-        r#match::{ExternalMatchResult, MatchResult},
+        r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
         traits::{BaseType, MpcBaseType, SingleProverCircuit},
         wallet::WalletShare,
         Address,
@@ -393,6 +377,10 @@ mod test {
                 test_helpers::create_witness_and_statement_with_shares as commitments_witness_statement,
                 ValidCommitments,
             },
+            valid_malleable_match_settle_atomic::{
+                ValidMalleableMatchSettleAtomic, ValidMalleableMatchSettleAtomicStatement,
+                ValidMalleableMatchSettleAtomicWitness,
+            },
             valid_match_settle::{
                 test_helpers::dummy_witness_and_statement as match_settle_witness_statement,
                 ValidMatchSettle,
@@ -409,8 +397,8 @@ mod test {
     };
 
     use super::{
-        link_commitments_match_settle_atomic, link_commitments_match_settle_multiprover,
-        link_commitments_reblind, validate_commitments_match_settle_atomic_link,
+        link_commitments_atomic_match_settle, link_commitments_match_settle_multiprover,
+        link_commitments_reblind, validate_commitments_atomic_match_settle_link,
         validate_commitments_match_settle_link, validate_commitments_reblind_link,
     };
 
@@ -588,16 +576,46 @@ mod test {
                 match_settle_statement,
             )?;
 
-        let link_proof = link_commitments_match_settle_atomic::<MAX_BALANCES, MAX_ORDERS>(
+        let link_proof = link_commitments_atomic_match_settle::<MAX_BALANCES, MAX_ORDERS>(
             &comm_hint,
             &match_settle_hint,
         )?;
 
         // Validate the link proof
-        validate_commitments_match_settle_atomic_link::<MAX_BALANCES, MAX_ORDERS>(
+        validate_commitments_atomic_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
             &link_proof,
             &comm_proof,
             &match_settle_proof,
+        )
+    }
+
+    /// Test the commitments <-> malleable match-settle atomic link in a
+    /// singleprover context
+    fn test_commitments_malleable_match_settle_atomic_singleprover(
+        comm_witness: <SizedValidCommitments as SingleProverCircuit>::Witness,
+        comm_statement: <SizedValidCommitments as SingleProverCircuit>::Statement,
+        match_atomic_witness: <ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS> as SingleProverCircuit>::Witness,
+        match_atomic_statement: <ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS> as SingleProverCircuit>::Statement,
+    ) -> Result<(), ProverError> {
+        // Create a proof of VALID COMMITMENTS and one of VALID MALLEABLE MATCH SETTLE
+        // ATOMIC
+        let (comm_proof, comm_hint) =
+            singleprover_prove_with_hint::<SizedValidCommitments>(comm_witness, comm_statement)?;
+        let (match_atomic_proof, match_atomic_hint) =
+            singleprover_prove_with_hint::<
+                ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>,
+            >(match_atomic_witness, match_atomic_statement)?;
+
+        let link_proof = link_commitments_atomic_match_settle::<MAX_BALANCES, MAX_ORDERS>(
+            &comm_hint,
+            &match_atomic_hint,
+        )?;
+
+        // Validate the link proof
+        validate_commitments_atomic_match_settle_link::<MAX_BALANCES, MAX_ORDERS>(
+            &link_proof,
+            &comm_proof,
+            &match_atomic_proof,
         )
     }
 
@@ -729,6 +747,41 @@ mod test {
         (comm_witness, comm_statement, match_atomic_witness, match_atomic_statement)
     }
 
+    /// Build a commitments and malleable match
+    fn build_commitments_malleable_match_settle_atomic_data() -> (
+        <SizedValidCommitments as SingleProverCircuit>::Witness,
+        <SizedValidCommitments as SingleProverCircuit>::Statement,
+        <ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS> as SingleProverCircuit>::Witness,
+        <ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS> as SingleProverCircuit>::Statement,
+    ){
+        let fee_rates = FeeTakeRate {
+            relayer_fee_rate: FixedPoint::from_f64_round_down(0.0004),
+            protocol_fee_rate: FixedPoint::from_f64_round_down(0.0001),
+        };
+
+        let (comm_witness, comm_statement, match_witness, _match_statement) =
+            build_commitments_match_settle_data(PARTY0);
+
+        let match_atomic_witness = ValidMalleableMatchSettleAtomicWitness {
+            internal_party_order: match_witness.order0,
+            internal_party_balance: match_witness.balance0,
+            internal_party_receive_balance: match_witness.balance_receive0,
+            internal_party_relayer_fee: match_witness.relayer_fee0,
+            internal_party_public_shares: match_witness.party0_public_shares.clone(),
+        };
+
+        let price = match_witness.price0;
+        let match_atomic_statement = ValidMalleableMatchSettleAtomicStatement {
+            bounded_match_result: build_bounded_match_result(match_witness.match_res, price),
+            external_fee_rates: fee_rates,
+            internal_fee_rates: fee_rates,
+            internal_party_public_shares: match_witness.party0_public_shares.clone(),
+            relayer_fee_address: Address::default(),
+        };
+
+        (comm_witness, comm_statement, match_atomic_witness, match_atomic_statement)
+    }
+
     /// Build an `ExternalMatchResult` from a `MatchResult`
     fn build_external_match_result(match_res: MatchResult) -> ExternalMatchResult {
         ExternalMatchResult {
@@ -736,6 +789,21 @@ mod test {
             base_mint: match_res.base_mint,
             quote_amount: match_res.quote_amount,
             base_amount: match_res.base_amount,
+            direction: match_res.direction,
+        }
+    }
+
+    /// Build a `BoundedMatchResult` from a `MatchResult`
+    ///
+    /// For simplicity, we set min and max to be a small range, these values
+    /// are not checked in the proof linking relation anyways
+    fn build_bounded_match_result(match_res: MatchResult, price: FixedPoint) -> BoundedMatchResult {
+        BoundedMatchResult {
+            quote_mint: match_res.quote_mint,
+            base_mint: match_res.base_mint,
+            price,
+            min_base_amount: match_res.base_amount - 1,
+            max_base_amount: match_res.base_amount,
             direction: match_res.direction,
         }
     }
@@ -1027,6 +1095,105 @@ mod test {
         }
 
         test_commitments_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests a valid link between a proof of VALID COMMITMENTS and a proof of
+    /// VALID MALLEABLE MATCH SETTLE ATOMIC
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    fn test_commitments_malleable_match_settle_atomic_valid_link() {
+        let (comm_witness, comm_statement, match_atomic_witness, match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        test_commitments_malleable_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
+    /// of VALID MALLEABLE MATCH SETTLE ATOMIC with a modified secret share
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_commitments_malleable_match_settle_atomic__invalid_link__modified_shares() {
+        let (comm_witness, comm_statement, mut match_atomic_witness, mut match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        // Modify the shares
+        let mut rng = thread_rng();
+        let mut modified_shares = match_atomic_witness.internal_party_public_shares.to_scalars();
+        let mut result_shares = match_atomic_statement.internal_party_public_shares.to_scalars();
+        let modification_idx = (0..modified_shares.len()).sample_single(&mut rng);
+
+        let modification = Scalar::random(&mut rng);
+        modified_shares[modification_idx] += modification;
+        result_shares[modification_idx] += modification;
+
+        match_atomic_witness.internal_party_public_shares =
+            WalletShare::from_scalars(&mut modified_shares.into_iter());
+        match_atomic_statement.internal_party_public_shares =
+            WalletShare::from_scalars(&mut result_shares.into_iter());
+
+        test_commitments_malleable_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
+    /// of VALID MALLEABLE MATCH SETTLE ATOMIC with a modified balance
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_commitments_malleable_match_settle_atomic__invalid_link__modified_balance() {
+        let (comm_witness, comm_statement, mut match_atomic_witness, match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        // Modify the balance
+        match_atomic_witness.internal_party_balance.amount += 1;
+        test_commitments_malleable_match_settle_atomic_singleprover(
+            comm_witness,
+            comm_statement,
+            match_atomic_witness,
+            match_atomic_statement,
+        )
+        .unwrap();
+    }
+
+    /// Tests an invalid link between a proof of VALID COMMITMENTS and a proof
+    /// of VALID MALLEABLE MATCH SETTLE ATOMIC with a modified order
+    #[cfg_attr(feature = "ci", ignore)]
+    #[test]
+    #[should_panic(expected = "ProofLinkVerification")]
+    #[allow(non_snake_case)]
+    fn test_commitments_malleable_match_settle_atomic__invalid_link__modified_order() {
+        let (comm_witness, comm_statement, mut match_atomic_witness, match_atomic_statement) =
+            build_commitments_malleable_match_settle_atomic_data();
+
+        // Modify the order
+        let price = &mut match_atomic_witness.internal_party_order.worst_case_price;
+        if match_atomic_witness.internal_party_order.side == OrderSide::Buy {
+            *price = *price + Scalar::one();
+        } else {
+            *price = *price - Scalar::one();
+        }
+
+        test_commitments_malleable_match_settle_atomic_singleprover(
             comm_witness,
             comm_statement,
             match_atomic_witness,
