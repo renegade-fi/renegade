@@ -5,13 +5,13 @@
 // | Task State |
 // --------------
 
-use std::{error::Error, fmt::Display, time::Duration};
+use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use async_trait::async_trait;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor},
-    token::get_all_tokens,
+    token::{get_all_tokens, Token},
     wallet::{
         derivation::{
             derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
@@ -20,7 +20,7 @@ use common::types::{
         Wallet, WalletIdentifier,
     },
 };
-use constants::{in_bootstrap_mode, Scalar};
+use constants::{in_bootstrap_mode, Scalar, NATIVE_ASSET_ADDRESS};
 use ethers::signers::LocalWallet;
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
@@ -541,7 +541,12 @@ impl NodeStartupTask {
 
     /// Setup the external match fee overrides for all tokens
     async fn setup_external_match_fees(&self) -> Result<(), NodeStartupTaskError> {
-        for token in get_all_tokens() {
+        let tokens: Vec<Token> = get_all_tokens()
+            .into_iter()
+            .chain(iter::once(Token::from_addr(NATIVE_ASSET_ADDRESS)))
+            .collect();
+
+        for token in tokens {
             // Fetch the fee override from the contract
             let addr = token.get_ethers_address();
             let fee = self.arbitrum_client.get_external_match_fee(addr).await?;

@@ -4,6 +4,8 @@
 // | Admin Route Handlers |
 // ------------------------
 
+use std::iter;
+
 use arbitrum_client::{client::ArbitrumClient, constants::Chain};
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
@@ -14,6 +16,7 @@ use common::types::{
     Price,
 };
 use config::setup_token_remaps;
+use constants::NATIVE_ASSET_ADDRESS;
 use external_api::{
     http::{
         admin::{
@@ -564,7 +567,12 @@ impl TypedHandler for AdminRefreshExternalMatchFeesHandler {
     ) -> Result<Self::Response, ApiServerError> {
         info!("Refreshing external match fees from contract");
 
-        for token in get_all_tokens() {
+        let tokens: Vec<Token> = get_all_tokens()
+            .into_iter()
+            .chain(iter::once(Token::from_addr(NATIVE_ASSET_ADDRESS)))
+            .collect();
+
+        for token in tokens {
             let addr = token.get_ethers_address();
             let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
 
