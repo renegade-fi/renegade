@@ -29,7 +29,7 @@ state = { path = "../state", features = ["mocks"] }
 system-bus = { path = "../system-bus" }
 system-clock = { path = "../system-clock" }
 task-driver = { path = "../workers/task-driver" }
-test-helpers = { path = "../test-helpers" }
+test-helpers = { path = "../test-helpers", features = ["mpc-network", "mocks"] }
 util = { path = "../util" }
 
 # === Misc Dependencies === #

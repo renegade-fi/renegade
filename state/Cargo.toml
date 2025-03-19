@@ -52,7 +52,9 @@ job-types = { path = "../workers/job-types" }
 system-bus = { path = "../system-bus" }
 system-clock = { path = "../system-clock" }
 util = { path = "../util" }
-test-helpers = { path = "../test-helpers", optional = true }
+test-helpers = { path = "../test-helpers", optional = true, features = [
+    "mocks",
+] }
 renegade-metrics = { path = "../renegade-metrics" }
 
 # === Misc === #
@@ -82,7 +84,7 @@ num-traits = "0.2"
 tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"
-test-helpers = { path = "../test-helpers" }
+test-helpers = { path = "../test-helpers", features = ["mocks"] }
 tokio-stream = "0.1"
 
 # Silence config warnings for testing

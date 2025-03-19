@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 integration = [
+    "dep:rand",
     "circuit-types/test-helpers",
     "circuits/test_helpers",
     "common/mocks",
@@ -60,7 +61,7 @@ contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.gi
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
 eyre = { workspace = true }
-test-helpers = { path = "../test-helpers" }
+test-helpers = { path = "../test-helpers", features = ["arbitrum"] }
 util = { path = "../util" }
 json = "0.12"
 tokio = { workspace = true }

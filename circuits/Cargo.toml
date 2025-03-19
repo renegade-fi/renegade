@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-test_helpers = ["dep:ctor", "util/mocks"]
+test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
 large_benchmarks = []
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
@@ -123,6 +123,6 @@ k256 = "0.13"
 mpc-plonk = { workspace = true, features = ["test_apis", "std"] }
 rand = "0.8"
 serde_json = "1.0"
-test-helpers = { path = "../test-helpers" }
+test-helpers = { path = "../test-helpers", features = ["mpc-network"] }
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
-util = { path = "../util", feaures = ["mocks"] }
+util = { path = "../util", features = ["mocks", "matching-engine"] }

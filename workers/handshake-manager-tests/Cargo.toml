@@ -26,7 +26,7 @@ config = { path = "../../config" }
 constants = { path = "../../constants" }
 job-types = { path = "../job-types" }
 mock-node = { path = "../../mock-node" }
-test-helpers = { path = "../../test-helpers" }
+test-helpers = { path = "../../test-helpers", features = ["arbitrum"] }
 util = { path = "../../util" }
 
 # === Misc Dependencies === #
