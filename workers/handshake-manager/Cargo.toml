@@ -27,7 +27,9 @@ job-types = { path = "../job-types" }
 gossip-api = { path = "../../gossip-api" }
 state = { path = "../../state" }
 system-bus = { path = "../../system-bus" }
-test-helpers = { path = "../../test-helpers" }
+test-helpers = { path = "../../test-helpers", features = [
+    "mpc-network",
+], default-features = false }
 util = { path = "../../util", features = ["matching-engine"] }
 renegade-metrics = { path = "../../renegade-metrics" }
 
@@ -52,7 +54,6 @@ lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }
-test-helpers = { path = "../../test-helpers" }
 util = { path = "../../util" }
 
 proof-manager = { path = "../proof-manager", features = ["mocks"] }
