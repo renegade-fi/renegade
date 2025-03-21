@@ -68,8 +68,8 @@ futures = "0.3"
 tokio = { version = "1" }
 
 # === Crypto Libraries === #
-alloy-primitives = "=0.7.7"
-alloy-sol-types = "=0.7.7"
+alloy-primitives = "0.8.20"
+alloy-sol-types = "0.8.20"
 ethers = "2"
 
 # === Misc === #
