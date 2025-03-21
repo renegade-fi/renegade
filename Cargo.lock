@@ -424,7 +424,6 @@ dependencies = [
  "colored",
  "common 0.1.0",
  "constants 0.1.0",
- "contracts-common",
  "ethers",
  "eyre",
  "inventory",

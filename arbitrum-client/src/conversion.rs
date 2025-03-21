@@ -32,36 +32,31 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
-use contracts_common::{
-    constants::NUM_SCALARS_PK,
-    custom_serde::scalar_to_u256,
-    types::{
-        BabyJubJubPoint as ContractBabyJubJubPoint,
-        ExternalMatchResult as ContractExternalMatchResult,
-        ExternalTransfer as ContractExternalTransfer, FeeTake as ContractFeeTake,
-        LinkingProof as ContractLinkingProof,
-        MatchAtomicLinkingProofs as ContractMatchAtomicLinkingProofs,
-        MatchAtomicProofs as ContractMatchAtomicProofs,
-        MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
-        NoteCiphertext as ContractNoteCiphertext,
-        OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
-        PublicEncryptionKey as ContractPublicEncryptionKey,
-        PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
-        ValidCommitmentsStatement as ContractValidCommitmentsStatement,
-        ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
-        ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
-        ValidMatchSettleStatement as ContractValidMatchSettleStatement,
-        ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
-        ValidReblindStatement as ContractValidReblindStatement,
-        ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
-        ValidWalletCreateStatement as ContractValidWalletCreateStatement,
-        ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
-    },
-};
 use num_bigint::BigUint;
 use ruint::aliases::{U160, U256};
 use util::hex::biguint_to_hex_string;
 
+use crate::contract_types::{
+    BabyJubJubPoint as ContractBabyJubJubPoint, ExternalMatchResult as ContractExternalMatchResult,
+    ExternalTransfer as ContractExternalTransfer, FeeTake as ContractFeeTake,
+    LinkingProof as ContractLinkingProof,
+    MatchAtomicLinkingProofs as ContractMatchAtomicLinkingProofs,
+    MatchAtomicProofs as ContractMatchAtomicProofs,
+    MatchLinkingProofs as ContractMatchLinkingProofs, MatchProofs as ContractMatchProofs,
+    NoteCiphertext as ContractNoteCiphertext,
+    OrderSettlementIndices as ContractOrderSettlementIndices, Proof as ContractProof,
+    PublicEncryptionKey as ContractPublicEncryptionKey,
+    PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
+    ValidCommitmentsStatement as ContractValidCommitmentsStatement,
+    ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+    ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
+    ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+    ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
+    ValidReblindStatement as ContractValidReblindStatement,
+    ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
+    ValidWalletCreateStatement as ContractValidWalletCreateStatement,
+    ValidWalletUpdateStatement as ContractValidWalletUpdateStatement, NUM_SCALARS_PK,
+};
 use crate::errors::ConversionError;
 
 /// Type alias for the affine representation of the
@@ -457,7 +452,7 @@ pub fn to_contract_valid_fee_redemption_statement(
 pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[AlloyU256; NUM_SCALARS_PK], ConversionError> {
     pk.to_scalars()
         .iter()
-        .map(|s| scalar_to_u256(s.inner()))
+        .map(|s| scalar_to_u256(*s))
         .collect::<Vec<_>>()
         .try_into()
         .map_err(|_| ConversionError::InvalidLength)
@@ -476,6 +471,11 @@ pub fn biguint_to_address(biguint: &BigUint) -> Result<Address, ConversionError>
 /// Convert an `Amount` to a `U256`
 pub fn amount_to_u256(amount: Amount) -> Result<U256, ConversionError> {
     amount.try_into().map_err(|_| ConversionError::InvalidUint)
+}
+
+/// Converts a `Scalar` to a `U256`
+pub fn scalar_to_u256(scalar: Scalar) -> U256 {
+    U256::from_be_slice(&scalar.to_bytes_be())
 }
 
 /// Try to extract a fixed-length array of G1Affine points

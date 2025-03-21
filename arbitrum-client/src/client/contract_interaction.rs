@@ -16,7 +16,6 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::Scalar;
-use contracts_common::types::MatchPayload;
 use ethers::{
     abi::Detokenize,
     contract::ContractCall,
@@ -33,6 +32,7 @@ use util::{err_str, telemetry::helpers::backfill_trace_field};
 use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
 
 use crate::{
+    contract_types::MatchPayload,
     conversion::{
         build_atomic_match_linking_proofs, build_atomic_match_proofs, build_match_linking_proofs,
         build_match_proofs, to_contract_proof, to_contract_transfer_aux_data,
