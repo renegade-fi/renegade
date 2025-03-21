@@ -89,3 +89,7 @@ lazy_static = "1.4"
 # We patch `ahash` here since version mismatches w/ the contracts code have
 # led to verification errors in the past.
 ahash = { git = "https://github.com/tkaitchuck/aHash.git", tag = "v0.8.11" }
+# Patch the `parity-scale-codec-derive` crate to force an updated version that is
+# compatible with newer versions of the `parity-scale-codec` crate.
+# See: https://github.com/paritytech/parity-scale-codec/issues/702
+parity-scale-codec-derive = { git = "https://github.com/paritytech/parity-scale-codec.git", tag = "v3.6.12" }
