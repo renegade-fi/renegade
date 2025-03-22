@@ -13,16 +13,16 @@ tokio = { workspace = true }
 libp2p = { workspace = true }
 
 # === Workspace Dependencies === #
-arbitrum-client = { path = "../../arbitrum-client" }
-circuits = { path = "../../circuits" }
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-gossip-api = { path = "../../gossip-api" }
-job-types = { path = "../job-types" }
-state = { path = "../../state" }
-util = { path = "../../util" }
-renegade-metrics = { path = "../../renegade-metrics" }
+arbitrum-client = { workspace = true }
+circuits = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+gossip-api = { workspace = true }
+job-types = { workspace = true }
+state = { workspace = true }
+util = { workspace = true }
+renegade-metrics = { workspace = true }
 
 # === Misc Dependencies === #
 itertools = { workspace = true }

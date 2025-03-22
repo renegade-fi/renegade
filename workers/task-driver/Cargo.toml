@@ -30,19 +30,19 @@ ark-mpc = { workspace = true }
 num-bigint = { workspace = true }
 
 # === Workspace Dependencies === #
-arbitrum-client = { path = "../../arbitrum-client" }
-circuits = { path = "../../circuits" }
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-external-api = { path = "../../external-api" }
-gossip-api = { path = "../../gossip-api" }
-job-types = { path = "../job-types" }
-renegade-crypto = { path = "../../renegade-crypto" }
-state = { path = "../../state" }
-system-bus = { path = "../../system-bus" }
-util = { path = "../../util" }
-renegade-metrics = { path = "../../renegade-metrics" }
+arbitrum-client = { workspace = true }
+circuits = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+external-api = { workspace = true }
+gossip-api = { workspace = true }
+job-types = { workspace = true }
+renegade-crypto = { workspace = true }
+state = { workspace = true }
+system-bus = { workspace = true }
+util = { workspace = true }
+renegade-metrics = { workspace = true }
 
 # === Misc Dependencies === #
 ethers = { workspace = true }
@@ -66,7 +66,11 @@ lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }
-test-helpers = { path = "../../test-helpers", features = ["arbitrum"] }
-util = { path = "../../util" }
+test-helpers = { workspace = true, features = ["arbitrum"] }
+util = { workspace = true, features = [
+    "blockchain",
+    "concurrency",
+    "telemetry",
+] }
 
-proof-manager = { path = "../proof-manager", features = ["mocks"] }
+proof-manager = { workspace = true, features = ["mocks"] }

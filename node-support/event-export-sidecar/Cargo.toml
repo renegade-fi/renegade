@@ -13,9 +13,9 @@ aws-config = { version = "1.1.4", features = ["behavior-version-latest"] }
 aws-sdk-sqs = "1.50.0"
 
 # === Workspace Dependencies === #
-config = { path = "../../config" }
-job-types = { path = "../../workers/job-types" }
-event-manager = { path = "../../workers/event-manager" }
+config = { workspace = true }
+job-types = { workspace = true }
+event-manager = { workspace = true }
 
 # === Misc Dependencies === #
 url = "2.4"

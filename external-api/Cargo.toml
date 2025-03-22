@@ -32,11 +32,11 @@ http = { version = "0.2.12", optional = true }
 thiserror = { version = "1.0.61", optional = true }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types", default-features = false }
-common = { path = "../common", default-features = false }
-constants = { path = "../constants", default-features = false }
-renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util", default-features = false }
+circuit-types = { workspace = true, default-features = false }
+common = { workspace = true, default-features = false }
+constants = { workspace = true, default-features = false }
+renegade-crypto = { workspace = true }
+util = { workspace = true, default-features = false }
 
 # === Misc Dependencies === #
 base64 = "0.22.1"
@@ -51,4 +51,4 @@ uuid = { version = "1.1.2", features = ["v4", "serde"] }
 [dev-dependencies]
 rand = "0.8.5"
 num-traits = "0.2.15"
-constants = { path = "../constants", default-features = true }
+constants = { workspace = true, default-features = true }

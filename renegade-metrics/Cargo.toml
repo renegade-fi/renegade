@@ -18,9 +18,9 @@ num-bigint = { workspace = true }
 atomic_float = "1"
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types" }
-util = { path = "../util" }
-common = { path = "../common" }
+circuit-types = { workspace = true }
+util = { workspace = true }
+common = { workspace = true }
 
 # === Misc === #
 lazy_static = { workspace = true }

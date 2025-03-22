@@ -11,7 +11,7 @@ serde = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 
 # === Workspace Dependencies === #
-common = { path = "../common" }
+common = { workspace = true }
 
 [dev-dependencies]
 rand = "0.8"

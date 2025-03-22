@@ -12,16 +12,16 @@ silent = []
 libp2p = { workspace = true }
 
 # === Workspace Dependencies === #
-arbitrum-client = { path = "../arbitrum-client" }
-circuit-types = { path = "../circuit-types" }
-colored = "2.0"
-common = { path = "../common" }
-constants = { path = "../constants" }
-util = { path = "../util" }
+arbitrum-client = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 base64 = "0.13"
 bimap = "0.6.2"
+colored = "2.0"
 clap = { version = "4.4", features = ["derive", "env"] }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 ethers = { workspace = true }

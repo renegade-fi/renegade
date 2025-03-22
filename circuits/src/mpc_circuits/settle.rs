@@ -8,7 +8,7 @@ use circuit_types::{
     Fabric,
 };
 use constants::AuthenticatedScalar;
-use util::arbitrum::get_protocol_fee;
+use util::on_chain::get_protocol_fee;
 
 use crate::mpc_gadgets::{comparators::cond_select_vec, fixed_point::FixedPointMpcGadget};
 

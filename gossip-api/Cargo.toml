@@ -9,9 +9,9 @@ hmac = "0.12"
 sha2 = { version = "0.10", features = ["asm"] }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types" }
-common = { path = "../common" }
-util = { path = "../util" }
+circuit-types = { workspace = true }
+common = { workspace = true }
+util = { workspace = true }
 
 # === Serialization === #
 bincode = "1.3"

@@ -20,9 +20,9 @@ use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 use util::{
-    arbitrum::get_external_match_fee,
     get_current_time_millis,
     hex::{biguint_from_hex_string, biguint_to_hex_addr},
+    on_chain::get_external_match_fee,
 };
 
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};

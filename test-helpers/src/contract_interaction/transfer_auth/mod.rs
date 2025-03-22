@@ -52,7 +52,7 @@ pub fn gen_transfer_with_auth(
 }
 
 /// Generate a withdrawal payload with proper auth data
-fn gen_withdrawal_with_auth(
+pub fn gen_withdrawal_with_auth(
     wallet: &Wallet<SigningKey>,
     transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth> {
@@ -70,7 +70,7 @@ fn gen_withdrawal_with_auth(
 }
 
 /// Generate a deposit payload with proper auth data
-fn gen_deposit_with_auth(
+pub fn gen_deposit_with_auth(
     wallet: &Wallet<SigningKey>,
     pk_root: &PublicSigningKey,
     transfer: ExternalTransfer,
@@ -141,7 +141,6 @@ fn gen_permit_payload(
         H256::from_slice(permit_signing_hash(&signable_permit, &permit_domain).as_slice());
 
     let signature = wallet.sign_hash(msg_hash)?.to_vec();
-
     Ok((nonce, deadline, signature))
 }
 

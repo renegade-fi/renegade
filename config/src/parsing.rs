@@ -19,8 +19,8 @@ use std::{env, fs, str::FromStr};
 use toml::{value::Map, Value};
 use url::Url;
 use util::{
-    arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
     hex::{biguint_from_hex_string, jubjub_from_hex_string},
+    on_chain::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
 };
 
 /// The CLI argument name for the config file

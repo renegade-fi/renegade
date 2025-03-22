@@ -23,7 +23,7 @@ use num_bigint::BigUint;
 use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::instrument;
-use util::{arbitrum::get_protocol_pubkey, err_str};
+use util::{err_str, on_chain::get_protocol_pubkey};
 
 use crate::{
     task_state::StateWrapper,

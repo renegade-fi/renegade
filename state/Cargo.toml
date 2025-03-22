@@ -42,20 +42,18 @@ futures = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types" }
-common = { path = "../common" }
-config = { path = "../config" }
-constants = { path = "../constants" }
-external-api = { path = "../external-api" }
-gossip-api = { path = "../gossip-api" }
-job-types = { path = "../workers/job-types" }
-system-bus = { path = "../system-bus" }
-system-clock = { path = "../system-clock" }
-util = { path = "../util" }
-test-helpers = { path = "../test-helpers", optional = true, features = [
-    "mocks",
-] }
-renegade-metrics = { path = "../renegade-metrics" }
+circuit-types = { workspace = true }
+common = { workspace = true }
+config = { workspace = true }
+constants = { workspace = true }
+external-api = { workspace = true }
+gossip-api = { workspace = true }
+job-types = { workspace = true }
+system-bus = { workspace = true }
+system-clock = { workspace = true }
+util = { workspace = true }
+test-helpers = { workspace = true, optional = true, features = ["mocks"] }
+renegade-metrics = { workspace = true }
 
 # === Misc === #
 async-trait = { workspace = true }
@@ -84,8 +82,8 @@ num-traits = "0.2"
 tempfile = "3.8"
 rand = { workspace = true }
 uuid = "1.4"
-test-helpers = { path = "../test-helpers", features = ["mocks"] }
+test-helpers = { workspace = true, features = ["mocks"] }
 tokio-stream = "0.1"
 
 # Silence config warnings for testing
-config = { path = "../config", features = ["silent"] }
+config = { workspace = true, features = ["silent"] }

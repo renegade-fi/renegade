@@ -25,7 +25,7 @@ use test_helpers::{
     types::TestVerbosity,
 };
 use tracing::level_filters::LevelFilter;
-use util::arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
+use util::on_chain::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY};
 
 /// A mock execution price to use in the integration tests
 const MOCK_EXECUTION_PRICE: f64 = 1.618;

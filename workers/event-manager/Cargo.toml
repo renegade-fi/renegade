@@ -10,12 +10,12 @@ tokio = { workspace = true }
 futures = { workspace = true }
 
 # === Workspace Dependencies === #
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-circuit-types = { path = "../../circuit-types" }
-job-types = { path = "../job-types" }
-util = { path = "../../util" }
-renegade-metrics = { path = "../../renegade-metrics" }
+common = { workspace = true }
+constants = { workspace = true }
+circuit-types = { workspace = true }
+job-types = { workspace = true }
+util = { workspace = true, features = ["metered-channels"] }
+renegade-metrics = { workspace = true }
 
 # === Misc Dependencies === #
 url = "2.4"
