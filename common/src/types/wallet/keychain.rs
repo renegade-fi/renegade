@@ -102,21 +102,14 @@ impl KeyChain {
 const ERR_NO_SK_ROOT: &str = "wallet does not have an `sk_root` value";
 
 impl Wallet {
-    /// Sign a wallet transition commitment with the wallet's keychain
-    ///
-    /// The contracts expect a recoverable signature with the recover ID set to
-    /// 0/1; we use ethers `sign_prehash_recoverable` to generate this signature
-    pub fn sign_commitment(&self, commitment: Scalar) -> Result<Signature, String> {
+    /// Sign the given bytes with the wallet's root signing key
+    pub fn sign_bytes(&self, bytes: &[u8]) -> Result<Signature, String> {
         // Fetch the `sk_root` key
         let root_key = self.key_chain.secret_keys.sk_root.as_ref().ok_or(ERR_NO_SK_ROOT)?;
         let key = EthersSigningKey::try_from(root_key)?;
 
-        // Hash the message and sign it as is done in the contract:
-        //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
-        // The `to_bytes_be` method is used to match the contract's serialization, with
-        // appropriate padding
-        let comm_bytes = commitment.to_bytes_be();
-        let digest = keccak256(comm_bytes);
+        // Sign the payload
+        let digest = keccak256(bytes);
         let (sig, recovery_id) = key
             .sign_prehash_recoverable(&digest)
             .map_err(raw_err_str!("failed to sign commitment: {}"))?;
@@ -126,6 +119,19 @@ impl Wallet {
             s: U256::from_big_endian(&sig.s().to_bytes()),
             v: recovery_id.to_byte() as u64,
         })
+    }
+
+    /// Sign a wallet transition commitment with the wallet's keychain
+    ///
+    /// The contracts expect a recoverable signature with the recover ID set to
+    /// 0/1; we use ethers `sign_prehash_recoverable` to generate this signature
+    pub fn sign_commitment(&self, commitment: Scalar) -> Result<Signature, String> {
+        // Hash the message and sign it as is done in the contract:
+        //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
+        // The `to_bytes_be` method is used to match the contract's serialization, with
+        // appropriate padding
+        let comm_bytes = commitment.to_bytes_be();
+        self.sign_bytes(&comm_bytes)
     }
 }
 
