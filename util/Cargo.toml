@@ -35,9 +35,9 @@ tokio = { workspace = true }
 crossbeam = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { path = "../circuit-types", default-features = false }
-constants = { path = "../constants", default-features = false }
-renegade-crypto = { path = "../renegade-crypto" }
+circuit-types = { workspace = true, default-features = false }
+constants = { workspace = true, default-features = false }
+renegade-crypto = { workspace = true }
 
 # === Misc === #
 eyre = { workspace = true }

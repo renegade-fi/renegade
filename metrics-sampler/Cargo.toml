@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 # === Workspace Dependencies === #
-state = { path = "../state" }
-system-clock = { path = "../system-clock" }
-common = { path = "../common" }
-job-types = { path = "../workers/job-types" }
-util = { path = "../util" }
+state = { workspace = true }
+system-clock = { workspace = true }
+common = { workspace = true }
+job-types = { workspace = true }
+util = { workspace = true }
 
 # === Misc === #
 metrics = { workspace = true }

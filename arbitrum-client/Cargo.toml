@@ -35,13 +35,13 @@ alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 
 # === Workspace Dependencies === #
-constants = { path = "../constants" }
-circuit-types = { path = "../circuit-types" }
-circuits = { path = "../circuits" }
-common = { path = "../common" }
-renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util", features = ["telemetry"] }
-renegade-metrics = { path = "../renegade-metrics" }
+constants = { workspace = true }
+circuit-types = { workspace = true }
+circuits = { workspace = true }
+common = { workspace = true }
+renegade-crypto = { workspace = true }
+util = { workspace = true, features = ["telemetry"] }
+renegade-metrics = { workspace = true }
 
 # === Serde === #
 serde = { version = "1.0.197" }
@@ -58,8 +58,8 @@ rand = { workspace = true, optional = true }
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
 eyre = { workspace = true }
-test-helpers = { path = "../test-helpers", features = ["arbitrum"] }
-util = { path = "../util" }
+test-helpers = { workspace = true, features = ["arbitrum"] }
+util = { workspace = true }
 json = "0.12"
 tokio = { workspace = true }
 colored = "2"

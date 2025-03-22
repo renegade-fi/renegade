@@ -74,6 +74,36 @@ alloy-primitives = "0.8.20"
 alloy-sol-types = "0.8.20"
 ethers = "2"
 
+# === Workspace Dependencies === #
+arbitrum-client = { path = "arbitrum-client" }
+api-server = { path = "workers/api-server" }
+chain-events = { path = "workers/chain-events" }
+constants = { path = "constants" }
+circuits = { path = "circuits" }
+circuit-macros = { path = "circuit-macros" }
+circuit-types = { path = "circuit-types" }
+common = { path = "common" }
+config = { path = "config" }
+event-manager = { path = "workers/event-manager" }
+external-api = { path = "external-api" }
+gossip-api = { path = "gossip-api" }
+gossip-server = { path = "workers/gossip-server" }
+handshake-manager = { path = "workers/handshake-manager" }
+job-types = { path = "workers/job-types" }
+metrics-sampler = { path = "metrics-sampler" }
+mock-node = { path = "mock-node" }
+network-manager = { path = "workers/network-manager" }
+price-reporter = { path = "workers/price-reporter" }
+proof-manager = { path = "workers/proof-manager" }
+renegade-crypto = { path = "renegade-crypto" }
+renegade-metrics = { path = "renegade-metrics" }
+state = { path = "state" }
+system-bus = { path = "system-bus" }
+system-clock = { path = "system-clock" }
+task-driver = { path = "workers/task-driver" }
+test-helpers = { path = "test-helpers" }
+util = { path = "util" }
+
 # === Misc === #
 async-trait = "0.1"
 eyre = "0.6"

@@ -18,28 +18,28 @@ crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
-api-server = { path = "../workers/api-server" }
-arbitrum-client = { path = "../arbitrum-client", features = ["rand"] }
-circuit-types = { path = "../circuit-types" }
-chain-events = { path = "../workers/chain-events" }
-common = { path = "../common" }
-constants = { path = "../constants" }
-config = { path = "../config" }
-external-api = { path = "../external-api" }
-gossip-api = { path = "../gossip-api" }
-gossip-server = { path = "../workers/gossip-server" }
-handshake-manager = { path = "../workers/handshake-manager" }
-job-types = { path = "../workers/job-types" }
-network-manager = { path = "../workers/network-manager" }
-price-reporter = { path = "../workers/price-reporter" }
-proof-manager = { path = "../workers/proof-manager" }
-event-manager = { path = "../workers/event-manager" }
-state = { path = "../state" }
-system-bus = { path = "../system-bus" }
-system-clock = { path = "../system-clock" }
-task-driver = { path = "../workers/task-driver" }
-util = { path = "../util" }
-metrics-sampler = { path = "../metrics-sampler" }
+api-server = { workspace = true }
+arbitrum-client = { workspace = true, features = ["rand"] }
+circuit-types = { workspace = true }
+chain-events = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+config = { workspace = true }
+external-api = { workspace = true }
+gossip-api = { workspace = true }
+gossip-server = { workspace = true }
+handshake-manager = { workspace = true }
+job-types = { workspace = true }
+network-manager = { workspace = true }
+price-reporter = { workspace = true }
+proof-manager = { workspace = true }
+event-manager = { workspace = true }
+state = { workspace = true }
+system-bus = { workspace = true }
+system-clock = { workspace = true }
+task-driver = { workspace = true }
+util = { workspace = true }
+metrics-sampler = { workspace = true }
 
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }

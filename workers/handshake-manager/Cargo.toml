@@ -16,22 +16,22 @@ libp2p = { workspace = true }
 tokio = { workspace = true }
 
 #=== Workspace Dependencies === #
-arbitrum-client = { path = "../../arbitrum-client" }
-circuits = { path = "../../circuits" }
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-renegade-crypto = { path = "../../renegade-crypto" }
-external-api = { path = "../../external-api" }
-job-types = { path = "../job-types" }
-gossip-api = { path = "../../gossip-api" }
-state = { path = "../../state" }
-system-bus = { path = "../../system-bus" }
-test-helpers = { path = "../../test-helpers", features = [
+arbitrum-client = { workspace = true }
+circuits = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+renegade-crypto = { workspace = true }
+external-api = { workspace = true }
+job-types = { workspace = true }
+gossip-api = { workspace = true }
+state = { workspace = true }
+system-bus = { workspace = true }
+test-helpers = { workspace = true, features = [
     "mpc-network",
 ], default-features = false }
-util = { path = "../../util", features = ["matching-engine"] }
-renegade-metrics = { path = "../../renegade-metrics" }
+util = { workspace = true, features = ["matching-engine"] }
+renegade-metrics = { workspace = true }
 
 # === Misc Dependencies === #
 ark-serialize = "0.4"
@@ -54,6 +54,5 @@ lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }
-util = { path = "../../util" }
-
-proof-manager = { path = "../proof-manager", features = ["mocks"] }
+util = { workspace = true }
+proof-manager = { workspace = true, features = ["mocks"] }

@@ -50,11 +50,11 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 # === Workspace Dependencies === #
-circuits = { path = "../circuits", optional = true }
-circuit-types = { path = "../circuit-types", default-features = false }
-constants = { path = "../constants", default-features = false }
-renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util" }
+circuits = { workspace = true, optional = true }
+circuit-types = { workspace = true, default-features = false }
+constants = { workspace = true, default-features = false }
+renegade-crypto = { workspace = true }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 base64 = { version = "0.22" }

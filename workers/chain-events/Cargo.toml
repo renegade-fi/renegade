@@ -12,15 +12,15 @@ tokio = { workspace = true }
 ethers = { workspace = true }
 
 # === Workspace Dependencies === #
-arbitrum-client = { path = "../../arbitrum-client" }
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-renegade-crypto = { path = "../../renegade-crypto" }
-gossip-api = { path = "../../gossip-api" }
-job-types = { path = "../job-types" }
-state = { path = "../../state" }
-util = { path = "../../util" }
+arbitrum-client = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+renegade-crypto = { workspace = true }
+gossip-api = { workspace = true }
+job-types = { workspace = true }
+state = { workspace = true }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 lazy_static = { workspace = true }

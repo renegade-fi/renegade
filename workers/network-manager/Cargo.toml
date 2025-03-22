@@ -24,13 +24,13 @@ ark-mpc = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 
 # === Workspace Dependencies === #
-common = { path = "../../common" }
-external-api = { path = "../../external-api" }
-gossip-api = { path = "../../gossip-api" }
-job-types = { path = "../job-types" }
-state = { path = "../../state" }
-system-bus = { path = "../../system-bus" }
-util = { path = "../../util" }
+common = { workspace = true }
+external-api = { workspace = true }
+gossip-api = { workspace = true }
+job-types = { workspace = true }
+state = { workspace = true }
+system-bus = { workspace = true }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 itertools = "0.11"

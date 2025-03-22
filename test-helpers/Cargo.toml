@@ -52,12 +52,12 @@ alloy-sol-types = { workspace = true, optional = true }
 ethers = { workspace = true, optional = true }
 
 # === Workspace Dependencies === # 
-arbitrum-client = { path = "../arbitrum-client", optional = true }
-circuit-types = { path = "../circuit-types", optional = true }
-common = { path = "../common", features = ["mocks"], optional = true }
-constants = { path = "../constants", optional = true }
-renegade-crypto = { path = "../renegade-crypto", optional = true }
-util = { path = "../util", optional = true }
+arbitrum-client = { workspace = true, optional = true }
+circuit-types = { workspace = true, optional = true }
+common = { workspace = true, features = ["mocks"], optional = true }
+constants = { workspace = true, optional = true }
+renegade-crypto = { workspace = true, optional = true }
+util = { workspace = true, optional = true }
 
 # === Misc Dependencies === #
 itertools = "0.10.5"

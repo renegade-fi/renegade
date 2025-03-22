@@ -11,26 +11,26 @@ libp2p = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }
 
 # === Workspace Dependencies === #
-api-server = { path = "../workers/api-server" }
-arbitrum-client = { path = "../arbitrum-client" }
-circuit-types = { path = "../circuit-types" }
-chain-events = { path = "../workers/chain-events" }
-common = { path = "../common" }
-config = { path = "../config" }
-external-api = { path = "../external-api" }
-gossip-api = { path = "../gossip-api" }
-gossip-server = { path = "../workers/gossip-server" }
-handshake-manager = { path = "../workers/handshake-manager" }
-job-types = { path = "../workers/job-types" }
-network-manager = { path = "../workers/network-manager" }
-price-reporter = { path = "../workers/price-reporter", features = ["mocks"] }
-proof-manager = { path = "../workers/proof-manager", features = ["mocks"] }
-state = { path = "../state", features = ["mocks"] }
-system-bus = { path = "../system-bus" }
-system-clock = { path = "../system-clock" }
-task-driver = { path = "../workers/task-driver" }
-test-helpers = { path = "../test-helpers", features = ["mpc-network", "mocks"] }
-util = { path = "../util" }
+api-server = { workspace = true }
+arbitrum-client = { workspace = true }
+circuit-types = { workspace = true }
+chain-events = { workspace = true }
+common = { workspace = true }
+config = { workspace = true }
+external-api = { workspace = true }
+gossip-api = { workspace = true }
+gossip-server = { workspace = true }
+handshake-manager = { workspace = true }
+job-types = { workspace = true }
+network-manager = { workspace = true }
+price-reporter = { workspace = true, features = ["mocks"] }
+proof-manager = { workspace = true, features = ["mocks"] }
+state = { workspace = true, features = ["mocks"] }
+system-bus = { workspace = true }
+system-clock = { workspace = true }
+task-driver = { workspace = true }
+test-helpers = { workspace = true, features = ["mpc-network", "mocks"] }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }

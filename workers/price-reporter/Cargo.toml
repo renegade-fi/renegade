@@ -24,12 +24,12 @@ reqwest = "0.11"
 web3 = "0.18"
 
 # === Workspace Dependencies === #
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-external-api = { path = "../../external-api" }
-job-types = { path = "../job-types" }
-system-bus = { path = "../../system-bus" }
-util = { path = "../../util" }
+common = { workspace = true }
+constants = { workspace = true }
+external-api = { workspace = true }
+job-types = { workspace = true }
+system-bus = { workspace = true }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 atomic_float = "0.1"
