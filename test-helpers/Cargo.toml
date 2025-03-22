@@ -8,6 +8,7 @@ description = "Helpers for setting up and running integration tests for the rela
 default = ["test-harness"]
 contracts = ["arbitrum"]
 arbitrum = [
+    "dep:alloy",
     "dep:alloy-primitives",
     "dep:alloy-sol-types",
     "dep:arbitrum-client",
@@ -45,6 +46,7 @@ num-bigint = { version = "0.4", features = ["rand"], optional = true }
 k256 = { version = "0.13", optional = true }
 
 # === Ethereum Utils === #
+alloy = { workspace = true, optional = true }
 alloy-primitives = { workspace = true, optional = true }
 alloy-sol-types = { workspace = true, optional = true }
 ethers = { workspace = true, optional = true }

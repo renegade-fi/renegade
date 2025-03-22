@@ -14,7 +14,7 @@ common = { path = "../../common" }
 constants = { path = "../../constants" }
 circuit-types = { path = "../../circuit-types" }
 job-types = { path = "../job-types" }
-util = { path = "../../util" }
+util = { path = "../../util", features = ["telemetry"] }
 renegade-metrics = { path = "../../renegade-metrics" }
 
 # === Misc Dependencies === #

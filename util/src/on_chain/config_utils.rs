@@ -15,14 +15,18 @@ use crate::concurrency::RwStatic;
 /// The deployments key in the `deployments.json` file
 pub const DEPLOYMENTS_KEY: &str = "deployments";
 /// The ERC-20s sub-key in the `deployments.json` file
+#[cfg(feature = "mocks")]
 pub const ERC20S_KEY: &str = "erc20s";
 /// The darkpool proxy contract key in the `deployments.json` file
 pub const DARKPOOL_PROXY_CONTRACT_KEY: &str = "darkpool_proxy_contract";
 /// The first dummy erc20 ticker
+#[cfg(feature = "mocks")]
 pub const DUMMY_ERC20_0_TICKER: &str = "DUMMY1";
 /// The second dummy erc20 ticker
+#[cfg(feature = "mocks")]
 pub const DUMMY_ERC20_1_TICKER: &str = "DUMMY2";
 /// The permit2 contract key in a `deployments.json` file
+#[cfg(feature = "mocks")]
 pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
 /// The protocol fee that the contract charges on a match
 pub static PROTOCOL_FEE: OnceLock<FixedPoint> = OnceLock::new();

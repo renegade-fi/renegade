@@ -35,7 +35,7 @@ use constants::SystemCurveGroup;
 use crossbeam::channel::{bounded, Receiver};
 use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use tracing::info;
-use util::{arbitrum::get_protocol_fee, matching_engine::compute_max_amount};
+use util::{matching_engine::compute_max_amount, on_chain::get_protocol_fee};
 use uuid::Uuid;
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};

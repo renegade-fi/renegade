@@ -36,11 +36,11 @@ use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
 use tracing::instrument;
-use util::arbitrum::get_protocol_fee;
 use util::err_str;
 use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
 };
+use util::on_chain::get_protocol_fee;
 
 use super::ERR_AWAITING_PROOF;
 

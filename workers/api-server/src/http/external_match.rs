@@ -48,9 +48,9 @@ use state::State;
 use system_bus::SystemBus;
 use tracing::warn;
 use util::{
-    arbitrum::get_external_match_fee,
     get_current_time_millis,
     hex::{biguint_from_hex_string, bytes_from_hex_string, bytes_to_hex_string},
+    on_chain::get_external_match_fee,
 };
 
 use crate::{

@@ -40,7 +40,7 @@ circuit-types = { path = "../circuit-types" }
 circuits = { path = "../circuits" }
 common = { path = "../common" }
 renegade-crypto = { path = "../renegade-crypto" }
-util = { path = "../util" }
+util = { path = "../util", features = ["telemetry"] }
 renegade-metrics = { path = "../renegade-metrics" }
 
 # === Serde === #

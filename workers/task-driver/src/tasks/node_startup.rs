@@ -31,8 +31,8 @@ use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::{error, info, instrument};
 use util::{
-    arbitrum::{set_external_match_fee, PROTOCOL_FEE, PROTOCOL_PUBKEY},
     err_str,
+    on_chain::{set_external_match_fee, PROTOCOL_FEE, PROTOCOL_PUBKEY},
 };
 
 use crate::{

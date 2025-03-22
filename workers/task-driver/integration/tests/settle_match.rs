@@ -36,11 +36,11 @@ use state::State;
 use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 use tokio::sync::oneshot::channel;
 use util::{
-    arbitrum::get_protocol_fee,
     hex::biguint_from_hex_string,
     matching_engine::{
         compute_fee_obligation, compute_max_amount, match_orders, settle_match_into_wallets,
     },
+    on_chain::get_protocol_fee,
 };
 use uuid::Uuid;
 

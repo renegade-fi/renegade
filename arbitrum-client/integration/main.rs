@@ -31,8 +31,8 @@ use test_helpers::{
     types::TestVerbosity,
 };
 use util::{
-    arbitrum::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
     concurrency::runtime::block_current,
+    on_chain::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
     telemetry::LevelFilter,
 };
 

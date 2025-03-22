@@ -4,9 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-matching-engine = []
+default = ["hex", "errors"]
+blockchain = ["hex", "concurrency"]
+concurrency = []
+errors = []
+hex = ["errors"]
+matching-engine = ["blockchain"]
 mocks = []
 metered-channels = []
+networking = []
+telemetry = []
 
 [dependencies]
 # === Arithmetic === #
