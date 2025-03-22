@@ -16,7 +16,7 @@ use external_api::{
 use hyper::HeaderMap;
 use itertools::Itertools;
 use state::State;
-use util::arbitrum::get_external_match_fee;
+use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{not_found, ApiServerError},

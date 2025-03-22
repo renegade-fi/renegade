@@ -12,7 +12,7 @@ use circuit_types::{
 use constants::Scalar;
 use renegade_crypto::fields::scalar_to_u128;
 
-use crate::arbitrum::get_protocol_fee;
+use crate::on_chain::get_protocol_fee;
 
 // ------------
 // | Matching |

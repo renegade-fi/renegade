@@ -39,10 +39,10 @@ use state::error::StateError;
 use state::State;
 use system_bus::SystemBus;
 use tracing::{info, instrument, warn};
-use util::arbitrum::get_external_match_fee;
 use util::matching_engine::{
     apply_match_to_shares, compute_fee_obligation, compute_fee_obligation_with_protocol_fee,
 };
+use util::on_chain::get_external_match_fee;
 
 use super::ERR_NO_VALIDITY_PROOF;
 

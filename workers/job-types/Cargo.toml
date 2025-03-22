@@ -12,14 +12,14 @@ libp2p = { workspace = true, features = ["request-response"] }
 libp2p-core = { workspace = true }
 
 # === Workspace Dependencies === #
-circuits = { path = "../../circuits" }
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-constants = { path = "../../constants" }
-external-api = { path = "../../external-api" }
-gossip-api = { path = "../../gossip-api" }
-util = { path = "../../util" }
-renegade-metrics = { path = "../../renegade-metrics" }
+circuits = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
+external-api = { workspace = true }
+gossip-api = { workspace = true }
+util = { workspace = true }
+renegade-metrics = { workspace = true }
 
 # === Misc === #
 crossbeam = { workspace = true }

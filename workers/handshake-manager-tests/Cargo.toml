@@ -19,15 +19,15 @@ libp2p = { workspace = true }
 tokio = { workspace = true }
 
 # === Workspace Dependencies === #
-arbitrum-client = { path = "../../arbitrum-client" }
-circuit-types = { path = "../../circuit-types" }
-common = { path = "../../common" }
-config = { path = "../../config" }
-constants = { path = "../../constants" }
-job-types = { path = "../job-types" }
-mock-node = { path = "../../mock-node" }
-test-helpers = { path = "../../test-helpers", features = ["arbitrum"] }
-util = { path = "../../util" }
+arbitrum-client = { workspace = true }
+circuit-types = { workspace = true }
+common = { workspace = true }
+config = { workspace = true }
+constants = { workspace = true }
+job-types = { workspace = true }
+mock-node = { workspace = true }
+test-helpers = { workspace = true, features = ["arbitrum"] }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 ark-mpc = { workspace = true }

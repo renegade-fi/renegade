@@ -36,7 +36,7 @@ use job_types::{
 };
 use state::State;
 use tracing::info;
-use util::{arbitrum::set_external_match_fee, matching_engine::compute_max_amount};
+use util::{matching_engine::compute_max_amount, on_chain::set_external_match_fee};
 
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},

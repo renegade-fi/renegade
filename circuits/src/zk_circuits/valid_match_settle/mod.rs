@@ -252,8 +252,8 @@ pub mod test_helpers {
     use constants::Scalar;
     use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
     use util::{
-        arbitrum::get_protocol_fee,
         matching_engine::{apply_match_to_shares, compute_fee_obligation},
+        on_chain::get_protocol_fee,
     };
 
     use crate::{

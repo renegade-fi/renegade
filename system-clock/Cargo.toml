@@ -9,7 +9,7 @@ tokio = { workspace = true }
 tokio-cron-scheduler = "0.10"
 
 # === Workspace Dependencies === #
-util = { path = "../util" }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 tracing = { workspace = true }

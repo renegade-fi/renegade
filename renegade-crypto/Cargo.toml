@@ -38,7 +38,7 @@ ethers-core = { version = "2", optional = true }
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 
 # === Workspace Dependencies === #
-constants = { path = "../constants", default-features = false }
+constants = { workspace = true, default-features = false }
 
 # === Misc Dependencies === #
 itertools = "0.10"

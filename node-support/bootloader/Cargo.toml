@@ -13,9 +13,9 @@ aws-sdk-s3 = "1.14.0"
 tokio = { workspace = true, features = ["full"] }
 
 # === Workspace Dependencies === #
-config = { path = "../../config" }
+config = { workspace = true }
 funds-manager-api = { git = "https://github.com/renegade-fi/relayer-extensions.git" }
-util = { path = "../../util" }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 base64 = "0.22"

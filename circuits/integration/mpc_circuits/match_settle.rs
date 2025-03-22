@@ -28,8 +28,8 @@ use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
 use rand::{thread_rng, RngCore};
 use renegade_crypto::fields::scalar_to_u128;
 use test_helpers::{assert_true_result, integration_test_async};
-use util::arbitrum::get_protocol_fee;
 use util::matching_engine::compute_max_amount;
+use util::on_chain::get_protocol_fee;
 
 use crate::{types::create_wallet_shares, IntegrationTestArgs};
 

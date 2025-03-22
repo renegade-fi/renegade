@@ -43,12 +43,12 @@ use test_helpers::{
     types::TestVerbosity,
 };
 use util::{
-    arbitrum::{
+    concurrency::runtime::block_current,
+    on_chain::{
         parse_addr_from_deployments_file, parse_erc20_addr_from_deployments_file,
         DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_TICKER, DUMMY_ERC20_1_TICKER,
         PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
     },
-    concurrency::runtime::block_current,
     telemetry::LevelFilter,
 };
 
