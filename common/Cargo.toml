@@ -56,9 +56,6 @@ constants = { path = "../constants", default-features = false }
 renegade-crypto = { path = "../renegade-crypto" }
 util = { path = "../util" }
 
-# === Contracts Repo Dependencies === #
-contracts-common = { git = "https://github.com/renegade-fi/renegade-contracts.git" }
-
 # === Misc Dependencies === #
 base64 = { version = "0.22" }
 bimap = "0.6.2"

@@ -8,15 +8,6 @@ use circuit_types::{
     SizedWalletShare,
 };
 use constants::Scalar;
-use contracts_common::types::{
-    ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
-    ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
-    ValidMatchSettleStatement as ContractValidMatchSettleStatement,
-    ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
-    ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
-    ValidWalletCreateStatement as ContractValidWalletCreateStatement,
-    ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
-};
 use ethers::types::Bytes;
 use serde::{Deserialize, Serialize};
 use util::err_str;
@@ -26,6 +17,15 @@ use crate::{
         newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
         processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
         updateWalletCall,
+    },
+    contract_types::{
+        ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+        ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
+        ValidMatchSettleStatement as ContractValidMatchSettleStatement,
+        ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
+        ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
+        ValidWalletCreateStatement as ContractValidWalletCreateStatement,
+        ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
     },
     errors::ArbitrumClientError,
 };

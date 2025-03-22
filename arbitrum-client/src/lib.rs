@@ -14,6 +14,7 @@
 pub mod abi;
 pub mod client;
 pub mod constants;
+pub mod contract_types;
 pub mod conversion;
 pub mod errors;
 pub mod helpers;

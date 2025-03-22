@@ -5,7 +5,6 @@ use circuit_types::keychain::{
     SecretSigningKey,
 };
 use constants::Scalar;
-use contracts_common::custom_serde::BytesSerializable;
 use derivative::Derivative;
 use ethers::{
     core::k256::ecdsa::SigningKey as EthersSigningKey,
@@ -112,8 +111,11 @@ impl Wallet {
         let root_key = self.key_chain.secret_keys.sk_root.as_ref().ok_or(ERR_NO_SK_ROOT)?;
         let key = EthersSigningKey::try_from(root_key)?;
 
-        // Hash the message and sign it
-        let comm_bytes = commitment.inner().serialize_to_bytes();
+        // Hash the message and sign it as is done in the contract:
+        //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
+        // The `to_bytes_be` method is used to match the contract's serialization, with
+        // appropriate padding
+        let comm_bytes = commitment.to_bytes_be();
         let digest = keccak256(comm_bytes);
         let (sig, recovery_id) = key
             .sign_prehash_recoverable(&digest)

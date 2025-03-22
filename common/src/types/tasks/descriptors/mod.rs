@@ -210,7 +210,6 @@ impl TaskDescriptor {
 pub mod mocks {
     use circuit_types::keychain::SecretSigningKey;
     use constants::Scalar;
-    use contracts_common::custom_serde::BytesSerializable;
     use ethers::core::utils::keccak256;
     use ethers::signers::Wallet as EthersWallet;
     use k256::ecdsa::SigningKey as K256SigningKey;
@@ -229,7 +228,9 @@ pub mod mocks {
 
         // Serialize the commitment, uses the contract's serialization here:
         //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87
-        let comm_bytes = new_wallet_comm.inner().serialize_to_bytes();
+        // The `to_bytes_be` method is used to match the contract's serialization, with
+        // appropriate padding
+        let comm_bytes = new_wallet_comm.to_bytes_be();
         let digest = keccak256(comm_bytes);
 
         // Sign the message
