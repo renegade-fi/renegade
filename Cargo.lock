@@ -11304,12 +11304,14 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 name = "util"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "ark-ec",
  "ark-serialize 0.4.2",
  "chrono",
  "circuit-types 0.1.0",
  "constants 0.1.0",
  "crossbeam",
+ "ethers",
  "eyre",
  "futures",
  "hex 0.4.3",

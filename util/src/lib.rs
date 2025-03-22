@@ -16,7 +16,7 @@ pub mod errors;
 pub mod hex;
 #[cfg(feature = "matching-engine")]
 pub mod matching_engine;
-#[cfg(feature = "telemetry")]
+#[cfg(feature = "metered-channels")]
 pub mod metered_channels;
 #[cfg(feature = "networking")]
 pub mod networking;

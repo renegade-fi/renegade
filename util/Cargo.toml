@@ -22,6 +22,10 @@ ark-serialize = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"
 
+# === Ethereum === #
+alloy = { workspace = true }
+ethers = { workspace = true }
+
 # === Networking === #
 libp2p = { workspace = true }
 
