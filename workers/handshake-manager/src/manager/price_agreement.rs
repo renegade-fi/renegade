@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use common::types::{
     exchange::PriceReporterState,
-    token::{read_token_remap, Token, USDC_TICKER},
+    token::{read_token_remap, Token},
     wallet::OrderIdentifier,
     TimestampedPrice,
 };
@@ -33,7 +33,7 @@ const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 pub fn init_price_streams(
     price_reporter_job_queue: PriceReporterQueue,
 ) -> Result<(), HandshakeManagerError> {
-    let quote = Token::from_ticker(USDC_TICKER);
+    let quote = Token::usdc();
 
     for (addr, _) in read_token_remap().iter() {
         let base = Token::from_addr(addr);
@@ -58,7 +58,7 @@ impl HandshakeExecutor {
         // remap across an await point.
         let channels = {
             let token_maps = read_token_remap();
-            let quote = Token::from_ticker(USDC_TICKER);
+            let quote = Token::usdc();
 
             let mut channels = Vec::with_capacity(token_maps.len());
             for (base_addr, _ticker) in token_maps.iter() {

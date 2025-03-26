@@ -78,6 +78,11 @@ const DIRECT_MATCH_BUNDLE_TIMEOUT: Duration = Duration::from_secs(0);
 
 /// The error message returned when atomic matches are disabled
 const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
+/// The error message returned when the quote token is not USDC
+const ERR_QUOTE_TOKEN_NOT_USDC: &str = "quote token must be USDC";
+/// The error message returned when the pair is not supported
+const ERR_UNSUPPORTED_PAIR: &str = "unsupported pair";
+
 /// The error message returned when the relayer fails to process an external
 /// match request
 const ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH: &str = "failed to process external match request";
@@ -187,6 +192,9 @@ impl ExternalMatchProcessor {
         mut o: ExternalOrder,
         mut options: ExternalMatchingEngineOptions,
     ) -> Result<(Order, ExternalMatchingEngineOptions), ApiServerError> {
+        // Validate the pair
+        self.check_supported_pair(&o)?;
+
         // Get the tokens being traded, swapping WETH for ETH if necessary
         let base = if o.trades_native_asset() {
             let native_wrapper = get_native_asset_wrapper_token();
@@ -238,6 +246,25 @@ impl ExternalMatchProcessor {
         Ok(())
     }
 
+    /// Check that the pair on an external order is supported
+    fn check_supported_pair(&self, o: &ExternalOrder) -> Result<(), ApiServerError> {
+        let base = Token::from_addr_biguint(&o.base_mint);
+        let quote = Token::from_addr_biguint(&o.quote_mint);
+
+        // Currently, we only support USDC quoted pairs
+        let usdc = Token::usdc();
+        if quote != usdc {
+            return Err(bad_request(ERR_QUOTE_TOKEN_NOT_USDC));
+        }
+
+        // Check that the base token is in the token configuration -- i.e. if it is
+        // named
+        if !base.is_named() {
+            return Err(bad_request(ERR_UNSUPPORTED_PAIR));
+        }
+
+        Ok(())
+    }
     // --- Handshake Manager Interactions --- //
 
     /// Request a quote from the external matching engine
