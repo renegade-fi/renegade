@@ -90,6 +90,11 @@ impl Display for Token {
 }
 
 impl Token {
+    /// Get the USDC token
+    pub fn usdc() -> Self {
+        Self::from_ticker(USDC_TICKER)
+    }
+
     /// Given an ERC-20 contract address, returns a new Token
     pub fn from_addr(addr: &str) -> Self {
         Self { addr: String::from(addr).to_lowercase() }
