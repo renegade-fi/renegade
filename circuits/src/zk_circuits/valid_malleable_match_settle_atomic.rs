@@ -268,6 +268,11 @@ pub struct ValidMalleableMatchSettleAtomicWitness<
     pub internal_party_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
 
+/// The witness type for `VALID MALLEABLE MATCH SETTLE ATOMIC` with default
+/// const generic sizing parameters
+pub type SizedValidMalleableMatchSettleAtomicWitness =
+    ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
+
 /// The statement type for `VALID MALLEABLE MATCH SETTLE ATOMIC`
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -289,6 +294,11 @@ pub struct ValidMalleableMatchSettleAtomicStatement<
     /// the external party
     pub relayer_fee_address: Address,
 }
+
+/// The statement type for `VALID MALLEABLE MATCH SETTLE ATOMIC` with default
+/// const generic sizing parameters
+pub type SizedValidMalleableMatchSettleAtomicStatement =
+    ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>;
 
 // ---------------------
 // | Prove Verify Flow |
