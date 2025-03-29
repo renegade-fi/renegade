@@ -201,7 +201,7 @@ impl ArbitrumClient {
     }
 
     /// Await a nullifier spent event on a given nullifier
-    #[instrument(skip_all, err, fields(nullifier = %nullifier))]
+    #[instrument(skip_all, fields(nullifier = %nullifier))]
     pub async fn await_nullifier_spent_from_selectors(
         &self,
         nullifier: Nullifier,
