@@ -224,13 +224,23 @@ impl ArbitrumClient {
             .await
             .map_err(err_str!(ArbitrumClientError::EventQuerying))?;
 
-        // Await the event with a timeout
-        let next_event = tokio::time::timeout(timeout, stream.next()).await;
-        let (_event, meta) = next_event
-            .map_err(|_| ArbitrumClientError::event_querying(ERR_NULLIFIER_SPENT_TIMEOUT))? // timeout
-            .ok_or(ArbitrumClientError::event_querying(ERR_EVENT_STREAM_CLOSED))? // no event
-            .map_err(err_str!(ArbitrumClientError::event_querying))?; // query error
-        let tx_hash = meta.transaction_hash;
+        // Pre-fetch events from before the creation of the filter,
+        // in case the nullifier has already been spent
+        let prefetched_events =
+            filter.query_with_meta().await.map_err(err_str!(ArbitrumClientError::EventQuerying))?;
+
+        let tx_hash = if let Some((_event, meta)) = prefetched_events.first() {
+            meta.transaction_hash
+        } else {
+            // Await the event with a timeout
+            let next_event = tokio::time::timeout(timeout, stream.next()).await;
+            let (_event, meta) = next_event
+                .map_err(|_| ArbitrumClientError::event_querying(ERR_NULLIFIER_SPENT_TIMEOUT))? // timeout
+                .ok_or(ArbitrumClientError::event_querying(ERR_EVENT_STREAM_CLOSED))? // no event
+                .map_err(err_str!(ArbitrumClientError::event_querying))?; // query error
+
+            meta.transaction_hash
+        };
 
         // Check if the transaction selector matches one of the given selectors
         // This is not a perfect check; it merely suffices for the ways in which this
