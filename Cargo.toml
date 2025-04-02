@@ -78,7 +78,7 @@ ethers = "2"
 arbitrum-client = { path = "arbitrum-client" }
 api-server = { path = "workers/api-server" }
 chain-events = { path = "workers/chain-events" }
-constants = { path = "constants" }
+constants = { path = "constants", default-features = false }
 circuits = { path = "circuits" }
 circuit-macros = { path = "circuit-macros" }
 circuit-types = { path = "circuit-types" }
