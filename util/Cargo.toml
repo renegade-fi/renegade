@@ -13,6 +13,7 @@ matching-engine = ["blockchain"]
 mocks = []
 metered-channels = []
 networking = []
+serde = []
 telemetry = []
 
 [dependencies]

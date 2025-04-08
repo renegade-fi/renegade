@@ -27,6 +27,7 @@ use std::{
 use util::{
     concurrency::RwStatic,
     hex::{biguint_from_hex_string, biguint_to_hex_addr},
+    serde::{deserialize_str_lower, serialize_str_lower},
 };
 
 use super::exchange::Exchange;
@@ -80,6 +81,7 @@ pub static EXCHANGE_SUPPORT_MAP: RwStatic<HashMap<String, ExchangeSupport>> =
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Token {
     /// The ERC-20 address of the Token.
+    #[serde(deserialize_with = "deserialize_str_lower", serialize_with = "serialize_str_lower")]
     pub addr: String,
 }
 

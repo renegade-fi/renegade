@@ -22,6 +22,8 @@ pub mod metered_channels;
 pub mod networking;
 #[cfg(feature = "blockchain")]
 pub mod on_chain;
+#[cfg(feature = "serde")]
+pub mod serde;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
 

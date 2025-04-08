@@ -54,7 +54,7 @@ circuits = { workspace = true, optional = true }
 circuit-types = { workspace = true, default-features = false }
 constants = { workspace = true, default-features = false }
 renegade-crypto = { workspace = true }
-util = { workspace = true }
+util = { workspace = true, features = ["serde"] }
 
 # === Misc Dependencies === #
 base64 = { version = "0.22" }
