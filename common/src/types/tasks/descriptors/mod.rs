@@ -33,6 +33,23 @@ pub type TaskIdentifier = Uuid;
 /// resource
 pub type TaskQueueKey = Uuid;
 
+/// The pause state of a task queue
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum TaskQueuePauseState {
+    /// The queue is in the active state, running the top task on the queue
+    Active,
+    /// The queue in in the paused state, waiting for a preemptive task to
+    /// complete. Non-preemptive tasks will not run until this state is cleared
+    ///
+    /// In this state, the preemptive task allows other preemptive tasks to
+    /// share the queue; i.e. they can run concurrently.
+    PausedShared,
+    /// The queue is in the paused state, and not shared with other workers
+    ///
+    /// Non-preemptive tasks will not run until this state is cleared
+    Paused,
+}
+
 /// A task in the task queue
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QueuedTask {

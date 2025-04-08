@@ -5,7 +5,9 @@
 
 use std::collections::VecDeque;
 
-use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
+use common::types::tasks::{
+    QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey, TaskQueuePauseState,
+};
 use libmdbx::{TransactionKind, RW};
 use util::res_some;
 
@@ -16,9 +18,9 @@ use super::StateTxn;
 /// The error message emitted when a task queue is empty
 const ERR_NO_TASKS: &str = "No tasks in the queue";
 
-/// Create the key for a "task queue paused" entry from a queue key
-fn paused_key(key: &TaskQueueKey) -> String {
-    format!("{key}-paused")
+/// Create the key for a "task queue state" entry from a queue key
+fn queue_lock_state_key(key: &TaskQueueKey) -> String {
+    format!("{key}-queue-state")
 }
 
 // -----------
@@ -33,11 +35,17 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     }
 
     /// Whether or not the task queue is paused
+    ///
+    /// This is true for _any_ of the pause states
     pub fn is_queue_paused(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
-        let key = paused_key(key);
-        let paused = self.inner().read(TASK_QUEUE_TABLE, &key)?;
+        let state = self.get_queue_pause_state(key)?;
+        Ok(matches!(state, TaskQueuePauseState::Paused | TaskQueuePauseState::PausedShared))
+    }
 
-        Ok(paused.unwrap_or(false))
+    /// Whether or not the task queue is paused-shared
+    pub fn is_queue_paused_shared(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
+        let state = self.get_queue_pause_state(key)?;
+        Ok(matches!(state, TaskQueuePauseState::PausedShared))
     }
 
     /// Get the tasks for a given queue
@@ -69,13 +77,25 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         key: &TaskQueueKey,
     ) -> Result<Option<QueuedTask>, StorageError> {
         let tasks = self.get_queued_tasks(key)?;
-
         Ok(tasks.first().cloned().filter(|task| task.state.is_running()))
     }
+
+    // --- Helpers --- //
 
     /// Internal helper to read the queued tasks as a `VecDeque`
     fn read_task_deque(&self, key: &TaskQueueKey) -> Result<VecDeque<QueuedTask>, StorageError> {
         self.read_queue(TASK_QUEUE_TABLE, key)
+    }
+
+    /// Get the lock state for a given queue
+    fn get_queue_pause_state(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<TaskQueuePauseState, StorageError> {
+        let key = queue_lock_state_key(key);
+        let state = self.inner().read(TASK_QUEUE_TABLE, &key)?;
+
+        Ok(state.unwrap_or(TaskQueuePauseState::Active))
     }
 }
 
@@ -145,16 +165,34 @@ impl<'db> StateTxn<'db, RW> {
         self.write_queue(TASK_QUEUE_TABLE, key, &tasks)
     }
 
-    /// Pause the given task queue
+    /// Mark the given task queue as paused
     pub fn pause_task_queue(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
-        let key = paused_key(key);
-        self.inner().write(TASK_QUEUE_TABLE, &key, &true)
+        self.set_queue_pause_state(key, TaskQueuePauseState::Paused)
+    }
+
+    /// Mark the given task queue as paused-shared
+    pub fn pause_task_queue_shared(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
+        self.set_queue_pause_state(key, TaskQueuePauseState::PausedShared)
     }
 
     /// Resume the given task queue
+    ///
+    /// We simply delete the pause state entry for the given queue and let it
+    /// default into the setter
     pub fn resume_task_queue(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
-        let key = paused_key(key);
-        self.inner().write(TASK_QUEUE_TABLE, &key, &false)
+        self.set_queue_pause_state(key, TaskQueuePauseState::Active)
+    }
+
+    // --- Helpers --- //
+
+    /// Set the pause state for a given task queue
+    fn set_queue_pause_state(
+        &self,
+        key: &TaskQueueKey,
+        state: TaskQueuePauseState,
+    ) -> Result<(), StorageError> {
+        let key = queue_lock_state_key(key);
+        self.inner().write(TASK_QUEUE_TABLE, &key, &state)
     }
 }
 
@@ -360,6 +398,48 @@ mod test {
         let tx = db.new_read_tx().unwrap();
         let paused = tx.is_queue_paused(&key).unwrap();
         tx.commit().unwrap();
+        assert!(!paused);
+    }
+
+    /// Tests pausing (shared) and resuming a task queue
+    #[test]
+    fn test_pause_resume_shared() {
+        // Setup the mock
+        let db = mock_db();
+        db.create_table(TASK_QUEUE_TABLE).unwrap();
+        let key = TaskQueueKey::new_v4();
+
+        let tx = db.new_read_tx().unwrap();
+        let paused = tx.is_queue_paused(&key).unwrap();
+        let pause_shared = tx.is_queue_paused_shared(&key).unwrap();
+        tx.commit().unwrap();
+        assert!(!paused);
+        assert!(!pause_shared);
+
+        // Pause the task queue with shared state
+        let tx = db.new_write_tx().unwrap();
+        tx.pause_task_queue_shared(&key).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task queue is paused
+        let tx = db.new_read_tx().unwrap();
+        let pause_shared = tx.is_queue_paused_shared(&key).unwrap();
+        let paused = tx.is_queue_paused(&key).unwrap();
+        tx.commit().unwrap();
+        assert!(pause_shared);
+        assert!(paused);
+
+        // Resume the task queue
+        let tx = db.new_write_tx().unwrap();
+        tx.resume_task_queue(&key).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task queue is resumed
+        let tx = db.new_read_tx().unwrap();
+        let pause_shared = tx.is_queue_paused_shared(&key).unwrap();
+        let paused = tx.is_queue_paused(&key).unwrap();
+        tx.commit().unwrap();
+        assert!(!pause_shared);
         assert!(!paused);
     }
 
