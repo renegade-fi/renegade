@@ -10024,6 +10024,7 @@ dependencies = [
  "system-clock",
  "tempfile",
  "test-helpers",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tracing",

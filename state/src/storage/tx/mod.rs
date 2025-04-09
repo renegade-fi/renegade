@@ -18,6 +18,7 @@ pub mod relayer_fees;
 pub mod task_assignments;
 pub mod task_history;
 pub mod task_queue;
+pub mod task_queuev2;
 pub mod wallet_index;
 
 use std::collections::VecDeque;
