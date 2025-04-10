@@ -23,6 +23,8 @@ use super::StateTxn;
 const ERR_TASK_NOT_FOUND: &str = "task not found";
 /// The error message emitted when a task queue is at max concurrency
 const ERR_MAX_CONCURRENCY: &str = "max concurrency reached for task queue";
+/// The error message emitted when a task queue has an invalid preemption state
+const ERR_INVALID_PREEMPTION_STATE: &str = "invalid preemption state for task queue";
 
 /// The maximum number of tasks that can be concurrently running for a queue
 const MAX_CONCURRENT_TASKS: usize = 20;
@@ -41,6 +43,18 @@ fn task_key(id: &TaskIdentifier) -> String {
     format!("task-{}", id)
 }
 
+/// The preemption state of a task queue
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum TaskQueuePreemptionState {
+    /// The queue contains a serial preemptive task
+    SerialPreemptionQueued,
+    /// The queue contains one or more concurrent preemptive tasks
+    ConcurrentPreemptionsQueued,
+    /// The queue is not currently preempted by any task
+    #[default]
+    NotPreempted,
+}
+
 /// The task queue type, containing the list of tasks that are queued for
 /// execution
 ///
@@ -51,20 +65,46 @@ fn task_key(id: &TaskIdentifier) -> String {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct TaskQueue {
     /// The list of tasks that are queued for execution
+    ///
+    /// These are assumed to be preemptive tasks
     pub(crate) concurrent_tasks: Vec<TaskIdentifier>,
     /// The list of tasks that are queued for execution
     pub(crate) serial_tasks: Vec<TaskIdentifier>,
     /// The list of running tasks
     pub(crate) running_tasks: Vec<TaskIdentifier>,
+    /// The preemption state of the queue
+    pub(crate) preemption_state: TaskQueuePreemptionState,
 }
 
 impl TaskQueue {
+    // --- Getters --- //
+
     /// Check whether the task queue is in a valid state
     pub fn check(&self) -> Result<(), StorageError> {
         if self.concurrent_tasks.len() > MAX_CONCURRENT_TASKS {
             return Err(StorageError::other(ERR_MAX_CONCURRENCY));
         }
+
+        if !self.check_preemption_state() {
+            return Err(StorageError::other(ERR_INVALID_PREEMPTION_STATE));
+        }
+
         Ok(())
+    }
+
+    /// Validate the preemption state
+    ///
+    /// This does not catch all invalid states, but ensures that the `TaskQueue`
+    /// struct is at least self consistent
+    fn check_preemption_state(&self) -> bool {
+        match self.preemption_state {
+            TaskQueuePreemptionState::NotPreempted => self.concurrent_tasks.is_empty(),
+            TaskQueuePreemptionState::ConcurrentPreemptionsQueued => {
+                !self.concurrent_tasks.is_empty()
+            },
+            // No invalid state can be caught here for a `SerialPreemptionQueued`
+            TaskQueuePreemptionState::SerialPreemptionQueued => true,
+        }
     }
 
     /// Check whether the task queue is empty
@@ -72,44 +112,88 @@ impl TaskQueue {
         self.concurrent_tasks.is_empty() && self.serial_tasks.is_empty()
     }
 
-    /// Check whether the given task is running
-    #[cfg(test)]
-    pub fn is_running(&self, id: &TaskIdentifier) -> bool {
-        self.running_tasks.contains(id)
-    }
-
     /// Get all tasks in the queue
     pub fn all_tasks(&self) -> Vec<TaskIdentifier> {
         self.concurrent_tasks.clone().into_iter().chain(self.serial_tasks.clone()).collect()
     }
 
+    /// Returns `true` if the queue may be preempted serially
+    ///
+    /// A queue may be serially preempted iff it is not already preempted by
+    /// another serial task
+    pub fn can_preempt_serial(&self) -> bool {
+        self.preemption_state != TaskQueuePreemptionState::SerialPreemptionQueued
+    }
+
+    /// Returns `true` if the queue may be preempted concurrently
+    ///
+    /// A queue may be concurrently preempted iff it has no queued serial tasks
+    pub fn can_preempt_concurrent(&self) -> bool {
+        self.serial_tasks.is_empty()
+    }
+
+    // --- Setters --- //
+
     /// Add a serial task to the queue
-    pub fn add_serial_task(&mut self, task: TaskIdentifier) {
+    ///
+    /// A serial task may always be enqueued, regardless of preemption state
+    pub fn enqueue_serial_task(&mut self, task: TaskIdentifier) {
         self.serial_tasks.push(task);
     }
 
     /// Add a serial task to the front of the queue
-    pub fn add_serial_task_front(&mut self, task: TaskIdentifier) {
+    ///
+    /// Returns `true` if the queue can be preempted serially, `false`
+    /// otherwise. In the case that the method returns false, no modifications
+    /// will be made to the queue.
+    ///
+    /// A serial task may preempt a queue iff the queue is not already preempted
+    /// by another serial task
+    ///
+    /// Inserts the preemptive task at the front of the queue
+    pub fn preempt_with_serial_task(&mut self, task: TaskIdentifier) -> bool {
+        if !self.can_preempt_serial() {
+            return false;
+        }
+
+        // Insert the preemptive task at the front of the queue
         self.serial_tasks.insert(0, task);
+        self.preemption_state = TaskQueuePreemptionState::SerialPreemptionQueued;
+        true
     }
 
     /// Add a concurrent task to the queue
-    pub fn add_concurrent_task(&mut self, task: TaskIdentifier) {
+    ///
+    /// Returns `true` if the queue can be preempted concurrently, `false`
+    /// otherwise. In the case that the method returns false, no modifications
+    /// will be made to the queue.
+    ///
+    /// A concurrent task may preempt the queue iff the queue has no queued
+    /// serial tasks. In this way, the queue expressed a preference for serial
+    /// (write or exclusive) tasks
+    pub fn preempt_with_concurrent_task(&mut self, task: TaskIdentifier) -> bool {
+        if !self.can_preempt_concurrent() {
+            return false;
+        }
+
         self.concurrent_tasks.push(task);
+        self.preemption_state = TaskQueuePreemptionState::ConcurrentPreemptionsQueued;
+        true
     }
 
     /// Pop a task from the queue
-    pub fn pop_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
-        self.remove_running_task(id);
-        if let Some(serial_idx) = self.serial_tasks.iter().position(|t| t == id) {
-            self.serial_tasks.remove(serial_idx);
+    pub fn pop_task(&mut self, id: &TaskIdentifier) -> bool {
+        if let Some(_idx) = self.serial_tasks.iter().position(|t| t == id) {
+            self.pop_serial_task();
         } else if let Some(concurrent_idx) = self.concurrent_tasks.iter().position(|t| t == id) {
-            self.concurrent_tasks.remove(concurrent_idx);
+            self.pop_concurrent_task(concurrent_idx);
         } else {
-            return None;
+            return false;
         }
 
-        Some(*id)
+        // Remove the task from the running list
+        self.remove_running_task(id);
+        true
     }
 
     /// Mark a task as running
@@ -121,6 +205,48 @@ impl TaskQueue {
     pub fn remove_running_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
         let idx = self.running_tasks.iter().position(|t| t == id)?;
         Some(self.running_tasks.remove(idx))
+    }
+
+    // --- Helpers --- //
+
+    /// Pop the first serial task from the queue
+    ///
+    /// Updates the preemption state after the pop
+    fn pop_serial_task(&mut self) {
+        self.serial_tasks.remove(0);
+        match self.preemption_state {
+            TaskQueuePreemptionState::SerialPreemptionQueued => {
+                // If this was the serially preemptive task, the queue is no longer preempted
+                self.preemption_state = TaskQueuePreemptionState::NotPreempted;
+            },
+            TaskQueuePreemptionState::ConcurrentPreemptionsQueued => {
+                unreachable!("Serial tasks cannot pop when concurrently preempted");
+            },
+            TaskQueuePreemptionState::NotPreempted => {
+                // Do nothing, no preemption existed before
+            },
+        }
+    }
+
+    /// Pop a task from the concurrent tasks list at the given index
+    ///
+    /// Updates the preemption state after the pop
+    fn pop_concurrent_task(&mut self, idx: usize) {
+        self.concurrent_tasks.remove(idx);
+        match self.preemption_state {
+            TaskQueuePreemptionState::SerialPreemptionQueued => {
+                // Noop, the queue waits for the serial preemption to commit
+            },
+            TaskQueuePreemptionState::ConcurrentPreemptionsQueued => {
+                // Only update if this is the last concurrent task active
+                if self.concurrent_tasks.is_empty() {
+                    self.preemption_state = TaskQueuePreemptionState::NotPreempted;
+                }
+            },
+            TaskQueuePreemptionState::NotPreempted => {
+                unreachable!("Task queue must be preempted to pop concurrent tasks");
+            },
+        };
     }
 }
 
@@ -177,6 +303,17 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         self.inner().read(TASK_TO_KEY_TABLE, id)
     }
 
+    /// Check whether a given task queue is preemptable
+    pub fn is_queue_preemptable(
+        &self,
+        key: &TaskQueueKey,
+        serial: bool,
+    ) -> Result<bool, StorageError> {
+        let queue = self.get_task_queue(key)?;
+        let res = if serial { queue.can_preempt_serial() } else { queue.can_preempt_concurrent() };
+        Ok(res)
+    }
+
     // --- Helpers --- //
 
     /// Get the task queue for a given key
@@ -192,27 +329,29 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 
 impl<'db> StateTxn<'db, RW> {
     /// Add a serial task to the queue
-    pub fn add_serial_task(
+    pub fn enqueue_serial_task(
         &self,
         key: &TaskQueueKey,
         task: &QueuedTask,
     ) -> Result<(), StorageError> {
         let mut queue = self.get_task_queue(key)?;
-        queue.add_serial_task(task.id);
+        queue.enqueue_serial_task(task.id);
 
         self.write_task_queue(key, &queue)?;
         self.write_task(&task.id, key, task)
     }
 
-    /// Add a serial task to the front of the queue
-    pub fn add_serial_task_front(
+    /// Preempt a queue with a serial task
+    pub fn preempt_queue_with_serial(
         &self,
         key: &TaskQueueKey,
         task: &QueuedTask,
-    ) -> Result<(), StorageError> {
+    ) -> Result<bool, StorageError> {
         // Index the task into the queue
         let mut queue = self.get_task_queue(key)?;
-        queue.add_serial_task_front(task.id);
+        if !queue.preempt_with_serial_task(task.id) {
+            return Ok(false);
+        };
 
         // If we add to the front of the queue, we must check if the task has
         // been added in the running state
@@ -220,20 +359,24 @@ impl<'db> StateTxn<'db, RW> {
             queue.mark_running(task.id);
         }
         self.write_task_queue(key, &queue)?;
-        self.write_task(&task.id, key, task)
+        self.write_task(&task.id, key, task)?;
+        Ok(true)
     }
 
     /// Add a concurrent task to the queue
-    pub fn add_concurrent_task(
+    pub fn preempt_queue_with_concurrent(
         &self,
         key: &TaskQueueKey,
         task: &QueuedTask,
-    ) -> Result<(), StorageError> {
+    ) -> Result<bool, StorageError> {
         let mut queue = self.get_task_queue(key)?;
-        queue.add_concurrent_task(task.id);
+        if !queue.preempt_with_concurrent_task(task.id) {
+            return Ok(false);
+        };
 
         self.write_task_queue(key, &queue)?;
-        self.write_task(&task.id, key, task)
+        self.write_task(&task.id, key, task)?;
+        Ok(true)
     }
 
     /// Pop a task from the queue
@@ -361,163 +504,356 @@ mod test {
 
     use super::*;
 
-    /// Tests adding a task to the queue and retrieving it
+    /// Test the serial operation of the task queue (no preemption)
     #[test]
-    fn test_append_and_get() {
+    #[allow(non_snake_case)]
+    fn test_serial_ops__basic() -> Result<(), StorageError> {
         // Setup the mock
         let db = mock_db();
-        let tx = db.new_write_tx().unwrap();
-
-        // Check the queue before any tasks are added
+        let tx = db.new_write_tx()?;
         let key = TaskQueueKey::new_v4();
-        let queued_tasks = tx.get_task_queue(&key).unwrap();
-        assert!(queued_tasks.is_empty());
 
-        // Add a serial task to the queue
-        let serial_task = mock_queued_task(key);
-        tx.add_serial_task(&key, &serial_task).unwrap();
-        let queued_tasks = tx.get_task_queue(&key).unwrap();
-        assert_eq!(queued_tasks.serial_tasks.len(), 1);
-        assert_eq!(queued_tasks.serial_tasks[0], serial_task.id);
-        assert_eq!(queued_tasks.concurrent_tasks.len(), 0);
+        // Check that the queue is empty
+        let empty = tx.is_queue_empty_v2(&key)?;
+        assert!(empty);
 
-        // Add a concurrent task to the queue
-        let concurrent_task = mock_queued_task(key);
-        tx.add_concurrent_task(&key, &concurrent_task).unwrap();
-        let queued_tasks = tx.get_task_queue(&key).unwrap();
-        assert_eq!(queued_tasks.serial_tasks.len(), 1);
-        assert_eq!(queued_tasks.concurrent_tasks.len(), 1);
-        assert_eq!(queued_tasks.concurrent_tasks[0], concurrent_task.id);
+        // Add a task to the queue, and check that it is indexed
+        let task = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &task)?;
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue { serial_tasks: vec![task.id], ..Default::default() };
+        assert_eq!(task_queue, expected_queue);
 
-        // Get the tasks and their queue mappings individually
-        let serial_id = serial_task.id;
-        let concurrent_id = concurrent_task.id;
-        let serial_task_retrieved = tx.get_task_v2(&serial_id).unwrap().is_some();
-        let concurrent_task_retrieved = tx.get_task_v2(&concurrent_id).unwrap().is_some();
-        let serial_queue_key = tx.get_queue_key_for_task_v2(&serial_id).unwrap().unwrap();
-        let concurrent_queue_key = tx.get_queue_key_for_task_v2(&concurrent_id).unwrap().unwrap();
-        assert!(serial_task_retrieved);
-        assert!(concurrent_task_retrieved);
-        assert_eq!(serial_queue_key, key);
-        assert_eq!(concurrent_queue_key, key);
+        // Check that the task is indexed
+        let indexed = tx.get_task_v2(&task.id)?.is_some();
+        assert!(indexed);
+
+        // Now pop the task and check that it is removed from the queue
+        let popped_task = tx.pop_task_v2(&key, &task.id)?;
+        let not_indexed = tx.get_task_v2(&task.id)?.is_none();
+        assert!(popped_task.is_some());
+        assert_eq!(popped_task.unwrap().id, task.id);
+        assert!(not_indexed);
+
+        // Check that the task queue has updated
+        let task_queue = tx.get_task_queue(&key).unwrap();
+        let expected_queue = TaskQueue::default();
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
     }
 
-    /// Tests popping a task from the queue
+    /// Test the serial operations of the task queue with multiple tasks
     #[test]
-    fn test_pop() {
+    #[allow(non_snake_case)]
+    fn test_serial_ops__multiple_tasks() -> Result<(), StorageError> {
         // Setup the mock
         let db = mock_db();
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_write_tx()?;
         let key = TaskQueueKey::new_v4();
+
+        // Add two tasks to the queue, one running
+        let mut task1 = mock_queued_task(key);
+        task1.state = QueuedTaskState::Running { state: "running".to_string(), committed: false };
+        let task2 = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &task1)?;
+        tx.mark_task_running(&task1.id, &key)?;
+        tx.enqueue_serial_task(&key, &task2)?;
+
+        // Check that the queue has the correct tasks
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task1.id, task2.id],
+            running_tasks: vec![task1.id],
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Check that both tasks are indexed
+        let indexed1 = tx.get_task_v2(&task1.id)?.is_some();
+        let indexed2 = tx.get_task_v2(&task2.id)?.is_some();
+        assert!(indexed1);
+        assert!(indexed2);
+
+        // Pop the first task from the queue
+        let popped_task = tx.pop_task_v2(&key, &task1.id)?;
+        assert!(popped_task.is_some());
+        assert_eq!(popped_task.unwrap().id, task1.id);
+
+        // Check that the queue has updated
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue { serial_tasks: vec![task2.id], ..Default::default() };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
+    }
+
+    /// Tests a serial preemption with only serial tasks running
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serial_preemption__simple() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Add a serial task to the queue
+        let task = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &task)?;
+
+        // Preempt the task queue
+        let preemptive_task = mock_queued_task(key);
+        tx.preempt_queue_with_serial(&key, &preemptive_task)?;
+
+        // Check that the task queue state is updated correctly
+        let task1_some = tx.get_task_v2(&task.id)?.is_some();
+        let preemptive_task_some = tx.get_task_v2(&preemptive_task.id)?.is_some();
+        assert!(task1_some);
+        assert!(preemptive_task_some);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![preemptive_task.id, task.id],
+            preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Pop the preemptive task and check that the queue state is updated
+        let popped_task = tx.pop_task_v2(&key, &preemptive_task.id)?;
+        assert!(popped_task.is_some());
+        assert_eq!(popped_task.unwrap().id, preemptive_task.id);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue { serial_tasks: vec![task.id], ..Default::default() };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
+    }
+
+    /// Tests a serial preemption with concurrent tasks running
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_serial_preemption__with_concurrent() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Add a normal, concurrent preemptive, and serial preemptive task
         let serial_task = mock_queued_task(key);
         let concurrent_task = mock_queued_task(key);
+        let preemptive_task = mock_queued_task(key);
+        tx.preempt_queue_with_concurrent(&key, &concurrent_task)?;
+        tx.enqueue_serial_task(&key, &serial_task)?;
+        tx.preempt_queue_with_serial(&key, &preemptive_task)?;
 
-        // First pop when the queue is empty
-        let maybe_task = tx.pop_task_v2(&key, &serial_task.id).unwrap();
-        assert!(maybe_task.is_none());
-        let maybe_task = tx.pop_task_v2(&key, &concurrent_task.id).unwrap();
-        assert!(maybe_task.is_none());
+        // Check that the task queue state is updated correctly
+        let serial_task_some = tx.get_task_v2(&serial_task.id)?.is_some();
+        let concurrent_task_some = tx.get_task_v2(&concurrent_task.id)?.is_some();
+        let preemptive_task_some = tx.get_task_v2(&preemptive_task.id)?.is_some();
+        assert!(serial_task_some);
+        assert!(concurrent_task_some);
+        assert!(preemptive_task_some);
 
-        // Add tasks to the queue
-        tx.add_serial_task(&key, &serial_task).unwrap();
-        tx.add_concurrent_task(&key, &concurrent_task).unwrap();
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![preemptive_task.id, serial_task.id],
+            concurrent_tasks: vec![concurrent_task.id],
+            preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
 
-        // Pop the serial task
-        let popped_task = tx.pop_task_v2(&key, &serial_task.id).unwrap();
-        assert!(popped_task.is_some());
-        assert_eq!(popped_task.unwrap().id, serial_task.id);
-
-        // Pop the concurrent task
-        let popped_task = tx.pop_task_v2(&key, &concurrent_task.id).unwrap();
+        // 1. Pop the concurrent task
+        let popped_task = tx.pop_task_v2(&key, &concurrent_task.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, concurrent_task.id);
 
-        // Check the queue is empty
-        let queued_tasks = tx.get_task_queue(&key).unwrap();
-        assert!(queued_tasks.is_empty());
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![preemptive_task.id, serial_task.id],
+            concurrent_tasks: vec![],
+            preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
 
-        // Check that both tasks are deleted
-        let serial_task_none = tx.get_task_v2(&serial_task.id).unwrap().is_none();
-        let concurrent_task_none = tx.get_task_v2(&concurrent_task.id).unwrap().is_none();
-        assert!(serial_task_none);
-        assert!(concurrent_task_none);
+        // 2. Pop the serial preemptive task
+        let popped_task = tx.pop_task_v2(&key, &preemptive_task.id)?;
+        assert!(popped_task.is_some());
+        assert_eq!(popped_task.unwrap().id, preemptive_task.id);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![serial_task.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
     }
 
-    /// Tests updating the state of a task
+    /// Tests an attempt to preempt a serial task with another -- invalid
     #[test]
-    fn test_transition() {
+    #[allow(non_snake_case)]
+    fn test_invalid_serial_preemption__already_preempted() -> Result<(), StorageError> {
         // Setup the mock
         let db = mock_db();
-        let tx = db.new_write_tx().unwrap();
-
-        // Add a task to the queue
+        let tx = db.new_write_tx()?;
         let key = TaskQueueKey::new_v4();
-        let task = mock_queued_task(key);
-        tx.add_serial_task(&key, &task).unwrap();
 
-        // Transition the state of the task
-        let state = QueuedTaskState::Running { state: "Running".to_string(), committed: false };
-        tx.transition_task_v2(&task.id, &key, state.clone()).unwrap();
+        // Add a serial task to the queue
+        let first_task = mock_queued_task(key);
+        tx.preempt_queue_with_serial(&key, &first_task)?;
 
-        // Check the task is running
-        let task_queue = tx.get_task_queue(&key).unwrap();
-        assert!(task_queue.is_running(&task.id));
+        // Attempt to preempt the task with another serial task
+        let second_task = mock_queued_task(key);
+        let success = tx.preempt_queue_with_serial(&key, &second_task)?;
+        assert!(!success);
 
-        // Fetch the task directly
-        let task = tx.get_task_v2(&task.id).unwrap().unwrap();
-        assert_eq!(task.state, state);
+        // Check that the queue was not updated
+        let second_task_none = tx.get_task_v2(&second_task.id)?.is_none();
+        assert!(second_task_none);
 
-        // Now delete the task and check the running map
-        tx.pop_task_v2(&key, &task.id).unwrap();
-        let task_queue = tx.get_task_queue(&key).unwrap();
-        let task_none = tx.get_task_v2(&task.id).unwrap().is_none();
-        assert!(!task_queue.is_running(&task.id));
-        assert!(task_none);
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![first_task.id],
+            preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
     }
 
-    /// Test clearing a task queue
+    /// Tests the basic concurrent preemption flow with multiple tasks
     #[test]
-    fn test_clear_queue() {
+    #[allow(non_snake_case)]
+    fn test_concurrent_preemption__basic() -> Result<(), StorageError> {
         // Setup the mock
         let db = mock_db();
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_write_tx()?;
         let key = TaskQueueKey::new_v4();
 
-        // Add three tasks to the queue
+        // Add two concurrent preemptive tasks
         let task1 = mock_queued_task(key);
         let task2 = mock_queued_task(key);
-        let task3 = mock_queued_task(key);
-        tx.add_serial_task(&key, &task1).unwrap();
-        tx.add_serial_task(&key, &task2).unwrap();
-        tx.add_concurrent_task(&key, &task3).unwrap();
+        tx.preempt_queue_with_concurrent(&key, &task1)?;
+        tx.preempt_queue_with_concurrent(&key, &task2)?;
 
-        // Clear the queue
-        tx.clear_task_queue_v2(&key).unwrap();
-        let queue = tx.get_task_queue(&key).unwrap();
-        assert!(queue.is_empty());
-        assert!(queue.running_tasks.is_empty());
+        // Check that the task queue state is updated correctly
+        let task1_some = tx.get_task_v2(&task1.id)?.is_some();
+        let task2_some = tx.get_task_v2(&task2.id)?.is_some();
+        assert!(task1_some);
+        assert!(task2_some);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            concurrent_tasks: vec![task1.id, task2.id],
+            preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Pop the first task
+        let popped_task = tx.pop_task_v2(&key, &task1.id)?;
+        assert!(popped_task.is_some());
+        assert_eq!(popped_task.unwrap().id, task1.id);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            concurrent_tasks: vec![task2.id],
+            preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
     }
 
-    /// Tests adding tasks up to the max concurrency limit
+    /// Tests enqueuing a serial task behind a preempted task
     #[test]
-    #[should_panic(expected = "max concurrency reached for task queue")]
-    fn test_max_concurrency() {
+    #[allow(non_snake_case)]
+    fn test_concurrent_preemption__enqueue_serial_behind() -> Result<(), StorageError> {
         // Setup the mock
         let db = mock_db();
-        let tx = db.new_write_tx().unwrap();
+        let tx = db.new_write_tx()?;
         let key = TaskQueueKey::new_v4();
 
-        for _ in 0..MAX_CONCURRENT_TASKS {
-            let task = mock_queued_task(key);
-            tx.add_concurrent_task(&key, &task).unwrap();
-        }
+        // Add a concurrent preemptive task
+        let concurrent_task = mock_queued_task(key);
+        tx.preempt_queue_with_concurrent(&key, &concurrent_task)?;
 
-        // Check that the queue is at max concurrency
-        let queue = tx.get_task_queue(&key).unwrap();
-        assert_eq!(queue.concurrent_tasks.len(), MAX_CONCURRENT_TASKS);
+        // Add a serial task to the queue
+        let serial_task = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &serial_task)?;
 
-        // Add one more and check that it errors
-        let task = mock_queued_task(key);
-        tx.add_concurrent_task(&key, &task).unwrap();
+        // Check that the task queue state is updated correctly
+        let concurrent_task_some = tx.get_task_v2(&concurrent_task.id)?.is_some();
+        let serial_task_some = tx.get_task_v2(&serial_task.id)?.is_some();
+        assert!(concurrent_task_some);
+        assert!(serial_task_some);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            concurrent_tasks: vec![concurrent_task.id],
+            serial_tasks: vec![serial_task.id],
+            preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Try adding another concurrent task, should fail
+        let new_concurrent_task = mock_queued_task(key);
+        let success = tx.preempt_queue_with_concurrent(&key, &new_concurrent_task)?;
+        assert!(!success);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            concurrent_tasks: vec![concurrent_task.id],
+            serial_tasks: vec![serial_task.id],
+            preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Now pop the concurrent task and check that the queue state is updated
+        let popped_task = tx.pop_task_v2(&key, &concurrent_task.id)?;
+        assert!(popped_task.is_some());
+        assert_eq!(popped_task.unwrap().id, concurrent_task.id);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            concurrent_tasks: vec![],
+            serial_tasks: vec![serial_task.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
+    }
+
+    /// Tests enqueuing a concurrent task behind a serial task
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_concurrent_preemption__serial_already_queued() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Add a serial task to the queue
+        let serial_task = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &serial_task)?;
+
+        // Try to add a concurrent task to the queue, should fail
+        let concurrent_task = mock_queued_task(key);
+        let success = tx.preempt_queue_with_concurrent(&key, &concurrent_task)?;
+        assert!(!success);
+
+        let task_queue = tx.get_task_queue(&key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![serial_task.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+        Ok(())
     }
 }

@@ -167,8 +167,24 @@ pub enum StateTransition {
     /// Preempt the given task queue
     ///
     /// Returns any running tasks to `Queued` state and pauses the queue
+    /// 
+    /// TODO(@joeykraut): Remove this once the migration is complete
+    #[deprecated(note="Use `EnqueuePreemptiveTask` instead")]
     PreemptTaskQueues { keys: Vec<TaskQueueKey>, task: QueuedTask, executor: WrappedPeerId },
+    /// Enqueue a preemptive task for the given task queues
+    /// 
+    /// Transitions any running tasks to `Queued` state and enqueues the given task
+    /// at the front of each queue
+    /// 
+    /// If `serial` is true, the task is enqueued as a serial task and requires
+    /// exclusive access to the task queue. If false, the task is enqueued as a
+    /// concurrent task and may share the queue with other concurrent, preemptive
+    /// tasks.
+    EnqueuePreemptiveTask { keys: Vec<TaskQueueKey>, task: QueuedTask, executor: WrappedPeerId, serial: bool },
     /// Resume the given task queue
+    /// 
+    /// TODO(@joeykraut): Remove this once the migration is complete
+    #[deprecated(note="Use `PopTask` instead, as in the standard task flow")]
     ResumeTaskQueues { keys: Vec<TaskQueueKey>, success: bool},
     /// Reassign all tasks from one peer to another peer
     ReassignTasks { from: WrappedPeerId, to: WrappedPeerId },
