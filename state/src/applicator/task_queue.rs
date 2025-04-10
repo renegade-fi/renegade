@@ -192,7 +192,7 @@ impl StateApplicator {
 
         // TODO(@joeykraut): Remove this once we migrate to v2
         tx.transition_task(&key, state.clone())?;
-        double_write_helper(tx.transition_task_v2(&task_id, &key, state));
+        double_write_helper(tx.transition_task_v2(&task_id, state));
         let task = tx.get_task(&task_id)?;
         tx.commit()?;
 
@@ -271,7 +271,7 @@ impl StateApplicator {
             // TODO(@joeykraut): Remove the v1 implementation once we migrate
             let state = QueuedTaskState::Queued;
             tx.transition_task(&key, state.clone())?;
-            double_write_helper(tx.transition_task_v2(&task.id, &key, state));
+            double_write_helper(tx.transition_task_v2(&task.id, state));
         }
 
         // If the queue is already paused, a preemptive task is already
@@ -446,7 +446,7 @@ impl StateApplicator {
         // TODO(@joeykraut): Remove v1 implementation once we migrate
         let running_state = new_running_state();
         tx.transition_task(&queue_key, running_state.clone())?;
-        double_write_helper(tx.transition_task_v2(&task.id, &queue_key, running_state));
+        double_write_helper(tx.transition_task_v2(&task.id, running_state));
         self.maybe_execute_task(task, tx)
     }
 
@@ -1388,7 +1388,6 @@ mod test {
         let expected_queue = TaskQueue {
             serial_tasks: vec![task.id],
             concurrent_tasks: vec![],
-            running_tasks: vec![task.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
         };
         assert_eq!(task_queue, expected_queue);
@@ -1432,7 +1431,6 @@ mod test {
         let expected_queue = TaskQueue {
             serial_tasks: vec![task1.id, task2.id],
             concurrent_tasks: vec![],
-            running_tasks: vec![task1.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
         };
 
@@ -1470,7 +1468,6 @@ mod test {
         let expected_queue = TaskQueue {
             serial_tasks: vec![preemptive_task.id, task.id],
             concurrent_tasks: vec![],
-            running_tasks: vec![preemptive_task.id],
             preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
         };
         assert_eq!(task_queue, expected_queue);
@@ -1489,7 +1486,6 @@ mod test {
         let expected_queue = TaskQueue {
             serial_tasks: vec![task.id],
             concurrent_tasks: vec![],
-            running_tasks: vec![task.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
         };
         assert_eq!(task_queue, expected_queue);
