@@ -76,7 +76,7 @@ pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
 /// The name of the db table that stores task queues
 pub(crate) const TASK_QUEUE_TABLE: &str = "task-queues";
-/// The name of the db table that maps tasks to their queue key
+/// The name of the db table that maps tasks to their queue keys
 pub(crate) const TASK_TO_KEY_TABLE: &str = "task-to-key";
 /// The name of the db table that maps nodes to their assigned tasks
 pub(crate) const TASK_ASSIGNMENT_TABLE: &str = "task-assignments";
