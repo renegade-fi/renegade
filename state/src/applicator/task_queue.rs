@@ -285,7 +285,7 @@ impl StateApplicator {
         tx.add_assigned_task(executor, &task.id)?;
         // TODO(@joeykraut): Remove the v1 implementation once we migrate
         tx.add_task_front(&key, task)?;
-        double_write_helper(tx.preempt_queue_with_serial(&key, task));
+        double_write_helper(tx.preempt_queue_with_serial(&[key], task));
         self.publish_task_updates(key, task);
 
         Ok(ApplicatorReturnType::None)
