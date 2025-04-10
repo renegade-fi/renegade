@@ -6,7 +6,6 @@ edition = "2021"
 [features]
 # Used to enable mocks from other crates in tests
 mocks = ["dep:tempfile", "dep:test-helpers"]
-task-queue-len = []
 ci = ["mocks"]
 
 [[bench]]

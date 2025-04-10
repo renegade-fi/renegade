@@ -72,6 +72,7 @@ impl TaskQueue {
     }
 
     /// Check whether the given task is running
+    #[cfg(test)]
     pub fn is_running(&self, id: &TaskIdentifier) -> bool {
         self.running_tasks.contains(id)
     }
@@ -96,18 +97,18 @@ impl TaskQueue {
         self.concurrent_tasks.push(task);
     }
 
-    /// Pop a serial task from the queue
-    pub fn pop_serial_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
+    /// Pop a task from the queue
+    pub fn pop_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
         self.remove_running_task(id);
-        let idx = self.serial_tasks.iter().position(|t| t == id)?;
-        Some(self.serial_tasks.remove(idx))
-    }
+        if let Some(serial_idx) = self.serial_tasks.iter().position(|t| t == id) {
+            self.serial_tasks.remove(serial_idx);
+        } else if let Some(concurrent_idx) = self.concurrent_tasks.iter().position(|t| t == id) {
+            self.concurrent_tasks.remove(concurrent_idx);
+        } else {
+            return None;
+        }
 
-    /// Pop a concurrent task from the queue
-    pub fn pop_concurrent_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
-        self.remove_running_task(id);
-        let idx = self.concurrent_tasks.iter().position(|t| t == id)?;
-        Some(self.concurrent_tasks.remove(idx))
+        Some(*id)
     }
 
     /// Mark a task as running
@@ -228,28 +229,14 @@ impl<'db> StateTxn<'db, RW> {
         self.write_task(&task.id, key, task)
     }
 
-    /// Pop a serial task from the queue
-    pub fn pop_serial_task(
+    /// Pop a task from the queue
+    pub fn pop_task_v2(
         &self,
         key: &TaskQueueKey,
         id: &TaskIdentifier,
     ) -> Result<Option<QueuedTask>, StorageError> {
         let mut queue = self.get_task_queue(key)?;
-        queue.pop_serial_task(id);
-        self.write_task_queue(key, &queue)?;
-
-        let task = self.delete_task(id)?;
-        Ok(task)
-    }
-
-    /// Pop a concurrent task from the queue
-    pub fn pop_concurrent_task(
-        &self,
-        key: &TaskQueueKey,
-        id: &TaskIdentifier,
-    ) -> Result<Option<QueuedTask>, StorageError> {
-        let mut queue = self.get_task_queue(key)?;
-        queue.pop_concurrent_task(id);
+        queue.pop_task(id);
         self.write_task_queue(key, &queue)?;
 
         let task = self.delete_task(id)?;
@@ -258,14 +245,18 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Clear a task queue, removing all tasks from it
     /// TODO(@joeykraut): Rename this method after migration completes
-    pub fn clear_task_queue_v2(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
+    pub fn clear_task_queue_v2(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<Vec<TaskIdentifier>, StorageError> {
         let queue = self.get_task_queue(key)?;
-        for task_id in queue.all_tasks() {
-            self.delete_task(&task_id)?;
+        let all_tasks = queue.all_tasks();
+        for task_id in all_tasks.iter() {
+            self.delete_task(task_id)?;
         }
 
-        self.write_task_queue(key, &Default::default())?;
-        Ok(())
+        self.write_task_queue(key, &TaskQueue::default())?;
+        Ok(all_tasks)
     }
 
     /// Transition the state of a given task
@@ -401,9 +392,9 @@ mod test {
         let concurrent_task = mock_queued_task(key);
 
         // First pop when the queue is empty
-        let maybe_task = tx.pop_serial_task(&key, &serial_task.id).unwrap();
+        let maybe_task = tx.pop_task_v2(&key, &serial_task.id).unwrap();
         assert!(maybe_task.is_none());
-        let maybe_task = tx.pop_concurrent_task(&key, &concurrent_task.id).unwrap();
+        let maybe_task = tx.pop_task_v2(&key, &concurrent_task.id).unwrap();
         assert!(maybe_task.is_none());
 
         // Add tasks to the queue
@@ -411,12 +402,12 @@ mod test {
         tx.add_concurrent_task(&key, &concurrent_task).unwrap();
 
         // Pop the serial task
-        let popped_task = tx.pop_serial_task(&key, &serial_task.id).unwrap();
+        let popped_task = tx.pop_task_v2(&key, &serial_task.id).unwrap();
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, serial_task.id);
 
         // Pop the concurrent task
-        let popped_task = tx.pop_concurrent_task(&key, &concurrent_task.id).unwrap();
+        let popped_task = tx.pop_task_v2(&key, &concurrent_task.id).unwrap();
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, concurrent_task.id);
 
@@ -456,7 +447,7 @@ mod test {
         assert_eq!(task.state, state);
 
         // Now delete the task and check the running map
-        tx.pop_serial_task(&key, &task.id).unwrap();
+        tx.pop_task_v2(&key, &task.id).unwrap();
         let task_queue = tx.get_task_queue(&key).unwrap();
         let task_none = tx.get_task_v2(&task.id).unwrap().is_none();
         assert!(!task_queue.is_running(&task.id));
