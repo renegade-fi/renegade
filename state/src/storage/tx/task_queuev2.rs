@@ -70,8 +70,6 @@ pub(crate) struct TaskQueue {
     pub(crate) concurrent_tasks: Vec<TaskIdentifier>,
     /// The list of tasks that are queued for execution
     pub(crate) serial_tasks: Vec<TaskIdentifier>,
-    /// The list of running tasks
-    pub(crate) running_tasks: Vec<TaskIdentifier>,
     /// The preemption state of the queue
     pub(crate) preemption_state: TaskQueuePreemptionState,
 }
@@ -191,20 +189,7 @@ impl TaskQueue {
             return false;
         }
 
-        // Remove the task from the running list
-        self.remove_running_task(id);
         true
-    }
-
-    /// Mark a task as running
-    pub fn mark_running(&mut self, task: TaskIdentifier) {
-        self.running_tasks.push(task);
-    }
-
-    /// Remove a task from the running list
-    pub fn remove_running_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
-        let idx = self.running_tasks.iter().position(|t| t == id)?;
-        Some(self.running_tasks.remove(idx))
     }
 
     // --- Helpers --- //
@@ -284,16 +269,6 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         Ok(task)
     }
 
-    /// Get the currently running task for a queue
-    /// TODO(@joeykraut): Rename this method after migration completes
-    pub fn get_current_running_tasks_v2(
-        &self,
-        key: &TaskQueueKey,
-    ) -> Result<Vec<TaskIdentifier>, StorageError> {
-        let queue = self.get_task_queue(key)?;
-        Ok(queue.running_tasks)
-    }
-
     /// Get the queue key for a given task
     /// TODO(@joeykraut): Rename this method after migration completes
     pub fn get_queue_key_for_task_v2(
@@ -353,11 +328,6 @@ impl<'db> StateTxn<'db, RW> {
             return Ok(false);
         };
 
-        // If we add to the front of the queue, we must check if the task has
-        // been added in the running state
-        if task.state.is_running() {
-            queue.mark_running(task.id);
-        }
         self.write_task_queue(key, &queue)?;
         self.write_task(&task.id, key, task)?;
         Ok(true)
@@ -414,7 +384,6 @@ impl<'db> StateTxn<'db, RW> {
     pub fn transition_task_v2(
         &self,
         id: &TaskIdentifier,
-        key: &TaskQueueKey,
         new_state: QueuedTaskState,
     ) -> Result<(), StorageError> {
         let mut task = match self.get_task_v2(id)? {
@@ -422,40 +391,11 @@ impl<'db> StateTxn<'db, RW> {
             None => return Err(StorageError::not_found(ERR_TASK_NOT_FOUND)),
         };
 
-        // Update the running status of the task
-        if new_state.is_running() {
-            self.mark_task_running(id, key)?;
-        } else {
-            self.mark_task_not_running(id, key)?;
-        }
-
         task.state = new_state;
         self.update_task(id, &task)
     }
 
     // --- Helpers --- //
-
-    /// Mark a task as running in the queue
-    fn mark_task_running(
-        &self,
-        id: &TaskIdentifier,
-        key: &TaskQueueKey,
-    ) -> Result<(), StorageError> {
-        let mut queue = self.get_task_queue(key)?;
-        queue.mark_running(*id);
-        self.write_task_queue(key, &queue)
-    }
-
-    /// Mark a task as _not_ running in the queue
-    fn mark_task_not_running(
-        &self,
-        id: &TaskIdentifier,
-        key: &TaskQueueKey,
-    ) -> Result<(), StorageError> {
-        let mut queue = self.get_task_queue(key)?;
-        queue.remove_running_task(id);
-        self.write_task_queue(key, &queue)
-    }
 
     /// Write the task queue to storage
     fn write_task_queue(&self, key: &TaskQueueKey, queue: &TaskQueue) -> Result<(), StorageError> {
@@ -556,16 +496,12 @@ mod test {
         task1.state = QueuedTaskState::Running { state: "running".to_string(), committed: false };
         let task2 = mock_queued_task(key);
         tx.enqueue_serial_task(&key, &task1)?;
-        tx.mark_task_running(&task1.id, &key)?;
         tx.enqueue_serial_task(&key, &task2)?;
 
         // Check that the queue has the correct tasks
         let task_queue = tx.get_task_queue(&key)?;
-        let expected_queue = TaskQueue {
-            serial_tasks: vec![task1.id, task2.id],
-            running_tasks: vec![task1.id],
-            ..Default::default()
-        };
+        let expected_queue =
+            TaskQueue { serial_tasks: vec![task1.id, task2.id], ..Default::default() };
         assert_eq!(task_queue, expected_queue);
 
         // Check that both tasks are indexed
@@ -658,7 +594,6 @@ mod test {
             serial_tasks: vec![preemptive_task.id, serial_task.id],
             concurrent_tasks: vec![concurrent_task.id],
             preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
-            ..Default::default()
         };
         assert_eq!(task_queue, expected_queue);
 
@@ -670,7 +605,6 @@ mod test {
         let task_queue = tx.get_task_queue(&key)?;
         let expected_queue = TaskQueue {
             serial_tasks: vec![preemptive_task.id, serial_task.id],
-            concurrent_tasks: vec![],
             preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
             ..Default::default()
         };
@@ -795,7 +729,6 @@ mod test {
             concurrent_tasks: vec![concurrent_task.id],
             serial_tasks: vec![serial_task.id],
             preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
-            ..Default::default()
         };
         assert_eq!(task_queue, expected_queue);
 
@@ -809,7 +742,6 @@ mod test {
             concurrent_tasks: vec![concurrent_task.id],
             serial_tasks: vec![serial_task.id],
             preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
-            ..Default::default()
         };
         assert_eq!(task_queue, expected_queue);
 
@@ -820,7 +752,6 @@ mod test {
 
         let task_queue = tx.get_task_queue(&key)?;
         let expected_queue = TaskQueue {
-            concurrent_tasks: vec![],
             serial_tasks: vec![serial_task.id],
             preemption_state: TaskQueuePreemptionState::NotPreempted,
             ..Default::default()
