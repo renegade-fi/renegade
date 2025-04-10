@@ -19,7 +19,7 @@ use libmdbx::{TransactionKind, RW};
 use tracing::{error, info, instrument, warn};
 use util::err_str;
 
-use crate::storage::tx::StateTxn;
+use crate::storage::{error::StorageError, tx::StateTxn};
 
 use super::{
     error::StateApplicatorError, return_type::ApplicatorReturnType, Result, StateApplicator,
@@ -51,6 +51,14 @@ fn task_not_in_queue(task_id: TaskIdentifier, queue_key: TaskQueueKey) -> String
 // -----------
 // | Helpers |
 // -----------
+
+/// Helper to ignore errors that come from double writes
+/// TODO(@joeykraut): Remove this once we migrate to v2
+fn double_write_helper<R>(res: std::result::Result<R, StorageError>) {
+    if let Err(e) = res {
+        warn!("error double writing: {e}");
+    }
+}
 
 /// Error message emitted when a task queue is already paused
 fn already_paused(id: TaskQueueKey) -> String {
@@ -92,7 +100,7 @@ impl StateApplicator {
         let previously_empty = tx.is_queue_empty(&queue_key)?;
         // TODO(@joeykraut): Remove v1 implementation once we migrate
         tx.add_task(&queue_key, task)?;
-        tx.add_serial_task(&queue_key, task)?;
+        double_write_helper(tx.add_serial_task(&queue_key, task));
         tx.add_assigned_task(executor, &task.id)?;
 
         // If the task queue was empty, run the task
@@ -184,7 +192,7 @@ impl StateApplicator {
 
         // TODO(@joeykraut): Remove this once we migrate to v2
         tx.transition_task(&key, state.clone())?;
-        tx.transition_task_v2(&task_id, &key, state)?;
+        double_write_helper(tx.transition_task_v2(&task_id, &key, state));
         let task = tx.get_task(&task_id)?;
         tx.commit()?;
 
@@ -248,7 +256,7 @@ impl StateApplicator {
             // TODO(@joeykraut): Remove the v1 implementation once we migrate
             let state = QueuedTaskState::Queued;
             tx.transition_task(&key, state.clone())?;
-            tx.transition_task_v2(&task.id, &key, state)?;
+            double_write_helper(tx.transition_task_v2(&task.id, &key, state));
         }
 
         // If the queue is already paused, a preemptive task is already
@@ -262,7 +270,7 @@ impl StateApplicator {
         tx.add_assigned_task(executor, &task.id)?;
         // TODO(@joeykraut): Remove the v1 implementation once we migrate
         tx.add_task_front(&key, task)?;
-        tx.add_serial_task_front(&key, task)?;
+        double_write_helper(tx.add_serial_task_front(&key, task));
         self.publish_task_updates(key, task);
 
         Ok(ApplicatorReturnType::None)
@@ -423,7 +431,7 @@ impl StateApplicator {
         // TODO(@joeykraut): Remove v1 implementation once we migrate
         let running_state = new_running_state();
         tx.transition_task(&queue_key, running_state.clone())?;
-        tx.transition_task_v2(&task.id, &queue_key, running_state)?;
+        double_write_helper(tx.transition_task_v2(&task.id, &queue_key, running_state));
         self.maybe_execute_task(task, tx)
     }
 
@@ -517,7 +525,7 @@ impl StateApplicator {
             Some(task) => task,
             None => return Ok(None),
         };
-        tx.pop_task_v2(key, &task.id)?;
+        double_write_helper(tx.pop_task_v2(key, &task.id));
 
         // Add the task to history and remove its node assignment
         task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
@@ -562,8 +570,9 @@ impl StateApplicator {
     /// "failed"
     fn clear_task_queue(&self, key: TaskQueueKey, tx: &StateTxn<'_, RW>) -> Result<()> {
         // Remove all tasks from queue in storage
+        // TODO(@joeykraut): Remove this once we migrate to v2
         let cleared_tasks = tx.clear_task_queue(&key)?;
-        tx.clear_task_queue_v2(&key)?;
+        double_write_helper(tx.clear_task_queue_v2(&key));
 
         // Mark all tasks as failed, append to history, and publish updates
         for mut task in cleared_tasks {
