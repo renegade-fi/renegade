@@ -48,13 +48,14 @@ fn task_key(id: &TaskIdentifier) -> String {
 /// `serial_tasks` list be empty before a task is added to the
 /// `concurrent_tasks` list.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct TaskQueue {
     /// The list of tasks that are queued for execution
-    concurrent_tasks: Vec<TaskIdentifier>,
+    pub(crate) concurrent_tasks: Vec<TaskIdentifier>,
     /// The list of tasks that are queued for execution
-    serial_tasks: Vec<TaskIdentifier>,
+    pub(crate) serial_tasks: Vec<TaskIdentifier>,
     /// The list of running tasks
-    running_tasks: Vec<TaskIdentifier>,
+    pub(crate) running_tasks: Vec<TaskIdentifier>,
 }
 
 impl TaskQueue {
@@ -72,6 +73,7 @@ impl TaskQueue {
     }
 
     /// Check whether the given task is running
+    #[cfg(test)]
     pub fn is_running(&self, id: &TaskIdentifier) -> bool {
         self.running_tasks.contains(id)
     }
@@ -96,18 +98,18 @@ impl TaskQueue {
         self.concurrent_tasks.push(task);
     }
 
-    /// Pop a serial task from the queue
-    pub fn pop_serial_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
+    /// Pop a task from the queue
+    pub fn pop_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
         self.remove_running_task(id);
-        let idx = self.serial_tasks.iter().position(|t| t == id)?;
-        Some(self.serial_tasks.remove(idx))
-    }
+        if let Some(serial_idx) = self.serial_tasks.iter().position(|t| t == id) {
+            self.serial_tasks.remove(serial_idx);
+        } else if let Some(concurrent_idx) = self.concurrent_tasks.iter().position(|t| t == id) {
+            self.concurrent_tasks.remove(concurrent_idx);
+        } else {
+            return None;
+        }
 
-    /// Pop a concurrent task from the queue
-    pub fn pop_concurrent_task(&mut self, id: &TaskIdentifier) -> Option<TaskIdentifier> {
-        self.remove_running_task(id);
-        let idx = self.concurrent_tasks.iter().position(|t| t == id)?;
-        Some(self.concurrent_tasks.remove(idx))
+        Some(*id)
     }
 
     /// Mark a task as running
@@ -208,9 +210,15 @@ impl<'db> StateTxn<'db, RW> {
         key: &TaskQueueKey,
         task: &QueuedTask,
     ) -> Result<(), StorageError> {
+        // Index the task into the queue
         let mut queue = self.get_task_queue(key)?;
         queue.add_serial_task_front(task.id);
 
+        // If we add to the front of the queue, we must check if the task has
+        // been added in the running state
+        if task.state.is_running() {
+            queue.mark_running(task.id);
+        }
         self.write_task_queue(key, &queue)?;
         self.write_task(&task.id, key, task)
     }
@@ -228,28 +236,14 @@ impl<'db> StateTxn<'db, RW> {
         self.write_task(&task.id, key, task)
     }
 
-    /// Pop a serial task from the queue
-    pub fn pop_serial_task(
+    /// Pop a task from the queue
+    pub fn pop_task_v2(
         &self,
         key: &TaskQueueKey,
         id: &TaskIdentifier,
     ) -> Result<Option<QueuedTask>, StorageError> {
         let mut queue = self.get_task_queue(key)?;
-        queue.pop_serial_task(id);
-        self.write_task_queue(key, &queue)?;
-
-        let task = self.delete_task(id)?;
-        Ok(task)
-    }
-
-    /// Pop a concurrent task from the queue
-    pub fn pop_concurrent_task(
-        &self,
-        key: &TaskQueueKey,
-        id: &TaskIdentifier,
-    ) -> Result<Option<QueuedTask>, StorageError> {
-        let mut queue = self.get_task_queue(key)?;
-        queue.pop_concurrent_task(id);
+        queue.pop_task(id);
         self.write_task_queue(key, &queue)?;
 
         let task = self.delete_task(id)?;
@@ -258,14 +252,18 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Clear a task queue, removing all tasks from it
     /// TODO(@joeykraut): Rename this method after migration completes
-    pub fn clear_task_queue_v2(&self, key: &TaskQueueKey) -> Result<(), StorageError> {
+    pub fn clear_task_queue_v2(
+        &self,
+        key: &TaskQueueKey,
+    ) -> Result<Vec<TaskIdentifier>, StorageError> {
         let queue = self.get_task_queue(key)?;
-        for task_id in queue.all_tasks() {
-            self.delete_task(&task_id)?;
+        let all_tasks = queue.all_tasks();
+        for task_id in all_tasks.iter() {
+            self.delete_task(task_id)?;
         }
 
-        self.write_task_queue(key, &Default::default())?;
-        Ok(())
+        self.write_task_queue(key, &TaskQueue::default())?;
+        Ok(all_tasks)
     }
 
     /// Transition the state of a given task
@@ -281,10 +279,13 @@ impl<'db> StateTxn<'db, RW> {
             None => return Err(StorageError::not_found(ERR_TASK_NOT_FOUND)),
         };
 
-        // Mark the task as running if the new state is running
+        // Update the running status of the task
         if new_state.is_running() {
             self.mark_task_running(id, key)?;
+        } else {
+            self.mark_task_not_running(id, key)?;
         }
+
         task.state = new_state;
         self.update_task(id, &task)
     }
@@ -299,6 +300,17 @@ impl<'db> StateTxn<'db, RW> {
     ) -> Result<(), StorageError> {
         let mut queue = self.get_task_queue(key)?;
         queue.mark_running(*id);
+        self.write_task_queue(key, &queue)
+    }
+
+    /// Mark a task as _not_ running in the queue
+    fn mark_task_not_running(
+        &self,
+        id: &TaskIdentifier,
+        key: &TaskQueueKey,
+    ) -> Result<(), StorageError> {
+        let mut queue = self.get_task_queue(key)?;
+        queue.remove_running_task(id);
         self.write_task_queue(key, &queue)
     }
 
@@ -401,9 +413,9 @@ mod test {
         let concurrent_task = mock_queued_task(key);
 
         // First pop when the queue is empty
-        let maybe_task = tx.pop_serial_task(&key, &serial_task.id).unwrap();
+        let maybe_task = tx.pop_task_v2(&key, &serial_task.id).unwrap();
         assert!(maybe_task.is_none());
-        let maybe_task = tx.pop_concurrent_task(&key, &concurrent_task.id).unwrap();
+        let maybe_task = tx.pop_task_v2(&key, &concurrent_task.id).unwrap();
         assert!(maybe_task.is_none());
 
         // Add tasks to the queue
@@ -411,12 +423,12 @@ mod test {
         tx.add_concurrent_task(&key, &concurrent_task).unwrap();
 
         // Pop the serial task
-        let popped_task = tx.pop_serial_task(&key, &serial_task.id).unwrap();
+        let popped_task = tx.pop_task_v2(&key, &serial_task.id).unwrap();
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, serial_task.id);
 
         // Pop the concurrent task
-        let popped_task = tx.pop_concurrent_task(&key, &concurrent_task.id).unwrap();
+        let popped_task = tx.pop_task_v2(&key, &concurrent_task.id).unwrap();
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, concurrent_task.id);
 
@@ -456,7 +468,7 @@ mod test {
         assert_eq!(task.state, state);
 
         // Now delete the task and check the running map
-        tx.pop_serial_task(&key, &task.id).unwrap();
+        tx.pop_task_v2(&key, &task.id).unwrap();
         let task_queue = tx.get_task_queue(&key).unwrap();
         let task_none = tx.get_task_v2(&task.id).unwrap().is_none();
         assert!(!task_queue.is_running(&task.id));

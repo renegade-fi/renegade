@@ -19,7 +19,7 @@ use libmdbx::{TransactionKind, RW};
 use tracing::{error, info, instrument, warn};
 use util::err_str;
 
-use crate::storage::tx::StateTxn;
+use crate::storage::{error::StorageError, tx::StateTxn};
 
 use super::{
     error::StateApplicatorError, return_type::ApplicatorReturnType, Result, StateApplicator,
@@ -27,12 +27,6 @@ use super::{
 
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
-/// Metric describing the number of tasks in a task queue
-#[cfg(feature = "task-queue-len")]
-const TASK_QUEUE_LENGTH_METRIC: &str = "task_queue_length";
-/// Metric tag for the key of a task queue
-#[cfg(feature = "task-queue-len")]
-const QUEUE_KEY_METRIC_TAG: &str = "queue_key";
 
 /// Error emitted when a task's assignment cannot be found
 const ERR_UNASSIGNED_TASK: &str = "task not assigned";
@@ -58,6 +52,14 @@ fn task_not_in_queue(task_id: TaskIdentifier, queue_key: TaskQueueKey) -> String
 // | Helpers |
 // -----------
 
+/// Helper to ignore errors that come from double writes
+/// TODO(@joeykraut): Remove this once we migrate to v2
+fn double_write_helper<R>(res: std::result::Result<R, StorageError>) {
+    if let Err(e) = res {
+        warn!("error double writing: {e}");
+    }
+}
+
 /// Error message emitted when a task queue is already paused
 fn already_paused(id: TaskQueueKey) -> String {
     format!("task queue {id} already paused")
@@ -79,21 +81,6 @@ fn new_running_state() -> QueuedTaskState {
     QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false }
 }
 
-/// Record the length of a task queue
-#[cfg(feature = "task-queue-len")]
-fn record_task_queue_length<T: TransactionKind>(key: &TaskQueueKey, tx: &StateTxn<'_, T>) {
-    let task_queue_length = match tx.get_queued_tasks(key) {
-        Ok(tasks) => tasks.len(),
-        Err(e) => {
-            error!("Error getting task queue length: {}", e);
-            return;
-        },
-    };
-
-    metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
-        .set(task_queue_length as f64);
-}
-
 impl StateApplicator {
     // ---------------------
     // | State Transitions |
@@ -111,18 +98,15 @@ impl StateApplicator {
 
         // Index the task
         let previously_empty = tx.is_queue_empty(&queue_key)?;
+        // TODO(@joeykraut): Remove v1 implementation once we migrate
         tx.add_task(&queue_key, task)?;
+        double_write_helper(tx.add_serial_task(&queue_key, task));
         tx.add_assigned_task(executor, &task.id)?;
 
-        // If the task queue was empty, transition the task to in progress and start it
+        // If the task queue was empty, run the task
         if previously_empty && !tx.is_queue_paused(&queue_key)? {
-            // Start the task
-            tx.transition_task(&queue_key, new_running_state())?;
-            self.maybe_start_task(task, &tx)?;
+            self.run_task(queue_key, task, &tx)?;
         }
-
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&queue_key, &tx);
 
         tx.commit()?;
         self.publish_task_updates(queue_key, task);
@@ -153,7 +137,6 @@ impl StateApplicator {
         let executor = tx
             .get_task_assignment(&task_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
-
         let task = self
             .pop_and_record_task(&key, success, Some(executor), &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
@@ -167,8 +150,7 @@ impl StateApplicator {
         // If the queue is non-empty, start the next task
         let remaining_tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = remaining_tasks.first() {
-            tx.transition_task(&key, new_running_state())?;
-            self.maybe_start_task(task, &tx)?;
+            self.run_task(key, task, &tx)?;
         }
 
         if Self::should_run_matching_engine(&executor, &remaining_tasks, &task, &tx)? {
@@ -176,12 +158,8 @@ impl StateApplicator {
             self.run_matching_engine_on_wallet(key, &tx)?;
         }
 
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&key, &tx);
-
+        // Commit and publish a message to the system bus
         tx.commit()?;
-
-        // Publish a completed message to the system bus
         self.publish_task_updates(key, &task);
         Ok(ApplicatorReturnType::None)
     }
@@ -212,7 +190,9 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject(already_paused(key)));
         }
 
-        tx.transition_task(&key, state)?;
+        // TODO(@joeykraut): Remove this once we migrate to v2
+        tx.transition_task(&key, state.clone())?;
+        double_write_helper(tx.transition_task_v2(&task_id, &key, state));
         let task = tx.get_task(&task_id)?;
         tx.commit()?;
 
@@ -273,8 +253,10 @@ impl StateApplicator {
             }
 
             // Otherwise transition the task to queued
+            // TODO(@joeykraut): Remove the v1 implementation once we migrate
             let state = QueuedTaskState::Queued;
-            tx.transition_task(&key, state)?;
+            tx.transition_task(&key, state.clone())?;
+            double_write_helper(tx.transition_task_v2(&task.id, &key, state));
         }
 
         // If the queue is already paused, a preemptive task is already
@@ -286,11 +268,10 @@ impl StateApplicator {
         // Pause the queue
         tx.pause_task_queue(&key)?;
         tx.add_assigned_task(executor, &task.id)?;
+        // TODO(@joeykraut): Remove the v1 implementation once we migrate
         tx.add_task_front(&key, task)?;
+        double_write_helper(tx.add_serial_task_front(&key, task));
         self.publish_task_updates(key, task);
-
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&key, tx);
 
         Ok(ApplicatorReturnType::None)
     }
@@ -332,7 +313,7 @@ impl StateApplicator {
 
     /// Resume a task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn resume_task_queue(
+    fn resume_task_queue(
         &self,
         key: TaskQueueKey,
         success: bool,
@@ -361,15 +342,11 @@ impl StateApplicator {
         }
 
         // Start running the first task if it exists
+        // This will resume the task as if it is starting anew, regardless of whether
+        // the task was previously running
         let tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = tasks.first() {
-            // Mark the task as pending in the db
-            let state = new_running_state();
-            tx.transition_task(&key, state)?;
-
-            // This will resume the task as if it is starting anew, regardless of whether
-            // the task was previously running
-            self.maybe_start_task(task, tx)?;
+            self.run_task(key, task, tx)?;
         }
 
         // Possibly run the matching engine on the wallet
@@ -380,10 +357,6 @@ impl StateApplicator {
         }
 
         self.publish_task_updates(key, &task);
-
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&key, tx);
-
         Ok(ApplicatorReturnType::None)
     }
 
@@ -416,8 +389,7 @@ impl StateApplicator {
             let queue_key = tx
                 .get_queue_key_for_task(&task_id)?
                 .ok_or_else(|| StateApplicatorError::reject(ERR_NO_KEY.to_string()))?;
-            tx.transition_task(&queue_key, new_running_state())?;
-            self.maybe_start_task(&task, &tx)?;
+            self.run_task(queue_key, &task, &tx)?;
         }
 
         tx.commit()?;
@@ -449,9 +421,23 @@ impl StateApplicator {
         }
     }
 
+    /// Transition a task into the running state
+    fn run_task(
+        &self,
+        queue_key: TaskQueueKey,
+        task: &QueuedTask,
+        tx: &StateTxn<'_, RW>,
+    ) -> Result<()> {
+        // TODO(@joeykraut): Remove v1 implementation once we migrate
+        let running_state = new_running_state();
+        tx.transition_task(&queue_key, running_state.clone())?;
+        double_write_helper(tx.transition_task_v2(&task.id, &queue_key, running_state));
+        self.maybe_execute_task(task, tx)
+    }
+
     /// Start a task if the current peer is the executor
     #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
-    fn maybe_start_task<T: TransactionKind>(
+    fn maybe_execute_task<T: TransactionKind>(
         &self,
         task: &QueuedTask,
         tx: &StateTxn<'_, T>,
@@ -481,10 +467,11 @@ impl StateApplicator {
         popped_task: &QueuedTask,
         tx: &StateTxn<'_, T>,
     ) -> Result<bool> {
-        let my_peer_id = tx.get_peer_id()?;
-        Ok(queued_tasks.is_empty()
-            && popped_task.descriptor.is_wallet_task()
-            && *executor == my_peer_id)
+        let this_node = tx.get_peer_id()?;
+        let queue_empty = queued_tasks.is_empty();
+        let is_executor = *executor == this_node;
+        let is_wallet_task = popped_task.descriptor.is_wallet_task();
+        Ok(queue_empty && is_executor && is_wallet_task)
     }
 
     /// Run the internal matching engine on all of a wallet's orders that are
@@ -533,19 +520,15 @@ impl StateApplicator {
         tx: &StateTxn<'_, RW>,
     ) -> Result<Option<QueuedTask>> {
         // Pop the task
+        // TODO(@joeykraut): Remove this once we migrate to v2
         let mut task = match tx.pop_task(key)? {
             Some(task) => task,
             None => return Ok(None),
         };
-
-        // Update the status
-        if success {
-            task.state = QueuedTaskState::Completed;
-        } else {
-            task.state = QueuedTaskState::Failed;
-        }
+        double_write_helper(tx.pop_task_v2(key, &task.id));
 
         // Add the task to history and remove its node assignment
+        task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
         self.maybe_append_historical_task(*key, task.clone(), executor, tx)?;
         if let Some(executor) = executor {
             tx.remove_assigned_task(&executor, &task.id)?;
@@ -587,7 +570,9 @@ impl StateApplicator {
     /// "failed"
     fn clear_task_queue(&self, key: TaskQueueKey, tx: &StateTxn<'_, RW>) -> Result<()> {
         // Remove all tasks from queue in storage
+        // TODO(@joeykraut): Remove this once we migrate to v2
         let cleared_tasks = tx.clear_task_queue(&key)?;
+        double_write_helper(tx.clear_task_queue_v2(&key));
 
         // Mark all tasks as failed, append to history, and publish updates
         for mut task in cleared_tasks {
@@ -617,18 +602,45 @@ mod test {
         wallet_mocks::mock_empty_wallet,
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
+    use util::metered_channels::MeteredCrossbeamReceiver;
 
     use crate::{
         applicator::{
             error::StateApplicatorError, task_queue::PENDING_STATE,
-            test_helpers::mock_applicator_with_task_queue,
+            test_helpers::mock_applicator_with_task_queue, StateApplicator,
         },
-        storage::db::DB,
+        storage::{db::DB, tx::task_queuev2::TaskQueue},
     };
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// Setup a mock applicator
+    fn setup_mock_applicator() -> StateApplicator {
+        let (applicator, queue) = setup_mock_applicator_with_driver_queue();
+        std::mem::forget(queue); // forget the queue to avoid it closing
+        applicator
+    }
+
+    /// Setup a mock applicator, and return with a task driver's work queue
+    fn setup_mock_applicator_with_driver_queue(
+    ) -> (StateApplicator, MeteredCrossbeamReceiver<TaskDriverJob>) {
+        let (task_queue, recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        (applicator, recv)
+    }
+
+    /// Get the local peer ID given an applicator
+    fn get_local_peer_id(applicator: &StateApplicator) -> WrappedPeerId {
+        let tx = applicator.db().new_read_tx().unwrap();
+        tx.get_peer_id().unwrap()
+    }
 
     /// Set the local peer ID
     fn set_local_peer_id(peer_id: &WrappedPeerId, db: &DB) {
@@ -642,6 +654,7 @@ mod test {
         let task = mock_queued_task(key);
         let tx = db.new_write_tx().unwrap();
         tx.add_task(&key, &task).unwrap();
+        tx.add_serial_task(&key, &task).unwrap();
 
         // Add an assignment
         let my_id = tx.get_peer_id().unwrap();
@@ -658,17 +671,12 @@ mod test {
     /// Tests appending a task to an empty queue
     #[test]
     fn test_append_empty_queue() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
 
         let task_queue_key = TaskQueueKey::new_v4();
         let task = mock_queued_task(task_queue_key);
         let task_id = task.id;
-
         applicator.append_task(&task, &peer_id).expect("Failed to append task");
 
         // Check the task was added to the queue
@@ -697,13 +705,7 @@ mod test {
     /// Test appending to an empty queue when the local peer is not the executor
     #[test]
     fn test_append_empty_queue_not_executor() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
         let task = mock_queued_task(task_queue_key);
         let executor = WrappedPeerId::random();
@@ -722,13 +724,8 @@ mod test {
     /// Tests the case in which a task is added to a non-empty queue
     #[test]
     fn test_append_non_empty_queue() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
@@ -754,12 +751,7 @@ mod test {
     /// Test popping from a task queue of length one
     #[test]
     fn test_pop_singleton_queue() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
 
         // Add a wallet; when the queue empties it will trigger the matching engine,
         // which requires the wallet to be present
@@ -786,13 +778,7 @@ mod test {
     /// the executor of the next task
     #[test]
     fn test_pop_non_executor() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
@@ -826,13 +812,8 @@ mod test {
     /// executor of the next task
     #[test]
     fn test_pop_executor() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
@@ -871,13 +852,7 @@ mod test {
     /// Test popping from a task queue and checking task history
     #[test]
     fn test_pop_and_check_history() {
-        let (task_queue, _task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, _task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add two tasks: one successful, one failed
@@ -902,13 +877,7 @@ mod test {
     /// the applicator
     #[test]
     fn test_double_pop() {
-        let (task_queue, _task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, _task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Test double-popping the only task in a queue
@@ -936,12 +905,7 @@ mod test {
     /// Test transitioning the state of the top task on the queue
     #[test]
     fn test_transition_task_state() {
-        let (task_queue, _task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
+        let (applicator, _task_recv) = setup_mock_applicator_with_driver_queue();
 
         // Add a task directly via the db
         let task_queue_key = TaskQueueKey::new_v4();
@@ -1372,5 +1336,140 @@ mod test {
         } else {
             panic!("Expected a Run task job");
         }
+    }
+
+    // TODO(@joeykraut): Remove double write tests once migration is complete
+
+    // ---------------------------------
+    // | Task Queue Double Write Tests |
+    // ---------------------------------
+
+    /// Tests that an added task is double-written correctly
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_add_and_pop_task__double_write() {
+        let applicator = setup_mock_applicator();
+
+        // Add a task
+        let executor = mock_peer().peer_id;
+        let task = mock_queued_task(WalletIdentifier::new_v4());
+        let queue_key = task.descriptor.queue_key();
+        applicator.append_task(&task, &executor).unwrap();
+
+        // Check the task queue v2 storage for the task
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_some = tx.get_task_v2(&task.id).unwrap().is_some();
+        assert!(task_info_some);
+
+        let is_empty = tx.is_queue_empty_v2(&queue_key).unwrap();
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        tx.commit().unwrap();
+        assert!(!is_empty);
+
+        // Check the task queue for the wallet
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![task.id],
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Pop the task
+        applicator.pop_task(task.id, true /* success */).unwrap();
+
+        // Check that the task queue v2 storage is updated
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_none = tx.get_task_v2(&task.id).unwrap().is_none();
+        assert!(task_info_none);
+
+        let is_empty = tx.is_queue_empty_v2(&queue_key).unwrap();
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        assert!(is_empty);
+        assert_eq!(task_queue, TaskQueue::default());
+    }
+
+    /// Checks double write behavior when multiple tasks are added to the queue
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_add_multiple_tasks__double_write() {
+        let applicator = setup_mock_applicator();
+
+        // Add two tasks
+        let executor = mock_peer().peer_id;
+        let queue_key = WalletIdentifier::new_v4();
+        let task1 = mock_queued_task(queue_key);
+        let task2 = mock_queued_task(queue_key);
+        applicator.append_task(&task1, &executor).unwrap();
+        applicator.append_task(&task2, &executor).unwrap();
+
+        // Check the task queue v2 storage for the tasks
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task1_info_some = tx.get_task_v2(&task1.id).unwrap().is_some();
+        let task2_info_some = tx.get_task_v2(&task2.id).unwrap().is_some();
+        assert!(task1_info_some);
+        assert!(task2_info_some);
+
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task1.id, task2.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![task1.id],
+        };
+
+        assert_eq!(task_queue, expected_queue);
+        tx.commit().unwrap();
+    }
+
+    /// Tests the double write behavior when a queue is paused and subsequently
+    /// resumed
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_pause_and_resume_queue__double_write() {
+        let applicator = setup_mock_applicator();
+
+        // Add a task
+        let executor = mock_peer().peer_id;
+        let queue_key = WalletIdentifier::new_v4();
+        let task = mock_queued_task(queue_key);
+        applicator.append_task(&task, &executor).unwrap();
+
+        // Pause the queue
+        let preemptive_task = mock_preemptive_task(queue_key);
+        applicator.preempt_task_queues(&[queue_key], &preemptive_task, &executor).unwrap();
+
+        // Check the task queue v2 storage for the task
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_some = tx.get_task_v2(&task.id).unwrap().is_some();
+        let preemptive_task_info_some = tx.get_task_v2(&preemptive_task.id).unwrap().is_some();
+        assert!(task_info_some);
+        assert!(preemptive_task_info_some);
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task queue for the wallet
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![preemptive_task.id, task.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![preemptive_task.id],
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Resume the queue, then check the task queue v2 storage for the task
+        applicator.resume_task_queues(&[queue_key], true /* success */).unwrap();
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_some = tx.get_task_v2(&task.id).unwrap().is_some();
+        let preemptive_task_info_none = tx.get_task_v2(&preemptive_task.id).unwrap().is_none();
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        assert!(task_info_some);
+        assert!(preemptive_task_info_none);
+        tx.commit().unwrap();
+
+        // Check the task queue for the wallet
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![task.id],
+        };
+        assert_eq!(task_queue, expected_queue);
     }
 }
