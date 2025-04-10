@@ -5,9 +5,8 @@ edition = "2018"
 default-run = "renegade-relayer"
 
 [features]
-dev-metrics = ["task-queue-len", "task-metrics", "proof-metrics"]
+dev-metrics = ["task-metrics", "proof-metrics"]
 metered-channels = ["util/metered-channels"]
-task-queue-len = ["state/task-queue-len"]
 task-metrics = ["task-driver/task-metrics"]
 proof-metrics = ["proof-manager/proof-metrics"]
 tx-metrics = ["arbitrum-client/tx-metrics"]

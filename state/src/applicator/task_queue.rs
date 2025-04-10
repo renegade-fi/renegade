@@ -27,12 +27,6 @@ use super::{
 
 /// The pending state description
 const PENDING_STATE: &str = "Pending";
-/// Metric describing the number of tasks in a task queue
-#[cfg(feature = "task-queue-len")]
-const TASK_QUEUE_LENGTH_METRIC: &str = "task_queue_length";
-/// Metric tag for the key of a task queue
-#[cfg(feature = "task-queue-len")]
-const QUEUE_KEY_METRIC_TAG: &str = "queue_key";
 
 /// Error emitted when a task's assignment cannot be found
 const ERR_UNASSIGNED_TASK: &str = "task not assigned";
@@ -79,21 +73,6 @@ fn new_running_state() -> QueuedTaskState {
     QueuedTaskState::Running { state: PENDING_STATE.to_string(), committed: false }
 }
 
-/// Record the length of a task queue
-#[cfg(feature = "task-queue-len")]
-fn record_task_queue_length<T: TransactionKind>(key: &TaskQueueKey, tx: &StateTxn<'_, T>) {
-    let task_queue_length = match tx.get_queued_tasks(key) {
-        Ok(tasks) => tasks.len(),
-        Err(e) => {
-            error!("Error getting task queue length: {}", e);
-            return;
-        },
-    };
-
-    metrics::gauge!(TASK_QUEUE_LENGTH_METRIC, QUEUE_KEY_METRIC_TAG => key.to_string())
-        .set(task_queue_length as f64);
-}
-
 impl StateApplicator {
     // ---------------------
     // | State Transitions |
@@ -111,18 +90,15 @@ impl StateApplicator {
 
         // Index the task
         let previously_empty = tx.is_queue_empty(&queue_key)?;
+        // TODO(@joeykraut): Remove v1 implementation once we migrate
         tx.add_task(&queue_key, task)?;
+        tx.add_serial_task(&queue_key, task)?;
         tx.add_assigned_task(executor, &task.id)?;
 
-        // If the task queue was empty, transition the task to in progress and start it
+        // If the task queue was empty, run the task
         if previously_empty && !tx.is_queue_paused(&queue_key)? {
-            // Start the task
-            tx.transition_task(&queue_key, new_running_state())?;
-            self.maybe_start_task(task, &tx)?;
+            self.run_task(queue_key, task, &tx)?;
         }
-
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&queue_key, &tx);
 
         tx.commit()?;
         self.publish_task_updates(queue_key, task);
@@ -153,7 +129,6 @@ impl StateApplicator {
         let executor = tx
             .get_task_assignment(&task_id)?
             .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
-
         let task = self
             .pop_and_record_task(&key, success, Some(executor), &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(key))?;
@@ -167,8 +142,7 @@ impl StateApplicator {
         // If the queue is non-empty, start the next task
         let remaining_tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = remaining_tasks.first() {
-            tx.transition_task(&key, new_running_state())?;
-            self.maybe_start_task(task, &tx)?;
+            self.run_task(key, task, &tx)?;
         }
 
         if Self::should_run_matching_engine(&executor, &remaining_tasks, &task, &tx)? {
@@ -176,12 +150,8 @@ impl StateApplicator {
             self.run_matching_engine_on_wallet(key, &tx)?;
         }
 
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&key, &tx);
-
+        // Commit and publish a message to the system bus
         tx.commit()?;
-
-        // Publish a completed message to the system bus
         self.publish_task_updates(key, &task);
         Ok(ApplicatorReturnType::None)
     }
@@ -212,7 +182,9 @@ impl StateApplicator {
             return Err(StateApplicatorError::reject(already_paused(key)));
         }
 
-        tx.transition_task(&key, state)?;
+        // TODO(@joeykraut): Remove this once we migrate to v2
+        tx.transition_task(&key, state.clone())?;
+        tx.transition_task_v2(&task_id, &key, state)?;
         let task = tx.get_task(&task_id)?;
         tx.commit()?;
 
@@ -273,8 +245,10 @@ impl StateApplicator {
             }
 
             // Otherwise transition the task to queued
+            // TODO(@joeykraut): Remove the v1 implementation once we migrate
             let state = QueuedTaskState::Queued;
-            tx.transition_task(&key, state)?;
+            tx.transition_task(&key, state.clone())?;
+            tx.transition_task_v2(&task.id, &key, state)?;
         }
 
         // If the queue is already paused, a preemptive task is already
@@ -286,11 +260,10 @@ impl StateApplicator {
         // Pause the queue
         tx.pause_task_queue(&key)?;
         tx.add_assigned_task(executor, &task.id)?;
+        // TODO(@joeykraut): Remove the v1 implementation once we migrate
         tx.add_task_front(&key, task)?;
+        tx.add_serial_task_front(&key, task)?;
         self.publish_task_updates(key, task);
-
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&key, tx);
 
         Ok(ApplicatorReturnType::None)
     }
@@ -332,7 +305,7 @@ impl StateApplicator {
 
     /// Resume a task queue
     #[instrument(skip_all, err, fields(queue_key = %key))]
-    pub fn resume_task_queue(
+    fn resume_task_queue(
         &self,
         key: TaskQueueKey,
         success: bool,
@@ -361,15 +334,11 @@ impl StateApplicator {
         }
 
         // Start running the first task if it exists
+        // This will resume the task as if it is starting anew, regardless of whether
+        // the task was previously running
         let tasks = tx.get_queued_tasks(&key)?;
         if let Some(task) = tasks.first() {
-            // Mark the task as pending in the db
-            let state = new_running_state();
-            tx.transition_task(&key, state)?;
-
-            // This will resume the task as if it is starting anew, regardless of whether
-            // the task was previously running
-            self.maybe_start_task(task, tx)?;
+            self.run_task(key, task, tx)?;
         }
 
         // Possibly run the matching engine on the wallet
@@ -380,10 +349,6 @@ impl StateApplicator {
         }
 
         self.publish_task_updates(key, &task);
-
-        #[cfg(feature = "task-queue-len")]
-        record_task_queue_length(&key, tx);
-
         Ok(ApplicatorReturnType::None)
     }
 
@@ -416,8 +381,7 @@ impl StateApplicator {
             let queue_key = tx
                 .get_queue_key_for_task(&task_id)?
                 .ok_or_else(|| StateApplicatorError::reject(ERR_NO_KEY.to_string()))?;
-            tx.transition_task(&queue_key, new_running_state())?;
-            self.maybe_start_task(&task, &tx)?;
+            self.run_task(queue_key, &task, &tx)?;
         }
 
         tx.commit()?;
@@ -449,9 +413,23 @@ impl StateApplicator {
         }
     }
 
+    /// Transition a task into the running state
+    fn run_task(
+        &self,
+        queue_key: TaskQueueKey,
+        task: &QueuedTask,
+        tx: &StateTxn<'_, RW>,
+    ) -> Result<()> {
+        // TODO(@joeykraut): Remove v1 implementation once we migrate
+        let running_state = new_running_state();
+        tx.transition_task(&queue_key, running_state.clone())?;
+        tx.transition_task_v2(&task.id, &queue_key, running_state)?;
+        self.maybe_execute_task(task, tx)
+    }
+
     /// Start a task if the current peer is the executor
     #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
-    fn maybe_start_task<T: TransactionKind>(
+    fn maybe_execute_task<T: TransactionKind>(
         &self,
         task: &QueuedTask,
         tx: &StateTxn<'_, T>,
@@ -481,10 +459,11 @@ impl StateApplicator {
         popped_task: &QueuedTask,
         tx: &StateTxn<'_, T>,
     ) -> Result<bool> {
-        let my_peer_id = tx.get_peer_id()?;
-        Ok(queued_tasks.is_empty()
-            && popped_task.descriptor.is_wallet_task()
-            && *executor == my_peer_id)
+        let this_node = tx.get_peer_id()?;
+        let queue_empty = queued_tasks.is_empty();
+        let is_executor = *executor == this_node;
+        let is_wallet_task = popped_task.descriptor.is_wallet_task();
+        Ok(queue_empty && is_executor && is_wallet_task)
     }
 
     /// Run the internal matching engine on all of a wallet's orders that are
@@ -533,19 +512,15 @@ impl StateApplicator {
         tx: &StateTxn<'_, RW>,
     ) -> Result<Option<QueuedTask>> {
         // Pop the task
+        // TODO(@joeykraut): Remove this once we migrate to v2
         let mut task = match tx.pop_task(key)? {
             Some(task) => task,
             None => return Ok(None),
         };
-
-        // Update the status
-        if success {
-            task.state = QueuedTaskState::Completed;
-        } else {
-            task.state = QueuedTaskState::Failed;
-        }
+        tx.pop_task_v2(key, &task.id)?;
 
         // Add the task to history and remove its node assignment
+        task.state = if success { QueuedTaskState::Completed } else { QueuedTaskState::Failed };
         self.maybe_append_historical_task(*key, task.clone(), executor, tx)?;
         if let Some(executor) = executor {
             tx.remove_assigned_task(&executor, &task.id)?;
@@ -588,6 +563,7 @@ impl StateApplicator {
     fn clear_task_queue(&self, key: TaskQueueKey, tx: &StateTxn<'_, RW>) -> Result<()> {
         // Remove all tasks from queue in storage
         let cleared_tasks = tx.clear_task_queue(&key)?;
+        tx.clear_task_queue_v2(&key)?;
 
         // Mark all tasks as failed, append to history, and publish updates
         for mut task in cleared_tasks {
@@ -642,6 +618,7 @@ mod test {
         let task = mock_queued_task(key);
         let tx = db.new_write_tx().unwrap();
         tx.add_task(&key, &task).unwrap();
+        tx.add_serial_task(&key, &task).unwrap();
 
         // Add an assignment
         let my_id = tx.get_peer_id().unwrap();
