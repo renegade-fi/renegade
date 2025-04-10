@@ -593,18 +593,45 @@ mod test {
         wallet_mocks::mock_empty_wallet,
     };
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
+    use util::metered_channels::MeteredCrossbeamReceiver;
 
     use crate::{
         applicator::{
             error::StateApplicatorError, task_queue::PENDING_STATE,
-            test_helpers::mock_applicator_with_task_queue,
+            test_helpers::mock_applicator_with_task_queue, StateApplicator,
         },
-        storage::db::DB,
+        storage::{db::DB, tx::task_queuev2::TaskQueue},
     };
 
     // -----------
     // | Helpers |
     // -----------
+
+    /// Setup a mock applicator
+    fn setup_mock_applicator() -> StateApplicator {
+        let (applicator, queue) = setup_mock_applicator_with_driver_queue();
+        std::mem::forget(queue); // forget the queue to avoid it closing
+        applicator
+    }
+
+    /// Setup a mock applicator, and return with a task driver's work queue
+    fn setup_mock_applicator_with_driver_queue(
+    ) -> (StateApplicator, MeteredCrossbeamReceiver<TaskDriverJob>) {
+        let (task_queue, recv) = new_task_driver_queue();
+        let applicator = mock_applicator_with_task_queue(task_queue);
+
+        // Set the local peer ID
+        let peer_id = mock_peer().peer_id;
+        set_local_peer_id(&peer_id, applicator.db());
+
+        (applicator, recv)
+    }
+
+    /// Get the local peer ID given an applicator
+    fn get_local_peer_id(applicator: &StateApplicator) -> WrappedPeerId {
+        let tx = applicator.db().new_read_tx().unwrap();
+        tx.get_peer_id().unwrap()
+    }
 
     /// Set the local peer ID
     fn set_local_peer_id(peer_id: &WrappedPeerId, db: &DB) {
@@ -635,17 +662,12 @@ mod test {
     /// Tests appending a task to an empty queue
     #[test]
     fn test_append_empty_queue() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
 
         let task_queue_key = TaskQueueKey::new_v4();
         let task = mock_queued_task(task_queue_key);
         let task_id = task.id;
-
         applicator.append_task(&task, &peer_id).expect("Failed to append task");
 
         // Check the task was added to the queue
@@ -674,13 +696,7 @@ mod test {
     /// Test appending to an empty queue when the local peer is not the executor
     #[test]
     fn test_append_empty_queue_not_executor() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
         let task = mock_queued_task(task_queue_key);
         let executor = WrappedPeerId::random();
@@ -699,13 +715,8 @@ mod test {
     /// Tests the case in which a task is added to a non-empty queue
     #[test]
     fn test_append_non_empty_queue() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
@@ -731,12 +742,7 @@ mod test {
     /// Test popping from a task queue of length one
     #[test]
     fn test_pop_singleton_queue() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
 
         // Add a wallet; when the queue empties it will trigger the matching engine,
         // which requires the wallet to be present
@@ -763,13 +769,7 @@ mod test {
     /// the executor of the next task
     #[test]
     fn test_pop_non_executor() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
@@ -803,13 +803,8 @@ mod test {
     /// executor of the next task
     #[test]
     fn test_pop_executor() {
-        let (task_queue, task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let peer_id = get_local_peer_id(&applicator);
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add a task directly via the db
@@ -848,13 +843,7 @@ mod test {
     /// Test popping from a task queue and checking task history
     #[test]
     fn test_pop_and_check_history() {
-        let (task_queue, _task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, _task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Add two tasks: one successful, one failed
@@ -879,13 +868,7 @@ mod test {
     /// the applicator
     #[test]
     fn test_double_pop() {
-        let (task_queue, _task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
-
+        let (applicator, _task_recv) = setup_mock_applicator_with_driver_queue();
         let task_queue_key = TaskQueueKey::new_v4();
 
         // Test double-popping the only task in a queue
@@ -913,12 +896,7 @@ mod test {
     /// Test transitioning the state of the top task on the queue
     #[test]
     fn test_transition_task_state() {
-        let (task_queue, _task_recv) = new_task_driver_queue();
-        let applicator = mock_applicator_with_task_queue(task_queue);
-
-        // Set the local peer ID
-        let peer_id = mock_peer().peer_id;
-        set_local_peer_id(&peer_id, applicator.db());
+        let (applicator, _task_recv) = setup_mock_applicator_with_driver_queue();
 
         // Add a task directly via the db
         let task_queue_key = TaskQueueKey::new_v4();
@@ -1349,5 +1327,140 @@ mod test {
         } else {
             panic!("Expected a Run task job");
         }
+    }
+
+    // TODO(@joeykraut): Remove double write tests once migration is complete
+
+    // ---------------------------------
+    // | Task Queue Double Write Tests |
+    // ---------------------------------
+
+    /// Tests that an added task is double-written correctly
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_add_and_pop_task__double_write() {
+        let applicator = setup_mock_applicator();
+
+        // Add a task
+        let executor = mock_peer().peer_id;
+        let task = mock_queued_task(WalletIdentifier::new_v4());
+        let queue_key = task.descriptor.queue_key();
+        applicator.append_task(&task, &executor).unwrap();
+
+        // Check the task queue v2 storage for the task
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_some = tx.get_task_v2(&task.id).unwrap().is_some();
+        assert!(task_info_some);
+
+        let is_empty = tx.is_queue_empty_v2(&queue_key).unwrap();
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        tx.commit().unwrap();
+        assert!(!is_empty);
+
+        // Check the task queue for the wallet
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![task.id],
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Pop the task
+        applicator.pop_task(task.id, true /* success */).unwrap();
+
+        // Check that the task queue v2 storage is updated
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_none = tx.get_task_v2(&task.id).unwrap().is_none();
+        assert!(task_info_none);
+
+        let is_empty = tx.is_queue_empty_v2(&queue_key).unwrap();
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        assert!(is_empty);
+        assert_eq!(task_queue, TaskQueue::default());
+    }
+
+    /// Checks double write behavior when multiple tasks are added to the queue
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_add_multiple_tasks__double_write() {
+        let applicator = setup_mock_applicator();
+
+        // Add two tasks
+        let executor = mock_peer().peer_id;
+        let queue_key = WalletIdentifier::new_v4();
+        let task1 = mock_queued_task(queue_key);
+        let task2 = mock_queued_task(queue_key);
+        applicator.append_task(&task1, &executor).unwrap();
+        applicator.append_task(&task2, &executor).unwrap();
+
+        // Check the task queue v2 storage for the tasks
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task1_info_some = tx.get_task_v2(&task1.id).unwrap().is_some();
+        let task2_info_some = tx.get_task_v2(&task2.id).unwrap().is_some();
+        assert!(task1_info_some);
+        assert!(task2_info_some);
+
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task1.id, task2.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![task1.id],
+        };
+
+        assert_eq!(task_queue, expected_queue);
+        tx.commit().unwrap();
+    }
+
+    /// Tests the double write behavior when a queue is paused and subsequently
+    /// resumed
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_pause_and_resume_queue__double_write() {
+        let applicator = setup_mock_applicator();
+
+        // Add a task
+        let executor = mock_peer().peer_id;
+        let queue_key = WalletIdentifier::new_v4();
+        let task = mock_queued_task(queue_key);
+        applicator.append_task(&task, &executor).unwrap();
+
+        // Pause the queue
+        let preemptive_task = mock_preemptive_task(queue_key);
+        applicator.preempt_task_queues(&[queue_key], &preemptive_task, &executor).unwrap();
+
+        // Check the task queue v2 storage for the task
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_some = tx.get_task_v2(&task.id).unwrap().is_some();
+        let preemptive_task_info_some = tx.get_task_v2(&preemptive_task.id).unwrap().is_some();
+        assert!(task_info_some);
+        assert!(preemptive_task_info_some);
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        tx.commit().unwrap();
+
+        // Check the task queue for the wallet
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![preemptive_task.id, task.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![preemptive_task.id],
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // Resume the queue, then check the task queue v2 storage for the task
+        applicator.resume_task_queues(&[queue_key], true /* success */).unwrap();
+        let tx = applicator.db().new_read_tx().unwrap();
+        let task_info_some = tx.get_task_v2(&task.id).unwrap().is_some();
+        let preemptive_task_info_none = tx.get_task_v2(&preemptive_task.id).unwrap().is_none();
+        let task_queue = tx.get_task_queue(&queue_key).unwrap();
+        assert!(task_info_some);
+        assert!(preemptive_task_info_none);
+        tx.commit().unwrap();
+
+        // Check the task queue for the wallet
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![task.id],
+            concurrent_tasks: vec![],
+            running_tasks: vec![task.id],
+        };
+        assert_eq!(task_queue, expected_queue);
     }
 }

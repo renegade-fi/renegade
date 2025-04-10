@@ -48,13 +48,14 @@ fn task_key(id: &TaskIdentifier) -> String {
 /// `serial_tasks` list be empty before a task is added to the
 /// `concurrent_tasks` list.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct TaskQueue {
     /// The list of tasks that are queued for execution
-    concurrent_tasks: Vec<TaskIdentifier>,
+    pub(crate) concurrent_tasks: Vec<TaskIdentifier>,
     /// The list of tasks that are queued for execution
-    serial_tasks: Vec<TaskIdentifier>,
+    pub(crate) serial_tasks: Vec<TaskIdentifier>,
     /// The list of running tasks
-    running_tasks: Vec<TaskIdentifier>,
+    pub(crate) running_tasks: Vec<TaskIdentifier>,
 }
 
 impl TaskQueue {
@@ -209,9 +210,15 @@ impl<'db> StateTxn<'db, RW> {
         key: &TaskQueueKey,
         task: &QueuedTask,
     ) -> Result<(), StorageError> {
+        // Index the task into the queue
         let mut queue = self.get_task_queue(key)?;
         queue.add_serial_task_front(task.id);
 
+        // If we add to the front of the queue, we must check if the task has
+        // been added in the running state
+        if task.state.is_running() {
+            queue.mark_running(task.id);
+        }
         self.write_task_queue(key, &queue)?;
         self.write_task(&task.id, key, task)
     }
@@ -272,10 +279,13 @@ impl<'db> StateTxn<'db, RW> {
             None => return Err(StorageError::not_found(ERR_TASK_NOT_FOUND)),
         };
 
-        // Mark the task as running if the new state is running
+        // Update the running status of the task
         if new_state.is_running() {
             self.mark_task_running(id, key)?;
+        } else {
+            self.mark_task_not_running(id, key)?;
         }
+
         task.state = new_state;
         self.update_task(id, &task)
     }
@@ -290,6 +300,17 @@ impl<'db> StateTxn<'db, RW> {
     ) -> Result<(), StorageError> {
         let mut queue = self.get_task_queue(key)?;
         queue.mark_running(*id);
+        self.write_task_queue(key, &queue)
+    }
+
+    /// Mark a task as _not_ running in the queue
+    fn mark_task_not_running(
+        &self,
+        id: &TaskIdentifier,
+        key: &TaskQueueKey,
+    ) -> Result<(), StorageError> {
+        let mut queue = self.get_task_queue(key)?;
+        queue.remove_running_task(id);
         self.write_task_queue(key, &queue)
     }
 
