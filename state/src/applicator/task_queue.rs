@@ -100,7 +100,7 @@ impl StateApplicator {
         let previously_empty = tx.is_queue_empty(&queue_key)?;
         // TODO(@joeykraut): Remove v1 implementation once we migrate
         tx.add_task(&queue_key, task)?;
-        double_write_helper(tx.add_serial_task(&queue_key, task));
+        double_write_helper(tx.enqueue_serial_task(&queue_key, task));
         tx.add_assigned_task(executor, &task.id)?;
 
         // If the task queue was empty, run the task
@@ -215,10 +215,25 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
+    /// Enqueue a preemptive task onto the given task queues
+    pub fn enqueue_preemptive_task(
+        &self,
+        keys: &[TaskQueueKey],
+        task: &QueuedTask,
+        executor: &WrappedPeerId,
+        is_serial: bool,
+    ) -> Result<ApplicatorReturnType> {
+        // TODO: Implementation
+        Ok(ApplicatorReturnType::None)
+    }
+
     /// Preempt all queues on a given task
     ///
     /// Multiple queues may be preempted at once to give "all or none" locking
     /// semantics to the caller
+    ///
+    /// TODO(@joeykraut): Remove this once the migration is complete
+    #[deprecated(note = "Use `EnqueuePreemptiveTask` instead")]
     pub fn preempt_task_queues(
         &self,
         keys: &[TaskQueueKey],
@@ -270,7 +285,7 @@ impl StateApplicator {
         tx.add_assigned_task(executor, &task.id)?;
         // TODO(@joeykraut): Remove the v1 implementation once we migrate
         tx.add_task_front(&key, task)?;
-        double_write_helper(tx.add_serial_task_front(&key, task));
+        double_write_helper(tx.preempt_queue_with_serial(&key, task));
         self.publish_task_updates(key, task);
 
         Ok(ApplicatorReturnType::None)
@@ -609,7 +624,10 @@ mod test {
             error::StateApplicatorError, task_queue::PENDING_STATE,
             test_helpers::mock_applicator_with_task_queue, StateApplicator,
         },
-        storage::{db::DB, tx::task_queuev2::TaskQueue},
+        storage::{
+            db::DB,
+            tx::task_queuev2::{TaskQueue, TaskQueuePreemptionState},
+        },
     };
 
     // -----------
@@ -654,7 +672,7 @@ mod test {
         let task = mock_queued_task(key);
         let tx = db.new_write_tx().unwrap();
         tx.add_task(&key, &task).unwrap();
-        tx.add_serial_task(&key, &task).unwrap();
+        tx.enqueue_serial_task(&key, &task).unwrap();
 
         // Add an assignment
         let my_id = tx.get_peer_id().unwrap();
@@ -1371,6 +1389,7 @@ mod test {
             serial_tasks: vec![task.id],
             concurrent_tasks: vec![],
             running_tasks: vec![task.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
         };
         assert_eq!(task_queue, expected_queue);
 
@@ -1414,6 +1433,7 @@ mod test {
             serial_tasks: vec![task1.id, task2.id],
             concurrent_tasks: vec![],
             running_tasks: vec![task1.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
         };
 
         assert_eq!(task_queue, expected_queue);
@@ -1451,6 +1471,7 @@ mod test {
             serial_tasks: vec![preemptive_task.id, task.id],
             concurrent_tasks: vec![],
             running_tasks: vec![preemptive_task.id],
+            preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
         };
         assert_eq!(task_queue, expected_queue);
 
@@ -1469,6 +1490,7 @@ mod test {
             serial_tasks: vec![task.id],
             concurrent_tasks: vec![],
             running_tasks: vec![task.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
         };
         assert_eq!(task_queue, expected_queue);
     }
