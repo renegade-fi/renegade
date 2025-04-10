@@ -229,6 +229,9 @@ impl StateInner {
     }
 
     /// Resume a task queue
+    ///
+    /// TODO(@joeykraut): Remove this once the migration is complete
+    #[deprecated(note = "Use `pop_task` instead")]
     pub async fn resume_task_queue(
         &self,
         key: &TaskQueueKey,
@@ -238,7 +241,10 @@ impl StateInner {
     }
 
     /// Resume multiple task queues
+    ///
+    /// TODO(@joeykraut): Remove this once the migration is complete
     #[instrument(name = "propose_resume_task_queues", skip_all, err, fields(queue_keys = ?keys))]
+    #[deprecated(note = "Use `pop_task` instead")]
     pub async fn resume_multiple_task_queues(
         &self,
         keys: Vec<TaskQueueKey>,

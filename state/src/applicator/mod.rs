@@ -101,6 +101,9 @@ impl StateApplicator {
                 self.transition_task_state(task_id, state)
             },
             StateTransition::ClearTaskQueue { queue } => self.clear_queue(queue),
+            StateTransition::EnqueuePreemptiveTask { keys, task, executor, serial } => {
+                self.enqueue_preemptive_task(&keys, &task, &executor, serial)
+            },
             StateTransition::PreemptTaskQueues { keys, task, executor } => {
                 self.preempt_task_queues(&keys, &task, &executor)
             },
