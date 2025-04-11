@@ -17,6 +17,9 @@ pub enum StorageError {
     /// An invalid key was used to access the database
     #[error("invalid key: {0}")]
     InvalidKey(String),
+    /// An invalid storage write was attempted
+    #[error("invalid write: {0}")]
+    InvalidWrite(String),
     /// An entry was not found in the database
     #[error("entry not found: {0}")]
     NotFound(String),
@@ -47,6 +50,12 @@ pub enum StorageError {
 }
 
 impl StorageError {
+    /// Create a new `InvalidWrite` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn invalid_write<T: ToString>(msg: T) -> Self {
+        Self::InvalidWrite(msg.to_string())
+    }
+
     /// Create a new `NotFound` error
     #[allow(clippy::needless_pass_by_value)]
     pub fn not_found<T: ToString>(msg: T) -> Self {
