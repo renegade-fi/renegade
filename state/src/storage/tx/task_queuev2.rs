@@ -135,6 +135,20 @@ impl TaskQueue {
         self.serial_tasks.is_empty()
     }
 
+    /// Whether the given task can run on the queue
+    pub fn can_task_run(&self, task: &TaskIdentifier) -> bool {
+        let is_first_serial = !self.serial_tasks.is_empty() && self.serial_tasks[0] == *task;
+        if is_first_serial && self.concurrent_tasks.is_empty() {
+            // Only the first serial task may run, if no concurrent tasks are queued
+            return true;
+        } else if self.concurrent_tasks.contains(task) {
+            // A concurrent task may run iff it is in the queue
+            return true;
+        }
+
+        false
+    }
+
     // --- Setters --- //
 
     /// Add a serial task to the queue
@@ -294,6 +308,21 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
         let queue = self.get_task_queue(key)?;
         let res = if serial { queue.can_preempt_serial() } else { queue.can_preempt_concurrent() };
         Ok(res)
+    }
+
+    /// Check whether the given task can run on its queues
+    ///
+    /// A task may run iff it can run on all queues it is indexed into
+    pub fn can_task_run(&self, id: &TaskIdentifier) -> Result<bool, StorageError> {
+        let queues = self.get_queue_keys_for_task_v2(id)?;
+        for queue_key in queues.iter() {
+            let queue = self.get_task_queue(queue_key)?;
+            if !queue.can_task_run(id) {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     // --- Helpers --- //
@@ -549,6 +578,34 @@ mod test {
         Ok(())
     }
 
+    /// Tests the `can_run` method on a basic serial task    
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_can_run__basic() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Add a serial task to the queue, and check that it can run
+        let task = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &task)?;
+        let can_run = tx.can_task_run(&task.id)?;
+        assert!(can_run);
+
+        // Add another task to the same queue, and check that it cannot yet run
+        let other_task = mock_queued_task(key);
+        tx.enqueue_serial_task(&key, &other_task)?;
+        let can_run = tx.can_task_run(&other_task.id)?;
+        assert!(!can_run);
+
+        // Pop the first task and check that the second task can run
+        tx.pop_task_v2(&key, &task.id)?;
+        let can_run = tx.can_task_run(&other_task.id)?;
+        assert!(can_run);
+        Ok(())
+    }
+
     // --- Serial Preemption --- //
 
     /// Tests a serial preemption with only serial tasks running
@@ -693,6 +750,59 @@ mod test {
         };
         assert_eq!(task_queue1, expected_queue1);
         assert_eq!(task_queue2, expected_queue2);
+        Ok(())
+    }
+
+    /// Tests the `can_run` method on a serial preemptive task    
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_can_run__serial_preemptive() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // 1. Add a concurrent preemptive task to the queue; serial task cannot run
+        let concurrent_task = mock_queued_task(key);
+        let serial_task = mock_queued_task(key);
+        tx.preempt_queue_with_concurrent(&[key], &concurrent_task)?;
+        tx.preempt_queue_with_serial(&[key], &serial_task)?;
+        let can_run = tx.can_task_run(&serial_task.id)?;
+        assert!(!can_run);
+
+        // 2. Pop the concurrent task; serial task can now run
+        tx.pop_task_v2(&key, &concurrent_task.id)?;
+        let can_run = tx.can_task_run(&serial_task.id)?;
+        assert!(can_run);
+        Ok(())
+    }
+
+    /// Tests the `can_run` method on a serial preemptive task associated with
+    /// multiple queues
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_can_run__serial_preemptive__multiple_queues() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key1 = TaskQueueKey::new_v4();
+        let key2 = TaskQueueKey::new_v4();
+
+        // Enqueue a concurrent task on one of the queues
+        let dummy_key = TaskQueueKey::new_v4();
+        let concurrent_task = mock_queued_task(dummy_key);
+        let serial_task = mock_queued_task(dummy_key);
+        tx.preempt_queue_with_concurrent(&[key1], &concurrent_task)?;
+        tx.preempt_queue_with_serial(&[key1, key2], &serial_task)?;
+
+        // Check that the serial task cannot run
+        let can_run = tx.can_task_run(&serial_task.id)?;
+        assert!(!can_run);
+
+        // Pop the concurrent task; serial task can now run
+        tx.pop_task_v2(&key1, &concurrent_task.id)?;
+        let can_run = tx.can_task_run(&serial_task.id)?;
+        assert!(can_run);
         Ok(())
     }
 
@@ -909,6 +1019,31 @@ mod test {
         };
         assert_eq!(task_queue1, expected_queue1);
         assert_eq!(task_queue2, expected_queue2);
+        Ok(())
+    }
+
+    /// Tests the `can_run` method on a concurrent preemptive task    
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_can_run__concurrent_preemptive() -> Result<(), StorageError> {
+        // Setup the mock
+        let db = mock_db();
+        let tx = db.new_write_tx()?;
+        let key = TaskQueueKey::new_v4();
+
+        // Add a concurrent preemptive task
+        let task1 = mock_queued_task(key);
+        let task2 = mock_queued_task(key);
+        tx.preempt_queue_with_concurrent(&[key], &task1)?;
+        let can_run = tx.can_task_run(&task1.id)?;
+        assert!(can_run);
+
+        // Add another task, both should be runnable
+        tx.preempt_queue_with_concurrent(&[key], &task2)?;
+        let can_run1 = tx.can_task_run(&task1.id)?;
+        let can_run2 = tx.can_task_run(&task2.id)?;
+        assert!(can_run1);
+        assert!(can_run2);
         Ok(())
     }
 
