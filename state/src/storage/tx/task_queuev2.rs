@@ -465,14 +465,14 @@ impl<'db> StateTxn<'db, RW> {
 
     /// Clear a task queue, removing all tasks from it
     /// TODO(@joeykraut): Rename this method after migration completes
-    pub fn clear_task_queue_v2(
-        &self,
-        key: &TaskQueueKey,
-    ) -> Result<Vec<TaskIdentifier>, StorageError> {
+    pub fn clear_task_queue_v2(&self, key: &TaskQueueKey) -> Result<Vec<QueuedTask>, StorageError> {
         let queue = self.get_task_queue(key)?;
-        let all_tasks = queue.all_tasks();
-        for task_id in all_tasks.iter() {
-            self.delete_task(task_id)?;
+        let all_task_ids = queue.all_tasks();
+        let mut all_tasks = Vec::with_capacity(all_task_ids.len());
+        for task_id in all_task_ids.iter() {
+            if let Some(task) = self.delete_task(task_id)? {
+                all_tasks.push(task);
+            }
         }
 
         self.write_task_queue(key, &TaskQueue::default())?;
