@@ -204,10 +204,8 @@ impl StateApplicator {
 
         // Assign the task and run it if possible
         tx.add_assigned_task(executor, &task.id)?;
-        if tx.can_task_run(&task.id)? {
-            // TODO(@joeykraut): We don't need to pass a queue key after migration
-            self.maybe_run_task(keys[0], task, &tx)?;
-        }
+        // TODO(@joeykraut): We don't need to pass a queue key after migration
+        self.maybe_run_task(keys[0], task, &tx)?;
 
         // We double write to the old queue implementation to ensure consistency during
         // the migration. However, we do not add a preemptive task to the original
@@ -303,7 +301,6 @@ impl StateApplicator {
         // Resume each queue
         for key in keys.iter() {
             self.resume_task_queue(*key, success, &tx)?;
-            println!("resumed queue {key}");
         }
         tx.commit()?;
         Ok(ApplicatorReturnType::None)
