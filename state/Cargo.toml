@@ -76,6 +76,7 @@ metrics = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async", "async_tokio"] }
+eyre = "0.6"
 multiaddr = "0.17"
 num-bigint = "0.4"
 num-traits = "0.2"

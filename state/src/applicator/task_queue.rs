@@ -32,6 +32,8 @@ const PENDING_STATE: &str = "Pending";
 const ERR_UNASSIGNED_TASK: &str = "task not assigned";
 /// Error emitted when a key cannot be found for a task
 const ERR_NO_KEY: &str = "key not found for task";
+/// Error emitted when a task preemption fails
+const ERR_TASK_PREEMPTION: &str = "task queue cannot be preempted";
 
 /// Construct an invalid task queue key error
 fn invalid_task_id(key: TaskIdentifier) -> String {
@@ -223,7 +225,29 @@ impl StateApplicator {
         executor: &WrappedPeerId,
         is_serial: bool,
     ) -> Result<ApplicatorReturnType> {
-        // TODO: Implementation
+        let tx = self.db().new_write_tx()?;
+        // Enqueue the task on the given queues
+        self.try_preempt_queues(keys, task, is_serial, &tx)?;
+
+        // Assign the task and run it if possible
+        tx.add_assigned_task(executor, &task.id)?;
+        if tx.can_task_run(&task.id)? {
+            // TODO(@joeykraut): We don't need to pass a queue key after migration
+            self.run_task(keys[0], task, &tx)?;
+        }
+
+        // We double write to the old queue implementation to ensure consistency during
+        // the migration. However, we do not add a preemptive task to the original
+        // queue, as we don't want to "pause", we want the new locking logic to
+        // take effect
+        //
+        // TODO(@joeykraut): Remove this once the migration is complete
+        for key in keys.iter() {
+            double_write_helper(tx.add_task_front(key, task));
+        }
+        tx.commit()?;
+
+        self.publish_task_updates_multiple(keys, task);
         Ok(ApplicatorReturnType::None)
     }
 
@@ -415,6 +439,13 @@ impl StateApplicator {
     // | Helpers |
     // -----------
 
+    /// Publish task updates for a task on multiple task queues
+    fn publish_task_updates_multiple(&self, keys: &[TaskQueueKey], task: &QueuedTask) {
+        for key in keys.iter() {
+            self.publish_task_updates(*key, task);
+        }
+    }
+
     /// Publish system bus messages indicating a task has been updated
     fn publish_task_updates(&self, key: TaskQueueKey, task: &QueuedTask) {
         let task_id = task.id;
@@ -445,7 +476,7 @@ impl StateApplicator {
     ) -> Result<()> {
         // TODO(@joeykraut): Remove v1 implementation once we migrate
         let running_state = new_running_state();
-        tx.transition_task(&queue_key, running_state.clone())?;
+        double_write_helper(tx.transition_task(&queue_key, running_state.clone()));
         double_write_helper(tx.transition_task_v2(&task.id, running_state));
         self.maybe_execute_task(task, tx)
     }
@@ -603,6 +634,27 @@ impl StateApplicator {
 
         Ok(())
     }
+
+    /// Try preempting a set of task queues with a task, returning a transition
+    /// rejection if this fails
+    fn try_preempt_queues(
+        &self,
+        keys: &[TaskQueueKey],
+        task: &QueuedTask,
+        is_serial: bool,
+        tx: &StateTxn<'_, RW>,
+    ) -> Result<()> {
+        let did_preempt = if is_serial {
+            tx.preempt_queue_with_serial(keys, task)?
+        } else {
+            tx.preempt_queue_with_concurrent(keys, task)?
+        };
+
+        if !did_preempt {
+            return Err(StateApplicatorError::reject(ERR_TASK_PREEMPTION));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -616,6 +668,7 @@ mod test {
         wallet::WalletIdentifier,
         wallet_mocks::mock_empty_wallet,
     };
+    use eyre::Result;
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
     use util::metered_channels::MeteredCrossbeamReceiver;
 
@@ -1030,6 +1083,174 @@ mod test {
     // --------------------
     // | Preemption Tests |
     // --------------------
+
+    /// Tests preempting a queue with a serial task
+    #[test]
+    fn test_enqueue_preemptive_serial() -> Result<()> {
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let my_peer_id = get_local_peer_id(&applicator);
+        let task_queue_key = TaskQueueKey::new_v4();
+
+        // Add a serial task to the queue
+        let serial_task = mock_queued_task(task_queue_key);
+        applicator.append_task(&serial_task, &my_peer_id)?;
+        task_recv.recv().expect("expected applicator to enqueue task for execution");
+
+        // Preempt the queue with a new serial task
+        let preemptive_task = mock_queued_task(task_queue_key);
+        applicator.enqueue_preemptive_task(
+            &[task_queue_key],
+            &preemptive_task,
+            &my_peer_id,
+            true, // is_serial
+        )?;
+
+        // Ensure the task queue has updated
+        let tx = applicator.db().new_read_tx()?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![preemptive_task.id, serial_task.id],
+            preemption_state: TaskQueuePreemptionState::SerialPreemptionQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // The existing task should be in the queued state
+        let existing_task = tx.get_task_v2(&serial_task.id)?.unwrap();
+        assert_eq!(existing_task.state, QueuedTaskState::Queued);
+
+        // Lastly, the applicator should have sent the task to the driver
+        let task = task_recv.recv().unwrap();
+        assert!(
+            matches!(task, TaskDriverJob::Run(queued_task) if queued_task.id == preemptive_task.id)
+        );
+        Ok(())
+    }
+
+    /// Tests enqueuing a preemptive concurrent task
+    #[test]
+    fn test_enqueue_preemptive_concurrent() -> Result<()> {
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let my_peer_id = get_local_peer_id(&applicator);
+        let task_queue_key = TaskQueueKey::new_v4();
+        let task1 = mock_queued_task(task_queue_key);
+        let task2 = mock_queued_task(task_queue_key);
+
+        // Enqueue both tasks as preemptive concurrent tasks
+        applicator.enqueue_preemptive_task(
+            &[task_queue_key],
+            &task1,
+            &my_peer_id,
+            false, // is_serial
+        )?;
+        applicator.enqueue_preemptive_task(
+            &[task_queue_key],
+            &task2,
+            &my_peer_id,
+            false, // is_serial
+        )?;
+
+        // Check that the queue has been updated correctly
+        let tx = applicator.db().new_read_tx()?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let expected_queue = TaskQueue {
+            concurrent_tasks: vec![task1.id, task2.id],
+            preemption_state: TaskQueuePreemptionState::ConcurrentPreemptionsQueued,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // The existing tasks should be in the queued state
+        let task1_retrieved = tx.get_task_v2(&task1.id)?.unwrap();
+        let task2_retrieved = tx.get_task_v2(&task2.id)?.unwrap();
+        assert!(matches!(task1_retrieved.state, QueuedTaskState::Running { .. }));
+        assert!(matches!(task2_retrieved.state, QueuedTaskState::Running { .. }));
+
+        // The applicator should have forwarded both tasks to the driver
+        let job1 = task_recv.recv().unwrap();
+        let job2 = task_recv.recv().unwrap();
+        assert!(matches!(job1, TaskDriverJob::Run(queued_task) if queued_task.id == task1.id));
+        assert!(matches!(job2, TaskDriverJob::Run(queued_task) if queued_task.id == task2.id));
+        Ok(())
+    }
+
+    /// Tests popping a serial preemptive task from the queue
+    #[test]
+    fn test_pop_serial_preemptive() -> Result<()> {
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let my_peer_id = get_local_peer_id(&applicator);
+        let task_queue_key = TaskQueueKey::new_v4();
+
+        // Add a serial task to the queue
+        let serial_task = mock_queued_task(task_queue_key);
+        applicator.append_task(&serial_task, &my_peer_id)?;
+        task_recv.recv().expect("expected applicator to enqueue task for execution");
+
+        // Preempt the queue with a new serial task and then pop it successfully
+        let preemptive_task = mock_queued_task(task_queue_key);
+        applicator.enqueue_preemptive_task(
+            &[task_queue_key],
+            &preemptive_task,
+            &my_peer_id,
+            true,
+        )?;
+        applicator.pop_task(preemptive_task.id, true)?;
+        task_recv.recv().expect("expected applicator to forward task");
+
+        // Ensure the task was removed from the queue
+        let tx = applicator.db().new_read_tx()?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let expected_queue = TaskQueue { serial_tasks: vec![serial_task.id], ..Default::default() };
+        assert_eq!(task_queue, expected_queue);
+
+        // The applicator should have forwarded the original task to the driver
+        let job = task_recv.recv().unwrap();
+        assert!(matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == serial_task.id));
+        Ok(())
+    }
+
+    /// Tests popping a concurrent preemptive task from the queue
+    #[test]
+    fn test_pop_concurrent_preemptive() -> Result<()> {
+        let (applicator, task_recv) = setup_mock_applicator_with_driver_queue();
+        let my_peer_id = get_local_peer_id(&applicator);
+        let task_queue_key = TaskQueueKey::new_v4();
+
+        // Add a concurrent task to the queue
+        let concurrent_task = mock_queued_task(task_queue_key);
+        applicator.enqueue_preemptive_task(
+            &[task_queue_key],
+            &concurrent_task,
+            &my_peer_id,
+            false, // is_serial
+        )?;
+        task_recv.recv().expect("expected applicator to enqueue task for execution");
+
+        // Add a serial task to the queue through the normal path
+        let serial_task = mock_queued_task(task_queue_key);
+        applicator.append_task(&serial_task, &my_peer_id)?;
+
+        // Pop the concurrent task successfully
+        applicator.pop_task(concurrent_task.id, true)?;
+
+        // Ensure the task was removed from the queue
+        let tx = applicator.db().new_read_tx()?;
+        let task_queue = tx.get_task_queue(&task_queue_key)?;
+        let expected_queue = TaskQueue {
+            serial_tasks: vec![serial_task.id],
+            preemption_state: TaskQueuePreemptionState::NotPreempted,
+            ..Default::default()
+        };
+        assert_eq!(task_queue, expected_queue);
+
+        // The applicator should have forwarded the original task to the driver
+        let job = task_recv.recv().unwrap();
+        assert!(matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == serial_task.id));
+        Ok(())
+    }
+
+    // TODO(@joeykraut): Remove the tests below once we've migrated to the new task
+    // queue implementation
 
     /// Tests cases in pausing an empty queue
     #[test]

@@ -10001,6 +10001,7 @@ dependencies = [
  "crossbeam",
  "crossterm 0.27.0",
  "external-api 0.1.0",
+ "eyre",
  "flate2",
  "futures",
  "fxhash",
