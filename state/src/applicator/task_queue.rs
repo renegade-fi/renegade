@@ -176,7 +176,7 @@ impl StateApplicator {
         self.clear_task_queue(key, &tx)?;
 
         // Resume the task queue in case it was paused
-        tx.resume_task_queue(&key)?;
+        double_write_helper(tx.resume_task_queue(&key));
         tx.commit()?;
 
         Ok(ApplicatorReturnType::None)
@@ -268,7 +268,7 @@ impl StateApplicator {
         }
 
         // Pause the queue
-        tx.pause_task_queue(&key)?;
+        double_write_helper(tx.pause_task_queue(&key));
         tx.add_assigned_task(executor, &task.id)?;
         // TODO(@joeykraut): Remove the v1 implementation once we migrate
         double_write_helper(tx.add_task_front(&key, task));
