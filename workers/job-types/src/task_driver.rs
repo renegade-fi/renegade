@@ -41,6 +41,7 @@ pub enum TaskDriverJob {
     /// This is used for tasks which need immediate settlement, e.g. matches
     ///
     /// Other tasks on a shared wallet will be preempted and the queue paused
+    #[deprecated(note = "Forward preemptive tasks to consensus layer directly")]
     RunImmediate {
         /// The ID to assign the task
         task_id: TaskIdentifier,
@@ -59,13 +60,21 @@ pub enum TaskDriverJob {
 }
 
 impl TaskDriverJob {
+    /// Create a new notification job
+    pub fn new_notification(task_id: TaskIdentifier) -> (Self, TaskNotificationReceiver) {
+        let (sender, receiver) = oneshot_channel();
+        (Self::Notify { task_id, channel: sender }, receiver)
+    }
+
     /// Create a new immediate task without a notification channel
+    #[deprecated(note = "Forward preemptive tasks to consensus layer directly")]
     pub fn new_immediate(task: TaskDescriptor) -> Self {
         let id = TaskIdentifier::new_v4();
         Self::RunImmediate { task_id: id, task, resp: None }
     }
 
     /// Create a new immediate task with a notification channel
+    #[deprecated(note = "Forward preemptive tasks to consensus layer directly")]
     pub fn new_immediate_with_notification(
         task: TaskDescriptor,
     ) -> (Self, TaskNotificationReceiver) {

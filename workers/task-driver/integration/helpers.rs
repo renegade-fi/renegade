@@ -102,9 +102,15 @@ pub(crate) async fn await_immediate_task(
     task: TaskDescriptor,
     test_args: &IntegrationTestArgs,
 ) -> Result<()> {
-    let (job, rx) = TaskDriverJob::new_immediate_with_notification(task);
-    test_args.task_queue.send(job).unwrap();
+    // Propose the preemption to the cluster
+    let keys = task.affected_wallets();
+    let (tid, waiter) =
+        test_args.state.enqueue_preemptive_task(keys, task, true /* serial */).await?;
+    waiter.await?;
 
+    // Await completion from the task driver
+    let (job, rx) = TaskDriverJob::new_notification(tid);
+    test_args.task_queue.send(job).unwrap();
     rx.await.unwrap().map_err(|e| eyre::eyre!(e))
 }
 

@@ -4,6 +4,7 @@ mod handshake;
 pub mod matching;
 mod price_agreement;
 pub(crate) mod scheduler;
+mod tasks;
 
 use circuit_types::{r#match::MatchResult, Amount};
 use common::{
@@ -35,7 +36,7 @@ use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerReceiver},
     network_manager::{NetworkManagerJob, NetworkManagerQueue},
     price_reporter::PriceReporterQueue,
-    task_driver::{TaskDriverJob, TaskDriverQueue},
+    task_driver::TaskDriverQueue,
 };
 use libp2p::request_response::ResponseChannel;
 use rand::{seq::SliceRandom, thread_rng};
@@ -485,12 +486,6 @@ impl HandshakeExecutor {
         .unwrap()
         .into();
 
-        // Signal the task driver to preempt its queue with the task
-        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task);
-        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
-
-        rx.await
-            .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
-            .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
+        self.enqueue_serial_task_await_completion(task).await
     }
 }

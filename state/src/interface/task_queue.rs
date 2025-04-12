@@ -197,7 +197,44 @@ impl StateInner {
         self.send_proposal(StateTransition::ClearTaskQueue { queue: *key }).await
     }
 
+    /// Enqueue a preemptive task
+    ///
+    /// A task marked `serial` (i.e. `serial = true`) requires exclusive access
+    /// to the task queues specified by `keys`. A task marked `!serial` is a
+    /// concurrent task, and is allowed to run concurrently with other
+    /// concurrent tasks on the same queues.
+    #[instrument(
+        name = "propose_enqueue_preemptive_task", 
+        skip_all, err, fields(
+            queue_keys = ?keys, task_id, task = %task.display_description(), serial = %serial
+        )
+    )]
+    pub async fn enqueue_preemptive_task(
+        &self,
+        keys: Vec<TaskQueueKey>,
+        task: TaskDescriptor,
+        serial: bool,
+    ) -> Result<(TaskIdentifier, ProposalWaiter), StateError> {
+        // Pick a task ID and create a task from the description
+        let id = TaskIdentifier::new_v4();
+        backfill_trace_field("task_id", id.to_string());
+
+        let task = QueuedTask {
+            id,
+            state: QueuedTaskState::Queued,
+            descriptor: task,
+            created_at: get_current_time_millis(),
+        };
+
+        // Propose the task to the task queue, with the local peer as the executor
+        let executor = self.get_peer_id().await?;
+        let transition = StateTransition::EnqueuePreemptiveTask { keys, task, executor, serial };
+        let waiter = self.send_proposal(transition).await?;
+        Ok((id, waiter))
+    }
+
     /// Pause a task queue placing the given task at the front of the queue
+    #[deprecated(note = "Use `enqueue_preemptive_task` instead")]
     pub async fn pause_task_queue(
         &self,
         key: &TaskQueueKey,

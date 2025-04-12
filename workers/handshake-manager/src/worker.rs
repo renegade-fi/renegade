@@ -25,6 +25,9 @@ use crate::manager::{
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager};
 
+/// The max stack size for the handshake manager's threads
+const HANDSHAKE_MANAGER_STACK_SIZE: usize = 1024 * 1024 * 10; // 10MB
+
 /// The config type for the handshake manager
 pub struct HandshakeManagerConfig {
     /// The minimum amount of the quote asset that the relayer should settle
@@ -110,6 +113,7 @@ impl Worker for HandshakeManager {
                 let runtime = RuntimeBuilder::new_multi_thread()
                     .enable_all()
                     .max_blocking_threads(HANDSHAKE_EXECUTOR_N_THREADS)
+                    .thread_stack_size(HANDSHAKE_MANAGER_STACK_SIZE)
                     .build()
                     .unwrap();
 

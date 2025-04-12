@@ -22,10 +22,10 @@ use common::types::{
 };
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
-use job_types::{handshake_manager::ExternalMatchingEngineOptions, task_driver::TaskDriverJob};
+use job_types::handshake_manager::ExternalMatchingEngineOptions;
 use renegade_crypto::fields::scalar_to_u128;
 use tracing::{error, info, instrument, warn};
-use util::{err_str, telemetry::helpers::backfill_trace_field};
+use util::telemetry::helpers::backfill_trace_field;
 
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
@@ -229,11 +229,7 @@ impl HandshakeExecutor {
             response_topic,
         );
 
-        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task.into());
-        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::SendMessage))?;
-        rx.await
-            .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
-            .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
+        self.enqueue_serial_task_await_completion(task.into()).await
     }
 
     /// Forward a quote to the client
