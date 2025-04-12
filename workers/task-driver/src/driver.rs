@@ -205,6 +205,7 @@ impl TaskExecutor {
 
     /// Handle a request to run a task immediately
     #[instrument(skip_all, err, fields(task_id = %task_id, affected_wallets))]
+    #[deprecated(note = "send preemptive tasks through the raft")]
     async fn handle_run_immediate(
         &self,
         task_id: TaskIdentifier,
@@ -254,6 +255,7 @@ impl TaskExecutor {
     // ------------------
 
     /// Start the given task, preempting the queues of the given wallets
+    #[deprecated(note = "send preemptive tasks through the raft")]
     async fn start_preemptive_task(
         &self,
         affected_wallets: Vec<WalletIdentifier>,
@@ -394,20 +396,8 @@ impl TaskExecutor {
         // resumption.
         if let Err(e) = task_res {
             error!("error creating task: {e:?}");
-            if !immediate {
-                let waiter = self.state().pop_task(id, false /* success */).await?;
-                waiter.await?;
-            } else {
-                // Unpause the queues for the affected local wallets
-                if !affected_wallets.is_empty() {
-                    self.state()
-                        .resume_multiple_task_queues(
-                            affected_wallets,
-                            false, // success
-                        )
-                        .await?;
-                }
-            }
+            let waiter = self.state().pop_task(id, false /* success */).await?;
+            waiter.await?;
 
             return Err(e);
         }

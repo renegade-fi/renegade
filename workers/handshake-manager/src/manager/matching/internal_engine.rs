@@ -10,9 +10,7 @@ use common::types::{
     wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
     TimestampedPrice,
 };
-use job_types::task_driver::TaskDriverJob;
 use tracing::{error, info, instrument};
-use util::err_str;
 
 use crate::{
     error::HandshakeManagerError,
@@ -160,12 +158,7 @@ impl HandshakeExecutor {
         .unwrap()
         .into();
 
-        let (job, rx) = TaskDriverJob::new_immediate_with_notification(task);
-        self.task_queue.send(job).map_err(err_str!(HandshakeManagerError::TaskError))?;
-
-        rx.await
-            .map_err(err_str!(HandshakeManagerError::TaskError))? // RecvError
-            .map_err(err_str!(HandshakeManagerError::TaskError)) // TaskDriverError
+        self.enqueue_serial_task_await_completion(task).await
     }
 
     // -----------
