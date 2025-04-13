@@ -15,8 +15,6 @@ use crate::labels::{
 use crate::global_metrics::IN_FLIGHT_ARBITRUM_TXS;
 #[cfg(feature = "proof-metrics")]
 use crate::global_metrics::IN_FLIGHT_PROOFS;
-#[cfg(feature = "task-metrics")]
-use crate::{global_metrics::IN_FLIGHT_TASKS, labels::NUM_COMPLETED_TASKS_METRIC};
 
 /// Get the human-readable asset and volume of
 /// the given mint and amount.
@@ -90,24 +88,6 @@ pub fn record_match_volume(res: &MatchResult, is_external_match: bool) {
 /// Record the volume of a fee settlement into the relayer's wallet
 pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
     record_volume(mint, amount, FEES_COLLECTED_METRIC);
-}
-
-/// Increment the number of in-flight tasks by 1
-#[cfg(feature = "task-metrics")]
-pub fn incr_inflight_tasks() {
-    IN_FLIGHT_TASKS.increment(1.0);
-}
-
-/// Decrement the number of in-flight tasks
-#[cfg(feature = "task-metrics")]
-pub fn decr_inflight_tasks(value: f64) {
-    IN_FLIGHT_TASKS.decrement(value);
-}
-
-/// Increment the number of completed tasks
-#[cfg(feature = "task-metrics")]
-pub fn incr_completed_tasks() {
-    metrics::counter!(NUM_COMPLETED_TASKS_METRIC).increment(1);
 }
 
 /// Increment the number of in-flight proofs by 1

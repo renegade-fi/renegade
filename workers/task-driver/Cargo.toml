@@ -10,7 +10,6 @@ integration = [
     "arbitrum-client/integration",
     "util/mocks",
 ]
-task-metrics = ["renegade-metrics/task-metrics"]
 
 [[test]]
 name = "integration"

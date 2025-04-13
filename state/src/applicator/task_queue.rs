@@ -151,8 +151,6 @@ impl StateApplicator {
     pub fn clear_queue(&self, key: TaskQueueKey) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
         self.clear_task_queue(key, &tx)?;
-
-        // Resume the task queue in case it was paused
         tx.commit()?;
 
         Ok(ApplicatorReturnType::None)
@@ -270,7 +268,7 @@ impl StateApplicator {
         if executor == my_peer_id {
             self.config
                 .task_queue
-                .send(TaskDriverJob::Run(task.clone()))
+                .send(TaskDriverJob::run(task.clone()))
                 .map_err(err_str!(StateApplicatorError::EnqueueTask))?;
         }
 
@@ -340,7 +338,7 @@ impl StateApplicator {
         tx: &StateTxn<'_, RW>,
     ) -> Result<Option<(QueuedTask, WrappedPeerId)>> {
         // Pop the task
-        let mut task = match tx.pop_task_v2(task_id) {
+        let mut task = match tx.pop_task(task_id) {
             Ok(Some(t)) => t,
             Ok(None) => return Ok(None),
             Err(StorageError::InvalidWrite(msg)) => {
@@ -512,6 +510,13 @@ mod test {
         task.id
     }
 
+    /// Check that a task driver job is a run task with the given id
+    fn assert_run_task(job: &TaskDriverJob, task_id: TaskIdentifier) {
+        assert!(
+            matches!(job, TaskDriverJob::Run { task: queued_task, .. } if queued_task.id == task_id)
+        );
+    }
+
     // ---------------------
     // | Basic Queue Tests |
     // ---------------------
@@ -541,8 +546,8 @@ mod test {
 
         // Check the task was started
         assert!(!task_recv.is_empty());
-        let task = task_recv.recv()?;
-        assert!(matches!(task, TaskDriverJob::Run(queued_task) if queued_task.id == task_id));
+        let job = task_recv.recv()?;
+        assert_run_task(&job, task_id);
         Ok(())
     }
 
@@ -684,8 +689,8 @@ mod test {
 
         // Ensure the second task was started
         assert!(!task_recv.is_empty());
-        let task = task_recv.recv()?;
-        assert!(matches!(task, TaskDriverJob::Run(queued_task) if queued_task.id == task2.id));
+        let job = task_recv.recv()?;
+        assert_run_task(&job, task2.id);
         Ok(())
     }
 
@@ -907,10 +912,8 @@ mod test {
         assert_eq!(existing_task.state, QueuedTaskState::Queued);
 
         // Lastly, the applicator should have sent the task to the driver
-        let task = task_recv.recv().unwrap();
-        assert!(
-            matches!(task, TaskDriverJob::Run(queued_task) if queued_task.id == preemptive_task.id)
-        );
+        let job = task_recv.recv().unwrap();
+        assert_run_task(&job, preemptive_task.id);
         Ok(())
     }
 
@@ -956,8 +959,8 @@ mod test {
         // The applicator should have forwarded both tasks to the driver
         let job1 = task_recv.recv().unwrap();
         let job2 = task_recv.recv().unwrap();
-        assert!(matches!(job1, TaskDriverJob::Run(queued_task) if queued_task.id == task1.id));
-        assert!(matches!(job2, TaskDriverJob::Run(queued_task) if queued_task.id == task2.id));
+        assert_run_task(&job1, task1.id);
+        assert_run_task(&job2, task2.id);
         Ok(())
     }
 
@@ -992,7 +995,7 @@ mod test {
 
         // The applicator should have forwarded the original task to the driver
         let job = task_recv.recv().unwrap();
-        assert!(matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == serial_task.id));
+        assert_run_task(&job, serial_task.id);
         Ok(())
     }
 
@@ -1032,7 +1035,7 @@ mod test {
 
         // The applicator should have forwarded the original task to the driver
         let job = task_recv.recv().unwrap();
-        assert!(matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == serial_task.id));
+        assert_run_task(&job, serial_task.id);
         Ok(())
     }
 
@@ -1059,9 +1062,7 @@ mod test {
             true, // is_serial
         )?;
         let job = task_recv.recv().expect("expected applicator to enqueue task for execution");
-        assert!(
-            matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == preemptive_task.id)
-        );
+        assert_run_task(&job, preemptive_task.id);
 
         // Check that the queues have been updated correctly
         let tx = applicator.db().new_read_tx()?;
@@ -1086,7 +1087,7 @@ mod test {
         // on the first queue
         applicator.pop_task(preemptive_task.id, true)?;
         let job = task_recv.recv().unwrap();
-        assert!(matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == task1.id));
+        assert_run_task(&job, task1.id);
 
         // Check the task status of the original task
         let tx = applicator.db().new_read_tx()?;
@@ -1124,9 +1125,7 @@ mod test {
             false, // is_serial
         )?;
         let job = task_recv.recv().expect("expected applicator to enqueue task for execution");
-        assert!(
-            matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == preemptive_task.id)
-        );
+        assert_run_task(&job, preemptive_task.id);
 
         // Add a serial task behind the concurrent task on the second queue
         let task2 = mock_queued_task(queue_key2);
@@ -1136,7 +1135,7 @@ mod test {
         // serial task
         applicator.pop_task(preemptive_task.id, true /* success */)?;
         let job = task_recv.recv().unwrap();
-        assert!(matches!(job, TaskDriverJob::Run(queued_task) if queued_task.id == task2.id));
+        assert_run_task(&job, task2.id);
 
         // Check the task status of the original task
         let tx = applicator.db().new_read_tx()?;
@@ -1215,9 +1214,7 @@ mod test {
 
         // Verify the task was started on the local peer
         assert!(!task_recv.is_empty());
-        assert!(
-            matches!(task_recv.recv()?, TaskDriverJob::Run(queued_task) if queued_task.id == task.id)
-        );
+        assert_run_task(&task_recv.recv()?, task.id);
         Ok(())
     }
 
@@ -1258,9 +1255,7 @@ mod test {
 
         // The second task should now be started on the local peer
         assert!(!task_recv.is_empty());
-        assert!(
-            matches!(task_recv.recv()?, TaskDriverJob::Run(queued_task) if queued_task.id == task2.id)
-        );
+        assert_run_task(&task_recv.recv()?, task2.id);
         Ok(())
     }
 }

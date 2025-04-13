@@ -35,7 +35,12 @@ pub fn new_task_notification(task_id: TaskIdentifier) -> (TaskNotificationReceiv
 #[derive(Debug)]
 pub enum TaskDriverJob {
     /// Run a task
-    Run(QueuedTask),
+    Run {
+        /// The task to run
+        task: QueuedTask,
+        /// The channel on which to notify the worker
+        channel: Option<TaskNotificationSender>,
+    },
     /// Request that the task driver notify a worker when a task is complete
     Notify {
         /// The task id to notify the worker about
@@ -46,6 +51,17 @@ pub enum TaskDriverJob {
 }
 
 impl TaskDriverJob {
+    /// Create a new run job
+    pub fn run(task: QueuedTask) -> Self {
+        Self::Run { task, channel: None }
+    }
+
+    /// Create a new run job with a notification channel
+    pub fn run_with_notification(task: QueuedTask) -> (Self, TaskNotificationReceiver) {
+        let (sender, receiver) = oneshot_channel();
+        (Self::Run { task, channel: Some(sender) }, receiver)
+    }
+
     /// Create a new notification job
     pub fn new_notification(task_id: TaskIdentifier) -> (Self, TaskNotificationReceiver) {
         let (sender, receiver) = oneshot_channel();

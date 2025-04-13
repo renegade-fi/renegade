@@ -24,6 +24,14 @@ pub enum CoordinatorError {
     Clock(String),
 }
 
+impl CoordinatorError {
+    /// New setup error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn setup<T: ToString>(msg: T) -> Self {
+        CoordinatorError::Setup(msg.to_string())
+    }
+}
+
 impl Error for CoordinatorError {}
 impl Display for CoordinatorError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

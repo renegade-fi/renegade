@@ -3,11 +3,14 @@
 //! TODO(@joey): This module will eventually become a dedicated task, for now
 //! this is sufficient
 
-use common::types::tasks::{NodeStartupTaskDescriptor, TaskDescriptor};
+use std::time::Duration;
+
+use common::types::tasks::{
+    NodeStartupTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier,
+};
 use config::RelayerConfig;
 use job_types::task_driver::{TaskDriverJob, TaskDriverQueue};
-use state::State;
-use util::err_str;
+use util::{err_str, get_current_time_millis};
 
 use crate::error::CoordinatorError;
 
@@ -18,10 +21,10 @@ const ERR_SENDING_STARTUP_TASK: &str = "error sending startup task to task drive
 pub async fn node_setup(
     config: &RelayerConfig,
     task_queue: TaskDriverQueue,
-    state: State,
 ) -> Result<(), CoordinatorError> {
     // Start the node setup task and await its completion
     let needs_relayer_wallet = config.needs_relayer_wallet();
+    println!("needs_relayer_wallet: {needs_relayer_wallet}");
     let desc: TaskDescriptor = NodeStartupTaskDescriptor::new(
         config.gossip_warmup,
         config.relayer_arbitrum_key(),
@@ -29,12 +32,18 @@ pub async fn node_setup(
     )
     .into();
 
-    let (tid, waiter) = state.append_task(desc).await?;
-    waiter.await?;
+    let tid = TaskIdentifier::new_v4();
+    let queued_task = QueuedTask {
+        id: tid,
+        state: QueuedTaskState::Preemptive,
+        descriptor: desc,
+        created_at: get_current_time_millis(),
+    };
 
-    let (job, rx) = TaskDriverJob::new_notification(tid);
-    task_queue
-        .send(job)
-        .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
+    // Send the task to the task driver
+    let (job, rx) = TaskDriverJob::run_with_notification(queued_task);
+    task_queue.send(job).map_err(|_| CoordinatorError::setup(ERR_SENDING_STARTUP_TASK))?;
+
+    // Await the task driver to complete the task
     rx.await.map_err(err_str!(CoordinatorError::Setup))?.map_err(err_str!(CoordinatorError::Setup))
 }

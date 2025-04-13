@@ -26,9 +26,6 @@ use crate::{
     worker::TaskDriverConfig,
 };
 
-#[cfg(feature = "task-metrics")]
-use renegade_metrics::helpers::{decr_inflight_tasks, incr_completed_tasks, incr_inflight_tasks};
-
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
 /// The maximum to increase the backoff to in milliseconds
@@ -160,13 +157,14 @@ impl TaskExecutor {
     /// Handle a job sent to the task driver
     async fn handle_job(&self, job: TaskDriverJob) -> Result<(), TaskDriverError> {
         match job {
-            TaskDriverJob::Run(task) => {
+            TaskDriverJob::Run { task, channel } => {
                 let affected_wallets = task.descriptor.affected_wallets();
                 self.start_task(
                     false, // immediate
                     task.id,
                     task.descriptor,
                     affected_wallets,
+                    channel,
                 )
                 .await
             },
@@ -215,7 +213,14 @@ impl TaskExecutor {
         id: TaskIdentifier,
         task: TaskDescriptor,
         affected_wallets: Vec<WalletIdentifier>,
+        channel: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
+        // Register the notification if one was requested
+        if let Some(c) = channel {
+            let mut notifications_locked = self.task_notifications.write().expect("poisoned");
+            notifications_locked.entry(id).or_default().push(c);
+        }
+
         // Construct the task from the descriptor
         let res = match task {
             TaskDescriptor::NewWallet(desc) => {
@@ -318,17 +323,7 @@ impl TaskExecutor {
         }
 
         let mut task = task_res.unwrap();
-
-        #[cfg(feature = "task-metrics")]
-        incr_inflight_tasks();
-
         let res = Self::run_task_to_completion(&mut task, args).await;
-
-        #[cfg(feature = "task-metrics")]
-        {
-            decr_inflight_tasks(1.0);
-            incr_completed_tasks();
-        }
 
         // Cleanup
         let cleanup_res = task.cleanup(res.is_ok(), affected_wallets).await;

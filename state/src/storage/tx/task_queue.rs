@@ -367,7 +367,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     // --- Helpers --- //
 
     /// Returns whether a given queue is serially preemptable
-    pub fn is_serial_preemption_safe(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
+    fn is_serial_preemption_safe(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
         let queue = self.get_task_queue(key)?;
         let mut can_preempt = queue.can_preempt_serial();
         if let Some(t) = queue.serial_tasks.first() {
@@ -464,7 +464,7 @@ impl<'db> StateTxn<'db, RW> {
     }
 
     /// Pop a task from the queue
-    pub fn pop_task_v2(&self, id: &TaskIdentifier) -> Result<Option<QueuedTask>, StorageError> {
+    pub fn pop_task(&self, id: &TaskIdentifier) -> Result<Option<QueuedTask>, StorageError> {
         let queue_keys = self.get_queue_keys_for_task(id)?;
         for key in queue_keys.iter() {
             let mut queue = self.get_task_queue(key)?;
@@ -605,7 +605,7 @@ mod test {
         assert!(indexed);
 
         // Now pop the task and check that it is removed from the queue
-        let popped_task = tx.pop_task_v2(&task.id)?;
+        let popped_task = tx.pop_task(&task.id)?;
         let not_indexed = tx.get_task(&task.id)?.is_none();
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, task.id);
@@ -647,7 +647,7 @@ mod test {
         assert!(indexed2);
 
         // Pop the first task from the queue
-        let popped_task = tx.pop_task_v2(&task1.id)?;
+        let popped_task = tx.pop_task(&task1.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, task1.id);
 
@@ -680,7 +680,7 @@ mod test {
         assert!(!can_run);
 
         // Pop the first task and check that the second task can run
-        tx.pop_task_v2(&task.id)?;
+        tx.pop_task(&task.id)?;
         let can_run = tx.can_task_run(&other_task.id)?;
         assert!(can_run);
         Ok(())
@@ -721,7 +721,7 @@ mod test {
         assert_eq!(task_queue, expected_queue);
 
         // Pop the preemptive task and check that the queue state is updated
-        let popped_task = tx.pop_task_v2(&preemptive_task.id)?;
+        let popped_task = tx.pop_task(&preemptive_task.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, preemptive_task.id);
 
@@ -765,7 +765,7 @@ mod test {
         assert_eq!(task_queue, expected_queue);
 
         // 1. Pop the concurrent task
-        let popped_task = tx.pop_task_v2(&concurrent_task.id)?;
+        let popped_task = tx.pop_task(&concurrent_task.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, concurrent_task.id);
 
@@ -778,7 +778,7 @@ mod test {
         assert_eq!(task_queue, expected_queue);
 
         // 2. Pop the serial preemptive task
-        let popped_task = tx.pop_task_v2(&preemptive_task.id)?;
+        let popped_task = tx.pop_task(&preemptive_task.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, preemptive_task.id);
 
@@ -852,7 +852,7 @@ mod test {
         assert!(!can_run);
 
         // 2. Pop the concurrent task; serial task can now run
-        tx.pop_task_v2(&concurrent_task.id)?;
+        tx.pop_task(&concurrent_task.id)?;
         let can_run = tx.can_task_run(&serial_task.id)?;
         assert!(can_run);
         Ok(())
@@ -881,7 +881,7 @@ mod test {
         assert!(!can_run);
 
         // Pop the concurrent task; serial task can now run
-        tx.pop_task_v2(&concurrent_task.id)?;
+        tx.pop_task(&concurrent_task.id)?;
         let can_run = tx.can_task_run(&serial_task.id)?;
         assert!(can_run);
         Ok(())
@@ -1016,7 +1016,7 @@ mod test {
         assert_eq!(task_queue, expected_queue);
 
         // Pop the first task
-        let popped_task = tx.pop_task_v2(&task1.id)?;
+        let popped_task = tx.pop_task(&task1.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, task1.id);
 
@@ -1075,7 +1075,7 @@ mod test {
         assert_eq!(task_queue, expected_queue);
 
         // Now pop the concurrent task and check that the queue state is updated
-        let popped_task = tx.pop_task_v2(&concurrent_task.id)?;
+        let popped_task = tx.pop_task(&concurrent_task.id)?;
         assert!(popped_task.is_some());
         assert_eq!(popped_task.unwrap().id, concurrent_task.id);
 
