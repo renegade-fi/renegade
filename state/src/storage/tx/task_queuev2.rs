@@ -14,6 +14,7 @@
 use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use libmdbx::{TransactionKind, RW};
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use util::res_some;
 
 use crate::{storage::error::StorageError, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE};
@@ -39,7 +40,7 @@ const MAX_CONCURRENT_TASKS: usize = 20;
 // --------------------
 
 /// Get the storage key for a task queue
-fn task_queue_key(key: &TaskQueueKey) -> String {
+pub fn task_queue_key(key: &TaskQueueKey) -> String {
     format!("task-queue-{}", key)
 }
 
@@ -372,7 +373,14 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get the task queue for a given key
     pub(crate) fn get_task_queue(&self, key: &TaskQueueKey) -> Result<TaskQueue, StorageError> {
         let key = task_queue_key(key);
-        let queue = self.inner().read(TASK_QUEUE_TABLE, &key)?;
+        // TODO(@joeykraut): Remove this once we migrate
+        let queue = match self.inner().read(TASK_QUEUE_TABLE, &key) {
+            Ok(queue) => queue,
+            Err(e) => {
+                warn!("error getting task queue, defaulting...: {e}");
+                Some(TaskQueue::default())
+            },
+        };
 
         Ok(queue.unwrap_or_default())
     }

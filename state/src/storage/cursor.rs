@@ -19,7 +19,7 @@ use super::{
 /// A cursor in a table
 pub struct DbCursor<'txn, Tx: TransactionKind, K: Key, V: Value> {
     /// The underlying cursor
-    inner: Cursor<'txn, Tx>,
+    pub inner: Cursor<'txn, Tx>,
     /// The filter applied to keys
     ///
     /// Only keys for which this filter returns `true` will be returned by the

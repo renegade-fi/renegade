@@ -251,7 +251,7 @@ impl StateInner {
                     }
                 }
 
-                if Self::is_task_queue_free(&id, tx)? {
+                if Self::is_serial_queue_free(&id, tx)? {
                     res.push(id);
                 }
             }
@@ -372,20 +372,22 @@ impl StateInner {
 impl StateInner {
     /// Checks that a task queue is empty and not paused for a wallet containing
     /// an order
-    fn is_task_queue_free<T: TransactionKind>(
+    fn is_serial_queue_free<T: TransactionKind>(
         order_id: &OrderIdentifier,
         tx: &StateTxn<T>,
     ) -> Result<bool, StateError> {
         // Check that there are no tasks in the queue for the containing wallet
         // This avoids unnecessary preemptions or possible dropped matches
+        //
+        // Note that we only check for serial tasks here, concurrent tasks
+        // will be preempted by the task queue
         let wallet_id = match tx.get_wallet_id_for_order(order_id)? {
             None => return Ok(false),
             Some(wallet) => wallet,
         };
 
-        let empty = tx.is_queue_empty(&wallet_id)?;
-        let paused = tx.is_queue_paused(&wallet_id)?;
-        Ok(empty && !paused)
+        let queue_locked_serial = !tx.serial_tasks_active(&wallet_id)?;
+        Ok(queue_locked_serial)
     }
 }
 

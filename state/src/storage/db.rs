@@ -31,7 +31,7 @@ pub(crate) fn serialize_value<V: Serialize>(value: &V) -> Result<Vec<u8>, Storag
 }
 
 /// Deserialize a value from a `flexbuffers` byte vector
-pub(crate) fn deserialize_value<V: for<'de> Deserialize<'de>>(
+pub fn deserialize_value<V: for<'de> Deserialize<'de>>(
     value_bytes: &[u8],
 ) -> Result<V, StorageError> {
     ciborium::de::from_reader(value_bytes).map_err(err_str!(StorageError::Deserialization))
