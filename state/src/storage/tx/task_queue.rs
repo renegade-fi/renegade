@@ -26,12 +26,6 @@ fn paused_key(key: &TaskQueueKey) -> String {
 // -----------
 
 impl<'db, T: TransactionKind> StateTxn<'db, T> {
-    /// Check whether the current task queue is empty
-    pub fn is_queue_empty(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
-        let tasks = self.get_queued_tasks(key)?;
-        Ok(tasks.is_empty())
-    }
-
     /// Whether or not the task queue is paused
     pub fn is_queue_paused(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
         let key = paused_key(key);

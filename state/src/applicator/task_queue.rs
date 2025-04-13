@@ -471,7 +471,7 @@ impl StateApplicator {
         tx: &StateTxn<'_, T>,
     ) -> Result<bool> {
         let this_node = tx.get_peer_id()?;
-        let queue_empty = tx.is_queue_empty_v2(queue_key)?;
+        let queue_empty = !tx.serial_tasks_active(queue_key)?;
         let is_executor = *executor == this_node;
         let is_wallet_task = popped_task.descriptor.is_wallet_task();
         Ok(queue_empty && is_executor && is_wallet_task)

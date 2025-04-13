@@ -24,7 +24,8 @@ pub mod wallet_index;
 use std::collections::VecDeque;
 
 use libmdbx::{
-    Error as MdbxError, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW,
+    Error as MdbxError, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RO,
+    RW,
 };
 use tracing::instrument;
 
@@ -41,6 +42,9 @@ use super::{
 // --------------------------
 // | High Level Transaction |
 // --------------------------
+
+/// A read-only transaction in the database
+pub type ReadTxn<'db> = StateTxn<'db, RO>;
 
 /// A high level transaction in the database
 pub struct StateTxn<'db, T: TransactionKind> {

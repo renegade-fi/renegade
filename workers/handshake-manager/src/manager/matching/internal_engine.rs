@@ -83,7 +83,7 @@ impl HandshakeExecutor {
                 Err(e) => {
                     error!(
                         "internal match settlement failed for {} x {}: {e}",
-                        network_order.id, order_id,
+                        other_order_id, order_id,
                     );
 
                     // Check whether matching should continue
