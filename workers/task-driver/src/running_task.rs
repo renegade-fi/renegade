@@ -125,17 +125,8 @@ impl<T: Task> RunnableTask<T> {
 
         // Pop the task from the state
         // Preemptive tasks are not indexed, so no work needs to be done
-        if !self.bypass_task_queue() {
-            let waiter = self.state.pop_task(self.task_id, success).await?;
-            waiter.await?;
-        }
-
-        if self.preemptive {
-            // Unpause the queues for the affected local wallets
-            if !affected_wallets.is_empty() {
-                self.state.resume_multiple_task_queues(affected_wallets.clone(), success).await?;
-            }
-        }
+        let waiter = self.state.pop_task(self.task_id, success).await?;
+        waiter.await?;
 
         // If the task failed at/after its commit point, we enqueue a wallet refresh
         // task for the affected wallets to ensure they are in sync w/ the

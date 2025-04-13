@@ -1,6 +1,6 @@
 //! Job types for the task driver
 
-use common::types::tasks::{QueuedTask, TaskDescriptor, TaskIdentifier};
+use common::types::tasks::{QueuedTask, TaskIdentifier};
 use crossbeam::channel::Sender as CrossbeamSender;
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
@@ -36,20 +36,6 @@ pub fn new_task_notification(task_id: TaskIdentifier) -> (TaskNotificationReceiv
 pub enum TaskDriverJob {
     /// Run a task
     Run(QueuedTask),
-    /// Run a task immediately, bypassing the task queue
-    ///
-    /// This is used for tasks which need immediate settlement, e.g. matches
-    ///
-    /// Other tasks on a shared wallet will be preempted and the queue paused
-    #[deprecated(note = "Forward preemptive tasks to consensus layer directly")]
-    RunImmediate {
-        /// The ID to assign the task
-        task_id: TaskIdentifier,
-        /// The task to run
-        task: TaskDescriptor,
-        /// The response channel on which to send the task result
-        resp: Option<TaskNotificationSender>,
-    },
     /// Request that the task driver notify a worker when a task is complete
     Notify {
         /// The task id to notify the worker about
@@ -64,22 +50,5 @@ impl TaskDriverJob {
     pub fn new_notification(task_id: TaskIdentifier) -> (Self, TaskNotificationReceiver) {
         let (sender, receiver) = oneshot_channel();
         (Self::Notify { task_id, channel: sender }, receiver)
-    }
-
-    /// Create a new immediate task without a notification channel
-    #[deprecated(note = "Forward preemptive tasks to consensus layer directly")]
-    pub fn new_immediate(task: TaskDescriptor) -> Self {
-        let id = TaskIdentifier::new_v4();
-        Self::RunImmediate { task_id: id, task, resp: None }
-    }
-
-    /// Create a new immediate task with a notification channel
-    #[deprecated(note = "Forward preemptive tasks to consensus layer directly")]
-    pub fn new_immediate_with_notification(
-        task: TaskDescriptor,
-    ) -> (Self, TaskNotificationReceiver) {
-        let id = TaskIdentifier::new_v4();
-        let (sender, receiver) = oneshot_channel();
-        (Self::RunImmediate { task_id: id, task, resp: Some(sender) }, receiver)
     }
 }

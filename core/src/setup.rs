@@ -6,6 +6,7 @@
 use common::types::tasks::{NodeStartupTaskDescriptor, TaskDescriptor};
 use config::RelayerConfig;
 use job_types::task_driver::{TaskDriverJob, TaskDriverQueue};
+use state::State;
 use util::err_str;
 
 use crate::error::CoordinatorError;
@@ -17,6 +18,7 @@ const ERR_SENDING_STARTUP_TASK: &str = "error sending startup task to task drive
 pub async fn node_setup(
     config: &RelayerConfig,
     task_queue: TaskDriverQueue,
+    state: State,
 ) -> Result<(), CoordinatorError> {
     // Start the node setup task and await its completion
     let needs_relayer_wallet = config.needs_relayer_wallet();
@@ -27,10 +29,12 @@ pub async fn node_setup(
     )
     .into();
 
-    let (job, rx) = TaskDriverJob::new_immediate_with_notification(desc);
+    let (tid, waiter) = state.append_task(desc).await?;
+    waiter.await?;
+
+    let (job, rx) = TaskDriverJob::new_notification(tid);
     task_queue
         .send(job)
         .map_err(|_| CoordinatorError::Setup(ERR_SENDING_STARTUP_TASK.to_string()))?;
-
     rx.await.map_err(err_str!(CoordinatorError::Setup))?.map_err(err_str!(CoordinatorError::Setup))
 }

@@ -255,7 +255,7 @@ async fn main() -> Result<(), CoordinatorError> {
     //
     // This task bootstraps the relayer into a correct raft and sets up the
     // relayer's wallet
-    node_setup(&setup_config, task_sender.clone()).await?;
+    node_setup(&setup_config, task_sender.clone(), global_state.clone()).await?;
 
     // Start the event manager
     let (event_manager_cancel_sender, event_manager_cancel_receiver) = new_cancel_channel();

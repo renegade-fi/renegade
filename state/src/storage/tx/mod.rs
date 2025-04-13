@@ -18,7 +18,6 @@ pub mod relayer_fees;
 pub mod task_assignments;
 pub mod task_history;
 pub mod task_queue;
-pub mod task_queuev2;
 pub mod wallet_index;
 
 use std::collections::VecDeque;
@@ -177,78 +176,6 @@ impl<'db> StateTxn<'db, RW> {
         value: &Vec<V>,
     ) -> Result<(), StorageError> {
         self.inner().write(table_name, key, value)
-    }
-
-    // ----------
-    // | Queues |
-    // ----------
-
-    /// Write a queue type to the database
-    pub(crate) fn write_queue<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &VecDeque<V>,
-    ) -> Result<(), StorageError> {
-        self.inner().write(table_name, key, value)
-    }
-
-    /// Push a value to a queue type
-    ///
-    /// Assumes the underlying queue is represented by a `VecDeque`
-    pub(crate) fn push_to_queue<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &V,
-    ) -> Result<(), StorageError> {
-        let mut queue = self.read_queue(table_name, key)?;
-        queue.push_back(value.clone());
-
-        self.write_queue(table_name, key, &queue)
-    }
-
-    /// Push a value to the front of a queue type
-    ///
-    /// Assumes the underlying queue is represented by a `VecDeque`
-    pub(crate) fn push_to_queue_front<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-        value: &V,
-    ) -> Result<(), StorageError> {
-        let mut queue = self.read_queue(table_name, key)?;
-        queue.push_front(value.clone());
-
-        self.write_queue(table_name, key, &queue)
-    }
-
-    /// Pop a value from the front of a queue
-    ///
-    /// Assumes the underlying queue is represented by a vector
-    pub(crate) fn pop_from_queue<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-    ) -> Result<Option<V>, StorageError> {
-        let mut queue: VecDeque<V> = self.read_queue(table_name, key)?;
-        let value = queue.pop_front();
-        if value.is_some() {
-            self.write_queue(table_name, key, &queue)?;
-        }
-
-        Ok(value)
-    }
-
-    /// Clear a queue
-    ///
-    /// Assumes the underlying queue is represented by a `VecDeque`
-    pub(crate) fn clear_queue<K: Key, V: Value>(
-        &self,
-        table_name: &str,
-        key: &K,
-    ) -> Result<(), StorageError> {
-        self.write_queue(table_name, key, &VecDeque::<V>::new())
     }
 }
 

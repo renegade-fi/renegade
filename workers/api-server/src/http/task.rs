@@ -144,7 +144,7 @@ impl TypedHandler for GetTaskQueuePausedHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Check if the queue is paused
-        let is_paused = self.state.is_queue_paused(&wallet_id).await?;
+        let is_paused = self.state.is_queue_paused_serial(&wallet_id).await?;
 
         Ok(TaskQueuePausedResponse { is_paused })
     }

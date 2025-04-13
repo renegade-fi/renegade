@@ -29,7 +29,7 @@ async fn get_existing_queues(state: &State) -> Result<Vec<String>, String> {
 }
 
 /// Get all queues with a tx
-fn get_all_queues_with_tx<'a>(tx: &ReadTxn<'a>) -> Result<Vec<String>, StateError> {
+fn get_all_queues_with_tx(tx: &ReadTxn<'_>) -> Result<Vec<String>, StateError> {
     let mut cursor = tx.inner().cursor::<String, CowBuffer>(TASK_QUEUE_TABLE)?;
 
     let mut queues = Vec::new();
