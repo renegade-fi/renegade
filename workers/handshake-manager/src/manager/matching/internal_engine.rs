@@ -229,13 +229,9 @@ impl HandshakeExecutor {
             return Ok(false);
         }
 
-        // Check the queue
-        let queue_len = self.state.get_task_queue_len(&wallet.wallet_id).await?;
+        // Check the length of the wallet's serial task queue
+        let queue_len = self.state.serial_tasks_queue_len(&wallet.wallet_id).await?;
         if queue_len > 0 {
-            return Ok(false);
-        }
-
-        if self.state.is_queue_paused(&wallet.wallet_id).await? {
             return Ok(false);
         }
 

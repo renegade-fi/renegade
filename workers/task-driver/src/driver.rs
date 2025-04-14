@@ -8,10 +8,7 @@ use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotification
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::{error, info, instrument, warn};
-use util::{
-    concurrency::{new_shared, Shared},
-    telemetry::helpers::backfill_trace_field,
-};
+use util::concurrency::{new_shared, Shared};
 
 use crate::{
     error::TaskDriverError,
@@ -28,9 +25,6 @@ use crate::{
     traits::{Task, TaskContext},
     worker::TaskDriverConfig,
 };
-
-#[cfg(feature = "task-metrics")]
-use renegade_metrics::helpers::{decr_inflight_tasks, incr_completed_tasks, incr_inflight_tasks};
 
 /// The amount to increase the backoff delay by every retry
 const BACKOFF_AMPLIFICATION_FACTOR: u32 = 2;
@@ -163,18 +157,16 @@ impl TaskExecutor {
     /// Handle a job sent to the task driver
     async fn handle_job(&self, job: TaskDriverJob) -> Result<(), TaskDriverError> {
         match job {
-            TaskDriverJob::Run(task) => {
+            TaskDriverJob::Run { task, channel } => {
                 let affected_wallets = task.descriptor.affected_wallets();
                 self.start_task(
                     false, // immediate
                     task.id,
                     task.descriptor,
                     affected_wallets,
+                    channel,
                 )
                 .await
-            },
-            TaskDriverJob::RunImmediate { task_id, task, resp } => {
-                self.handle_run_immediate(task_id, task, resp).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await
@@ -203,92 +195,13 @@ impl TaskExecutor {
         Ok(())
     }
 
-    /// Handle a request to run a task immediately
-    #[instrument(skip_all, err, fields(task_id = %task_id, affected_wallets))]
-    #[deprecated(note = "send preemptive tasks through the raft")]
-    async fn handle_run_immediate(
-        &self,
-        task_id: TaskIdentifier,
-        task: TaskDescriptor,
-        resp: Option<TaskNotificationSender>,
-    ) -> Result<(), TaskDriverError> {
-        let affected_wallets = task.affected_wallets();
-        backfill_trace_field("affected_wallets", format!("{affected_wallets:?}"));
-
-        // Check if any non-preemptable tasks conflict with this task before pausing
-        for wallet_id in affected_wallets.iter() {
-            if let Some(s) = self.preemption_conflict(wallet_id).await? {
-                warn!("task preemption failed: {s}");
-                if let Some(chan) = resp {
-                    let _ = chan.send(Err(s));
-                }
-
-                return Ok(());
-            }
-        }
-
-        self.start_preemptive_task(affected_wallets, task_id, task, resp).await
-    }
-
-    /// Check for any conflicting conditions that cannot be preempted
-    ///
-    /// Returns an error message describing the conflict, if one exists
-    async fn preemption_conflict(
-        &self,
-        wallet_id: &WalletIdentifier,
-    ) -> Result<Option<String>, TaskDriverError> {
-        if let Some(conflicting_task) = self.state().current_committed_task(wallet_id).await? {
-            return Ok(Some(format!(
-                "task preemption conflicts with committed task {conflicting_task:?}, aborting..."
-            )));
-        }
-
-        if self.state().is_queue_paused(wallet_id).await? {
-            return Ok(Some("queue already paused, aborting...".to_string()));
-        }
-
-        Ok(None)
-    }
-
     // ------------------
     // | Task Execution |
     // ------------------
 
-    /// Start the given task, preempting the queues of the given wallets
-    #[deprecated(note = "send preemptive tasks through the raft")]
-    async fn start_preemptive_task(
-        &self,
-        affected_wallets: Vec<WalletIdentifier>,
-        task_id: TaskIdentifier,
-        task: TaskDescriptor,
-        resp: Option<TaskNotificationSender>,
-    ) -> Result<(), TaskDriverError> {
-        // Pause the queues for the affected local wallets
-        if !affected_wallets.is_empty() {
-            let waiter = self
-                .state()
-                .pause_multiple_task_queues(affected_wallets.clone(), task_id, task.clone())
-                .await?;
-            waiter.await?;
-        }
-
-        let res = self.start_task(true /* immediate */, task_id, task, affected_wallets).await;
-        if let Err(e) = &res {
-            error!("error running immediate task: {e:?}");
-        }
-
-        // Notify the task creator that the task has completed
-        if let Some(sender) = resp {
-            let _ = sender.send(res.map_err(|e| e.to_string()));
-        }
-
-        Ok(())
-    }
-
     /// Spawn a new task in the driver
     ///
     /// Returns the success of the task
-
     #[instrument(name = "task", skip_all, err, fields(
         task_id = %id,
         task = %task.display_description(),
@@ -300,7 +213,14 @@ impl TaskExecutor {
         id: TaskIdentifier,
         task: TaskDescriptor,
         affected_wallets: Vec<WalletIdentifier>,
+        channel: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
+        // Register the notification if one was requested
+        if let Some(c) = channel {
+            let mut notifications_locked = self.task_notifications.write().expect("poisoned");
+            notifications_locked.entry(id).or_default().push(c);
+        }
+
         // Construct the task from the descriptor
         let res = match task {
             TaskDescriptor::NewWallet(desc) => {
@@ -403,17 +323,7 @@ impl TaskExecutor {
         }
 
         let mut task = task_res.unwrap();
-
-        #[cfg(feature = "task-metrics")]
-        incr_inflight_tasks();
-
         let res = Self::run_task_to_completion(&mut task, args).await;
-
-        #[cfg(feature = "task-metrics")]
-        {
-            decr_inflight_tasks(1.0);
-            incr_completed_tasks();
-        }
 
         // Cleanup
         let cleanup_res = task.cleanup(res.is_ok(), affected_wallets).await;

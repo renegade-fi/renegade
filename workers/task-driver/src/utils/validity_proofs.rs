@@ -238,7 +238,7 @@ pub(crate) async fn update_wallet_validity_proofs(
     network_sender: NetworkManagerQueue,
 ) -> Result<(), String> {
     // If there are other tasks in the queue behind the current task, skip proving
-    let queue_length = state.get_task_queue_len(&wallet.wallet_id).await?;
+    let queue_length = state.serial_tasks_queue_len(&wallet.wallet_id).await?;
     if queue_length > 1 {
         return Ok(());
     }

@@ -11,7 +11,10 @@ use common::types::{
 use tracing::instrument;
 use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
 
-use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
+use crate::{
+    error::StateError, notifications::ProposalWaiter,
+    storage::tx::task_queue::TaskQueuePreemptionState, StateInner, StateTransition,
+};
 
 impl StateInner {
     // -----------
@@ -20,35 +23,47 @@ impl StateInner {
 
     /// Whether or not the task queue contains a specific task
     pub async fn contains_task(&self, task_id: &TaskIdentifier) -> Result<bool, StateError> {
-        let key = self.get_task_queue_key(task_id).await?;
-        Ok(key.is_some())
+        let tid = *task_id;
+        self.with_read_tx(move |tx| Ok(tx.get_task(&tid)?.is_some())).await
     }
 
-    /// Whether a task queue is paused
-    pub async fn is_queue_paused(&self, key: &TaskQueueKey) -> Result<bool, StateError> {
-        let key = *key;
-        self.with_read_tx(move |tx| Ok(tx.is_queue_paused(&key)?)).await
-    }
-
-    /// Get the length of the task queue
-    pub async fn get_task_queue_len(&self, key: &TaskQueueKey) -> Result<usize, StateError> {
+    /// Whether the queue is paused by a serial task
+    pub async fn is_queue_paused_serial(&self, key: &TaskQueueKey) -> Result<bool, StateError> {
         let key = *key;
         self.with_read_tx(move |tx| {
-            let tasks = tx.get_queued_tasks(&key)?;
-            Ok(tasks.len())
+            let queue = tx.get_task_queue(&key)?;
+            let paused_serial =
+                queue.preemption_state == TaskQueuePreemptionState::SerialPreemptionQueued;
+            Ok(paused_serial)
         })
         .await
     }
 
-    /// Get the list of tasks
+    /// Whether there are any serial tasks enqueued for the given queue
+    pub async fn has_active_serial_tasks(&self, key: &TaskQueueKey) -> Result<bool, StateError> {
+        let serial_task_len = self.serial_tasks_queue_len(key).await?;
+        Ok(serial_task_len > 0)
+    }
+
+    /// Get the length of the serial task queue
+    pub async fn serial_tasks_queue_len(&self, key: &TaskQueueKey) -> Result<usize, StateError> {
+        let key = *key;
+        self.with_read_tx(move |tx| {
+            let queue = tx.get_task_queue(&key)?;
+            Ok(queue.serial_tasks.len())
+        })
+        .await
+    }
+
+    /// Get the list of tasks enqueued for the given queue
     pub async fn get_queued_tasks(
         &self,
         key: &TaskQueueKey,
     ) -> Result<Vec<QueuedTask>, StateError> {
         let key = *key;
         self.with_read_tx(move |tx| {
-            let tasks = tx.get_queued_tasks(&key)?;
-            Ok(tasks)
+            let queue = tx.get_queued_tasks(&key)?;
+            Ok(queue)
         })
         .await
     }
@@ -75,27 +90,14 @@ impl StateInner {
         .await
     }
 
-    /// Get the task queue key that a task modifies
-    pub async fn get_task_queue_key(
-        &self,
-        task_id: &TaskIdentifier,
-    ) -> Result<Option<TaskQueueKey>, StateError> {
-        let task_id = *task_id;
-        self.with_read_tx(move |tx| {
-            let key = tx.get_queue_key_for_task(&task_id)?;
-            Ok(key)
-        })
-        .await
-    }
-
     /// Get a task by ID
     pub async fn get_task(
         &self,
         task_id: &TaskIdentifier,
     ) -> Result<Option<QueuedTask>, StateError> {
-        let task_id = *task_id;
+        let tid = *task_id;
         self.with_read_tx(move |tx| {
-            let task = tx.get_task(&task_id)?;
+            let task = tx.get_task(&tid)?;
             Ok(task)
         })
         .await
@@ -106,24 +108,10 @@ impl StateInner {
         &self,
         task_id: &TaskIdentifier,
     ) -> Result<Option<QueuedTaskState>, StateError> {
-        let task_id = *task_id;
+        let tid = *task_id;
         self.with_read_tx(move |tx| {
-            let status = tx.get_task(&task_id)?;
+            let status = tx.get_task(&tid)?;
             Ok(status.map(|x| x.state))
-        })
-        .await
-    }
-
-    /// Returns the current running task for a queue if it exists and has
-    /// already committed
-    pub async fn current_committed_task(
-        &self,
-        key: &TaskQueueKey,
-    ) -> Result<Option<TaskIdentifier>, StateError> {
-        let key = *key;
-        self.with_read_tx(move |tx| {
-            let running = tx.get_current_running_task(&key)?;
-            Ok(running.filter(|x| x.state.is_committed()).map(|x| x.id))
         })
         .await
     }
@@ -233,63 +221,6 @@ impl StateInner {
         Ok((id, waiter))
     }
 
-    /// Pause a task queue placing the given task at the front of the queue
-    #[deprecated(note = "Use `enqueue_preemptive_task` instead")]
-    pub async fn pause_task_queue(
-        &self,
-        key: &TaskQueueKey,
-        task_id: TaskIdentifier,
-        task: TaskDescriptor,
-    ) -> Result<ProposalWaiter, StateError> {
-        self.pause_multiple_task_queues(vec![*key], task_id, task).await
-    }
-
-    /// Pause multiple task queues, placing the given task at the front of each
-    /// queue
-    #[instrument(name = "propose_preempt_task_queues", skip_all, err, fields(queue_keys = ?keys, task_id = %task_id, task = %task.display_description()))]
-    pub async fn pause_multiple_task_queues(
-        &self,
-        keys: Vec<TaskQueueKey>,
-        task_id: TaskIdentifier,
-        task: TaskDescriptor,
-    ) -> Result<ProposalWaiter, StateError> {
-        let self_id = self.get_peer_id().await?;
-        let task = QueuedTask {
-            id: task_id,
-            state: QueuedTaskState::Preemptive,
-            descriptor: task,
-            created_at: get_current_time_millis(),
-        };
-
-        let proposal = StateTransition::PreemptTaskQueues { keys, task, executor: self_id };
-        self.send_proposal(proposal).await
-    }
-
-    /// Resume a task queue
-    ///
-    /// TODO(@joeykraut): Remove this once the migration is complete
-    #[deprecated(note = "Use `pop_task` instead")]
-    pub async fn resume_task_queue(
-        &self,
-        key: &TaskQueueKey,
-        success: bool,
-    ) -> Result<ProposalWaiter, StateError> {
-        self.resume_multiple_task_queues(vec![*key], success).await
-    }
-
-    /// Resume multiple task queues
-    ///
-    /// TODO(@joeykraut): Remove this once the migration is complete
-    #[instrument(name = "propose_resume_task_queues", skip_all, err, fields(queue_keys = ?keys))]
-    #[deprecated(note = "Use `pop_task` instead")]
-    pub async fn resume_multiple_task_queues(
-        &self,
-        keys: Vec<TaskQueueKey>,
-        success: bool,
-    ) -> Result<ProposalWaiter, StateError> {
-        self.send_proposal(StateTransition::ResumeTaskQueues { keys, success }).await
-    }
-
     /// Reassign the tasks from a failed peer to the local peer
     pub async fn reassign_tasks(
         &self,
@@ -320,7 +251,7 @@ mod test {
         let state = mock_state().await;
 
         let key = TaskQueueKey::new_v4();
-        assert_eq!(state.get_task_queue_len(&key).await.unwrap(), 0);
+        assert_eq!(state.serial_tasks_queue_len(&key).await.unwrap(), 0);
         assert!(state.get_queued_tasks(&key).await.unwrap().is_empty());
     }
 
@@ -337,7 +268,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was added
-        assert_eq!(state.get_task_queue_len(&key).await.unwrap(), 1);
+        assert_eq!(state.serial_tasks_queue_len(&key).await.unwrap(), 1);
 
         let tasks = state.get_queued_tasks(&key).await.unwrap();
         assert_eq!(tasks.len(), 1);
@@ -368,7 +299,7 @@ mod test {
         waiter.await.unwrap();
 
         // Check that the task was removed
-        assert_eq!(state.get_task_queue_len(&wallet_id).await.unwrap(), 0);
+        assert_eq!(state.serial_tasks_queue_len(&wallet_id).await.unwrap(), 0);
     }
 
     /// Tests transitioning the state of a task
@@ -399,44 +330,6 @@ mod test {
             task.state,
             QueuedTaskState::Running { state: "Test".to_string(), committed: false }
         );
-    }
-
-    /// Tests the `has_committed_task` method
-    #[tokio::test]
-    async fn test_has_committed_task() {
-        let state = mock_state().await;
-
-        // Add a task
-        let key = TaskQueueKey::new_v4();
-        let task = mock_queued_task(key).descriptor;
-
-        let (task_id, waiter) = state.append_task(task).await.unwrap();
-        waiter.await.unwrap();
-
-        // Check that the queue has no committed task
-        assert!(state.current_committed_task(&key).await.unwrap().is_none());
-
-        // Transition the task to running and check again
-        let waiter = state
-            .transition_task(
-                task_id,
-                QueuedTaskState::Running { state: "Running".to_string(), committed: false },
-            )
-            .await
-            .unwrap();
-        waiter.await.unwrap();
-        assert!(state.current_committed_task(&key).await.unwrap().is_none());
-
-        // Transition the task to committed and check again
-        let waiter = state
-            .transition_task(
-                task_id,
-                QueuedTaskState::Running { state: "Running".to_string(), committed: true },
-            )
-            .await
-            .unwrap();
-        waiter.await.unwrap();
-        assert_eq!(state.current_committed_task(&key).await.unwrap(), Some(task_id));
     }
 
     /// Tests fetching task history

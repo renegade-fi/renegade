@@ -41,8 +41,18 @@ impl StateInner {
     ) -> Result<Option<(Wallet, Vec<QueuedTask>)>, StateError> {
         let id = *id;
         self.with_read_tx(move |tx| {
+            // Read the wallet's task queue
             let wallet = res_some!(tx.get_wallet(&id)?);
-            let tasks = tx.get_queued_tasks(&id)?;
+            let queue = tx.get_task_queue(&id)?;
+
+            // Fetch the tasks one by one
+            let mut tasks = Vec::new();
+            for task_id in queue.all_tasks() {
+                if let Some(task) = tx.get_task(&task_id)? {
+                    tasks.push(task);
+                }
+            }
+
             Ok(Some((wallet, tasks)))
         })
         .await
