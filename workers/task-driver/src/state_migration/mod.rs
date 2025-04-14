@@ -5,5 +5,7 @@
 //!
 //! These migrations should be idempotent, and defined as need be
 
+mod remove_old_task_queues;
 mod remove_phantom_orders;
+pub(crate) use remove_old_task_queues::remove_old_queues;
 pub(crate) use remove_phantom_orders::remove_phantom_orders;

@@ -37,7 +37,7 @@ use util::{
 
 use crate::{
     await_task,
-    state_migration::remove_phantom_orders,
+    state_migration::{remove_old_queues, remove_phantom_orders},
     task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
@@ -455,6 +455,17 @@ impl NodeStartupTask {
                 error!("error removing phantom orders: {e}");
             } else {
                 info!("done removing phantom orders");
+            }
+        });
+
+        // Remove old task queues
+        let state = self.state.clone();
+        tokio::task::spawn(async move {
+            info!("removing old task queues...");
+            if let Err(e) = remove_old_queues(&state).await {
+                error!("error removing old task queues: {e}");
+            } else {
+                info!("done removing old task queues");
             }
         });
 

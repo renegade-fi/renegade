@@ -43,6 +43,8 @@ use super::{
 // --------------------------
 
 /// A read-only transaction in the database
+///
+/// TODO(@joeykraut): Remove this type
 pub type ReadTxn<'db> = StateTxn<'db, RO>;
 
 /// A high level transaction in the database

@@ -75,9 +75,11 @@ pub(crate) const NULLIFIER_TO_WALLET_TABLE: &str = "nullifier-to-wallet";
 pub(crate) const WALLETS_TABLE: &str = "wallet-info";
 
 /// The name of the db table that stores task queues
+///
+/// TODO(@joeykraut): Privatize all tables
 pub const TASK_QUEUE_TABLE: &str = "task-queues";
 /// The name of the db table that maps tasks to their queue keys
-pub(crate) const TASK_TO_KEY_TABLE: &str = "task-to-key";
+pub const TASK_TO_KEY_TABLE: &str = "task-to-key";
 /// The name of the db table that maps nodes to their assigned tasks
 pub(crate) const TASK_ASSIGNMENT_TABLE: &str = "task-assignments";
 /// The name of the db table that stores historical task information
