@@ -12,7 +12,6 @@
 use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
 use libmdbx::{TransactionKind, RW};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 use util::res_some;
 
 use crate::{storage::error::StorageError, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE};
@@ -381,15 +380,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     /// Get the task queue for a given key
     pub(crate) fn get_task_queue(&self, key: &TaskQueueKey) -> Result<TaskQueue, StorageError> {
         let key = task_queue_key(key);
-        // TODO(@joeykraut): Remove this once we migrate
-        let queue = match self.inner().read(TASK_QUEUE_TABLE, &key) {
-            Ok(queue) => queue,
-            Err(e) => {
-                warn!("error getting task queue, defaulting...: {e}");
-                Some(TaskQueue::default())
-            },
-        };
-
+        let queue = self.inner().read(TASK_QUEUE_TABLE, &key)?;
         Ok(queue.unwrap_or_default())
     }
 }
