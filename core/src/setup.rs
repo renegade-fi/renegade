@@ -1,9 +1,4 @@
 //! Setup logic for the node
-//!
-//! TODO(@joey): This module will eventually become a dedicated task, for now
-//! this is sufficient
-
-use std::time::Duration;
 
 use common::types::tasks::{
     NodeStartupTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier,

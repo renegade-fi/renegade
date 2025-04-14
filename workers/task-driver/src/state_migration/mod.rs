@@ -5,7 +5,5 @@
 //!
 //! These migrations should be idempotent, and defined as need be
 
-mod remove_existing_queues;
 mod remove_phantom_orders;
-pub(crate) use remove_existing_queues::remove_existing_queues;
 pub(crate) use remove_phantom_orders::remove_phantom_orders;
