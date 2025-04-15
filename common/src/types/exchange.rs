@@ -18,6 +18,7 @@ pub enum Exchange {
     Kraken,
     Okx,
     UniswapV3,
+    Renegade,
 }
 
 impl Display for Exchange {
@@ -28,6 +29,7 @@ impl Display for Exchange {
             Exchange::Kraken => String::from("kraken"),
             Exchange::Okx => String::from("okx"),
             Exchange::UniswapV3 => String::from("uniswapv3"),
+            Exchange::Renegade => String::from("renegade"),
         };
         write!(f, "{}", fmt_str)
     }
@@ -43,6 +45,7 @@ impl FromStr for Exchange {
             "kraken" => Ok(Exchange::Kraken),
             "okx" => Ok(Exchange::Okx),
             "uniswapv3" | "uniswap" => Ok(Exchange::UniswapV3),
+            "renegade" => Ok(Exchange::Renegade),
             _ => Err(format!("Unknown exchange: {s}")),
         }
     }
