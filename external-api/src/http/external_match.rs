@@ -95,6 +95,12 @@ pub struct AssembleExternalMatchRequest {
     /// Whether or not to include gas estimation in the response
     #[serde(default)]
     pub do_gas_estimation: bool,
+    /// Whether or not to allow shared access to the resulting bundle
+    ///
+    /// If true, the bundle may be sent to other clients requesting an external
+    /// match. If false, the bundle will be exclusively held for some time
+    #[serde(default)]
+    pub allow_shared: bool,
     /// The receiver address of the match, if not the message sender
     #[serde(default)]
     pub receiver_address: Option<String>,

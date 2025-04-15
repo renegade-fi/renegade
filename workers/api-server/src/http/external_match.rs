@@ -286,12 +286,14 @@ impl ExternalMatchProcessor {
     async fn assemble_external_match(
         &self,
         gas_estimation: bool,
+        allow_shared: bool,
         receiver: Option<Address>,
         price: TimestampedPrice,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
+            .with_allow_shared(allow_shared)
             .with_price(price);
         let resp = self.request_handshake_manager(order.clone(), opt).await?;
 
@@ -573,7 +575,13 @@ impl TypedHandler for AssembleExternalMatchHandler {
         let price = TimestampedPrice::from(req.signed_quote.quote.price);
         let match_bundle = self
             .processor
-            .assemble_external_match(req.do_gas_estimation, receiver, price, order)
+            .assemble_external_match(
+                req.do_gas_estimation,
+                req.allow_shared,
+                receiver,
+                price,
+                order,
+            )
             .await?;
         Ok(ExternalMatchResponse { match_bundle })
     }
