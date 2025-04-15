@@ -166,6 +166,12 @@ pub struct ExternalMatchingEngineOptions {
     /// The duration for which a match bundle is valid; i.e. for which the task
     /// driver should lock the matched wallet's queue
     pub bundle_duration: Duration,
+    /// Whether or not to allow shared access to the resulting bundle
+    ///
+    /// If true, the bundle may be sent to other clients requesting an external
+    /// match. If false, the bundle will be exclusively held for
+    /// `bundle_duration`
+    pub allow_shared: bool,
     /// The price to use for the external match. If `None`, the price will
     /// be sampled by the engine
     ///
@@ -196,6 +202,12 @@ impl ExternalMatchingEngineOptions {
     /// Set the bundle duration
     pub fn with_bundle_duration(mut self, duration: Duration) -> Self {
         self.bundle_duration = duration;
+        self
+    }
+
+    /// Set whether to allow shared access to the resulting bundle
+    pub fn with_allow_shared(mut self, allow_shared: bool) -> Self {
+        self.allow_shared = allow_shared;
         self
     }
 

@@ -185,6 +185,9 @@ impl StateInner {
     }
 
     /// Get a list of matchable orders matching the given filter
+    ///
+    /// If `requires_serial` is true, then the returned orders will all be
+    /// serial-preemptable, otherwise they only require concurrent preemption
     #[instrument(name = "get_matchable_orders", skip_all, fields(filter = ?filter, num_candidates, num_available))]
     pub async fn get_matchable_orders(
         &self,
@@ -251,6 +254,7 @@ impl StateInner {
                     }
                 }
 
+                // Check if the task queue for the order is free
                 if Self::is_serial_queue_free(&id, tx)? {
                     res.push(id);
                 }
@@ -370,8 +374,7 @@ impl StateInner {
 // -----------
 
 impl StateInner {
-    /// Checks that a task queue is empty and not paused for a wallet containing
-    /// an order
+    /// Checks whether a given serial task queue is free, for a given order
     fn is_serial_queue_free<T: TransactionKind>(
         order_id: &OrderIdentifier,
         tx: &StateTxn<T>,

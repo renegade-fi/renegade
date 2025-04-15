@@ -15,7 +15,7 @@ use circuit_types::{
     r#match::{ExternalMatchResult, MatchResult},
 };
 use common::types::{
-    tasks::SettleExternalMatchTaskDescriptor,
+    tasks::{SettleExternalMatchTaskDescriptor, TaskDescriptor},
     token::Token,
     wallet::{Order, OrderIdentifier},
     TimestampedPrice,
@@ -229,7 +229,12 @@ impl HandshakeExecutor {
             response_topic,
         );
 
-        self.enqueue_serial_task_await_completion(task.into()).await
+        let descriptor = TaskDescriptor::from(task);
+        if options.allow_shared {
+            self.enqueue_concurrent_task_await_completion(descriptor).await
+        } else {
+            self.enqueue_serial_task_await_completion(descriptor).await
+        }
     }
 
     /// Forward a quote to the client
