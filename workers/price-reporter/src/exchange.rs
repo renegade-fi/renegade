@@ -51,6 +51,9 @@ pub async fn connect_exchange(
         Exchange::UniswapV3 => {
             Box::new(UniswapV3Connection::connect(base_token, quote_token, config).await?)
         },
+        Exchange::Renegade => {
+            todo!("implement renegade connection")
+        },
     })
 }
 
@@ -66,6 +69,7 @@ pub async fn supports_pair(
         Exchange::Kraken => KrakenConnection::supports_pair(base_token, quote_token).await?,
         Exchange::Okx => OkxConnection::supports_pair(base_token, quote_token).await?,
         Exchange::UniswapV3 => UniswapV3Connection::supports_pair(base_token, quote_token).await?,
+        Exchange::Renegade => BinanceConnection::supports_pair(base_token, quote_token).await?,
     })
 }
 

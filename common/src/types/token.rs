@@ -97,6 +97,11 @@ impl Token {
         Self::from_ticker(USDC_TICKER)
     }
 
+    /// Get the USDT token
+    pub fn usdt() -> Self {
+        Self::from_ticker(USDT_TICKER)
+    }
+
     /// Given an ERC-20 contract address, returns a new Token
     pub fn from_addr(addr: &str) -> Self {
         Self { addr: String::from(addr).to_lowercase() }
