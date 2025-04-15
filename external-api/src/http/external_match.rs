@@ -245,7 +245,8 @@ impl ExternalOrder {
             return self.exact_quote_output;
         }
 
-        let base_amount_scalar = Scalar::from(self.base_amount);
+        let base_amount = self.get_base_amount(price, relayer_fee);
+        let base_amount_scalar = Scalar::from(base_amount);
         let implied_quote_amount = price * base_amount_scalar;
         scalar_to_u128(&implied_quote_amount.floor())
     }
