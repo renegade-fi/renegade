@@ -1,18 +1,21 @@
 //! Defines the core implementation of the on-chain event listener
 
 use rand::{thread_rng, Rng};
-use std::{thread::JoinHandle, time::Duration};
+use std::{sync::Arc, thread::JoinHandle, time::Duration};
 
-use arbitrum_client::{abi::NullifierSpentFilter, client::ArbitrumClient};
+use arbitrum_client::{
+    abi::{DarkpoolContract, NullifierSpentFilter},
+    client::ArbitrumClient,
+};
 use circuit_types::wallet::Nullifier;
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
-use ethers::{prelude::StreamExt, types::H256 as TxHash};
-use job_types::{
-    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
-    network_manager::NetworkManagerQueue,
-    proof_manager::ProofManagerQueue,
+use ethers::{
+    prelude::StreamExt,
+    providers::{Provider, Ws},
+    types::H256 as TxHash,
 };
+use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
 use tracing::{error, info};
@@ -35,8 +38,10 @@ const TASK_COMPLETION_DELAY_S: u64 = 10; // 10 seconds
 /// The configuration passed to the listener upon startup
 #[derive(Clone)]
 pub struct OnChainEventListenerConfig {
-    /// The maximum root staleness to allow in Merkle proofs
-    pub max_root_staleness: usize,
+    /// The ethereum websocket address to use for streaming events
+    ///
+    /// If not configured, the listener will poll using the arbitrum client
+    pub websocket_addr: Option<String>,
     /// An arbitrum client for listening to events
     pub arbitrum_client: ArbitrumClient,
     /// A copy of the relayer global state
@@ -44,13 +49,34 @@ pub struct OnChainEventListenerConfig {
     /// A sender to the handshake manager's job queue, used to enqueue
     /// MPC shootdown jobs
     pub handshake_manager_job_queue: HandshakeManagerQueue,
-    /// The worker job queue for the ProofGenerationManager
-    pub proof_generation_work_queue: ProofManagerQueue,
-    /// The work queue for the network manager, used to send outbound gossip
-    /// messages
-    pub network_sender: NetworkManagerQueue,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
+}
+
+impl OnChainEventListenerConfig {
+    /// Whether or not a websocket listener is configured
+    pub fn has_websocket_listener(&self) -> bool {
+        self.websocket_addr.is_some()
+    }
+
+    /// Create a new websocket client if available
+    pub async fn ws_client(
+        &self,
+    ) -> Result<DarkpoolContract<Provider<Ws>>, OnChainEventListenerError> {
+        if !self.has_websocket_listener() {
+            panic!("no websocket listener configured");
+        }
+
+        // Connect to the websocket
+        let addr = self.websocket_addr.clone().unwrap();
+        let client = Ws::connect(&addr).await?;
+        let provider = Provider::<Ws>::new(client);
+
+        // Create the contract instance
+        let contract_addr = self.arbitrum_client.get_darkpool_client().address();
+        let contract = DarkpoolContract::new(contract_addr, Arc::new(provider));
+        Ok(contract)
+    }
 }
 
 /// The worker responsible for listening for on-chain events, translating them
@@ -89,6 +115,10 @@ impl OnChainEventListenerExecutor {
         &self.config.global_state
     }
 
+    // --------------
+    // | Event Loop |
+    // --------------
+
     /// The main execution loop for the executor
     pub async fn execute(self) -> Result<(), OnChainEventListenerError> {
         // If the node is running in bootstrap mode, sleep forever
@@ -104,23 +134,57 @@ impl OnChainEventListenerExecutor {
             .map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
         info!("Starting on-chain event listener from current block {starting_block_number}");
 
-        // Build a filtered stream on events that the chain-events worker listens for
-        let filter = self.arbitrum_client().get_darkpool_client().event::<NullifierSpentFilter>();
-        let mut event_stream = filter
-            .stream_with_meta()
-            .await
-            .map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
+        // Begin the watch loop
+        let res = self.watch_nullifiers().await.unwrap_err();
+        error!("on-chain event listener stream ended unexpectedly: {res}");
+        Err(res)
+    }
+
+    /// Nullifier watch loop
+    async fn watch_nullifiers(&self) -> Result<(), OnChainEventListenerError> {
+        if self.config.has_websocket_listener() {
+            self.watch_nullifiers_ws().await
+        } else {
+            self.watch_nullifiers_http().await
+        }
+    }
+
+    /// Watch for nullifiers via a websocket stream
+    async fn watch_nullifiers_ws(&self) -> Result<(), OnChainEventListenerError> {
+        info!("listening for nullifiers via websocket");
+        // Create the contract instance and the event stream
+        let contract = self.config.ws_client().await?;
+        let filter = contract.event::<NullifierSpentFilter>();
+        let mut stream = filter.stream_with_meta().await?;
 
         // Listen for events in a loop
-        while let Some(res) = event_stream.next().await {
-            let (event, meta) =
-                res.map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
+        while let Some(res) = stream.next().await {
+            let (event, meta) = res.map_err(OnChainEventListenerError::arbitrum)?;
             self.handle_nullifier_spent(meta.transaction_hash, &event).await?;
         }
 
-        error!("on-chain event listener stream ended unexpectedly");
-        Ok(())
+        todo!()
     }
+
+    /// Watch for nullifiers via HTTP polling
+    async fn watch_nullifiers_http(&self) -> Result<(), OnChainEventListenerError> {
+        info!("listening for nullifiers via HTTP polling");
+        // Build a filtered stream on events that the chain-events worker listens for
+        let filter = self.arbitrum_client().get_darkpool_client().event::<NullifierSpentFilter>();
+        let mut event_stream = filter.stream_with_meta().await?;
+
+        // Listen for events in a loop
+        while let Some(res) = event_stream.next().await {
+            let (event, meta) = res.map_err(OnChainEventListenerError::arbitrum)?;
+            self.handle_nullifier_spent(meta.transaction_hash, &event).await?;
+        }
+
+        unreachable!()
+    }
+
+    // ----------------------
+    // | Nullifier Handlers |
+    // ----------------------
 
     /// Handle a nullifier spent event
     async fn handle_nullifier_spent(

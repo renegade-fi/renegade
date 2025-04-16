@@ -43,7 +43,7 @@ pub struct Cli {
     pub config_file: Option<String>,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
-    #[clap(long, value_parser, conflicts_with_all = &["coinbase_key_name", "coinbase_key_secret", "eth_websocket_addr"])]
+    #[clap(long, value_parser, conflicts_with_all = &["coinbase_key_name", "coinbase_key_secret"])]
     pub price_reporter_url: Option<String>,
 
     // -----------------------------
@@ -214,7 +214,7 @@ pub struct Cli {
     #[clap(long = "coinbase-key-secret", value_parser)]
     pub coinbase_key_secret: Option<String>,
     /// The Ethereum RPC node websocket address to dial for on-chain data
-    #[clap(long = "eth-websocket", value_parser)]
+    #[clap(long = "eth-websocket-url", value_parser, env = "ETH_WEBSOCKET_URL")]
     pub eth_websocket_addr: Option<String>,
     /// The HTTP addressable Arbitrum JSON-RPC node
     #[clap(long = "rpc-url", value_parser, env = "RPC_URL")]

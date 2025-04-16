@@ -457,17 +457,13 @@ impl MockNodeController {
             self.arbitrum_client.clone().expect("Arbitrum client not initialized");
         let global_state = self.state.clone().expect("State not initialized");
         let handshake_manager_job_queue = self.handshake_queue.0.clone();
-        let proof_generation_work_queue = self.proof_queue.0.clone();
-        let network_sender = self.network_queue.0.clone();
         let cancel_channel = mock_cancel();
 
         let conf = OnChainEventListenerConfig {
-            max_root_staleness: config.max_merkle_staleness,
+            websocket_addr: config.eth_websocket_addr.clone(),
             arbitrum_client,
             global_state,
             handshake_manager_job_queue,
-            proof_generation_work_queue,
-            network_sender,
             cancel_channel,
         };
 
