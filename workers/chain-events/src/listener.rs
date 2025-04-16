@@ -1,6 +1,6 @@
 //! Defines the core implementation of the on-chain event listener
 
-use rand::{rngs::OsRng, Rng};
+use rand::{thread_rng, Rng};
 use std::{thread::JoinHandle, time::Duration};
 
 use arbitrum_client::{abi::NullifierSpentFilter, client::ArbitrumClient};
@@ -24,6 +24,9 @@ use super::error::OnChainEventListenerError;
 const MIN_NULLIFIER_REFRESH_DELAY_S: u64 = 20; // 20 seconds
 /// The maximum delay in seconds for wallet refresh
 const MAX_NULLIFIER_REFRESH_DELAY_S: u64 = 40; // 40 seconds
+/// The delay to wait for a task to complete before attempting to refresh a
+/// nullifier's wallet
+const TASK_COMPLETION_DELAY_S: u64 = 10; // 10 seconds
 
 // ----------
 // | Worker |
@@ -131,18 +134,86 @@ impl OnChainEventListenerExecutor {
             .handshake_manager_job_queue
             .send(HandshakeManagerJob::MpcShootdown { nullifier })
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
-
-        // Nullify any orders that used this nullifier in their validity proof and
-        // check if the wallet that this nullifier belongs to needs a refresh
         self.state().nullify_orders(nullifier).await?;
-        self.check_wallet_refresh(nullifier).await?;
 
-        // Record metrics for any external matches in the transaction
-        self.check_external_match_settlement(tx).await
+        // Update internal state
+        self.handle_nullifier_wallet_updates(nullifier, tx).await
     }
 
-    /// Check if the wallet that this nullifier belongs to needs a refresh
-    async fn check_wallet_refresh(
+    /// Handle the internal wallet updates resulting from a nullifier spend
+    async fn handle_nullifier_wallet_updates(
+        &self,
+        nullifier: Nullifier,
+        tx: TxHash,
+    ) -> Result<(), OnChainEventListenerError> {
+        // If the current node is not the update handler, sleep for a random timeout
+        // then check that the nullifier state updates have been processed.
+        // We do this as a crash recovery mechanism to ensure that the updates are
+        // processed even if the selected node is crashed
+        if !self.should_execute_wallet_updates(nullifier).await? {
+            let mut rng = thread_rng();
+            let timeout =
+                rng.gen_range(MIN_NULLIFIER_REFRESH_DELAY_S..=MAX_NULLIFIER_REFRESH_DELAY_S);
+            tokio::time::sleep(Duration::from_secs(timeout)).await;
+        }
+
+        // Check whether any wallet is indexed by the nullifier
+        let maybe_wallet = self.state().get_wallet_for_nullifier(&nullifier).await?;
+        if maybe_wallet.is_none() {
+            return Ok(());
+        }
+
+        // Record metrics for any external matches in the transaction
+        let external_match = self.check_external_match_settlement(tx).await?;
+
+        // External matches will not automatically update the wallet, so we should
+        // enqueue a wallet refresh immediately. Otherwise, we wait some time
+        // for an ongoing task to finish after it spends a nullifier -- this may
+        // clear the nullifier indexed into the state naturally
+        if !external_match {
+            let duration = Duration::from_secs(TASK_COMPLETION_DELAY_S);
+            tokio::time::sleep(duration).await;
+        }
+
+        // Clear the wallet's queue and refresh it if the nullifier is still present
+        self.clear_queue_for_nullifier(nullifier).await
+    }
+
+    /// Decides the node in a cluster that should execute wallet updates for a
+    /// given nullifier
+    ///
+    /// This is done to prevent multiple nodes from enqueuing wallet refreshes
+    /// or otherwise updating the same wallet state
+    ///
+    /// To select a node, we sort the nodes then take (nullifier_lsb % n_nodes)
+    /// as the selected node. The nullifier is the result of a cryptographic
+    /// hash function, so this should give a roughly uniform distribution
+    ///
+    /// Returns true if the current node should execute wallet updates for the
+    /// given nullifier
+    async fn should_execute_wallet_updates(
+        &self,
+        nullifier: Nullifier,
+    ) -> Result<bool, OnChainEventListenerError> {
+        // Fetch cluster state
+        let state = self.state();
+        let my_id = state.get_peer_id().await?;
+        let cluster_id = state.get_cluster_id().await?;
+        let mut peers = state.get_cluster_peers(&cluster_id).await?;
+        peers.sort();
+
+        // Compute the selected node
+        let n_peers = peers.len();
+        let nullifier_bytes = nullifier.to_bytes_be();
+        let nullifier_lsb = *nullifier_bytes.last().unwrap();
+        let peer = usize::from(nullifier_lsb) % n_peers;
+        let peer_id = peers[peer];
+
+        Ok(peer_id == my_id)
+    }
+
+    /// Clear a wallet's task queue and enqueue a wallet refresh task
+    async fn clear_queue_for_nullifier(
         &self,
         nullifier: Nullifier,
     ) -> Result<(), OnChainEventListenerError> {
@@ -151,55 +222,28 @@ impl OnChainEventListenerExecutor {
         if maybe_wallet.is_none() {
             return Ok(());
         }
+        let id = maybe_wallet.unwrap();
+        info!("refreshing wallet {id} after nullifier spend");
 
-        let state_clone = self.state().clone();
-        tokio::spawn(async move {
-            if let Err(e) = Self::enqueue_wallet_refresh_if_needed(nullifier, state_clone).await {
-                error!("error checking for wallet nullifier refresh: {e}");
-            }
-        });
+        // Clear the queue
+        let waiter = self.state().clear_task_queue(&id).await?;
+        waiter.await.map_err(OnChainEventListenerError::arbitrum)?;
 
-        Ok(())
-    }
-
-    /// Wait for a randomized delay then enqueue a wallet refresh if the wallet
-    /// is still indexed by an old nullifier
-    ///
-    /// We do not immediately refresh the wallet, but instead wait for a
-    /// randomized timeout to pass. This allows time for other components of the
-    /// relayer to process the nullifier spend and update the wallet state
-    /// accordingly. Randomizing the timeout prevents a thundering herd
-    ///
-    /// As such, after the timeout, we check whether the wallet is still indexed
-    /// by the nullifier, and if so we refresh it
-    async fn enqueue_wallet_refresh_if_needed(
-        nullifier: Nullifier,
-        state: State,
-    ) -> Result<(), OnChainEventListenerError> {
-        // Generate a random delay and sleep for that duration
-        let mut rng = OsRng;
-        let delay_seconds =
-            rng.gen_range(MIN_NULLIFIER_REFRESH_DELAY_S..=MAX_NULLIFIER_REFRESH_DELAY_S);
-        let delay = Duration::from_secs(delay_seconds);
-        tokio::time::sleep(delay).await;
-
-        // Check if a wallet is still indexed by the nullifier
-        let maybe_wallet = state.get_wallet_for_nullifier(&nullifier).await?;
-        if let Some(id) = maybe_wallet {
-            info!("refreshing wallet {id} after nullifier spend");
-            state.append_wallet_refresh_task(id).await?;
-        }
-
+        // Refresh the wallet
+        self.state().append_wallet_refresh_task(id).await?;
         Ok(())
     }
 
     /// Check for an external match settlement on the given transaction hash. If
     /// one is present, record metrics for it
+    ///
+    /// Returns whether the tx settled an external match
     async fn check_external_match_settlement(
         &self,
         tx: TxHash,
-    ) -> Result<(), OnChainEventListenerError> {
+    ) -> Result<bool, OnChainEventListenerError> {
         let matches = self.arbitrum_client().find_external_matches_in_tx(tx).await?;
+        let external_match = !matches.is_empty();
 
         // Record metrics for each match
         // TODO: Record a fill on the internal order. We don't do this for now to keep
@@ -212,6 +256,6 @@ impl OnChainEventListenerExecutor {
             renegade_metrics::record_match_volume(&match_result, true /* is_external_match */);
         }
 
-        Ok(())
+        Ok(external_match)
     }
 }

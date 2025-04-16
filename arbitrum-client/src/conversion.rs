@@ -481,9 +481,10 @@ pub fn amount_to_u256(amount: Amount) -> Result<U256, ConversionError> {
 
 /// Convert a `U256` to an `Amount`
 pub fn u256_to_amount(u256: U256) -> Result<Amount, ConversionError> {
-    let bytes: [u8; 16] =
-        u256.to_be_bytes_vec().try_into().map_err(|_| ConversionError::InvalidUint)?;
-    let amount = Amount::from_be_bytes(bytes);
+    // Take the LSBs of the `U256`
+    let le_bytes = u256.to_le_bytes_vec();
+    let trimmed: [u8; 16] = le_bytes[..16].try_into().unwrap();
+    let amount = Amount::from_le_bytes(trimmed);
     Ok(amount)
 }
 
