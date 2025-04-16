@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt::Display};
 
+use arbitrum_client::errors::ArbitrumClientError;
 use state::error::StateError;
 
 /// The error type that the event listener emits
@@ -23,6 +24,14 @@ pub enum OnChainEventListenerError {
     TaskStartup(String),
 }
 
+impl OnChainEventListenerError {
+    /// Create a new arbitrum error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn arbitrum<T: ToString>(e: T) -> Self {
+        OnChainEventListenerError::Arbitrum(e.to_string())
+    }
+}
+
 impl Display for OnChainEventListenerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
@@ -33,5 +42,11 @@ impl Error for OnChainEventListenerError {}
 impl From<StateError> for OnChainEventListenerError {
     fn from(e: StateError) -> Self {
         OnChainEventListenerError::State(e.to_string())
+    }
+}
+
+impl From<ArbitrumClientError> for OnChainEventListenerError {
+    fn from(e: ArbitrumClientError) -> Self {
+        OnChainEventListenerError::Arbitrum(e.to_string())
     }
 }

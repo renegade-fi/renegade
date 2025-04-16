@@ -17,6 +17,7 @@ circuit-types = { workspace = true }
 common = { workspace = true }
 constants = { workspace = true }
 renegade-crypto = { workspace = true }
+renegade-metrics = { workspace = true }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
 state = { workspace = true }

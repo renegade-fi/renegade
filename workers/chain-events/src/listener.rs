@@ -7,7 +7,7 @@ use arbitrum_client::{abi::NullifierSpentFilter, client::ArbitrumClient};
 use circuit_types::wallet::Nullifier;
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
-use ethers::prelude::StreamExt;
+use ethers::{prelude::StreamExt, types::H256 as TxHash};
 use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
     network_manager::NetworkManagerQueue,
@@ -104,14 +104,15 @@ impl OnChainEventListenerExecutor {
         // Build a filtered stream on events that the chain-events worker listens for
         let filter = self.arbitrum_client().get_darkpool_client().event::<NullifierSpentFilter>();
         let mut event_stream = filter
-            .stream()
+            .stream_with_meta()
             .await
             .map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
 
         // Listen for events in a loop
         while let Some(res) = event_stream.next().await {
-            let event = res.map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
-            self.handle_nullifier_spent(&event).await?;
+            let (event, meta) =
+                res.map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
+            self.handle_nullifier_spent(meta.transaction_hash, &event).await?;
         }
 
         error!("on-chain event listener stream ended unexpectedly");
@@ -121,6 +122,7 @@ impl OnChainEventListenerExecutor {
     /// Handle a nullifier spent event
     async fn handle_nullifier_spent(
         &self,
+        tx: TxHash,
         event: &NullifierSpentFilter,
     ) -> Result<(), OnChainEventListenerError> {
         // Send an MPC shootdown request to the handshake manager
@@ -130,12 +132,13 @@ impl OnChainEventListenerExecutor {
             .send(HandshakeManagerJob::MpcShootdown { nullifier })
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
 
-        // Nullify any orders that used this nullifier in their validity proof
+        // Nullify any orders that used this nullifier in their validity proof and
+        // check if the wallet that this nullifier belongs to needs a refresh
         self.state().nullify_orders(nullifier).await?;
-
-        // Check if the wallet that this nullifier belongs to needs a refresh
         self.check_wallet_refresh(nullifier).await?;
-        Ok(())
+
+        // Record metrics for any external matches in the transaction
+        self.check_external_match_settlement(tx).await
     }
 
     /// Check if the wallet that this nullifier belongs to needs a refresh
@@ -185,6 +188,28 @@ impl OnChainEventListenerExecutor {
         if let Some(id) = maybe_wallet {
             info!("refreshing wallet {id} after nullifier spend");
             state.append_wallet_refresh_task(id).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Check for an external match settlement on the given transaction hash. If
+    /// one is present, record metrics for it
+    async fn check_external_match_settlement(
+        &self,
+        tx: TxHash,
+    ) -> Result<(), OnChainEventListenerError> {
+        let matches = self.arbitrum_client().find_external_matches_in_tx(tx).await?;
+
+        // Record metrics for each match
+        // TODO: Record a fill on the internal order. We don't do this for now to keep
+        // things simple, but when internal volumes increase we should start
+        // recording order fills. One way to do this is to lookup the wallet by
+        // nullifier and record a fill on the order with matching mint
+        for match_result in matches {
+            let match_result =
+                match_result.try_into().map_err(OnChainEventListenerError::arbitrum)?;
+            renegade_metrics::record_match_volume(&match_result, true /* is_external_match */);
         }
 
         Ok(())
