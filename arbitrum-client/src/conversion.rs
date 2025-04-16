@@ -468,9 +468,24 @@ pub fn biguint_to_address(biguint: &BigUint) -> Result<Address, ConversionError>
     Ok(Address::from(u160))
 }
 
+/// Convert an `Address` to a `BigUint`
+pub fn address_to_biguint(address: &Address) -> Result<BigUint, ConversionError> {
+    let bytes = address.0.to_vec();
+    Ok(BigUint::from_bytes_be(&bytes))
+}
+
 /// Convert an `Amount` to a `U256`
 pub fn amount_to_u256(amount: Amount) -> Result<U256, ConversionError> {
     amount.try_into().map_err(|_| ConversionError::InvalidUint)
+}
+
+/// Convert a `U256` to an `Amount`
+pub fn u256_to_amount(u256: U256) -> Result<Amount, ConversionError> {
+    // Take the LSBs of the `U256`
+    let le_bytes = u256.to_le_bytes_vec();
+    let trimmed: [u8; 16] = le_bytes[..16].try_into().unwrap();
+    let amount = Amount::from_le_bytes(trimmed);
+    Ok(amount)
 }
 
 /// Converts a `Scalar` to a `U256`

@@ -30,7 +30,14 @@ use crate::abi::{
     processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall, MerkleInsertionFilter,
     NullifierSpentFilter,
 };
-use crate::constants::{Selector, KNOWN_SELECTORS};
+use crate::constants::{
+    Selector, KNOWN_SELECTORS, PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
+    PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
+};
+use crate::contract_types::{
+    ExternalMatchResult, ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
+};
+use crate::helpers::deserialize_calldata;
 use crate::{
     abi::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
@@ -284,6 +291,44 @@ impl ArbitrumClient {
             info!("unknown selector {selector:?}, searching calldata...");
             self.fetch_public_shares_for_unknown_selector(tx_hash, public_blinder_share).await
         }
+    }
+
+    /// Fetch all external matches in a given transaction
+    pub async fn find_external_matches_in_tx(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<Vec<ExternalMatchResult>, ArbitrumClientError> {
+        // Get all darkpool subcalls in the tx
+        let mut matches = Vec::new();
+        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+        for frame in darkpool_calls.into_iter() {
+            let calldata: &[u8] = &frame.input;
+            let selector = calldata[..SELECTOR_LEN].try_into().unwrap();
+
+            // Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata
+            let statement_bytes = match selector {
+                PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
+                    let call = processAtomicMatchSettleCall::abi_decode(
+                        calldata, true, // validate
+                    )?;
+                    call.valid_match_settle_atomic_statement
+                },
+                PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
+                    let call = processAtomicMatchSettleWithReceiverCall::abi_decode(
+                        calldata, true, // validate
+                    )?;
+                    call.valid_match_settle_atomic_statement
+                },
+                _ => continue,
+            };
+
+            // Deserialize the statement, and store the match
+            let statement: ContractValidMatchSettleAtomicStatement =
+                deserialize_calldata(&statement_bytes)?;
+            matches.push(statement.match_result);
+        }
+
+        Ok(matches)
     }
 
     // -----------

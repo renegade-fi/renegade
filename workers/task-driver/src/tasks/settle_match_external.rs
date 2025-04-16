@@ -7,12 +7,7 @@ use std::time::Duration;
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
-use crate::utils::order_states::record_order_fill;
 use crate::utils::validity_proofs::enqueue_proof_job;
-use arbitrum_client::client::ArbitrumClient;
-use arbitrum_client::constants::{
-    PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR, PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
-};
 use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
@@ -30,18 +25,13 @@ use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use common::types::TimestampedPrice;
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::bus_message::SystemBusMessage;
-use job_types::event_manager::{
-    try_send_event, EventManagerQueue, ExternalFillEvent, RelayerEvent,
-};
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use system_bus::SystemBus;
-use tracing::{info, instrument, warn};
-use util::matching_engine::{
-    apply_match_to_shares, compute_fee_obligation, compute_fee_obligation_with_protocol_fee,
-};
+use tracing::instrument;
+use util::matching_engine::{apply_match_to_shares, compute_fee_obligation_with_protocol_fee};
 use util::on_chain::get_external_match_fee;
 
 use super::ERR_NO_VALIDITY_PROOF;
@@ -58,10 +48,6 @@ pub const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 /// The name of the task
 pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
 
-/// The duration for which to wait for settlement on-chain for the purpose of
-/// metrics reporting
-const SETTLEMENT_METRICS_WAIT_TIME: Duration = Duration::from_secs(30);
-
 // --------------
 // | Task State |
 // --------------
@@ -77,8 +63,6 @@ pub enum SettleMatchExternalTaskState {
     ForwardingAtomicMatchBundle,
     /// Await the result of the atomic match settlement to be submitted on-chain
     AwaitingSettlement,
-    /// Refresh the wallet after the match settlement is witnessed on-chain
-    RefreshingWallet,
     /// The task has finished
     Completed,
 }
@@ -106,7 +90,6 @@ impl Display for SettleMatchExternalTaskState {
             Self::ProvingAtomicMatchSettle => write!(f, "Proving Atomic Match Settle"),
             Self::ForwardingAtomicMatchBundle => write!(f, "Forwarding Atomic Match Bundle"),
             Self::AwaitingSettlement => write!(f, "Awaiting Settlement"),
-            Self::RefreshingWallet => write!(f, "Refreshing Wallet"),
             Self::Completed => write!(f, "Completed"),
         }
     }
@@ -204,8 +187,6 @@ impl From<ArbitrumClientError> for SettleMatchExternalTaskError {
 /// Describe the settle match external task
 #[derive(Clone)]
 pub struct SettleMatchExternalTask {
-    /// The ID of the order to settle
-    internal_order_id: OrderIdentifier,
     /// The ID of the wallet that the local node matched an order from
     internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
@@ -222,8 +203,6 @@ pub struct SettleMatchExternalTask {
     atomic_match_bundle: Option<AtomicMatchSettleBundle>,
     /// The system bus topic on which to send the atomic match settle bundle
     atomic_match_bundle_topic: String,
-    /// The arbitrum client to use for submitting transactions
-    arbitrum_client: ArbitrumClient,
     /// A copy of the relayer-global state
     state: State,
     /// A handle on the system bus
@@ -232,8 +211,6 @@ pub struct SettleMatchExternalTask {
     proof_queue: ProofManagerQueue,
     /// The state of the task
     task_state: SettleMatchExternalTaskState,
-    /// The event queue to send events to
-    event_queue: EventManagerQueue,
 }
 
 #[async_trait]
@@ -261,7 +238,6 @@ impl Task for SettleMatchExternalTask {
             Self::fetch_internal_order_validity_bundle(internal_order_id, &ctx.state).await?;
 
         Ok(Self {
-            internal_order_id,
             internal_wallet_id,
             execution_price,
             match_res,
@@ -270,12 +246,10 @@ impl Task for SettleMatchExternalTask {
             internal_order_validity_witness,
             atomic_match_bundle: None,
             atomic_match_bundle_topic,
-            arbitrum_client: ctx.arbitrum_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             bus: ctx.bus,
             task_state: SettleMatchExternalTaskState::Pending,
-            event_queue: ctx.event_queue,
         })
     }
 
@@ -303,18 +277,7 @@ impl Task for SettleMatchExternalTask {
             },
 
             SettleMatchExternalTaskState::AwaitingSettlement => {
-                if self.await_settlement().await? {
-                    self.task_state = SettleMatchExternalTaskState::RefreshingWallet
-                } else {
-                    // If settlement times out, assume that the match was not settled, and complete
-                    // the task
-                    self.task_state = SettleMatchExternalTaskState::Completed
-                }
-            },
-
-            SettleMatchExternalTaskState::RefreshingWallet => {
-                self.refresh_wallet().await?;
-                self.emit_event()?;
+                self.await_settlement().await?;
                 self.task_state = SettleMatchExternalTaskState::Completed
             },
 
@@ -380,36 +343,11 @@ impl SettleMatchExternalTask {
         Ok(())
     }
 
-    /// Await the result of the atomic match settlement to be submitted on-chain
-    ///
-    /// Returns `true` if the settlement succeeded on-chain, `false` otherwise
-    async fn await_settlement(&self) -> Result<bool, SettleMatchExternalTaskError> {
-        // We spawn the settlement waiter in a separate thread, to allow the task to
-        // continue before settlement is observed on-chain
-        let self_clone = self.clone();
-        let settlement =
-            tokio::spawn(async move { self_clone.await_settlement_and_record_metrics().await });
-
-        // Wait for the settlement task to complete or timeout after bundle_duration
-        match tokio::time::timeout(self.bundle_duration, settlement).await {
-            Ok(result) => result.map_err(SettleMatchExternalTaskError::awaiting_settlement)?,
-            Err(_) => Ok(false), // timeout
-        }
-    }
-
-    /// Refresh the wallet after the match settlement is witnessed on-chain
-    ///
-    /// Instead of replicating the logic of the refresh task we simply enqueue a
-    /// refresh task for the wallet.
-    ///
-    /// The wallet should have no other tasks enqueued by virtue of it being
-    /// considered for atomic matches, but if it does they will fail through
-    /// and be discarded
-    async fn refresh_wallet(&self) -> Result<(), SettleMatchExternalTaskError> {
-        // Refresh the wallet
-        let wallet_id = self.internal_wallet_id;
-        let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
-        info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
+    /// Waits for the bundle duration to pass so that the client may settle the
+    /// match. This is done to block the task queue for the duration the bundle
+    /// is guaranteed to be valid.
+    async fn await_settlement(&self) -> Result<(), SettleMatchExternalTaskError> {
+        tokio::time::sleep(self.bundle_duration).await;
         Ok(())
     }
 
@@ -519,68 +457,5 @@ impl SettleMatchExternalTask {
                 .map_err(SettleMatchExternalTaskError::proof_linking)?;
 
         Ok(AtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })
-    }
-
-    /// Await settlement on-chain and record metrics
-    async fn await_settlement_and_record_metrics(
-        &self,
-    ) -> Result<bool, SettleMatchExternalTaskError> {
-        let valid_reblind = &self.internal_order_validity_bundle.reblind_proof.statement;
-        let nullifier = valid_reblind.original_shares_nullifier;
-        let selectors = [
-            PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
-            PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
-        ];
-        let res = self
-            .arbitrum_client
-            .await_nullifier_spent_from_selectors(
-                nullifier,
-                &selectors,
-                SETTLEMENT_METRICS_WAIT_TIME,
-            )
-            .await;
-
-        let did_settle = res.is_ok();
-        if did_settle {
-            self.record_fill().await?;
-        } else {
-            warn!("atomic match settlement not observed on-chain");
-        }
-
-        Ok(did_settle)
-    }
-
-    /// Record a fill in the internal order's fill history and in the relayer
-    /// metrics
-    async fn record_fill(&self) -> Result<(), SettleMatchExternalTaskError> {
-        let match_res = &self.match_res;
-        let price = self.execution_price;
-        record_order_fill(self.internal_order_id, match_res, price, &self.state)
-            .await
-            .map_err(SettleMatchExternalTaskError::State)?;
-
-        renegade_metrics::record_match_volume(match_res, true /* is_external_match */);
-        Ok(())
-    }
-
-    /// Emit an external match event to the event manager
-    fn emit_event(&self) -> Result<(), SettleMatchExternalTaskError> {
-        let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
-        let internal_party_order_side = commitments_witness.order.side;
-        let relayer_fee = commitments_witness.relayer_fee;
-        let internal_fee_take =
-            compute_fee_obligation(relayer_fee, internal_party_order_side, &self.match_res);
-
-        let external_match_result = self.match_res.clone().into();
-
-        let event = RelayerEvent::ExternalFill(ExternalFillEvent::new(
-            self.internal_wallet_id,
-            self.internal_order_id,
-            self.execution_price,
-            external_match_result,
-            internal_fee_take,
-        ));
-
-        try_send_event(event, &self.event_queue).map_err(SettleMatchExternalTaskError::send_event)
     }
 }

@@ -2489,6 +2489,7 @@ dependencies = [
  "lazy_static",
  "rand 0.8.5",
  "renegade-crypto 0.1.0",
+ "renegade-metrics",
  "state",
  "tokio",
  "tracing",

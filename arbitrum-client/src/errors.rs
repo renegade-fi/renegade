@@ -2,6 +2,8 @@
 
 use std::{error::Error, fmt::Display};
 
+use alloy_sol_types::Error as SolError;
+
 /// The error type returned by the Arbitrum client interface
 #[derive(Clone, Debug)]
 pub enum ArbitrumClientError {
@@ -93,5 +95,11 @@ impl Error for ConversionError {}
 impl From<ConversionError> for ArbitrumClientError {
     fn from(e: ConversionError) -> Self {
         Self::Conversion(e)
+    }
+}
+
+impl From<SolError> for ArbitrumClientError {
+    fn from(e: SolError) -> Self {
+        Self::ContractInteraction(e.to_string())
     }
 }

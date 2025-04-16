@@ -3,8 +3,13 @@
 use alloy_primitives::{Address, U256};
 use ark_bn254::{g1::Config as G1Config, g2::Config as G2Config, Fq, Fq2, Fr};
 use ark_ec::short_weierstrass::Affine;
+use circuit_types::r#match::MatchResult as CircuitMatchResult;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+
+use crate::conversion::address_to_biguint;
+use crate::conversion::u256_to_amount;
+use crate::errors::ConversionError;
 
 use super::serde_def_types::*;
 
@@ -190,6 +195,21 @@ pub struct ExternalMatchResult {
     /// `false` (0) corresponds to the internal party buying the base
     /// `true` (1) corresponds to the internal party selling the base
     pub direction: bool,
+}
+
+impl TryFrom<ExternalMatchResult> for CircuitMatchResult {
+    type Error = ConversionError;
+
+    fn try_from(value: ExternalMatchResult) -> Result<Self, Self::Error> {
+        Ok(CircuitMatchResult {
+            base_mint: address_to_biguint(&value.base_mint)?,
+            quote_mint: address_to_biguint(&value.quote_mint)?,
+            base_amount: u256_to_amount(value.base_amount)?,
+            quote_amount: u256_to_amount(value.quote_amount)?,
+            direction: value.direction,
+            min_amount_order_index: false, // unused for external matches
+        })
+    }
 }
 
 /// Represents the affine coordinates of a secp256k1 ECDSA public key.
