@@ -3,6 +3,7 @@
 use std::{error::Error, fmt::Display};
 
 use arbitrum_client::errors::ArbitrumClientError;
+use ethers::providers::Middleware;
 use state::error::StateError;
 
 /// The error type that the event listener emits
@@ -10,7 +11,7 @@ use state::error::StateError;
 pub enum OnChainEventListenerError {
     /// An error executing some method in the Arbitrum client
     Arbitrum(String),
-    /// An RPC error with the StarkNet provider
+    /// An RPC error with the provider
     Rpc(String),
     /// An error sending a message to another worker in the local node
     SendMessage(String),
@@ -47,6 +48,18 @@ impl From<StateError> for OnChainEventListenerError {
 
 impl From<ArbitrumClientError> for OnChainEventListenerError {
     fn from(e: ArbitrumClientError) -> Self {
-        OnChainEventListenerError::Arbitrum(e.to_string())
+        OnChainEventListenerError::arbitrum(e)
+    }
+}
+
+impl From<ethers::providers::WsClientError> for OnChainEventListenerError {
+    fn from(e: ethers::providers::WsClientError) -> Self {
+        OnChainEventListenerError::Rpc(e.to_string())
+    }
+}
+
+impl<M: Middleware> From<ethers::contract::ContractError<M>> for OnChainEventListenerError {
+    fn from(e: ethers::contract::ContractError<M>) -> Self {
+        OnChainEventListenerError::arbitrum(e)
     }
 }

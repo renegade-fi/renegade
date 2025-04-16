@@ -301,7 +301,7 @@ async fn main() -> Result<(), CoordinatorError> {
         exchange_conn_config: ExchangeConnectionsConfig {
             coinbase_key_name: args.coinbase_key_name,
             coinbase_key_secret: args.coinbase_key_secret,
-            eth_websocket_addr: args.eth_websocket_addr,
+            eth_websocket_addr: args.eth_websocket_addr.clone(),
         },
         price_reporter_url: args.price_reporter_url,
         disabled: args.disable_price_reporter,
@@ -317,12 +317,10 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = new_cancel_channel();
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
-        max_root_staleness: args.max_merkle_staleness,
+        websocket_addr: args.eth_websocket_addr,
         arbitrum_client: chain_listener_arbitrum_client,
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender.clone(),
-        proof_generation_work_queue: proof_generation_worker_sender.clone(),
-        network_sender: network_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
     })
     .await
