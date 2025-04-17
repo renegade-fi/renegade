@@ -308,15 +308,11 @@ impl ArbitrumClient {
             // Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata
             let statement_bytes = match selector {
                 PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
-                    let call = processAtomicMatchSettleCall::abi_decode(
-                        calldata, true, // validate
-                    )?;
+                    let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
                     call.valid_match_settle_atomic_statement
                 },
                 PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
-                    let call = processAtomicMatchSettleWithReceiverCall::abi_decode(
-                        calldata, true, // validate
-                    )?;
+                    let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
                     call.valid_match_settle_atomic_statement
                 },
                 _ => continue,
