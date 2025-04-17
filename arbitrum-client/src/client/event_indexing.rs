@@ -203,7 +203,7 @@ impl ArbitrumClient {
         &self,
         nullifier: Nullifier,
         timeout: Duration,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<TxHash, ArbitrumClientError> {
         self.await_nullifier_spent_from_selectors(nullifier, &[] /* selectors */, timeout).await
     }
 
@@ -214,7 +214,7 @@ impl ArbitrumClient {
         nullifier: Nullifier,
         selectors: &[Selector],
         timeout: Duration,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<TxHash, ArbitrumClientError> {
         // Build an event filter on the nullifier
         let nullifier_u256 = scalar_to_u256(&nullifier);
         let address = self.get_darkpool_client().address().into();
@@ -260,7 +260,7 @@ impl ArbitrumClient {
             ));
         }
 
-        Ok(())
+        Ok(tx_hash)
     }
 
     /// Fetch and parse the public secret shares from the calldata of the
