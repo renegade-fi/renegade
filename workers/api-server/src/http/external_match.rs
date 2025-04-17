@@ -320,8 +320,9 @@ impl ExternalMatchProcessor {
         receiver: Option<Address>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
-        let opt =
-            ExternalMatchingEngineOptions::new().with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT);
+        let opt = ExternalMatchingEngineOptions::new()
+            .with_allow_shared(true)
+            .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT);
         let resp = self.request_handshake_manager(external_order.clone(), opt).await?;
 
         match resp {
