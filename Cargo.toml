@@ -68,10 +68,10 @@ futures = "0.3"
 tokio = { version = "1" }
 
 # === Ethereum Libraries === #
-alloy = "0.11"
-alloy-contract = "0.11"
-alloy-primitives = "=0.8.20"
-alloy-sol-types = "=0.8.20"
+alloy = "0.14"
+alloy-contract = "0.14"
+alloy-primitives = "1.0.0"
+alloy-sol-types = "1.0.0"
 ethers = "2"
 
 # === Workspace Dependencies === #
