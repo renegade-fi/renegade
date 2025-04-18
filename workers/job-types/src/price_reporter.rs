@@ -46,6 +46,13 @@ impl PriceReporterQueue {
         report.price()
     }
 
+    /// Peek a timestamped price from the price reporter using usdc as the quote
+    /// token
+    pub async fn peek_price_usdc(&self, base_token: Token) -> Result<TimestampedPrice, String> {
+        let usdc = Token::usdc();
+        self.peek_price(base_token, usdc).await
+    }
+
     /// Peek a full price report from the price reporter
     pub async fn peek_price_report(
         &self,

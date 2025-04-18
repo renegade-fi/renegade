@@ -6,6 +6,7 @@
 use std::fmt;
 
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use common::types::{token::Token, Price};
 use num_bigint::BigUint;
 use serde::{
     de::{self, Error as DeserializeError, SeqAccess, Visitor},
@@ -25,6 +26,10 @@ pub mod websocket;
 pub const RENEGADE_AUTH_HEADER_NAME: &str = "x-renegade-auth";
 /// Header name for the expiration timestamp of a signature; lower cased
 pub const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "x-renegade-auth-expiration";
+
+// -------------------------
+// | Serialization Helpers |
+// -------------------------
 
 /// An empty request/response type
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -186,6 +191,47 @@ where
 {
     deserializer.deserialize_any(BigUintVisitor)
 }
+
+/// Serialize a `Token` as a hex string
+pub(crate) fn serialize_token_as_hex_string<S>(
+    token: &Token,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&token.get_addr())
+}
+
+/// Deserialize a `Token` from a hex string
+pub(crate) fn deserialize_token_from_hex_string<'de, D>(deserializer: D) -> Result<Token, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let addr = String::deserialize(deserializer)?;
+    Ok(Token::from_addr(&addr))
+}
+
+/// Serialize a `Price` as a string
+pub(crate) fn serialize_price_as_string<S>(price: &Price, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&price.to_string())
+}
+
+/// Deserialize a `Price` from a string
+pub(crate) fn deserialize_price_from_string<'de, D>(deserializer: D) -> Result<Price, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let price_str = String::deserialize(deserializer)?;
+    price_str.parse::<f64>().map_err(D::Error::custom)
+}
+
+// ---------
+// | Tests |
+// ---------
 
 #[cfg(test)]
 mod test {
