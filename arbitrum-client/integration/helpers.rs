@@ -1,10 +1,7 @@
 //! Helper functions for Arbitrum client integration tests
 
 use arbitrum_client::client::ArbitrumClient;
-use circuit_types::{
-    native_helpers::compute_wallet_commitment_from_private, traits::BaseType,
-    wallet::WalletShareStateCommitment, SizedWalletShare,
-};
+use circuit_types::{traits::BaseType, wallet::WalletShareStateCommitment, SizedWalletShare};
 use common::types::proof_bundles::mocks::dummy_valid_wallet_create_bundle;
 use constants::Scalar;
 use eyre::{eyre, Result};
@@ -31,14 +28,7 @@ pub async fn deploy_new_wallet(
     let statement = valid_wallet_create_bundle.statement.clone();
 
     client.new_wallet(&valid_wallet_create_bundle).await?;
-
-    // The contract will compute the full commitment and insert it into the Merkle
-    // tree; we repeat the same computation here for consistency
-    let full_commitment = compute_wallet_commitment_from_private(
-        &statement.public_wallet_shares,
-        statement.private_shares_commitment,
-    );
-    Ok((full_commitment, statement.public_wallet_shares))
+    Ok((statement.wallet_share_commitment, statement.public_wallet_shares))
 }
 
 /// Sets up pre-allocated state used by the integration tests

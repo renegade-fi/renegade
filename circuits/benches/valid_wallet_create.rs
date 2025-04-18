@@ -5,7 +5,7 @@
 
 use circuit_types::elgamal::DecryptionKey;
 use circuit_types::fixed_point::FixedPoint;
-use circuit_types::native_helpers::compute_wallet_private_share_commitment;
+use circuit_types::native_helpers::compute_wallet_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::wallet::Wallet;
 use circuit_types::PlonkCircuit;
@@ -52,12 +52,12 @@ where
     let blinder_seed = Scalar::random(&mut rng);
     let (private_shares, public_shares) =
         create_wallet_shares_with_blinder_seed(&mut wallet, blinder_seed);
-    let private_shares_commitment = compute_wallet_private_share_commitment(&private_shares);
+    let share_commitment = compute_wallet_share_commitment(&public_shares, &private_shares);
 
     (
         ValidWalletCreateWitness { private_wallet_share: private_shares, blinder_seed },
         ValidWalletCreateStatement {
-            private_shares_commitment,
+            wallet_share_commitment: share_commitment,
             public_wallet_shares: public_shares,
         },
     )
