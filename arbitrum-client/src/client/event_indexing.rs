@@ -293,35 +293,65 @@ impl ArbitrumClient {
         }
     }
 
+    /// Collects all calldata blobs from a transaction that match external match
+    /// selectors
+    pub async fn collect_external_match_calldata(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<Vec<Vec<u8>>, ArbitrumClientError> {
+        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
+        let mut matching_calldatas = Vec::new();
+
+        for frame in darkpool_calls {
+            let calldata: &[u8] = &frame.input;
+            let selector: [u8; SELECTOR_LEN] = calldata[..SELECTOR_LEN].try_into().unwrap();
+
+            if selector == PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR
+                || selector == PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR
+            {
+                matching_calldatas.push(calldata.to_vec());
+            }
+        }
+
+        Ok(matching_calldatas)
+    }
+
+    /// Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata and
+    /// deserialize the statement into an ExternalMatchResult
+    pub fn parse_external_match_from_calldata(
+        &self,
+        calldata: &[u8],
+    ) -> Result<ExternalMatchResult, ArbitrumClientError> {
+        let selector = calldata[..SELECTOR_LEN].try_into().unwrap();
+
+        let statement_bytes = match selector {
+            PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
+                let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
+                call.valid_match_settle_atomic_statement
+            },
+            PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
+                let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
+                call.valid_match_settle_atomic_statement
+            },
+            _ => return Err(ArbitrumClientError::InvalidSelector),
+        };
+
+        let statement: ContractValidMatchSettleAtomicStatement =
+            deserialize_calldata(&statement_bytes)?;
+        Ok(statement.match_result)
+    }
+
     /// Fetch all external matches in a given transaction
     pub async fn find_external_matches_in_tx(
         &self,
         tx_hash: TxHash,
     ) -> Result<Vec<ExternalMatchResult>, ArbitrumClientError> {
-        // Get all darkpool subcalls in the tx
+        let calldata = self.collect_external_match_calldata(tx_hash).await?;
         let mut matches = Vec::new();
-        let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
-        for frame in darkpool_calls.into_iter() {
-            let calldata: &[u8] = &frame.input;
-            let selector = calldata[..SELECTOR_LEN].try_into().unwrap();
 
-            // Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata
-            let statement_bytes = match selector {
-                PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
-                    let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
-                    call.valid_match_settle_atomic_statement
-                },
-                PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
-                    let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
-                    call.valid_match_settle_atomic_statement
-                },
-                _ => continue,
-            };
-
-            // Deserialize the statement, and store the match
-            let statement: ContractValidMatchSettleAtomicStatement =
-                deserialize_calldata(&statement_bytes)?;
-            matches.push(statement.match_result);
+        for data in calldata {
+            let match_result = self.parse_external_match_from_calldata(&data)?;
+            matches.push(match_result);
         }
 
         Ok(matches)
