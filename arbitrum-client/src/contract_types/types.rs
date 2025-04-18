@@ -261,9 +261,9 @@ pub struct ValidWalletUpdateStatement {
     /// The nullifier of the old wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
     pub old_shares_nullifier: ScalarField,
-    /// A commitment to the new wallet's private secret shares
+    /// A commitment to the new wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
-    pub new_private_shares_commitment: ScalarField,
+    pub new_wallet_commitment: ScalarField,
     /// The blinded public secret shares of the new wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub new_public_shares: Vec<ScalarField>,
