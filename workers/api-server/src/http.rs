@@ -38,7 +38,7 @@ use external_api::{
         order_book::{
             GET_EXTERNAL_MATCH_FEE_ROUTE, GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE,
         },
-        price_report::PRICE_REPORT_ROUTE,
+        price_report::{GET_SUPPORTED_TOKENS_ROUTE, GET_TOKEN_PRICES_ROUTE, PRICE_REPORT_ROUTE},
         task::{GET_TASK_QUEUE_PAUSED_ROUTE, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         task_history::TASK_HISTORY_ROUTE,
         wallet::{
@@ -48,7 +48,7 @@ use external_api::{
             ORDER_HISTORY_ROUTE, PAY_FEES_ROUTE, REDEEM_NOTE_ROUTE, REFRESH_WALLET_ROUTE,
             UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
         },
-        PingResponse, GET_SUPPORTED_TOKENS_ROUTE,
+        PingResponse,
     },
     EmptyRequestResponse,
 };
@@ -63,7 +63,8 @@ use hyper::{
 };
 use num_bigint::BigUint;
 use num_traits::Num;
-use order_book::{GetExternalMatchFeesHandler, GetSupportedTokensHandler};
+use order_book::GetExternalMatchFeesHandler;
+use price_report::{GetSupportedTokensHandler, TokenPricesHandler};
 use rate_limit::WalletTaskRateLimiter;
 use state::State;
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
@@ -471,6 +472,13 @@ impl HttpServer {
             &Method::GET,
             GET_SUPPORTED_TOKENS_ROUTE.to_string(),
             GetSupportedTokensHandler,
+        );
+
+        // The "/token-prices" route
+        router.add_unauthenticated_route(
+            &Method::GET,
+            GET_TOKEN_PRICES_ROUTE.to_string(),
+            TokenPricesHandler::new(config.price_reporter_work_queue.clone()),
         );
 
         // The "/order_book/external-match-fee" route
