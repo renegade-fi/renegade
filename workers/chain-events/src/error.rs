@@ -3,7 +3,6 @@
 use std::{error::Error, fmt::Display};
 
 use arbitrum_client::errors::ArbitrumClientError;
-use ethers::providers::Middleware;
 use state::error::StateError;
 
 /// The error type that the event listener emits
@@ -52,14 +51,14 @@ impl From<ArbitrumClientError> for OnChainEventListenerError {
     }
 }
 
-impl From<ethers::providers::WsClientError> for OnChainEventListenerError {
-    fn from(e: ethers::providers::WsClientError) -> Self {
+impl<E: Display> From<alloy::transports::RpcError<E>> for OnChainEventListenerError {
+    fn from(e: alloy::transports::RpcError<E>) -> Self {
         OnChainEventListenerError::Rpc(e.to_string())
     }
 }
 
-impl<M: Middleware> From<ethers::contract::ContractError<M>> for OnChainEventListenerError {
-    fn from(e: ethers::contract::ContractError<M>) -> Self {
-        OnChainEventListenerError::arbitrum(e)
+impl From<alloy::sol_types::Error> for OnChainEventListenerError {
+    fn from(e: alloy::sol_types::Error) -> Self {
+        OnChainEventListenerError::Rpc(e.to_string())
     }
 }

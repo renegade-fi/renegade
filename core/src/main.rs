@@ -74,6 +74,12 @@ const TERMINATION_TIMEOUT_MS: u64 = 10_000; // 10 seconds
 ///     4. Allocate a thread to monitor the worker for faults
 #[tokio::main]
 async fn main() -> Result<(), CoordinatorError> {
+    // Set the default crypto provider for the process, this will be used by
+    // websocket listeners
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     // ---------------------
     // | Environment Setup |
     // ---------------------

@@ -43,6 +43,7 @@ metrics-sampler = { workspace = true }
 clap = { version = "3.2.8", features = ["derive"] }
 ethers = { workspace = true }
 lazy_static = { workspace = true }
+rustls = "0.23"
 tracing = { workspace = true }
 opentelemetry = { version = "0.21", default-features = false, features = [
     "trace",

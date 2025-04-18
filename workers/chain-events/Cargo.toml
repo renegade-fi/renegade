@@ -9,7 +9,8 @@ crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Crypto === #
-ethers = { workspace = true, features = ["ws"] }
+ethers = { workspace = true }
+alloy = { workspace = true, features = ["provider-ws"] }
 
 # === Workspace Dependencies === #
 arbitrum-client = { workspace = true }
@@ -24,7 +25,8 @@ state = { workspace = true }
 util = { workspace = true }
 
 # === Misc Dependencies === #
-lazy_static = { workspace = true }
 async-trait = { workspace = true }
+futures-util = "0.3.31"
+lazy_static = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }

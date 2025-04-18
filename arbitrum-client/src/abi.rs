@@ -80,4 +80,6 @@ sol! {
     function settleOnlineRelayerFee(bytes memory proof, bytes memory valid_relayer_fee_settlement_statement, bytes memory relayer_wallet_commitment_signature) external;
     function settleOfflineFee(bytes memory proof, bytes memory valid_offline_fee_settlement_statement) external;
     function redeemFee(bytes memory proof, bytes memory valid_fee_redemption_statement, bytes memory recipient_wallet_commitment_signature) external;
+
+    event NullifierSpent(uint256 indexed nullifier);
 }
