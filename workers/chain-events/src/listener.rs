@@ -1,21 +1,24 @@
 //! Defines the core implementation of the on-chain event listener
 
-use rand::{thread_rng, Rng};
-use std::{sync::Arc, thread::JoinHandle, time::Duration};
+use std::{thread::JoinHandle, time::Duration};
 
+use alloy::{
+    providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
+    rpc::types::Filter,
+    sol_types::SolEvent,
+};
 use arbitrum_client::{
-    abi::{DarkpoolContract, NullifierSpentFilter},
+    abi::{NullifierSpent, NullifierSpentFilter},
     client::ArbitrumClient,
+    conversion::alloy_u256_to_scalar,
 };
 use circuit_types::wallet::Nullifier;
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
-use ethers::{
-    prelude::StreamExt,
-    providers::{Provider, Ws},
-    types::H256 as TxHash,
-};
+use ethers::types::TxHash;
+use futures_util::StreamExt;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
+use rand::{thread_rng, Rng};
 use renegade_crypto::fields::u256_to_scalar;
 use state::State;
 use tracing::{error, info};
@@ -60,22 +63,16 @@ impl OnChainEventListenerConfig {
     }
 
     /// Create a new websocket client if available
-    pub async fn ws_client(
-        &self,
-    ) -> Result<DarkpoolContract<Provider<Ws>>, OnChainEventListenerError> {
+    pub async fn ws_client(&self) -> Result<DynProvider, OnChainEventListenerError> {
         if !self.has_websocket_listener() {
             panic!("no websocket listener configured");
         }
 
         // Connect to the websocket
         let addr = self.websocket_addr.clone().unwrap();
-        let client = Ws::connect(&addr).await?;
-        let provider = Provider::<Ws>::new(client);
-
-        // Create the contract instance
-        let contract_addr = self.arbitrum_client.get_darkpool_client().address();
-        let contract = DarkpoolContract::new(contract_addr, Arc::new(provider));
-        Ok(contract)
+        let conn = WsConnect::new(addr);
+        let provider = ProviderBuilder::new().on_ws(conn).await?;
+        Ok(DynProvider::new(provider))
     }
 }
 
@@ -153,17 +150,24 @@ impl OnChainEventListenerExecutor {
     async fn watch_nullifiers_ws(&self) -> Result<(), OnChainEventListenerError> {
         info!("listening for nullifiers via websocket");
         // Create the contract instance and the event stream
-        let contract = self.config.ws_client().await?;
-        let filter = contract.event::<NullifierSpentFilter>();
-        let mut stream = filter.stream_with_meta().await?;
+        let client = self.config.ws_client().await?;
+        let contract_addr = self.arbitrum_client().darkpool_alloy_addr();
+        let filter = Filter::new().address(contract_addr).event(NullifierSpent::SIGNATURE);
+        let mut stream = client.subscribe_logs(&filter).await?.into_stream();
 
         // Listen for events in a loop
-        while let Some(res) = stream.next().await {
-            let (event, meta) = res.map_err(OnChainEventListenerError::arbitrum)?;
-            self.handle_nullifier_spent(meta.transaction_hash, &event).await?;
+        while let Some(log) = stream.next().await {
+            let hash = log
+                .transaction_hash
+                .ok_or_else(|| OnChainEventListenerError::arbitrum("no tx hash"))?;
+            let tx_hash = TxHash::from(hash.0);
+
+            let event = log.log_decode::<NullifierSpent>()?;
+            let nullifier = alloy_u256_to_scalar(event.data().nullifier);
+            self.handle_nullifier_spent(tx_hash, nullifier).await?;
         }
 
-        todo!()
+        unreachable!()
     }
 
     /// Watch for nullifiers via HTTP polling
@@ -171,12 +175,14 @@ impl OnChainEventListenerExecutor {
         info!("listening for nullifiers via HTTP polling");
         // Build a filtered stream on events that the chain-events worker listens for
         let filter = self.arbitrum_client().get_darkpool_client().event::<NullifierSpentFilter>();
-        let mut event_stream = filter.stream_with_meta().await?;
+        let mut event_stream =
+            filter.stream_with_meta().await.map_err(OnChainEventListenerError::arbitrum)?;
 
         // Listen for events in a loop
         while let Some(res) = event_stream.next().await {
             let (event, meta) = res.map_err(OnChainEventListenerError::arbitrum)?;
-            self.handle_nullifier_spent(meta.transaction_hash, &event).await?;
+            let nullifier = u256_to_scalar(&event.nullifier);
+            self.handle_nullifier_spent(meta.transaction_hash, nullifier).await?;
         }
 
         unreachable!()
@@ -190,10 +196,9 @@ impl OnChainEventListenerExecutor {
     async fn handle_nullifier_spent(
         &self,
         tx: TxHash,
-        event: &NullifierSpentFilter,
+        nullifier: Nullifier,
     ) -> Result<(), OnChainEventListenerError> {
         // Send an MPC shootdown request to the handshake manager
-        let nullifier = u256_to_scalar(&event.nullifier);
         self.config
             .handshake_manager_job_queue
             .send(HandshakeManagerJob::MpcShootdown { nullifier })

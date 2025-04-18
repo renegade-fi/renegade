@@ -493,6 +493,12 @@ pub fn scalar_to_u256(scalar: Scalar) -> U256 {
     U256::from_be_slice(&scalar.to_bytes_be())
 }
 
+/// Converts an alloy `U256` to a `Scalar`
+pub fn alloy_u256_to_scalar(u256: AlloyU256) -> Scalar {
+    let bytes = u256.to_be_bytes_vec();
+    Scalar::from_be_bytes_mod_order(&bytes)
+}
+
 /// Try to extract a fixed-length array of G1Affine points
 /// from a slice of proof system commitments
 pub fn try_unwrap_commitments<const N: usize>(

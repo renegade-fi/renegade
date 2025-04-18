@@ -3,7 +3,7 @@
 
 use std::{str::FromStr, sync::Arc, time::Duration};
 
-use alloy_primitives::ChainId;
+use alloy_primitives::{Address as AlloyAddress, ChainId};
 use constants::{DEVNET_DEPLOY_BLOCK, MAINNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
 use ethers::{
     core::k256::ecdsa::SigningKey,
@@ -143,6 +143,15 @@ impl ArbitrumClient {
             // errors in the contracts repo.
             unimplemented!()
         }
+    }
+
+    /// Get an alloy address for the darkpool contract
+    ///
+    /// TODO: Delete this after we've migrated to alloy entirely
+    pub fn darkpool_alloy_addr(&self) -> AlloyAddress {
+        let client = self.get_darkpool_client();
+        let ethers_addr: ethers::types::Address = client.address();
+        AlloyAddress::from(ethers_addr.as_fixed_bytes())
     }
 
     /// Get a reference to some underlying RPC client
