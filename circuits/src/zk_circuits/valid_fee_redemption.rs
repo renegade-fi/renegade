@@ -65,9 +65,12 @@ where
         )?;
 
         // Verify the commitment to the new wallet private shares
-        let expected_commit =
-            WalletGadget::compute_private_commitment(&witness.new_wallet_private_shares, cs)?;
-        EqGadget::constrain_eq(&expected_commit, &statement.new_wallet_commitment, cs)?;
+        let expected_commit = WalletGadget::compute_wallet_share_commitment(
+            &statement.new_wallet_public_shares,
+            &witness.new_wallet_private_shares,
+            cs,
+        )?;
+        EqGadget::constrain_eq(&expected_commit, &statement.new_shares_commitment, cs)?;
 
         // Verify the Merkle opening of the note
         let note_commit = NoteGadget::compute_note_commitment(&witness.note, cs)?;
@@ -258,8 +261,8 @@ where
     pub wallet_nullifier: Nullifier,
     /// The nullifier of the note
     pub note_nullifier: Nullifier,
-    /// The commitment to the new wallet
-    pub new_wallet_commitment: WalletShareStateCommitment,
+    /// The commitment to the new wallet's secret shares
+    pub new_shares_commitment: WalletShareStateCommitment,
     /// The blinded public shares of the post-update wallet
     pub new_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The root key of the recipient
@@ -301,8 +304,8 @@ pub mod test_helpers {
         balance::Balance,
         elgamal::DecryptionKey,
         native_helpers::{
-            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
-            compute_wallet_share_nullifier, note_commitment, note_nullifier, reblind_wallet,
+            compute_wallet_share_commitment, compute_wallet_share_nullifier, note_commitment,
+            note_nullifier, reblind_wallet,
         },
         note::Note,
         wallet::Wallet,
@@ -361,8 +364,8 @@ pub mod test_helpers {
         let (new_wallet_private_shares, new_wallet_public_shares) =
             reblind_wallet(&old_wallet_private_shares, &new_wallet);
 
-        let new_wallet_commitment =
-            compute_wallet_private_share_commitment(&new_wallet_private_shares);
+        let new_shares_commitment =
+            compute_wallet_share_commitment(&new_wallet_public_shares, &new_wallet_private_shares);
 
         // Create the witness and statement
         let statement = ValidFeeRedemptionStatement {
@@ -370,7 +373,7 @@ pub mod test_helpers {
             note_root: root,
             wallet_nullifier,
             note_nullifier,
-            new_wallet_commitment,
+            new_shares_commitment,
             new_wallet_public_shares,
             recipient_root_key: wallet.keys.pk_root.clone(),
         };
@@ -449,7 +452,7 @@ mod test {
             note_nullifier,
         },
         note::Note,
-        traits::BaseType,
+        traits::{BaseType, SingleProverCircuit},
         wallet::{Nullifier, Wallet},
         Amount, AMOUNT_BITS,
     };
@@ -514,6 +517,22 @@ mod test {
         (root, opening[0].clone(), nullifier)
     }
 
+    /// A helper to print the size of the `VALID FEE REDEMPTION` circuit
+    #[test]
+    #[ignore]
+    fn print_valid_fee_redemption_size() {
+        let layout = ValidFeeRedemption::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+            { constants::MERKLE_HEIGHT },
+        >::get_circuit_layout()
+        .unwrap();
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
+    }
+
     // -----------------------
     // | Valid Witness Tests |
     // -----------------------
@@ -560,6 +579,13 @@ mod test {
         statement.new_wallet_public_shares.keys.nonce += Scalar::one();
         statement.new_wallet_public_shares.keys.pk_root =
             PublicSigningKeyShare::from_scalars(&mut share_stream);
+
+        // Recompute the wallet commitment
+        let comm = compute_wallet_share_commitment(
+            &statement.new_wallet_public_shares,
+            &witness.new_wallet_private_shares,
+        );
+        statement.new_shares_commitment = comm;
 
         assert!(check_constraints_satisfied(&witness, &statement));
     }
@@ -821,6 +847,18 @@ mod test {
         }
 
         let (statement, witness) = create_witness_and_statement(&wallet, &note);
+        assert!(!check_constraints_satisfied(&witness, &statement));
+    }
+
+    /// Test the case in which the prover modifies the commitment to the new
+    /// wallet's share
+    #[test]
+    fn test_invalid_new_shares_commitment() {
+        let (wallet, note) = get_testing_wallet_and_note();
+        let (mut statement, witness) = create_witness_and_statement(&wallet, &note);
+
+        // Modify the commitment to the new wallet's shares
+        statement.new_shares_commitment += Scalar::one();
         assert!(!check_constraints_satisfied(&witness, &statement));
     }
 }

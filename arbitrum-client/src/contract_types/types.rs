@@ -457,7 +457,7 @@ pub struct ValidFeeRedemptionStatement {
     pub note_nullifier: ScalarField,
     /// A commitment to the new wallet's private secret shares
     #[serde_as(as = "ScalarFieldDef")]
-    pub new_wallet_commitment: ScalarField,
+    pub new_shares_commitment: ScalarField,
     /// The blinded public secret shares of the new wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub new_wallet_public_shares: Vec<ScalarField>,
