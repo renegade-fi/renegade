@@ -90,10 +90,10 @@ where
 /// commitment in a multiprover circuit outweighs the gains from removing this
 /// computation in the contract
 #[derive(Clone, Debug)]
-pub struct ValidMatchSettleWithCommitment<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
+pub struct ValidMatchSettleWithCommitments<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-    ValidMatchSettleWithCommitment<MAX_BALANCES, MAX_ORDERS>
+    ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
@@ -338,7 +338,7 @@ where
 }
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
-    for ValidMatchSettleWithCommitment<MAX_BALANCES, MAX_ORDERS>
+    for ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
@@ -359,7 +359,7 @@ where
         statement: ValidMatchSettleWithCommitmentStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
-        ValidMatchSettleWithCommitment::singleprover_circuit(&statement, &witness, cs)
+        ValidMatchSettleWithCommitments::singleprover_circuit(&statement, &witness, cs)
             .map_err(PlonkError::CircuitError)
     }
 }
@@ -609,7 +609,7 @@ mod tests {
             test_helpers::{MAX_BALANCES, MAX_ORDERS},
             valid_match_settle::{
                 test_helpers::{dummy_witness_and_statement, SizedValidMatchSettle},
-                ValidMatchSettle, ValidMatchSettleWithCommitment,
+                ValidMatchSettle, ValidMatchSettleWithCommitments,
             },
         },
     };
@@ -636,7 +636,7 @@ mod tests {
     /// A `VALID MATCH SETTLE WITH COMMITMENTS` circuit with test sizing
     /// parameters attached
     type TestValidMatchSettleWithCommitment =
-        ValidMatchSettleWithCommitment<MAX_BALANCES, MAX_ORDERS>;
+        ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>;
     /// A `VALID MATCH SETTLE` circuit with test sizing parameters attached
     type TestValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>;
 
@@ -725,7 +725,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_n_constraints_with_commitments() {
-        let layout = ValidMatchSettleWithCommitment::<
+        let layout = ValidMatchSettleWithCommitments::<
             { constants::MAX_BALANCES },
             { constants::MAX_ORDERS },
         >::get_circuit_layout()
