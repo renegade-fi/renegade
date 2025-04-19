@@ -359,7 +359,7 @@ pub mod test_helpers {
 mod test {
     use circuit_types::{
         native_helpers::compute_wallet_private_share_commitment,
-        traits::{BaseType, SecretShareType},
+        traits::{BaseType, SecretShareType, SingleProverCircuit},
     };
     use constants::{Scalar, MERKLE_HEIGHT};
     use rand::{thread_rng, Rng};
@@ -398,6 +398,25 @@ mod test {
 
         recovered_wallet.blinder = wallet.blinder;
         assert!(wallet.eq(&recovered_wallet));
+    }
+
+    /// A helper to print the number of constraints in the circuit
+    ///
+    /// Useful when benchmarking the circuit
+    #[test]
+    #[ignore]
+    fn test_n_constraints() {
+        let layout = ValidReblind::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+            { constants::MERKLE_HEIGHT },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
     }
 
     // -------------------------

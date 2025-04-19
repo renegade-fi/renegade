@@ -611,6 +611,24 @@ mod test {
     /// A type alias for the VALID COMMITMENTS circuit with size parameters
     pub type SizedCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
 
+    /// A helper to print the number of constraints in the circuit
+    ///
+    /// Useful when benchmarking the circuit
+    #[test]
+    #[ignore]
+    fn test_n_constraints() {
+        let layout = ValidCommitments::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
+    }
+
     // --------------
     // | Test Cases |
     // --------------
