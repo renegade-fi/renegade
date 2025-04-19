@@ -41,7 +41,7 @@ use crate::utils::validity_proofs::{
     enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
 };
 
-/// The human-readable name of the the task
+/// The human-readable name of the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
 /// The wallet no longer exists in global state
 const ERR_WALLET_MISSING: &str = "wallet not found in global state";
