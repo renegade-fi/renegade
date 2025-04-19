@@ -153,7 +153,7 @@ pub fn to_contract_valid_wallet_update_statement(
 
     Ok(ContractValidWalletUpdateStatement {
         old_shares_nullifier: statement.old_shares_nullifier.inner(),
-        new_private_shares_commitment: statement.new_private_shares_commitment.inner(),
+        new_wallet_commitment: statement.new_wallet_commitment.inner(),
         new_public_shares,
         merkle_root: statement.merkle_root.inner(),
         external_transfer,

@@ -425,13 +425,13 @@ impl UpdateWalletTask {
         // Build the witness and statement
         let old_wallet = &self.old_wallet;
         let new_wallet = &self.new_wallet;
-        let new_private_share_commitment = self.new_wallet.get_private_share_commitment();
+        let new_wallet_commitment = self.new_wallet.get_wallet_share_commitment();
 
         let transfer_index = self.get_transfer_idx()?;
         let transfer = self.transfer.clone().map(|t| t.external_transfer).unwrap_or_default();
         let statement = SizedValidWalletUpdateStatement {
             old_shares_nullifier: old_wallet.get_wallet_nullifier(),
-            new_private_shares_commitment: new_private_share_commitment,
+            new_wallet_commitment,
             new_public_shares: new_wallet.blinded_public_shares.clone(),
             merkle_root,
             external_transfer: transfer,

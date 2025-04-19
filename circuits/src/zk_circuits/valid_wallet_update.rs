@@ -70,10 +70,13 @@ where
         let blinder_seed = witness.old_wallet_private_shares.blinder;
         WalletGadget::validate_public_blinder_from_seed(public_blinder, blinder_seed, cs)?;
 
-        // Validate the commitment to the new wallet private shares
-        let new_wallet_private_commitment =
-            WalletGadget::compute_private_commitment(&witness.new_wallet_private_shares, cs)?;
-        cs.enforce_equal(new_wallet_private_commitment, statement.new_private_shares_commitment)?;
+        // Validate the commitment to the new wallet secret shares
+        let new_wallet_commitment = WalletGadget::compute_wallet_share_commitment(
+            &statement.new_public_shares,
+            &witness.new_wallet_private_shares,
+            cs,
+        )?;
+        cs.enforce_equal(new_wallet_commitment, statement.new_wallet_commitment)?;
 
         // Recover the old and new wallets from shares
         let old_wallet = WalletGadget::wallet_from_shares(
@@ -478,8 +481,8 @@ where
 {
     /// The nullifier of the old wallet's secret shares
     pub old_shares_nullifier: Nullifier,
-    /// A commitment to the new wallet's private secret shares
-    pub new_private_shares_commitment: WalletShareStateCommitment,
+    /// A commitment to the new wallet's secret shares
+    pub new_wallet_commitment: WalletShareStateCommitment,
     /// The public secret shares of the new wallet
     pub new_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The global Merkle root that the wallet share proofs open to
@@ -525,10 +528,7 @@ where
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        native_helpers::{
-            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
-            compute_wallet_share_nullifier,
-        },
+        native_helpers::{compute_wallet_share_commitment, compute_wallet_share_nullifier},
         transfers::ExternalTransfer,
         wallet::Wallet,
     };
@@ -588,9 +588,9 @@ pub mod test_helpers {
         let old_shares_nullifier =
             compute_wallet_share_nullifier(old_shares_commitment, old_wallet.blinder);
 
-        // Commit to the new private shares
-        let new_private_shares_commitment =
-            compute_wallet_private_share_commitment(&new_wallet_private_shares);
+        // Commit to the new wallet shares
+        let new_wallet_commitment =
+            compute_wallet_share_commitment(&new_wallet_public_shares, &new_wallet_private_shares);
 
         let witness = ValidWalletUpdateWitness {
             old_wallet_private_shares,
@@ -602,7 +602,7 @@ pub mod test_helpers {
         let statement = ValidWalletUpdateStatement {
             old_shares_nullifier,
             old_pk_root: old_wallet.keys.pk_root.clone(),
-            new_private_shares_commitment,
+            new_wallet_commitment,
             new_public_shares: new_wallet_public_shares,
             merkle_root,
             external_transfer,
@@ -620,9 +620,9 @@ mod test {
         elgamal::DecryptionKey,
         fixed_point::FixedPoint,
         keychain::PublicSigningKey,
-        native_helpers::compute_wallet_private_share_commitment,
+        native_helpers::compute_wallet_share_commitment,
         order::Order,
-        traits::CircuitBaseType,
+        traits::{CircuitBaseType, SingleProverCircuit},
         transfers::{ExternalTransfer, ExternalTransferDirection},
         Address, AMOUNT_BITS, PRICE_BITS,
     };
@@ -669,6 +669,25 @@ mod test {
     fn max_price_fp() -> FixedPoint {
         let repr = Scalar::from(2u8).pow(PRICE_BITS as u64) - Scalar::one();
         FixedPoint { repr }
+    }
+
+    /// A helper to print the number of constraints in the circuit
+    ///
+    /// Useful when benchmarking the circuit
+    #[test]
+    #[ignore]
+    fn test_n_constraints() {
+        let layout = ValidWalletUpdate::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+            { constants::MERKLE_HEIGHT },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
     }
 
     // ---------------------
@@ -772,8 +791,10 @@ mod test {
         witness.new_wallet_private_shares.orders[0].amount = blinder; // Cancels out the blinding on the public shares
 
         // Recompute the wallet commitment
-        statement.new_private_shares_commitment =
-            compute_wallet_private_share_commitment(&witness.new_wallet_private_shares);
+        statement.new_wallet_commitment = compute_wallet_share_commitment(
+            &statement.new_public_shares,
+            &witness.new_wallet_private_shares,
+        );
 
         let res = check_constraint_satisfaction::<
             ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
@@ -799,8 +820,10 @@ mod test {
         witness.new_wallet_private_shares.orders[0].side += Scalar::from(2u8);
 
         // Recompute the wallet commitment
-        statement.new_private_shares_commitment =
-            compute_wallet_private_share_commitment(&witness.new_wallet_private_shares);
+        statement.new_wallet_commitment = compute_wallet_share_commitment(
+            &statement.new_public_shares,
+            &witness.new_wallet_private_shares,
+        );
 
         let res = check_constraint_satisfaction::<
             ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
@@ -1472,8 +1495,10 @@ mod test {
         let offset = Scalar::random(&mut rng);
         witness.new_wallet_private_shares.blinder += offset;
         statement.new_public_shares.blinder -= offset;
-        statement.new_private_shares_commitment =
-            compute_wallet_private_share_commitment(&witness.new_wallet_private_shares);
+        statement.new_wallet_commitment = compute_wallet_share_commitment(
+            &statement.new_public_shares,
+            &witness.new_wallet_private_shares,
+        );
 
         // Check that the constraints are not satisfied
         let res = check_constraint_satisfaction::<
