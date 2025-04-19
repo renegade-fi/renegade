@@ -73,9 +73,12 @@ where
         )?;
 
         // Check the commitment to the new wallet shares
-        let new_wallet_comm =
-            WalletGadget::compute_private_commitment(&witness.updated_wallet_private_shares, cs)?;
-        EqGadget::constrain_eq(&new_wallet_comm, &statement.updated_wallet_commitment, cs)?;
+        let new_wallet_comm = WalletGadget::compute_wallet_share_commitment(
+            &statement.updated_wallet_public_shares,
+            &witness.updated_wallet_private_shares,
+            cs,
+        )?;
+        EqGadget::constrain_eq(&new_wallet_comm, &statement.new_wallet_commitment, cs)?;
 
         // Reconstruct the old and new wallets
         let old_wallet = WalletGadget::wallet_from_shares(
@@ -333,8 +336,8 @@ where
     pub merkle_root: MerkleRoot,
     /// The nullifier of the original wallet
     pub nullifier: Nullifier,
-    /// The commitment to the updated wallet's private shares
-    pub updated_wallet_commitment: WalletShareStateCommitment,
+    /// The commitment to the updated wallet's secret shares
+    pub new_wallet_commitment: WalletShareStateCommitment,
     /// The blinded public shares of the post-update wallet
     pub updated_wallet_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The ciphertext of the note
@@ -376,8 +379,8 @@ where
 pub mod test_helpers {
     use circuit_types::{
         native_helpers::{
-            compute_wallet_private_share_commitment, compute_wallet_share_commitment,
-            compute_wallet_share_nullifier, encrypt_note, note_commitment, reblind_wallet,
+            compute_wallet_share_commitment, compute_wallet_share_nullifier, encrypt_note,
+            note_commitment, reblind_wallet,
         },
         note::Note,
         wallet::Wallet,
@@ -446,8 +449,10 @@ pub mod test_helpers {
         let (root, opening) = create_multi_opening(&[commitment]);
         let nullifier = compute_wallet_share_nullifier(commitment, wallet.blinder);
 
-        let new_wallet_commitment =
-            compute_wallet_private_share_commitment(&updated_wallet_private_shares);
+        let new_wallet_commitment = compute_wallet_share_commitment(
+            &updated_wallet_public_shares,
+            &updated_wallet_private_shares,
+        );
 
         // Create the note
         let note = Note {
@@ -472,7 +477,7 @@ pub mod test_helpers {
         let statement = ValidOfflineFeeSettlementStatement {
             merkle_root: root,
             nullifier,
-            updated_wallet_commitment: new_wallet_commitment,
+            new_wallet_commitment,
             updated_wallet_public_shares,
             note_ciphertext: cipher,
             note_commitment,
@@ -488,9 +493,9 @@ pub mod test_helpers {
 mod test {
     use circuit_types::{
         elgamal::{DecryptionKey, ElGamalCiphertext},
-        native_helpers::{compute_wallet_private_share_commitment, encrypt_note, note_commitment},
+        native_helpers::{compute_wallet_share_commitment, encrypt_note, note_commitment},
         note::{Note, NOTE_CIPHERTEXT_SIZE},
-        traits::BaseType,
+        traits::{BaseType, SingleProverCircuit},
         wallet::WalletShare,
         Amount,
     };
@@ -535,6 +540,22 @@ mod test {
         let (cipher, new_rand) = encrypt_note(note, &note.receiver);
         let new_commitment = note_commitment(note);
         (cipher, new_rand, new_commitment)
+    }
+
+    /// A helper to print the size of the `VALID OFFLINE FEE SETTLEMENT` circuit
+    #[test]
+    #[ignore]
+    fn print_valid_offline_fee_settlement_size() {
+        let layout = ValidOfflineFeeSettlement::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+            { constants::MERKLE_HEIGHT },
+        >::get_circuit_layout()
+        .unwrap();
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
     }
 
     // -----------------------
@@ -655,8 +676,10 @@ mod test {
         private_shares[idx] += modification;
         witness.updated_wallet_private_shares =
             WalletShare::from_scalars(&mut private_shares.into_iter());
-        statement.updated_wallet_commitment =
-            compute_wallet_private_share_commitment(&witness.updated_wallet_private_shares);
+        statement.new_wallet_commitment = compute_wallet_share_commitment(
+            &statement.updated_wallet_public_shares,
+            &witness.updated_wallet_private_shares,
+        );
 
         // Make an analogous modification to the public shares so that the wallet
         // remains unchanged

@@ -412,7 +412,7 @@ pub fn to_contract_valid_offline_fee_settlement_statement(
     ContractValidOfflineFeeSettlementStatement {
         merkle_root: statement.merkle_root.inner(),
         nullifier: statement.nullifier.inner(),
-        updated_wallet_commitment: statement.updated_wallet_commitment.inner(),
+        new_wallet_commitment: statement.new_wallet_commitment.inner(),
         updated_wallet_public_shares: statement
             .updated_wallet_public_shares
             .to_scalars()
