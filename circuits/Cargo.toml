@@ -61,6 +61,11 @@ harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
+name = "valid_match_settle_atomic_with_commitments"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
 name = "valid_malleable_match_settle_atomic"
 harness = false
 required-features = ["test_helpers"]
