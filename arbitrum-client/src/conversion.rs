@@ -436,7 +436,7 @@ pub fn to_contract_valid_fee_redemption_statement(
         note_root: statement.note_root.inner(),
         nullifier: statement.wallet_nullifier.inner(),
         note_nullifier: statement.note_nullifier.inner(),
-        new_wallet_commitment: statement.new_wallet_commitment.inner(),
+        new_shares_commitment: statement.new_shares_commitment.inner(),
         new_wallet_public_shares: statement
             .new_wallet_public_shares
             .to_scalars()
