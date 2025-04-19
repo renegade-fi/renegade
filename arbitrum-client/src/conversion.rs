@@ -131,7 +131,7 @@ pub fn to_contract_valid_wallet_create_statement(
     let public_wallet_shares = wallet_shares_to_scalar_vec(&statement.public_wallet_shares);
 
     ContractValidWalletCreateStatement {
-        private_shares_commitment: statement.private_shares_commitment.inner(),
+        wallet_share_commitment: statement.wallet_share_commitment.inner(),
         public_wallet_shares,
     }
 }

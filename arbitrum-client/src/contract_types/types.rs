@@ -248,7 +248,7 @@ pub type PublicEncryptionKey = BabyJubJubPoint;
 pub struct ValidWalletCreateStatement {
     /// The commitment to the private secret shares of the wallet
     #[serde_as(as = "ScalarFieldDef")]
-    pub private_shares_commitment: ScalarField,
+    pub wallet_share_commitment: ScalarField,
     /// The blinded public secret shares of the wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub public_wallet_shares: Vec<ScalarField>,

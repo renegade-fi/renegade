@@ -45,10 +45,13 @@ where
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // Validate the commitment given in the statement is a valid commitment to the
-        // private secret shares
-        let commitment =
-            WalletGadget::compute_private_commitment(&witness.private_wallet_share, cs)?;
-        cs.enforce_equal(commitment, statement.private_shares_commitment)?;
+        // wallet shares
+        let commitment = WalletGadget::compute_wallet_share_commitment(
+            &statement.public_wallet_shares,
+            &witness.private_wallet_share,
+            cs,
+        )?;
+        cs.enforce_equal(commitment, statement.wallet_share_commitment)?;
 
         // Check that the prover knows the blinder seed
         // This prevents a prover from choosing a blinder maliciously to block another
@@ -123,8 +126,8 @@ pub struct ValidWalletCreateStatement<const MAX_BALANCES: usize, const MAX_ORDER
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
-    /// The commitment to the private secret shares of the wallet
-    pub private_shares_commitment: Scalar,
+    /// The commitment to the secret shares of the wallet
+    pub wallet_share_commitment: Scalar,
     /// The public secret shares of the wallet
     pub public_wallet_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
 }
@@ -164,7 +167,7 @@ where
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
-        balance::Balance, native_helpers::compute_wallet_private_share_commitment, order::Order,
+        balance::Balance, native_helpers::compute_wallet_share_commitment, order::Order,
     };
     use constants::Scalar;
     use rand::thread_rng;
@@ -213,13 +216,13 @@ pub mod test_helpers {
             create_wallet_shares_with_blinder_seed(&mut wallet, blinder_seed);
 
         // Build a commitment to the private secret shares
-        let commitment = compute_wallet_private_share_commitment(&private_shares);
+        let commitment = compute_wallet_share_commitment(&public_shares, &private_shares);
 
         // Prove and verify
         let witness =
             ValidWalletCreateWitness { private_wallet_share: private_shares, blinder_seed };
         let statement = ValidWalletCreateStatement {
-            private_shares_commitment: commitment,
+            wallet_share_commitment: commitment,
             public_wallet_shares: public_shares,
         };
 
@@ -229,7 +232,7 @@ pub mod test_helpers {
 
 #[cfg(test)]
 pub mod tests {
-    use circuit_types::{fixed_point::FixedPoint, FEE_BITS};
+    use circuit_types::{fixed_point::FixedPoint, traits::SingleProverCircuit, FEE_BITS};
     use constants::Scalar;
     use rand::thread_rng;
 
@@ -253,6 +256,21 @@ pub mod tests {
     // | Tests |
     // ---------
 
+    /// A helper test to print the number of constraints in the circuit
+    ///
+    /// Useful for benchmarking while modifying the circuit
+    #[test]
+    #[ignore]
+    fn test_n_constraints() {
+        let layout =
+            ValidWalletCreate::<{ constants::MAX_BALANCES }, { constants::MAX_ORDERS }>::get_circuit_layout()
+                .unwrap();
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
+    }
+
     /// Tests that the circuit correctly verifies with valid zero'd balance and
     /// orders lists
     #[test]
@@ -269,7 +287,7 @@ pub mod tests {
     #[test]
     fn test_invalid_commitment() {
         let (witness, mut statement) = create_default_witness_statement();
-        statement.private_shares_commitment += Scalar::from(1u8);
+        statement.wallet_share_commitment += Scalar::from(1u8);
 
         assert!(!check_constraint_satisfaction::<SizedWalletCreate>(&witness, &statement))
     }

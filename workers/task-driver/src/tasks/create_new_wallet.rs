@@ -13,7 +13,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
-use circuit_types::native_helpers::compute_wallet_private_share_commitment;
+use circuit_types::native_helpers::compute_wallet_share_commitment;
 use circuits::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreateStatement, SizedValidWalletCreateWitness, ValidWalletCreateStatement,
     ValidWalletCreateWitness,
@@ -296,8 +296,10 @@ impl NewWalletTask {
     fn get_witness_statement(
         &self,
     ) -> (SizedValidWalletCreateWitness, SizedValidWalletCreateStatement) {
-        let private_shares_commitment =
-            compute_wallet_private_share_commitment(&self.wallet.private_shares);
+        let public_shares = &self.wallet.blinded_public_shares;
+        let private_shares = &self.wallet.private_shares;
+        let wallet_share_commitment =
+            compute_wallet_share_commitment(public_shares, private_shares);
 
         (
             ValidWalletCreateWitness {
@@ -305,7 +307,7 @@ impl NewWalletTask {
                 blinder_seed: self.blinder_seed,
             },
             ValidWalletCreateStatement {
-                private_shares_commitment,
+                wallet_share_commitment,
                 public_wallet_shares: self.wallet.blinded_public_shares.clone(),
             },
         )
