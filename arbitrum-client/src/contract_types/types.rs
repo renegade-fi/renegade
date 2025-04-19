@@ -420,9 +420,9 @@ pub struct ValidOfflineFeeSettlementStatement {
     /// The nullifier of the old wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
     pub nullifier: ScalarField,
-    /// A commitment to the new wallet's private secret shares
+    /// A commitment to the new wallet's updated secret shares
     #[serde_as(as = "ScalarFieldDef")]
-    pub updated_wallet_commitment: ScalarField,
+    pub new_wallet_commitment: ScalarField,
     /// The blinded public secret shares of the new wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub updated_wallet_public_shares: Vec<ScalarField>,
