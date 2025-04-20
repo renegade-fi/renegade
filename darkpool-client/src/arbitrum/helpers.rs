@@ -58,7 +58,7 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 pub fn parse_shares_from_new_wallet(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = newWalletCall::abi_decode(calldata)?;
+    let call = newWalletCall::abi_decode(calldata, true /* validate */)?;
 
     let statement = deserialize_calldata::<ContractValidWalletCreateStatement>(
         &call.valid_wallet_create_statement_bytes,
@@ -73,7 +73,7 @@ pub fn parse_shares_from_new_wallet(
 pub fn parse_shares_from_update_wallet(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = updateWalletCall::abi_decode(calldata)?;
+    let call = updateWalletCall::abi_decode(calldata, true /* validate */)?;
 
     let statement = deserialize_calldata::<ContractValidWalletUpdateStatement>(
         &call.valid_wallet_update_statement_bytes,
@@ -89,7 +89,7 @@ pub fn parse_shares_from_process_match_settle(
     calldata: &[u8],
     public_blinder_share: Scalar,
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = processMatchSettleCall::abi_decode(calldata)?;
+    let call = processMatchSettleCall::abi_decode(calldata, true /* validate */)?;
 
     let valid_match_settle_statement = deserialize_calldata::<ContractValidMatchSettleStatement>(
         &call.valid_match_settle_statement,
@@ -120,7 +120,7 @@ pub fn parse_shares_from_process_match_settle(
 pub fn parse_shares_from_process_atomic_match_settle(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
+    let call = processAtomicMatchSettleCall::abi_decode(calldata, true /* validate */)?;
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
     )?;
@@ -134,7 +134,8 @@ pub fn parse_shares_from_process_atomic_match_settle(
 pub fn parse_shares_from_process_atomic_match_settle_with_receiver(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
+    let call =
+        processAtomicMatchSettleWithReceiverCall::abi_decode(calldata, true /* validate */)?;
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
     )?;
@@ -149,7 +150,8 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
     // Parse the pre-update shares from the calldata
-    let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
+    let call =
+        processMalleableAtomicMatchSettleCall::abi_decode(calldata, true /* validate */)?;
     let statement = deserialize_calldata::<ContractValidMalleableMatchSettleAtomicStatement>(
         &call.valid_match_settle_statement,
     )?;
@@ -175,7 +177,9 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle(
 pub fn parse_shares_from_process_malleable_atomic_match_settle_with_receiver(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
+    let call = processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(
+        calldata, true, // validate
+    )?;
     let statement = deserialize_calldata::<ContractValidMalleableMatchSettleAtomicStatement>(
         &call.valid_match_settle_statement,
     )?;
@@ -202,7 +206,7 @@ pub fn parse_shares_from_settle_online_relayer_fee(
     calldata: &[u8],
     public_blinder_share: Scalar,
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = settleOnlineRelayerFeeCall::abi_decode(calldata)?;
+    let call = settleOnlineRelayerFeeCall::abi_decode(calldata, true /* validate */)?;
 
     let valid_relayer_fee_settlement_statement =
         deserialize_calldata::<ContractValidRelayerFeeSettlementStatement>(
@@ -234,7 +238,7 @@ pub fn parse_shares_from_settle_online_relayer_fee(
 pub fn parse_shares_from_settle_offline_fee(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = settleOfflineFeeCall::abi_decode(calldata)?;
+    let call = settleOfflineFeeCall::abi_decode(calldata, true /* validate */)?;
 
     let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
         &call.valid_offline_fee_settlement_statement,
@@ -249,7 +253,7 @@ pub fn parse_shares_from_settle_offline_fee(
 pub fn parse_shares_from_redeem_fee(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, DarkpoolClientError> {
-    let call = redeemFeeCall::abi_decode(calldata)?;
+    let call = redeemFeeCall::abi_decode(calldata, true /* validate */)?;
 
     let statement = deserialize_calldata::<ContractValidFeeRedemptionStatement>(
         &call.valid_fee_redemption_statement,

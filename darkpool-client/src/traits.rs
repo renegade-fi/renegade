@@ -221,20 +221,7 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
     ///
     /// We double the latest basefee to prevent reverts
     async fn get_adjusted_gas_price(&self) -> Result<u128, DarkpoolClientError> {
-        // Set the gas price to 2x the latest basefee for simplicity
-        let latest_block = self
-            .provider()
-            .get_block(BlockId::latest())
-            .await
-            .map_err(DarkpoolClientError::rpc)?
-            .ok_or(DarkpoolClientError::rpc("No latest block found"))?;
-
-        let latest_basefee = latest_block
-            .header
-            .base_fee_per_gas
-            .ok_or(DarkpoolClientError::rpc("No basefee found"))?;
-        let gas_price = (latest_basefee * 2) as u128;
-        Ok(gas_price)
+        unimplemented!("not implemented on alloy-v0.11.0 branch")
     }
 }
 impl<T: DarkpoolImpl> DarkpoolImplExt for T {}

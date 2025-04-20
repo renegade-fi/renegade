@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = []
 arbitrum = ["dep:serde_with", "dep:postcard"]
-base = ["dep:renegade-solidity-abi"]
+base = []
 integration = [
     "dep:rand",
     "circuit-types/test-helpers",
@@ -42,7 +42,6 @@ circuit-types = { workspace = true }
 circuits = { workspace = true }
 common = { workspace = true }
 renegade-crypto = { workspace = true }
-renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-solidity-contracts", optional = true }
 util = { workspace = true, features = ["telemetry"] }
 
 # === Serde === #

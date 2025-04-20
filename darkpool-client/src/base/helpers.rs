@@ -5,10 +5,6 @@ use alloy::primitives::U256;
 use alloy_sol_types::SolCall;
 use circuit_types::{traits::BaseType, SizedWalletShare};
 use constants::Scalar;
-use renegade_solidity_abi::IDarkpool::{
-    createWalletCall, processAtomicMatchSettleCall, processMalleableAtomicMatchSettleCall,
-    processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, updateWalletCall,
-};
 use util::matching_engine::apply_match_to_shares;
 
 use crate::{

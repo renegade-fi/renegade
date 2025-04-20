@@ -70,57 +70,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         commitment: Scalar,
     ) -> Result<MerkleAuthenticationPath, DarkpoolClientError> {
-        let (index, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
-        let leaf_index = BigUint::from(index);
-        let tx: TransactionReceipt = self
-            .provider()
-            .get_transaction_receipt(tx)
-            .await
-            .map_err(|e| DarkpoolClientError::TxQuerying(e.to_string()))?
-            .ok_or(DarkpoolClientError::TxNotFound(tx.to_string()))?;
-
-        // The number of Merkle insertions that occurred in a transaction
-        let mut n_insertions = 0;
-        let mut insertion_idx = 0;
-
-        // Parse the Merkle path from the transaction logs
-        let mut all_insertion_events = vec![];
-        for log in tx.logs().iter().cloned().map(Log::from) {
-            // Matches cannot depend on associated constants, so we if-else
-            let topic0 = log.topics()[0];
-            if topic0 == D::MerkleInsertion::SIGNATURE_HASH {
-                // Track the number of Merkle insertions in the tx, so that we may properly find
-                // our commitment in the log stream
-                let event = D::MerkleInsertion::decode_log(&log)
-                    .map_err(DarkpoolClientError::event_querying)?;
-
-                if event.value() == commitment {
-                    insertion_idx = n_insertions;
-                }
-                n_insertions += 1;
-            } else if topic0 == D::MerkleOpening::SIGNATURE_HASH {
-                let event = D::MerkleOpening::decode_log(&log)
-                    .map_err(DarkpoolClientError::event_querying)?;
-                all_insertion_events.push((event.depth(), event.new_value()));
-            } else {
-                // Ignore other events and unknown events
-                continue;
-            }
-        }
-
-        // Slice only the events corresponding to the correct insertion in the tx
-        let start = MERKLE_HEIGHT * insertion_idx;
-        let end = start + MERKLE_HEIGHT;
-        let mut merkle_path = all_insertion_events[start..end].to_vec();
-
-        // Sort the Merkle path by depth; "deepest" here being the leaves
-        merkle_path.sort_by_key(|(depth, _)| Reverse(*depth));
-        let siblings =
-            merkle_path.into_iter().map(|(_, sibling)| sibling).collect_vec().try_into().map_err(
-                |_| DarkpoolClientError::EventQuerying(ERR_MERKLE_PATH_SIBLINGS.to_string()),
-            )?;
-
-        Ok(MerkleAuthenticationPath::new(siblings, leaf_index, commitment))
+        unimplemented!("not implemented on alloy-v0.11.0 branch")
     }
 
     /// A helper to find a commitment's index in the Merkle tree, also returns

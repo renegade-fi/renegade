@@ -82,12 +82,12 @@ use tracing::error;
 #[derive(Clone)]
 pub struct ArbitrumDarkpool {
     /// The darkpool instance
-    darkpool: DarkpoolInstance<RenegadeProvider>,
+    darkpool: DarkpoolInstance<(), RenegadeProvider>,
 }
 
 impl ArbitrumDarkpool {
     /// Get a reference to the darkpool instance
-    pub fn darkpool(&self) -> &DarkpoolInstance<RenegadeProvider> {
+    pub fn darkpool(&self) -> &DarkpoolInstance<(), RenegadeProvider> {
         &self.darkpool
     }
 }
@@ -125,7 +125,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .call()
             .await
             .map_err(DarkpoolClientError::contract_interaction)
-            .map(u256_to_scalar)
+            .map(|r| u256_to_scalar(r._0))
     }
 
     /// Get the base fee charged by the contract
@@ -135,7 +135,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .call()
             .await
             .map_err(DarkpoolClientError::contract_interaction)
-            .map(|r| FixedPoint::from_repr(u256_to_scalar(r)))
+            .map(|r| FixedPoint::from_repr(u256_to_scalar(r._0)))
     }
 
     /// Get the external match fee for the given mint
@@ -148,7 +148,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .call()
             .await
             .map_err(DarkpoolClientError::contract_interaction)
-            .map(|r| FixedPoint::from_repr(u256_to_scalar(r)))
+            .map(|r| FixedPoint::from_repr(u256_to_scalar(r._0)))
     }
 
     /// Get the protocol pubkey
@@ -158,7 +158,8 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .getPubkey()
             .call()
             .await
-            .map_err(DarkpoolClientError::contract_interaction)?;
+            .map_err(DarkpoolClientError::contract_interaction)?
+            ._0;
 
         Ok(EncryptionKey { x: u256_to_scalar(pubkey[0]), y: u256_to_scalar(pubkey[1]) })
     }
@@ -170,6 +171,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .rootInHistory(root_u256)
             .call()
             .await
+            .map(|r| r._0)
             .map_err(DarkpoolClientError::contract_interaction)
     }
 
@@ -180,6 +182,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .isNullifierSpent(nullifier_u256)
             .call()
             .await
+            .map(|r| r._0)
             .map_err(DarkpoolClientError::contract_interaction)
     }
 
@@ -190,6 +193,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             .isPublicBlinderUsed(blinder_u256)
             .call()
             .await
+            .map(|r| r._0)
             .map_err(DarkpoolClientError::contract_interaction)
     }
 
@@ -565,22 +569,29 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         // Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata
         let match_res = match selector {
             PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
-                let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
+                let call =
+                    processAtomicMatchSettleCall::abi_decode(calldata, true /* validate */)?;
                 Self::parse_external_match_from_calldata(&call.valid_match_settle_atomic_statement)
             },
             PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
-                let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
+                let call = processAtomicMatchSettleWithReceiverCall::abi_decode(
+                    calldata, true, // validate
+                )?;
                 Self::parse_external_match_from_calldata(&call.valid_match_settle_atomic_statement)
             },
             PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
-                let call = processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
+                let call = processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(
+                    calldata, true, // validate
+                )?;
                 Self::parse_external_match_from_malleable(
                     call.base_amount,
                     &call.valid_match_settle_statement,
                 )
             },
             PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR => {
-                let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
+                let call = processMalleableAtomicMatchSettleCall::abi_decode(
+                    calldata, true, // validate
+                )?;
                 Self::parse_external_match_from_malleable(
                     call.base_amount,
                     &call.valid_match_settle_statement,

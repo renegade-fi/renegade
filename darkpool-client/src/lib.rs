@@ -34,13 +34,13 @@ pub type DarkpoolClient = client::DarkpoolClientInner<arbitrum::ArbitrumDarkpool
 /// Exported here to allow lower level access from other workers
 pub type DarkpoolImplementation = arbitrum::ArbitrumDarkpool;
 
-#[cfg(feature = "base")]
-pub mod base;
-#[cfg(feature = "base")]
-/// The darkpool client for the Base chain
-pub type DarkpoolClient = client::DarkpoolClientInner<base::BaseDarkpool>;
-#[cfg(feature = "base")]
-/// The darkpool implementation for the Base chain
-///
-/// Exported here to allow lower level access from other workers
-pub type DarkpoolImplementation = base::BaseDarkpool;
+// #[cfg(feature = "base")]
+// pub mod base;
+// #[cfg(feature = "base")]
+// /// The darkpool client for the Base chain
+// pub type DarkpoolClient = client::DarkpoolClientInner<base::BaseDarkpool>;
+// #[cfg(feature = "base")]
+// /// The darkpool implementation for the Base chain
+// ///
+// /// Exported here to allow lower level access from other workers
+// pub type DarkpoolImplementation = base::BaseDarkpool;

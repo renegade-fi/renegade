@@ -31,7 +31,7 @@ mod event_indexing;
 /// connects to the RPC endpoint over HTTP.
 pub type RenegadeProvider = DynProvider;
 /// A darkpool call builder type
-pub type DarkpoolCallBuilder<'a, C> = CallBuilder<&'a DynProvider, C>;
+pub type DarkpoolCallBuilder<'a, C> = CallBuilder<(), &'a DynProvider, C>;
 
 /// A configuration struct for the darkpool client, consists of relevant
 /// contract addresses, and endpoint for setting up an RPC client, and a private
@@ -65,20 +65,7 @@ impl DarkpoolClientConfig {
     /// Constructs RPC clients capable of signing transactions from the
     /// configuration
     fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
-        let url = Url::parse(&self.rpc_url)
-            .map_err(err_str!(DarkpoolClientConfigError::RpcClientInitialization))?;
-        let key = self.private_key.clone();
-        let provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .with_simple_nonce_management()
-            .filler(ChainIdFiller::default())
-            .filler(GasFiller)
-            .filler(BlobGasFiller)
-            .wallet(key)
-            .on_http(url);
-        provider.client().set_poll_interval(self.block_polling_interval);
-
-        Ok(DynProvider::new(provider))
+        unimplemented!("not implemented on alloy-v0.11.0 branch")
     }
 
     /// Parses the darkpool proxy address from the configuration,
@@ -137,7 +124,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     }
 
     /// Create an event filter
-    pub fn event_filter<E: SolEvent>(&self) -> Event<&RenegadeProvider, E> {
+    pub fn event_filter<E: SolEvent>(&self) -> Event<(), &RenegadeProvider, E> {
         let provider = self.provider();
         let address = self.darkpool_addr();
         Event::new_sol(provider, &address)
