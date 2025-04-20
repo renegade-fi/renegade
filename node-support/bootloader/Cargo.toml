@@ -14,7 +14,7 @@ tokio = { workspace = true, features = ["full"] }
 
 # === Workspace Dependencies === #
 config = { workspace = true }
-funds-manager-api = { git = "https://github.com/renegade-fi/relayer-extensions.git" }
+funds-manager-api = { git = "https://github.com/renegade-fi/relayer-extensions.git", rev = "25bfcce" }
 util = { workspace = true }
 
 # === Misc Dependencies === #

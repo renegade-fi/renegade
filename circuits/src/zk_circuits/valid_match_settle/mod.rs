@@ -36,8 +36,12 @@ use crate::zk_gadgets::wallet_operations::WalletGadget;
 
 use super::{VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1};
 
-/// A circuit with default sizing parameters
+/// A `VALID MATCH SETTLE` circuit with default sizing parameters
 pub type SizedValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>;
+/// A `VALID MATCH SETTLE WITH COMMITMENTS` circuit with default sizing
+/// parameters
+pub type SizedValidMatchSettleWithCommitments =
+    ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>;
 
 /// The circuitry for the valid match
 ///
@@ -101,7 +105,7 @@ where
     ///
     /// Used to apply constraints to the verifier
     fn singleprover_circuit(
-        statement: &ValidMatchSettleWithCommitmentStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        statement: &ValidMatchSettleWithCommitmentsStatementVar<MAX_BALANCES, MAX_ORDERS>,
         witness: &ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
@@ -229,7 +233,7 @@ where
 /// This is only used for the `VALID MATCH SETTLE WITH COMMITMENTS` statement
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchSettleWithCommitmentStatement<
+pub struct ValidMatchSettleWithCommitmentsStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
 > where
@@ -270,8 +274,8 @@ pub type SizedAuthenticatedMatchSettleStatement =
     AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
 /// A `VALID MATCH SETTLE WITH COMMITMENTS` statement with default const
 /// generic sizing parameters
-pub type SizedValidMatchSettleWithCommitmentStatement =
-    ValidMatchSettleWithCommitmentStatement<MAX_BALANCES, MAX_ORDERS>;
+pub type SizedValidMatchSettleWithCommitmentsStatement =
+    ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
 
 // ---------------------
 // | Prove Verify Flow |
@@ -343,7 +347,7 @@ where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
-    type Statement = ValidMatchSettleWithCommitmentStatement<MAX_BALANCES, MAX_ORDERS>;
+    type Statement = ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
 
     fn name() -> String {
         format!("Valid Match Settle With Commitments ({MAX_BALANCES}, {MAX_ORDERS})")
@@ -356,7 +360,7 @@ where
 
     fn apply_constraints(
         witness: ValidMatchSettleWitnessVar<MAX_BALANCES, MAX_ORDERS>,
-        statement: ValidMatchSettleWithCommitmentStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        statement: ValidMatchSettleWithCommitmentsStatementVar<MAX_BALANCES, MAX_ORDERS>,
         cs: &mut PlonkCircuit,
     ) -> Result<(), PlonkError> {
         ValidMatchSettleWithCommitments::singleprover_circuit(&statement, &witness, cs)
@@ -392,7 +396,7 @@ pub mod test_helpers {
     };
 
     use super::{
-        ValidMatchSettle, ValidMatchSettleStatement, ValidMatchSettleWithCommitmentStatement,
+        ValidMatchSettle, ValidMatchSettleStatement, ValidMatchSettleWithCommitmentsStatement,
         ValidMatchSettleWitness,
     };
 
@@ -407,7 +411,7 @@ pub mod test_helpers {
     /// `VALID MATCH SETTLE WITH COMMITMENTS`
     pub fn convert_statement_to_commitments<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
-    ) -> ValidMatchSettleWithCommitmentStatement<MAX_BALANCES, MAX_ORDERS>
+    ) -> ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>
     where
         [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
@@ -419,7 +423,7 @@ pub mod test_helpers {
         let share_comm0 = compute_wallet_commitment_from_private(public_shares0, private_comm0);
         let share_comm1 = compute_wallet_commitment_from_private(public_shares1, private_comm1);
 
-        ValidMatchSettleWithCommitmentStatement {
+        ValidMatchSettleWithCommitmentsStatement {
             private_share_commitment0: private_comm0,
             private_share_commitment1: private_comm1,
             new_share_commitment0: share_comm0,
@@ -438,7 +442,7 @@ pub mod test_helpers {
         const MAX_ORDERS: usize,
     >() -> (
         ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>,
-        ValidMatchSettleWithCommitmentStatement<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>,
     )
     where
         [(); MAX_BALANCES + MAX_ORDERS]: Sized,
@@ -618,7 +622,7 @@ mod tests {
         test_helpers::{
             convert_statement_to_commitments, dummy_witness_and_statement_with_commitments,
         },
-        ValidMatchSettleStatement, ValidMatchSettleWithCommitmentStatement,
+        ValidMatchSettleStatement, ValidMatchSettleWithCommitmentsStatement,
         ValidMatchSettleWitness,
     };
 
@@ -631,11 +635,11 @@ mod tests {
     /// A statement with test sizing parameters attached
     type TestValidMatchSettleStatement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
     /// A statement with test sizing parameters attached
-    type TestValidMatchSettleWithCommitmentStatement =
-        ValidMatchSettleWithCommitmentStatement<MAX_BALANCES, MAX_ORDERS>;
+    type TestValidMatchSettleWithCommitmentsStatement =
+        ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
     /// A `VALID MATCH SETTLE WITH COMMITMENTS` circuit with test sizing
     /// parameters attached
-    type TestValidMatchSettleWithCommitment =
+    type TestValidMatchSettleWithCommitments =
         ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>;
     /// A `VALID MATCH SETTLE` circuit with test sizing parameters attached
     type TestValidMatchSettle = ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>;
@@ -691,9 +695,9 @@ mod tests {
     /// COMMITMENTS` circuit
     fn check_witness_statement_with_commitments(
         witness: &TestValidMatchSettleWitness,
-        statement: &TestValidMatchSettleWithCommitmentStatement,
+        statement: &TestValidMatchSettleWithCommitmentsStatement,
     ) -> bool {
-        check_constraint_satisfaction::<TestValidMatchSettleWithCommitment>(witness, statement)
+        check_constraint_satisfaction::<TestValidMatchSettleWithCommitments>(witness, statement)
     }
 
     // ------------------------
