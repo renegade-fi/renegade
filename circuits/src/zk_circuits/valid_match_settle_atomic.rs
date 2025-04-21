@@ -429,7 +429,10 @@ where
     }
 
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        ValidMatchSettleAtomic::proof_linking_groups()
+        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+
+        Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
     }
 
     fn apply_constraints(

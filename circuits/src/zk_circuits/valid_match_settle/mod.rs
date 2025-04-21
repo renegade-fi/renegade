@@ -314,20 +314,22 @@ where
         format!("Valid Match Settle ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
-    /// VALID MATCH SETTLE places the two groups that it shares with VALID
-    /// COMMITMENTS
+    /// `VALID MATCH SETTLE` uses the same proof linking groups as
+    /// `VALID MATCH SETTLE WITH COMMITMENTS`; allowing the latter to place the
+    /// groups
     ///
-    /// Note: VALID MATCH SETTLE places these groups because it has a larger
-    /// statement. If VALID COMMITMENTS were to place this group, VALID MATCH
-    /// SETTLE would not be able to inherit it -- it would overlap with public
-    /// inputs
-    ///
-    /// Ideally we would fix this by exposing a `min_offset` or similar, but for
-    /// now we simply have VALID MATCH SETTLE place the group
+    /// We do this because `VALID MATCH SETTLE WITH COMMITMENTS` has a larger
+    /// statement, so it must place the groups after its public input gates.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        let match_settle_layout = ValidMatchSettleWithCommitments::get_circuit_layout()?;
+        let commitments_group0 =
+            match_settle_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+        let commitments_group1 =
+            match_settle_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
+
         Ok(vec![
-            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), None),
-            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), None),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(commitments_group0)),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), Some(commitments_group1)),
         ])
     }
 
@@ -353,9 +355,21 @@ where
         format!("Valid Match Settle With Commitments ({MAX_BALANCES}, {MAX_ORDERS})")
     }
 
-    /// Same proof linking groups as `VALID MATCH SETTLE`
+    /// VALID MATCH SETTLE places the two groups that it shares with VALID
+    /// COMMITMENTS
+    ///
+    /// Note: VALID MATCH SETTLE places these groups because it has a larger
+    /// statement. If VALID COMMITMENTS were to place this group, VALID MATCH
+    /// SETTLE would not be able to inherit it -- it would overlap with public
+    /// inputs
+    ///
+    /// Ideally we would fix this by exposing a `min_offset` or similar, but for
+    /// now we simply have VALID MATCH SETTLE place the group
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        <ValidMatchSettle<MAX_BALANCES, MAX_ORDERS> as SingleProverCircuit>::proof_linking_groups()
+        Ok(vec![
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), None),
+            (VALID_COMMITMENTS_MATCH_SETTLE_LINK1.to_string(), None),
+        ])
     }
 
     fn apply_constraints(

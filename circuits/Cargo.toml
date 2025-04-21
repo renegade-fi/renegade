@@ -102,12 +102,12 @@ num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
 
 # === Workspace Dependencies === #
+util = { workspace = true, features = ["blockchain"] }
+
 circuit-macros = { workspace = true }
 circuit-types = { workspace = true }
 constants = { workspace = true }
 renegade-crypto = { workspace = true }
-util = { workspace = true }
-
 # === Misc Dependencies === #
 bitvec = "1.0"
 ctor = { version = "0.1", optional = true }
