@@ -17,8 +17,8 @@ use mpc_relation::proof_linking::GroupLayout;
 use crate::zk_circuits::{valid_reblind::ValidReblind, VALID_REBLIND_COMMITMENTS_LINK};
 
 use super::{
-    valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE_LINK0,
-    VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
+    valid_match_settle::{ValidMatchSettle, ValidMatchSettleWithCommitments},
+    VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
 };
 
 // ---------------------------------------
@@ -280,6 +280,46 @@ where
         &layout,
         &pk.commit_key,
         fabric,
+    )
+    .map_err(ProverError::Plonk)
+}
+
+/// Link a proof of `VALID COMMITMENTS` into a proof of `VALID MATCH SETTLE WITH
+/// COMMITMENTS` using the system wide sizing constants
+pub fn link_sized_commitments_match_settle_with_commitments(
+    party_id: PartyId,
+    commitments_link_hint: &ProofLinkingHint,
+    match_settle_link_hint: &ProofLinkingHint,
+) -> Result<PlonkLinkProof, ProverError> {
+    link_commitments_match_settle_with_commitments::<MAX_BALANCES, MAX_ORDERS>(
+        party_id,
+        commitments_link_hint,
+        match_settle_link_hint,
+    )
+}
+
+/// Link a proof of `VALID COMMITMENTS` into a proof of `VALID MATCH SETTLE WITH
+/// COMMITMENTS` with generics sizing constants
+pub fn link_commitments_match_settle_with_commitments<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+>(
+    party_id: PartyId,
+    commitments_link_hint: &ProofLinkingHint,
+    match_settle_link_hint: &ProofLinkingHint,
+) -> Result<PlonkLinkProof, ProverError>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    // Get the group layout for the match settle <-> commitments link group
+    let layout = get_commitments_match_settle_group_layout::<MAX_BALANCES, MAX_ORDERS>(party_id)?;
+    let pk = ValidMatchSettleWithCommitments::<MAX_BALANCES, MAX_ORDERS>::proving_key();
+
+    PlonkKzgSnark::link_proofs::<SolidityTranscript>(
+        commitments_link_hint,
+        match_settle_link_hint,
+        &layout,
+        &pk.commit_key,
     )
     .map_err(ProverError::Plonk)
 }
