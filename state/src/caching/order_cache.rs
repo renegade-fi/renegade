@@ -12,7 +12,9 @@ use tracing::instrument;
 
 use crate::storage::{db::DB, error::StorageError};
 
-use super::{order_metadata_index::OrderMetadataIndex, RwLockHashSet};
+use super::{
+    matchable_amount::MatchableAmountMap, order_metadata_index::OrderMetadataIndex, RwLockHashSet,
+};
 
 /// A filter for querying the order book cache
 #[derive(Clone, Debug)]
@@ -43,6 +45,8 @@ pub struct OrderBookCache {
     externally_enabled_orders: RwLockHashSet<OrderIdentifier>,
     /// The index of order metadata
     order_metadata_index: OrderMetadataIndex,
+    /// Mapping of matchable amount at the midpoint of a pair
+    matchable_amount_map: MatchableAmountMap,
 }
 
 impl OrderBookCache {
@@ -51,6 +55,7 @@ impl OrderBookCache {
         Self {
             externally_enabled_orders: RwLock::new(HashSet::new()),
             order_metadata_index: OrderMetadataIndex::new(),
+            matchable_amount_map: MatchableAmountMap::new(),
         }
     }
 
@@ -77,6 +82,13 @@ impl OrderBookCache {
         self.order_metadata_index.get_all_orders().await
     }
 
+    /// Get the matchable amount for a given pair and side
+    ///
+    /// This is the sum of all matchable amounts for the given pair and side
+    pub async fn get_matchable_amount(&self, pair: Pair, side: OrderSide) -> Amount {
+        self.matchable_amount_map.get(pair, side).await
+    }
+
     // --- Setters --- //
 
     /// Add an order to the cache
@@ -85,6 +97,8 @@ impl OrderBookCache {
         if order.allow_external_matches {
             self.externally_enabled_orders.write().await.insert(id);
         }
+        let (pair, side) = order.pair_and_side();
+        self.matchable_amount_map.update_amount(pair, side, 0, matchable_amount).await;
     }
 
     /// Add an order to the cache in a blocking fashion
@@ -99,6 +113,9 @@ impl OrderBookCache {
 
     /// Update an order in the cache
     pub async fn update_order(&self, id: OrderIdentifier, matchable_amount: Amount) {
+        let prev = self.order_metadata_index.get_matchable_amount(&id).await.unwrap_or(0);
+        let (pair, side) = self.order_metadata_index.get_pair_and_side(&id).await.unwrap();
+        self.matchable_amount_map.update_amount(pair, side, prev, matchable_amount).await;
         self.order_metadata_index.update_matchable_amount(id, matchable_amount).await;
     }
 
@@ -120,6 +137,9 @@ impl OrderBookCache {
 
     /// Remove an order from the cache entirely
     pub async fn remove_order(&self, order: OrderIdentifier) {
+        let prev = self.order_metadata_index.get_matchable_amount(&order).await.unwrap_or(0);
+        let (pair, side) = self.order_metadata_index.get_pair_and_side(&order).await.unwrap();
+        self.matchable_amount_map.update_amount(pair, side, prev, 0).await;
         self.externally_enabled_orders.write().await.remove(&order);
         self.order_metadata_index.remove_order(&order).await;
     }

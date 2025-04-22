@@ -67,6 +67,17 @@ impl OrderMetadataIndex {
         self.reverse_index.blocking_read().contains_key(order_id)
     }
 
+    /// Get the matchable amount for a given order_id
+    pub async fn get_matchable_amount(&self, order_id: &OrderIdentifier) -> Option<Amount> {
+        let (pair, side) = self.get_pair_and_side(order_id).await?;
+        let index = self.index.read().await;
+        let side_index = index.get(&pair)?;
+        let sorted_vec = side_index.get(&side)?;
+        let amount =
+            sorted_vec.iter().find(|(_, oid)| oid == order_id).map(|(amount, _)| *amount)?;
+        Some(amount)
+    }
+
     // --- Setters --- //
 
     /// Add an order to the index
