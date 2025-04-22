@@ -10,9 +10,9 @@ mod task;
 mod wallet;
 
 use admin::{
-    AdminGetOrderMatchingPoolHandler, AdminRefreshExternalMatchFeesHandler,
-    AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler,
-    AdminWalletMatchableOrderIdsHandler, IsLeaderHandler,
+    AdminGetAggregateMatchableAmountHandler, AdminGetOrderMatchingPoolHandler,
+    AdminRefreshExternalMatchFeesHandler, AdminRefreshTokenMappingHandler,
+    AdminTriggerSnapshotHandler, AdminWalletMatchableOrderIdsHandler, IsLeaderHandler,
 };
 use async_trait::async_trait;
 use common::types::{
@@ -25,8 +25,9 @@ use external_api::{
     http::{
         admin::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE,
-            ADMIN_GET_ORDER_MATCHING_POOL_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
-            ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
+            ADMIN_GET_AGGREGATE_MATCHABLE_AMOUNT_ROUTE, ADMIN_GET_ORDER_MATCHING_POOL_ROUTE,
+            ADMIN_MATCHING_POOL_CREATE_ROUTE, ADMIN_MATCHING_POOL_DESTROY_ROUTE,
+            ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
             ADMIN_REFRESH_EXTERNAL_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
             ADMIN_TRIGGER_SNAPSHOT_ROUTE, ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
         },
@@ -546,6 +547,13 @@ impl HttpServer {
             &Method::GET,
             ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE.to_string(),
             AdminWalletMatchableOrderIdsHandler::new(state.clone()),
+        );
+
+        // The "/admin/liquidity/:mint" route
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            ADMIN_GET_AGGREGATE_MATCHABLE_AMOUNT_ROUTE.to_string(),
+            AdminGetAggregateMatchableAmountHandler::new(state.clone(), config.clone()),
         );
 
         // The "/admin/matching_pools/:matching_pool" route

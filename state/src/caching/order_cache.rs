@@ -82,6 +82,11 @@ impl OrderBookCache {
         self.order_metadata_index.get_all_orders().await
     }
 
+    /// Get the matchable amount for both sides of a pair
+    pub async fn get_aggregate_matchable_amount(&self, pair: &Pair) -> (Amount, Amount) {
+        self.matchable_amount_map.get(pair).await
+    }
+
     // --- Setters --- //
 
     /// Add an order to the cache

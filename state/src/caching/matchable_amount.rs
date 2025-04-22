@@ -34,10 +34,14 @@ impl MatchableAmountMap {
 
     // --- Getters --- //
 
-    /// Get the matchable amount for a given pair and side
-    pub async fn get(&self, pair: Pair, side: OrderSide) -> Amount {
+    /// Get the matchable amount for both sides of a pair
+    pub async fn get(&self, pair: &Pair) -> (Amount, Amount) {
         let matchable_amount_map = self.matchable_amount_map.read().await;
-        matchable_amount_map.get(&(pair, side)).copied().unwrap_or(0)
+        let buy_amount =
+            matchable_amount_map.get(&(pair.clone(), OrderSide::Buy)).copied().unwrap_or(0);
+        let sell_amount =
+            matchable_amount_map.get(&(pair.clone(), OrderSide::Sell)).copied().unwrap_or(0);
+        (buy_amount, sell_amount)
     }
 
     // --- Setters --- //

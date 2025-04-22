@@ -70,6 +70,12 @@ impl From<AuthError> for ApiServerError {
     }
 }
 
+impl From<String> for ApiServerError {
+    fn from(value: String) -> Self {
+        internal_error(value)
+    }
+}
+
 /// Create an `ApiServerError` with a 204 no content code
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn no_content<E: ToString>(e: E) -> ApiServerError {

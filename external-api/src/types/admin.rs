@@ -21,3 +21,21 @@ pub struct AdminOrderMetadata {
     /// The price used to calculate the fillable amount
     pub price: Option<Price>,
 }
+
+/// A summary of the aggregate matchable amount for a given side of the market
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MidpointMatchableAmount {
+    /// The matchable amount at the midpoint price, in units of the base token
+    pub total_quantity: Amount,
+    /// The matchable amount at the midpoint price, in USD
+    pub total_quantity_usd: f64,
+}
+
+impl MidpointMatchableAmount {
+    /// Constructor
+    pub fn new(matchable_amount: Amount, price: Price) -> Self {
+        let total_quantity_usd = matchable_amount as f64 * price;
+
+        Self { total_quantity: matchable_amount, total_quantity_usd }
+    }
+}
