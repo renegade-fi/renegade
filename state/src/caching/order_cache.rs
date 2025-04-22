@@ -98,7 +98,7 @@ impl OrderBookCache {
             self.externally_enabled_orders.write().await.insert(id);
         }
         let (pair, side) = order.pair_and_side();
-        self.matchable_amount_map.update_amount(pair, side, 0, matchable_amount).await;
+        self.matchable_amount_map.add_amount(pair, side, matchable_amount).await;
     }
 
     /// Add an order to the cache in a blocking fashion
@@ -113,9 +113,20 @@ impl OrderBookCache {
 
     /// Update an order in the cache
     pub async fn update_order(&self, id: OrderIdentifier, matchable_amount: Amount) {
+        // An order's matchable amount can change due to various wallet update
+        // operations, so we cannot assume the direction of the delta
         let prev = self.order_metadata_index.get_matchable_amount(&id).await.unwrap_or(0);
         let (pair, side) = self.order_metadata_index.get_pair_and_side(&id).await.unwrap();
-        self.matchable_amount_map.update_amount(pair, side, prev, matchable_amount).await;
+        if prev > matchable_amount {
+            self.matchable_amount_map
+                .sub_amount(pair, side, prev.saturating_sub(matchable_amount))
+                .await;
+        } else {
+            self.matchable_amount_map
+                .add_amount(pair, side, matchable_amount.saturating_sub(prev))
+                .await;
+        }
+
         self.order_metadata_index.update_matchable_amount(id, matchable_amount).await;
     }
 
@@ -139,7 +150,7 @@ impl OrderBookCache {
     pub async fn remove_order(&self, order: OrderIdentifier) {
         let prev = self.order_metadata_index.get_matchable_amount(&order).await.unwrap_or(0);
         let (pair, side) = self.order_metadata_index.get_pair_and_side(&order).await.unwrap();
-        self.matchable_amount_map.update_amount(pair, side, prev, 0).await;
+        self.matchable_amount_map.sub_amount(pair, side, prev).await;
         self.externally_enabled_orders.write().await.remove(&order);
         self.order_metadata_index.remove_order(&order).await;
     }
