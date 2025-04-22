@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use tokio::sync::RwLock;
 
+pub mod matchable_amount;
 pub mod order_cache;
 pub mod order_metadata_index;
 

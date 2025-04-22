@@ -87,30 +87,39 @@ impl OrderMetadataIndex {
     }
 
     /// Update the matchable amount for an order
+    ///
+    /// Returns the old matchable amount if it was updated, otherwise None
     pub async fn update_matchable_amount(
         &self,
         order_id: OrderIdentifier,
         matchable_amount: Amount,
-    ) {
+    ) -> Option<Amount> {
         let (pair, side) = self.get_pair_and_side(&order_id).await.unwrap();
         let mut index = self.index.write().await;
         let entry = index.entry(pair).or_insert_with(OrderSideIndex::new);
         let sorted_vec = entry.entry(side).or_insert_with(SortedVec::new);
 
         // Remove the old entry
-        if let Some(idx) = sorted_vec.find_index(|(_, oid)| *oid == order_id) {
-            sorted_vec.remove(idx);
-        }
+        let old_amount = if let Some(idx) = sorted_vec.find_index(|(_, oid)| *oid == order_id) {
+            let (amt, _) = sorted_vec.remove(idx);
+            Some(amt)
+        } else {
+            None
+        };
 
         // Insert the new entry (this will maintain the sort order)
         sorted_vec.insert((matchable_amount, order_id));
+
+        old_amount
     }
 
     /// Remove an order from the index
     ///
     /// Note that we do not clean up sub-index entries when their
     /// lists become empty.
-    pub async fn remove_order(&self, order_id: &OrderIdentifier) -> Option<()> {
+    ///
+    /// Returns the old matchable amount if it was removed, otherwise None
+    pub async fn remove_order(&self, order_id: &OrderIdentifier) -> Option<Amount> {
         // Get the pair and side from the reverse index
         let (pair, side) = self.get_pair_and_side(order_id).await?;
 
@@ -119,15 +128,18 @@ impl OrderMetadataIndex {
         let side_index = index.get_mut(&pair)?;
         let sorted_vec = side_index.get_mut(&side)?;
 
-        if let Some(idx) = sorted_vec.find_index(|(_, oid)| oid == order_id) {
-            sorted_vec.remove(idx);
-        }
+        let old_amount = if let Some(idx) = sorted_vec.find_index(|(_, oid)| oid == order_id) {
+            let (amt, _) = sorted_vec.remove(idx);
+            Some(amt)
+        } else {
+            None
+        };
 
         // Remove from the reverse index
         let mut reverse_index = self.reverse_index.write().await;
         reverse_index.remove(order_id);
 
-        Some(())
+        old_amount
     }
 }
 
@@ -389,7 +401,7 @@ mod order_index_tests {
 
         // Update the matchable amount
         let updated_amount = 200;
-        index.update_matchable_amount(order_id, updated_amount).await;
+        let old_amount = index.update_matchable_amount(order_id, updated_amount).await;
 
         // Get the orders and verify the order is in the correct position
         let orders = index.get_orders(&pair, order.side).await;
@@ -401,6 +413,9 @@ mod order_index_tests {
         let side_index = index_map.get(&pair).unwrap();
         let sorted_vec = side_index.get(&OrderSide::Buy).unwrap();
         assert_eq!(sorted_vec.get(0).unwrap().0, updated_amount);
+
+        // Verify the returned old amount
+        assert_eq!(old_amount, Some(initial_amount));
     }
 
     #[tokio::test]
@@ -423,13 +438,16 @@ mod order_index_tests {
         assert_eq!(orders[1], order_id2); // 100
 
         // Update order2's amount to be larger than order1
-        index.update_matchable_amount(order_id2, 300).await;
+        let old_amount = index.update_matchable_amount(order_id2, 300).await;
 
         // Verify the sort order has changed
         let orders = index.get_orders(&pair, OrderSide::Buy).await;
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0], order_id2); // 300
         assert_eq!(orders[1], order_id1); // 200
+
+        // Verify the returned old amount
+        assert_eq!(old_amount, Some(100));
     }
 
     #[tokio::test]
@@ -486,7 +504,8 @@ mod order_index_tests {
         index.add_order(order_id3, &order, 100).await;
 
         // Remove the middle order
-        index.remove_order(&order_id2).await;
+        let result = index.remove_order(&order_id2).await;
+        assert_eq!(result, Some(200));
 
         // Verify remaining orders are still sorted
         let orders = index.get_orders(&pair, OrderSide::Buy).await;
