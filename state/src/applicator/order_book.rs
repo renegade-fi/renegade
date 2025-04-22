@@ -99,7 +99,13 @@ impl StateApplicator {
             .get_order(&order_id)
             .ok_or_else(|| StateApplicatorError::reject(ERR_ORDER_MISSING))?;
         let matchable_amount = wallet.get_matchable_amount_for_order(order);
-        self.order_cache().add_order_blocking(order_id, order, matchable_amount);
+        // If order exists, update its matchable amount
+        // Otherwise, add it to the cache
+        if self.order_cache().order_exists(order_id) {
+            self.order_cache().update_order_blocking(order_id, matchable_amount);
+        } else {
+            self.order_cache().add_order_blocking(order_id, order, matchable_amount);
+        }
 
         // Publish the order state change
         self.system_bus().publish(

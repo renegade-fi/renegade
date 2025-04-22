@@ -62,6 +62,11 @@ impl OrderMetadataIndex {
         self.reverse_index.read().await.get(order_id).cloned()
     }
 
+    /// Returns whether an order exists in the index synchronously
+    pub fn order_exists(&self, order_id: &OrderIdentifier) -> bool {
+        self.reverse_index.blocking_read().contains_key(order_id)
+    }
+
     // --- Setters --- //
 
     /// Add an order to the index

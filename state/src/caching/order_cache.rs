@@ -67,6 +67,11 @@ impl OrderBookCache {
         }
     }
 
+    /// Returns whether an order exists in the cache
+    pub fn order_exists(&self, id: OrderIdentifier) -> bool {
+        self.order_metadata_index.order_exists(&id)
+    }
+
     /// Get all orders that match any filter
     pub async fn get_all_orders(&self) -> Vec<OrderIdentifier> {
         self.order_metadata_index.get_all_orders().await
@@ -90,6 +95,17 @@ impl OrderBookCache {
         if order.allow_external_matches {
             self.externally_enabled_orders.blocking_write().insert(id);
         }
+    }
+
+    /// Update an order in the cache
+    pub async fn update_order(&self, id: OrderIdentifier, matchable_amount: Amount) {
+        self.order_metadata_index.update_matchable_amount(id, matchable_amount).await;
+    }
+
+    /// Update an order in the cache in a blocking fashion
+    pub fn update_order_blocking(&self, id: OrderIdentifier, matchable_amount: Amount) {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(self.update_order(id, matchable_amount));
     }
 
     /// Mark an order as externally matchable
