@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use circuit_types::r#match::MatchResult;
+use circuit_types::r#match::{BoundedMatchResult, MatchResult};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
@@ -119,6 +119,41 @@ impl SettleExternalMatchTaskDescriptor {
 impl From<SettleExternalMatchTaskDescriptor> for TaskDescriptor {
     fn from(descriptor: SettleExternalMatchTaskDescriptor) -> Self {
         TaskDescriptor::SettleExternalMatch(descriptor)
+    }
+}
+
+/// The task descriptor parameterizing the `SettleMalleableExternalMatch` task
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SettleMalleableExternalMatchTaskDescriptor {
+    /// The duration for which the external match bundle is valid
+    #[serde(default)]
+    pub bundle_duration: Duration,
+    /// The ID of the order that the local node matched
+    pub internal_order_id: OrderIdentifier,
+    /// The ID of the wallet that the local node matched an order from
+    pub internal_wallet_id: WalletIdentifier,
+    /// The match result from the external matching engine
+    pub match_res: BoundedMatchResult,
+    /// The system bus topic on which to send the atomic match settle bundle
+    pub atomic_match_bundle_topic: String,
+}
+
+impl SettleMalleableExternalMatchTaskDescriptor {
+    /// Constructor
+    pub fn new(
+        bundle_duration: Duration,
+        internal_order_id: OrderIdentifier,
+        internal_wallet_id: WalletIdentifier,
+        match_res: BoundedMatchResult,
+        atomic_match_bundle_topic: String,
+    ) -> Self {
+        SettleMalleableExternalMatchTaskDescriptor {
+            bundle_duration,
+            internal_order_id,
+            internal_wallet_id,
+            atomic_match_bundle_topic,
+            match_res,
+        }
     }
 }
 

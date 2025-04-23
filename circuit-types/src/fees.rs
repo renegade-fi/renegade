@@ -36,6 +36,11 @@ pub struct FeeTakeRate {
 }
 
 impl FeeTakeRate {
+    /// Constructor
+    pub fn new(relayer_fee_rate: FixedPoint, protocol_fee_rate: FixedPoint) -> Self {
+        Self { relayer_fee_rate, protocol_fee_rate }
+    }
+
     /// Get the total fee rate
     pub fn total(&self) -> FixedPoint {
         self.relayer_fee_rate + self.protocol_fee_rate
