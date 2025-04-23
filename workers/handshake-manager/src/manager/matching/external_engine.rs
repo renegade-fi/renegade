@@ -13,6 +13,7 @@ use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
     r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
+    Amount,
 };
 use common::types::{
     tasks::{
@@ -28,9 +29,15 @@ use external_api::bus_message::SystemBusMessage;
 use job_types::handshake_manager::ExternalMatchingEngineOptions;
 use renegade_crypto::fields::scalar_to_u128;
 use tracing::{error, info, instrument, warn};
-use util::telemetry::helpers::backfill_trace_field;
+use util::{matching_engine::compute_max_amount, telemetry::helpers::backfill_trace_field};
 
-use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
+use crate::{
+    error::HandshakeManagerError,
+    manager::{
+        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
+        HandshakeExecutor,
+    },
+};
 
 use super::matching_order_filter;
 
@@ -40,6 +47,14 @@ use super::matching_order_filter;
 /// This is intentionally very low, as the quote amount should only be
 /// overridden for very small differences that amount to rounding
 const MAX_QUOTE_OVERRIDE_DIFF: f64 = 0.000001;
+/// The maximum one-sided range to allow on a malleable match
+///
+/// That is, when emitting a bounded match, the range of the match is:
+///     [amount * (1 - MAX_MALLEABLE_RANGE), amount * (1 + MAX_MALLEABLE_RANGE)]
+///
+/// Note that the resulting bounded match may be clamped to a narrower range by
+/// limits on the counterparty order
+const MAX_MALLEABLE_RANGE: f64 = 0.1; // 10%
 
 impl HandshakeExecutor {
     /// Encapsulates the logic for the external matching engine in an error
@@ -260,32 +275,68 @@ impl HandshakeExecutor {
     /// and forward the task to the task driver to create a bundle.
     async fn handle_bounded_match(
         &self,
-        other_order_id: OrderIdentifier,
+        order_id: OrderIdentifier,
         price: TimestampedPrice,
         match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
-        // First, build a bounded match result
+        // Build a bounded match result
+        let price_fp = price.as_fixed_point();
+        let (min_amount, max_amount) =
+            self.derive_match_bounds(&order_id, price_fp, match_res.base_amount).await?;
         let bounded_res = BoundedMatchResult {
             quote_mint: match_res.quote_mint,
             base_mint: match_res.base_mint,
-            price: price.as_fixed_point(),
-            min_base_amount: match_res.base_amount,
-            max_base_amount: match_res.base_amount,
+            price: price_fp,
+            min_base_amount: min_amount,
+            max_base_amount: max_amount,
             direction: match_res.direction,
         };
 
         // Create a task to settle the match
-        let wallet_id = self.get_wallet_id_for_order(&other_order_id).await?;
+        let wallet_id = self.get_wallet_id_for_order(&order_id).await?;
         let task = SettleMalleableExternalMatchTaskDescriptor::new(
             options.bundle_duration,
-            other_order_id,
+            order_id,
             wallet_id,
             bounded_res,
             response_topic,
         );
         self.enqueue_settlement_task(task, options).await
+    }
+
+    /// Derive the bounds for a match
+    ///
+    /// Returns a tuple containing `(min_amount, max_amount)`
+    async fn derive_match_bounds(
+        &self,
+        order_id: &OrderIdentifier,
+        price: FixedPoint,
+        match_amt: Amount,
+    ) -> Result<(Amount, Amount), HandshakeManagerError> {
+        let wallet = self
+            .state
+            .get_wallet_for_order(order_id)
+            .await?
+            .ok_or_else(|| HandshakeManagerError::state(ERR_NO_WALLET))?;
+        let order = wallet
+            .get_order(order_id)
+            .ok_or_else(|| HandshakeManagerError::state(ERR_NO_ORDER))?
+            .clone();
+
+        let capitalizing_balance = wallet.get_balance_for_order(&order).unwrap_or_default();
+        let order_min = order.min_fill_size;
+        let order_max = compute_max_amount(&price, &order.into(), &capitalizing_balance);
+
+        let min_amount = mul_amount_f64(match_amt, 1.0 - MAX_MALLEABLE_RANGE);
+        let max_amount = mul_amount_f64(match_amt, 1.0 + MAX_MALLEABLE_RANGE);
+
+        // Clamp the amounts to the order's min and max
+        let min_amount = u128::max(min_amount, order_min);
+        let max_amount = u128::min(max_amount, order_max);
+
+        Ok((min_amount, max_amount))
     }
 
     // --- Helper Functions --- //
@@ -337,4 +388,13 @@ impl HandshakeExecutor {
         let response = SystemBusMessage::NoAtomicMatchFound;
         self.system_bus.publish(response_topic, response);
     }
+}
+
+// --- Non-Member Helpers --- //
+
+/// Multiply an `Amount` by an `f64` and round down to an `Amount`
+fn mul_amount_f64(amount: Amount, multiplier: f64) -> Amount {
+    let amount_f64 = amount as f64;
+    let product = amount_f64 * multiplier;
+    product.floor() as Amount
 }
