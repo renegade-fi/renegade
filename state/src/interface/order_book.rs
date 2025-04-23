@@ -150,7 +150,8 @@ impl StateInner {
 
     /// Get the matchable amount for both sides of a pair
     ///
-    /// Returns (buy_amount, sell_amount)
+    /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
+    /// quote token, sell amount is denominated in the base token
     pub async fn get_liquidity_for_pair(&self, pair: &Pair) -> (Amount, Amount) {
         self.order_cache.get_matchable_amount(pair).await
     }
