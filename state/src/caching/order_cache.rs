@@ -83,7 +83,9 @@ impl OrderBookCache {
     }
 
     /// Get the matchable amount for both sides of a pair
-    pub async fn get_aggregate_matchable_amount(&self, pair: &Pair) -> (Amount, Amount) {
+    ///
+    /// Returns (buy_amount, sell_amount)
+    pub async fn get_matchable_amount(&self, pair: &Pair) -> (Amount, Amount) {
         self.matchable_amount_map.get(pair).await
     }
 

@@ -493,7 +493,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_BY_MINT_ROUTE.to_string(),
-            GetDepthByMintHandler::new(state.clone(), config.clone()),
+            GetDepthByMintHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
         );
 
         // --- Network Routes --- //

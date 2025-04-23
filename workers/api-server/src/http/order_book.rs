@@ -13,13 +13,13 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
+use job_types::price_reporter::PriceReporterQueue;
 use state::State;
 use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{internal_error, not_found, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
-    worker::ApiServerConfig,
 };
 
 use super::{parse_mint_from_params, parse_order_id_from_params};
@@ -135,14 +135,14 @@ impl TypedHandler for GetExternalMatchFeesHandler {
 pub struct GetDepthByMintHandler {
     /// A handle to the relayer state
     state: State,
-    /// The config for the API server
-    config: ApiServerConfig,
+    /// The price reporter work queue
+    price_reporter_work_queue: PriceReporterQueue,
 }
 
 impl GetDepthByMintHandler {
     /// Constructor
-    pub fn new(state: State, config: ApiServerConfig) -> Self {
-        Self { state, config }
+    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
+        Self { state, price_reporter_work_queue }
     }
 }
 
@@ -164,18 +164,16 @@ impl TypedHandler for GetDepthByMintHandler {
         // Get the price
         let base_token = Token::from_addr_biguint(&mint);
         let ts_price = self
-            .config
             .price_reporter_work_queue
-            .peek_price_report(base_token.clone(), quote_token.clone())
-            .await?
-            .price()
+            .peek_price_usdc(base_token)
+            .await
             .map_err(internal_error)?;
 
-        // Get the aggregate matchable amount
+        // Get the matchable amount
         let pair = pair_from_mints(mint, quote_token.get_addr_biguint());
-        let (buy_amount, sell_amount) = self.state.get_aggregate_matchable_amount(&pair).await;
-        let buy_liquidity = MidpointMatchableAmount::new(buy_amount, ts_price.price);
-        let sell_liquidity = MidpointMatchableAmount::new(sell_amount, ts_price.price);
+        let (buy_liquidity, sell_liquidity) = self.state.get_liquidity_for_pair(&pair).await;
+        let buy_liquidity = MidpointMatchableAmount::new(buy_liquidity, ts_price.price);
+        let sell_liquidity = MidpointMatchableAmount::new(sell_liquidity, ts_price.price);
 
         Ok(GetDepthByMintResponse {
             price: ts_price.price,

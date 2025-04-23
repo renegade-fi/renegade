@@ -149,8 +149,10 @@ impl StateInner {
     }
 
     /// Get the matchable amount for both sides of a pair
-    pub async fn get_aggregate_matchable_amount(&self, pair: &Pair) -> (Amount, Amount) {
-        self.order_cache.get_aggregate_matchable_amount(pair).await
+    ///
+    /// Returns (buy_amount, sell_amount)
+    pub async fn get_liquidity_for_pair(&self, pair: &Pair) -> (Amount, Amount) {
+        self.order_cache.get_matchable_amount(pair).await
     }
 
     // --- Heartbeat --- //

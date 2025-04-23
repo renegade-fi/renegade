@@ -35,6 +35,8 @@ impl MatchableAmountMap {
     // --- Getters --- //
 
     /// Get the matchable amount for both sides of a pair
+    ///
+    /// Returns (buy_amount, sell_amount)
     pub async fn get(&self, pair: &Pair) -> (Amount, Amount) {
         let matchable_amount_map = self.matchable_amount_map.read().await;
         let buy_amount =
