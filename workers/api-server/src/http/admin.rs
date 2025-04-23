@@ -12,7 +12,7 @@ use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
     tasks::UpdateWalletTaskDescriptor,
     token::{get_all_tokens, Token},
-    wallet::{order_metadata::OrderMetadata, pair_from_mints, Order, WalletIdentifier},
+    wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
     Price,
 };
 use config::setup_token_remaps;
@@ -20,13 +20,13 @@ use constants::NATIVE_ASSET_ADDRESS;
 use external_api::{
     http::{
         admin::{
-            AdminGetAggregateMatchableAmountResponse, AdminGetOrderMatchingPoolResponse,
-            AdminOrderMetadataResponse, AdminWalletMatchableOrderIdsResponse,
-            CreateOrderInMatchingPoolRequest, IsLeaderResponse, OpenOrdersResponse,
+            AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
+            AdminWalletMatchableOrderIdsResponse, CreateOrderInMatchingPoolRequest,
+            IsLeaderResponse, OpenOrdersResponse,
         },
         wallet::CreateOrderResponse,
     },
-    types::{AdminOrderMetadata, MidpointMatchableAmount},
+    types::AdminOrderMetadata,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
@@ -41,12 +41,11 @@ use util::{matching_engine::compute_max_amount, on_chain::set_external_match_fee
 use crate::{
     error::{bad_request, internal_error, not_found, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
-    worker::ApiServerConfig,
 };
 
 use super::{
     parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
-    parse_mint_from_params, parse_order_id_from_params, parse_wallet_id_from_params,
+    parse_order_id_from_params, parse_wallet_id_from_params,
     wallet::{
         append_task_and_await, find_wallet_for_update, maybe_rotate_root_key, ERR_ORDER_NOT_FOUND,
     },
@@ -242,65 +241,6 @@ impl TypedHandler for AdminOrderMetadataHandler {
         }
 
         Ok(AdminOrderMetadataResponse { order })
-    }
-}
-
-// ----------------------
-// | Liquidity Handlers |
-// ----------------------
-
-/// Handler for the GET /v0/admin/liquidity/:mint route
-pub struct AdminGetAggregateMatchableAmountHandler {
-    /// A handle to the relayer state
-    state: State,
-    /// The config for the API server
-    config: ApiServerConfig,
-}
-
-impl AdminGetAggregateMatchableAmountHandler {
-    /// Constructor
-    pub fn new(state: State, config: ApiServerConfig) -> Self {
-        Self { state, config }
-    }
-}
-
-#[async_trait]
-impl TypedHandler for AdminGetAggregateMatchableAmountHandler {
-    type Request = EmptyRequestResponse;
-    type Response = AdminGetAggregateMatchableAmountResponse;
-
-    async fn handle_typed(
-        &self,
-        _headers: HeaderMap,
-        _req: Self::Request,
-        params: UrlParams,
-        _query_params: QueryParams,
-    ) -> Result<Self::Response, ApiServerError> {
-        let mint = parse_mint_from_params(&params)?;
-        let quote_token = Token::usdc();
-
-        // Get the price
-        let base_token = Token::from_addr_biguint(&mint);
-        let ts_price = self
-            .config
-            .price_reporter_work_queue
-            .peek_price_report(base_token.clone(), quote_token.clone())
-            .await?
-            .price()
-            .map_err(internal_error)?;
-
-        // Get the aggregate matchable amount
-        let pair = pair_from_mints(mint, quote_token.get_addr_biguint());
-        let (buy_amount, sell_amount) = self.state.get_aggregate_matchable_amount(&pair).await;
-        let buy_liquidity = MidpointMatchableAmount::new(buy_amount, ts_price.price);
-        let sell_liquidity = MidpointMatchableAmount::new(sell_amount, ts_price.price);
-
-        Ok(AdminGetAggregateMatchableAmountResponse {
-            price: ts_price.price,
-            timestamp: ts_price.timestamp,
-            buy_liquidity,
-            sell_liquidity,
-        })
     }
 }
 

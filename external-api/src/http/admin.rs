@@ -4,10 +4,10 @@
 // | HTTP Routes |
 // ---------------
 
-use common::types::{wallet::OrderIdentifier, MatchingPoolName, Price};
+use common::types::{wallet::OrderIdentifier, MatchingPoolName};
 use serde::{Deserialize, Serialize};
 
-use crate::types::{AdminOrderMetadata, ApiOrder, MidpointMatchableAmount};
+use crate::types::{AdminOrderMetadata, ApiOrder};
 
 use super::wallet::WalletUpdateAuthorization;
 
@@ -24,8 +24,6 @@ pub const ADMIN_GET_ORDER_MATCHING_POOL_ROUTE: &str = "/v0/admin/orders/:order_i
 /// Route to get all the matchable order IDs for a given wallet
 pub const ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE: &str =
     "/v0/admin/wallet/:wallet_id/matchable-order-ids";
-/// Route to get the aggregate matchable amount for a given mint
-pub const ADMIN_GET_AGGREGATE_MATCHABLE_AMOUNT_ROUTE: &str = "/v0/admin/liquidity/:mint";
 
 // Setter routes
 
@@ -92,17 +90,4 @@ pub struct AdminGetOrderMatchingPoolResponse {
 pub struct AdminWalletMatchableOrderIdsResponse {
     /// The order IDs
     pub order_ids: Vec<OrderIdentifier>,
-}
-
-/// The response to a "get aggregate matchable amount" request
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AdminGetAggregateMatchableAmountResponse {
-    /// The midpoint price
-    pub price: Price,
-    /// The timestamp of the price
-    pub timestamp: u64,
-    /// The aggregate matchable amount for the buy side
-    pub buy_liquidity: MidpointMatchableAmount,
-    /// The aggregate matchable amount for the sell side
-    pub sell_liquidity: MidpointMatchableAmount,
 }

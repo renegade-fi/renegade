@@ -1,6 +1,10 @@
 //! API types for order book requests
 
-use common::types::network_order::{NetworkOrder, NetworkOrderState};
+use circuit_types::Amount;
+use common::types::{
+    network_order::{NetworkOrder, NetworkOrderState},
+    Price,
+};
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_biguint;
 use serde::{Deserialize, Serialize};
@@ -42,5 +46,23 @@ impl From<NetworkOrder> for ApiNetworkOrder {
             state: order.state,
             timestamp: order.timestamp,
         }
+    }
+}
+
+/// A summary of the aggregate matchable amount for a given side of the market
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MidpointMatchableAmount {
+    /// The matchable amount at the midpoint price, in units of the base token
+    pub total_quantity: Amount,
+    /// The matchable amount at the midpoint price, in USD
+    pub total_quantity_usd: f64,
+}
+
+impl MidpointMatchableAmount {
+    /// Constructor
+    pub fn new(matchable_amount: Amount, price: Price) -> Self {
+        let total_quantity_usd = matchable_amount as f64 * price;
+
+        Self { total_quantity: matchable_amount, total_quantity_usd }
     }
 }
