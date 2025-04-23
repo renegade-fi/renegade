@@ -96,9 +96,9 @@ impl OrderBookCache {
         self.order_metadata_index.add_order(id, order, matchable_amount).await;
         if order.allow_external_matches {
             self.externally_enabled_orders.write().await.insert(id);
+            let (pair, side) = order.pair_and_side();
+            self.matchable_amount_map.add_amount(pair, side, matchable_amount).await;
         }
-        let (pair, side) = order.pair_and_side();
-        self.matchable_amount_map.add_amount(pair, side, matchable_amount).await;
     }
 
     /// Add an order to the cache in a blocking fashion
@@ -122,13 +122,15 @@ impl OrderBookCache {
             .await
             .unwrap_or(0);
 
-        // Update the matchable amount map with the delta
-        if old_amount > matchable_amount {
-            let delta = old_amount.saturating_sub(matchable_amount);
-            self.matchable_amount_map.sub_amount(pair, side, delta).await;
-        } else {
-            let delta = matchable_amount.saturating_sub(old_amount);
-            self.matchable_amount_map.add_amount(pair, side, delta).await;
+        if self.externally_enabled_orders.read().await.contains(&id) {
+            // Update the matchable amount map with the delta
+            if old_amount > matchable_amount {
+                let delta = old_amount.saturating_sub(matchable_amount);
+                self.matchable_amount_map.sub_amount(pair, side, delta).await;
+            } else {
+                let delta = matchable_amount.saturating_sub(old_amount);
+                self.matchable_amount_map.add_amount(pair, side, delta).await;
+            }
         }
     }
 
@@ -152,8 +154,9 @@ impl OrderBookCache {
     pub async fn remove_order(&self, order: OrderIdentifier) {
         let (pair, side) = self.order_metadata_index.get_pair_and_side(&order).await.unwrap();
         let removed = self.order_metadata_index.remove_order(&order).await.unwrap_or(0);
-        self.matchable_amount_map.sub_amount(pair, side, removed).await;
-        self.externally_enabled_orders.write().await.remove(&order);
+        if self.externally_enabled_orders.write().await.remove(&order) {
+            self.matchable_amount_map.sub_amount(pair, side, removed).await;
+        }
     }
 
     /// Remove an order in a blocking fashion
