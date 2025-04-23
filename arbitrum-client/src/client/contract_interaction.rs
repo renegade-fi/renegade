@@ -6,12 +6,14 @@ use circuit_types::{
 };
 use common::types::{
     proof_bundles::{
-        AtomicMatchSettleBundle, GenericFeeRedemptionBundle, GenericMatchSettleAtomicBundle,
+        AtomicMatchSettleBundle, GenericFeeRedemptionBundle,
+        GenericMalleableMatchSettleAtomicBundle, GenericMatchSettleAtomicBundle,
         GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
         GenericRelayerFeeSettlementBundle, GenericValidWalletCreateBundle,
-        GenericValidWalletUpdateBundle, MatchBundle, OrderValidityProofBundle,
-        SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
-        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
+        GenericValidWalletUpdateBundle, MalleableAtomicMatchSettleBundle, MatchBundle,
+        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
+        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
+        SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -22,6 +24,7 @@ use ethers::{
     providers::Middleware,
     types::{
         transaction::eip2718::TypedTransaction, Address, BlockNumber, Bytes, TransactionReceipt,
+        U256,
     },
 };
 use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
@@ -37,6 +40,7 @@ use crate::{
         build_atomic_match_linking_proofs, build_atomic_match_proofs, build_match_linking_proofs,
         build_match_proofs, to_contract_proof, to_contract_transfer_aux_data,
         to_contract_valid_commitments_statement, to_contract_valid_fee_redemption_statement,
+        to_contract_valid_malleable_match_settle_atomic_statement,
         to_contract_valid_match_settle_atomic_statement, to_contract_valid_match_settle_statement,
         to_contract_valid_offline_fee_settlement_statement, to_contract_valid_reblind_statement,
         to_contract_valid_relayer_fee_settlement_statement,
@@ -363,8 +367,9 @@ impl ArbitrumClient {
         )
         .map_err(ArbitrumClientError::Conversion)?;
 
+        let commitments_link = &match_atomic_bundle.commitments_link;
         let match_link_proofs =
-            build_atomic_match_linking_proofs(internal_party_validity_proofs, match_atomic_bundle)
+            build_atomic_match_linking_proofs(internal_party_validity_proofs, commitments_link)
                 .map_err(ArbitrumClientError::Conversion)?;
 
         // Serialize calldata
@@ -412,6 +417,103 @@ impl ArbitrumClient {
         } else {
             self.get_darkpool_client()
                 .process_atomic_match_settle(
+                    internal_party_match_payload_calldata,
+                    valid_match_settle_atomic_statement_calldata,
+                    match_proofs_calldata,
+                    match_link_proofs_calldata,
+                )
+                .tx
+        }
+    }
+
+    /// Generate tx parameters for a `process_malleable_atomic_match_settle`
+    /// call
+    pub fn gen_malleable_atomic_match_settle_calldata(
+        &self,
+        receiver_address: Option<Address>,
+        internal_party_validity_proofs: &OrderValidityProofBundle,
+        match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
+    ) -> Result<TypedTransaction, ArbitrumClientError> {
+        let GenericMalleableMatchSettleAtomicBundle {
+            statement: valid_match_settle_atomic_statement,
+            proof: valid_match_settle_atomic_proof,
+        } = match_atomic_bundle.copy_atomic_match_proof();
+
+        let commitments_statement = internal_party_validity_proofs.commitment_proof.statement;
+        let reblind_statement = &internal_party_validity_proofs.reblind_proof.statement;
+
+        let internal_party_match_payload = MatchPayload {
+            valid_commitments_statement: to_contract_valid_commitments_statement(
+                commitments_statement,
+            ),
+            valid_reblind_statement: to_contract_valid_reblind_statement(reblind_statement),
+        };
+
+        // We use the same types here as in the regular atomic match case, though the
+        // proofs and statements here encode a different relation
+        let match_proofs = build_atomic_match_proofs(
+            internal_party_validity_proofs,
+            &valid_match_settle_atomic_proof,
+        )
+        .map_err(ArbitrumClientError::Conversion)?;
+
+        let commitments_link = &match_atomic_bundle.commitments_link;
+        let link_proofs =
+            build_atomic_match_linking_proofs(internal_party_validity_proofs, commitments_link)
+                .map_err(ArbitrumClientError::Conversion)?;
+
+        // Serialize calldata
+        let internal_party_match_payload_calldata =
+            serialize_calldata(&internal_party_match_payload)?;
+        let contract_valid_match_settle_atomic_statement =
+            to_contract_valid_malleable_match_settle_atomic_statement(
+                &valid_match_settle_atomic_statement,
+            )?;
+        let valid_match_settle_atomic_statement_calldata =
+            serialize_calldata(&contract_valid_match_settle_atomic_statement)?;
+        let match_proofs_calldata = serialize_calldata(&match_proofs)?;
+        let match_link_proofs_calldata = serialize_calldata(&link_proofs)?;
+
+        // Generate the calldata for `process_atomic_match_settle`, use the max amount
+        // as a placeholder for the calldata base amount
+        let base_amount = valid_match_settle_atomic_statement.bounded_match_result.max_base_amount;
+        let base_amount_calldata = U256::from(base_amount);
+        Ok(self.build_malleable_atomic_match_from_serialized_data(
+            base_amount_calldata,
+            receiver_address,
+            internal_party_match_payload_calldata,
+            valid_match_settle_atomic_statement_calldata,
+            match_proofs_calldata,
+            match_link_proofs_calldata,
+        ))
+    }
+
+    /// Build a `process_malleable_atomic_match_settle` transaction from
+    /// calldata serialized values
+    fn build_malleable_atomic_match_from_serialized_data(
+        &self,
+        base_amount: U256,
+        receiver: Option<Address>,
+        internal_party_match_payload_calldata: Bytes,
+        valid_match_settle_atomic_statement_calldata: Bytes,
+        match_proofs_calldata: Bytes,
+        match_link_proofs_calldata: Bytes,
+    ) -> TypedTransaction {
+        if let Some(receiver) = receiver {
+            self.get_darkpool_client()
+                .process_malleable_atomic_match_settle_with_receiver(
+                    base_amount,
+                    receiver,
+                    internal_party_match_payload_calldata,
+                    valid_match_settle_atomic_statement_calldata,
+                    match_proofs_calldata,
+                    match_link_proofs_calldata,
+                )
+                .tx
+        } else {
+            self.get_darkpool_client()
+                .process_malleable_atomic_match_settle(
+                    base_amount,
                     internal_party_match_payload_calldata,
                     valid_match_settle_atomic_statement_calldata,
                     match_proofs_calldata,

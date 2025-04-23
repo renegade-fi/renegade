@@ -26,6 +26,18 @@ pub type G1BaseField = Fq;
 /// Type alias for an element of the Bn254 curve's G2 pairing group's base field
 pub type G2BaseField = Fq2;
 
+/// A fixed-point representation of a real number
+///
+/// In the Renegade darkpool, a fixed point representation of a real number `r`
+/// is:     floor(r * 2^FIXED_POINT_PRECISION)
+#[serde_as]
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct FixedPoint {
+    /// The representation of the fixed-point number
+    #[serde_as(as = "ScalarFieldDef")]
+    pub repr: ScalarField,
+}
+
 /// A Plonk proof, using the "fast prover" strategy described in the paper.
 #[serde_as]
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
@@ -174,6 +186,16 @@ pub struct FeeTake {
     pub protocol_fee: U256,
 }
 
+/// A pair of fee rates that generate a fee when multiplied by a match amount
+#[serde_as]
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct FeeRates {
+    /// The fee rate for the relayer
+    pub relayer_fee_rate: FixedPoint,
+    /// The fee rate for the protocol
+    pub protocol_fee_rate: FixedPoint,
+}
+
 /// The result of an atomic match
 #[serde_as]
 #[derive(Clone, Serialize, Deserialize)]
@@ -190,6 +212,32 @@ pub struct ExternalMatchResult {
     /// The amount of the base token
     #[serde_as(as = "U256Def")]
     pub base_amount: U256,
+    /// The direction of the trade
+    ///
+    /// `false` (0) corresponds to the internal party buying the base
+    /// `true` (1) corresponds to the internal party selling the base
+    pub direction: bool,
+}
+
+/// A match result that specifies a range of match sizes rather than an exact
+/// base amount
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BoundedMatchResult {
+    /// The mint (erc20 address) of the quote token
+    #[serde_as(as = "AddressDef")]
+    pub quote_mint: Address,
+    /// The mint (erc20 address) of the base token
+    #[serde_as(as = "AddressDef")]
+    pub base_mint: Address,
+    /// The price at which the match will be settled
+    pub price: FixedPoint,
+    /// The minimum base amount of the match
+    #[serde_as(as = "U256Def")]
+    pub min_base_amount: U256,
+    /// The maximum base amount of the match
+    #[serde_as(as = "U256Def")]
+    pub max_base_amount: U256,
     /// The direction of the trade
     ///
     /// `false` (0) corresponds to the internal party buying the base
@@ -361,6 +409,24 @@ pub struct ValidMatchSettleAtomicStatement {
     pub protocol_fee: ScalarField,
     /// The address at which the relayer wishes to receive their fee due from
     /// the external party
+    #[serde_as(as = "AddressDef")]
+    pub relayer_fee_address: Address,
+}
+
+/// Statement for the `VALID MALLEABLE MATCH SETTLE ATOMIC` circuit
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ValidMalleableMatchSettleAtomicStatement {
+    /// The result of the match
+    pub match_result: BoundedMatchResult,
+    /// The fee rates charged to the external party
+    pub external_fee_rates: FeeRates,
+    /// The fee rates charged to the internal party
+    pub internal_fee_rates: FeeRates,
+    /// The public wallet shares of the internal party
+    #[serde_as(as = "Vec<ScalarFieldDef>")]
+    pub internal_party_public_shares: Vec<ScalarField>,
+    /// The address at which the relayer wishes to receive their fee due
     #[serde_as(as = "AddressDef")]
     pub relayer_fee_address: Address,
 }
