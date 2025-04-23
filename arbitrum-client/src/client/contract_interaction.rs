@@ -48,6 +48,11 @@ use crate::{
 
 use super::{ArbitrumClient, MiddlewareStack};
 
+/// The number of retries to attempt when polling a pending transaction for
+/// a receipt. The polling interval on a pending transaction is exactly the
+/// interval specified in the `ArbitrumClientConfig`
+const TX_RECEIPT_POLL_RETRIES: usize = 20;
+
 impl ArbitrumClient {
     // -----------
     // | GETTERS |
@@ -555,6 +560,7 @@ impl ArbitrumClient {
             .send()
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
+            .retries(TX_RECEIPT_POLL_RETRIES)
             .await
             .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
             .ok_or(ArbitrumClientError::TxDropped)?;
