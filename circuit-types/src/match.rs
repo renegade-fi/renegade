@@ -1,6 +1,7 @@
 //! Groups the type definitions for matches
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 
 use crate::{fixed_point::FixedPoint, order::OrderSide, Address, Amount};
@@ -194,4 +195,33 @@ pub struct BoundedMatchResult {
     ///
     /// In effect, this flag can be thought of as `external_party_buys_base`
     pub direction: bool,
+}
+
+impl BoundedMatchResult {
+    /// Get the quote amount for a given base amount
+    pub fn quote_amount(&self, base_amount: Amount) -> Amount {
+        let quote_amount_fp = self.price * Scalar::from(base_amount);
+        scalar_to_u128(&quote_amount_fp.floor())
+    }
+
+    /// Get the receive mint and amount of the external party at a given trade
+    /// size
+    pub fn external_party_receive(&self, base_amount: Amount) -> (Address, Amount) {
+        // If the direction is true, the external party buys the base
+        if self.direction {
+            (self.base_mint.clone(), base_amount)
+        } else {
+            (self.quote_mint.clone(), self.quote_amount(base_amount))
+        }
+    }
+
+    /// Get the send mint and amount of the external party
+    pub fn external_party_send(&self, base_amount: Amount) -> (Address, Amount) {
+        // If the direction is true, the external party sells the quote
+        if self.direction {
+            (self.quote_mint.clone(), self.quote_amount(base_amount))
+        } else {
+            (self.base_mint.clone(), base_amount)
+        }
+    }
 }

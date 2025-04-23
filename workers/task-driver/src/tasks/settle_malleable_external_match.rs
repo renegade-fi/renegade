@@ -91,7 +91,7 @@ impl Display for SettleMalleableExternalMatchTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Pending => write!(f, "Pending"),
-            Self::ProvingAtomicMatchSettle => write!(f, "Proving Atomic Match Settle"),
+            Self::ProvingAtomicMatchSettle => write!(f, "Proving Malleable Atomic Match Settle"),
             Self::ForwardingAtomicMatchBundle => write!(f, "Forwarding Atomic Match Bundle"),
             Self::AwaitingSettlement => write!(f, "Awaiting Settlement"),
             Self::Completed => write!(f, "Completed"),

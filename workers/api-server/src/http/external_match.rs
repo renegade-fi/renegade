@@ -495,10 +495,29 @@ impl ExternalMatchProcessor {
         do_gas_estimation: bool,
         receiver: Option<Address>,
         order: &ExternalOrder,
-        match_bundle: MalleableAtomicMatchSettleBundle,
+        mut match_bundle: MalleableAtomicMatchSettleBundle,
         validity_proofs: OrderValidityProofBundle,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
-        todo!("implement in a follow up PR")
+        // If the order trades the native asset, replace WETH with ETH
+        let is_native = order.trades_native_asset();
+        let bundle = Arc::make_mut(&mut match_bundle.atomic_match_proof);
+        if is_native {
+            bundle.statement.bounded_match_result.base_mint = get_native_asset_address();
+        }
+
+        // Build a settlement transaction for the match
+        let mut settlement_tx = self
+            .arbitrum_client
+            .gen_malleable_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
+            .map_err(internal_error)?;
+
+        // Estimate gas for the settlement tx if requested
+        if do_gas_estimation {
+            let gas = self.estimate_gas(settlement_tx.clone()).await?;
+            settlement_tx.set_gas(gas);
+        }
+
+        Ok(MalleableAtomicMatchApiBundle::new(&match_bundle, settlement_tx))
     }
 }
 
@@ -643,14 +662,12 @@ impl TypedHandler for AssembleExternalMatchHandler {
 pub struct AssembleMalleableExternalMatchHandler {
     /// The external match processor
     processor: ExternalMatchProcessor,
-    /// A handle on the relayer state
-    state: State,
 }
 
 impl AssembleMalleableExternalMatchHandler {
     /// Create a new handler
-    pub fn new(processor: ExternalMatchProcessor, state: State) -> Self {
-        Self { processor, state }
+    pub fn new(processor: ExternalMatchProcessor) -> Self {
+        Self { processor }
     }
 }
 

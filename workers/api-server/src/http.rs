@@ -451,7 +451,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE.to_string(),
-            AssembleMalleableExternalMatchHandler::new(processor.clone(), state.clone()),
+            AssembleMalleableExternalMatchHandler::new(processor.clone()),
         );
 
         // The "/external-match/request" route

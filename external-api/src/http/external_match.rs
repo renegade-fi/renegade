@@ -9,7 +9,7 @@
 //! for consenting liquidity on a given token pair.
 
 use circuit_types::{
-    fees::FeeTake,
+    fees::{FeeTake, FeeTakeRate},
     fixed_point::FixedPoint,
     max_price,
     order::OrderSide,
@@ -356,11 +356,15 @@ pub struct MalleableAtomicMatchApiBundle {
     /// The match result
     pub match_result: ApiBoundedMatchResult,
     /// The fees owed by the external party
-    pub fees: FeeTake,
-    /// The transfer received by the external party, net of fees
-    pub receive: ApiExternalAssetTransfer,
-    /// The transfer sent by the external party
-    pub send: ApiExternalAssetTransfer,
+    pub fee_rates: FeeTakeRate,
+    /// The maximum amount that the external party will receive
+    pub max_receive: ApiExternalAssetTransfer,
+    /// The minimum amount that the external party will receive
+    pub min_receive: ApiExternalAssetTransfer,
+    /// The maximum amount that the external party will send
+    pub max_send: ApiExternalAssetTransfer,
+    /// The minimum amount that the external party will send
+    pub min_send: ApiExternalAssetTransfer,
     /// The transaction which settles the match on-chain
     pub settlement_tx: TypedTransaction,
 }
@@ -373,7 +377,39 @@ impl MalleableAtomicMatchApiBundle {
         match_bundle: &MalleableAtomicMatchSettleBundle,
         settlement_tx: TypedTransaction,
     ) -> Self {
-        todo!()
+        let statement = &match_bundle.atomic_match_proof.statement;
+        let match_result = statement.bounded_match_result.clone();
+        let fee_rates = statement.external_fee_rates;
+
+        // Compute the received and sent assets net of fees
+        let max_base = match_result.max_base_amount;
+        let min_base = match_result.min_base_amount;
+        let (receive_mint, max_receive_amount) = match_result.external_party_receive(max_base);
+        let (_, min_receive_amount) = match_result.external_party_receive(min_base);
+        let (sent_mint, max_send_amount) = match_result.external_party_send(max_base);
+        let (_, min_send_amount) = match_result.external_party_send(min_base);
+
+        Self {
+            match_result: ApiBoundedMatchResult::from(match_result),
+            fee_rates,
+            max_receive: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_addr(&receive_mint),
+                amount: max_receive_amount,
+            },
+            min_receive: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_addr(&receive_mint),
+                amount: min_receive_amount,
+            },
+            max_send: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_addr(&sent_mint),
+                amount: max_send_amount,
+            },
+            min_send: ApiExternalAssetTransfer {
+                mint: biguint_to_hex_addr(&sent_mint),
+                amount: min_send_amount,
+            },
+            settlement_tx,
+        }
     }
 }
 
