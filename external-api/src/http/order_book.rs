@@ -3,7 +3,7 @@
 use common::types::Price;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ApiNetworkOrder, MidpointMatchableAmount};
+use crate::types::{ApiNetworkOrder, DepthSide};
 
 // ---------------
 // | HTTP Routes |
@@ -15,7 +15,7 @@ pub const GET_NETWORK_ORDERS_ROUTE: &str = "/v0/order_book/orders";
 pub const GET_NETWORK_ORDER_BY_ID_ROUTE: &str = "/v0/order_book/orders/:order_id";
 /// Returns the external match fee for a given asset
 pub const GET_EXTERNAL_MATCH_FEE_ROUTE: &str = "/v0/order_book/external-match-fee";
-/// Route to get the aggregate matchable amount for a given mint
+/// Route to get the liquidity depth of a given mint
 pub const GET_DEPTH_BY_MINT_ROUTE: &str = "/v0/order_book/depth/:mint";
 
 // -------------
@@ -54,15 +54,15 @@ impl GetExternalMatchFeeResponse {
     }
 }
 
-/// The response to a "get aggregate matchable amount" request
+/// Response for the GET /order_book/depth/:mint route
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetDepthByMintResponse {
-    /// The midpoint price
+    /// The current price of the token in USD
     pub price: Price,
     /// The timestamp of the price
     pub timestamp: u64,
-    /// The aggregate matchable amount for the buy side
-    pub buy_liquidity: MidpointMatchableAmount,
-    /// The aggregate matchable amount for the sell side
-    pub sell_liquidity: MidpointMatchableAmount,
+    /// The buy side depth
+    pub buy: DepthSide,
+    /// The sell side depth
+    pub sell: DepthSide,
 }

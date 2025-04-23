@@ -8,7 +8,7 @@ use external_api::{
         GetDepthByMintResponse, GetExternalMatchFeeResponse, GetNetworkOrderByIdResponse,
         GetNetworkOrdersResponse,
     },
-    types::MidpointMatchableAmount,
+    types::DepthSide,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
@@ -159,27 +159,30 @@ impl TypedHandler for GetDepthByMintHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let mint = parse_mint_from_params(&params)?;
+        let base_token = Token::from_addr_biguint(&mint);
         let quote_token = Token::usdc();
 
         // Get the price
-        let base_token = Token::from_addr_biguint(&mint);
         let ts_price = self
             .price_reporter_work_queue
-            .peek_price_usdc(base_token)
+            .peek_price_usdc(base_token.clone())
             .await
             .map_err(internal_error)?;
 
         // Get the matchable amount
         let pair = pair_from_mints(mint, quote_token.get_addr_biguint());
         let (buy_liquidity, sell_liquidity) = self.state.get_liquidity_for_pair(&pair).await;
-        let buy_liquidity = MidpointMatchableAmount::new(buy_liquidity, ts_price.price);
-        let sell_liquidity = MidpointMatchableAmount::new(sell_liquidity, ts_price.price);
+        let buy_usd = base_token.convert_to_decimal(buy_liquidity) * ts_price.price;
+        let sell_usd = base_token.convert_to_decimal(sell_liquidity) * ts_price.price;
+
+        let buy = DepthSide { total_quantity: buy_liquidity, total_quantity_usd: buy_usd };
+        let sell = DepthSide { total_quantity: sell_liquidity, total_quantity_usd: sell_usd };
 
         Ok(GetDepthByMintResponse {
             price: ts_price.price,
             timestamp: ts_price.timestamp,
-            buy_liquidity,
-            sell_liquidity,
+            buy,
+            sell,
         })
     }
 }
