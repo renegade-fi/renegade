@@ -1,20 +1,24 @@
 //! Groups routes and handlers for order book API operations
 
 use async_trait::async_trait;
+use common::types::{token::Token, wallet::pair_from_mints};
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     http::order_book::{
-        GetExternalMatchFeeResponse, GetNetworkOrderByIdResponse, GetNetworkOrdersResponse,
+        GetDepthByMintResponse, GetExternalMatchFeeResponse, GetNetworkOrderByIdResponse,
+        GetNetworkOrdersResponse,
     },
+    types::DepthSide,
     EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
+use job_types::price_reporter::PriceReporterQueue;
 use state::State;
 use util::on_chain::get_external_match_fee;
 
 use crate::{
-    error::{not_found, ApiServerError},
+    error::{internal_error, not_found, ApiServerError},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -122,6 +126,63 @@ impl TypedHandler for GetExternalMatchFeesHandler {
         Ok(GetExternalMatchFeeResponse {
             protocol_fee: protocol_fee.to_string(),
             relayer_fee: relayer_fee.to_string(),
+        })
+    }
+}
+
+/// Handler for the GET /order_book/depth/:mint route
+#[derive(Clone)]
+pub struct GetDepthByMintHandler {
+    /// A handle to the relayer state
+    state: State,
+    /// The price reporter work queue
+    price_reporter_work_queue: PriceReporterQueue,
+}
+
+impl GetDepthByMintHandler {
+    /// Constructor
+    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
+        Self { state, price_reporter_work_queue }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetDepthByMintHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetDepthByMintResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let mint = parse_mint_from_params(&params)?;
+        let base_token = Token::from_addr_biguint(&mint);
+        let quote_token = Token::usdc();
+
+        // Get the price
+        let ts_price = self
+            .price_reporter_work_queue
+            .peek_price_usdc(base_token.clone())
+            .await
+            .map_err(internal_error)?;
+
+        // Get the matchable amount
+        let pair = pair_from_mints(mint, quote_token.get_addr_biguint());
+        let (buy_liquidity, sell_liquidity) = self.state.get_liquidity_for_pair(&pair).await;
+        let buy_usd = base_token.convert_to_decimal(buy_liquidity) * ts_price.price;
+        let sell_usd = base_token.convert_to_decimal(sell_liquidity) * ts_price.price;
+
+        let buy = DepthSide { total_quantity: buy_liquidity, total_quantity_usd: buy_usd };
+        let sell = DepthSide { total_quantity: sell_liquidity, total_quantity_usd: sell_usd };
+
+        Ok(GetDepthByMintResponse {
+            price: ts_price.price,
+            timestamp: ts_price.timestamp,
+            buy,
+            sell,
         })
     }
 }
