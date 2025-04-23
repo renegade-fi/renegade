@@ -208,15 +208,21 @@ impl ExternalMatchingEngineOptions {
         self
     }
 
-    /// Set the bundle duration
-    pub fn with_bundle_duration(mut self, duration: Duration) -> Self {
-        self.bundle_duration = duration;
-        self
-    }
-
     /// Set whether to allow shared access to the resulting bundle
     pub fn with_allow_shared(mut self, allow_shared: bool) -> Self {
         self.allow_shared = allow_shared;
+        self
+    }
+
+    /// Set whether to emit a bounded match
+    pub fn with_bounded_match(mut self, bounded_match: bool) -> Self {
+        self.bounded_match = bounded_match;
+        self
+    }
+
+    /// Set the bundle duration
+    pub fn with_bundle_duration(mut self, duration: Duration) -> Self {
+        self.bundle_duration = duration;
         self
     }
 

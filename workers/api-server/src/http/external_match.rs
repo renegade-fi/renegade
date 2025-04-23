@@ -15,7 +15,9 @@ use async_trait::async_trait;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use common::types::{
     hmac::HmacKey,
-    proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
+    proof_bundles::{
+        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
+    },
     token::Token,
     wallet::Order,
     TimestampedPrice,
@@ -32,7 +34,7 @@ use external_api::{
     http::external_match::{
         ApiExternalQuote, AssembleExternalMatchRequest, AtomicMatchApiBundle, ExternalMatchRequest,
         ExternalMatchResponse, ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse,
-        SignedExternalQuote,
+        MalleableAtomicMatchApiBundle, MalleableExternalMatchResponse, SignedExternalQuote,
     },
 };
 use hyper::HeaderMap;
@@ -131,6 +133,8 @@ fn parse_receiver_address(receiver: Option<String>) -> Result<Option<Address>, A
 pub struct ExternalMatchProcessor {
     /// The minimum usdc denominated order size
     min_order_size: f64,
+    /// The admin key, used to sign and validate quotes
+    admin_key: HmacKey,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
     /// A handle on the Arbitrum RPC client
@@ -145,12 +149,13 @@ impl ExternalMatchProcessor {
     /// Create a new processor
     pub fn new(
         min_order_size: f64,
+        admin_key: HmacKey,
         handshake_queue: HandshakeManagerQueue,
         arbitrum_client: ArbitrumClient,
         bus: SystemBus<SystemBusMessage>,
         price_queue: PriceReporterQueue,
     ) -> Self {
-        Self { min_order_size, handshake_queue, arbitrum_client, bus, price_queue }
+        Self { min_order_size, admin_key, handshake_queue, arbitrum_client, bus, price_queue }
     }
 
     /// Await the next bus message on a topic
@@ -185,6 +190,57 @@ impl ExternalMatchProcessor {
     }
 
     // --- Order Validation & Conversion --- //
+
+    /// Validate a quote
+    pub(crate) fn validate_quote(
+        &self,
+        signed_quote: &SignedExternalQuote,
+    ) -> Result<(), ApiServerError> {
+        // Check that quote has not expired
+        let current_time = get_current_time_millis();
+        let quote = &signed_quote.quote;
+        let quote_age = current_time.saturating_sub(quote.timestamp);
+        if quote_age > MAX_QUOTE_AGE {
+            return Err(bad_request(ERR_QUOTE_EXPIRED));
+        }
+
+        // Check the quote signature
+        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
+        let mac_bytes = bytes_from_hex_string(&signed_quote.signature).map_err(internal_error)?;
+        if !self.admin_key.verify_mac(&quote_bytes, &mac_bytes) {
+            return Err(bad_request(ERR_INVALID_QUOTE_SIGNATURE));
+        }
+
+        Ok(())
+    }
+
+    /// Validate an order update
+    ///
+    /// Amounts are allowed to change, as is `min_fill_size`, but the order side
+    /// and pair is not
+    pub(crate) fn validate_order_update(
+        &self,
+        new_order: &ExternalOrder,
+        old_order: &ExternalOrder,
+    ) -> Result<(), ApiServerError> {
+        // Validate the new order
+        new_order.validate().map_err(bad_request)?;
+
+        // Check that the mints are the same
+        let base_mint_changed = new_order.base_mint != old_order.base_mint;
+        let quote_mint_changed = new_order.quote_mint != old_order.quote_mint;
+        if base_mint_changed || quote_mint_changed {
+            return Err(bad_request(ERR_PAIR_CHANGED));
+        }
+
+        // Check that the side is the same
+        let side_changed = new_order.side != old_order.side;
+        if side_changed {
+            return Err(bad_request(ERR_SIDE_CHANGED));
+        }
+
+        Ok(())
+    }
 
     /// Get an internal order from an external order given a price
     async fn external_order_to_internal_order_with_options(
@@ -313,6 +369,38 @@ impl ExternalMatchProcessor {
         }
     }
 
+    /// Assemble a malleable external match quote into a settlement bundle
+    async fn assemble_malleable_external_match(
+        &self,
+        gas_estimation: bool,
+        allow_shared: bool,
+        receiver: Option<Address>,
+        price: TimestampedPrice,
+        order: ExternalOrder,
+    ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        let opt = ExternalMatchingEngineOptions::new()
+            .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
+            .with_allow_shared(allow_shared)
+            .with_bounded_match(true)
+            .with_price(price);
+        let resp = self.request_handshake_manager(order.clone(), opt).await?;
+
+        match resp {
+            SystemBusMessage::NoAtomicMatchFound => Err(no_content(NO_ATOMIC_MATCH_FOUND)),
+            SystemBusMessage::MalleableAtomicMatchFound { match_bundle, validity_proofs } => {
+                self.build_malleable_api_bundle(
+                    gas_estimation,
+                    receiver,
+                    &order,
+                    match_bundle,
+                    validity_proofs,
+                )
+                .await
+            },
+            _ => Err(internal_error(ERR_FAILED_TO_PROCESS_EXTERNAL_MATCH)),
+        }
+    }
+
     /// Request an external match for a given order
     async fn request_match_bundle(
         &self,
@@ -399,6 +487,19 @@ impl ExternalMatchProcessor {
 
         Ok(AtomicMatchApiBundle::new(&match_bundle, settlement_tx))
     }
+
+    /// Build a malleable API bundle from a malleable match bundle and internal
+    /// party validity proofs
+    async fn build_malleable_api_bundle(
+        &self,
+        do_gas_estimation: bool,
+        receiver: Option<Address>,
+        order: &ExternalOrder,
+        match_bundle: MalleableAtomicMatchSettleBundle,
+        validity_proofs: OrderValidityProofBundle,
+    ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        todo!("implement in a follow up PR")
+    }
 }
 
 // ------------------
@@ -480,8 +581,6 @@ impl TypedHandler for RequestExternalQuoteHandler {
 
 /// The handler for the `POST /external-match/assemble` route
 pub struct AssembleExternalMatchHandler {
-    /// The admin key, used to verify signatures
-    admin_key: HmacKey,
     /// The external match processor
     processor: ExternalMatchProcessor,
     /// A handle on the relayer state
@@ -490,56 +589,8 @@ pub struct AssembleExternalMatchHandler {
 
 impl AssembleExternalMatchHandler {
     /// Create a new handler
-    pub fn new(admin_key: HmacKey, processor: ExternalMatchProcessor, state: State) -> Self {
-        Self { admin_key, processor, state }
-    }
-
-    /// Validate a quote
-    fn validate_quote(&self, signed_quote: &SignedExternalQuote) -> Result<(), ApiServerError> {
-        // Check that quote has not expired
-        let current_time = get_current_time_millis();
-        let quote = &signed_quote.quote;
-        let quote_age = current_time.saturating_sub(quote.timestamp);
-        if quote_age > MAX_QUOTE_AGE {
-            return Err(bad_request(ERR_QUOTE_EXPIRED));
-        }
-
-        // Check the quote signature
-        let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
-        let mac_bytes = bytes_from_hex_string(&signed_quote.signature).map_err(internal_error)?;
-        if !self.admin_key.verify_mac(&quote_bytes, &mac_bytes) {
-            return Err(bad_request(ERR_INVALID_QUOTE_SIGNATURE));
-        }
-
-        Ok(())
-    }
-
-    /// Validate an order update
-    ///
-    /// Amounts are allowed to change, as is `min_fill_size`, but the order side
-    /// and pair is not
-    fn validate_order_update(
-        &self,
-        new_order: &ExternalOrder,
-        old_order: &ExternalOrder,
-    ) -> Result<(), ApiServerError> {
-        // Validate the new order
-        new_order.validate().map_err(bad_request)?;
-
-        // Check that the mints are the same
-        let base_mint_changed = new_order.base_mint != old_order.base_mint;
-        let quote_mint_changed = new_order.quote_mint != old_order.quote_mint;
-        if base_mint_changed || quote_mint_changed {
-            return Err(bad_request(ERR_PAIR_CHANGED));
-        }
-
-        // Check that the side is the same
-        let side_changed = new_order.side != old_order.side;
-        if side_changed {
-            return Err(bad_request(ERR_SIDE_CHANGED));
-        }
-
-        Ok(())
+    pub fn new(processor: ExternalMatchProcessor, state: State) -> Self {
+        Self { processor, state }
     }
 }
 
@@ -564,14 +615,14 @@ impl TypedHandler for AssembleExternalMatchHandler {
         // Validate the order update if one is present
         let old_order = req.signed_quote.quote.order.clone();
         let order = if let Some(updated_order) = req.updated_order {
-            self.validate_order_update(&updated_order, &old_order)?;
+            self.processor.validate_order_update(&updated_order, &old_order)?;
             updated_order
         } else {
             old_order
         };
 
         // Validate the quote then execute it
-        self.validate_quote(&req.signed_quote)?;
+        self.processor.validate_quote(&req.signed_quote)?;
         let receiver = parse_receiver_address(req.receiver_address)?;
         let price = TimestampedPrice::from(req.signed_quote.quote.price);
         let match_bundle = self
@@ -585,6 +636,61 @@ impl TypedHandler for AssembleExternalMatchHandler {
             )
             .await?;
         Ok(ExternalMatchResponse { match_bundle })
+    }
+}
+
+/// The handler for the `POST /external-match/assemble-malleable` route
+pub struct AssembleMalleableExternalMatchHandler {
+    /// The external match processor
+    processor: ExternalMatchProcessor,
+    /// A handle on the relayer state
+    state: State,
+}
+
+impl AssembleMalleableExternalMatchHandler {
+    /// Create a new handler
+    pub fn new(processor: ExternalMatchProcessor, state: State) -> Self {
+        Self { processor, state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for AssembleMalleableExternalMatchHandler {
+    type Request = AssembleExternalMatchRequest;
+    type Response = MalleableExternalMatchResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Validate the order update if one is present
+        let old_order = req.signed_quote.quote.order.clone();
+        let order = if let Some(updated_order) = req.updated_order {
+            self.processor.validate_order_update(&updated_order, &old_order)?;
+            updated_order
+        } else {
+            old_order
+        };
+
+        // Validate the quote then execute it
+        self.processor.validate_quote(&req.signed_quote)?;
+        let receiver = parse_receiver_address(req.receiver_address)?;
+        let price = TimestampedPrice::from(req.signed_quote.quote.price);
+        let match_bundle = self
+            .processor
+            .assemble_malleable_external_match(
+                req.do_gas_estimation,
+                req.allow_shared,
+                receiver,
+                price,
+                order,
+            )
+            .await?;
+
+        Ok(MalleableExternalMatchResponse { match_bundle })
     }
 }
 

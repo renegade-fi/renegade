@@ -9,8 +9,12 @@
 //! for consenting liquidity on a given token pair.
 
 use circuit_types::{
-    fees::FeeTake, fixed_point::FixedPoint, max_price, order::OrderSide,
-    r#match::ExternalMatchResult, Amount,
+    fees::FeeTake,
+    fixed_point::FixedPoint,
+    max_price,
+    order::OrderSide,
+    r#match::{BoundedMatchResult, ExternalMatchResult},
+    Amount,
 };
 use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
@@ -28,7 +32,10 @@ use util::{
 use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 #[cfg(feature = "full-api")]
-use common::types::{proof_bundles::AtomicMatchSettleBundle, wallet::Order};
+use common::types::{
+    proof_bundles::{AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle},
+    wallet::Order,
+};
 
 // ------------------
 // | Error Messages |
@@ -45,8 +52,11 @@ const ERR_MULTIPLE_SIZING_PARAMS: &str =
 
 /// The route for requesting a quote on an external match
 pub const REQUEST_EXTERNAL_QUOTE_ROUTE: &str = "/v0/matching-engine/quote";
-/// The route to assemble an external match quote into a settlement bundle
+/// The route used to assemble an external match quote into a settlement bundle
 pub const ASSEMBLE_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/assemble-external-match";
+/// The route used to assemble an external match quote into a malleable
+pub const ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE: &str =
+    "/v0/matching-engine/assemble-malleable-external-match";
 /// The route for requesting an atomic match
 pub const REQUEST_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/request-external-match";
 
@@ -72,6 +82,13 @@ pub struct ExternalMatchRequest {
 pub struct ExternalMatchResponse {
     /// The match bundle
     pub match_bundle: AtomicMatchApiBundle,
+}
+
+/// The response type for requesting a malleable quote on an external order
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MalleableExternalMatchResponse {
+    /// The match bundle
+    pub match_bundle: MalleableAtomicMatchApiBundle,
 }
 
 /// The request type for a quote on an external order
@@ -325,6 +342,41 @@ impl AtomicMatchApiBundle {
     }
 }
 
+/// An atomic match settlement bundle using a malleable match result
+///
+/// A malleable match result is one in which the exact `base_amount` swapped
+/// is not known at the time the proof is generated, and may be changed up until
+/// it is submitted on-chain. Instead, a bounded match result gives a
+/// `min_base_amount` and a `max_base_amount`, between which the `base_amount`
+/// may take any value
+///
+/// The bundle is otherwise identical to the standard atomic match bundle
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MalleableAtomicMatchApiBundle {
+    /// The match result
+    pub match_result: ApiBoundedMatchResult,
+    /// The fees owed by the external party
+    pub fees: FeeTake,
+    /// The transfer received by the external party, net of fees
+    pub receive: ApiExternalAssetTransfer,
+    /// The transfer sent by the external party
+    pub send: ApiExternalAssetTransfer,
+    /// The transaction which settles the match on-chain
+    pub settlement_tx: TypedTransaction,
+}
+
+impl MalleableAtomicMatchApiBundle {
+    /// Create a new bundle from a `VALID MATCH SETTLE MALLEABLE` bundle and a
+    /// settlement transaction
+    #[cfg(feature = "full-api")]
+    pub fn new(
+        match_bundle: &MalleableAtomicMatchSettleBundle,
+        settlement_tx: TypedTransaction,
+    ) -> Self {
+        todo!()
+    }
+}
+
 /// An asset transfer from an external party
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ApiExternalAssetTransfer {
@@ -361,6 +413,41 @@ impl From<ExternalMatchResult> for ApiExternalMatchResult {
             base_mint,
             quote_amount: result.quote_amount,
             base_amount: result.base_amount,
+            direction,
+        }
+    }
+}
+
+/// An API server bounded match result
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiBoundedMatchResult {
+    /// The mint of the quote token in the matched asset pair
+    pub quote_mint: String,
+    /// The mint of the base token in the matched asset pair
+    pub base_mint: String,
+    /// The price at which the match executes
+    pub price: String,
+    /// The minimum base amount of the match
+    pub min_base_amount: Amount,
+    /// The maximum base amount of the match
+    pub max_base_amount: Amount,
+    /// The direction of the match
+    pub direction: OrderSide,
+}
+
+impl From<BoundedMatchResult> for ApiBoundedMatchResult {
+    fn from(result: BoundedMatchResult) -> Self {
+        let quote_mint = biguint_to_hex_addr(&result.quote_mint);
+        let base_mint = biguint_to_hex_addr(&result.base_mint);
+        let direction = if result.direction { OrderSide::Buy } else { OrderSide::Sell };
+        let price_str = result.price.to_f64().to_string();
+
+        Self {
+            quote_mint,
+            base_mint,
+            price: price_str,
+            min_base_amount: result.min_base_amount,
+            max_base_amount: result.max_base_amount,
             direction,
         }
     }
