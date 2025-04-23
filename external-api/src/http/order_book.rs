@@ -1,8 +1,9 @@
 //! Groups API types for order book API operations
 
+use common::types::Price;
 use serde::{Deserialize, Serialize};
 
-use crate::types::ApiNetworkOrder;
+use crate::types::{ApiNetworkOrder, DepthSide};
 
 // ---------------
 // | HTTP Routes |
@@ -14,6 +15,8 @@ pub const GET_NETWORK_ORDERS_ROUTE: &str = "/v0/order_book/orders";
 pub const GET_NETWORK_ORDER_BY_ID_ROUTE: &str = "/v0/order_book/orders/:order_id";
 /// Returns the external match fee for a given asset
 pub const GET_EXTERNAL_MATCH_FEE_ROUTE: &str = "/v0/order_book/external-match-fee";
+/// Route to get the liquidity depth of a given mint
+pub const GET_DEPTH_BY_MINT_ROUTE: &str = "/v0/order_book/depth/:mint";
 
 // -------------
 // | API Types |
@@ -49,4 +52,17 @@ impl GetExternalMatchFeeResponse {
         let protocol_fee = self.protocol_fee.parse::<f64>().unwrap();
         relayer_fee + protocol_fee
     }
+}
+
+/// Response for the GET /order_book/depth/:mint route
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetDepthByMintResponse {
+    /// The current price of the token in USD
+    pub price: Price,
+    /// The timestamp of the price
+    pub timestamp: u64,
+    /// The buy side depth
+    pub buy: DepthSide,
+    /// The sell side depth
+    pub sell: DepthSide,
 }

@@ -5,12 +5,12 @@
 //! of unconditional writes only and inconsistent state is okay between cluster
 //! peers
 
-use circuit_types::wallet::Nullifier;
+use circuit_types::{wallet::Nullifier, Amount};
 use common::types::{
     gossip::WrappedPeerId,
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::OrderIdentifier,
+    wallet::{OrderIdentifier, Pair},
     MatchingPoolName,
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
@@ -146,6 +146,13 @@ impl StateInner {
             Ok(orders)
         })
         .await
+    }
+
+    /// Get the matchable amount for both sides of a pair
+    ///
+    /// Returns (buy_amount, sell_amount)
+    pub async fn get_liquidity_for_pair(&self, pair: &Pair) -> (Amount, Amount) {
+        self.order_cache.get_matchable_amount(pair).await
     }
 
     // --- Heartbeat --- //
