@@ -138,7 +138,7 @@ impl ArbitrumClient {
             // We generally always want to select a Darkpool contract client randomly, but
             // the contracts repo also imports the `arbitrum_client` crate, and
             // it must compile to WASM. The `rand` crate does not compile to
-            // WASM, but the contracts repo only uses the conversion utilites
+            // WASM, but the contracts repo only uses the conversion utilities
             // defined in this crate, so we make this no-op fallback to prevent compilation
             // errors in the contracts repo.
             unimplemented!()
