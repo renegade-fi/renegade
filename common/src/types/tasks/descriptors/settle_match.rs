@@ -157,6 +157,12 @@ impl SettleMalleableExternalMatchTaskDescriptor {
     }
 }
 
+impl From<SettleMalleableExternalMatchTaskDescriptor> for TaskDescriptor {
+    fn from(descriptor: SettleMalleableExternalMatchTaskDescriptor) -> Self {
+        TaskDescriptor::SettleMalleableExternalMatch(descriptor)
+    }
+}
+
 /// The task descriptor containing only the parameterization of the
 /// `SettleMatch` task
 #[derive(Clone, Debug, Serialize, Deserialize)]

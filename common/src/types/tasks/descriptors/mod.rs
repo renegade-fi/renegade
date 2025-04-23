@@ -115,6 +115,8 @@ pub enum TaskDescriptor {
     SettleMatch(SettleMatchTaskDescriptor),
     /// The task descriptor for the `SettleExternalMatch` task
     SettleExternalMatch(SettleExternalMatchTaskDescriptor),
+    /// The task descriptor for the `SettleMalleableExternalMatch` task
+    SettleMalleableExternalMatch(SettleMalleableExternalMatchTaskDescriptor),
     /// The task descriptor for the `UpdateMerkleProof` task
     UpdateMerkleProof(UpdateMerkleProofTaskDescriptor),
     /// The task descriptor for the `UpdateWallet` task
@@ -140,6 +142,7 @@ impl TaskDescriptor {
                 unimplemented!("SettleMatchInternal should preempt queue, no key needed")
             },
             TaskDescriptor::SettleExternalMatch(task) => task.internal_wallet_id,
+            TaskDescriptor::SettleMalleableExternalMatch(task) => task.internal_wallet_id,
             TaskDescriptor::UpdateMerkleProof(task) => task.wallet.wallet_id,
             TaskDescriptor::UpdateWallet(task) => task.wallet_id,
             TaskDescriptor::NodeStartup(task) => task.id,
@@ -158,6 +161,7 @@ impl TaskDescriptor {
             TaskDescriptor::SettleMatch(task) => vec![task.wallet_id],
             TaskDescriptor::SettleMatchInternal(task) => vec![task.wallet_id1, task.wallet_id2],
             TaskDescriptor::SettleExternalMatch(task) => vec![task.internal_wallet_id],
+            TaskDescriptor::SettleMalleableExternalMatch(task) => vec![task.internal_wallet_id],
             TaskDescriptor::UpdateMerkleProof(task) => vec![task.wallet.wallet_id],
             TaskDescriptor::UpdateWallet(task) => vec![task.wallet_id],
             TaskDescriptor::NodeStartup(_) => vec![],
@@ -177,6 +181,7 @@ impl TaskDescriptor {
             | TaskDescriptor::SettleMatch(_)
             | TaskDescriptor::SettleMatchInternal(_)
             | TaskDescriptor::SettleExternalMatch(_)
+            | TaskDescriptor::SettleMalleableExternalMatch(_)
             | TaskDescriptor::UpdateMerkleProof(_) => true,
             TaskDescriptor::NodeStartup(_) => false,
         }
@@ -191,7 +196,8 @@ impl TaskDescriptor {
             TaskDescriptor::RefreshWallet(_) => "Refresh Wallet".to_string(),
             TaskDescriptor::SettleMatch(_) => "Settle Match".to_string(),
             TaskDescriptor::SettleMatchInternal(_) => "Settle Match".to_string(),
-            TaskDescriptor::SettleExternalMatch(_) => "Settle Match".to_string(),
+            TaskDescriptor::SettleExternalMatch(_) => "Settle External Match".to_string(),
+            TaskDescriptor::SettleMalleableExternalMatch(_) => "Settle Malleable Match".to_string(),
             TaskDescriptor::OfflineFee(_) => "Pay Fee Offline".to_string(),
             TaskDescriptor::RelayerFee(_) => "Pay Relayer Fee".to_string(),
             TaskDescriptor::RedeemFee(_) => "Redeem Fee".to_string(),

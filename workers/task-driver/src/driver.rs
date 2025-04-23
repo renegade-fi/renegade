@@ -17,8 +17,9 @@ use crate::{
         create_new_wallet::NewWalletTask, lookup_wallet::LookupWalletTask,
         node_startup::NodeStartupTask, pay_offline_fee::PayOfflineFeeTask,
         pay_relayer_fee::PayRelayerFeeTask, redeem_fee::RedeemFeeTask,
-        refresh_wallet::RefreshWalletTask, settle_match::SettleMatchTask,
-        settle_match_external::SettleMatchExternalTask,
+        refresh_wallet::RefreshWalletTask,
+        settle_malleable_external_match::SettleMalleableExternalMatchTask,
+        settle_match::SettleMatchTask, settle_match_external::SettleMatchExternalTask,
         settle_match_internal::SettleMatchInternalTask, update_merkle_proof::UpdateMerkleProofTask,
         update_wallet::UpdateWalletTask,
     },
@@ -277,6 +278,15 @@ impl TaskExecutor {
             },
             TaskDescriptor::SettleExternalMatch(desc) => {
                 self.start_task_helper::<SettleMatchExternalTask>(
+                    immediate,
+                    id,
+                    desc,
+                    affected_wallets,
+                )
+                .await
+            },
+            TaskDescriptor::SettleMalleableExternalMatch(desc) => {
+                self.start_task_helper::<SettleMalleableExternalMatchTask>(
                     immediate,
                     id,
                     desc,

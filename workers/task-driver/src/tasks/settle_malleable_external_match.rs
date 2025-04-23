@@ -58,7 +58,7 @@ pub const SETTLE_MATCH_EXTERNAL_TASK_NAME: &str = "settle-match-external";
 
 /// The state of the settle match external task
 #[derive(Clone, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SettleMalleableMatchExternalTaskState {
+pub enum SettleMalleableExternalMatchTaskState {
     /// The task is awaiting scheduling
     Pending,
     /// The task is performing a dummy step
@@ -71,7 +71,7 @@ pub enum SettleMalleableMatchExternalTaskState {
     Completed,
 }
 
-impl TaskState for SettleMalleableMatchExternalTaskState {
+impl TaskState for SettleMalleableExternalMatchTaskState {
     fn commit_point() -> Self {
         Self::AwaitingSettlement
     }
@@ -81,13 +81,13 @@ impl TaskState for SettleMalleableMatchExternalTaskState {
     }
 }
 
-impl From<SettleMalleableMatchExternalTaskState> for StateWrapper {
-    fn from(value: SettleMalleableMatchExternalTaskState) -> Self {
-        Self::SettleMalleableMatchExternal(value)
+impl From<SettleMalleableExternalMatchTaskState> for StateWrapper {
+    fn from(value: SettleMalleableExternalMatchTaskState) -> Self {
+        Self::SettleMalleableExternalMatch(value)
     }
 }
 
-impl Display for SettleMalleableMatchExternalTaskState {
+impl Display for SettleMalleableExternalMatchTaskState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Pending => write!(f, "Pending"),
@@ -104,12 +104,12 @@ impl Display for SettleMalleableMatchExternalTaskState {
 // ---------------
 
 /// A type alias for a result that errors with a
-/// `SettleMalleableMatchExternalTaskError`
-pub type Result<T> = std::result::Result<T, SettleMalleableMatchExternalTaskError>;
+/// `SettleMalleableExternalMatchTaskError`
+pub type Result<T> = std::result::Result<T, SettleMalleableExternalMatchTaskError>;
 
 /// The error type that the task emits
 #[derive(Clone, Debug, Serialize)]
-pub enum SettleMalleableMatchExternalTaskError {
+pub enum SettleMalleableExternalMatchTaskError {
     /// A dummy error
     Arbitrum(String),
     /// An error awaiting settlement on-chain
@@ -125,7 +125,7 @@ pub enum SettleMalleableMatchExternalTaskError {
     SendEvent(String),
 }
 
-impl SettleMalleableMatchExternalTaskError {
+impl SettleMalleableExternalMatchTaskError {
     /// Construct an `Arbitrum` error
     #[allow(clippy::needless_pass_by_value)]
     pub fn arbitrum<T: ToString>(msg: T) -> Self {
@@ -163,26 +163,26 @@ impl SettleMalleableMatchExternalTaskError {
     }
 }
 
-impl TaskError for SettleMalleableMatchExternalTaskError {
+impl TaskError for SettleMalleableExternalMatchTaskError {
     fn retryable(&self) -> bool {
         matches!(self, Self::Arbitrum(_))
     }
 }
 
-impl Display for SettleMalleableMatchExternalTaskError {
+impl Display for SettleMalleableExternalMatchTaskError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{self:?}")
     }
 }
-impl Error for SettleMalleableMatchExternalTaskError {}
+impl Error for SettleMalleableExternalMatchTaskError {}
 
-impl From<StateError> for SettleMalleableMatchExternalTaskError {
+impl From<StateError> for SettleMalleableExternalMatchTaskError {
     fn from(value: StateError) -> Self {
         Self::state(value.to_string())
     }
 }
 
-impl From<ArbitrumClientError> for SettleMalleableMatchExternalTaskError {
+impl From<ArbitrumClientError> for SettleMalleableExternalMatchTaskError {
     fn from(value: ArbitrumClientError) -> Self {
         Self::arbitrum(value.to_string())
     }
@@ -194,7 +194,7 @@ impl From<ArbitrumClientError> for SettleMalleableMatchExternalTaskError {
 
 /// Describe the settle match external task
 #[derive(Clone)]
-pub struct SettleMalleableMatchExternalTask {
+pub struct SettleMalleableExternalMatchTask {
     /// The ID of the wallet that the local node matched an order from
     internal_wallet_id: WalletIdentifier,
     /// The match result from the external matching engine
@@ -216,20 +216,20 @@ pub struct SettleMalleableMatchExternalTask {
     /// The work queue to add proof management jobs to
     proof_queue: ProofManagerQueue,
     /// The state of the task
-    task_state: SettleMalleableMatchExternalTaskState,
+    task_state: SettleMalleableExternalMatchTaskState,
 }
 
 #[async_trait]
-impl Task for SettleMalleableMatchExternalTask {
-    type State = SettleMalleableMatchExternalTaskState;
-    type Error = SettleMalleableMatchExternalTaskError;
+impl Task for SettleMalleableExternalMatchTask {
+    type State = SettleMalleableExternalMatchTaskState;
+    type Error = SettleMalleableExternalMatchTaskError;
     type Descriptor = SettleMalleableExternalMatchTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self> {
         // Check that atomic matches are enabled
         let enabled = ctx.state.get_atomic_matches_enabled().await?;
         if !enabled {
-            return Err(SettleMalleableMatchExternalTaskError::state(ERR_ATOMIC_MATCHES_DISABLED));
+            return Err(SettleMalleableExternalMatchTaskError::state(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
         let SettleMalleableExternalMatchTaskDescriptor {
@@ -253,7 +253,7 @@ impl Task for SettleMalleableMatchExternalTask {
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             bus: ctx.bus,
-            task_state: SettleMalleableMatchExternalTaskState::Pending,
+            task_state: SettleMalleableExternalMatchTaskState::Pending,
         })
     }
 
@@ -266,26 +266,26 @@ impl Task for SettleMalleableMatchExternalTask {
     async fn step(&mut self) -> Result<()> {
         // Dispatch based on the current task state
         match self.state() {
-            SettleMalleableMatchExternalTaskState::Pending => {
-                self.task_state = SettleMalleableMatchExternalTaskState::ProvingAtomicMatchSettle
+            SettleMalleableExternalMatchTaskState::Pending => {
+                self.task_state = SettleMalleableExternalMatchTaskState::ProvingAtomicMatchSettle
             },
 
-            SettleMalleableMatchExternalTaskState::ProvingAtomicMatchSettle => {
+            SettleMalleableExternalMatchTaskState::ProvingAtomicMatchSettle => {
                 self.prove_atomic_match_settle().await?;
-                self.task_state = SettleMalleableMatchExternalTaskState::ForwardingAtomicMatchBundle
+                self.task_state = SettleMalleableExternalMatchTaskState::ForwardingAtomicMatchBundle
             },
 
-            SettleMalleableMatchExternalTaskState::ForwardingAtomicMatchBundle => {
+            SettleMalleableExternalMatchTaskState::ForwardingAtomicMatchBundle => {
                 self.forward_atomic_match_bundle()?;
-                self.task_state = SettleMalleableMatchExternalTaskState::AwaitingSettlement
+                self.task_state = SettleMalleableExternalMatchTaskState::AwaitingSettlement
             },
 
-            SettleMalleableMatchExternalTaskState::AwaitingSettlement => {
+            SettleMalleableExternalMatchTaskState::AwaitingSettlement => {
                 self.await_settlement().await?;
-                self.task_state = SettleMalleableMatchExternalTaskState::Completed
+                self.task_state = SettleMalleableExternalMatchTaskState::Completed
             },
 
-            SettleMalleableMatchExternalTaskState::Completed => {
+            SettleMalleableExternalMatchTaskState::Completed => {
                 panic!("step called on completed task")
             },
         };
@@ -298,7 +298,7 @@ impl Task for SettleMalleableMatchExternalTask {
     }
 
     fn completed(&self) -> bool {
-        matches!(self.task_state, SettleMalleableMatchExternalTaskState::Completed)
+        matches!(self.task_state, SettleMalleableExternalMatchTaskState::Completed)
     }
 
     fn state(&self) -> Self::State {
@@ -310,7 +310,7 @@ impl Task for SettleMalleableMatchExternalTask {
 // | Task Implementation |
 // -----------------------
 
-impl SettleMalleableMatchExternalTask {
+impl SettleMalleableExternalMatchTask {
     // --------------
     // | Task Steps |
     // --------------
@@ -322,11 +322,11 @@ impl SettleMalleableMatchExternalTask {
         // Enqueue a job with the proof generation module
         let job = ProofJob::ValidMalleableMatchSettleAtomic { witness, statement };
         let proof_recv = enqueue_proof_job(job, &self.proof_queue)
-            .map_err(SettleMalleableMatchExternalTaskError::EnqueuingJob)?;
+            .map_err(SettleMalleableExternalMatchTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
         let proof = proof_recv.await.map_err(|_| {
-            SettleMalleableMatchExternalTaskError::enqueuing_job(ERR_AWAITING_PROOF)
+            SettleMalleableExternalMatchTaskError::enqueuing_job(ERR_AWAITING_PROOF)
         })?;
 
         // Create proof-links between the atomic match settle proof and the internal
@@ -367,13 +367,13 @@ impl SettleMalleableMatchExternalTask {
         let order = state
             .get_order(&order_id)
             .await?
-            .ok_or_else(|| SettleMalleableMatchExternalTaskError::state(ERR_ORDER_NOT_FOUND))?;
+            .ok_or_else(|| SettleMalleableExternalMatchTaskError::state(ERR_ORDER_NOT_FOUND))?;
         let validity_proofs = order
             .validity_proofs
-            .ok_or_else(|| SettleMalleableMatchExternalTaskError::state(ERR_NO_VALIDITY_PROOF))?;
+            .ok_or_else(|| SettleMalleableExternalMatchTaskError::state(ERR_NO_VALIDITY_PROOF))?;
         let validity_proof_witnesses = order
             .validity_proof_witnesses
-            .ok_or_else(|| SettleMalleableMatchExternalTaskError::state(ERR_NO_VALIDITY_PROOF))?;
+            .ok_or_else(|| SettleMalleableExternalMatchTaskError::state(ERR_NO_VALIDITY_PROOF))?;
 
         Ok((validity_proofs, validity_proof_witnesses))
     }
@@ -436,7 +436,7 @@ impl SettleMalleableMatchExternalTask {
         let commitments_hint = &self.internal_order_validity_witness.commitment_linking_hint;
         let link_proof =
             link_sized_commitments_atomic_match_settle(commitments_hint, atomic_match_hint)
-                .map_err(SettleMalleableMatchExternalTaskError::proof_linking)?;
+                .map_err(SettleMalleableExternalMatchTaskError::proof_linking)?;
 
         Ok(MalleableAtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })
     }

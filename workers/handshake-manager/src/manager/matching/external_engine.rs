@@ -12,10 +12,13 @@ use std::collections::HashSet;
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
-    r#match::{ExternalMatchResult, MatchResult},
+    r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
 };
 use common::types::{
-    tasks::{SettleExternalMatchTaskDescriptor, TaskDescriptor},
+    tasks::{
+        SettleExternalMatchTaskDescriptor, SettleMalleableExternalMatchTaskDescriptor,
+        TaskDescriptor,
+    },
     token::Token,
     wallet::{Order, OrderIdentifier},
     TimestampedPrice,
@@ -148,8 +151,26 @@ impl HandshakeExecutor {
         Ok(HashSet::from_iter(matchable_orders))
     }
 
-    /// Run a match against a single order
+    /// Handle a match against an order
     async fn handle_match(
+        &self,
+        order_id: OrderIdentifier,
+        price: TimestampedPrice,
+        match_res: MatchResult,
+        response_topic: String,
+        options: &ExternalMatchingEngineOptions,
+    ) -> Result<(), HandshakeManagerError> {
+        if options.bounded_match {
+            self.handle_bounded_match(order_id, price, match_res, response_topic, options).await
+        } else {
+            self.handle_exact_match(order_id, price, match_res, response_topic, options).await
+        }
+    }
+
+    // --- Exact Match Handler -- //
+
+    /// Handle an exact match result on the given order
+    async fn handle_exact_match(
         &self,
         other_order_id: OrderIdentifier,
         price: TimestampedPrice,
@@ -228,8 +249,54 @@ impl HandshakeExecutor {
             match_res,
             response_topic,
         );
+        self.enqueue_settlement_task(task, options).await
+    }
 
-        let descriptor = TaskDescriptor::from(task);
+    // --- Bounded Match Handler --- //
+
+    /// Handle a bounded match result on the given order
+    ///
+    /// The matching engine will sample appropriate bounds for the `base_amount`
+    /// and forward the task to the task driver to create a bundle.
+    async fn handle_bounded_match(
+        &self,
+        other_order_id: OrderIdentifier,
+        price: TimestampedPrice,
+        match_res: MatchResult,
+        response_topic: String,
+        options: &ExternalMatchingEngineOptions,
+    ) -> Result<(), HandshakeManagerError> {
+        // First, build a bounded match result
+        let bounded_res = BoundedMatchResult {
+            quote_mint: match_res.quote_mint,
+            base_mint: match_res.base_mint,
+            price: price.as_fixed_point(),
+            min_base_amount: match_res.base_amount,
+            max_base_amount: match_res.base_amount,
+            direction: match_res.direction,
+        };
+
+        // Create a task to settle the match
+        let wallet_id = self.get_wallet_id_for_order(&other_order_id).await?;
+        let task = SettleMalleableExternalMatchTaskDescriptor::new(
+            options.bundle_duration,
+            other_order_id,
+            wallet_id,
+            bounded_res,
+            response_topic,
+        );
+        self.enqueue_settlement_task(task, options).await
+    }
+
+    // --- Helper Functions --- //
+
+    /// Enqueue a settlement task
+    async fn enqueue_settlement_task<T: Into<TaskDescriptor>>(
+        &self,
+        descriptor: T,
+        options: &ExternalMatchingEngineOptions,
+    ) -> Result<(), HandshakeManagerError> {
+        let descriptor = descriptor.into();
         if options.allow_shared {
             self.enqueue_concurrent_task_await_completion(descriptor).await
         } else {

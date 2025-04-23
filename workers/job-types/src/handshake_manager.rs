@@ -163,15 +163,24 @@ pub struct ExternalMatchingEngineOptions {
     /// Whether or not to only generate a quote, without proving validity
     /// for the order's match
     pub only_quote: bool,
-    /// The duration for which a match bundle is valid; i.e. for which the task
-    /// driver should lock the matched wallet's queue
-    pub bundle_duration: Duration,
     /// Whether or not to allow shared access to the resulting bundle
     ///
     /// If true, the bundle may be sent to other clients requesting an external
     /// match. If false, the bundle will be exclusively held for
     /// `bundle_duration`
     pub allow_shared: bool,
+    /// Whether or not to emit a bounded match rather than an exact match
+    ///
+    /// A `BoundedMatchResult` is one in which the exact `base_amount` is not
+    /// known at the time the proof is generated. Rather, the submitting
+    /// party will choose a `base_amount` in between the supplied bounds.
+    ///
+    /// The matching engine, then, must find a match but emit a match result
+    /// that has appropriate (and valid) bounds on the `base_amount`.
+    pub bounded_match: bool,
+    /// The duration for which a match bundle is valid; i.e. for which the task
+    /// driver should lock the matched wallet's queue
+    pub bundle_duration: Duration,
     /// The price to use for the external match. If `None`, the price will
     /// be sampled by the engine
     ///
