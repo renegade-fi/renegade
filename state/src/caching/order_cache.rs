@@ -153,10 +153,14 @@ impl OrderBookCache {
 
     /// Remove an order from the cache entirely
     pub async fn remove_order(&self, order: OrderIdentifier) {
-        let (pair, side) = self.order_metadata_index.get_pair_and_side(&order).await.unwrap();
-        let removed = self.order_metadata_index.remove_order(&order).await.unwrap_or(0);
+        let maybe_info = self.order_metadata_index.remove_order(&order).await;
+        if maybe_info.is_none() {
+            return;
+        }
+        let (pair, side, matchable_amount) = maybe_info.unwrap();
+
         if self.externally_enabled_orders.write().await.remove(&order) {
-            self.matchable_amount_map.sub_amount(pair, side, removed).await;
+            self.matchable_amount_map.sub_amount(pair, side, matchable_amount).await;
         }
     }
 
