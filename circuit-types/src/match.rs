@@ -149,6 +149,34 @@ impl ExternalMatchResult {
             (self.base_mint.clone(), self.base_amount)
         }
     }
+
+    /// Get the `OrderSide` for the internal party
+    pub fn internal_party_side(&self) -> OrderSide {
+        if self.direction {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        }
+    }
+
+    /// Get a mock `MatchResult` type from an `ExternalMatchResult`
+    ///
+    /// Though an `ExternalMatchResult` doesn't exactly represent the same
+    /// application level idea that a `MatchResult` does, it is useful to
+    /// convert types to use common helpers
+    ///
+    /// Here we make the choice that the internal party acts as "party 0" in the
+    /// `MatchResult` language, and the external party acts as "party 1".
+    pub fn to_match_result(&self) -> MatchResult {
+        MatchResult {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            quote_amount: self.quote_amount,
+            base_amount: self.base_amount,
+            direction: self.direction,
+            min_amount_order_index: false, // unused for external matches
+        }
+    }
 }
 
 impl From<MatchResult> for ExternalMatchResult {
@@ -222,6 +250,17 @@ impl BoundedMatchResult {
             (self.quote_mint.clone(), self.quote_amount(base_amount))
         } else {
             (self.base_mint.clone(), base_amount)
+        }
+    }
+
+    /// Get an external match result given a base amount swapped
+    pub fn to_external_match_result(&self, base_amount: Amount) -> ExternalMatchResult {
+        ExternalMatchResult {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            quote_amount: self.quote_amount(base_amount),
+            base_amount,
+            direction: self.direction,
         }
     }
 }

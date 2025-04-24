@@ -42,7 +42,10 @@ use crate::contract_types::{
 use crate::conversion::{
     alloy_u256_to_ethers_u256, scalar_to_u256 as scalar_to_alloy_u256, to_circuit_fixed_point,
 };
-use crate::helpers::deserialize_calldata;
+use crate::helpers::{
+    deserialize_calldata, parse_shares_from_process_malleable_atomic_match_settle,
+    parse_shares_from_process_malleable_atomic_match_settle_with_receiver,
+};
 use crate::{
     abi::{
         newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
@@ -323,6 +326,12 @@ impl ArbitrumClient {
             },
             <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
                 parse_shares_from_process_atomic_match_settle_with_receiver(calldata)
+            },
+            <processMalleableAtomicMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_malleable_atomic_match_settle(calldata)
+            },
+            <processMalleableAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_malleable_atomic_match_settle_with_receiver(calldata)
             },
             <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
                 parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)

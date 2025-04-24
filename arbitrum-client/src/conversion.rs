@@ -228,6 +228,18 @@ pub fn to_contract_order_settlement_indices(
     }
 }
 
+/// Convert a contract [`OrderSettlementIndices`] to a
+/// [`OrderSettlementIndices`]
+pub fn to_circuit_order_settlement_indices(
+    indices: &ContractOrderSettlementIndices,
+) -> OrderSettlementIndices {
+    OrderSettlementIndices {
+        balance_send: indices.balance_send as usize,
+        balance_receive: indices.balance_receive as usize,
+        order: indices.order as usize,
+    }
+}
+
 /// Convert a [`SizedValidMatchSettleStatement`] to its corresponding smart
 /// contract type
 pub fn to_contract_valid_match_settle_statement(
@@ -284,6 +296,26 @@ pub fn to_contract_bounded_match_result(
     })
 }
 
+/// Convert a contract [`BoundedMatchResult`] to a [`BoundedMatchResult`]
+pub fn to_circuit_bounded_match_result(
+    match_result: &ContractBoundedMatchResult,
+) -> Result<BoundedMatchResult, ConversionError> {
+    let quote_mint = address_to_biguint(&match_result.quote_mint)?;
+    let base_mint = address_to_biguint(&match_result.base_mint)?;
+    let price = to_circuit_fixed_point(&match_result.price);
+    let min_base_amount = u256_to_amount(match_result.min_base_amount)?;
+    let max_base_amount = u256_to_amount(match_result.max_base_amount)?;
+
+    Ok(BoundedMatchResult {
+        quote_mint,
+        base_mint,
+        price,
+        min_base_amount,
+        max_base_amount,
+        direction: match_result.direction,
+    })
+}
+
 /// Convert a [`FeeTake`] to its corresponding smart contract type
 pub fn to_contract_fee_take(fee_take: &FeeTake) -> Result<ContractFeeTake, ConversionError> {
     Ok(ContractFeeTake {
@@ -297,6 +329,14 @@ pub fn to_contract_fee_rates(fee_rates: &FeeTakeRate) -> Result<ContractFeeRates
     Ok(ContractFeeRates {
         relayer_fee_rate: to_contract_fixed_point(&fee_rates.relayer_fee_rate),
         protocol_fee_rate: to_contract_fixed_point(&fee_rates.protocol_fee_rate),
+    })
+}
+
+/// Convert a contract [`FeeRates`] to a [`FeeRates`]
+pub fn to_circuit_fee_rates(fee_rates: &ContractFeeRates) -> Result<FeeTakeRate, ConversionError> {
+    Ok(FeeTakeRate {
+        relayer_fee_rate: to_circuit_fixed_point(&fee_rates.relayer_fee_rate),
+        protocol_fee_rate: to_circuit_fixed_point(&fee_rates.protocol_fee_rate),
     })
 }
 

@@ -30,9 +30,10 @@ ruint = { version = "1.11.1", features = ["num-bigint"] }
 mpc-relation = { workspace = true }
 
 # === Networking / Blockchain === #
-ethers = { workspace = true }
+alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
+ethers = { workspace = true }
 
 # === Workspace Dependencies === #
 constants = { workspace = true }
