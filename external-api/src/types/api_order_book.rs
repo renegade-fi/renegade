@@ -1,5 +1,6 @@
 //! API types for order book requests
 
+use circuit_types::Amount;
 use common::types::network_order::{NetworkOrder, NetworkOrderState};
 use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_biguint;
@@ -43,4 +44,13 @@ impl From<NetworkOrder> for ApiNetworkOrder {
             timestamp: order.timestamp,
         }
     }
+}
+
+/// The liquidity depth for a given side of the market
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DepthSide {
+    /// The matchable amount at the midpoint price, in units of the base token
+    pub total_quantity: Amount,
+    /// The matchable amount at the midpoint price, in USD
+    pub total_quantity_usd: f64,
 }

@@ -12,7 +12,9 @@ use tracing::instrument;
 
 use crate::storage::{db::DB, error::StorageError};
 
-use super::{order_metadata_index::OrderMetadataIndex, RwLockHashSet};
+use super::{
+    matchable_amount::MatchableAmountMap, order_metadata_index::OrderMetadataIndex, RwLockHashSet,
+};
 
 /// A filter for querying the order book cache
 #[derive(Clone, Debug)]
@@ -43,6 +45,8 @@ pub struct OrderBookCache {
     externally_enabled_orders: RwLockHashSet<OrderIdentifier>,
     /// The index of order metadata
     order_metadata_index: OrderMetadataIndex,
+    /// Mapping of matchable amount at the midpoint of a pair
+    matchable_amount_map: MatchableAmountMap,
 }
 
 impl OrderBookCache {
@@ -51,6 +55,7 @@ impl OrderBookCache {
         Self {
             externally_enabled_orders: RwLock::new(HashSet::new()),
             order_metadata_index: OrderMetadataIndex::new(),
+            matchable_amount_map: MatchableAmountMap::new(),
         }
     }
 
@@ -67,9 +72,22 @@ impl OrderBookCache {
         }
     }
 
+    /// Returns whether an order exists in the cache
+    pub fn order_exists(&self, id: OrderIdentifier) -> bool {
+        self.order_metadata_index.order_exists(&id)
+    }
+
     /// Get all orders that match any filter
     pub async fn get_all_orders(&self) -> Vec<OrderIdentifier> {
         self.order_metadata_index.get_all_orders().await
+    }
+
+    /// Get the matchable amount for both sides of a pair
+    ///
+    /// Returns (buy_amount, sell_amount) where buy amount is denominated in the
+    /// quote token, sell amount is denominated in the base token
+    pub async fn get_matchable_amount(&self, pair: &Pair) -> (Amount, Amount) {
+        self.matchable_amount_map.get(pair).await
     }
 
     // --- Setters --- //
@@ -79,6 +97,8 @@ impl OrderBookCache {
         self.order_metadata_index.add_order(id, order, matchable_amount).await;
         if order.allow_external_matches {
             self.externally_enabled_orders.write().await.insert(id);
+            let (pair, side) = order.pair_and_side();
+            self.matchable_amount_map.add_amount(pair, side, matchable_amount).await;
         }
     }
 
@@ -90,6 +110,35 @@ impl OrderBookCache {
         if order.allow_external_matches {
             self.externally_enabled_orders.blocking_write().insert(id);
         }
+    }
+
+    /// Update an order in the cache
+    pub async fn update_order(&self, id: OrderIdentifier, matchable_amount: Amount) {
+        let (pair, side) = self.order_metadata_index.get_pair_and_side(&id).await.unwrap();
+
+        // Update the index and get the previous matchable amount
+        let old_amount = self
+            .order_metadata_index
+            .update_matchable_amount(id, matchable_amount)
+            .await
+            .unwrap_or(0);
+
+        if self.externally_enabled_orders.read().await.contains(&id) {
+            // Update the matchable amount map with the delta
+            if old_amount > matchable_amount {
+                let delta = old_amount.saturating_sub(matchable_amount);
+                self.matchable_amount_map.sub_amount(pair, side, delta).await;
+            } else {
+                let delta = matchable_amount.saturating_sub(old_amount);
+                self.matchable_amount_map.add_amount(pair, side, delta).await;
+            }
+        }
+    }
+
+    /// Update an order in the cache in a blocking fashion
+    pub fn update_order_blocking(&self, id: OrderIdentifier, matchable_amount: Amount) {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(self.update_order(id, matchable_amount));
     }
 
     /// Mark an order as externally matchable
@@ -104,8 +153,15 @@ impl OrderBookCache {
 
     /// Remove an order from the cache entirely
     pub async fn remove_order(&self, order: OrderIdentifier) {
-        self.externally_enabled_orders.write().await.remove(&order);
-        self.order_metadata_index.remove_order(&order).await;
+        let maybe_info = self.order_metadata_index.remove_order(&order).await;
+        if maybe_info.is_none() {
+            return;
+        }
+        let (pair, side, matchable_amount) = maybe_info.unwrap();
+
+        if self.externally_enabled_orders.write().await.remove(&order) {
+            self.matchable_amount_map.sub_amount(pair, side, matchable_amount).await;
+        }
     }
 
     /// Remove an order in a blocking fashion
