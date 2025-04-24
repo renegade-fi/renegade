@@ -9,25 +9,6 @@ use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{helpers::setup_pre_allocated_state, IntegrationTestArgs};
 
-/// Tests finding a pre-allocated commitment in the Merkle state
-async fn test_find_commitment(test_args: IntegrationTestArgs) -> Result<()> {
-    let mut client = test_args.client;
-    let state = setup_pre_allocated_state(&mut client).await?;
-
-    for (index, commitment) in
-        [state.index0_commitment, state.index1_commitment, state.index2_commitment]
-            .into_iter()
-            .enumerate()
-    {
-        // Test the commitment
-        let commitment_index = client.find_commitment_in_state(commitment).await?;
-        assert_eq_result!(commitment_index, index as u128)?;
-    }
-
-    Ok(())
-}
-integration_test_async!(test_find_commitment);
-
 /// Tests finding a Merkle authentication path for a pre-allocated commitment
 async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
     let mut client = test_args.client;
