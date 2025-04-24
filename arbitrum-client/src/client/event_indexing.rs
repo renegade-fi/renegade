@@ -11,7 +11,7 @@ use constants::{Scalar, MERKLE_HEIGHT};
 use ethers::contract::EthLogDecode;
 use ethers::types::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
-    GethTraceFrame, NameOrAddress, Transaction,
+    GethTraceFrame, NameOrAddress, Transaction, U256,
 };
 use ethers::{
     middleware::Middleware,
@@ -35,7 +35,12 @@ use crate::constants::{
     PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
 };
 use crate::contract_types::{
-    ExternalMatchResult, ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
+    ExternalMatchResult,
+    ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
+    ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
+};
+use crate::conversion::{
+    alloy_u256_to_ethers_u256, scalar_to_u256 as scalar_to_alloy_u256, to_circuit_fixed_point,
 };
 use crate::helpers::deserialize_calldata;
 use crate::{
@@ -225,31 +230,40 @@ impl ArbitrumClient {
             let selector = calldata[..SELECTOR_LEN].try_into().unwrap();
 
             // Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata
-            let statement_bytes = match selector {
+            let match_res = match selector {
                 PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
                     let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
-                    call.valid_match_settle_atomic_statement
+                    Self::parse_external_match_from_calldata(
+                        &call.valid_match_settle_atomic_statement,
+                    )
                 },
                 PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
                     let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
-                    call.valid_match_settle_atomic_statement
+                    Self::parse_external_match_from_calldata(
+                        &call.valid_match_settle_atomic_statement,
+                    )
                 },
                 PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
                     let call =
                         processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
-                    call.valid_match_settle_statement
+                    Self::parse_external_match_from_malleable(
+                        alloy_u256_to_ethers_u256(call.baseAmount),
+                        &call.valid_match_settle_statement,
+                    )
                 },
                 PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR => {
                     let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
-                    call.valid_match_settle_statement
+                    let base = alloy_u256_to_ethers_u256(call.baseAmount);
+                    Self::parse_external_match_from_malleable(
+                        base,
+                        &call.valid_match_settle_statement,
+                    )
                 },
                 _ => continue,
-            };
+            }?;
 
             // Deserialize the statement, and store the match
-            let statement: ContractValidMatchSettleAtomicStatement =
-                deserialize_calldata(&statement_bytes)?;
-            matches.push(statement.match_result);
+            matches.push(match_res);
         }
 
         Ok(matches)
@@ -258,6 +272,8 @@ impl ArbitrumClient {
     // -----------
     // | Helpers |
     // -----------
+
+    // --- Fetch Shares --- //
 
     /// Fetch the public shares from a transaction that has an unknown selector
     async fn fetch_public_shares_for_unknown_selector(
@@ -289,6 +305,78 @@ impl ArbitrumClient {
 
         Err(ArbitrumClientError::InvalidSelector)
     }
+
+    /// Parse wallet shares given a selector and calldata
+    fn parse_shares_from_selector_and_calldata(
+        selector: [u8; SELECTOR_LEN],
+        calldata: &[u8],
+        public_blinder_share: Scalar,
+    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+        match selector {
+            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
+            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
+            <processMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_match_settle(calldata, public_blinder_share)
+            },
+            <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_atomic_match_settle(calldata)
+            },
+            <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
+                parse_shares_from_process_atomic_match_settle_with_receiver(calldata)
+            },
+            <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
+                parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
+            },
+            <settleOfflineFeeCall as SolCall>::SELECTOR => {
+                parse_shares_from_settle_offline_fee(calldata)
+            },
+            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
+            _ => {
+                error!("invalid selector when parsing public shares: {selector:?}");
+                Err(ArbitrumClientError::InvalidSelector)
+            },
+        }
+    }
+
+    // --- Parse External Matches --- //
+
+    /// Parse an external match from a `VALID MATCH SETTLE ATOMIC` statement
+    /// serialized as calldata bytes
+    fn parse_external_match_from_calldata(
+        statement_bytes: &[u8],
+    ) -> Result<ExternalMatchResult, ArbitrumClientError> {
+        let statement: ContractValidMatchSettleAtomicStatement =
+            deserialize_calldata(statement_bytes)?;
+        Ok(statement.match_result)
+    }
+
+    /// Parse an external match from a `VALID MALLEABLE MATCH SETTLE ATOMIC`
+    /// statement and the calldata of the `processMalleableAtomicMatchSettle`
+    fn parse_external_match_from_malleable(
+        base_amount: U256,
+        statement_bytes: &[u8],
+    ) -> Result<ExternalMatchResult, ArbitrumClientError> {
+        let statement: ContractValidMalleableMatchSettleAtomicStatement =
+            deserialize_calldata(statement_bytes)?;
+        let match_res = statement.match_result;
+
+        // Compute the quote amount from the price and the base amount
+        let price = to_circuit_fixed_point(&match_res.price);
+        let base_scalar = u256_to_scalar(&base_amount);
+        let quote_scalar = (price * base_scalar).floor();
+        let base_amount = scalar_to_alloy_u256(base_scalar);
+        let quote_amount = scalar_to_alloy_u256(quote_scalar);
+
+        Ok(ExternalMatchResult {
+            base_mint: match_res.base_mint,
+            quote_mint: match_res.quote_mint,
+            base_amount,
+            quote_amount,
+            direction: match_res.direction,
+        })
+    }
+
+    // --- Call Tracing --- //
 
     /// Fetch the darkpool calls from a given transaction
     async fn fetch_tx_darkpool_calls(
@@ -340,37 +428,5 @@ impl ArbitrumClient {
         }
 
         darkpool_calls
-    }
-
-    /// Parse wallet shares given a selector and calldata
-    fn parse_shares_from_selector_and_calldata(
-        selector: [u8; SELECTOR_LEN],
-        calldata: &[u8],
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
-        match selector {
-            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
-            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
-            <processMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_match_settle(calldata, public_blinder_share)
-            },
-            <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_atomic_match_settle(calldata)
-            },
-            <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_atomic_match_settle_with_receiver(calldata)
-            },
-            <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
-            },
-            <settleOfflineFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_offline_fee(calldata)
-            },
-            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
-            _ => {
-                error!("invalid selector when parsing public shares: {selector:?}");
-                Err(ArbitrumClientError::InvalidSelector)
-            },
-        }
     }
 }
