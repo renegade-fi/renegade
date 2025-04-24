@@ -118,8 +118,12 @@ impl OrderMetadataIndex {
     /// Note that we do not clean up sub-index entries when their
     /// lists become empty.
     ///
-    /// Returns the old matchable amount if it was removed, otherwise None
-    pub async fn remove_order(&self, order_id: &OrderIdentifier) -> Option<Amount> {
+    /// Returns the pair, side, and matchable amount if the order was removed,
+    /// otherwise None
+    pub async fn remove_order(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Option<(Pair, OrderSide, Amount)> {
         // Get the pair and side from the reverse index
         let (pair, side) = self.get_pair_and_side(order_id).await?;
 
@@ -139,7 +143,7 @@ impl OrderMetadataIndex {
         let mut reverse_index = self.reverse_index.write().await;
         reverse_index.remove(order_id);
 
-        old_amount
+        old_amount.map(|amt| (pair, side, amt))
     }
 }
 
@@ -455,22 +459,22 @@ mod order_index_tests {
         let index = OrderMetadataIndex::new();
         let order_id = OrderIdentifier::new_v4();
         let order = mock_order();
-        let pair = order.pair();
+        let pair = order.pair().clone();
 
         // Add an order
         index.add_order(order_id, &order, 100).await;
 
         // Verify it was added
-        let orders = index.get_orders(&pair, order.side).await;
+        let orders = index.get_orders(&pair.clone(), order.side).await;
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0], order_id);
 
         // Remove the order
         let result = index.remove_order(&order_id).await;
-        assert!(result.is_some());
+        assert_eq!(result, Some((pair.clone(), order.side, 100)));
 
         // Verify it was removed
-        let orders = index.get_orders(&pair, order.side).await;
+        let orders = index.get_orders(&pair.clone(), order.side).await;
         assert!(orders.is_empty());
 
         // Verify it was removed from reverse index
@@ -492,7 +496,7 @@ mod order_index_tests {
     async fn test_remove_order_maintains_sort() {
         let index = OrderMetadataIndex::new();
         let order = mock_order();
-        let pair = order.pair();
+        let pair = order.pair().clone();
 
         // Add three orders
         let order_id1 = OrderIdentifier::new_v4();
@@ -505,10 +509,10 @@ mod order_index_tests {
 
         // Remove the middle order
         let result = index.remove_order(&order_id2).await;
-        assert_eq!(result, Some(200));
+        assert_eq!(result, Some((pair.clone(), order.side, 200)));
 
         // Verify remaining orders are still sorted
-        let orders = index.get_orders(&pair, OrderSide::Buy).await;
+        let orders = index.get_orders(&pair.clone(), OrderSide::Buy).await;
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0], order_id1); // 300
         assert_eq!(orders[1], order_id3); // 100
