@@ -15,6 +15,10 @@ use circuits::{
             SizedValidFeeRedemption, SizedValidFeeRedemptionStatement,
             SizedValidFeeRedemptionWitness,
         },
+        valid_malleable_match_settle_atomic::{
+            SizedValidMalleableMatchSettleAtomic, SizedValidMalleableMatchSettleAtomicStatement,
+            SizedValidMalleableMatchSettleAtomicWitness,
+        },
         valid_match_settle::{
             SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
         },
@@ -154,6 +158,11 @@ impl ProofManager {
                 Self::prove_valid_match_settle_atomic(witness, statement)
             },
 
+            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
+                // Prove `VALID MALLEABLE MATCH SETTLE ATOMIC`
+                Self::prove_valid_malleable_match_settle_atomic(witness, statement)
+            },
+
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
                 // Prove `VALID RELAYER FEE SETTLEMENT`
                 Self::prove_valid_relayer_fee_settlement(witness, statement)
@@ -289,6 +298,23 @@ impl ProofManager {
                 .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
         Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_hint))
+    }
+
+    /// Create a proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
+    #[instrument(skip_all, err)]
+    fn prove_valid_malleable_match_settle_atomic(
+        witness: SizedValidMalleableMatchSettleAtomicWitness,
+        statement: SizedValidMalleableMatchSettleAtomicStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID MALLEABLE MATCH SETTLE ATOMIC`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidMalleableMatchSettleAtomic>(
+                witness,
+                statement.clone(),
+            )
+            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+
+        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_hint))
     }
 
     /// Create a proof of `VALID RELAYER FEE SETTLEMENT`

@@ -7,6 +7,9 @@
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
     valid_fee_redemption::{SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness},
+    valid_malleable_match_settle_atomic::{
+        SizedValidMalleableMatchSettleAtomicStatement, SizedValidMalleableMatchSettleAtomicWitness,
+    },
     valid_match_settle::{SizedValidMatchSettleStatement, SizedValidMatchSettleWitness},
     valid_match_settle_atomic::{
         SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
@@ -112,6 +115,16 @@ pub enum ProofJob {
         /// The statement (public variables) to use in the proof of `VALID
         /// MATCH SETTLE ATOMIC`
         statement: SizedValidMatchSettleAtomicStatement,
+    },
+    /// A request to create a proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
+    /// describing a malleable match settlement between an internal and an
+    /// external order
+    ValidMalleableMatchSettleAtomic {
+        /// The witness to the proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
+        witness: SizedValidMalleableMatchSettleAtomicWitness,
+        /// The statement (public variables) to use in the proof of `VALID
+        /// MALLEABLE MATCH SETTLE ATOMIC`
+        statement: SizedValidMalleableMatchSettleAtomicStatement,
     },
     /// A request to create a proof of `VALID RELAYER FEE SETTLEMENT` in a
     /// single prover context

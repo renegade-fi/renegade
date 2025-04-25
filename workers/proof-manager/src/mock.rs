@@ -10,6 +10,10 @@ use circuits::zk_circuits::{
     valid_fee_redemption::{
         SizedValidFeeRedemption, SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness,
     },
+    valid_malleable_match_settle_atomic::{
+        SizedValidMalleableMatchSettleAtomic, SizedValidMalleableMatchSettleAtomicStatement,
+        SizedValidMalleableMatchSettleAtomicWitness,
+    },
     valid_match_settle::{
         SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
     },
@@ -99,6 +103,9 @@ impl MockProofManager {
             ProofJob::ValidMatchSettleAtomic { witness, statement } => {
                 Self::valid_match_settle_atomic(witness, statement)
             },
+            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
+                Self::valid_malleable_match_settle_atomic(witness, statement)
+            },
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
                 Self::valid_relayer_fee_settlement(witness, statement)
             },
@@ -184,6 +191,18 @@ impl MockProofManager {
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
         Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_hint))
+    }
+
+    /// Create a dummy proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
+    fn valid_malleable_match_settle_atomic(
+        witness: SizedValidMalleableMatchSettleAtomicWitness,
+        statement: SizedValidMalleableMatchSettleAtomicStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        Self::check_constraints::<SizedValidMalleableMatchSettleAtomic>(&witness, &statement)?;
+
+        let proof = dummy_proof();
+        let link_hint = dummy_link_hint();
+        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_hint))
     }
 
     /// Generate a dummy proof of `VALID RELAYER FEE SETTLEMENT`

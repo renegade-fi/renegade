@@ -5,7 +5,9 @@ use common::types::{
     exchange::PriceReport,
     gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
-    proof_bundles::{AtomicMatchSettleBundle, OrderValidityProofBundle},
+    proof_bundles::{
+        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
+    },
     tasks::TaskIdentifier,
     token::Token,
     wallet::{
@@ -169,9 +171,20 @@ pub enum SystemBusMessage {
         /// The validity proofs for the internal party
         validity_proofs: OrderValidityProofBundle,
     },
+    /// A message indicating that a malleable atomic match was found for a
+    /// request
+    ///
+    /// This message is published by a task enqueued by the external matching
+    /// engine, and consumed by the API server which will forward the bundle
+    /// to its client
+    MalleableAtomicMatchFound {
+        /// The match bundle
+        match_bundle: MalleableAtomicMatchSettleBundle,
+        /// The validity proofs for the internal party
+        validity_proofs: OrderValidityProofBundle,
+    },
     /// A message indicating that no atomic match was found for a request
     NoAtomicMatchFound,
-
     // --- Admin -- //
     /// A message indicating that a wallet has been updated, intended for
     /// consumption by the admin API
