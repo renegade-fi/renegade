@@ -1,24 +1,29 @@
 //! Various helpers for Arbitrum client execution
 
+use alloy::primitives::U256;
 use alloy_sol_types::SolCall;
 use circuit_types::{
     elgamal::{BabyJubJubPoint, ElGamalCiphertext},
     note::NOTE_CIPHERTEXT_SIZE,
+    r#match::OrderSettlementIndices,
     traits::BaseType,
-    SizedWalletShare,
+    Amount, SizedWalletShare,
 };
 use constants::Scalar;
 use ethers::types::Bytes;
 use serde::{Deserialize, Serialize};
+use util::matching_engine::apply_match_to_shares;
 
 use crate::{
     abi::{
         newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
+        processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
         processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
         updateWalletCall,
     },
     contract_types::{
-        ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+        MatchPayload, ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+        ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
         ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
         ValidMatchSettleStatement as ContractValidMatchSettleStatement,
         ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
@@ -26,8 +31,15 @@ use crate::{
         ValidWalletCreateStatement as ContractValidWalletCreateStatement,
         ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
     },
+    conversion::{
+        to_circuit_bounded_match_result, to_circuit_fee_rates, to_circuit_order_settlement_indices,
+    },
     errors::ArbitrumClientError,
 };
+
+// ---------------------
+// | (De)serialization |
+// ---------------------
 
 /// Serializes a calldata element for a contract call
 pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, ArbitrumClientError> {
@@ -42,6 +54,10 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 ) -> Result<T, ArbitrumClientError> {
     postcard::from_bytes(calldata).map_err(|e| ArbitrumClientError::Serde(e.to_string()))
 }
+
+// ----------------
+// | Parse Shares |
+// ----------------
 
 /// Parses wallet shares from the calldata of a `newWallet` call
 pub fn parse_shares_from_new_wallet(
@@ -124,13 +140,66 @@ pub fn parse_shares_from_process_atomic_match_settle_with_receiver(
     calldata: &[u8],
 ) -> Result<SizedWalletShare, ArbitrumClientError> {
     let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
-
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
     )?;
 
     let mut shares = statement.internal_party_modified_shares.into_iter().map(Scalar::new);
     Ok(SizedWalletShare::from_scalars(&mut shares))
+}
+
+/// Parses wallet shares from the calldata of a
+/// `processMalleableAtomicMatchSettle` call
+pub fn parse_shares_from_process_malleable_atomic_match_settle(
+    calldata: &[u8],
+) -> Result<SizedWalletShare, ArbitrumClientError> {
+    // Parse the pre-update shares from the calldata
+    let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
+    let statement = deserialize_calldata::<ContractValidMalleableMatchSettleAtomicStatement>(
+        &call.valid_match_settle_statement,
+    )?;
+    let mut shares = statement.internal_party_public_shares.clone().into_iter().map(Scalar::new);
+    let mut wallet_share = SizedWalletShare::from_scalars(&mut shares);
+
+    // Update the shares with the match result
+    let validity_proofs = deserialize_calldata::<MatchPayload>(&call.internal_party_match_payload)?;
+    let indices =
+        to_circuit_order_settlement_indices(&validity_proofs.valid_commitments_statement.indices);
+    apply_malleable_match_result_to_wallet_share(
+        &mut wallet_share,
+        call.base_amount,
+        indices,
+        &statement,
+    )?;
+
+    Ok(wallet_share)
+}
+
+/// Parses wallet shares from the calldata of a
+/// `processMalleableAtomicMatchSettleWithReceiver` call
+pub fn parse_shares_from_process_malleable_atomic_match_settle_with_receiver(
+    calldata: &[u8],
+) -> Result<SizedWalletShare, ArbitrumClientError> {
+    let call = processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
+    let statement = deserialize_calldata::<ContractValidMalleableMatchSettleAtomicStatement>(
+        &call.valid_match_settle_statement,
+    )?;
+
+    let mut shares = statement.internal_party_public_shares.clone().into_iter().map(Scalar::new);
+    let mut wallet_share = SizedWalletShare::from_scalars(&mut shares);
+
+    // Update the shares with the match result
+    let validity_proofs = deserialize_calldata::<MatchPayload>(&call.internal_party_match_payload)?;
+    let indices =
+        to_circuit_order_settlement_indices(&validity_proofs.valid_commitments_statement.indices);
+    apply_malleable_match_result_to_wallet_share(
+        &mut wallet_share,
+        call.base_amount,
+        indices,
+        &statement,
+    )?;
+
+    Ok(wallet_share)
 }
 
 /// Parses wallet shares from the calldata of a `settleOnlineRelayerFee` call
@@ -211,4 +280,36 @@ pub fn parse_note_ciphertext_from_settle_offline_fee(
         [Scalar::new(cipher.1), Scalar::new(cipher.2), Scalar::new(cipher.3)];
 
     Ok(ElGamalCiphertext { ephemeral_key: key_encryption, ciphertext: symmetric_ciphertext })
+}
+
+// ---------------------
+// | Malleable Matches |
+// ---------------------
+
+/// Apply a malleable match result to a wallet share
+///
+/// We replicate this logic in the relayer for simplicity, though we could
+/// conceivably log these updated shares in the contract as well
+pub fn apply_malleable_match_result_to_wallet_share(
+    wallet_share: &mut SizedWalletShare,
+    base_amount: U256,
+    indices: OrderSettlementIndices,
+    statement: &ContractValidMalleableMatchSettleAtomicStatement,
+) -> Result<(), ArbitrumClientError> {
+    let base_amt: Amount = base_amount.try_into().expect("base amount too large");
+
+    // Compute the amounts traded
+    let bounded_match = to_circuit_bounded_match_result(&statement.match_result)?;
+    let external_match_res = bounded_match.to_external_match_result(base_amt);
+    let match_res = external_match_res.to_match_result();
+
+    // Compute the fees due by the internal party
+    let (_, recv_amount) = external_match_res.external_party_send();
+    let fees = to_circuit_fee_rates(&statement.internal_fee_rates)?;
+    let fee_take = fees.compute_fee_take(recv_amount);
+
+    // Apply the match to the wallet share
+    let side = external_match_res.internal_party_side();
+    apply_match_to_shares(wallet_share, &indices, fee_take, &match_res, side);
+    Ok(())
 }

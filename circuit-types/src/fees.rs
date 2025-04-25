@@ -1,6 +1,7 @@
 //! Fee types for circuits in the Renegade system
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 
 use crate::{fixed_point::FixedPoint, Amount};
@@ -44,6 +45,17 @@ impl FeeTakeRate {
     /// Get the total fee rate
     pub fn total(&self) -> FixedPoint {
         self.relayer_fee_rate + self.protocol_fee_rate
+    }
+
+    /// Get a fee take given an amount received
+    pub fn compute_fee_take(&self, amount: Amount) -> FeeTake {
+        let amt_scalar = Scalar::from(amount);
+        let relayer_fee_scalar = (self.relayer_fee_rate * amt_scalar).floor();
+        let protocol_fee_scalar = (self.protocol_fee_rate * amt_scalar).floor();
+        let relayer_fee = scalar_to_u128(&relayer_fee_scalar);
+        let protocol_fee = scalar_to_u128(&protocol_fee_scalar);
+
+        FeeTake { relayer_fee, protocol_fee }
     }
 }
 

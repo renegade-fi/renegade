@@ -928,6 +928,7 @@ dependencies = [
 name = "arbitrum-client"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "alloy-primitives 1.0.0",
  "alloy-sol-types 1.0.0",
  "ark-bn254",
