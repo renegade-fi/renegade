@@ -3,7 +3,7 @@
 
 use std::str::FromStr;
 
-use alloy_primitives::{Address, U256 as AlloyU256};
+use alloy_primitives::{Address, U160, U256};
 use ark_bn254::g1::Config as G1Config;
 use ark_ec::short_weierstrass::Affine;
 use circuit_types::{
@@ -34,8 +34,8 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
+use ethers::types::U256 as EthersU256;
 use num_bigint::BigUint;
-use ruint::aliases::{U160, U256};
 use util::hex::biguint_to_hex_string;
 
 use crate::contract_types::{
@@ -173,11 +173,11 @@ pub fn to_contract_transfer_aux_data(
     Ok(match data {
         TransferAuth::Deposit(deposit) => ContractTransferAuxData {
             permit_nonce: Some(
-                AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_nonce))
+                U256::from_str(&biguint_to_hex_string(&deposit.permit_nonce))
                     .map_err(|_| ConversionError::InvalidUint)?,
             ),
             permit_deadline: Some(
-                AlloyU256::from_str(&biguint_to_hex_string(&deposit.permit_deadline))
+                U256::from_str(&biguint_to_hex_string(&deposit.permit_deadline))
                     .map_err(|_| ConversionError::InvalidUint)?,
             ),
             permit_signature: Some(deposit.permit_signature.clone()),
@@ -496,7 +496,7 @@ pub fn to_contract_valid_fee_redemption_statement(
 
 /// Converts a [`PublicSigningKey`] to a fixed-length array of [`AlloyU256`]
 /// elements
-pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[AlloyU256; NUM_SCALARS_PK], ConversionError> {
+pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[U256; NUM_SCALARS_PK], ConversionError> {
     pk.to_scalars()
         .iter()
         .map(|s| scalar_to_u256(*s))
@@ -541,14 +541,34 @@ pub fn scalar_to_u256(scalar: Scalar) -> U256 {
 }
 
 /// Converts an alloy `U256` to a `Scalar`
-pub fn alloy_u256_to_scalar(u256: AlloyU256) -> Scalar {
+pub fn alloy_u256_to_scalar(u256: U256) -> Scalar {
     let bytes = u256.to_be_bytes_vec();
     Scalar::from_be_bytes_mod_order(&bytes)
+}
+
+/// Convert an ethers `U256` to an alloy `U256`
+///
+/// TODO: Remove this when we transition to alloy entirely
+pub fn ethers_u256_to_alloy_u256(u256: EthersU256) -> U256 {
+    U256::from_limbs(u256.0)
+}
+
+/// Convert an alloy `U256` to an ethers `U256`
+///
+/// TODO: Remove this when we transition to alloy entirely
+pub fn alloy_u256_to_ethers_u256(u256: U256) -> EthersU256 {
+    EthersU256(u256.into_limbs())
 }
 
 /// Convert a [`FixedPoint`] to its corresponding smart contract type
 pub fn to_contract_fixed_point(fixed_point: &FixedPoint) -> ContractFixedPoint {
     ContractFixedPoint { repr: fixed_point.repr.inner() }
+}
+
+/// Convert a smart contract [`FixedPoint`] to a circuit [`FixedPoint`]
+pub fn to_circuit_fixed_point(fixed_point: &ContractFixedPoint) -> FixedPoint {
+    let repr = Scalar::new(fixed_point.repr);
+    FixedPoint::from_repr(repr)
 }
 
 /// Try to extract a fixed-length array of G1Affine points

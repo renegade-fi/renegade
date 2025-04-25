@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::abi::{
     newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
+    processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
     processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
     updateWalletCall,
 };
@@ -77,6 +78,12 @@ pub const PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] =
 /// Selector for `processAtomicMatchSettleWithReceiver`
 pub const PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR: [u8; SELECTOR_LEN] =
     processAtomicMatchSettleWithReceiverCall::SELECTOR;
+/// Selector for `processMalleableAtomicMatchSettleWithReceiver`
+pub const PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR: [u8; SELECTOR_LEN] =
+    processMalleableAtomicMatchSettleWithReceiverCall::SELECTOR;
+/// Selector for `processMalleableAtomicMatchSettle`
+pub const PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] =
+    processMalleableAtomicMatchSettleCall::SELECTOR;
 /// Selector for `settleOnlineRelayerFee`
 pub const SETTLE_ONLINE_RELAYER_FEE_SELECTOR: [u8; SELECTOR_LEN] =
     settleOnlineRelayerFeeCall::SELECTOR;
