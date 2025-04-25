@@ -8,10 +8,11 @@ use ark_bn254::g1::Config as G1Config;
 use ark_ec::short_weierstrass::Affine;
 use circuit_types::{
     elgamal::{ElGamalCiphertext, EncryptionKey},
-    fees::FeeTake,
+    fees::{FeeTake, FeeTakeRate},
+    fixed_point::FixedPoint,
     keychain::PublicSigningKey,
     note::NOTE_CIPHERTEXT_SIZE,
-    r#match::{ExternalMatchResult, OrderSettlementIndices},
+    r#match::{BoundedMatchResult, ExternalMatchResult, OrderSettlementIndices},
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
     Amount, PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
@@ -19,6 +20,7 @@ use circuit_types::{
 use circuits::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,
     valid_fee_redemption::SizedValidFeeRedemptionStatement,
+    valid_malleable_match_settle_atomic::SizedValidMalleableMatchSettleAtomicStatement,
     valid_match_settle::SizedValidMatchSettleStatement,
     valid_match_settle_atomic::SizedValidMatchSettleAtomicStatement,
     valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement,
@@ -28,7 +30,7 @@ use circuits::zk_circuits::{
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
 use common::types::{
-    proof_bundles::{AtomicMatchSettleBundle, MatchBundle, OrderValidityProofBundle},
+    proof_bundles::{MatchBundle, OrderValidityProofBundle},
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
@@ -37,8 +39,10 @@ use ruint::aliases::{U160, U256};
 use util::hex::biguint_to_hex_string;
 
 use crate::contract_types::{
-    BabyJubJubPoint as ContractBabyJubJubPoint, ExternalMatchResult as ContractExternalMatchResult,
-    ExternalTransfer as ContractExternalTransfer, FeeTake as ContractFeeTake,
+    BabyJubJubPoint as ContractBabyJubJubPoint, BoundedMatchResult as ContractBoundedMatchResult,
+    ExternalMatchResult as ContractExternalMatchResult,
+    ExternalTransfer as ContractExternalTransfer, FeeRates as ContractFeeRates,
+    FeeTake as ContractFeeTake, FixedPoint as ContractFixedPoint,
     LinkingProof as ContractLinkingProof,
     MatchAtomicLinkingProofs as ContractMatchAtomicLinkingProofs,
     MatchAtomicProofs as ContractMatchAtomicProofs,
@@ -49,6 +53,7 @@ use crate::contract_types::{
     PublicSigningKey as ContractPublicSigningKey, TransferAuxData as ContractTransferAuxData,
     ValidCommitmentsStatement as ContractValidCommitmentsStatement,
     ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
+    ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
     ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
     ValidMatchSettleStatement as ContractValidMatchSettleStatement,
     ValidOfflineFeeSettlementStatement as ContractValidOfflineFeeSettlementStatement,
@@ -260,11 +265,38 @@ pub fn to_contract_external_match_result(
     })
 }
 
+/// Convert a [`BoundedMatchResult`] to its corresponding smart contract type
+pub fn to_contract_bounded_match_result(
+    match_result: &BoundedMatchResult,
+) -> Result<ContractBoundedMatchResult, ConversionError> {
+    let quote_mint = biguint_to_address(&match_result.quote_mint)?;
+    let base_mint = biguint_to_address(&match_result.base_mint)?;
+    let min_base_amount = amount_to_u256(match_result.min_base_amount)?;
+    let max_base_amount = amount_to_u256(match_result.max_base_amount)?;
+
+    Ok(ContractBoundedMatchResult {
+        quote_mint,
+        base_mint,
+        price: to_contract_fixed_point(&match_result.price),
+        min_base_amount,
+        max_base_amount,
+        direction: match_result.direction,
+    })
+}
+
 /// Convert a [`FeeTake`] to its corresponding smart contract type
 pub fn to_contract_fee_take(fee_take: &FeeTake) -> Result<ContractFeeTake, ConversionError> {
     Ok(ContractFeeTake {
         relayer_fee: amount_to_u256(fee_take.relayer_fee)?,
         protocol_fee: amount_to_u256(fee_take.protocol_fee)?,
+    })
+}
+
+/// Convert a [`FeeRates`] to its corresponding smart contract type
+pub fn to_contract_fee_rates(fee_rates: &FeeTakeRate) -> Result<ContractFeeRates, ConversionError> {
+    Ok(ContractFeeRates {
+        relayer_fee_rate: to_contract_fixed_point(&fee_rates.relayer_fee_rate),
+        protocol_fee_rate: to_contract_fixed_point(&fee_rates.protocol_fee_rate),
     })
 }
 
@@ -284,6 +316,23 @@ pub fn to_contract_valid_match_settle_atomic_statement(
         internal_party_modified_shares,
         internal_party_indices,
         protocol_fee: statement.protocol_fee.repr.inner(),
+        relayer_fee_address: biguint_to_address(&statement.relayer_fee_address)?,
+    })
+}
+
+/// Convert a [`SizedValidMalleableMatchSettleAtomicStatement`] to its
+/// corresponding smart contract type
+pub fn to_contract_valid_malleable_match_settle_atomic_statement(
+    statement: &SizedValidMalleableMatchSettleAtomicStatement,
+) -> Result<ContractValidMalleableMatchSettleAtomicStatement, ConversionError> {
+    let internal_party_public_shares =
+        wallet_shares_to_scalar_vec(&statement.internal_party_public_shares);
+
+    Ok(ContractValidMalleableMatchSettleAtomicStatement {
+        match_result: to_contract_bounded_match_result(&statement.bounded_match_result)?,
+        external_fee_rates: to_contract_fee_rates(&statement.external_fee_rates)?,
+        internal_fee_rates: to_contract_fee_rates(&statement.internal_fee_rates)?,
+        internal_party_public_shares,
         relayer_fee_address: biguint_to_address(&statement.relayer_fee_address)?,
     })
 }
@@ -337,15 +386,13 @@ pub fn build_atomic_match_proofs(
 /// match linking proofs
 pub fn build_atomic_match_linking_proofs(
     internal_party_validity_proofs: &OrderValidityProofBundle,
-    match_bundle: &AtomicMatchSettleBundle,
+    commitments_link_proof: &PlonkLinkProof,
 ) -> Result<ContractMatchAtomicLinkingProofs, ConversionError> {
     Ok(ContractMatchAtomicLinkingProofs {
         valid_reblind_commitments: to_contract_link_proof(
             &internal_party_validity_proofs.linking_proof,
         )?,
-        valid_commitments_match_settle_atomic: to_contract_link_proof(
-            &match_bundle.commitments_link,
-        )?,
+        valid_commitments_match_settle_atomic: to_contract_link_proof(commitments_link_proof)?,
     })
 }
 
@@ -497,6 +544,11 @@ pub fn scalar_to_u256(scalar: Scalar) -> U256 {
 pub fn alloy_u256_to_scalar(u256: AlloyU256) -> Scalar {
     let bytes = u256.to_be_bytes_vec();
     Scalar::from_be_bytes_mod_order(&bytes)
+}
+
+/// Convert a [`FixedPoint`] to its corresponding smart contract type
+pub fn to_contract_fixed_point(fixed_point: &FixedPoint) -> ContractFixedPoint {
+    ContractFixedPoint { repr: fixed_point.repr.inner() }
 }
 
 /// Try to extract a fixed-length array of G1Affine points
