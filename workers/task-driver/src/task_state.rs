@@ -11,7 +11,7 @@ use crate::{
         node_startup::NodeStartupTaskState, pay_offline_fee::PayOfflineFeeTaskState,
         pay_relayer_fee::PayRelayerFeeTaskState, redeem_fee::RedeemFeeTaskState,
         refresh_wallet::RefreshWalletTaskState,
-        settle_malleable_external_match::SettleMalleableMatchExternalTaskState,
+        settle_malleable_external_match::SettleMalleableExternalMatchTaskState,
         settle_match::SettleMatchTaskState, settle_match_external::SettleMatchExternalTaskState,
         settle_match_internal::SettleMatchInternalTaskState,
         update_merkle_proof::UpdateMerkleProofTaskState, update_wallet::UpdateWalletTaskState,
@@ -47,7 +47,7 @@ pub enum StateWrapper {
     /// The state object for the settle match external task
     SettleMatchExternal(SettleMatchExternalTaskState),
     /// The state object for the settle malleable match external task
-    SettleMalleableMatchExternal(SettleMalleableMatchExternalTaskState),
+    SettleMalleableExternalMatch(SettleMalleableExternalMatchTaskState),
     /// The state object for the update Merkle proof task
     UpdateMerkleProof(UpdateMerkleProofTaskState),
     /// The state object for the update wallet task
@@ -69,7 +69,7 @@ impl StateWrapper {
             StateWrapper::SettleMatch(state) => state.committed(),
             StateWrapper::SettleMatchInternal(state) => state.committed(),
             StateWrapper::SettleMatchExternal(state) => state.committed(),
-            StateWrapper::SettleMalleableMatchExternal(state) => state.committed(),
+            StateWrapper::SettleMalleableExternalMatch(state) => state.committed(),
             StateWrapper::UpdateWallet(state) => state.committed(),
             StateWrapper::UpdateMerkleProof(state) => state.committed(),
             StateWrapper::NodeStartup(state) => state.committed(),
@@ -93,8 +93,8 @@ impl StateWrapper {
             StateWrapper::SettleMatchExternal(state) => {
                 state == &SettleMatchExternalTaskState::commit_point()
             },
-            StateWrapper::SettleMalleableMatchExternal(state) => {
-                state == &SettleMalleableMatchExternalTaskState::commit_point()
+            StateWrapper::SettleMalleableExternalMatch(state) => {
+                state == &SettleMalleableExternalMatchTaskState::commit_point()
             },
             StateWrapper::UpdateWallet(state) => state == &UpdateWalletTaskState::commit_point(),
             StateWrapper::UpdateMerkleProof(state) => {
@@ -116,7 +116,7 @@ impl StateWrapper {
             StateWrapper::SettleMatch(state) => state.completed(),
             StateWrapper::SettleMatchInternal(state) => state.completed(),
             StateWrapper::SettleMatchExternal(state) => state.completed(),
-            StateWrapper::SettleMalleableMatchExternal(state) => state.completed(),
+            StateWrapper::SettleMalleableExternalMatch(state) => state.completed(),
             StateWrapper::UpdateWallet(state) => state.completed(),
             StateWrapper::UpdateMerkleProof(state) => state.completed(),
             StateWrapper::NodeStartup(state) => state.completed(),
@@ -136,7 +136,7 @@ impl Display for StateWrapper {
             StateWrapper::SettleMatch(state) => state.to_string(),
             StateWrapper::SettleMatchInternal(state) => state.to_string(),
             StateWrapper::SettleMatchExternal(state) => state.to_string(),
-            StateWrapper::SettleMalleableMatchExternal(state) => state.to_string(),
+            StateWrapper::SettleMalleableExternalMatch(state) => state.to_string(),
             StateWrapper::UpdateWallet(state) => state.to_string(),
             StateWrapper::UpdateMerkleProof(state) => state.to_string(),
             StateWrapper::NodeStartup(state) => state.to_string(),
