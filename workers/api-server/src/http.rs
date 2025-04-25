@@ -31,8 +31,8 @@ use external_api::{
             ADMIN_TRIGGER_SNAPSHOT_ROUTE, ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
         },
         external_match::{
-            ASSEMBLE_EXTERNAL_MATCH_ROUTE, REQUEST_EXTERNAL_MATCH_ROUTE,
-            REQUEST_EXTERNAL_QUOTE_ROUTE,
+            ASSEMBLE_EXTERNAL_MATCH_ROUTE, ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE,
+            REQUEST_EXTERNAL_MATCH_ROUTE, REQUEST_EXTERNAL_QUOTE_ROUTE,
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{
@@ -54,8 +54,8 @@ use external_api::{
     EmptyRequestResponse,
 };
 use external_match::{
-    AssembleExternalMatchHandler, ExternalMatchProcessor, RequestExternalMatchHandler,
-    RequestExternalQuoteHandler,
+    AssembleExternalMatchHandler, AssembleMalleableExternalMatchHandler, ExternalMatchProcessor,
+    RequestExternalMatchHandler, RequestExternalQuoteHandler,
 };
 use hyper::{
     server::conn::AddrStream,
@@ -421,8 +421,12 @@ impl HttpServer {
 
         // --- External Match Routes --- //
 
+        // The following endpoints will be disabled if no admin key is set, hence the
+        // dummy value
+        let admin_key = config.admin_api_key.unwrap_or(HmacKey::random());
         let processor = ExternalMatchProcessor::new(
             config.min_order_size,
+            admin_key,
             handshake_queue,
             config.arbitrum_client.clone(),
             config.system_bus.clone(),
@@ -430,8 +434,6 @@ impl HttpServer {
         );
 
         // The "/external-match/quote" route
-        // The endpoint will be disabled if no admin key is set, hence the dummy value
-        let admin_key = config.admin_api_key.unwrap_or(HmacKey::random());
         router.add_admin_authenticated_route(
             &Method::POST,
             REQUEST_EXTERNAL_QUOTE_ROUTE.to_string(),
@@ -442,7 +444,14 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ASSEMBLE_EXTERNAL_MATCH_ROUTE.to_string(),
-            AssembleExternalMatchHandler::new(admin_key, processor.clone(), state.clone()),
+            AssembleExternalMatchHandler::new(processor.clone(), state.clone()),
+        );
+
+        // The "/external-match/assemble-malleable" route
+        router.add_admin_authenticated_route(
+            &Method::POST,
+            ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE.to_string(),
+            AssembleMalleableExternalMatchHandler::new(processor.clone(), state.clone()),
         );
 
         // The "/external-match/request" route
