@@ -461,8 +461,8 @@ pub struct ApiBoundedMatchResult {
     pub quote_mint: String,
     /// The mint of the base token in the matched asset pair
     pub base_mint: String,
-    /// The price at which the match executes
-    pub price: String,
+    /// The fixed point representation of the price
+    pub price_fp: FixedPoint,
     /// The minimum base amount of the match
     pub min_base_amount: Amount,
     /// The maximum base amount of the match
@@ -476,12 +476,11 @@ impl From<BoundedMatchResult> for ApiBoundedMatchResult {
         let quote_mint = biguint_to_hex_addr(&result.quote_mint);
         let base_mint = biguint_to_hex_addr(&result.base_mint);
         let direction = if result.direction { OrderSide::Buy } else { OrderSide::Sell };
-        let price_str = result.price.to_f64().to_string();
 
         Self {
             quote_mint,
             base_mint,
-            price: price_str,
+            price_fp: result.price,
             min_base_amount: result.min_base_amount,
             max_base_amount: result.max_base_amount,
             direction,
