@@ -20,7 +20,7 @@ pub enum TelemetrySetupError {
     EnvVarMissing,
     /// Error emitted when setting up the OTLP tracer
     Tracer(String),
-    /// Error emitted when the OTLP deployment environemt
+    /// Error emitted when the OTLP deployment environment
     /// is not provided
     DeploymentEnvUnset,
     /// Error emitted when the OTLP collector endpoint is not provided
