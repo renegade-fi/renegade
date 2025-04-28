@@ -15,8 +15,8 @@
 //!
 //! In general, Named Tokens use all exchanges where they are listed, whereas
 //! Unnamed Tokens only use Uniswap V3 for the price feed.
+use alloy::primitives::Address;
 use bimap::BiMap;
-use ethers::types::Address;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -133,8 +133,8 @@ impl Token {
         biguint_from_hex_string(&self.get_addr()).expect("invalid token address in mapping")
     }
 
-    /// Get the ethers compatible address
-    pub fn get_ethers_address(&self) -> Address {
+    /// Get the alloy compatible address
+    pub fn get_alloy_address(&self) -> Address {
         self.addr.parse::<Address>().expect("invalid token address in mapping")
     }
 

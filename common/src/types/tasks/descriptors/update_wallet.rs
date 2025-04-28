@@ -1,9 +1,10 @@
 //! Descriptor for the wallet update task
 
+use alloy::primitives::keccak256;
+use alloy::signers::utils::public_key_to_address;
+use alloy::signers::Signature;
 use circuit_types::{keychain::PublicSigningKey, Amount};
 use constants::Scalar;
-use ethers::core::types::Signature;
-use ethers::utils::{keccak256, public_key_to_address};
 use k256::ecdsa::VerifyingKey as K256VerifyingKey;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,9 @@ use crate::types::{
 };
 
 use super::{TaskDescriptor, INVALID_WALLET_SHARES};
+
+/// The error message emitted for an invalid wallet update signature
+const ERR_INVALID_SIGNATURE: &str = "invalid signature";
 
 /// A type representing a description of an update wallet task
 ///
@@ -218,8 +222,13 @@ pub fn verify_wallet_update_signature(
     let comm_bytes = new_wallet_comm.to_bytes_be();
     let digest = keccak256(comm_bytes);
 
-    // Verify the signature
+    // Verify the signature by recovering the address
     let addr = public_key_to_address(&key);
     let sig = Signature::try_from(wallet_update_signature).map_err(|e| e.to_string())?;
-    sig.verify(digest, addr).map_err(|e| e.to_string())
+    let recovered_addr = sig.recover_address_from_prehash(&digest).map_err(|e| e.to_string())?;
+    if recovered_addr != addr {
+        return Err(ERR_INVALID_SIGNATURE.to_string());
+    }
+
+    Ok(())
 }

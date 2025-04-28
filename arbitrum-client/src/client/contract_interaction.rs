@@ -1,9 +1,10 @@
 //! Defines `ArbitrumClient` helpers that allow for interacting with the
 //! darkpool contract
 
-use alloy::consensus::TypedTransaction;
+use alloy::eips::BlockId;
 use alloy::primitives::{Address, Bytes, U256};
-use alloy::rpc::types::TransactionReceipt;
+use alloy::providers::Provider;
+use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use alloy_contract::CallDecoder;
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
@@ -43,9 +44,6 @@ use crate::{
 };
 
 use super::{ArbitrumClient, DarkpoolCallBuilder};
-
-/// The error message emitted when building a typed tx fails
-const ERR_BUILD_TX: &str = "failed to build typed tx";
 
 impl ArbitrumClient {
     // -----------
@@ -326,7 +324,7 @@ impl ArbitrumClient {
         receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &AtomicMatchSettleBundle,
-    ) -> Result<TypedTransaction, ArbitrumClientError> {
+    ) -> Result<TransactionRequest, ArbitrumClientError> {
         // Destructure proof bundles
         let GenericMatchSettleAtomicBundle {
             statement: valid_match_settle_atomic_statement,
@@ -389,7 +387,7 @@ impl ArbitrumClient {
         valid_match_settle_atomic_statement_calldata: Bytes,
         match_proofs_calldata: Bytes,
         match_link_proofs_calldata: Bytes,
-    ) -> TypedTransaction {
+    ) -> TransactionRequest {
         if let Some(receiver) = receiver {
             self.darkpool_client()
                 .processAtomicMatchSettleWithReceiver(
@@ -400,8 +398,6 @@ impl ArbitrumClient {
                     match_link_proofs_calldata,
                 )
                 .into_transaction_request()
-                .build_typed_tx()
-                .expect(ERR_BUILD_TX)
         } else {
             self.darkpool_client()
                 .processAtomicMatchSettle(
@@ -411,8 +407,6 @@ impl ArbitrumClient {
                     match_link_proofs_calldata,
                 )
                 .into_transaction_request()
-                .build_typed_tx()
-                .expect(ERR_BUILD_TX)
         }
     }
 
@@ -423,7 +417,7 @@ impl ArbitrumClient {
         receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
-    ) -> Result<TypedTransaction, ArbitrumClientError> {
+    ) -> Result<TransactionRequest, ArbitrumClientError> {
         let GenericMalleableMatchSettleAtomicBundle {
             statement: valid_match_settle_atomic_statement,
             proof: valid_match_settle_atomic_proof,
@@ -488,7 +482,7 @@ impl ArbitrumClient {
         valid_match_settle_atomic_statement_calldata: Bytes,
         match_proofs_calldata: Bytes,
         match_link_proofs_calldata: Bytes,
-    ) -> TypedTransaction {
+    ) -> TransactionRequest {
         if let Some(receiver) = receiver {
             self.darkpool_client()
                 .processMalleableAtomicMatchSettleWithReceiver(
@@ -500,8 +494,6 @@ impl ArbitrumClient {
                     match_link_proofs_calldata,
                 )
                 .into_transaction_request()
-                .build_typed_tx()
-                .expect(ERR_BUILD_TX)
         } else {
             self.darkpool_client()
                 .processMalleableAtomicMatchSettle(
@@ -512,8 +504,6 @@ impl ArbitrumClient {
                     match_link_proofs_calldata,
                 )
                 .into_transaction_request()
-                .build_typed_tx()
-                .expect(ERR_BUILD_TX)
         }
     }
 
@@ -632,7 +622,9 @@ impl ArbitrumClient {
         &self,
         tx: DarkpoolCallBuilder<'_, C>,
     ) -> Result<TransactionReceipt, ArbitrumClientError> {
+        let gas_price = self.get_adjusted_gas_price().await?;
         let receipt = tx
+            .gas_price(gas_price)
             .send()
             .await
             .map_err(ArbitrumClientError::contract_interaction)?
@@ -647,5 +639,25 @@ impl ArbitrumClient {
         }
 
         Ok(receipt)
+    }
+
+    /// Get the adjusted gas price for submitting a transaction
+    ///
+    /// We double the latest basefee to prevent reverts
+    async fn get_adjusted_gas_price(&self) -> Result<u128, ArbitrumClientError> {
+        // Set the gas price to 2x the latest basefee for simplicity
+        let latest_block = self
+            .provider()
+            .get_block(BlockId::latest())
+            .await
+            .map_err(ArbitrumClientError::rpc)?
+            .ok_or(ArbitrumClientError::rpc("No latest block found"))?;
+
+        let latest_basefee = latest_block
+            .header
+            .base_fee_per_gas
+            .ok_or(ArbitrumClientError::rpc("No basefee found"))?;
+        let gas_price = (latest_basefee * 2) as u128;
+        Ok(gas_price)
     }
 }

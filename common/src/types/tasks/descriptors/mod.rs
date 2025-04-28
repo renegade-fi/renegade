@@ -214,10 +214,12 @@ impl TaskDescriptor {
 /// Mocks for the task descriptors
 #[cfg(any(test, feature = "mocks"))]
 pub mod mocks {
+    use alloy::{
+        primitives::keccak256,
+        signers::{local::PrivateKeySigner, SignerSync},
+    };
     use circuit_types::keychain::SecretSigningKey;
     use constants::Scalar;
-    use ethers::core::utils::keccak256;
-    use ethers::signers::Wallet as EthersWallet;
     use k256::ecdsa::SigningKey as K256SigningKey;
     use rand::thread_rng;
     use util::get_current_time_millis;
@@ -241,10 +243,10 @@ pub mod mocks {
 
         // Sign the message
         let signing_key: K256SigningKey = key.try_into().unwrap();
-        let wallet = EthersWallet::from(signing_key);
-        let sig = wallet.sign_hash(digest.into()).unwrap();
+        let wallet = PrivateKeySigner::from(signing_key);
+        let sig = wallet.sign_hash_sync(&digest).unwrap();
 
-        sig.to_vec()
+        sig.into()
     }
 
     /// Get a dummy queued task

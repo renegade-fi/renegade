@@ -39,8 +39,8 @@ renegade-crypto = { workspace = true }
 util = { workspace = true, default-features = false }
 
 # === Misc Dependencies === #
+alloy = { workspace = true }
 base64 = "0.22.1"
-ethers = { workspace = true }
 hex = "0.4"
 itertools = { workspace = true }
 num-traits = "0.2.15"

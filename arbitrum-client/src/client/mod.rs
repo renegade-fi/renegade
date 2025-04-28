@@ -22,7 +22,7 @@ use crate::{
 mod contract_interaction;
 mod event_indexing;
 
-/// A type alias for the RPC client, which is an ethers middleware stack that
+/// A type alias for the RPC client, which is an alloy middleware stack that
 /// includes a signer derived from a raw private key, and a provider that
 /// connects to the RPC endpoint over HTTP.
 pub type RenegadeProvider = DynProvider;
@@ -31,6 +31,7 @@ pub type Darkpool = DarkpoolInstance<RenegadeProvider>;
 /// A darkpool call builder type
 pub type DarkpoolCallBuilder<'a, C> = CallBuilder<&'a DynProvider, C>;
 
+/// A configuration struct for the Arbitrum client, consists of relevant
 /// contract addresses, and endpoint for setting up an RPC client, and a private
 /// key for signing transactions.
 pub struct ArbitrumClientConfig {
@@ -71,7 +72,7 @@ impl ArbitrumClientConfig {
     }
 
     /// Parses the darkpool proxy address from the configuration,
-    /// returning an [`ethers::types::Address`]
+    /// returning an [`alloy::primitives::Address`]
     fn get_darkpool_address(&self) -> Result<Address, ArbitrumClientConfigError> {
         Address::from_str(&self.darkpool_addr)
             .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
@@ -90,7 +91,8 @@ pub struct ArbitrumClient {
 
 impl ArbitrumClient {
     /// Constructs a new Arbitrum client from the given configuration
-    pub async fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
         let darkpool_address = config.get_darkpool_address()?;
         let provider = config.get_provider()?;
         let darkpool = Darkpool::new(darkpool_address, provider);

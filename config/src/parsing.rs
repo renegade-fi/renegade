@@ -2,6 +2,7 @@
 
 pub use crate::token_remaps::setup_token_remaps;
 use crate::{cli::RelayerConfig, validation::validate_config, Cli, RelayerFeeKey};
+use alloy::signers::local::PrivateKeySigner;
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use common::types::{
@@ -11,8 +12,8 @@ use common::types::{
 };
 use constants::set_bootstrap_mode;
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
-use ethers::{core::rand::thread_rng, signers::LocalWallet};
 use libp2p::{identity::Keypair, Multiaddr, PeerId};
+use rand::thread_rng;
 use rand_core::OsRng;
 use serde::Deserialize;
 use std::{env, fs, str::FromStr};
@@ -67,11 +68,8 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let admin_api_key = cli_args.admin_api_key.map(parse_symmetric_key).transpose()?;
 
     // Parse the local relayer's keys and fee configuration from the CLI
-    let arbitrum_private_keys = cli_args
-        .arbitrum_private_keys
-        .iter()
-        .map(|k| LocalWallet::from_str(k).map_err(|e| e.to_string()))
-        .collect::<Result<Vec<_>, _>>()?;
+    let private_key =
+        PrivateKeySigner::from_str(&cli_args.private_key).map_err(|e| e.to_string())?;
     let fee_key = parse_fee_key(cli_args.fee_encryption_key, cli_args.fee_decryption_key)?;
     let external_fee_addr = cli_args
         .external_fee_addr
@@ -145,7 +143,7 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         coinbase_key_name: cli_args.coinbase_key_name,
         coinbase_key_secret: cli_args.coinbase_key_secret,
         rpc_url: cli_args.rpc_url,
-        arbitrum_private_keys,
+        private_key,
         fee_key,
         eth_websocket_addr: cli_args.eth_websocket_addr,
         debug: cli_args.debug,
@@ -219,7 +217,8 @@ pub fn parse_fee_key(
             println!("{}\n", "WARN: No fee decryption key provided, generating one".yellow());
         }
 
-        let key = DecryptionKey::random(&mut thread_rng());
+        let mut rng = thread_rng();
+        let key = DecryptionKey::random(&mut rng);
         Ok(RelayerFeeKey::new_secret(key))
     }
 }

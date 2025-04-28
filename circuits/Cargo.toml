@@ -97,7 +97,7 @@ circuit-macros = { workspace = true }
 circuit-types = { workspace = true }
 constants = { workspace = true }
 renegade-crypto = { workspace = true }
-util = { workspace = true }
+util = { workspace = true, features = ["blockchain"] }
 
 # === Misc Dependencies === #
 bitvec = "1.0"

@@ -52,9 +52,6 @@ use util::{concurrency::runtime::sleep_forever_blocking, err_str};
 
 use super::error::ProofManagerError;
 
-#[cfg(feature = "proof-metrics")]
-use renegade_metrics::helpers::{decr_inflight_proofs, incr_inflight_proofs};
-
 // -------------
 // | Constants |
 // -------------
@@ -125,9 +122,6 @@ impl ProofManager {
 
     /// The main job handler, run by a thread in the pool
     fn handle_proof_job(job: ProofManagerJob) -> Result<(), ProofManagerError> {
-        #[cfg(feature = "proof-metrics")]
-        incr_inflight_proofs();
-
         let proof_bundle = match job.type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 // Prove `VALID WALLET CREATE`
@@ -178,9 +172,6 @@ impl ProofManager {
                 Self::prove_valid_fee_redemption(witness, statement)
             },
         }?;
-
-        #[cfg(feature = "proof-metrics")]
-        decr_inflight_proofs();
 
         job.response_channel
             .send(proof_bundle)

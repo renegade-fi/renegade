@@ -1,6 +1,6 @@
 //! Task descriptor for the node startup task
 
-use ethers::signers::LocalWallet;
+use alloy::signers::local::PrivateKeySigner;
 use serde::{Deserialize, Serialize};
 
 use super::{TaskDescriptor, TaskIdentifier};
@@ -24,9 +24,13 @@ pub struct NodeStartupTaskDescriptor {
 
 impl NodeStartupTaskDescriptor {
     /// Construct a new node startup task descriptor
-    pub fn new(gossip_warmup_ms: u64, keypair: &LocalWallet, needs_relayer_wallet: bool) -> Self {
+    pub fn new(
+        gossip_warmup_ms: u64,
+        keypair: &PrivateKeySigner,
+        needs_relayer_wallet: bool,
+    ) -> Self {
         let id = TaskIdentifier::new_v4();
-        let key_bytes = keypair.signer().to_bytes().to_vec();
+        let key_bytes = keypair.to_bytes().to_vec();
 
         Self { id, gossip_warmup_ms, key_bytes, needs_relayer_wallet }
     }

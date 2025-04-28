@@ -143,7 +143,7 @@ impl StateInner {
 
         let need_relayer_wallet = config.needs_relayer_wallet();
         let relayer_wallet_id =
-            derive_wallet_id(config.relayer_arbitrum_key()).map_err(StateError::InvalidUpdate)?;
+            derive_wallet_id(config.relayer_wallet_key()).map_err(StateError::InvalidUpdate)?;
         let historical_state_enabled = config.record_historical_state;
 
         if !historical_state_enabled {

@@ -5,7 +5,6 @@ edition = "2021"
 
 [features]
 mocks = ["dep:circuit-types", "common/mocks"]
-proof-metrics = ["renegade-metrics/proof-metrics"]
 
 [dependencies]
 # === Cryptography === #

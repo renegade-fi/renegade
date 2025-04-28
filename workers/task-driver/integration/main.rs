@@ -12,6 +12,8 @@ mod tests;
 
 use std::{str::FromStr, sync::Arc};
 
+use alloy::signers::local::PrivateKeySigner;
+use alloy_primitives::Address;
 use arbitrum_client::{
     client::{ArbitrumClient, ArbitrumClientConfig},
     constants::Chain,
@@ -19,11 +21,6 @@ use arbitrum_client::{
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use crossbeam::channel::Sender as CrossbeamSender;
-use ethers::{
-    middleware::Middleware,
-    signers::{LocalWallet, Signer},
-    types::Address,
-};
 use helpers::new_mock_task_driver;
 use job_types::{
     event_manager::{new_event_manager_queue, EventManagerReceiver},
@@ -68,7 +65,7 @@ struct CliArgs {
         long,
         default_value = DEFAULT_DEVNET_PKEY
     )]
-    arbitrum_pkey: String,
+    pkey: String,
     /// The location of a `deployments.json` file that contains the addresses of
     /// the deployed contracts
     #[arg(long)]
@@ -95,6 +92,8 @@ struct IntegrationTestArgs {
     permit2_addr: String,
     /// The arbitrum client that resolves to a locally running devnet node
     arbitrum_client: ArbitrumClient,
+    /// The private key of the account used for the relayer
+    pkey: PrivateKeySigner,
     /// A receiver for the network manager's work queue
     ///
     /// Held here to avoid closing the channel on `Drop`
@@ -125,6 +124,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         MockProofManager::start(job_receiver);
 
         // Create a mock arbitrum client
+        let pkey = PrivateKeySigner::from_str(&test_args.pkey).unwrap();
         let arbitrum_client = setup_arbitrum_client_mock(&test_args);
 
         // Create a mock state instance and a task driver
@@ -164,6 +164,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             erc20_addr1,
             permit2_addr,
             arbitrum_client,
+            pkey,
             _network_receiver: Arc::new(network_receiver),
             _event_receiver: Arc::new(event_receiver),
             proof_job_queue,
@@ -177,7 +178,7 @@ impl IntegrationTestArgs {
     /// Get the address of the (assumed to be only) Arbitrum account
     /// with which the relayer is configured
     pub fn wallet_address(&self) -> Address {
-        self.arbitrum_client.client().inner().signer().address()
+        self.pkey.address()
     }
 }
 
@@ -188,19 +189,19 @@ async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
 
 /// Setup a mock `ArbitrumClient` for the integration tests
 fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
-    let arb_priv_key = LocalWallet::from_str(&test_args.arbitrum_pkey).unwrap();
+    let private_key = PrivateKeySigner::from_str(&test_args.pkey).unwrap();
     let darkpool_addr =
         parse_addr_from_deployments_file(&test_args.deployments_path, DARKPOOL_PROXY_CONTRACT_KEY)
             .unwrap();
 
     // Build a client that references the darkpool
-    block_current(ArbitrumClient::new(ArbitrumClientConfig {
+    ArbitrumClient::new(ArbitrumClientConfig {
         chain: Chain::Devnet,
         darkpool_addr,
-        arb_priv_keys: vec![arb_priv_key],
+        private_key,
         rpc_url: test_args.devnet_url.clone(),
         block_polling_interval_ms: 100,
-    }))
+    })
     .unwrap()
 }
 

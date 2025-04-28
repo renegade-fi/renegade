@@ -8,6 +8,7 @@
 //! Endpoints here allow permissioned solvers, searchers, etc to "ping the pool"
 //! for consenting liquidity on a given token pair.
 
+use alloy::rpc::types::TransactionRequest;
 use circuit_types::{
     fees::{FeeTake, FeeTakeRate},
     fixed_point::FixedPoint,
@@ -18,7 +19,6 @@ use circuit_types::{
 };
 use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
-use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;
@@ -309,14 +309,14 @@ pub struct AtomicMatchApiBundle {
     /// The transfer sent by the external party
     pub send: ApiExternalAssetTransfer,
     /// The transaction which settles the match on-chain
-    pub settlement_tx: TypedTransaction,
+    pub settlement_tx: TransactionRequest,
 }
 
 impl AtomicMatchApiBundle {
     /// Create a new bundle from a `VALID MATCH SETTLE ATOMIC` bundle and a
     /// settlement transaction
     #[cfg(feature = "full-api")]
-    pub fn new(match_bundle: &AtomicMatchSettleBundle, settlement_tx: TypedTransaction) -> Self {
+    pub fn new(match_bundle: &AtomicMatchSettleBundle, settlement_tx: TransactionRequest) -> Self {
         let statement = &match_bundle.atomic_match_proof.statement;
         let match_result = statement.match_result.clone();
         let fees = statement.external_party_fees;
@@ -366,7 +366,7 @@ pub struct MalleableAtomicMatchApiBundle {
     /// The minimum amount that the external party will send
     pub min_send: ApiExternalAssetTransfer,
     /// The transaction which settles the match on-chain
-    pub settlement_tx: TypedTransaction,
+    pub settlement_tx: TransactionRequest,
 }
 
 impl MalleableAtomicMatchApiBundle {
@@ -375,7 +375,7 @@ impl MalleableAtomicMatchApiBundle {
     #[cfg(feature = "full-api")]
     pub fn new(
         match_bundle: &MalleableAtomicMatchSettleBundle,
-        settlement_tx: TypedTransaction,
+        settlement_tx: TransactionRequest,
     ) -> Self {
         let statement = &match_bundle.atomic_match_proof.statement;
         let match_result = statement.bounded_match_result.clone();

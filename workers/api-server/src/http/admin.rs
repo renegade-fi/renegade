@@ -573,7 +573,7 @@ impl TypedHandler for AdminRefreshExternalMatchFeesHandler {
             .collect();
 
         for token in tokens {
-            let addr = token.get_ethers_address();
+            let addr = token.get_alloy_address();
             let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
 
             set_external_match_fee(&token.get_addr_biguint(), fee);

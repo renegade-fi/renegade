@@ -26,6 +26,9 @@ futures = { workspace = true }
 futures-util = "0.3"
 tokio = { workspace = true }
 
+# === Ethereum === #
+alloy = { workspace = true }
+
 # === Renegade Dependencies === #
 arbitrum-client = { workspace = true }
 circuit-types = { workspace = true }
@@ -45,7 +48,6 @@ util = { workspace = true }
 # === Misc Dependencies === #
 async-trait = { workspace = true }
 base64 = "0.21"
-ethers = { workspace = true }
 itertools = "0.11"
 serde = { workspace = true }
 serde_json = { workspace = true }

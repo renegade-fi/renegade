@@ -5,9 +5,7 @@ edition = "2018"
 default-run = "renegade-relayer"
 
 [features]
-dev-metrics = ["proof-metrics"]
 metered-channels = ["util/metered-channels"]
-proof-metrics = ["proof-manager/proof-metrics"]
 
 [dependencies]
 # === Runtime + Async === #
@@ -40,7 +38,6 @@ metrics-sampler = { workspace = true }
 
 # === Misc Dependencies === #
 clap = { version = "3.2.8", features = ["derive"] }
-ethers = { workspace = true }
 lazy_static = { workspace = true }
 rustls = "0.23"
 tracing = { workspace = true }

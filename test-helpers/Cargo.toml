@@ -15,7 +15,6 @@ arbitrum = [
     "dep:circuit-types",
     "dep:common",
     "dep:constants",
-    "dep:ethers",
     "dep:num-bigint",
     "dep:k256",
     "dep:renegade-crypto",
@@ -49,7 +48,6 @@ k256 = { version = "0.13", optional = true }
 alloy = { workspace = true, optional = true }
 alloy-primitives = { workspace = true, optional = true }
 alloy-sol-types = { workspace = true, optional = true }
-ethers = { workspace = true, optional = true }
 
 # === Workspace Dependencies === # 
 arbitrum-client = { workspace = true, optional = true }

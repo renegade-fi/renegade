@@ -73,7 +73,7 @@ const CONFIG_FEE_WHITELIST: &str = "relayer-fee-whitelist";
 /// The p2p key name in the relayer config
 const CONFIG_P2P_KEY: &str = "p2p-key";
 /// The gas wallet in the relayer config
-const CONFIG_GAS_WALLET: &str = "arbitrum-pkeys";
+const CONFIG_GAS_WALLET: &str = "private-key";
 
 /// The name of the file in the s3 bucket
 const WHITELIST_FILE_NAME: &str = "fee-whitelist.json";

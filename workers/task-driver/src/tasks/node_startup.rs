@@ -7,6 +7,7 @@
 
 use std::{error::Error, fmt::Display, iter, time::Duration};
 
+use alloy::signers::{k256::ecdsa::SigningKey, local::PrivateKeySigner};
 use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use async_trait::async_trait;
 use common::types::{
@@ -21,7 +22,6 @@ use common::types::{
     },
 };
 use constants::{in_bootstrap_mode, Scalar, NATIVE_ASSET_ADDRESS};
-use ethers::signers::LocalWallet;
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
     proof_manager::ProofManagerQueue,
@@ -173,7 +173,7 @@ pub struct NodeStartupTask {
     /// Whether the relayer needs a wallet created for it or not
     pub needs_relayer_wallet: bool,
     /// The arbitrum private key
-    pub keypair: LocalWallet,
+    pub keypair: PrivateKeySigner,
     /// The arbitrum client to use for submitting transactions
     pub arbitrum_client: ArbitrumClient,
     /// A sender to the network manager's work queue
@@ -195,13 +195,14 @@ impl Task for NodeStartupTask {
     type Descriptor = NodeStartupTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        let keypair = LocalWallet::from_bytes(&descriptor.key_bytes)
+        let signing_key = SigningKey::from_slice(descriptor.key_bytes.as_slice())
             .map_err(|_| NodeStartupTaskError::Setup(ERR_INVALID_KEY.to_string()))?;
+        let pkey = PrivateKeySigner::from_signing_key(signing_key);
 
         Ok(Self {
             gossip_warmup_ms: descriptor.gossip_warmup_ms,
             needs_relayer_wallet: descriptor.needs_relayer_wallet,
-            keypair,
+            keypair: pkey,
             arbitrum_client: ctx.arbitrum_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
@@ -548,7 +549,7 @@ impl NodeStartupTask {
 
         for token in tokens {
             // Fetch the fee override from the contract
-            let addr = token.get_ethers_address();
+            let addr = token.get_alloy_address();
             let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
 
             // Write the fee into the mapping

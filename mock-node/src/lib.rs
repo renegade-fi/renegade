@@ -254,12 +254,12 @@ impl MockNodeController {
             darkpool_addr: self.config.contract_address.clone(),
             chain: self.config.chain_id,
             rpc_url: self.config.rpc_url.clone().unwrap(),
-            arb_priv_keys: self.config.arbitrum_private_keys.clone(),
+            private_key: self.config.relayer_wallet_key().clone(),
             block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
         };
 
         // Expects to be running in a Tokio runtime
-        let client = run_fut(ArbitrumClient::new(conf)).expect("Failed to create arbitrum client");
+        let client = ArbitrumClient::new(conf).expect("Failed to create arbitrum client");
         self.arbitrum_client = Some(client);
 
         self
@@ -554,7 +554,7 @@ mod test {
         let db_path = tmp_db_path();
         let conf = RelayerConfig {
             rpc_url: Some("http://localhost:1234".to_string()),
-            arbitrum_private_keys: vec![get_devnet_key()],
+            private_key: get_devnet_key(),
             raft_snapshot_path: db_path.clone(),
             db_path,
             ..Default::default()

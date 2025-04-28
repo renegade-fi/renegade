@@ -18,6 +18,9 @@ inventory = "0.3"
 libp2p = { workspace = true }
 tokio = { workspace = true }
 
+# === Ethereum === #
+alloy = { workspace = true }
+
 # === Workspace Dependencies === #
 arbitrum-client = { workspace = true }
 circuit-types = { workspace = true }
@@ -32,7 +35,6 @@ util = { workspace = true }
 # === Misc Dependencies === #
 ark-mpc = { workspace = true }
 base64 = "0.13"
-ethers = { workspace = true }
 lazy_static = { workspace = true }
 tracing = { workspace = true }
 num-bigint = "0.4"

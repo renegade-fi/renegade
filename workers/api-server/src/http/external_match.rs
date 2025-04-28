@@ -10,6 +10,10 @@
 
 use std::{sync::Arc, time::Duration};
 
+use alloy::{
+    primitives::{Address, U256},
+    rpc::types::TransactionRequest,
+};
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
@@ -24,10 +28,6 @@ use common::types::{
 };
 use constants::{
     Scalar, EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER,
-};
-use ethers::{
-    middleware::Middleware,
-    types::{transaction::eip2718::TypedTransaction, Address, U256},
 };
 use external_api::{
     bus_message::SystemBusMessage,
@@ -48,7 +48,6 @@ use num_bigint::BigUint;
 use renegade_crypto::fields::scalar_to_u128;
 use state::State;
 use system_bus::SystemBus;
-use tracing::warn;
 use util::{
     get_current_time_millis,
     hex::{biguint_from_hex_string, bytes_from_hex_string, bytes_to_hex_string},
@@ -167,26 +166,13 @@ impl ExternalMatchProcessor {
     }
 
     /// Estimate the gas for a given external match transaction
+    ///
+    /// TODO: Properly implement gas estimation for external matches
     pub(super) async fn estimate_gas(
         &self,
-        mut tx: TypedTransaction,
-    ) -> Result<U256, ApiServerError> {
-        // To estimate gas without reverts, we would need to approve the ERC20 transfers
-        // due in the transaction before estimating. This is infeasible, so we mock the
-        // sender as the _darkpool itself_, which will automatically have an approval
-        // for itself. This can still fail if a transfer exceeds the darkpool's balance,
-        // in which case we fall back to the default gas estimation below
-        let darkpool_addr = self.arbitrum_client.get_darkpool_client().address();
-        tx.set_from(darkpool_addr);
-
-        let client = self.arbitrum_client.client();
-        match client.estimate_gas(&tx, None /* block */).await {
-            Ok(gas) => Ok(gas),
-            Err(e) => {
-                warn!("gas estimation failed for external match: {e}");
-                Ok(DEFAULT_GAS_ESTIMATION.into())
-            },
-        }
+        _tx: TransactionRequest,
+    ) -> Result<u64, ApiServerError> {
+        Ok(DEFAULT_GAS_ESTIMATION)
     }
 
     // --- Order Validation & Conversion --- //
@@ -476,13 +462,13 @@ impl ExternalMatchProcessor {
         // match the base amount sold by the external party
         if is_native && order.side.is_sell() {
             let base_amount = match_bundle.atomic_match_proof.statement.match_result.base_amount;
-            settlement_tx.set_value(base_amount);
+            settlement_tx.value.replace(U256::from(base_amount));
         }
 
         // Estimate gas for the settlement tx if requested
         if do_gas_estimation {
             let gas = self.estimate_gas(settlement_tx.clone()).await?;
-            settlement_tx.set_gas(gas);
+            settlement_tx = settlement_tx.gas_limit(gas);
         }
 
         Ok(AtomicMatchApiBundle::new(&match_bundle, settlement_tx))
@@ -514,7 +500,7 @@ impl ExternalMatchProcessor {
         // Estimate gas for the settlement tx if requested
         if do_gas_estimation {
             let gas = self.estimate_gas(settlement_tx.clone()).await?;
-            settlement_tx.set_gas(gas);
+            settlement_tx = settlement_tx.gas_limit(gas);
         }
 
         Ok(MalleableAtomicMatchApiBundle::new(&match_bundle, settlement_tx))
