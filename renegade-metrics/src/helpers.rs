@@ -11,11 +11,6 @@ use crate::labels::{
     NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
 };
 
-#[cfg(feature = "tx-metrics")]
-use crate::global_metrics::IN_FLIGHT_ARBITRUM_TXS;
-#[cfg(feature = "proof-metrics")]
-use crate::global_metrics::IN_FLIGHT_PROOFS;
-
 /// Get the human-readable asset and volume of
 /// the given mint and amount.
 /// The asset is the token ticker, if it is found, otherwise
@@ -88,28 +83,4 @@ pub fn record_match_volume(res: &MatchResult, is_external_match: bool) {
 /// Record the volume of a fee settlement into the relayer's wallet
 pub fn record_relayer_fee_settlement(mint: &BigUint, amount: u128) {
     record_volume(mint, amount, FEES_COLLECTED_METRIC);
-}
-
-/// Increment the number of in-flight proofs by 1
-#[cfg(feature = "proof-metrics")]
-pub fn incr_inflight_proofs() {
-    IN_FLIGHT_PROOFS.increment(1.0);
-}
-
-/// Decrement the number of in-flight proofs by 1
-#[cfg(feature = "proof-metrics")]
-pub fn decr_inflight_proofs() {
-    IN_FLIGHT_PROOFS.decrement(1.0);
-}
-
-/// Increment the number of in-flight transactions by 1
-#[cfg(feature = "tx-metrics")]
-pub fn incr_inflight_txs() {
-    IN_FLIGHT_ARBITRUM_TXS.increment(1.0);
-}
-
-/// Decrement the number of in-flight transactions by 1
-#[cfg(feature = "tx-metrics")]
-pub fn decr_inflight_txs() {
-    IN_FLIGHT_ARBITRUM_TXS.decrement(1.0);
 }

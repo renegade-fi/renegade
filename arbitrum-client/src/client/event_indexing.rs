@@ -4,30 +4,22 @@
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 
-use alloy_sol_types::SolCall;
+use alloy::consensus::Transaction;
+use alloy::providers::{ext::DebugApi, Provider};
+use alloy::rpc::types::trace::geth::{
+    CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
+};
+use alloy::rpc::types::TransactionReceipt;
+use alloy_primitives::{Log, TxHash, U256};
+use alloy_sol_types::{SolCall, SolEventInterface};
 use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
-use ethers::contract::EthLogDecode;
-use ethers::types::{
-    CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
-    GethTraceFrame, NameOrAddress, Transaction, U256,
-};
-use ethers::{
-    middleware::Middleware,
-    types::{TransactionReceipt, TxHash},
-};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{error, info, instrument};
-use util::err_str;
 
-use crate::abi::{
-    processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
-    processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
-    MerkleInsertionFilter,
-};
+use crate::abi::Darkpool::{DarkpoolEvents, MerkleInsertion, MerkleOpeningNode};
 use crate::constants::{
     KNOWN_SELECTORS, PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
     PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
@@ -39,18 +31,17 @@ use crate::contract_types::{
     ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
     ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
 };
-use crate::conversion::{
-    alloy_u256_to_ethers_u256, scalar_to_u256 as scalar_to_alloy_u256, to_circuit_fixed_point,
-};
+use crate::conversion::{scalar_to_u256, to_circuit_fixed_point, u256_to_scalar};
 use crate::helpers::{
     deserialize_calldata, parse_shares_from_process_malleable_atomic_match_settle,
     parse_shares_from_process_malleable_atomic_match_settle_with_receiver,
 };
 use crate::{
-    abi::{
-        newWalletCall, processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall,
-        settleOnlineRelayerFeeCall, updateWalletCall, DarkpoolContractEvents,
-        MerkleOpeningNodeFilter, WalletUpdatedFilter,
+    abi::Darkpool::{
+        newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
+        processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
+        processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
+        updateWalletCall,
     },
     constants::SELECTOR_LEN,
     errors::ArbitrumClientError,
@@ -67,6 +58,8 @@ use super::ArbitrumClient;
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
+/// The error message emitted when a TX hash is not found in a log
+const ERR_NO_TX_HASH: &str = "no tx hash for log";
 
 impl ArbitrumClient {
     /// Return the hash of the transaction that last indexed secret shares for
@@ -81,18 +74,17 @@ impl ArbitrumClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, ArbitrumClientError> {
-        let darkpool_client = self.get_darkpool_client();
+        let darkpool_client = self.darkpool_client();
         let events = darkpool_client
-            .event::<WalletUpdatedFilter>()
-            .address(darkpool_client.address().into())
-            .topic1(scalar_to_u256(&public_blinder_share))
+            .WalletUpdated_filter()
+            .topic1(scalar_to_u256(public_blinder_share))
             .from_block(self.deploy_block)
-            .query_with_meta()
+            .query()
             .await
-            .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
+            .map_err(ArbitrumClientError::event_querying)?;
 
-        let tx_hash = events.last().map(|(_, meta)| meta.transaction_hash);
-
+        // Fetch the tx hash from the latest event
+        let tx_hash = events.last().map(|(_, meta)| meta.transaction_hash.expect(ERR_NO_TX_HASH));
         if let Some(tx_hash) = tx_hash {
             tracing::Span::current().record("tx_hash", format!("{:#x}", tx_hash));
         }
@@ -111,8 +103,7 @@ impl ArbitrumClient {
         let (index, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
         let leaf_index = BigUint::from(index);
         let tx: TransactionReceipt = self
-            .get_darkpool_client()
-            .client()
+            .provider()
             .get_transaction_receipt(tx)
             .await
             .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
@@ -124,23 +115,20 @@ impl ArbitrumClient {
 
         // Parse the Merkle path from the transaction logs
         let mut all_insertion_events = vec![];
-        for eth_log in tx.logs.into_iter() {
-            match DarkpoolContractEvents::decode_log(&eth_log.into()) {
-                Ok(DarkpoolContractEvents::MerkleOpeningNodeFilter(MerkleOpeningNodeFilter {
+        for log in tx.logs().iter().cloned().map(Log::from) {
+            match DarkpoolEvents::decode_log(&log).map(|l| l.data) {
+                Ok(DarkpoolEvents::MerkleOpeningNode(MerkleOpeningNode {
                     height: depth,
                     new_value,
                     ..
                 })) => {
-                    all_insertion_events.push((depth, u256_to_scalar(&new_value)));
+                    all_insertion_events.push((depth, u256_to_scalar(new_value)));
                 },
 
                 // Track the number of Merkle insertions in the tx, so that we may properly find our
                 // commitment in the log stream
-                Ok(DarkpoolContractEvents::MerkleInsertionFilter(MerkleInsertionFilter {
-                    value,
-                    ..
-                })) => {
-                    if u256_to_scalar(&value) == commitment {
+                Ok(DarkpoolEvents::MerkleInsertion(MerkleInsertion { value, .. })) => {
+                    if u256_to_scalar(value) == commitment {
                         insertion_idx = n_insertions;
                     }
 
@@ -175,18 +163,17 @@ impl ArbitrumClient {
         commitment: Scalar,
     ) -> Result<(u128, TxHash), ArbitrumClientError> {
         let events = self
-            .get_darkpool_client()
-            .event::<MerkleInsertionFilter>()
-            .address(self.get_darkpool_client().address().into())
-            .topic2(scalar_to_u256(&commitment))
+            .darkpool_client()
+            .MerkleInsertion_filter()
+            .topic2(scalar_to_u256(commitment))
             .from_block(self.deploy_block)
-            .query_with_meta()
+            .query()
             .await
-            .map_err(|e| ArbitrumClientError::EventQuerying(e.to_string()))?;
+            .map_err(ArbitrumClientError::event_querying)?;
 
         events
             .last()
-            .map(|(event, meta)| (event.index, meta.transaction_hash))
+            .map(|(event, meta)| (event.index, meta.transaction_hash.expect(ERR_NO_TX_HASH)))
             .ok_or(ArbitrumClientError::CommitmentNotFound)
     }
 
@@ -202,15 +189,14 @@ impl ArbitrumClient {
             .await?
             .ok_or(ArbitrumClientError::BlinderNotFound)?;
 
-        let tx: Transaction = self
-            .get_darkpool_client()
-            .client()
-            .get_transaction(tx_hash)
+        let tx = self
+            .provider()
+            .get_transaction_by_hash(tx_hash)
             .await
-            .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
+            .map_err(ArbitrumClientError::tx_querying)?
             .ok_or(ArbitrumClientError::TxNotFound(tx_hash.to_string()))?;
 
-        let calldata: Vec<u8> = tx.input.to_vec();
+        let calldata: Vec<u8> = tx.input().to_vec();
         let selector: [u8; 4] = calldata[..SELECTOR_LEN].try_into().unwrap();
         if KNOWN_SELECTORS.contains(&selector) {
             Self::parse_shares_from_selector_and_calldata(selector, &calldata, public_blinder_share)
@@ -250,15 +236,14 @@ impl ArbitrumClient {
                     let call =
                         processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
                     Self::parse_external_match_from_malleable(
-                        alloy_u256_to_ethers_u256(call.base_amount),
+                        call.base_amount,
                         &call.valid_match_settle_statement,
                     )
                 },
                 PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR => {
                     let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
-                    let base = alloy_u256_to_ethers_u256(call.base_amount);
                     Self::parse_external_match_from_malleable(
-                        base,
+                        call.base_amount,
                         &call.valid_match_settle_statement,
                     )
                 },
@@ -371,10 +356,10 @@ impl ArbitrumClient {
 
         // Compute the quote amount from the price and the base amount
         let price = to_circuit_fixed_point(&match_res.price);
-        let base_scalar = u256_to_scalar(&base_amount);
+        let base_scalar = u256_to_scalar(base_amount);
         let quote_scalar = (price * base_scalar).floor();
-        let base_amount = scalar_to_alloy_u256(base_scalar);
-        let quote_amount = scalar_to_alloy_u256(quote_scalar);
+        let base_amount = scalar_to_u256(base_scalar);
+        let quote_amount = scalar_to_u256(quote_scalar);
 
         Ok(ExternalMatchResult {
             base_mint: match_res.base_mint,
@@ -406,17 +391,17 @@ impl ArbitrumClient {
             ..Default::default()
         };
 
-        self.client()
+        self.provider()
             .debug_trace_transaction(tx_hash, options)
             .await
-            .map_err(err_str!(ArbitrumClientError::TxQuerying))
+            .map_err(ArbitrumClientError::tx_querying)
     }
 
     /// Find all darkpool sub-calls in a call trace
     fn find_darkpool_subcalls(&self, trace: &GethTrace) -> Vec<CallFrame> {
-        let darkpool = self.get_darkpool_client().address();
+        let darkpool = self.darkpool_addr();
         let global_call_frame = match trace {
-            GethTrace::Known(GethTraceFrame::CallTracer(frame)) => frame,
+            GethTrace::CallTracer(frame) => frame.clone(),
             _ => return vec![],
         };
 
@@ -424,16 +409,14 @@ impl ArbitrumClient {
         let mut darkpool_calls = vec![];
         let mut calls = VecDeque::from([global_call_frame]);
         while let Some(call) = calls.pop_front() {
-            match call.to {
-                Some(NameOrAddress::Address(addr)) if addr == darkpool => {
-                    darkpool_calls.push(call.clone());
-                },
-                _ => {},
+            if let Some(to) = call.to
+                && to == darkpool
+            {
+                darkpool_calls.push(call.clone());
             }
 
-            if let Some(sub_calls) = &call.calls {
-                calls.extend(sub_calls);
-            }
+            // Add the sub-calls to the queue
+            calls.extend(call.calls);
         }
 
         darkpool_calls
