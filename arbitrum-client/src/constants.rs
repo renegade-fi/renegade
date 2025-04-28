@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
-use crate::abi::{
+use crate::abi::Darkpool::{
     newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
     processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
     processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,

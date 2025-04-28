@@ -8,7 +8,6 @@ default-run = "renegade-relayer"
 dev-metrics = ["proof-metrics"]
 metered-channels = ["util/metered-channels"]
 proof-metrics = ["proof-manager/proof-metrics"]
-tx-metrics = ["arbitrum-client/tx-metrics"]
 
 [dependencies]
 # === Runtime + Async === #

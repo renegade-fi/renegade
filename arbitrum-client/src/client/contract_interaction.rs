@@ -1,6 +1,10 @@
 //! Defines `ArbitrumClient` helpers that allow for interacting with the
 //! darkpool contract
 
+use alloy::consensus::TypedTransaction;
+use alloy::primitives::{Address, Bytes, U256};
+use alloy::rpc::types::TransactionReceipt;
+use alloy_contract::CallDecoder;
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
 };
@@ -18,22 +22,10 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::Scalar;
-use ethers::{
-    abi::Detokenize,
-    contract::ContractCall,
-    providers::Middleware,
-    types::{
-        transaction::eip2718::TypedTransaction, Address, BlockNumber, Bytes, TransactionReceipt,
-        U256,
-    },
-};
-use renegade_crypto::fields::{scalar_to_u256, u256_to_scalar};
 use tracing::{info, instrument};
-use util::{err_str, telemetry::helpers::backfill_trace_field};
+use util::telemetry::helpers::backfill_trace_field;
 
-#[cfg(feature = "tx-metrics")]
-use renegade_metrics::helpers::{decr_inflight_txs, incr_inflight_txs};
-
+use crate::conversion::{scalar_to_u256, u256_to_scalar};
 use crate::{
     contract_types::MatchPayload,
     conversion::{
@@ -50,12 +42,10 @@ use crate::{
     helpers::serialize_calldata,
 };
 
-use super::{ArbitrumClient, MiddlewareStack};
+use super::{ArbitrumClient, DarkpoolCallBuilder};
 
-/// The number of retries to attempt when polling a pending transaction for
-/// a receipt. The polling interval on a pending transaction is exactly the
-/// interval specified in the `ArbitrumClientConfig`
-const TX_RECEIPT_POLL_RETRIES: usize = 20;
+/// The error message emitted when building a typed tx fails
+const ERR_BUILD_TX: &str = "failed to build typed tx";
 
 impl ArbitrumClient {
     // -----------
@@ -65,24 +55,24 @@ impl ArbitrumClient {
     /// Get the current Merkle root in the contract
     #[instrument(skip_all, err)]
     pub async fn get_merkle_root(&self) -> Result<Scalar, ArbitrumClientError> {
-        self.get_darkpool_client()
-            .get_root()
+        self.darkpool_client()
+            .getRoot()
             .call()
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
-            .map(|r| u256_to_scalar(&r))
+            .map_err(ArbitrumClientError::contract_interaction)
+            .map(u256_to_scalar)
     }
 
     /// Get the fee charged by the contract
     #[instrument(skip_all, err)]
     pub async fn get_protocol_fee(&self) -> Result<FixedPoint, ArbitrumClientError> {
         // The contract returns the repr of the fee as a u256
-        self.get_darkpool_client()
-            .get_fee()
+        self.darkpool_client()
+            .getFee()
             .call()
             .await
-            .map_err(err_str!(ArbitrumClientError::ContractInteraction))
-            .map(|r| FixedPoint::from_repr(u256_to_scalar(&r)))
+            .map_err(ArbitrumClientError::contract_interaction)
+            .map(|r| FixedPoint::from_repr(u256_to_scalar(r)))
     }
 
     /// Get the external match fee override for the given mint
@@ -91,25 +81,25 @@ impl ArbitrumClient {
         &self,
         mint: Address,
     ) -> Result<FixedPoint, ArbitrumClientError> {
-        self.get_darkpool_client()
-            .get_external_match_fee_for_asset(mint)
+        self.darkpool_client()
+            .getExternalMatchFeeForAsset(mint)
             .call()
             .await
-            .map_err(err_str!(ArbitrumClientError::ContractInteraction))
-            .map(|r| FixedPoint::from_repr(u256_to_scalar(&r)))
+            .map_err(ArbitrumClientError::contract_interaction)
+            .map(|r| FixedPoint::from_repr(u256_to_scalar(r)))
     }
 
     /// Get the public encryption key used for protocol fees
     #[instrument(skip_all, err)]
     pub async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, ArbitrumClientError> {
         let pubkey = self
-            .get_darkpool_client()
-            .get_pubkey()
+            .darkpool_client()
+            .getPubkey()
             .call()
             .await
-            .map_err(err_str!(ArbitrumClientError::ContractInteraction))?;
+            .map_err(ArbitrumClientError::contract_interaction)?;
 
-        Ok(EncryptionKey { x: u256_to_scalar(&pubkey[0]), y: u256_to_scalar(&pubkey[1]) })
+        Ok(EncryptionKey { x: u256_to_scalar(pubkey[0]), y: u256_to_scalar(pubkey[1]) })
     }
 
     /// Check whether the given Merkle root is a valid historical root
@@ -118,11 +108,11 @@ impl ArbitrumClient {
         &self,
         root: MerkleRoot,
     ) -> Result<bool, ArbitrumClientError> {
-        self.get_darkpool_client()
-            .root_in_history(scalar_to_u256(&root))
+        self.darkpool_client()
+            .rootInHistory(scalar_to_u256(root))
             .call()
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
+            .map_err(ArbitrumClientError::contract_interaction)
     }
 
     /// Check whether the given nullifier is used
@@ -133,11 +123,11 @@ impl ArbitrumClient {
         &self,
         nullifier: Nullifier,
     ) -> Result<bool, ArbitrumClientError> {
-        self.get_darkpool_client()
-            .is_nullifier_spent(scalar_to_u256(&nullifier))
+        self.darkpool_client()
+            .isNullifierSpent(scalar_to_u256(nullifier))
             .call()
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))
+            .map_err(ArbitrumClientError::contract_interaction)
     }
 
     /// Check whether the given public blinder is used
@@ -148,12 +138,12 @@ impl ArbitrumClient {
         &self,
         blinder: Scalar,
     ) -> Result<bool, ArbitrumClientError> {
-        let blinder_u256 = scalar_to_u256(&blinder);
-        self.get_darkpool_client()
-            .is_public_blinder_used(blinder_u256)
+        let blinder_u256 = scalar_to_u256(blinder);
+        self.darkpool_client()
+            .isPublicBlinderUsed(blinder_u256)
             .call()
             .await
-            .map_err(err_str!(ArbitrumClientError::ContractInteraction))
+            .map_err(ArbitrumClientError::contract_interaction)
     }
 
     // -----------
@@ -180,12 +170,10 @@ impl ArbitrumClient {
         let contract_statement = to_contract_valid_wallet_create_statement(statement);
         let valid_wallet_create_statement_calldata = serialize_calldata(&contract_statement)?;
 
-        let receipt = self
-            .send_tx(
-                self.get_darkpool_client()
-                    .new_wallet(proof_calldata, valid_wallet_create_statement_calldata),
-            )
-            .await?;
+        let call = self
+            .darkpool_client()
+            .newWallet(proof_calldata, valid_wallet_create_statement_calldata);
+        let receipt = self.send_tx(call).await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -220,14 +208,13 @@ impl ArbitrumClient {
             transfer_auth.map(to_contract_transfer_aux_data).transpose()?.unwrap_or_default();
         let transfer_aux_data_calldata = serialize_calldata(&contract_transfer_aux_data)?;
 
-        let receipt = self
-            .send_tx(self.get_darkpool_client().update_wallet(
-                proof_calldata,
-                valid_wallet_update_statement_calldata,
-                wallet_commitment_signature.into(),
-                transfer_aux_data_calldata,
-            ))
-            .await?;
+        let call = self.darkpool_client().updateWallet(
+            proof_calldata,
+            valid_wallet_update_statement_calldata,
+            wallet_commitment_signature.into(),
+            transfer_aux_data_calldata,
+        );
+        let receipt = self.send_tx(call).await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -314,15 +301,14 @@ impl ArbitrumClient {
         let match_link_proofs_calldata = serialize_calldata(&match_link_proofs)?;
 
         // Call `process_match_settle` on darkpool contract
-        let receipt = self
-            .send_tx(self.get_darkpool_client().process_match_settle(
-                party_0_match_payload_calldata,
-                party_1_match_payload_calldata,
-                valid_match_settle_statement_calldata,
-                match_proofs_calldata,
-                match_link_proofs_calldata,
-            ))
-            .await?;
+        let call = self.darkpool_client().processMatchSettle(
+            party_0_match_payload_calldata,
+            party_1_match_payload_calldata,
+            valid_match_settle_statement_calldata,
+            match_proofs_calldata,
+            match_link_proofs_calldata,
+        );
+        let receipt = self.send_tx(call).await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -405,24 +391,28 @@ impl ArbitrumClient {
         match_link_proofs_calldata: Bytes,
     ) -> TypedTransaction {
         if let Some(receiver) = receiver {
-            self.get_darkpool_client()
-                .process_atomic_match_settle_with_receiver(
+            self.darkpool_client()
+                .processAtomicMatchSettleWithReceiver(
                     receiver,
                     internal_party_match_payload_calldata,
                     valid_match_settle_atomic_statement_calldata,
                     match_proofs_calldata,
                     match_link_proofs_calldata,
                 )
-                .tx
+                .into_transaction_request()
+                .build_typed_tx()
+                .expect(ERR_BUILD_TX)
         } else {
-            self.get_darkpool_client()
-                .process_atomic_match_settle(
+            self.darkpool_client()
+                .processAtomicMatchSettle(
                     internal_party_match_payload_calldata,
                     valid_match_settle_atomic_statement_calldata,
                     match_proofs_calldata,
                     match_link_proofs_calldata,
                 )
-                .tx
+                .into_transaction_request()
+                .build_typed_tx()
+                .expect(ERR_BUILD_TX)
         }
     }
 
@@ -500,8 +490,8 @@ impl ArbitrumClient {
         match_link_proofs_calldata: Bytes,
     ) -> TypedTransaction {
         if let Some(receiver) = receiver {
-            self.get_darkpool_client()
-                .process_malleable_atomic_match_settle_with_receiver(
+            self.darkpool_client()
+                .processMalleableAtomicMatchSettleWithReceiver(
                     base_amount,
                     receiver,
                     internal_party_match_payload_calldata,
@@ -509,17 +499,21 @@ impl ArbitrumClient {
                     match_proofs_calldata,
                     match_link_proofs_calldata,
                 )
-                .tx
+                .into_transaction_request()
+                .build_typed_tx()
+                .expect(ERR_BUILD_TX)
         } else {
-            self.get_darkpool_client()
-                .process_malleable_atomic_match_settle(
+            self.darkpool_client()
+                .processMalleableAtomicMatchSettle(
                     base_amount,
                     internal_party_match_payload_calldata,
                     valid_match_settle_atomic_statement_calldata,
                     match_proofs_calldata,
                     match_link_proofs_calldata,
                 )
-                .tx
+                .into_transaction_request()
+                .build_typed_tx()
+                .expect(ERR_BUILD_TX)
         }
     }
 
@@ -546,13 +540,12 @@ impl ArbitrumClient {
         let valid_relayer_fee_settlement_statement_calldata =
             serialize_calldata(&contract_statement)?;
 
-        let receipt = self
-            .send_tx(self.get_darkpool_client().settle_online_relayer_fee(
-                proof_calldata,
-                valid_relayer_fee_settlement_statement_calldata,
-                relayer_wallet_commitment_signature.into(),
-            ))
-            .await?;
+        let call = self.darkpool_client().settleOnlineRelayerFee(
+            proof_calldata,
+            valid_relayer_fee_settlement_statement_calldata,
+            relayer_wallet_commitment_signature.into(),
+        );
+        let receipt = self.send_tx(call).await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -582,12 +575,10 @@ impl ArbitrumClient {
         let valid_offline_fee_settlement_statement_calldata =
             serialize_calldata(&contract_statement)?;
 
-        let receipt = self
-            .send_tx(self.get_darkpool_client().settle_offline_fee(
-                proof_calldata,
-                valid_offline_fee_settlement_statement_calldata,
-            ))
-            .await?;
+        let call = self
+            .darkpool_client()
+            .settleOfflineFee(proof_calldata, valid_offline_fee_settlement_statement_calldata);
+        let receipt = self.send_tx(call).await?;
 
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
@@ -618,7 +609,7 @@ impl ArbitrumClient {
         let valid_fee_redemption_statement_calldata = serialize_calldata(&contract_statement)?;
 
         let receipt = self
-            .send_tx(self.get_darkpool_client().redeem_fee(
+            .send_tx(self.darkpool_client().redeemFee(
                 proof_calldata,
                 valid_fee_redemption_statement_calldata,
                 recipient_wallet_commitment_signature.into(),
@@ -637,44 +628,22 @@ impl ArbitrumClient {
     // -----------
 
     /// Sends a transaction, awaiting its confirmation and returning the receipt
-    pub async fn send_tx(
+    pub async fn send_tx<C: CallDecoder>(
         &self,
-        tx: ContractCall<MiddlewareStack, impl Detokenize>,
+        tx: DarkpoolCallBuilder<'_, C>,
     ) -> Result<TransactionReceipt, ArbitrumClientError> {
-        #[cfg(feature = "tx-metrics")]
-        incr_inflight_txs();
-
-        // Set the gas price to 2x the latest basefee for simplicity
-        let latest_block = self
-            .client()
-            .get_block(BlockNumber::Latest)
-            .await
-            .map_err(err_str!(ArbitrumClientError::Rpc))?
-            .ok_or(ArbitrumClientError::Rpc("No latest block found".to_string()))?;
-
-        let latest_basefee = latest_block
-            .base_fee_per_gas
-            .ok_or(ArbitrumClientError::Rpc("No basefee found".to_string()))?;
-
-        let tx = tx.gas_price(latest_basefee * 2);
-
         let receipt = tx
             .send()
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .retries(TX_RECEIPT_POLL_RETRIES)
+            .map_err(ArbitrumClientError::contract_interaction)?
+            .get_receipt()
             .await
-            .map_err(|e| ArbitrumClientError::ContractInteraction(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxDropped)?;
-
-        #[cfg(feature = "tx-metrics")]
-        decr_inflight_txs();
+            .map_err(ArbitrumClientError::contract_interaction)?;
 
         // Check for failure
-        let status = receipt.status.expect("status is `Some` after EIP-658");
-        if status.is_zero() {
+        if !receipt.status() {
             let error_msg = format!("tx ({:#x}) failed with status 0", receipt.transaction_hash);
-            return Err(ArbitrumClientError::ContractInteraction(error_msg));
+            return Err(ArbitrumClientError::contract_interaction(error_msg));
         }
 
         Ok(receipt)

@@ -39,10 +39,28 @@ pub enum ArbitrumClientError {
 }
 
 impl ArbitrumClientError {
+    /// Create a new contract interaction error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn contract_interaction<T: ToString>(msg: T) -> Self {
+        Self::ContractInteraction(msg.to_string())
+    }
+
     /// Create a new event querying error
     #[allow(clippy::needless_pass_by_value)]
     pub fn event_querying<T: ToString>(msg: T) -> Self {
         Self::EventQuerying(msg.to_string())
+    }
+
+    /// Create a new RPC error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn rpc<T: ToString>(msg: T) -> Self {
+        Self::Rpc(msg.to_string())
+    }
+
+    /// Create a new transaction querying error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn tx_querying<T: ToString>(msg: T) -> Self {
+        Self::TxQuerying(msg.to_string())
     }
 }
 

@@ -18,13 +18,13 @@ mod helpers;
 use std::str::FromStr;
 
 use ::constants::Scalar;
+use alloy::signers::local::PrivateKeySigner;
 use arbitrum_client::{
     client::{ArbitrumClient, ArbitrumClientConfig},
     constants::Chain,
 };
 use circuit_types::SizedWalletShare;
 use clap::Parser;
-use ethers::signers::LocalWallet;
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -112,11 +112,11 @@ impl From<CliArgs> for IntegrationTestArgs {
         // We block on the client creation so that we can match the (synchronous)
         // function signature of `From`, which is assumed to be implemented in
         // the integration test harness
-        let arb_priv_key = LocalWallet::from_str(&test_args.private_key).unwrap();
+        let private_key = PrivateKeySigner::from_str(&test_args.private_key).unwrap();
         let client = block_current(ArbitrumClient::new(ArbitrumClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
-            arb_priv_keys: vec![arb_priv_key],
+            private_key,
             rpc_url: test_args.rpc_url,
             block_polling_interval_ms: 100,
         }))

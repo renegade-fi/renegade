@@ -1,6 +1,6 @@
 //! Various helpers for Arbitrum client execution
 
-use alloy::primitives::U256;
+use alloy::primitives::{Bytes, U256};
 use alloy_sol_types::SolCall;
 use circuit_types::{
     elgamal::{BabyJubJubPoint, ElGamalCiphertext},
@@ -10,12 +10,11 @@ use circuit_types::{
     Amount, SizedWalletShare,
 };
 use constants::Scalar;
-use ethers::types::Bytes;
 use serde::{Deserialize, Serialize};
 use util::matching_engine::apply_match_to_shares;
 
 use crate::{
-    abi::{
+    abi::Darkpool::{
         newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
         processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
         processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,

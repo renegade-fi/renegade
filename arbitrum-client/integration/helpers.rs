@@ -69,7 +69,7 @@ pub async fn setup_pre_allocated_state(client: &mut ArbitrumClient) -> Result<Pr
 pub async fn clear_merkle(client: &ArbitrumClient) -> Result<()> {
     warn!("Clearing Merkle contract state");
     client
-        .send_tx(client.get_darkpool_client().clear_merkle())
+        .send_tx(client.darkpool_client().clearMerkle())
         .await
         .map(|_| ())
         .map_err(|e| eyre!(e.to_string()))

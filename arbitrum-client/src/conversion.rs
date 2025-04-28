@@ -34,7 +34,6 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
-use ethers::types::U256 as EthersU256;
 use num_bigint::BigUint;
 use util::hex::biguint_to_hex_string;
 
@@ -581,23 +580,9 @@ pub fn scalar_to_u256(scalar: Scalar) -> U256 {
 }
 
 /// Converts an alloy `U256` to a `Scalar`
-pub fn alloy_u256_to_scalar(u256: U256) -> Scalar {
+pub fn u256_to_scalar(u256: U256) -> Scalar {
     let bytes = u256.to_be_bytes_vec();
     Scalar::from_be_bytes_mod_order(&bytes)
-}
-
-/// Convert an ethers `U256` to an alloy `U256`
-///
-/// TODO: Remove this when we transition to alloy entirely
-pub fn ethers_u256_to_alloy_u256(u256: EthersU256) -> U256 {
-    U256::from_limbs(u256.0)
-}
-
-/// Convert an alloy `U256` to an ethers `U256`
-///
-/// TODO: Remove this when we transition to alloy entirely
-pub fn alloy_u256_to_ethers_u256(u256: U256) -> EthersU256 {
-    EthersU256(u256.into_limbs())
 }
 
 /// Convert a [`FixedPoint`] to its corresponding smart contract type

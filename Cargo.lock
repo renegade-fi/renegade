@@ -390,7 +390,9 @@ dependencies = [
  "alloy-primitives 1.0.0",
  "alloy-pubsub",
  "alloy-rpc-client",
+ "alloy-rpc-types-debug",
  "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
  "alloy-signer",
  "alloy-sol-types 1.0.0",
  "alloy-transport",
@@ -494,6 +496,7 @@ checksum = "3bf27873220877cb15125eb6eec2f86c6e9b41473aca85844bd3d9d755bfc0a0"
 dependencies = [
  "alloy-primitives 1.0.0",
  "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
  "alloy-serde",
  "serde",
 ]
@@ -507,6 +510,16 @@ dependencies = [
  "alloy-consensus-any",
  "alloy-rpc-types-eth",
  "alloy-serde",
+]
+
+[[package]]
+name = "alloy-rpc-types-debug"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05525519bd7f37f98875354f0b3693d3ad3c7a7f067e3b8946777920be15cb5b"
+dependencies = [
+ "alloy-primitives 1.0.0",
+ "serde",
 ]
 
 [[package]]
@@ -524,6 +537,20 @@ dependencies = [
  "alloy-serde",
  "alloy-sol-types 1.0.0",
  "itertools 0.13.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "alloy-rpc-types-trace"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bccbe4594eaa2d69d21fa0b558c44e36202e599eb209da70b405415cb37a354"
+dependencies = [
+ "alloy-primitives 1.0.0",
+ "alloy-rpc-types-eth",
+ "alloy-serde",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -929,6 +956,7 @@ name = "arbitrum-client"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-contract",
  "alloy-primitives 1.0.0",
  "alloy-sol-types 1.0.0",
  "ark-bn254",
@@ -940,7 +968,6 @@ dependencies = [
  "colored",
  "common 0.1.0",
  "constants 0.1.0",
- "ethers",
  "eyre",
  "inventory",
  "itertools 0.12.1",
