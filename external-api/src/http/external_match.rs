@@ -8,6 +8,7 @@
 //! Endpoints here allow permissioned solvers, searchers, etc to "ping the pool"
 //! for consenting liquidity on a given token pair.
 
+use alloy::consensus::TypedTransaction;
 use circuit_types::{
     fees::{FeeTake, FeeTakeRate},
     fixed_point::FixedPoint,
@@ -18,7 +19,6 @@ use circuit_types::{
 };
 use common::types::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
-use ethers::types::transaction::eip2718::TypedTransaction;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use renegade_crypto::fields::scalar_to_u128;

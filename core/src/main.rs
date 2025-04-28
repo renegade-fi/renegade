@@ -157,10 +157,9 @@ async fn main() -> Result<(), CoordinatorError> {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.clone().expect("rpc url not set"),
-        arb_priv_keys: args.arbitrum_private_keys.clone(),
+        private_key: args.private_key.clone(),
         block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
     })
-    .await
     .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
 
     // Construct an arbitrum client for the on-chain event listener worker
@@ -168,10 +167,9 @@ async fn main() -> Result<(), CoordinatorError> {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
-        arb_priv_keys: args.arbitrum_private_keys.clone(),
+        private_key: args.private_key.clone(),
         block_polling_interval_ms: EVENT_FILTER_POLLING_INTERVAL_MS,
     })
-    .await
     .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
 
     // ----------------

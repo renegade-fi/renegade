@@ -1,6 +1,7 @@
 //! Test helpers for constructing auth data for external transfers
 //! Much of this is ported over from https://github.com/renegade-fi/renegade-contracts/blob/main/integration/src/utils.rs
 
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_sol_types::{
     eip712_domain,
@@ -16,9 +17,7 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
-use ethers::{signers::Wallet, types::H256};
 use eyre::Result;
-use k256::ecdsa::SigningKey;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
@@ -31,7 +30,7 @@ const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
 
 /// Generates an external transfer augmented with auth data
 pub fn gen_transfer_with_auth(
-    wallet: &Wallet<SigningKey>,
+    wallet: &PrivateKeySigner,
     pk_root: &PublicSigningKey,
     permit2_address: Address,
     darkpool_address: Address,
@@ -53,13 +52,13 @@ pub fn gen_transfer_with_auth(
 
 /// Generate a withdrawal payload with proper auth data
 pub fn gen_withdrawal_with_auth(
-    wallet: &Wallet<SigningKey>,
+    wallet: &PrivateKeySigner,
     transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth> {
     let contract_transfer = to_contract_external_transfer(&transfer)?;
     let transfer_bytes = serialize_calldata(&contract_transfer)?;
-    let transfer_hash = H256::from_slice(keccak256(&transfer_bytes).as_slice());
-    let transfer_signature = wallet.sign_hash(transfer_hash)?.to_vec();
+    let transfer_hash = B256::from_slice(keccak256(&transfer_bytes).as_slice());
+    let transfer_signature = wallet.sign_hash_sync(&transfer_hash)?.as_bytes().to_vec();
 
     Ok(ExternalTransferWithAuth::withdrawal(
         transfer.account_addr,
@@ -71,7 +70,7 @@ pub fn gen_withdrawal_with_auth(
 
 /// Generate a deposit payload with proper auth data
 pub fn gen_deposit_with_auth(
-    wallet: &Wallet<SigningKey>,
+    wallet: &PrivateKeySigner,
     pk_root: &PublicSigningKey,
     transfer: ExternalTransfer,
     permit2_address: Address,
@@ -102,7 +101,7 @@ pub fn gen_deposit_with_auth(
 
 /// Generates a permit payload for the given token and amount
 fn gen_permit_payload(
-    wallet: &Wallet<SigningKey>,
+    wallet: &PrivateKeySigner,
     token: Address,
     amount: U256,
     pk_root: &PublicSigningKey,
@@ -137,10 +136,8 @@ fn gen_permit_payload(
         verifying_contract: permit2_address,
     );
 
-    let msg_hash =
-        H256::from_slice(permit_signing_hash(&signable_permit, &permit_domain).as_slice());
-
-    let signature = wallet.sign_hash(msg_hash)?.to_vec();
+    let msg_hash = permit_signing_hash(&signable_permit, &permit_domain);
+    let signature = wallet.sign_hash_sync(&msg_hash)?.as_bytes().to_vec();
     Ok((nonce, deadline, signature))
 }
 

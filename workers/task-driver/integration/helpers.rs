@@ -2,7 +2,7 @@
 
 use std::str::FromStr;
 
-use alloy_primitives::Address as AlloyAddress;
+use alloy_primitives::Address;
 use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{keychain::PublicSigningKey, transfers::ExternalTransfer};
 use common::{
@@ -15,7 +15,6 @@ use common::{
     worker::Worker,
 };
 use constants::Scalar;
-use ethers::{middleware::Middleware, types::Address};
 use eyre::Result;
 use job_types::{
     event_manager::EventManagerQueue,
@@ -44,7 +43,7 @@ use crate::IntegrationTestArgs;
 
 /// Parse a biguint from an H160 address
 pub fn biguint_from_address(val: Address) -> BigUint {
-    BigUint::from_bytes_be(val.as_bytes())
+    BigUint::from_bytes_be(val.as_ref())
 }
 
 // ---------
@@ -201,13 +200,10 @@ pub async fn authorize_transfer(
 ) -> Result<ExternalTransferWithAuth> {
     let client = &test_args.arbitrum_client;
     let chain_id = client.chain_id().await.unwrap();
-    let permit2_address = AlloyAddress::from_str(&test_args.permit2_addr)?;
-    let darkpool_address =
-        AlloyAddress::from_slice(client.get_darkpool_client().address().as_bytes());
+    let permit2_address = Address::from_str(&test_args.permit2_addr)?;
+    let darkpool_address = client.darkpool_addr();
 
-    let eth_client = client.get_darkpool_client().client(); // Assigned to avoid dropping
-    let signer = eth_client.inner().signer();
-
+    let signer = &test_args.pkey;
     gen_transfer_with_auth(signer, pk_root, permit2_address, darkpool_address, chain_id, transfer)
 }
 

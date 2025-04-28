@@ -3,9 +3,6 @@ name = "renegade-metrics"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-proof-metrics = []
-
 [dependencies]
 # === Telemetry === #
 tracing = { workspace = true }

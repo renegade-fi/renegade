@@ -286,9 +286,10 @@ impl PayRelayerFeeTask {
             .old_recipient_wallet
             .sign_commitment(new_wallet_comm)
             .map_err(err_str!(PayRelayerFeeTaskError::Signature))?;
+        let sig_bytes = sig.as_bytes().to_vec();
 
         self.arbitrum_client
-            .settle_online_relayer_fee(&proof, sig.to_vec())
+            .settle_online_relayer_fee(&proof, sig_bytes)
             .await
             .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))
     }

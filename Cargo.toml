@@ -72,7 +72,6 @@ alloy = "0.14"
 alloy-contract = "0.14"
 alloy-primitives = "1.0.0"
 alloy-sol-types = "1.0.0"
-ethers = "2"
 
 # === Workspace Dependencies === #
 arbitrum-client = { path = "arbitrum-client" }

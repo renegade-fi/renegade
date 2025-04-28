@@ -133,8 +133,8 @@ impl Token {
         biguint_from_hex_string(&self.get_addr()).expect("invalid token address in mapping")
     }
 
-    /// Get the ethers compatible address
-    pub fn get_ethers_address(&self) -> Address {
+    /// Get the alloy compatible address
+    pub fn get_alloy_address(&self) -> Address {
         self.addr.parse::<Address>().expect("invalid token address in mapping")
     }
 

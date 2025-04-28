@@ -10,6 +10,12 @@
 
 use std::{sync::Arc, time::Duration};
 
+use alloy::{
+    network::TransactionBuilder,
+    primitives::{Address, U256},
+    providers::Provider,
+    rpc::types::TransactionRequest,
+};
 use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
@@ -24,10 +30,6 @@ use common::types::{
 };
 use constants::{
     Scalar, EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER,
-};
-use ethers::{
-    middleware::Middleware,
-    types::{transaction::eip2718::TypedTransaction, Address, U256},
 };
 use external_api::{
     bus_message::SystemBusMessage,
@@ -100,6 +102,8 @@ const ERR_INVALID_QUOTE_SIGNATURE: &str = "invalid quote signature";
 const ERR_PAIR_CHANGED: &str = "order update must not change the token pair";
 /// The error message emitted when an order update changes the side
 const ERR_SIDE_CHANGED: &str = "order update must not change the side";
+/// The error message emitted when a transaction fails to build
+const ERR_FAILED_TO_BUILD_TRANSACTION: &str = "failed to build transaction";
 
 // -----------
 // | Helpers |
@@ -169,22 +173,22 @@ impl ExternalMatchProcessor {
     /// Estimate the gas for a given external match transaction
     pub(super) async fn estimate_gas(
         &self,
-        mut tx: TypedTransaction,
-    ) -> Result<U256, ApiServerError> {
+        mut tx: TransactionRequest,
+    ) -> Result<u64, ApiServerError> {
         // To estimate gas without reverts, we would need to approve the ERC20 transfers
         // due in the transaction before estimating. This is infeasible, so we mock the
         // sender as the _darkpool itself_, which will automatically have an approval
         // for itself. This can still fail if a transfer exceeds the darkpool's balance,
         // in which case we fall back to the default gas estimation below
-        let darkpool_addr = self.arbitrum_client.get_darkpool_client().address();
+        let darkpool_addr = self.arbitrum_client.darkpool_addr();
         tx.set_from(darkpool_addr);
 
-        let client = self.arbitrum_client.client();
-        match client.estimate_gas(&tx, None /* block */).await {
+        let client = self.arbitrum_client.provider();
+        match client.estimate_gas(tx).await {
             Ok(gas) => Ok(gas),
             Err(e) => {
                 warn!("gas estimation failed for external match: {e}");
-                Ok(DEFAULT_GAS_ESTIMATION.into())
+                Ok(DEFAULT_GAS_ESTIMATION)
             },
         }
     }
@@ -470,22 +474,26 @@ impl ExternalMatchProcessor {
         let mut settlement_tx = self
             .arbitrum_client
             .gen_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
+            .map(TransactionRequest::from_transaction)
             .map_err(internal_error)?;
 
         // If the order _sells_ the native asset, the value of the transaction should
         // match the base amount sold by the external party
         if is_native && order.side.is_sell() {
             let base_amount = match_bundle.atomic_match_proof.statement.match_result.base_amount;
-            settlement_tx.set_value(base_amount);
+            settlement_tx.set_value(U256::from(base_amount));
         }
 
         // Estimate gas for the settlement tx if requested
         if do_gas_estimation {
             let gas = self.estimate_gas(settlement_tx.clone()).await?;
-            settlement_tx.set_gas(gas);
+            settlement_tx.set_gas_limit(gas);
         }
 
-        Ok(AtomicMatchApiBundle::new(&match_bundle, settlement_tx))
+        let tx = settlement_tx
+            .build_typed_tx()
+            .map_err(|_| internal_error(ERR_FAILED_TO_BUILD_TRANSACTION))?;
+        Ok(AtomicMatchApiBundle::new(&match_bundle, tx))
     }
 
     /// Build a malleable API bundle from a malleable match bundle and internal
@@ -509,15 +517,19 @@ impl ExternalMatchProcessor {
         let mut settlement_tx = self
             .arbitrum_client
             .gen_malleable_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
+            .map(TransactionRequest::from_transaction)
             .map_err(internal_error)?;
 
         // Estimate gas for the settlement tx if requested
         if do_gas_estimation {
             let gas = self.estimate_gas(settlement_tx.clone()).await?;
-            settlement_tx.set_gas(gas);
+            settlement_tx.set_gas_limit(gas);
         }
 
-        Ok(MalleableAtomicMatchApiBundle::new(&match_bundle, settlement_tx))
+        let tx = settlement_tx
+            .build_typed_tx()
+            .map_err(|_| internal_error(ERR_FAILED_TO_BUILD_TRANSACTION))?;
+        Ok(MalleableAtomicMatchApiBundle::new(&match_bundle, tx))
     }
 }
 

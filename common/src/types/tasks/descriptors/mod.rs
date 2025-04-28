@@ -216,7 +216,7 @@ impl TaskDescriptor {
 pub mod mocks {
     use alloy::{
         primitives::keccak256,
-        signers::{local::PrivateKeySigner, Signer},
+        signers::{local::PrivateKeySigner, SignerSync},
     };
     use circuit_types::keychain::SecretSigningKey;
     use constants::Scalar;
@@ -231,7 +231,7 @@ pub mod mocks {
     };
 
     /// Generate the wallet update signature for a new wallet
-    pub async fn gen_wallet_update_sig(wallet: &Wallet, key: &SecretSigningKey) -> Vec<u8> {
+    pub fn gen_wallet_update_sig(wallet: &Wallet, key: &SecretSigningKey) -> Vec<u8> {
         let new_wallet_comm = wallet.get_wallet_share_commitment();
 
         // Serialize the commitment, uses the contract's serialization here:
@@ -244,7 +244,7 @@ pub mod mocks {
         // Sign the message
         let signing_key: K256SigningKey = key.try_into().unwrap();
         let wallet = PrivateKeySigner::from(signing_key);
-        let sig = wallet.sign_hash(&digest).await.unwrap();
+        let sig = wallet.sign_hash_sync(&digest).unwrap();
 
         sig.into()
     }
@@ -343,12 +343,12 @@ mod test {
     }
 
     /// Tests creating a valid update wallet task
-    #[tokio::test]
-    async fn test_valid_update_wallet() {
+    #[test]
+    fn test_valid_update_wallet() {
         let wallet = mock_empty_wallet();
 
         let key = wallet.key_chain.secret_keys.sk_root.as_ref().unwrap();
-        let sig = gen_wallet_update_sig(&wallet, key).await;
+        let sig = gen_wallet_update_sig(&wallet, key);
 
         UpdateWalletTaskDescriptor::new_order_placement(
             OrderIdentifier::new_v4(),

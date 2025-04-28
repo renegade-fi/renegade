@@ -9,12 +9,12 @@
 pub mod helpers;
 pub mod mpc_match;
 
+use alloy::signers::local::PrivateKeySigner;
 use arbitrum_client::constants::Chain;
 use ark_mpc::network::PartyId;
 use clap::Parser;
 use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
-use ethers::signers::LocalWallet;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use libp2p::{identity::Keypair, Multiaddr};
 use mock_node::MockNodeController;
@@ -100,12 +100,12 @@ impl From<CliArgs> for IntegrationTestArgs {
             parse_addr_from_deployments_file(&args.deployments_path, DARKPOOL_PROXY_CONTRACT_KEY)
                 .unwrap();
 
-        let arbitrum_private_key = LocalWallet::from_str(&args.arbitrum_pkey).unwrap();
+        let private_key = PrivateKeySigner::from_str(&args.arbitrum_pkey).unwrap();
         let conf = RelayerConfig {
             p2p_key,
             p2p_port: args.my_port,
             chain_id: Chain::Devnet,
-            arbitrum_private_keys: vec![arbitrum_private_key],
+            private_key,
             contract_address,
             rpc_url: Some(args.devnet_url.clone()),
             allow_local: true,

@@ -891,6 +891,7 @@ checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
 name = "api-server"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "arbitrum-client",
  "async-trait",
  "base64 0.21.7",
@@ -901,7 +902,6 @@ dependencies = [
  "constants 0.1.0",
  "crossbeam",
  "ecdsa 0.16.9",
- "ethers",
  "external-api 0.1.0",
  "futures",
  "futures-util",
@@ -2585,7 +2585,6 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "crossbeam",
- "ethers",
  "futures-util",
  "gossip-api",
  "job-types",
@@ -4542,11 +4541,11 @@ dependencies = [
 name = "external-api"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "base64 0.22.1",
  "circuit-types 0.1.0",
  "common 0.1.0",
  "constants 0.1.0",
- "ethers",
  "hex 0.4.3",
  "http 0.2.12",
  "itertools 0.10.5",
@@ -5200,6 +5199,7 @@ dependencies = [
 name = "handshake-manager-tests"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "arbitrum-client",
  "ark-mpc",
  "base64 0.13.1",
@@ -5209,7 +5209,6 @@ dependencies = [
  "common 0.1.0",
  "config",
  "constants 0.1.0",
- "ethers",
  "eyre",
  "inventory",
  "job-types",
@@ -8931,7 +8930,6 @@ dependencies = [
  "bigdecimal",
  "constants 0.1.0",
  "criterion",
- "ethers-core",
  "itertools 0.10.5",
  "lazy_static",
  "num-bigint",
@@ -8987,7 +8985,6 @@ dependencies = [
  "config",
  "constants 0.1.0",
  "crossbeam",
- "ethers",
  "event-manager",
  "external-api 0.1.0",
  "gossip-api",
@@ -10523,6 +10520,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 name = "task-driver"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "alloy-primitives 1.0.0",
  "arbitrum-client",
  "ark-mpc",
@@ -10534,7 +10532,6 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "crossbeam",
- "ethers",
  "external-api 0.1.0",
  "eyre",
  "futures",
@@ -10608,7 +10605,6 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "dns-lookup",
- "ethers",
  "eyre",
  "futures",
  "itertools 0.10.5",
@@ -11483,7 +11479,6 @@ dependencies = [
  "circuit-types 0.1.0",
  "constants 0.1.0",
  "crossbeam",
- "ethers",
  "eyre",
  "futures",
  "hex 0.4.3",

@@ -118,9 +118,6 @@ impl Wallet {
     }
 
     /// Sign a wallet transition commitment with the wallet's keychain
-    ///
-    /// The contracts expect a recoverable signature with the recover ID set to
-    /// 0/1; we use ethers `sign_prehash_recoverable` to generate this signature
     pub fn sign_commitment(&self, commitment: Scalar) -> Result<Signature, String> {
         // Hash the message and sign it as is done in the contract:
         //  https://github.com/renegade-fi/renegade-contracts/blob/main/contracts-common/src/custom_serde.rs#L82-L87

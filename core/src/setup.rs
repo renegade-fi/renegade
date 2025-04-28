@@ -21,7 +21,7 @@ pub async fn node_setup(
     let needs_relayer_wallet = config.needs_relayer_wallet();
     let desc: TaskDescriptor = NodeStartupTaskDescriptor::new(
         config.gossip_warmup,
-        config.relayer_arbitrum_key(),
+        config.relayer_wallet_key(),
         needs_relayer_wallet,
     )
     .into();

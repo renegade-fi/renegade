@@ -278,9 +278,10 @@ impl RedeemFeeTask {
         let new_wallet_comm = self.new_wallet.get_wallet_share_commitment();
         let sig =
             self.old_wallet.sign_commitment(new_wallet_comm).map_err(RedeemFeeError::Signature)?;
+        let sig_bytes = sig.as_bytes().to_vec();
 
         self.arbitrum_client
-            .redeem_fee(proof, sig.to_vec())
+            .redeem_fee(proof, sig_bytes)
             .await
             .map_err(err_str!(RedeemFeeError::Arbitrum))
     }

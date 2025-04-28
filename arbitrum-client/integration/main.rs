@@ -31,7 +31,6 @@ use test_helpers::{
     types::TestVerbosity,
 };
 use util::{
-    concurrency::runtime::block_current,
     on_chain::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
     telemetry::LevelFilter,
 };
@@ -113,13 +112,13 @@ impl From<CliArgs> for IntegrationTestArgs {
         // function signature of `From`, which is assumed to be implemented in
         // the integration test harness
         let private_key = PrivateKeySigner::from_str(&test_args.private_key).unwrap();
-        let client = block_current(ArbitrumClient::new(ArbitrumClientConfig {
+        let client = ArbitrumClient::new(ArbitrumClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
             private_key,
             rpc_url: test_args.rpc_url,
             block_polling_interval_ms: 100,
-        }))
+        })
         .unwrap();
 
         Self { client }

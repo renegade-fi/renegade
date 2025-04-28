@@ -9,7 +9,6 @@ crossbeam = { workspace = true }
 tokio = { workspace = true }
 
 # === Crypto === #
-ethers = { workspace = true }
 alloy = { workspace = true, features = ["provider-ws"] }
 
 # === Workspace Dependencies === #
