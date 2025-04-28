@@ -2,7 +2,9 @@
 //! darkpool contract
 
 use alloy::consensus::TypedTransaction;
+use alloy::eips::BlockId;
 use alloy::primitives::{Address, Bytes, U256};
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use alloy_contract::CallDecoder;
 use circuit_types::{
@@ -632,7 +634,9 @@ impl ArbitrumClient {
         &self,
         tx: DarkpoolCallBuilder<'_, C>,
     ) -> Result<TransactionReceipt, ArbitrumClientError> {
+        let gas_price = self.get_adjusted_gas_price().await?;
         let receipt = tx
+            .gas_price(gas_price)
             .send()
             .await
             .map_err(ArbitrumClientError::contract_interaction)?
@@ -647,5 +651,25 @@ impl ArbitrumClient {
         }
 
         Ok(receipt)
+    }
+
+    /// Get the adjusted gas price for submitting a transaction
+    ///
+    /// We double the latest basefee to prevent reverts
+    async fn get_adjusted_gas_price(&self) -> Result<u128, ArbitrumClientError> {
+        // Set the gas price to 2x the latest basefee for simplicity
+        let latest_block = self
+            .provider()
+            .get_block(BlockId::latest())
+            .await
+            .map_err(ArbitrumClientError::rpc)?
+            .ok_or(ArbitrumClientError::rpc("No latest block found"))?;
+
+        let latest_basefee = latest_block
+            .header
+            .base_fee_per_gas
+            .ok_or(ArbitrumClientError::rpc("No basefee found"))?;
+        let gas_price = (latest_basefee * 2) as u128;
+        Ok(gas_price)
     }
 }
