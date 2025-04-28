@@ -3090,6 +3090,7 @@ dependencies = [
 name = "config"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "arbitrum-client",
  "base64 0.13.1",
  "bimap",
@@ -3099,9 +3100,9 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "ed25519-dalek 1.0.1",
- "ethers",
  "json",
  "libp2p",
+ "rand 0.8.5",
  "rand_core 0.5.1",
  "reqwest 0.11.27",
  "serde",

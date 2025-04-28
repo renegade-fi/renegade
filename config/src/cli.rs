@@ -1,5 +1,6 @@
 //! The relayer CLI and config definitions
 
+use alloy::signers::local::PrivateKeySigner;
 use arbitrum_client::constants::Chain;
 use circuit_types::{
     elgamal::{DecryptionKey, EncryptionKey},
@@ -14,7 +15,6 @@ use common::types::{
     token::Token,
 };
 use ed25519_dalek::Keypair as DalekKeypair;
-use ethers::signers::LocalWallet;
 use libp2p::{identity::Keypair, Multiaddr};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -225,12 +225,10 @@ pub struct Cli {
     /// Defaults to the devnet pre-funded key
     #[clap(
         value_parser,
-        long = "arbitrum-pkeys",  
-        default_values_t = ["0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659".to_string()],
-        num_args = 1..,
-        value_delimiter = ' ',
+        long = "private-key",  
+        default_value = "0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659",
     )]
-    pub arbitrum_private_keys: Vec<String>,
+    pub private_key: String,
     /// The key used to encrypt fee payments
     /// 
     /// May be specified _instead of_ `fee_decryption_key` in the case that separate infrastructure is used for 
@@ -389,8 +387,8 @@ pub struct RelayerConfig {
     pub coinbase_key_secret: Option<String>,
     /// The HTTP addressable Arbitrum JSON-RPC node
     pub rpc_url: Option<String>,
-    /// The Arbitrum private keys used to send transactions
-    pub arbitrum_private_keys: Vec<LocalWallet>,
+    /// The private key used to send transactions
+    pub private_key: PrivateKeySigner,
     /// The Ethereum RPC node websocket address to dial for on-chain data
     pub eth_websocket_addr: Option<String>,
     /// The key used to encrypt (and possibly decrypt) fee payments
@@ -419,9 +417,9 @@ impl RelayerConfig {
         WrappedPeerId(self.p2p_key.public().to_peer_id())
     }
 
-    /// Get the Arbitrum private key from which the relayer's wallet is derived
-    pub fn relayer_arbitrum_key(&self) -> &LocalWallet {
-        self.arbitrum_private_keys.first().expect("no arbitrum private keys configured")
+    /// Get the private key from which the relayer's wallet is derived
+    pub fn relayer_wallet_key(&self) -> &PrivateKeySigner {
+        &self.private_key
     }
 
     /// Get a path ref to the raft snapshot path
@@ -503,7 +501,7 @@ impl Clone for RelayerConfig {
             coinbase_key_name: self.coinbase_key_name.clone(),
             coinbase_key_secret: self.coinbase_key_secret.clone(),
             rpc_url: self.rpc_url.clone(),
-            arbitrum_private_keys: self.arbitrum_private_keys.clone(),
+            private_key: self.private_key.clone(),
             fee_key: self.fee_key,
             eth_websocket_addr: self.eth_websocket_addr.clone(),
             debug: self.debug,
