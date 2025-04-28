@@ -27,10 +27,8 @@ mocks = [
 ark-mpc = { workspace = true }
 ark-ec = { version = "0.4", optional = true }
 ark-poly = { version = "0.4", optional = true }
-
 ecdsa = { version = "0.16", optional = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
-ethers = { workspace = true }
 hmac = "0.12"
 jf-primitives = { workspace = true, optional = true }
 k256 = { version = "0.13", features = ["ecdsa"] }
@@ -40,6 +38,9 @@ num-bigint = { workspace = true }
 num-traits = "0.2"
 signature = "2.0"
 sha2 = { version = "0.10", features = ["asm"] }
+
+# === Ethereum === #
+alloy = { workspace = true }
 
 # === Runtime + Networking === #
 async-trait = { workspace = true }

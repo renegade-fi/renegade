@@ -15,8 +15,8 @@
 //!
 //! In general, Named Tokens use all exchanges where they are listed, whereas
 //! Unnamed Tokens only use Uniswap V3 for the price feed.
+use alloy::primitives::Address;
 use bimap::BiMap;
-use ethers::types::Address;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::{

@@ -2989,6 +2989,7 @@ dependencies = [
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "ark-ec",
  "ark-mpc",
  "ark-poly",
@@ -3002,7 +3003,6 @@ dependencies = [
  "derivative",
  "ecdsa 0.16.9",
  "ed25519-dalek 1.0.1",
- "ethers",
  "hmac",
  "indexmap 2.8.0",
  "itertools 0.10.5",

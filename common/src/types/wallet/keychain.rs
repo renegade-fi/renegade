@@ -1,16 +1,16 @@
 //! Keychain helpers for the wallet
 
+use alloy::{
+    primitives::keccak256,
+    signers::{local::PrivateKeySigner, Signature, SignerSync},
+};
 use circuit_types::keychain::{
     PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,
     SecretSigningKey,
 };
 use constants::Scalar;
 use derivative::Derivative;
-use ethers::{
-    core::k256::ecdsa::SigningKey as EthersSigningKey,
-    types::{Signature, U256},
-    utils::keccak256,
-};
+use k256::ecdsa::SigningKey as K256SigningKey;
 use serde::{Deserialize, Serialize};
 use util::raw_err_str;
 
@@ -106,19 +106,15 @@ impl Wallet {
     pub fn sign_bytes(&self, bytes: &[u8]) -> Result<Signature, String> {
         // Fetch the `sk_root` key
         let root_key = self.key_chain.secret_keys.sk_root.as_ref().ok_or(ERR_NO_SK_ROOT)?;
-        let key = EthersSigningKey::try_from(root_key)?;
+        let k256_key = K256SigningKey::try_from(root_key)?;
+        let key = PrivateKeySigner::from(k256_key);
 
         // Sign the payload
         let digest = keccak256(bytes);
-        let (sig, recovery_id) = key
-            .sign_prehash_recoverable(&digest)
-            .map_err(raw_err_str!("failed to sign commitment: {}"))?;
+        let sig =
+            key.sign_hash_sync(&digest).map_err(raw_err_str!("failed to sign commitment: {}"))?;
 
-        Ok(Signature {
-            r: U256::from_big_endian(&sig.r().to_bytes()),
-            s: U256::from_big_endian(&sig.s().to_bytes()),
-            v: recovery_id.to_byte() as u64,
-        })
+        Ok(sig)
     }
 
     /// Sign a wallet transition commitment with the wallet's keychain
@@ -149,6 +145,7 @@ mod test {
 
         // Check the signature
         let sig = wallet.sign_commitment(comm).unwrap();
-        verify_wallet_update_signature(&wallet, &key, &sig.to_vec()).unwrap();
+        let sig_bytes = sig.as_bytes().to_vec();
+        verify_wallet_update_signature(&wallet, &key, &sig_bytes).unwrap();
     }
 }

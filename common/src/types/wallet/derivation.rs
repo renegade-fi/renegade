@@ -2,9 +2,12 @@
 
 use std::borrow::Borrow;
 
+use alloy::{
+    primitives::keccak256,
+    signers::{local::PrivateKeySigner, SignerSync},
+};
 use circuit_types::keychain::{PublicKeyChain, SecretIdentificationKey};
 use constants::Scalar;
-use ethers::{signers::LocalWallet as EthWallet, utils::keccak256};
 use k256::ecdsa::SigningKey;
 use lazy_static::lazy_static;
 use num_bigint::BigUint;
@@ -52,14 +55,17 @@ lazy_static! {
 ///
 /// This does not necessarily match the implementation used in the clients to
 /// generate their wallets
-pub fn derive_wallet_keychain(eth_key: &EthWallet, chain_id: u64) -> Result<KeyChain, String> {
+pub fn derive_wallet_keychain(
+    eth_key: &PrivateKeySigner,
+    chain_id: u64,
+) -> Result<KeyChain, String> {
     // Generate the root key
     let sk_root_key = derive_signing_key(&get_root_key_msg(chain_id), eth_key)?;
     let sk_root = sk_root_key.borrow().into();
     let pk_root = sk_root_key.verifying_key().into();
 
     // Generate the match key, this time using the root key to derive it
-    let sk_root_wallet = EthWallet::from(sk_root_key);
+    let sk_root_wallet = PrivateKeySigner::from(sk_root_key);
     let sk_match_key = derive_scalar(MATCH_KEY_MESSAGE, &sk_root_wallet)?;
     let sk_match = SecretIdentificationKey::from(sk_match_key);
     let pk_match = sk_match.get_public_key();
@@ -74,13 +80,13 @@ pub fn derive_wallet_keychain(eth_key: &EthWallet, chain_id: u64) -> Result<KeyC
 }
 
 /// Construct the blinder seed for the wallet
-pub fn derive_blinder_seed(root_key: &EthWallet) -> Result<Scalar, String> {
+pub fn derive_blinder_seed(root_key: &PrivateKeySigner) -> Result<Scalar, String> {
     // Sign the blinder seed message and convert to a scalar
     derive_scalar(BLINDER_STREAM_SEED_MESSAGE, root_key)
 }
 
 /// Construct the share seed for the wallet
-pub fn derive_share_seed(root_key: &EthWallet) -> Result<Scalar, String> {
+pub fn derive_share_seed(root_key: &PrivateKeySigner) -> Result<Scalar, String> {
     // Sign the share seed message and convert to a scalar
     derive_scalar(SHARE_STREAM_SEED_MESSAGE, root_key)
 }
@@ -88,7 +94,7 @@ pub fn derive_share_seed(root_key: &EthWallet) -> Result<Scalar, String> {
 /// Construct a wallet ID from the given Ethereum keypair
 ///
 /// This is done to ensure deterministic wallet recovery
-pub fn derive_wallet_id(root_key: &EthWallet) -> Result<WalletIdentifier, String> {
+pub fn derive_wallet_id(root_key: &PrivateKeySigner) -> Result<WalletIdentifier, String> {
     let bytes = get_extended_sig_bytes(WALLET_ID_MESSAGE, root_key)?;
     WalletIdentifier::from_slice(&bytes[..WALLET_ID_BYTES])
         .map_err(raw_err_str!("failed to derive wallet ID from key: {}"))
@@ -104,14 +110,13 @@ fn get_root_key_msg(chain_id: u64) -> Vec<u8> {
 }
 
 /// Get a `Scalar` from a signature on a message
-fn derive_scalar(msg: &[u8], key: &EthWallet) -> Result<Scalar, String> {
+fn derive_scalar(msg: &[u8], key: &PrivateKeySigner) -> Result<Scalar, String> {
     let sig_bytes = get_extended_sig_bytes(msg, key)?;
-
     Ok(Scalar::from_be_bytes_mod_order(&sig_bytes))
 }
 
 /// Derive a signing key from a signature on a message
-fn derive_signing_key(msg: &[u8], key: &EthWallet) -> Result<SigningKey, String> {
+fn derive_signing_key(msg: &[u8], key: &PrivateKeySigner) -> Result<SigningKey, String> {
     let sig_bytes = get_extended_sig_bytes(msg, key)?;
 
     // We must manually reduce the bytes to the base field as the k256 library
@@ -125,25 +130,26 @@ fn derive_signing_key(msg: &[u8], key: &EthWallet) -> Result<SigningKey, String>
 }
 
 /// Derive a symmetric key from a signing key
-fn derive_symmetric_key(key: &EthWallet) -> Result<HmacKey, String> {
+fn derive_symmetric_key(key: &PrivateKeySigner) -> Result<HmacKey, String> {
     get_sig_bytes(SYMMETRIC_KEY_MESSAGE, key).map(HmacKey)
 }
 
 /// Sign a message, serialize the signature into bytes
-fn get_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; KECCAK_HASH_BYTES], String> {
+fn get_sig_bytes(msg: &[u8], key: &PrivateKeySigner) -> Result<[u8; KECCAK_HASH_BYTES], String> {
     let digest = keccak256(msg);
-    let wallet = EthWallet::from(key.clone());
-    let sig =
-        wallet.sign_hash(digest.into()).map_err(raw_err_str!("failed to sign message: {}"))?;
+    let sig = key.sign_hash_sync(&digest).map_err(raw_err_str!("failed to sign message: {}"))?;
 
     // Take the keccak hash of the signature to disperse its elements
-    let bytes = sig.to_vec();
-    Ok(keccak256(bytes))
+    let bytes: Vec<u8> = sig.into();
+    Ok(*keccak256(bytes))
 }
 
 /// Sign a message, serialize the signature into bytes, and extend the bytes to
 /// support secure reduction into a field
-fn get_extended_sig_bytes(msg: &[u8], key: &EthWallet) -> Result<[u8; EXTENDED_BYTES], String> {
+fn get_extended_sig_bytes(
+    msg: &[u8],
+    key: &PrivateKeySigner,
+) -> Result<[u8; EXTENDED_BYTES], String> {
     let sig_bytes = get_sig_bytes(msg, key)?;
     Ok(extend_to_64_bytes(&sig_bytes))
 }
@@ -157,13 +163,13 @@ fn extend_to_64_bytes(bytes: &[u8]) -> [u8; EXTENDED_BYTES] {
     let mut extended = [0; EXTENDED_BYTES];
     let top_bytes = keccak256(bytes);
     extended[..KECCAK_HASH_BYTES].copy_from_slice(bytes);
-    extended[KECCAK_HASH_BYTES..].copy_from_slice(&top_bytes);
+    extended[KECCAK_HASH_BYTES..].copy_from_slice(&top_bytes.0);
     extended
 }
 
 #[cfg(test)]
 mod test {
-    use ethers::signers::LocalWallet;
+    use alloy::signers::local::PrivateKeySigner;
     use k256::ecdsa::SigningKey;
     use rand::thread_rng;
 
@@ -213,7 +219,7 @@ mod test {
         let mut rng = thread_rng();
         let msg = b"test message";
         let key = SigningKey::random(&mut rng);
-        let wallet = LocalWallet::from(key);
+        let wallet = PrivateKeySigner::from(key);
 
         let sig1 = get_extended_sig_bytes(msg, &wallet).unwrap();
         let sig2 = get_extended_sig_bytes(msg, &wallet).unwrap();
