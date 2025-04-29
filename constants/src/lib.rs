@@ -114,10 +114,6 @@ pub type AuthenticatedScalar = AuthenticatedScalarResult<SystemCurveGroup>;
 // | Arbitrum Constants |
 // ----------------------
 
-/// The deployment block for the Mainnet contract
-/// TODO: Update this once the contract is deployed
-pub const MAINNET_CONTRACT_DEPLOYMENT_BLOCK: u64 = 0;
-
 /// The block number at which the darkpool was deployed on devnet
 pub const DEVNET_DEPLOY_BLOCK: u64 = 0;
 
@@ -130,7 +126,7 @@ pub const MAINNET_DEPLOY_BLOCK: u64 = 249416532;
 /// The number of bytes in an Arbitrum address
 pub const ADDRESS_BYTE_LENGTH: usize = 20;
 
-/// The address used to represent the native asset (ETH) on Arbitrum
+/// The address used to represent the native asset (ETH) as an ERC20 address
 pub const NATIVE_ASSET_ADDRESS: &str = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 /// The ticker of the native asset's wrapper token

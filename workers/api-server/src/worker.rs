@@ -1,11 +1,11 @@
 //! Defines the implementation of the `Worker` trait for the ApiServer
 
-use arbitrum_client::{client::ArbitrumClient, constants::Chain};
 use async_trait::async_trait;
 use common::{
     types::{hmac::HmacKey, CancelChannel},
     worker::Worker,
 };
+use darkpool_client::{client::DarkpoolClient, constants::Chain};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{
@@ -62,8 +62,8 @@ pub struct ApiServerConfig {
     ///
     /// Compliance screening is disabled if this is not set
     pub compliance_service_url: Option<String>,
-    /// A handle on the Arbitrum RPC client
-    pub arbitrum_client: ArbitrumClient,
+    /// A handle on the darkpool RPC client
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// The worker job queue for the PriceReporter

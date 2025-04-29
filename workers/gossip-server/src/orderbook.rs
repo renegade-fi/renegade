@@ -199,10 +199,10 @@ impl GossipProtocolExecutor {
 
         // Check that the Merkle root is a valid historical root
         if !self
-            .arbitrum_client()
+            .darkpool_client()
             .check_merkle_root_valid(reblind_proof.statement.merkle_root)
             .await
-            .map_err(err_str!(GossipError::Arbitrum))?
+            .map_err(err_str!(GossipError::Darkpool))?
         {
             return Err(GossipError::ValidCommitmentVerification(
                 ERR_INVALID_MERKLE_ROOT.to_string(),
@@ -236,7 +236,7 @@ impl GossipProtocolExecutor {
     /// Assert that a nullifier is unused in the contract, returns a GossipError
     /// if the nullifier has been used
     async fn assert_nullifier_unused(&self, nullifier: Nullifier) -> Result<(), GossipError> {
-        self.arbitrum_client()
+        self.darkpool_client()
             .check_nullifier_used(nullifier)
             .await
             .map(|res| {
@@ -246,6 +246,6 @@ impl GossipProtocolExecutor {
                     Ok(())
                 }
             })
-            .map_err(|err| GossipError::Arbitrum(err.to_string()))?
+            .map_err(err_str!(GossipError::Darkpool))?
     }
 }

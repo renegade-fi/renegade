@@ -1,5 +1,5 @@
 //! Provides a client for interacting with the Renegade smart contracts
-//! on Arbitrum.
+//! and the blockchain more generally.
 //!
 //! This contains abstractions for handling configuration details like
 //! RPC endpoint, contract address, etc.; executing transactions /

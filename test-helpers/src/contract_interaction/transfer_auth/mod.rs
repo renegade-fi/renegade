@@ -8,15 +8,15 @@ use alloy_sol_types::{
     sol_data::{Address as SolAddress, Uint as SolUint},
     Eip712Domain, SolStruct, SolType,
 };
-use arbitrum_client::{
-    conversion::{pk_to_u256s, to_contract_external_transfer},
-    helpers::serialize_calldata,
-};
 use circuit_types::{
     keychain::PublicSigningKey,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
+use darkpool_client::{
+    conversion::{pk_to_u256s, to_contract_external_transfer},
+    helpers::serialize_calldata,
+};
 use eyre::Result;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};

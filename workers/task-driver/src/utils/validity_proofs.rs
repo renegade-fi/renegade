@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use arbitrum_client::client::ArbitrumClient;
-use arbitrum_client::errors::ArbitrumClientError;
 use circuit_types::balance::Balance;
 use circuit_types::native_helpers::{
     compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
@@ -25,6 +23,8 @@ use common::types::proof_bundles::{
 };
 use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
+use darkpool_client::client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use gossip_api::pubsub::orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC};
 use gossip_api::pubsub::PubsubMessage;
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
@@ -62,11 +62,11 @@ pub(crate) fn enqueue_proof_job(
 /// Find the merkle authentication path of a wallet
 pub(crate) async fn find_merkle_path(
     wallet: &Wallet,
-    arbitrum_client: &ArbitrumClient,
-) -> Result<WalletAuthenticationPath, ArbitrumClientError> {
+    darkpool_client: &DarkpoolClient,
+) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
     // The contract indexes the wallet by its commitment to the public and private
     // secret shares, find this in the Merkle tree
-    arbitrum_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
+    darkpool_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
 }
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet

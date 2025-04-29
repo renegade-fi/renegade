@@ -24,8 +24,8 @@ pub enum GossipError {
     SendMessage(String),
     /// An error interacting with the global state
     State(String),
-    /// An error occurred executing an Arbitrum RPC
-    Arbitrum(String),
+    /// An error occurred executing an darkpool RPC
+    Darkpool(String),
     /// Timer failed to send a heartbeat
     TimerFailed(String),
     /// An unhandled request type was received

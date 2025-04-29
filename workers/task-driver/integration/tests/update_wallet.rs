@@ -60,7 +60,7 @@ pub(crate) async fn execute_wallet_update(
 ) -> Result<Wallet> {
     // Make sure the Merkle proof is present
     if old_wallet.merkle_proof.is_none() {
-        attach_merkle_opening(&mut old_wallet, &test_args.arbitrum_client).await?;
+        attach_merkle_opening(&mut old_wallet, &test_args.darkpool_client).await?;
     }
 
     // Generate a signature for the state transition
@@ -142,7 +142,7 @@ pub fn new_withdrawal(
 /// Tests updating a wallet then recovering it from on-chain state
 async fn test_update_wallet_then_recover(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
-    let client = &test_args.arbitrum_client;
+    let client = &test_args.darkpool_client;
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Update the wallet by reblinding it
@@ -332,7 +332,7 @@ integration_test_async!(test_update_wallet__cancel_and_place_order);
 #[allow(non_snake_case)]
 async fn test_update_wallet__add_fee(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a new wallet and post it on-chain
-    let client = &test_args.arbitrum_client;
+    let client = &test_args.darkpool_client;
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Update the wallet by adding a fee
@@ -389,7 +389,7 @@ integration_test_async!(test_update_wallet__remove_fee);
 async fn test_update_wallet__deposit_and_full_withdraw(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    let client = &test_args.arbitrum_client;
+    let client = &test_args.darkpool_client;
 
     // --- Deposit --- //
     // Create a new wallet and post it on-chain
@@ -445,7 +445,7 @@ integration_test_async!(test_update_wallet__deposit_and_full_withdraw);
 async fn test_update_wallet__deposit_and_partial_withdraw(
     test_args: IntegrationTestArgs,
 ) -> Result<()> {
-    let client = &test_args.arbitrum_client;
+    let client = &test_args.darkpool_client;
 
     // Create a new wallet and post it on-chain
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;

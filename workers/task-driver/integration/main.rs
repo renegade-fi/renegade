@@ -14,13 +14,13 @@ use std::{str::FromStr, sync::Arc};
 
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
-use arbitrum_client::{
-    client::{ArbitrumClient, ArbitrumClientConfig},
-    constants::Chain,
-};
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use crossbeam::channel::Sender as CrossbeamSender;
+use darkpool_client::{
+    client::{DarkpoolClient, DarkpoolClientConfig},
+    constants::Chain,
+};
 use helpers::new_mock_task_driver;
 use job_types::{
     event_manager::{new_event_manager_queue, EventManagerReceiver},
@@ -57,7 +57,7 @@ use util::{
 #[derive(Debug, Clone, Parser)]
 #[command(author, version, about, long_about=None)]
 struct CliArgs {
-    /// The private key to use for the Arbitrum account during testing
+    /// The private key to use for the EVM account during testing
     ///
     /// Defaults to the first pre-deployed account on the `nitro-testnode`
     #[arg(
@@ -90,8 +90,8 @@ struct IntegrationTestArgs {
     erc20_addr1: String,
     /// The address of the Permit2 contract
     permit2_addr: String,
-    /// The arbitrum client that resolves to a locally running devnet node
-    arbitrum_client: ArbitrumClient,
+    /// The darkpool client that resolves to a locally running devnet node
+    darkpool_client: DarkpoolClient,
     /// The private key of the account used for the relayer
     pkey: PrivateKeySigner,
     /// A receiver for the network manager's work queue
@@ -123,9 +123,9 @@ impl From<CliArgs> for IntegrationTestArgs {
         let (proof_job_queue, job_receiver) = new_proof_manager_queue();
         MockProofManager::start(job_receiver);
 
-        // Create a mock arbitrum client
+        // Create a mock darkpool client
         let pkey = PrivateKeySigner::from_str(&test_args.pkey).unwrap();
-        let arbitrum_client = setup_arbitrum_client_mock(&test_args);
+        let darkpool_client = setup_darkpool_client_mock(&test_args);
 
         // Create a mock state instance and a task driver
         let (task_queue, task_recv) = new_task_driver_queue();
@@ -138,7 +138,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         new_mock_task_driver(
             task_recv,
             task_queue.clone(),
-            arbitrum_client.clone(),
+            darkpool_client.clone(),
             network_sender,
             proof_job_queue.clone(),
             event_queue,
@@ -163,7 +163,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             erc20_addr0,
             erc20_addr1,
             permit2_addr,
-            arbitrum_client,
+            darkpool_client,
             pkey,
             _network_receiver: Arc::new(network_receiver),
             _event_receiver: Arc::new(event_receiver),
@@ -175,7 +175,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 }
 
 impl IntegrationTestArgs {
-    /// Get the address of the (assumed to be only) Arbitrum account
+    /// Get the address of the (assumed to be only) EVM account
     /// with which the relayer is configured
     pub fn wallet_address(&self) -> Address {
         self.pkey.address()
@@ -187,15 +187,15 @@ async fn setup_global_state_mock(task_queue: TaskDriverQueue) -> State {
     mock_state_with_task_queue(0 /* network_delay_ms */, task_queue, &mock_relayer_config()).await
 }
 
-/// Setup a mock `ArbitrumClient` for the integration tests
-fn setup_arbitrum_client_mock(test_args: &CliArgs) -> ArbitrumClient {
+/// Setup a mock `DarkpoolClient` for the integration tests
+fn setup_darkpool_client_mock(test_args: &CliArgs) -> DarkpoolClient {
     let private_key = PrivateKeySigner::from_str(&test_args.pkey).unwrap();
     let darkpool_addr =
         parse_addr_from_deployments_file(&test_args.deployments_path, DARKPOOL_PROXY_CONTRACT_KEY)
             .unwrap();
 
     // Build a client that references the darkpool
-    ArbitrumClient::new(ArbitrumClientConfig {
+    DarkpoolClient::new(DarkpoolClientConfig {
         chain: Chain::Devnet,
         darkpool_addr,
         private_key,

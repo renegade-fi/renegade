@@ -1,6 +1,5 @@
 [workspace]
 members = [
-	"arbitrum-client",
 	"circuits",
 	"circuit-types",
 	"circuit-macros",
@@ -8,6 +7,7 @@ members = [
 	"common",
 	"config",
 	"core",
+	"darkpool-client",
 	"external-api",
 	"gossip-api",
 	"mock-node",
@@ -74,7 +74,7 @@ alloy-primitives = "1.0.0"
 alloy-sol-types = "1.0.0"
 
 # === Workspace Dependencies === #
-arbitrum-client = { path = "arbitrum-client" }
+darkpool-client = { path = "darkpool-client" }
 api-server = { path = "workers/api-server" }
 chain-events = { path = "workers/chain-events" }
 constants = { path = "constants", default-features = false }

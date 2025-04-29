@@ -8,7 +8,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use arbitrum_client::client::ArbitrumClient;
 use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::r#match::MatchResult;
@@ -19,6 +18,8 @@ use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
 };
+use darkpool_client::client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::ProofManagerQueue;
 use serde::Serialize;
@@ -104,8 +105,8 @@ pub enum SettleMatchTaskError {
     SendMessage(String),
     /// Error when state is missing for settlement
     Missing(String),
-    /// Error interacting with Arbitrum
-    Arbitrum(String),
+    /// Error interacting with the darkpool client
+    Darkpool(String),
     /// Error updating validity proofs for a wallet
     UpdatingValidityProofs(String),
     /// Error interacting with global state
@@ -117,7 +118,7 @@ impl TaskError for SettleMatchTaskError {
         matches!(
             self,
             SettleMatchTaskError::ProofGeneration(_)
-                | SettleMatchTaskError::Arbitrum(_)
+                | SettleMatchTaskError::Darkpool(_)
                 | SettleMatchTaskError::State(_)
                 | SettleMatchTaskError::UpdatingValidityProofs(_)
         )
@@ -135,6 +136,12 @@ impl Error for SettleMatchTaskError {}
 impl From<StateError> for SettleMatchTaskError {
     fn from(err: StateError) -> Self {
         SettleMatchTaskError::State(err.to_string())
+    }
+}
+
+impl From<DarkpoolClientError> for SettleMatchTaskError {
+    fn from(err: DarkpoolClientError) -> Self {
+        SettleMatchTaskError::Darkpool(err.to_string())
     }
 }
 
@@ -157,8 +164,8 @@ pub struct SettleMatchTask {
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
     pub party1_validity_proof: OrderValidityProofBundle,
-    /// The arbitrum client to use for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client to use for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
@@ -192,7 +199,7 @@ impl Task for SettleMatchTask {
             match_bundle,
             party0_validity_proof,
             party1_validity_proof,
-            arbitrum_client: context.arbitrum_client,
+            darkpool_client: context.darkpool_client,
             network_sender: context.network_queue,
             global_state: context.state,
             proof_queue: context.proof_queue,
@@ -262,7 +269,7 @@ impl SettleMatchTask {
             .map_err(SettleMatchTaskError::State)?;
 
         let tx_submit_res = self
-            .arbitrum_client
+            .darkpool_client
             .process_match_settle(
                 &self.party0_validity_proof,
                 &self.party1_validity_proof,
@@ -279,7 +286,8 @@ impl SettleMatchTask {
             return Ok(());
         }
 
-        tx_submit_res.map_err(|e| SettleMatchTaskError::Arbitrum(e.to_string()))
+        tx_submit_res?;
+        Ok(())
     }
 
     /// Apply the match result to the local wallet, find the wallet's new
@@ -314,9 +322,7 @@ impl SettleMatchTask {
             .await?;
 
         // Find the wallet's new Merkle opening
-        let opening = find_merkle_path(&wallet, &self.arbitrum_client)
-            .await
-            .map_err(|err| SettleMatchTaskError::Arbitrum(err.to_string()))?;
+        let opening = find_merkle_path(&wallet, &self.darkpool_client).await?;
         wallet.merkle_proof = Some(opening);
 
         // Index the updated wallet in global state

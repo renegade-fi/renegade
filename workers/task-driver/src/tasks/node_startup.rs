@@ -8,7 +8,6 @@
 use std::{error::Error, fmt::Display, iter, time::Duration};
 
 use alloy::signers::{k256::ecdsa::SigningKey, local::PrivateKeySigner};
-use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use async_trait::async_trait;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor},
@@ -22,6 +21,7 @@ use common::types::{
     },
 };
 use constants::{in_bootstrap_mode, Scalar, NATIVE_ASSET_ADDRESS};
+use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
     proof_manager::ProofManagerQueue,
@@ -48,8 +48,8 @@ const NODE_STARTUP_TASK_NAME: &str = "node-startup";
 
 /// Error sending a job to another worker
 const ERR_SEND_JOB: &str = "error sending job";
-/// Error deserializing the arbitrum private key
-const ERR_INVALID_KEY: &str = "invalid arbitrum private key";
+/// Error deserializing the private key
+const ERR_INVALID_KEY: &str = "invalid private key";
 
 /// Defines the state of the node startup task
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -123,8 +123,8 @@ impl From<NodeStartupTaskState> for StateWrapper {
 /// The error type for the node startup task
 #[derive(Clone, Debug)]
 pub enum NodeStartupTaskError {
-    /// An error interacting with arbitrum
-    Arbitrum(String),
+    /// An error interacting with darkpool
+    Darkpool(String),
     /// An error deriving a wallet
     DeriveWallet(String),
     /// An error sending a job to another worker
@@ -135,6 +135,12 @@ pub enum NodeStartupTaskError {
     Setup(String),
     /// An error interacting with global state
     State(String),
+}
+
+impl From<DarkpoolClientError> for NodeStartupTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        NodeStartupTaskError::Darkpool(e.to_string())
+    }
 }
 
 impl TaskError for NodeStartupTaskError {
@@ -156,12 +162,6 @@ impl From<StateError> for NodeStartupTaskError {
     }
 }
 
-impl From<ArbitrumClientError> for NodeStartupTaskError {
-    fn from(e: ArbitrumClientError) -> Self {
-        Self::Arbitrum(e.to_string())
-    }
-}
-
 // --------------------
 // | Task Definition |
 // --------------------
@@ -172,10 +172,10 @@ pub struct NodeStartupTask {
     pub gossip_warmup_ms: u64,
     /// Whether the relayer needs a wallet created for it or not
     pub needs_relayer_wallet: bool,
-    /// The arbitrum private key
+    /// The private key
     pub keypair: PrivateKeySigner,
-    /// The arbitrum client to use for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client to use for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
@@ -203,7 +203,7 @@ impl Task for NodeStartupTask {
             gossip_warmup_ms: descriptor.gossip_warmup_ms,
             needs_relayer_wallet: descriptor.needs_relayer_wallet,
             keypair: pkey,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
@@ -292,12 +292,12 @@ impl NodeStartupTask {
 
         // Fetch the values from the contract
         let protocol_fee = self
-            .arbitrum_client
+            .darkpool_client
             .get_protocol_fee()
             .await
             .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
         let protocol_key = self
-            .arbitrum_client
+            .darkpool_client
             .get_protocol_pubkey()
             .await
             .map_err(err_str!(NodeStartupTaskError::FetchConstants))?;
@@ -377,13 +377,8 @@ impl NodeStartupTask {
             return Ok(());
         }
 
-        let chain_id = self
-            .arbitrum_client
-            .chain_id()
-            .await
-            .map_err(err_str!(NodeStartupTaskError::Arbitrum))?;
-
         // Derive the keychain, blinder seed, and share seed from the relayer pkey
+        let chain_id = self.darkpool_client.chain_id().await?;
         let blinder_seed = derive_blinder_seed(&self.keypair)
             .map_err(err_str!(NodeStartupTaskError::DeriveWallet))?;
         let share_seed = derive_share_seed(&self.keypair)
@@ -420,7 +415,7 @@ impl NodeStartupTask {
         // For each wallet, check if a newer version is known on-chain
         for wallet in self.state.get_all_wallets().await?.into_iter() {
             let nullifier = wallet.get_wallet_nullifier();
-            if self.arbitrum_client.check_nullifier_used(nullifier).await? {
+            if self.darkpool_client.check_nullifier_used(nullifier).await? {
                 self.refresh_wallet(&wallet).await?;
             }
         }
@@ -550,7 +545,7 @@ impl NodeStartupTask {
         for token in tokens {
             // Fetch the fee override from the contract
             let addr = token.get_alloy_address();
-            let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
+            let fee = self.darkpool_client.get_external_match_fee(addr).await?;
 
             // Write the fee into the mapping
             let addr_bigint = token.get_addr_biguint();

@@ -94,7 +94,7 @@ impl TaskExecutor {
     /// Constructor
     pub fn new(config: TaskDriverConfig) -> Self {
         let task_context = TaskContext {
-            arbitrum_client: config.arbitrum_client,
+            darkpool_client: config.darkpool_client,
             network_queue: config.network_queue,
             proof_queue: config.proof_queue,
             event_queue: config.event_queue,

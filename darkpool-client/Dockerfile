@@ -1,6 +1,6 @@
 # Build a set of sources that are used to build a dependency cache for the main
 # integration tests. We effectively copy all the sources and then remove the target
-# directory. This means that changes to `arbitrum-client` sources will invalidate the
+# directory. This means that changes to `darkpool-client` sources will invalidate the
 # cache for this stage only, as the end state is the same
 FROM --platform=arm64 rust:latest AS chef
 
@@ -34,7 +34,7 @@ RUN cargo chef cook --tests --features "integration" --recipe-path recipe.json
 WORKDIR /build
 COPY . .
 
-WORKDIR /build/arbitrum-client
+WORKDIR /build/darkpool-client
 RUN cargo build --quiet --test integration --features "integration"
 
 # Copy in the deployments file from the sequencer

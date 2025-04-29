@@ -6,12 +6,12 @@ description = "Helpers for setting up and running integration tests for the rela
 
 [features]
 default = ["test-harness"]
-contracts = ["arbitrum"]
-arbitrum = [
+arbitrum = ["blockchain"]
+blockchain = [
     "dep:alloy",
     "dep:alloy-primitives",
     "dep:alloy-sol-types",
-    "dep:arbitrum-client",
+    "dep:darkpool-client",
     "dep:circuit-types",
     "dep:common",
     "dep:constants",
@@ -50,7 +50,7 @@ alloy-primitives = { workspace = true, optional = true }
 alloy-sol-types = { workspace = true, optional = true }
 
 # === Workspace Dependencies === # 
-arbitrum-client = { workspace = true, optional = true }
+darkpool-client = { workspace = true, optional = true }
 circuit-types = { workspace = true, optional = true }
 common = { workspace = true, features = ["mocks"], optional = true }
 constants = { workspace = true, optional = true }

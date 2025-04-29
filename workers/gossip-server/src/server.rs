@@ -4,12 +4,12 @@
 //! This file groups logic for creating the server as well as the central
 //! dispatch/execution loop of the workers
 
-use arbitrum_client::client::ArbitrumClient;
 use common::{
     default_wrapper::DefaultWrapper,
     types::{gossip::WrappedPeerId, CancelChannel},
 };
 use constants::in_bootstrap_mode;
+use darkpool_client::client::DarkpoolClient;
 use gossip_api::{
     pubsub::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},
@@ -150,9 +150,9 @@ impl GossipProtocolExecutor {
         })
     }
 
-    /// Shorthand to fetch the arbitrum client from the config
-    pub(super) fn arbitrum_client(&self) -> &ArbitrumClient {
-        &self.config.arbitrum_client
+    /// Shorthand to fetch the darkpool client from the config
+    pub(super) fn darkpool_client(&self) -> &DarkpoolClient {
+        &self.config.darkpool_client
     }
 
     /// Runs the executor loop

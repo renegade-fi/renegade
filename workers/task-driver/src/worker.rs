@@ -2,9 +2,9 @@
 
 use std::thread::{self, JoinHandle};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::{default_wrapper::DefaultOption, worker::Worker};
+use darkpool_client::client::DarkpoolClient;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue,
@@ -34,8 +34,8 @@ pub struct TaskDriverConfig {
     ///
     /// For recursive job enqueues
     pub task_queue_sender: TaskDriverQueue,
-    /// The arbitrum client used by the system
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client used by the system
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_queue: NetworkManagerQueue,
     /// A sender to the proof manager's work queue
@@ -54,7 +54,7 @@ impl TaskDriverConfig {
     pub fn new(
         task_queue: TaskDriverReceiver,
         task_queue_sender: TaskDriverQueue,
-        arbitrum_client: ArbitrumClient,
+        darkpool_client: DarkpoolClient,
         network_queue: NetworkManagerQueue,
         proof_queue: ProofManagerQueue,
         event_queue: EventManagerQueue,
@@ -65,7 +65,7 @@ impl TaskDriverConfig {
             runtime_config: Default::default(),
             task_queue,
             task_queue_sender,
-            arbitrum_client,
+            darkpool_client,
             network_queue,
             proof_queue,
             event_queue,

@@ -16,14 +16,14 @@ mod setup;
 use std::{process::exit, thread, time::Duration};
 
 use api_server::worker::{ApiServer, ApiServerConfig};
-use arbitrum_client::{
-    client::{ArbitrumClient, ArbitrumClientConfig},
-    constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
-};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use common::{default_wrapper::default_option, types::new_cancel_channel};
 use constants::{in_bootstrap_mode, VERSION};
+use darkpool_client::{
+    client::{DarkpoolClient, DarkpoolClientConfig},
+    constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
+};
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
@@ -47,6 +47,7 @@ use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use tokio::select;
 use tracing::info;
+use util::err_str;
 
 use crate::setup::node_setup;
 
@@ -152,25 +153,25 @@ async fn main() -> Result<(), CoordinatorError> {
         });
     }
 
-    // Construct an arbitrum client that workers will use for submitting txs
-    let arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
+    // Construct a darkpool client that workers will use for submitting txs
+    let darkpool_client = DarkpoolClient::new(DarkpoolClientConfig {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.clone().expect("rpc url not set"),
         private_key: args.private_key.clone(),
         block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
     })
-    .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
+    .map_err(err_str!(CoordinatorError::DarkpoolClient))?;
 
-    // Construct an arbitrum client for the on-chain event listener worker
-    let chain_listener_arbitrum_client = ArbitrumClient::new(ArbitrumClientConfig {
+    // Construct a darkpool client for the on-chain event listener worker
+    let chain_listener_darkpool_client = DarkpoolClient::new(DarkpoolClientConfig {
         darkpool_addr: args.contract_address.clone(),
         chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
         private_key: args.private_key.clone(),
         block_polling_interval_ms: EVENT_FILTER_POLLING_INTERVAL_MS,
     })
-    .map_err(|e| CoordinatorError::Arbitrum(e.to_string()))?;
+    .map_err(err_str!(CoordinatorError::DarkpoolClient))?;
 
     // ----------------
     // | Worker Setup |
@@ -183,7 +184,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let task_driver_config = TaskDriverConfig::new(
         task_receiver,
         task_sender.clone(),
-        arbitrum_client.clone(),
+        darkpool_client.clone(),
         network_sender.clone(),
         proof_generation_worker_sender.clone(),
         event_manager_sender,
@@ -242,7 +243,7 @@ async fn main() -> Result<(), CoordinatorError> {
         local_addr: network_manager.local_addr.clone(),
         cluster_id: args.cluster_id,
         bootstrap_servers: args.bootstrap_servers,
-        arbitrum_client: arbitrum_client.clone(),
+        darkpool_client: darkpool_client.clone(),
         global_state: global_state.clone(),
         job_sender: gossip_worker_sender.clone(),
         job_receiver: Some(gossip_worker_receiver).into(),
@@ -322,7 +323,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = new_cancel_channel();
     let mut chain_listener = OnChainEventListener::new(OnChainEventListenerConfig {
         websocket_addr: args.eth_websocket_addr,
-        arbitrum_client: chain_listener_arbitrum_client,
+        darkpool_client: chain_listener_darkpool_client,
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
@@ -345,7 +346,7 @@ async fn main() -> Result<(), CoordinatorError> {
         chain: args.chain_id,
         compliance_service_url: args.compliance_service_url,
         wallet_task_rate_limit: args.wallet_task_rate_limit,
-        arbitrum_client: arbitrum_client.clone(),
+        darkpool_client: darkpool_client.clone(),
         network_sender: network_sender.clone(),
         state: global_state.clone(),
         system_bus,

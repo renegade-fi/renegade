@@ -11,7 +11,6 @@ use core::panic;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::native_helpers::compute_wallet_private_share_commitment;
 use circuits::zk_circuits::valid_wallet_create::{
@@ -21,6 +20,8 @@ use circuits::zk_circuits::valid_wallet_create::{
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use constants::Scalar;
+use darkpool_client::client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::{
     try_send_event, EventManagerQueue, RelayerEvent, WalletCreationEvent,
 };
@@ -110,8 +111,8 @@ pub enum NewWalletTaskError {
     InvalidShares(String),
     /// Error generating a proof of `VALID WALLET CREATE`
     ProofGeneration(String),
-    /// Error interacting with the Arbitrum client
-    Arbitrum(String),
+    /// Error interacting with the darkpool client
+    Darkpool(String),
     /// Error sending a message to another worker
     SendMessage(String),
     /// Error setting up the task
@@ -120,11 +121,17 @@ pub enum NewWalletTaskError {
     State(String),
 }
 
+impl From<DarkpoolClientError> for NewWalletTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        NewWalletTaskError::Darkpool(e.to_string())
+    }
+}
+
 impl TaskError for NewWalletTaskError {
     fn retryable(&self) -> bool {
         matches!(
             self,
-            NewWalletTaskError::Arbitrum(_)
+            NewWalletTaskError::Darkpool(_)
                 | NewWalletTaskError::ProofGeneration(_)
                 | NewWalletTaskError::State(_)
         )
@@ -157,8 +164,8 @@ pub struct NewWalletTask {
     /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
     /// first step
     pub proof_bundle: Option<ValidWalletCreateBundle>,
-    /// An arbitrum client for the task to submit transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// A darkpool client for the task to submit transactions
+    pub darkpool_client: DarkpoolClient,
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
@@ -184,7 +191,7 @@ impl Task for NewWalletTask {
             wallet: descriptor.wallet,
             blinder_seed: descriptor.blinder_seed,
             proof_bundle: None, // Initialize as None since it's not part of the descriptor
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             global_state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
             task_state: NewWalletTaskState::Pending, // Initialize to the initial state
@@ -265,10 +272,8 @@ impl NewWalletTask {
     /// Submit the newly created wallet on-chain with proof of validity
     async fn submit_wallet_tx(&self) -> Result<(), NewWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
-        self.arbitrum_client
-            .new_wallet(&proof)
-            .await
-            .map_err(|err| NewWalletTaskError::Arbitrum(err.to_string()))
+        self.darkpool_client.new_wallet(&proof).await?;
+        Ok(())
     }
 
     /// A helper to find the new Merkle authentication path in the contract
@@ -276,9 +281,7 @@ impl NewWalletTask {
     /// authentication path
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
         // Find the authentication path of the wallet's private shares
-        let wallet_auth_path = find_merkle_path(&self.wallet, &self.arbitrum_client)
-            .await
-            .map_err(|err| NewWalletTaskError::Arbitrum(err.to_string()))?;
+        let wallet_auth_path = find_merkle_path(&self.wallet, &self.darkpool_client).await?;
 
         // Index the wallet in the global state
         let mut wallet = self.wallet.clone();

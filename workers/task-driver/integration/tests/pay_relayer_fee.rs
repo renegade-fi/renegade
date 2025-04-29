@@ -105,7 +105,7 @@ async fn test_pay_relayer_fee__zero_initial_balance(test_args: IntegrationTestAr
 
     // Create an empty relayer wallet
     let (relayer_wallet, relayer_blinder_seed, relayer_share_seed) =
-        new_wallet_in_darkpool(&test_args.arbitrum_client).await?;
+        new_wallet_in_darkpool(&test_args.darkpool_client).await?;
     set_local_relayer_wallet(relayer_wallet.clone(), &test_args).await;
 
     // Pay the relayer fee

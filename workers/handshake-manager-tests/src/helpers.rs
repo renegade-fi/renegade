@@ -13,7 +13,7 @@ use crate::IntegrationTestArgs;
 pub(crate) async fn allocate_wallet(wallet: &mut Wallet, args: &IntegrationTestArgs) -> Result<()> {
     let mut rng = thread_rng();
     let state = args.mock_node.state();
-    let client = args.mock_node.arbitrum_client();
+    let client = args.mock_node.darkpool_client();
 
     // Generate wallet shares so we can find the wallet on-chain
     let blinder_seed = Scalar::random(&mut rng);

@@ -1,4 +1,4 @@
-//! Defines `ArbitrumClient` helpers that allow for indexing events
+//! Defines `DarkpoolClient` helpers that allow for indexing events
 //! emitted by the darkpool contract
 
 use std::cmp::Reverse;
@@ -44,7 +44,7 @@ use crate::{
         updateWalletCall,
     },
     constants::SELECTOR_LEN,
-    errors::ArbitrumClientError,
+    errors::DarkpoolClientError,
     helpers::{
         parse_shares_from_new_wallet, parse_shares_from_process_atomic_match_settle,
         parse_shares_from_process_atomic_match_settle_with_receiver,
@@ -54,14 +54,14 @@ use crate::{
     },
 };
 
-use super::ArbitrumClient;
+use super::DarkpoolClient;
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 /// The error message emitted when a TX hash is not found in a log
 const ERR_NO_TX_HASH: &str = "no tx hash for log";
 
-impl ArbitrumClient {
+impl DarkpoolClient {
     /// Return the hash of the transaction that last indexed secret shares for
     /// the given public blinder share
     ///
@@ -73,7 +73,7 @@ impl ArbitrumClient {
     pub async fn get_public_blinder_tx(
         &self,
         public_blinder_share: Scalar,
-    ) -> Result<Option<TxHash>, ArbitrumClientError> {
+    ) -> Result<Option<TxHash>, DarkpoolClientError> {
         let darkpool_client = self.darkpool_client();
         let events = darkpool_client
             .WalletUpdated_filter()
@@ -81,7 +81,7 @@ impl ArbitrumClient {
             .from_block(self.deploy_block)
             .query()
             .await
-            .map_err(ArbitrumClientError::event_querying)?;
+            .map_err(DarkpoolClientError::event_querying)?;
 
         // Fetch the tx hash from the latest event
         let tx_hash = events.last().map(|(_, meta)| meta.transaction_hash.expect(ERR_NO_TX_HASH));
@@ -99,15 +99,15 @@ impl ArbitrumClient {
     pub async fn find_merkle_authentication_path(
         &self,
         commitment: Scalar,
-    ) -> Result<MerkleAuthenticationPath, ArbitrumClientError> {
+    ) -> Result<MerkleAuthenticationPath, DarkpoolClientError> {
         let (index, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
         let leaf_index = BigUint::from(index);
         let tx: TransactionReceipt = self
             .provider()
             .get_transaction_receipt(tx)
             .await
-            .map_err(|e| ArbitrumClientError::TxQuerying(e.to_string()))?
-            .ok_or(ArbitrumClientError::TxNotFound(tx.to_string()))?;
+            .map_err(|e| DarkpoolClientError::TxQuerying(e.to_string()))?
+            .ok_or(DarkpoolClientError::TxNotFound(tx.to_string()))?;
 
         // The number of Merkle insertions that occurred in a transaction
         let mut n_insertions = 0;
@@ -149,7 +149,7 @@ impl ArbitrumClient {
         merkle_path.sort_by_key(|(depth, _)| Reverse(*depth));
         let siblings =
             merkle_path.into_iter().map(|(_, sibling)| sibling).collect_vec().try_into().map_err(
-                |_| ArbitrumClientError::EventQuerying(ERR_MERKLE_PATH_SIBLINGS.to_string()),
+                |_| DarkpoolClientError::EventQuerying(ERR_MERKLE_PATH_SIBLINGS.to_string()),
             )?;
 
         Ok(MerkleAuthenticationPath::new(siblings, leaf_index, commitment))
@@ -161,7 +161,7 @@ impl ArbitrumClient {
     pub async fn find_commitment_in_state_with_tx(
         &self,
         commitment: Scalar,
-    ) -> Result<(u128, TxHash), ArbitrumClientError> {
+    ) -> Result<(u128, TxHash), DarkpoolClientError> {
         let events = self
             .darkpool_client()
             .MerkleInsertion_filter()
@@ -169,12 +169,12 @@ impl ArbitrumClient {
             .from_block(self.deploy_block)
             .query()
             .await
-            .map_err(ArbitrumClientError::event_querying)?;
+            .map_err(DarkpoolClientError::event_querying)?;
 
         events
             .last()
             .map(|(event, meta)| (event.index, meta.transaction_hash.expect(ERR_NO_TX_HASH)))
-            .ok_or(ArbitrumClientError::CommitmentNotFound)
+            .ok_or(DarkpoolClientError::CommitmentNotFound)
     }
 
     /// Fetch and parse the public secret shares from the calldata of the
@@ -183,18 +183,18 @@ impl ArbitrumClient {
     pub async fn fetch_public_shares_for_blinder(
         &self,
         public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+    ) -> Result<SizedWalletShare, DarkpoolClientError> {
         let tx_hash = self
             .get_public_blinder_tx(public_blinder_share)
             .await?
-            .ok_or(ArbitrumClientError::BlinderNotFound)?;
+            .ok_or(DarkpoolClientError::BlinderNotFound)?;
 
         let tx = self
             .provider()
             .get_transaction_by_hash(tx_hash)
             .await
-            .map_err(ArbitrumClientError::tx_querying)?
-            .ok_or(ArbitrumClientError::TxNotFound(tx_hash.to_string()))?;
+            .map_err(DarkpoolClientError::tx_querying)?
+            .ok_or(DarkpoolClientError::TxNotFound(tx_hash.to_string()))?;
 
         let calldata: Vec<u8> = tx.input().to_vec();
         let selector: [u8; 4] = calldata[..SELECTOR_LEN].try_into().unwrap();
@@ -210,7 +210,7 @@ impl ArbitrumClient {
     pub async fn find_external_matches_in_tx(
         &self,
         tx_hash: TxHash,
-    ) -> Result<Vec<ExternalMatchResult>, ArbitrumClientError> {
+    ) -> Result<Vec<ExternalMatchResult>, DarkpoolClientError> {
         // Get all darkpool subcalls in the tx
         let mut matches = Vec::new();
         let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
@@ -268,12 +268,12 @@ impl ArbitrumClient {
         &self,
         tx_hash: TxHash,
         public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+    ) -> Result<SizedWalletShare, DarkpoolClientError> {
         // Parse the call trace for calls to the darkpool contract
         let calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
         if calls.is_empty() {
             let hash_str = format!("{tx_hash:#x}");
-            return Err(ArbitrumClientError::DarkpoolSubcallNotFound(hash_str));
+            return Err(DarkpoolClientError::DarkpoolSubcallNotFound(hash_str));
         }
 
         // Attempt to parse public shares from the calldata of each call
@@ -291,7 +291,7 @@ impl ArbitrumClient {
             }
         }
 
-        Err(ArbitrumClientError::InvalidSelector)
+        Err(DarkpoolClientError::InvalidSelector)
     }
 
     /// Parse wallet shares given a selector and calldata
@@ -299,7 +299,7 @@ impl ArbitrumClient {
         selector: [u8; SELECTOR_LEN],
         calldata: &[u8],
         public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, ArbitrumClientError> {
+    ) -> Result<SizedWalletShare, DarkpoolClientError> {
         match selector {
             <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
             <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
@@ -327,7 +327,7 @@ impl ArbitrumClient {
             <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
             _ => {
                 error!("invalid selector when parsing public shares: {selector:?}");
-                Err(ArbitrumClientError::InvalidSelector)
+                Err(DarkpoolClientError::InvalidSelector)
             },
         }
     }
@@ -338,7 +338,7 @@ impl ArbitrumClient {
     /// serialized as calldata bytes
     fn parse_external_match_from_calldata(
         statement_bytes: &[u8],
-    ) -> Result<ExternalMatchResult, ArbitrumClientError> {
+    ) -> Result<ExternalMatchResult, DarkpoolClientError> {
         let statement: ContractValidMatchSettleAtomicStatement =
             deserialize_calldata(statement_bytes)?;
         Ok(statement.match_result)
@@ -349,7 +349,7 @@ impl ArbitrumClient {
     fn parse_external_match_from_malleable(
         base_amount: U256,
         statement_bytes: &[u8],
-    ) -> Result<ExternalMatchResult, ArbitrumClientError> {
+    ) -> Result<ExternalMatchResult, DarkpoolClientError> {
         let statement: ContractValidMalleableMatchSettleAtomicStatement =
             deserialize_calldata(statement_bytes)?;
         let match_res = statement.match_result;
@@ -376,13 +376,13 @@ impl ArbitrumClient {
     async fn fetch_tx_darkpool_calls(
         &self,
         tx_hash: TxHash,
-    ) -> Result<Vec<CallFrame>, ArbitrumClientError> {
+    ) -> Result<Vec<CallFrame>, DarkpoolClientError> {
         let trace = self.fetch_call_trace(tx_hash).await?;
         Ok(self.find_darkpool_subcalls(&trace))
     }
 
     /// Fetch the call trace for a given transaction
-    async fn fetch_call_trace(&self, tx_hash: TxHash) -> Result<GethTrace, ArbitrumClientError> {
+    async fn fetch_call_trace(&self, tx_hash: TxHash) -> Result<GethTrace, DarkpoolClientError> {
         // Fetch a call trace for the transaction
         let options = GethDebugTracingOptions {
             tracer: Some(GethDebugTracerType::BuiltInTracer(
@@ -394,7 +394,7 @@ impl ArbitrumClient {
         self.provider()
             .debug_trace_transaction(tx_hash, options)
             .await
-            .map_err(ArbitrumClientError::tx_querying)
+            .map_err(DarkpoolClientError::tx_querying)
     }
 
     /// Find all darkpool sub-calls in a call trace

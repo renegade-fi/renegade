@@ -1,9 +1,9 @@
 //! Integration tests for event indexing client functionality
 
-use arbitrum_client::constants::EMPTY_LEAF_VALUE;
 use circuit_types::merkle::MerkleOpening;
 use circuits::zk_circuits::test_helpers::create_multi_opening_with_default_leaf;
 use constants::MERKLE_HEIGHT;
+use darkpool_client::constants::EMPTY_LEAF_VALUE;
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
@@ -20,7 +20,7 @@ async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {
         *EMPTY_LEAF_VALUE,
     );
 
-    // Find Merkle openings via the `ArbitrumClient` and compare them to the
+    // Find Merkle openings via the `DarkpoolClient` and compare them to the
     // expected openings
     for (index, commitment) in
         [state.index0_commitment, state.index1_commitment, state.index2_commitment]

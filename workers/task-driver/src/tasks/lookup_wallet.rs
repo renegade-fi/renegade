@@ -6,7 +6,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::{
@@ -14,6 +13,7 @@ use common::types::{
     wallet::{keychain::PrivateKeyChain, Wallet, WalletIdentifier},
 };
 use constants::Scalar;
+use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};
@@ -86,17 +86,31 @@ pub enum LookupWalletTaskError {
     NotFound(String),
     /// Error generating a proof of `VALID COMMITMENTS`
     ProofGeneration(String),
-    /// Error interacting with the arbitrum client
-    Arbitrum(String),
+    /// Error interacting with the darkpool client
+    Darkpool(String),
     /// Error interacting with global state
     State(String),
+}
+
+impl LookupWalletTaskError {
+    /// Create a new not found error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn not_found(msg: impl ToString) -> Self {
+        LookupWalletTaskError::NotFound(msg.to_string())
+    }
+}
+
+impl From<DarkpoolClientError> for LookupWalletTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        LookupWalletTaskError::Darkpool(e.to_string())
+    }
 }
 
 impl TaskError for LookupWalletTaskError {
     fn retryable(&self) -> bool {
         matches!(
             self,
-            LookupWalletTaskError::Arbitrum(_)
+            LookupWalletTaskError::Darkpool(_)
                 | LookupWalletTaskError::ProofGeneration(_)
                 | LookupWalletTaskError::State(_)
         )
@@ -133,8 +147,8 @@ pub struct LookupWalletTask {
     pub keychain: PrivateKeyChain,
     /// The wallet recovered from contract state
     pub wallet: Option<Wallet>,
-    /// An arbitrum client for the task to submit transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// A darkpool client for the task to submit transactions
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
@@ -157,7 +171,7 @@ impl Task for LookupWalletTask {
             blinder_seed: descriptor.blinder_seed,
             secret_share_seed: descriptor.secret_share_seed,
             keychain: descriptor.secret_keys,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             global_state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
@@ -225,9 +239,7 @@ impl LookupWalletTask {
         );
 
         // Find the authentication path for the wallet
-        let authentication_path = find_merkle_path(&wallet, &self.arbitrum_client)
-            .await
-            .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
+        let authentication_path = find_merkle_path(&wallet, &self.darkpool_client).await?;
         wallet.merkle_proof = Some(authentication_path);
 
         let waiter = self.global_state.update_wallet(wallet.clone()).await?;
@@ -268,17 +280,14 @@ impl LookupWalletTask {
     ) -> Result<(SizedWalletShare, SizedWalletShare), LookupWalletTaskError> {
         // Find the latest index of the wallet in its share stream
         let (blinder_index, curr_blinder, curr_blinder_private_share) =
-            find_latest_wallet_tx(self.blinder_seed, &self.arbitrum_client)
+            find_latest_wallet_tx(self.blinder_seed, &self.darkpool_client)
                 .await
-                .map_err(|e| LookupWalletTaskError::NotFound(e.to_string()))?;
+                .map_err(LookupWalletTaskError::not_found)?;
 
         // Fetch the secret shares from the tx
         let blinder_public_share = curr_blinder - curr_blinder_private_share;
-        let blinded_public_shares = self
-            .arbitrum_client
-            .fetch_public_shares_for_blinder(blinder_public_share)
-            .await
-            .map_err(|e| LookupWalletTaskError::Arbitrum(e.to_string()))?;
+        let blinded_public_shares =
+            self.darkpool_client.fetch_public_shares_for_blinder(blinder_public_share).await?;
 
         // Sample the private shares for the wallet
         let private_shares =

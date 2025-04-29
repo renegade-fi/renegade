@@ -7,9 +7,9 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
+use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};
@@ -85,8 +85,8 @@ impl From<UpdateMerkleProofTaskState> for StateWrapper {
 /// The error type for the update merkle proof task
 #[derive(Clone, Debug)]
 pub enum UpdateMerkleProofTaskError {
-    /// An error occurred interacting with Arbitrum
-    Arbitrum(String),
+    /// An error interacting with the darkpool client
+    Darkpool(String),
     /// An error interacting with global state
     State(String),
     /// An error while updating validity proofs for a wallet
@@ -99,7 +99,7 @@ impl TaskError for UpdateMerkleProofTaskError {
     fn retryable(&self) -> bool {
         matches!(
             self,
-            UpdateMerkleProofTaskError::Arbitrum(_)
+            UpdateMerkleProofTaskError::Darkpool(_)
                 | UpdateMerkleProofTaskError::State(_)
                 | UpdateMerkleProofTaskError::UpdatingValidityProofs(_)
         )
@@ -119,6 +119,12 @@ impl From<StateError> for UpdateMerkleProofTaskError {
     }
 }
 
+impl From<DarkpoolClientError> for UpdateMerkleProofTaskError {
+    fn from(value: DarkpoolClientError) -> Self {
+        UpdateMerkleProofTaskError::Darkpool(value.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
@@ -127,8 +133,8 @@ impl From<StateError> for UpdateMerkleProofTaskError {
 pub struct UpdateMerkleProofTask {
     /// The wallet to update
     pub wallet: Wallet,
-    /// The arbitrum client to use for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client to use for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A copy of the relayer-global state
     pub global_state: State,
     /// The work queue to add proof management jobs to
@@ -148,7 +154,7 @@ impl Task for UpdateMerkleProofTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         Ok(Self {
             wallet: descriptor.wallet,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             global_state: ctx.state,
             proof_queue: ctx.proof_queue,
             network_sender: ctx.network_queue,
@@ -205,11 +211,8 @@ impl UpdateMerkleProofTask {
     /// Find the opening of the wallet to the newest known Merkle root
     pub async fn find_opening(&mut self) -> Result<(), UpdateMerkleProofTaskError> {
         let wallet_commitment = self.wallet.get_wallet_share_commitment();
-        let new_opening = self
-            .arbitrum_client
-            .find_merkle_authentication_path(wallet_commitment)
-            .await
-            .map_err(|err| UpdateMerkleProofTaskError::Arbitrum(err.to_string()))?;
+        let new_opening =
+            self.darkpool_client.find_merkle_authentication_path(wallet_commitment).await?;
         self.wallet.merkle_proof = Some(new_opening);
         self.wallet.merkle_staleness.store(0, Ordering::Relaxed);
 

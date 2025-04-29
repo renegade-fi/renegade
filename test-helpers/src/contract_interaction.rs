@@ -1,5 +1,4 @@
 //! Helpers for interacting with contracts in tests
-use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{
     native_helpers::create_wallet_shares_from_private, traits::BaseType, SizedWalletShare,
 };
@@ -8,6 +7,7 @@ use common::types::{
     wallet::{mocks::mock_empty_wallet, Wallet},
 };
 use constants::Scalar;
+use darkpool_client::client::DarkpoolClient;
 use eyre::Result;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
@@ -22,7 +22,7 @@ pub mod transfer_auth;
 ///
 /// Returns the `blinder_stream_seed` and `share_stream_seed` used to secret
 /// share the wallet as well as the wallet itself
-pub async fn new_wallet_in_darkpool(client: &ArbitrumClient) -> Result<(Wallet, Scalar, Scalar)> {
+pub async fn new_wallet_in_darkpool(client: &DarkpoolClient) -> Result<(Wallet, Scalar, Scalar)> {
     let mut rng = thread_rng();
     let blinder_seed = Scalar::random(&mut rng);
     let share_seed = Scalar::random(&mut rng);
@@ -37,7 +37,7 @@ pub async fn new_wallet_in_darkpool(client: &ArbitrumClient) -> Result<(Wallet, 
 /// wallet
 pub async fn allocate_wallet_in_darkpool(
     wallet: &mut Wallet,
-    client: &ArbitrumClient,
+    client: &DarkpoolClient,
 ) -> Result<()> {
     let share_comm = wallet.get_private_share_commitment();
 
@@ -52,7 +52,7 @@ pub async fn allocate_wallet_in_darkpool(
 }
 
 /// Find the merkle path of the wallet and attach it
-pub async fn attach_merkle_opening(wallet: &mut Wallet, client: &ArbitrumClient) -> Result<()> {
+pub async fn attach_merkle_opening(wallet: &mut Wallet, client: &DarkpoolClient) -> Result<()> {
     let comm = wallet.get_wallet_share_commitment();
     let opening = client.find_merkle_authentication_path(comm).await?;
 

@@ -10,11 +10,11 @@ pub mod helpers;
 pub mod mpc_match;
 
 use alloy::signers::local::PrivateKeySigner;
-use arbitrum_client::constants::Chain;
 use ark_mpc::network::PartyId;
 use clap::Parser;
 use common::types::gossip::WrappedPeerId;
 use config::RelayerConfig;
+use darkpool_client::constants::Chain;
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
 use libp2p::{identity::Keypair, Multiaddr};
 use mock_node::MockNodeController;
@@ -57,7 +57,7 @@ struct CliArgs {
     peer_port: u16,
 
     // --- Chain Config --- //
-    /// The private key to use for the Arbitrum account during testing
+    /// The private key to use for the EVM account during testing
     ///
     /// Defaults to the first pre-deployed account on the `nitro-testnode`
     #[arg(
@@ -65,7 +65,7 @@ struct CliArgs {
         long,
         default_value = DEFAULT_DEVNET_PKEY
     )]
-    arbitrum_pkey: String,
+    private_key: String,
     /// The location of a `deployments.json` file that contains the addresses of
     /// the deployed contracts
     #[arg(long)]
@@ -100,7 +100,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             parse_addr_from_deployments_file(&args.deployments_path, DARKPOOL_PROXY_CONTRACT_KEY)
                 .unwrap();
 
-        let private_key = PrivateKeySigner::from_str(&args.arbitrum_pkey).unwrap();
+        let private_key = PrivateKeySigner::from_str(&args.private_key).unwrap();
         let conf = RelayerConfig {
             p2p_key,
             p2p_port: args.my_port,
@@ -115,7 +115,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         // Setup a mock node
         let mock_node = MockNodeController::new(conf)
             .with_state()
-            .with_arbitrum_client()
+            .with_darkpool_client()
             .with_mock_price_reporter(MOCK_EXECUTION_PRICE)
             .with_mock_proof_generation()
             .with_handshake_manager()

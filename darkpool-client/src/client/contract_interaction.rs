@@ -1,4 +1,4 @@
-//! Defines `ArbitrumClient` helpers that allow for interacting with the
+//! Defines `DarkpoolClient` helpers that allow for interacting with the
 //! darkpool contract
 
 use alloy::eips::BlockId;
@@ -39,37 +39,37 @@ use crate::{
         to_contract_valid_relayer_fee_settlement_statement,
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
     },
-    errors::ArbitrumClientError,
+    errors::DarkpoolClientError,
     helpers::serialize_calldata,
 };
 
-use super::{ArbitrumClient, DarkpoolCallBuilder};
+use super::{DarkpoolCallBuilder, DarkpoolClient};
 
-impl ArbitrumClient {
+impl DarkpoolClient {
     // -----------
     // | GETTERS |
     // -----------
 
     /// Get the current Merkle root in the contract
     #[instrument(skip_all, err)]
-    pub async fn get_merkle_root(&self) -> Result<Scalar, ArbitrumClientError> {
+    pub async fn get_merkle_root(&self) -> Result<Scalar, DarkpoolClientError> {
         self.darkpool_client()
             .getRoot()
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)
+            .map_err(DarkpoolClientError::contract_interaction)
             .map(u256_to_scalar)
     }
 
     /// Get the fee charged by the contract
     #[instrument(skip_all, err)]
-    pub async fn get_protocol_fee(&self) -> Result<FixedPoint, ArbitrumClientError> {
+    pub async fn get_protocol_fee(&self) -> Result<FixedPoint, DarkpoolClientError> {
         // The contract returns the repr of the fee as a u256
         self.darkpool_client()
             .getFee()
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)
+            .map_err(DarkpoolClientError::contract_interaction)
             .map(|r| FixedPoint::from_repr(u256_to_scalar(r)))
     }
 
@@ -78,24 +78,24 @@ impl ArbitrumClient {
     pub async fn get_external_match_fee(
         &self,
         mint: Address,
-    ) -> Result<FixedPoint, ArbitrumClientError> {
+    ) -> Result<FixedPoint, DarkpoolClientError> {
         self.darkpool_client()
             .getExternalMatchFeeForAsset(mint)
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)
+            .map_err(DarkpoolClientError::contract_interaction)
             .map(|r| FixedPoint::from_repr(u256_to_scalar(r)))
     }
 
     /// Get the public encryption key used for protocol fees
     #[instrument(skip_all, err)]
-    pub async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, ArbitrumClientError> {
+    pub async fn get_protocol_pubkey(&self) -> Result<EncryptionKey, DarkpoolClientError> {
         let pubkey = self
             .darkpool_client()
             .getPubkey()
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)?;
+            .map_err(DarkpoolClientError::contract_interaction)?;
 
         Ok(EncryptionKey { x: u256_to_scalar(pubkey[0]), y: u256_to_scalar(pubkey[1]) })
     }
@@ -105,12 +105,12 @@ impl ArbitrumClient {
     pub async fn check_merkle_root_valid(
         &self,
         root: MerkleRoot,
-    ) -> Result<bool, ArbitrumClientError> {
+    ) -> Result<bool, DarkpoolClientError> {
         self.darkpool_client()
             .rootInHistory(scalar_to_u256(root))
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)
+            .map_err(DarkpoolClientError::contract_interaction)
     }
 
     /// Check whether the given nullifier is used
@@ -120,12 +120,12 @@ impl ArbitrumClient {
     pub async fn check_nullifier_used(
         &self,
         nullifier: Nullifier,
-    ) -> Result<bool, ArbitrumClientError> {
+    ) -> Result<bool, DarkpoolClientError> {
         self.darkpool_client()
             .isNullifierSpent(scalar_to_u256(nullifier))
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)
+            .map_err(DarkpoolClientError::contract_interaction)
     }
 
     /// Check whether the given public blinder is used
@@ -135,13 +135,13 @@ impl ArbitrumClient {
     pub async fn is_public_blinder_used(
         &self,
         blinder: Scalar,
-    ) -> Result<bool, ArbitrumClientError> {
+    ) -> Result<bool, DarkpoolClientError> {
         let blinder_u256 = scalar_to_u256(blinder);
         self.darkpool_client()
             .isPublicBlinderUsed(blinder_u256)
             .call()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)
+            .map_err(DarkpoolClientError::contract_interaction)
     }
 
     // -----------
@@ -159,7 +159,7 @@ impl ArbitrumClient {
     pub async fn new_wallet(
         &self,
         valid_wallet_create: &SizedValidWalletCreateBundle,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<(), DarkpoolClientError> {
         let GenericValidWalletCreateBundle { statement, proof } = valid_wallet_create;
 
         let contract_proof = to_contract_proof(proof)?;
@@ -193,7 +193,7 @@ impl ArbitrumClient {
         valid_wallet_update: &SizedValidWalletUpdateBundle,
         wallet_commitment_signature: Vec<u8>,
         transfer_auth: Option<TransferAuth>,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<(), DarkpoolClientError> {
         let GenericValidWalletUpdateBundle { statement, proof } = valid_wallet_update;
 
         let contract_proof = to_contract_proof(proof)?;
@@ -235,7 +235,7 @@ impl ArbitrumClient {
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
         match_bundle: &MatchBundle,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<(), DarkpoolClientError> {
         // Destructure proof bundles
 
         let GenericMatchSettleBundle {
@@ -276,14 +276,14 @@ impl ArbitrumClient {
             party1_validity_proofs,
             &valid_match_settle_proof,
         )
-        .map_err(ArbitrumClientError::Conversion)?;
+        .map_err(DarkpoolClientError::Conversion)?;
 
         let match_link_proofs = build_match_linking_proofs(
             party0_validity_proofs,
             party1_validity_proofs,
             match_bundle,
         )
-        .map_err(ArbitrumClientError::Conversion)?;
+        .map_err(DarkpoolClientError::Conversion)?;
 
         // Serialize calldata
 
@@ -324,7 +324,7 @@ impl ArbitrumClient {
         receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &AtomicMatchSettleBundle,
-    ) -> Result<TransactionRequest, ArbitrumClientError> {
+    ) -> Result<TransactionRequest, DarkpoolClientError> {
         // Destructure proof bundles
         let GenericMatchSettleAtomicBundle {
             statement: valid_match_settle_atomic_statement,
@@ -349,12 +349,12 @@ impl ArbitrumClient {
             internal_party_validity_proofs,
             &valid_match_settle_atomic_proof,
         )
-        .map_err(ArbitrumClientError::Conversion)?;
+        .map_err(DarkpoolClientError::Conversion)?;
 
         let commitments_link = &match_atomic_bundle.commitments_link;
         let match_link_proofs =
             build_atomic_match_linking_proofs(internal_party_validity_proofs, commitments_link)
-                .map_err(ArbitrumClientError::Conversion)?;
+                .map_err(DarkpoolClientError::Conversion)?;
 
         // Serialize calldata
         let internal_party_match_payload_calldata =
@@ -417,7 +417,7 @@ impl ArbitrumClient {
         receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
-    ) -> Result<TransactionRequest, ArbitrumClientError> {
+    ) -> Result<TransactionRequest, DarkpoolClientError> {
         let GenericMalleableMatchSettleAtomicBundle {
             statement: valid_match_settle_atomic_statement,
             proof: valid_match_settle_atomic_proof,
@@ -439,12 +439,12 @@ impl ArbitrumClient {
             internal_party_validity_proofs,
             &valid_match_settle_atomic_proof,
         )
-        .map_err(ArbitrumClientError::Conversion)?;
+        .map_err(DarkpoolClientError::Conversion)?;
 
         let commitments_link = &match_atomic_bundle.commitments_link;
         let link_proofs =
             build_atomic_match_linking_proofs(internal_party_validity_proofs, commitments_link)
-                .map_err(ArbitrumClientError::Conversion)?;
+                .map_err(DarkpoolClientError::Conversion)?;
 
         // Serialize calldata
         let internal_party_match_payload_calldata =
@@ -520,7 +520,7 @@ impl ArbitrumClient {
         &self,
         valid_relayer_fee_settlement: &SizedRelayerFeeSettlementBundle,
         relayer_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<(), DarkpoolClientError> {
         let GenericRelayerFeeSettlementBundle { statement, proof } = valid_relayer_fee_settlement;
 
         let contract_proof = to_contract_proof(proof)?;
@@ -555,7 +555,7 @@ impl ArbitrumClient {
     pub async fn settle_offline_fee(
         &self,
         valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<(), DarkpoolClientError> {
         let GenericOfflineFeeSettlementBundle { statement, proof } = valid_offline_fee_settlement;
 
         let contract_proof = to_contract_proof(proof)?;
@@ -589,7 +589,7 @@ impl ArbitrumClient {
         &self,
         valid_fee_redemption: &SizedFeeRedemptionBundle,
         recipient_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<(), ArbitrumClientError> {
+    ) -> Result<(), DarkpoolClientError> {
         let GenericFeeRedemptionBundle { statement, proof } = valid_fee_redemption;
 
         let contract_proof = to_contract_proof(proof)?;
@@ -621,21 +621,21 @@ impl ArbitrumClient {
     pub async fn send_tx<C: CallDecoder>(
         &self,
         tx: DarkpoolCallBuilder<'_, C>,
-    ) -> Result<TransactionReceipt, ArbitrumClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let gas_price = self.get_adjusted_gas_price().await?;
         let receipt = tx
             .gas_price(gas_price)
             .send()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)?
+            .map_err(DarkpoolClientError::contract_interaction)?
             .get_receipt()
             .await
-            .map_err(ArbitrumClientError::contract_interaction)?;
+            .map_err(DarkpoolClientError::contract_interaction)?;
 
         // Check for failure
         if !receipt.status() {
             let error_msg = format!("tx ({:#x}) failed with status 0", receipt.transaction_hash);
-            return Err(ArbitrumClientError::contract_interaction(error_msg));
+            return Err(DarkpoolClientError::contract_interaction(error_msg));
         }
 
         Ok(receipt)
@@ -644,19 +644,19 @@ impl ArbitrumClient {
     /// Get the adjusted gas price for submitting a transaction
     ///
     /// We double the latest basefee to prevent reverts
-    async fn get_adjusted_gas_price(&self) -> Result<u128, ArbitrumClientError> {
+    async fn get_adjusted_gas_price(&self) -> Result<u128, DarkpoolClientError> {
         // Set the gas price to 2x the latest basefee for simplicity
         let latest_block = self
             .provider()
             .get_block(BlockId::latest())
             .await
-            .map_err(ArbitrumClientError::rpc)?
-            .ok_or(ArbitrumClientError::rpc("No latest block found"))?;
+            .map_err(DarkpoolClientError::rpc)?
+            .ok_or(DarkpoolClientError::rpc("No latest block found"))?;
 
         let latest_basefee = latest_block
             .header
             .base_fee_per_gas
-            .ok_or(ArbitrumClientError::rpc("No basefee found"))?;
+            .ok_or(DarkpoolClientError::rpc("No basefee found"))?;
         let gas_price = (latest_basefee * 2) as u128;
         Ok(gas_price)
     }

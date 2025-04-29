@@ -36,7 +36,7 @@ integration_test_async!(test_lookup_wallet__invalid_wallet);
 async fn test_lookup_wallet__valid_wallet(test_args: IntegrationTestArgs) -> Result<()> {
     // Create a wallet from a blinder seed
     let mut rng = thread_rng();
-    let client = &test_args.arbitrum_client;
+    let client = &test_args.darkpool_client;
     let (mut wallet, blinder_seed, share_seed) = new_wallet_in_darkpool(client).await?;
 
     // Reblind the wallet to emulate a sequence of updates to the wallet

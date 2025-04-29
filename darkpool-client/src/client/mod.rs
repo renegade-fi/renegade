@@ -1,4 +1,4 @@
-//! The definition of the Arbitrum client, which holds the configuration
+//! The definition of the darkpool client, which holds the configuration
 //! details, along with a lower-level handle for the darkpool smart contract
 
 use std::str::FromStr;
@@ -16,7 +16,7 @@ use util::err_str;
 use crate::{
     abi::Darkpool::DarkpoolInstance,
     constants::Chain,
-    errors::{ArbitrumClientConfigError, ArbitrumClientError},
+    errors::{DarkpoolClientConfigError, DarkpoolClientError},
 };
 
 mod contract_interaction;
@@ -31,10 +31,10 @@ pub type Darkpool = DarkpoolInstance<RenegadeProvider>;
 /// A darkpool call builder type
 pub type DarkpoolCallBuilder<'a, C> = CallBuilder<&'a DynProvider, C>;
 
-/// A configuration struct for the Arbitrum client, consists of relevant
+/// A configuration struct for the darkpool client, consists of relevant
 /// contract addresses, and endpoint for setting up an RPC client, and a private
 /// key for signing transactions.
-pub struct ArbitrumClientConfig {
+pub struct DarkpoolClientConfig {
     /// The address of the darkpool proxy contract.
     ///
     /// This is the main entrypoint to interaction with the darkpool.
@@ -50,7 +50,7 @@ pub struct ArbitrumClientConfig {
     pub block_polling_interval_ms: u64,
 }
 
-impl ArbitrumClientConfig {
+impl DarkpoolClientConfig {
     /// Gets the block number at which the darkpool was deployed
     fn get_deploy_block(&self) -> BlockNumber {
         match self.chain {
@@ -62,9 +62,9 @@ impl ArbitrumClientConfig {
 
     /// Constructs RPC clients capable of signing transactions from the
     /// configuration
-    fn get_provider(&self) -> Result<RenegadeProvider, ArbitrumClientConfigError> {
+    fn get_provider(&self) -> Result<RenegadeProvider, DarkpoolClientConfigError> {
         let url = Url::parse(&self.rpc_url)
-            .map_err(err_str!(ArbitrumClientConfigError::RpcClientInitialization))?;
+            .map_err(err_str!(DarkpoolClientConfigError::RpcClientInitialization))?;
         let key = self.private_key.clone();
         let provider = ProviderBuilder::new().wallet(key).on_http(url);
 
@@ -73,26 +73,26 @@ impl ArbitrumClientConfig {
 
     /// Parses the darkpool proxy address from the configuration,
     /// returning an [`alloy::primitives::Address`]
-    fn get_darkpool_address(&self) -> Result<Address, ArbitrumClientConfigError> {
+    fn get_darkpool_address(&self) -> Result<Address, DarkpoolClientConfigError> {
         Address::from_str(&self.darkpool_addr)
-            .map_err(|e| ArbitrumClientConfigError::AddressParsing(e.to_string()))
+            .map_err(|e| DarkpoolClientConfigError::AddressParsing(e.to_string()))
     }
 }
 
-/// The Arbitrum client, which provides a higher-level interface to the darkpool
+/// The darkpool client, which provides a higher-level interface to the darkpool
 /// contract for Renegade-specific access patterns.
 #[derive(Clone)]
-pub struct ArbitrumClient {
+pub struct DarkpoolClient {
     /// The darkpool contract instance
     darkpool: Darkpool,
     /// The block number at which the darkpool was deployed
     deploy_block: BlockNumber,
 }
 
-impl ArbitrumClient {
-    /// Constructs a new Arbitrum client from the given configuration
+impl DarkpoolClient {
+    /// Constructs a new darkpool client from the given configuration
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(config: ArbitrumClientConfig) -> Result<Self, ArbitrumClientError> {
+    pub fn new(config: DarkpoolClientConfig) -> Result<Self, DarkpoolClientError> {
         let darkpool_address = config.get_darkpool_address()?;
         let provider = config.get_provider()?;
         let darkpool = Darkpool::new(darkpool_address, provider);
@@ -117,13 +117,13 @@ impl ArbitrumClient {
     }
 
     /// Get the chain ID
-    pub async fn chain_id(&self) -> Result<ChainId, ArbitrumClientError> {
-        self.provider().get_chain_id().await.map_err(err_str!(ArbitrumClientError::Rpc))
+    pub async fn chain_id(&self) -> Result<ChainId, DarkpoolClientError> {
+        self.provider().get_chain_id().await.map_err(err_str!(DarkpoolClientError::Rpc))
     }
 
     /// Get the current Stylus block number
-    pub async fn block_number(&self) -> Result<BlockNumber, ArbitrumClientError> {
-        self.provider().get_block_number().await.map_err(err_str!(ArbitrumClientError::Rpc))
+    pub async fn block_number(&self) -> Result<BlockNumber, DarkpoolClientError> {
+        self.provider().get_block_number().await.map_err(err_str!(DarkpoolClientError::Rpc))
     }
 
     /// Resets the deploy block to the current block number.
@@ -131,7 +131,7 @@ impl ArbitrumClient {
     /// Used in integration tests to ensure that we are only querying for events
     /// from the desired block onwards.
     #[cfg(feature = "integration")]
-    pub async fn reset_deploy_block(&mut self) -> Result<(), ArbitrumClientError> {
+    pub async fn reset_deploy_block(&mut self) -> Result<(), DarkpoolClientError> {
         self.deploy_block = self.block_number().await?;
 
         Ok(())

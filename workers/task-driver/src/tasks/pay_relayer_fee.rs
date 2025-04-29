@@ -3,7 +3,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::balance::Balance;
 use circuit_types::Amount;
@@ -13,6 +12,8 @@ use circuits::zk_circuits::valid_relayer_fee_settlement::{
 use common::types::proof_bundles::RelayerFeeSettlementBundle;
 use common::types::tasks::PayRelayerFeeTaskDescriptor;
 use common::types::wallet::Wallet;
+use darkpool_client::client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use num_bigint::BigUint;
@@ -94,8 +95,8 @@ impl From<PayRelayerFeeTaskState> for StateWrapper {
 /// The error type for the pay fees task
 #[derive(Clone, Debug)]
 pub enum PayRelayerFeeTaskError {
-    /// An error interacting with Arbitrum
-    Arbitrum(String),
+    /// An error interacting with the darkpool
+    Darkpool(String),
     /// An error generating a proof for fee payment
     ProofGeneration(String),
     /// An error generating signatures for update
@@ -109,7 +110,7 @@ pub enum PayRelayerFeeTaskError {
 impl TaskError for PayRelayerFeeTaskError {
     fn retryable(&self) -> bool {
         match self {
-            PayRelayerFeeTaskError::Arbitrum(_)
+            PayRelayerFeeTaskError::Darkpool(_)
             | PayRelayerFeeTaskError::ProofGeneration(_)
             | PayRelayerFeeTaskError::State(_)
             | PayRelayerFeeTaskError::UpdateValidityProofs(_) => true,
@@ -132,6 +133,12 @@ impl From<StateError> for PayRelayerFeeTaskError {
     }
 }
 
+impl From<DarkpoolClientError> for PayRelayerFeeTaskError {
+    fn from(error: DarkpoolClientError) -> Self {
+        PayRelayerFeeTaskError::Darkpool(error.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
@@ -150,8 +157,8 @@ pub struct PayRelayerFeeTask {
     pub new_recipient_wallet: Wallet,
     /// The proof of `VALID RELAYER FEE SETTLEMENT` used to pay the protocol fee
     pub proof: Option<RelayerFeeSettlementBundle>,
-    /// The arbitrum client used for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client used for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A hand to the global state
     pub state: State,
     /// The work queue for the proof manager
@@ -196,7 +203,7 @@ impl Task for PayRelayerFeeTask {
             old_recipient_wallet: recipient_wallet,
             new_recipient_wallet,
             proof: None,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             network_sender: ctx.network_queue,
@@ -288,24 +295,20 @@ impl PayRelayerFeeTask {
             .map_err(err_str!(PayRelayerFeeTaskError::Signature))?;
         let sig_bytes = sig.as_bytes().to_vec();
 
-        self.arbitrum_client
-            .settle_online_relayer_fee(&proof, sig_bytes)
-            .await
-            .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))
+        self.darkpool_client.settle_online_relayer_fee(&proof, sig_bytes).await?;
+        Ok(())
     }
 
     /// Find the new Merkle opening for the user and relayer's wallets
     async fn find_opening(&mut self) -> Result<(), PayRelayerFeeTaskError> {
         // Find the opening for the sender's wallet
-        let sender_opening = find_merkle_path(&self.new_sender_wallet, &self.arbitrum_client)
-            .await
-            .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))?;
+        let sender_opening =
+            find_merkle_path(&self.new_sender_wallet, &self.darkpool_client).await?;
         self.new_sender_wallet.merkle_proof = Some(sender_opening);
 
         // Find the opening for the recipient's wallet
-        let recipient_opening = find_merkle_path(&self.new_recipient_wallet, &self.arbitrum_client)
-            .await
-            .map_err(err_str!(PayRelayerFeeTaskError::Arbitrum))?;
+        let recipient_opening =
+            find_merkle_path(&self.new_recipient_wallet, &self.darkpool_client).await?;
         self.new_recipient_wallet.merkle_proof = Some(recipient_opening);
 
         let waiter1 = self.state.update_wallet(self.new_sender_wallet.clone()).await?;

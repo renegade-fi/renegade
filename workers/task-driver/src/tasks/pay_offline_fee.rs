@@ -6,7 +6,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{native_helpers::encrypt_note, note::Note};
 use circuits::zk_circuits::valid_offline_fee_settlement::{
@@ -15,6 +14,7 @@ use circuits::zk_circuits::valid_offline_fee_settlement::{
 use common::types::{
     proof_bundles::OfflineFeeSettlementBundle, tasks::PayOfflineFeeTaskDescriptor, wallet::Wallet,
 };
+use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::{ProofJob, ProofManagerQueue},
@@ -100,8 +100,8 @@ impl From<PayOfflineFeeTaskState> for StateWrapper {
 /// The error type for the pay fees task
 #[derive(Clone, Debug)]
 pub enum PayOfflineFeeTaskError {
-    /// An error interacting with Arbitrum
-    Arbitrum(String),
+    /// An error interacting with darkpool
+    Darkpool(String),
     /// An error generating a proof for fee payment
     ProofGeneration(String),
     /// An error interacting with the state
@@ -113,7 +113,7 @@ pub enum PayOfflineFeeTaskError {
 impl TaskError for PayOfflineFeeTaskError {
     fn retryable(&self) -> bool {
         match self {
-            PayOfflineFeeTaskError::Arbitrum(_)
+            PayOfflineFeeTaskError::Darkpool(_)
             | PayOfflineFeeTaskError::State(_)
             | PayOfflineFeeTaskError::ProofGeneration(_)
             | PayOfflineFeeTaskError::UpdateValidityProofs(_) => true,
@@ -135,6 +135,12 @@ impl From<StateError> for PayOfflineFeeTaskError {
     }
 }
 
+impl From<DarkpoolClientError> for PayOfflineFeeTaskError {
+    fn from(error: DarkpoolClientError) -> Self {
+        PayOfflineFeeTaskError::Darkpool(error.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
@@ -153,8 +159,8 @@ pub struct PayOfflineFeeTask {
     pub note: Note,
     /// The proof of `VALID OFFLINE FEE SETTLEMENT` used to pay the fee
     pub proof: Option<OfflineFeeSettlementBundle>,
-    /// The arbitrum client used for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client used for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A hand to the global state
     pub state: State,
     /// The work queue for the proof manager
@@ -191,7 +197,7 @@ impl Task for PayOfflineFeeTask {
             new_wallet,
             note,
             proof: None,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             network_sender: ctx.network_queue,
@@ -271,17 +277,13 @@ impl PayOfflineFeeTask {
     /// Submit the `settle_offline_fee` transaction for the balance
     async fn submit_payment(&self) -> Result<(), PayOfflineFeeTaskError> {
         let proof = self.proof.clone().unwrap();
-        self.arbitrum_client
-            .settle_offline_fee(&proof)
-            .await
-            .map_err(err_str!(PayOfflineFeeTaskError::Arbitrum))
+        self.darkpool_client.settle_offline_fee(&proof).await?;
+        Ok(())
     }
 
     /// Find the Merkle opening for the new wallet
     async fn find_merkle_opening(&mut self) -> Result<(), PayOfflineFeeTaskError> {
-        let merkle_opening = find_merkle_path(&self.new_wallet, &self.arbitrum_client)
-            .await
-            .map_err(err_str!(PayOfflineFeeTaskError::Arbitrum))?;
+        let merkle_opening = find_merkle_path(&self.new_wallet, &self.darkpool_client).await?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // Update the global state to include the new wallet

@@ -6,7 +6,7 @@
 #[cfg(feature = "arbitrum")]
 pub mod arbitrum;
 pub mod assertions;
-#[cfg(feature = "arbitrum")]
+#[cfg(feature = "blockchain")]
 pub mod contract_interaction;
 #[cfg(feature = "test-harness")]
 pub mod macros;
