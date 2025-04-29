@@ -60,6 +60,28 @@ pub const ASSEMBLE_MALLEABLE_EXTERNAL_MATCH_ROUTE: &str =
 /// The route for requesting an atomic match
 pub const REQUEST_EXTERNAL_MATCH_ROUTE: &str = "/v0/matching-engine/request-external-match";
 
+// -----------
+// | Helpers |
+// -----------
+
+/// Processes a settlement transaction for an external match response
+///
+/// Practically this will swap the `input` and `data` fields, as clients expect
+/// transaction calldata to be set in the `data` field
+#[cfg(feature = "full-api")]
+fn process_settlement_tx(tx: &mut TransactionRequest) {
+    // If the data is not empty, do not modify it
+    let calldata = &mut tx.input;
+    let data_empty = calldata.data.as_ref().map(|d| d.is_empty()).unwrap_or(true);
+    if !data_empty {
+        return;
+    }
+
+    // Otherwise, swap the input and data
+    let input = calldata.input.take().unwrap_or_default();
+    calldata.data = Some(input);
+}
+
 // -------------------------------
 // | HTTP Requests and Responses |
 // -------------------------------
@@ -316,7 +338,10 @@ impl AtomicMatchApiBundle {
     /// Create a new bundle from a `VALID MATCH SETTLE ATOMIC` bundle and a
     /// settlement transaction
     #[cfg(feature = "full-api")]
-    pub fn new(match_bundle: &AtomicMatchSettleBundle, settlement_tx: TransactionRequest) -> Self {
+    pub fn new(
+        match_bundle: &AtomicMatchSettleBundle,
+        mut settlement_tx: TransactionRequest,
+    ) -> Self {
         let statement = &match_bundle.atomic_match_proof.statement;
         let match_result = statement.match_result.clone();
         let fees = statement.external_party_fees;
@@ -326,6 +351,8 @@ impl AtomicMatchApiBundle {
         received_amount -= fees.total();
         let (sent_mint, sent_amount) = match_result.external_party_send();
 
+        // Update the format of the settlement transaction
+        process_settlement_tx(&mut settlement_tx);
         Self {
             match_result: ApiExternalMatchResult::from(match_result),
             fees,
@@ -375,7 +402,7 @@ impl MalleableAtomicMatchApiBundle {
     #[cfg(feature = "full-api")]
     pub fn new(
         match_bundle: &MalleableAtomicMatchSettleBundle,
-        settlement_tx: TransactionRequest,
+        mut settlement_tx: TransactionRequest,
     ) -> Self {
         let statement = &match_bundle.atomic_match_proof.statement;
         let match_result = statement.bounded_match_result.clone();
@@ -389,6 +416,8 @@ impl MalleableAtomicMatchApiBundle {
         let (sent_mint, max_send_amount) = match_result.external_party_send(max_base);
         let (_, min_send_amount) = match_result.external_party_send(min_base);
 
+        // Update the format of the settlement transaction
+        process_settlement_tx(&mut settlement_tx);
         Self {
             match_result: ApiBoundedMatchResult::from(match_result),
             fee_rates,
