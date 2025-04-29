@@ -10,7 +10,6 @@ use std::{
     fmt::{self, Display},
 };
 
-use arbitrum_client::{client::ArbitrumClient, errors::ArbitrumClientError};
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::{
@@ -18,11 +17,11 @@ use common::types::{
     wallet::{Wallet, WalletIdentifier},
 };
 use constants::Scalar;
+use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
 use state::{error::StateError, State};
 use tracing::{info, instrument};
-use util::err_str;
 
 use crate::{
     task_state::StateWrapper,
@@ -90,8 +89,8 @@ pub enum RefreshWalletTaskError {
     NotFound(String),
     /// Error generating a proof of `VALID COMMITMENTS`
     ProofGeneration(String),
-    /// Error interacting with the arbitrum client
-    Arbitrum(String),
+    /// Error interacting with the darkpool
+    Darkpool(String),
     /// Error interacting with state
     State(String),
 }
@@ -100,7 +99,7 @@ impl TaskError for RefreshWalletTaskError {
     fn retryable(&self) -> bool {
         matches!(
             self,
-            RefreshWalletTaskError::Arbitrum(_)
+            RefreshWalletTaskError::Darkpool(_)
                 | RefreshWalletTaskError::ProofGeneration(_)
                 | RefreshWalletTaskError::State(_)
         )
@@ -121,9 +120,9 @@ impl From<StateError> for RefreshWalletTaskError {
     }
 }
 
-impl From<ArbitrumClientError> for RefreshWalletTaskError {
-    fn from(e: ArbitrumClientError) -> Self {
-        RefreshWalletTaskError::Arbitrum(e.to_string())
+impl From<DarkpoolClientError> for RefreshWalletTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        RefreshWalletTaskError::Darkpool(e.to_string())
     }
 }
 
@@ -135,8 +134,8 @@ impl From<ArbitrumClientError> for RefreshWalletTaskError {
 pub struct RefreshWalletTask {
     /// The ID to provision for the wallet
     pub wallet_id: WalletIdentifier,
-    /// An arbitrum client for the task to submit transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// A darkpool client for the task to submit transactions
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
@@ -156,7 +155,7 @@ impl Task for RefreshWalletTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         Ok(Self {
             wallet_id: descriptor.wallet_id,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
@@ -239,7 +238,7 @@ impl RefreshWalletTask {
         );
 
         // Update the merkle proof for the wallet, then write to state
-        let merkle_proof = find_merkle_path(&wallet, &self.arbitrum_client).await?;
+        let merkle_proof = find_merkle_path(&wallet, &self.darkpool_client).await?;
         wallet.merkle_proof = Some(merkle_proof);
 
         // Match up order IDs from the existing wallet with those in the refreshed
@@ -287,7 +286,7 @@ impl RefreshWalletTask {
 
         // Fetch public shares from on-chain
         let blinded_public_shares =
-            self.arbitrum_client.fetch_public_shares_for_blinder(public_blinder).await?;
+            self.darkpool_client.fetch_public_shares_for_blinder(public_blinder).await?;
         Ok((blinded_public_shares, private_share))
     }
 
@@ -296,10 +295,8 @@ impl RefreshWalletTask {
         &self,
         public_blinder: Scalar,
     ) -> Result<bool, RefreshWalletTaskError> {
-        self.arbitrum_client
-            .is_public_blinder_used(public_blinder)
-            .await
-            .map_err(err_str!(RefreshWalletTaskError::Arbitrum))
+        let is_used = self.darkpool_client.is_public_blinder_used(public_blinder).await?;
+        Ok(is_used)
     }
 
     /// Get the latest known shares on-chain
@@ -312,7 +309,7 @@ impl RefreshWalletTask {
         // Otherwise lookup the wallet
         let blinder_seed = wallet.private_blinder_share();
         let (idx, blinder, private_blinder_share) =
-            find_latest_wallet_tx(blinder_seed, &self.arbitrum_client)
+            find_latest_wallet_tx(blinder_seed, &self.darkpool_client)
                 .await
                 .map_err(|e| RefreshWalletTaskError::NotFound(e.to_string()))?;
 

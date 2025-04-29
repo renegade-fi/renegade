@@ -1,4 +1,4 @@
-//! Various helpers for Arbitrum client execution
+//! Various helpers for darkpool client execution
 
 use alloy::primitives::{Bytes, U256};
 use alloy_sol_types::SolCall;
@@ -33,7 +33,7 @@ use crate::{
     conversion::{
         to_circuit_bounded_match_result, to_circuit_fee_rates, to_circuit_order_settlement_indices,
     },
-    errors::ArbitrumClientError,
+    errors::DarkpoolClientError,
 };
 
 // ---------------------
@@ -41,17 +41,17 @@ use crate::{
 // ---------------------
 
 /// Serializes a calldata element for a contract call
-pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, ArbitrumClientError> {
+pub fn serialize_calldata<T: Serialize>(data: &T) -> Result<Bytes, DarkpoolClientError> {
     postcard::to_allocvec(data)
         .map(Bytes::from)
-        .map_err(|e| ArbitrumClientError::Serde(e.to_string()))
+        .map_err(|e| DarkpoolClientError::Serde(e.to_string()))
 }
 
 /// Deserializes a return value from a contract call
 pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
     calldata: &'de [u8],
-) -> Result<T, ArbitrumClientError> {
-    postcard::from_bytes(calldata).map_err(|e| ArbitrumClientError::Serde(e.to_string()))
+) -> Result<T, DarkpoolClientError> {
+    postcard::from_bytes(calldata).map_err(|e| DarkpoolClientError::Serde(e.to_string()))
 }
 
 // ----------------
@@ -61,7 +61,7 @@ pub fn deserialize_calldata<'de, T: Deserialize<'de>>(
 /// Parses wallet shares from the calldata of a `newWallet` call
 pub fn parse_shares_from_new_wallet(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = newWalletCall::abi_decode(calldata)?;
 
     let statement = deserialize_calldata::<ContractValidWalletCreateStatement>(
@@ -76,7 +76,7 @@ pub fn parse_shares_from_new_wallet(
 /// Parses wallet shares from the calldata of an `updateWallet` call
 pub fn parse_shares_from_update_wallet(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = updateWalletCall::abi_decode(calldata)?;
 
     let statement = deserialize_calldata::<ContractValidWalletUpdateStatement>(
@@ -92,7 +92,7 @@ pub fn parse_shares_from_update_wallet(
 pub fn parse_shares_from_process_match_settle(
     calldata: &[u8],
     public_blinder_share: Scalar,
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = processMatchSettleCall::abi_decode(calldata)?;
 
     let valid_match_settle_statement = deserialize_calldata::<ContractValidMatchSettleStatement>(
@@ -113,7 +113,7 @@ pub fn parse_shares_from_process_match_settle(
     } else if party_1_blinder_share == &target_share {
         party_1_shares
     } else {
-        return Err(ArbitrumClientError::BlinderNotFound);
+        return Err(DarkpoolClientError::BlinderNotFound);
     };
 
     let mut shares = selected_shares.into_iter().map(Scalar::new);
@@ -123,7 +123,7 @@ pub fn parse_shares_from_process_match_settle(
 /// Parses wallet shares from the calldata of a `processAtomicMatchSettle` call
 pub fn parse_shares_from_process_atomic_match_settle(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
@@ -137,7 +137,7 @@ pub fn parse_shares_from_process_atomic_match_settle(
 /// `processAtomicMatchSettleWithReceiver` call
 pub fn parse_shares_from_process_atomic_match_settle_with_receiver(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
     let statement = deserialize_calldata::<ContractValidMatchSettleAtomicStatement>(
         &call.valid_match_settle_atomic_statement,
@@ -151,7 +151,7 @@ pub fn parse_shares_from_process_atomic_match_settle_with_receiver(
 /// `processMalleableAtomicMatchSettle` call
 pub fn parse_shares_from_process_malleable_atomic_match_settle(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     // Parse the pre-update shares from the calldata
     let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
     let statement = deserialize_calldata::<ContractValidMalleableMatchSettleAtomicStatement>(
@@ -178,7 +178,7 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle(
 /// `processMalleableAtomicMatchSettleWithReceiver` call
 pub fn parse_shares_from_process_malleable_atomic_match_settle_with_receiver(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
     let statement = deserialize_calldata::<ContractValidMalleableMatchSettleAtomicStatement>(
         &call.valid_match_settle_statement,
@@ -205,7 +205,7 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle_with_receiver(
 pub fn parse_shares_from_settle_online_relayer_fee(
     calldata: &[u8],
     public_blinder_share: Scalar,
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = settleOnlineRelayerFeeCall::abi_decode(calldata)?;
 
     let valid_relayer_fee_settlement_statement =
@@ -227,7 +227,7 @@ pub fn parse_shares_from_settle_online_relayer_fee(
     } else if recipient_blinder_share == &target_share {
         recipient_shares
     } else {
-        return Err(ArbitrumClientError::BlinderNotFound);
+        return Err(DarkpoolClientError::BlinderNotFound);
     };
 
     let mut shares = selected_shares.into_iter().map(Scalar::new);
@@ -237,7 +237,7 @@ pub fn parse_shares_from_settle_online_relayer_fee(
 /// Parses wallet shares from the calldata of a `settleOfflineFee` call
 pub fn parse_shares_from_settle_offline_fee(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = settleOfflineFeeCall::abi_decode(calldata)?;
 
     let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
@@ -252,7 +252,7 @@ pub fn parse_shares_from_settle_offline_fee(
 /// Parses wallet shares from the calldata of a `redeemFee` call
 pub fn parse_shares_from_redeem_fee(
     calldata: &[u8],
-) -> Result<SizedWalletShare, ArbitrumClientError> {
+) -> Result<SizedWalletShare, DarkpoolClientError> {
     let call = redeemFeeCall::abi_decode(calldata)?;
 
     let statement = deserialize_calldata::<ContractValidFeeRedemptionStatement>(
@@ -267,7 +267,7 @@ pub fn parse_shares_from_redeem_fee(
 /// Parse a note from calldata of a `settleOfflineFee` call
 pub fn parse_note_ciphertext_from_settle_offline_fee(
     calldata: &[u8],
-) -> Result<ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, ArbitrumClientError> {
+) -> Result<ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, DarkpoolClientError> {
     let call = settleOfflineFeeCall::abi_decode(calldata)?;
 
     let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
@@ -294,7 +294,7 @@ pub fn apply_malleable_match_result_to_wallet_share(
     base_amount: U256,
     indices: OrderSettlementIndices,
     statement: &ContractValidMalleableMatchSettleAtomicStatement,
-) -> Result<(), ArbitrumClientError> {
+) -> Result<(), DarkpoolClientError> {
     let base_amt: Amount = base_amount.try_into().expect("base amount too large");
 
     // Compute the amounts traded

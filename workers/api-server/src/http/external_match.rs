@@ -14,7 +14,6 @@ use alloy::{
     primitives::{Address, U256},
     rpc::types::TransactionRequest,
 };
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use common::types::{
@@ -29,6 +28,7 @@ use common::types::{
 use constants::{
     Scalar, EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER,
 };
+use darkpool_client::client::DarkpoolClient;
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{
@@ -136,8 +136,8 @@ pub struct ExternalMatchProcessor {
     admin_key: HmacKey,
     /// The handshake manager's queue
     handshake_queue: HandshakeManagerQueue,
-    /// A handle on the Arbitrum RPC client
-    arbitrum_client: ArbitrumClient,
+    /// A handle on the darkpool RPC client
+    darkpool_client: DarkpoolClient,
     /// A handle on the system bus
     bus: SystemBus<SystemBusMessage>,
     /// The price reporter queue
@@ -150,11 +150,11 @@ impl ExternalMatchProcessor {
         min_order_size: f64,
         admin_key: HmacKey,
         handshake_queue: HandshakeManagerQueue,
-        arbitrum_client: ArbitrumClient,
+        darkpool_client: DarkpoolClient,
         bus: SystemBus<SystemBusMessage>,
         price_queue: PriceReporterQueue,
     ) -> Self {
-        Self { min_order_size, admin_key, handshake_queue, arbitrum_client, bus, price_queue }
+        Self { min_order_size, admin_key, handshake_queue, darkpool_client, bus, price_queue }
     }
 
     /// Await the next bus message on a topic
@@ -168,6 +168,7 @@ impl ExternalMatchProcessor {
     /// Estimate the gas for a given external match transaction
     ///
     /// TODO: Properly implement gas estimation for external matches
+    #[allow(clippy::unused_async)]
     pub(super) async fn estimate_gas(
         &self,
         _tx: TransactionRequest,
@@ -454,7 +455,7 @@ impl ExternalMatchProcessor {
 
         // Build a settlement transaction for the match
         let mut settlement_tx = self
-            .arbitrum_client
+            .darkpool_client
             .gen_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
             .map_err(internal_error)?;
 
@@ -493,7 +494,7 @@ impl ExternalMatchProcessor {
 
         // Build a settlement transaction for the match
         let mut settlement_tx = self
-            .arbitrum_client
+            .darkpool_client
             .gen_malleable_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
             .map_err(internal_error)?;
 

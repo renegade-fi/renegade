@@ -11,10 +11,6 @@
 use std::mem;
 
 use api_server::worker::{ApiServer, ApiServerConfig};
-use arbitrum_client::{
-    client::{ArbitrumClient, ArbitrumClientConfig},
-    constants::BLOCK_POLLING_INTERVAL_MS,
-};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
     default_wrapper::{default_option, DefaultOption},
@@ -22,6 +18,10 @@ use common::{
     worker::{new_worker_failure_channel, Worker},
 };
 use config::RelayerConfig;
+use darkpool_client::{
+    client::{DarkpoolClient, DarkpoolClientConfig},
+    constants::BLOCK_POLLING_INTERVAL_MS,
+};
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
 use futures::Future;
@@ -98,8 +98,8 @@ pub struct MockNodeController {
     config: RelayerConfig,
 
     // --- Shared Handles --- //
-    /// The arbitrum client
-    arbitrum_client: Option<ArbitrumClient>,
+    /// The darkpool client
+    darkpool_client: Option<DarkpoolClient>,
     /// The system bus
     bus: SystemBus<SystemBusMessage>,
     /// The system clock
@@ -141,7 +141,7 @@ impl MockNodeController {
         Self {
             config,
             local_addr: Multiaddr::empty(),
-            arbitrum_client: None,
+            darkpool_client: None,
             bus,
             clock,
             state: None,
@@ -175,9 +175,9 @@ impl MockNodeController {
         self.state.clone().expect("State not initialized")
     }
 
-    /// Get a handle to the arbitrum client
-    pub fn arbitrum_client(&self) -> ArbitrumClient {
-        self.arbitrum_client.clone().expect("Arbitrum client not initialized")
+    /// Get a handle to the darkpool client
+    pub fn darkpool_client(&self) -> DarkpoolClient {
+        self.darkpool_client.clone().expect("Darkpool client not initialized")
     }
 
     /// Get a copy of the system bus
@@ -248,9 +248,9 @@ impl MockNodeController {
     // | Builders |
     // ------------
 
-    /// Add an arbitrum client to the mock node
-    pub fn with_arbitrum_client(mut self) -> Self {
-        let conf = ArbitrumClientConfig {
+    /// Add a darkpool client to the mock node
+    pub fn with_darkpool_client(mut self) -> Self {
+        let conf = DarkpoolClientConfig {
             darkpool_addr: self.config.contract_address.clone(),
             chain: self.config.chain_id,
             rpc_url: self.config.rpc_url.clone().unwrap(),
@@ -259,8 +259,8 @@ impl MockNodeController {
         };
 
         // Expects to be running in a Tokio runtime
-        let client = ArbitrumClient::new(conf).expect("Failed to create arbitrum client");
-        self.arbitrum_client = Some(client);
+        let client = DarkpoolClient::new(conf).expect("Failed to create darkpool client");
+        self.darkpool_client = Some(client);
 
         self
     }
@@ -297,8 +297,8 @@ impl MockNodeController {
     pub fn with_task_driver(mut self) -> Self {
         let task_queue = self.task_queue.1.take().unwrap();
         let task_sender = self.task_queue.0.clone();
-        let arbitrum_client =
-            self.arbitrum_client.clone().expect("Arbitrum client not initialized");
+        let darkpool_client =
+            self.darkpool_client.clone().expect("Darkpool client not initialized");
         let network_queue = self.network_queue.0.clone();
         let proof_queue = self.proof_queue.0.clone();
         let event_queue = self.event_queue.0.clone();
@@ -308,7 +308,7 @@ impl MockNodeController {
         let conf = TaskDriverConfig::new(
             task_queue,
             task_sender,
-            arbitrum_client,
+            darkpool_client,
             network_queue,
             proof_queue,
             event_queue,
@@ -358,8 +358,8 @@ impl MockNodeController {
         let config = &self.config;
         let state = self.state.clone().expect("State not initialized");
         let local_peer_id = run_fut(state.get_peer_id()).expect("Failed to get peer id");
-        let arbitrum_client =
-            self.arbitrum_client.clone().expect("Arbitrum client not initialized");
+        let darkpool_client =
+            self.darkpool_client.clone().expect("Darkpool client not initialized");
 
         let job_sender = self.gossip_queue.0.clone();
         let job_receiver = self.gossip_queue.1.take().unwrap();
@@ -370,7 +370,7 @@ impl MockNodeController {
             local_addr: self.local_addr.clone(),
             cluster_id: config.cluster_id.clone(),
             bootstrap_servers: config.bootstrap_servers.clone(),
-            arbitrum_client,
+            darkpool_client,
             global_state: state,
             job_sender,
             job_receiver: default_option(job_receiver),
@@ -453,15 +453,15 @@ impl MockNodeController {
     /// Add a chain even listener to the mock node
     pub fn with_chain_event_listener(self) -> Self {
         let config = &self.config;
-        let arbitrum_client =
-            self.arbitrum_client.clone().expect("Arbitrum client not initialized");
+        let darkpool_client =
+            self.darkpool_client.clone().expect("Darkpool client not initialized");
         let global_state = self.state.clone().expect("State not initialized");
         let handshake_manager_job_queue = self.handshake_queue.0.clone();
         let cancel_channel = mock_cancel();
 
         let conf = OnChainEventListenerConfig {
             websocket_addr: config.eth_websocket_addr.clone(),
-            arbitrum_client,
+            darkpool_client,
             global_state,
             handshake_manager_job_queue,
             cancel_channel,
@@ -477,8 +477,8 @@ impl MockNodeController {
     /// Add an API server to the mock node
     pub fn with_api_server(self) -> Self {
         let config = &self.config;
-        let arbitrum_client =
-            self.arbitrum_client.clone().expect("Arbitrum client not initialized");
+        let darkpool_client =
+            self.darkpool_client.clone().expect("Darkpool client not initialized");
         let network_sender = self.network_queue.0.clone();
         let state = self.state.clone().expect("State not initialized");
         let system_bus = self.bus.clone();
@@ -496,7 +496,7 @@ impl MockNodeController {
             chain: config.chain_id,
             compliance_service_url: config.compliance_service_url.clone(),
             wallet_task_rate_limit: config.wallet_task_rate_limit,
-            arbitrum_client,
+            darkpool_client,
             network_sender,
             state,
             system_bus,

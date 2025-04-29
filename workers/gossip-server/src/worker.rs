@@ -1,11 +1,11 @@
 //! Implements the `Worker` trait for the GossipServer
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use common::default_wrapper::DefaultWrapper;
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
+use darkpool_client::client::DarkpoolClient;
 use futures::executor::block_on;
 use job_types::gossip_server::{GossipServerQueue, GossipServerReceiver};
 use job_types::network_manager::NetworkManagerQueue;
@@ -31,8 +31,8 @@ pub struct GossipServerConfig {
     pub cluster_id: ClusterId,
     /// The servers to bootstrap into the network with
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
-    /// The arbitrum client used for querying contract state
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client used for querying contract state
+    pub darkpool_client: DarkpoolClient,
     /// A reference to the relayer-global state
     pub global_state: State,
     /// A job queue to send outbound heartbeat requests on

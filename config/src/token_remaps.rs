@@ -4,11 +4,11 @@
 
 use std::collections::HashMap;
 
-use arbitrum_client::constants::Chain;
 use common::types::{
     exchange::Exchange,
     token::{write_exchange_support, write_token_decimals_map, write_token_remap, USD_TICKER},
 };
+use darkpool_client::constants::Chain;
 use serde::{Deserialize, Serialize};
 use util::raw_err_str;
 
@@ -157,8 +157,8 @@ fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
 mod test {
     use std::{collections::HashMap, fs::File};
 
-    use arbitrum_client::constants::Chain;
     use common::types::token::read_token_remap;
+    use darkpool_client::constants::Chain;
     use tempfile::{tempdir, TempDir};
 
     use crate::token_remaps::parse_remap_from_file;

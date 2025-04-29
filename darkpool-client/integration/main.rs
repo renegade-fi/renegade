@@ -19,12 +19,12 @@ use std::str::FromStr;
 
 use ::constants::Scalar;
 use alloy::signers::local::PrivateKeySigner;
-use arbitrum_client::{
-    client::{ArbitrumClient, ArbitrumClientConfig},
-    constants::Chain,
-};
 use circuit_types::SizedWalletShare;
 use clap::Parser;
+use darkpool_client::{
+    client::{DarkpoolClient, DarkpoolClientConfig},
+    constants::Chain,
+};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
@@ -52,7 +52,7 @@ struct CliArgs {
 
     // TODO: Add a flag for the contract artifacts to allow for building/deploying
     // during test setup
-    /// The url of the Arbitrum RPC endpoint to use for the integration test
+    /// The url of the RPC endpoint to use for the integration test
     #[arg(long, default_value = DEFAULT_DEVNET_HOSTPORT)]
     rpc_url: String,
 
@@ -68,8 +68,8 @@ struct CliArgs {
 /// The arguments provided to every integration test
 #[derive(Clone)]
 struct IntegrationTestArgs {
-    /// The Arbitrum client that resolves to a locally running devnet node
-    client: ArbitrumClient,
+    /// The darkpool client that resolves to a locally running devnet node
+    client: DarkpoolClient,
 }
 
 /// The set of pre-allocated state elements in the contract
@@ -112,7 +112,7 @@ impl From<CliArgs> for IntegrationTestArgs {
         // function signature of `From`, which is assumed to be implemented in
         // the integration test harness
         let private_key = PrivateKeySigner::from_str(&test_args.private_key).unwrap();
-        let client = ArbitrumClient::new(ArbitrumClientConfig {
+        let client = DarkpoolClient::new(DarkpoolClientConfig {
             chain: Chain::Devnet,
             darkpool_addr,
             private_key,

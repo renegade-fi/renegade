@@ -428,7 +428,7 @@ impl HttpServer {
             config.min_order_size,
             admin_key,
             handshake_queue,
-            config.arbitrum_client.clone(),
+            config.darkpool_client.clone(),
             config.system_bus.clone(),
             config.price_reporter_work_queue.clone(),
         );
@@ -614,7 +614,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::POST,
             ADMIN_REFRESH_EXTERNAL_MATCH_FEES_ROUTE.to_string(),
-            AdminRefreshExternalMatchFeesHandler::new(config.arbitrum_client.clone()),
+            AdminRefreshExternalMatchFeesHandler::new(config.darkpool_client.clone()),
         );
 
         router

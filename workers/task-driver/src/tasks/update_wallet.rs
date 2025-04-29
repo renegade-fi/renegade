@@ -7,7 +7,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::transfers::ExternalTransferDirection;
 use circuits::zk_circuits::valid_wallet_update::{
@@ -20,6 +19,8 @@ use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
+use darkpool_client::client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use itertools::Itertools;
 use job_types::event_manager::{
     try_send_event, EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent,
@@ -130,8 +131,8 @@ pub enum UpdateWalletTaskError {
     InvalidShares(String),
     /// Error generating a proof of `VALID WALLET UPDATE`
     ProofGeneration(String),
-    /// An error occurred interacting with Arbitrum
-    Arbitrum(String),
+    /// An error interacting with the darkpool client
+    Darkpool(String),
     /// A state element was not found that is necessary for task execution
     Missing(String),
     /// An error interacting with the relayer state
@@ -147,7 +148,7 @@ impl TaskError for UpdateWalletTaskError {
         matches!(
             self,
             UpdateWalletTaskError::ProofGeneration(_)
-                | UpdateWalletTaskError::Arbitrum(_)
+                | UpdateWalletTaskError::Darkpool(_)
                 | UpdateWalletTaskError::State(_)
                 | UpdateWalletTaskError::UpdatingValidityProofs(_)
         )
@@ -165,6 +166,12 @@ impl Error for UpdateWalletTaskError {}
 impl From<StateError> for UpdateWalletTaskError {
     fn from(e: StateError) -> Self {
         UpdateWalletTaskError::State(e.to_string())
+    }
+}
+
+impl From<DarkpoolClientError> for UpdateWalletTaskError {
+    fn from(e: DarkpoolClientError) -> Self {
+        UpdateWalletTaskError::Darkpool(e.to_string())
     }
 }
 
@@ -187,8 +194,8 @@ pub struct UpdateWalletTask {
     pub wallet_update_signature: Vec<u8>,
     /// A proof of `VALID WALLET UPDATE` created in the first step
     pub proof_bundle: Option<ValidWalletUpdateBundle>,
-    /// The arbitrum client to use for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client to use for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
@@ -237,7 +244,7 @@ impl Task for UpdateWalletTask {
             new_wallet: descriptor.new_wallet,
             wallet_update_signature: descriptor.wallet_update_signature,
             proof_bundle: None,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             global_state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
@@ -341,11 +348,10 @@ impl UpdateWalletTask {
     async fn submit_tx(&self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         let transfer_auth = self.transfer.as_ref().map(|t| t.transfer_auth.clone());
-        self.arbitrum_client
-            .update_wallet(&proof, self.wallet_update_signature.clone(), transfer_auth)
-            .await
-            .map_err(|e| e.to_string())
-            .map_err(UpdateWalletTaskError::Arbitrum)
+        let sig = self.wallet_update_signature.clone();
+        self.darkpool_client.update_wallet(&proof, sig, transfer_auth).await?;
+
+        Ok(())
     }
 
     /// Find the wallet opening for the new wallet and re-index the wallet in
@@ -353,9 +359,7 @@ impl UpdateWalletTask {
     async fn find_opening(&mut self) -> Result<(), UpdateWalletTaskError> {
         // Attach the opening to the new wallet, and index the wallet in the global
         // state
-        let merkle_opening = find_merkle_path(&self.new_wallet, &self.arbitrum_client)
-            .await
-            .map_err(|e| UpdateWalletTaskError::Arbitrum(e.to_string()))?;
+        let merkle_opening = find_merkle_path(&self.new_wallet, &self.darkpool_client).await?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // After the state is finalized on-chain, re-index the wallet in the global

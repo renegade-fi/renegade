@@ -13,7 +13,6 @@ use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::enqueue_proof_job;
-use arbitrum_client::errors::ArbitrumClientError;
 use async_trait::async_trait;
 use circuit_types::fees::FeeTakeRate;
 use circuit_types::fixed_point::FixedPoint;
@@ -29,6 +28,7 @@ use common::types::proof_bundles::{
 use common::types::tasks::SettleMalleableExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
+use darkpool_client::errors::DarkpoolClientError;
 use external_api::bus_message::SystemBusMessage;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use serde::Serialize;
@@ -110,8 +110,8 @@ pub type Result<T> = std::result::Result<T, SettleMalleableExternalMatchTaskErro
 /// The error type that the task emits
 #[derive(Clone, Debug, Serialize)]
 pub enum SettleMalleableExternalMatchTaskError {
-    /// A dummy error
-    Arbitrum(String),
+    /// An error interacting with the darkpool client
+    Darkpool(String),
     /// An error awaiting settlement on-chain
     AwaitingSettlement(String),
     /// An error enqueuing a job to the proof manager
@@ -126,16 +126,16 @@ pub enum SettleMalleableExternalMatchTaskError {
 }
 
 impl SettleMalleableExternalMatchTaskError {
-    /// Construct an `Arbitrum` error
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn arbitrum<T: ToString>(msg: T) -> Self {
-        Self::Arbitrum(msg.to_string())
-    }
-
     /// Construct an `AwaitingSettlement` error
     #[allow(clippy::needless_pass_by_value)]
     pub fn awaiting_settlement<T: ToString>(msg: T) -> Self {
         Self::AwaitingSettlement(msg.to_string())
+    }
+
+    /// Construct a `State` error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(msg: T) -> Self {
+        Self::State(msg.to_string())
     }
 
     /// Construct an `EnqueuingJob` error
@@ -150,12 +150,6 @@ impl SettleMalleableExternalMatchTaskError {
         Self::ProofLinking(msg.to_string())
     }
 
-    /// Construct a `State` error
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn state<T: ToString>(msg: T) -> Self {
-        Self::State(msg.to_string())
-    }
-
     /// Construct a `SendEvent` error
     #[allow(clippy::needless_pass_by_value)]
     pub fn send_event<T: ToString>(msg: T) -> Self {
@@ -165,7 +159,7 @@ impl SettleMalleableExternalMatchTaskError {
 
 impl TaskError for SettleMalleableExternalMatchTaskError {
     fn retryable(&self) -> bool {
-        matches!(self, Self::Arbitrum(_))
+        matches!(self, Self::Darkpool(_))
     }
 }
 
@@ -178,13 +172,13 @@ impl Error for SettleMalleableExternalMatchTaskError {}
 
 impl From<StateError> for SettleMalleableExternalMatchTaskError {
     fn from(value: StateError) -> Self {
-        Self::state(value.to_string())
+        Self::State(value.to_string())
     }
 }
 
-impl From<ArbitrumClientError> for SettleMalleableExternalMatchTaskError {
-    fn from(value: ArbitrumClientError) -> Self {
-        Self::arbitrum(value.to_string())
+impl From<DarkpoolClientError> for SettleMalleableExternalMatchTaskError {
+    fn from(value: DarkpoolClientError) -> Self {
+        Self::Darkpool(value.to_string())
     }
 }
 

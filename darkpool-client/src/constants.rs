@@ -1,4 +1,4 @@
-//! Constant values referenced by the Arbitrum client.
+//! Constant values referenced by the darkpool client.
 
 use std::{fmt::Display, marker::PhantomData, str::FromStr};
 

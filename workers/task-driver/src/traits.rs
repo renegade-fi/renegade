@@ -2,8 +2,8 @@
 //! queued by the consensus engine
 use std::fmt::{Debug, Display};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
+use darkpool_client::client::DarkpoolClient;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue, network_manager::NetworkManagerQueue,
@@ -26,7 +26,7 @@ use crate::task_state::StateWrapper;
 /// The task must be constructable from a descriptor, which is a serializable
 /// description of the task's state transition, and a set of dependency
 /// injections from the task driver that may include: network manager queue,
-/// arbitrum client, etc.
+/// darkpool client, etc.
 #[async_trait]
 pub trait Task: Send + Sized {
     /// The descriptor of a task, this may be used to construct the task
@@ -103,8 +103,8 @@ pub trait TaskError: Debug + Display + Send {
 /// the driver
 #[derive(Clone)]
 pub struct TaskContext {
-    /// An arbitrum client
-    pub arbitrum_client: ArbitrumClient,
+    /// A darkpool client
+    pub darkpool_client: DarkpoolClient,
     /// A handle on the global state
     pub state: State,
     /// A sender to the network manager's queue

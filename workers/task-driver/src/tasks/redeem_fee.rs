@@ -2,7 +2,6 @@
 
 use std::{error::Error, fmt::Display};
 
-use arbitrum_client::client::ArbitrumClient;
 use async_trait::async_trait;
 use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use circuits::zk_circuits::valid_fee_redemption::{
@@ -12,6 +11,7 @@ use common::types::{
     merkle::MerkleAuthenticationPath, proof_bundles::FeeRedemptionBundle,
     tasks::RedeemFeeTaskDescriptor, wallet::Wallet,
 };
+use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::{ProofJob, ProofManagerQueue},
@@ -91,8 +91,8 @@ impl From<RedeemFeeTaskState> for StateWrapper {
 /// The error type for the redeem relayer fee task
 #[derive(Clone, Debug)]
 pub enum RedeemFeeError {
-    /// An error interacting with Arbitrum
-    Arbitrum(String),
+    /// An error interacting with the darkpool
+    Darkpool(String),
     /// An error generating a proof for fee payment
     ProofGeneration(String),
     /// An error signing the commitment to the new wallet
@@ -106,7 +106,7 @@ pub enum RedeemFeeError {
 impl TaskError for RedeemFeeError {
     fn retryable(&self) -> bool {
         match self {
-            RedeemFeeError::Arbitrum(_)
+            RedeemFeeError::Darkpool(_)
             | RedeemFeeError::ProofGeneration(_)
             | RedeemFeeError::State(_)
             | RedeemFeeError::UpdateValidityProofs(_) => true,
@@ -129,6 +129,12 @@ impl From<StateError> for RedeemFeeError {
     }
 }
 
+impl From<DarkpoolClientError> for RedeemFeeError {
+    fn from(error: DarkpoolClientError) -> Self {
+        RedeemFeeError::Darkpool(error.to_string())
+    }
+}
+
 // -------------------
 // | Task Definition |
 // -------------------
@@ -147,8 +153,8 @@ pub struct RedeemFeeTask {
     pub new_wallet: Wallet,
     /// The proof of `VALID FEE REDEMPTION` used to pay the fee
     pub proof: Option<FeeRedemptionBundle>,
-    /// The arbitrum client used for submitting transactions
-    pub arbitrum_client: ArbitrumClient,
+    /// The darkpool client used for submitting transactions
+    pub darkpool_client: DarkpoolClient,
     /// A handle on the global state
     pub state: State,
     /// The work queue for the proof manager
@@ -182,7 +188,7 @@ impl Task for RedeemFeeTask {
             old_wallet,
             new_wallet,
             proof: None,
-            arbitrum_client: ctx.arbitrum_client,
+            darkpool_client: ctx.darkpool_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
             network_sender: ctx.network_queue,
@@ -245,12 +251,7 @@ impl RedeemFeeTask {
     /// Find the Merkle opening for the note
     async fn find_note_opening(&mut self) -> Result<(), RedeemFeeError> {
         let note_comm = self.note.commitment();
-        let opening = self
-            .arbitrum_client
-            .find_merkle_authentication_path(note_comm)
-            .await
-            .map_err(err_str!(RedeemFeeError::Arbitrum))?;
-
+        let opening = self.darkpool_client.find_merkle_authentication_path(note_comm).await?;
         self.note_opening = Some(opening);
         Ok(())
     }
@@ -280,17 +281,13 @@ impl RedeemFeeTask {
             self.old_wallet.sign_commitment(new_wallet_comm).map_err(RedeemFeeError::Signature)?;
         let sig_bytes = sig.as_bytes().to_vec();
 
-        self.arbitrum_client
-            .redeem_fee(proof, sig_bytes)
-            .await
-            .map_err(err_str!(RedeemFeeError::Arbitrum))
+        self.darkpool_client.redeem_fee(proof, sig_bytes).await?;
+        Ok(())
     }
 
     /// Find the opening for the relayer wallet
     async fn find_wallet_opening(&mut self) -> Result<(), RedeemFeeError> {
-        let opening = find_merkle_path(&self.new_wallet, &self.arbitrum_client)
-            .await
-            .map_err(err_str!(RedeemFeeError::Arbitrum))?;
+        let opening = find_merkle_path(&self.new_wallet, &self.darkpool_client).await?;
         self.new_wallet.merkle_proof = Some(opening);
 
         let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;

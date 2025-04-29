@@ -6,7 +6,6 @@
 
 use std::iter;
 
-use arbitrum_client::{client::ArbitrumClient, constants::Chain};
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
@@ -17,6 +16,7 @@ use common::types::{
 };
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;
+use darkpool_client::{client::DarkpoolClient, constants::Chain};
 use external_api::{
     http::{
         admin::{
@@ -543,13 +543,13 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
 /// Handler for the POST /v0/admin/refresh-external-match-fees route
 pub struct AdminRefreshExternalMatchFeesHandler {
     /// A handle to the relayer state
-    arbitrum_client: ArbitrumClient,
+    darkpool_client: DarkpoolClient,
 }
 
 impl AdminRefreshExternalMatchFeesHandler {
     /// Constructor
-    pub fn new(arbitrum_client: ArbitrumClient) -> Self {
-        Self { arbitrum_client }
+    pub fn new(darkpool_client: DarkpoolClient) -> Self {
+        Self { darkpool_client }
     }
 }
 
@@ -574,7 +574,7 @@ impl TypedHandler for AdminRefreshExternalMatchFeesHandler {
 
         for token in tokens {
             let addr = token.get_alloy_address();
-            let fee = self.arbitrum_client.get_external_match_fee(addr).await?;
+            let fee = self.darkpool_client.get_external_match_fee(addr).await?;
 
             set_external_match_fee(&token.get_addr_biguint(), fee);
         }

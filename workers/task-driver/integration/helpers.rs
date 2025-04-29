@@ -3,7 +3,6 @@
 use std::str::FromStr;
 
 use alloy_primitives::Address;
-use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{keychain::PublicSigningKey, transfers::ExternalTransfer};
 use common::{
     types::{
@@ -15,6 +14,7 @@ use common::{
     worker::Worker,
 };
 use constants::Scalar;
+use darkpool_client::client::DarkpoolClient;
 use eyre::Result;
 use job_types::{
     event_manager::EventManagerQueue,
@@ -147,7 +147,7 @@ pub(crate) async fn setup_initial_wallet(
     test_args: &IntegrationTestArgs,
 ) -> Result<()> {
     setup_wallet_shares(blinder_seed, share_seed, wallet);
-    allocate_wallet_in_darkpool(wallet, &test_args.arbitrum_client).await?;
+    allocate_wallet_in_darkpool(wallet, &test_args.darkpool_client).await?;
     lookup_wallet_and_check_result(wallet, blinder_seed, share_seed, test_args).await?;
 
     // Read the wallet from the global state so that order IDs match
@@ -160,7 +160,7 @@ pub(crate) async fn setup_initial_wallet(
 ///
 /// Mutates the wallet in place so that the changes in the contract are
 /// reflected in the caller's state
-pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) -> Result<()> {
+pub async fn mock_wallet_update(wallet: &mut Wallet, client: &DarkpoolClient) -> Result<()> {
     wallet.reblind_wallet();
 
     let mut rng = thread_rng();
@@ -183,7 +183,7 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &ArbitrumClient) ->
 /// Setup a relayer wallet for collecting fees
 pub(crate) async fn setup_relayer_wallet(test_args: &IntegrationTestArgs) -> Result<()> {
     let state = &test_args.state;
-    let (wallet, _, _) = new_wallet_in_darkpool(&test_args.arbitrum_client).await?;
+    let (wallet, _, _) = new_wallet_in_darkpool(&test_args.darkpool_client).await?;
 
     state.set_local_relayer_wallet_id(wallet.wallet_id).await?;
     let waiter = state.update_wallet(wallet).await?;
@@ -198,7 +198,7 @@ pub async fn authorize_transfer(
     pk_root: &PublicSigningKey,
     test_args: &IntegrationTestArgs,
 ) -> Result<ExternalTransferWithAuth> {
-    let client = &test_args.arbitrum_client;
+    let client = &test_args.darkpool_client;
     let chain_id = client.chain_id().await.unwrap();
     let permit2_address = Address::from_str(&test_args.permit2_addr)?;
     let darkpool_address = client.darkpool_addr();
@@ -215,7 +215,7 @@ pub async fn authorize_transfer(
 pub fn new_mock_task_driver(
     task_queue: TaskDriverReceiver,
     task_queue_sender: TaskDriverQueue,
-    arbitrum_client: ArbitrumClient,
+    darkpool_client: DarkpoolClient,
     network_queue: NetworkManagerQueue,
     proof_queue: ProofManagerQueue,
     event_queue: EventManagerQueue,
@@ -235,7 +235,7 @@ pub fn new_mock_task_driver(
         task_queue_sender,
         runtime_config,
         system_bus: bus,
-        arbitrum_client,
+        darkpool_client,
         network_queue,
         proof_queue,
         event_queue,

@@ -15,7 +15,7 @@ libp2p = { workspace = true }
 alloy = { workspace = true }
 
 # === Workspace Dependencies === #
-arbitrum-client = { workspace = true }
+darkpool-client = { workspace = true }
 circuit-types = { workspace = true }
 common = { workspace = true }
 constants = { workspace = true }

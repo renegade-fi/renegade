@@ -2,9 +2,9 @@
 
 use std::iter;
 
-use arbitrum_client::client::ArbitrumClient;
 use circuit_types::{traits::BaseType, SizedWallet, SizedWalletShare};
 use constants::Scalar;
+use darkpool_client::client::DarkpoolClient;
 use itertools::Itertools;
 use renegade_crypto::hash::PoseidonCSPRNG;
 
@@ -44,16 +44,16 @@ pub(crate) fn gen_private_shares(
 /// Returns a tuple: `(blinder_index, blinder, blinder_private_share)`
 pub(crate) async fn find_latest_wallet_tx(
     blinder_seed: Scalar,
-    arbitrum_client: &ArbitrumClient,
+    darkpool_client: &DarkpoolClient,
 ) -> Result<(usize, Scalar, Scalar), String> {
     let (min_idx, max_idx) =
-        find_wallet_share_index_phase_one(blinder_seed, arbitrum_client).await?;
+        find_wallet_share_index_phase_one(blinder_seed, darkpool_client).await?;
     let (idx, blinder, blinder_private) =
-        find_wallet_share_index_phase_two(min_idx, max_idx, blinder_seed, arbitrum_client).await?;
+        find_wallet_share_index_phase_two(min_idx, max_idx, blinder_seed, darkpool_client).await?;
 
     // Check that the implied public blinder exists
     let public_blinder = blinder - blinder_private;
-    match arbitrum_client.get_public_blinder_tx(public_blinder).await.map_err(|e| e.to_string())? {
+    match darkpool_client.get_public_blinder_tx(public_blinder).await.map_err(|e| e.to_string())? {
         None => Err(ERR_WALLET_NOT_FOUND.to_string()),
         Some(_) => Ok((idx, blinder, blinder_private)),
     }
@@ -68,7 +68,7 @@ pub(crate) async fn find_latest_wallet_tx(
 /// Returns the bounds for the binary search phase
 async fn find_wallet_share_index_phase_one(
     blinder_seed: Scalar,
-    arbitrum_client: &ArbitrumClient,
+    darkpool_client: &DarkpoolClient,
 ) -> Result<(usize, usize), String> {
     let mut curr_min = 0;
     let mut curr_max = EXPONENTIAL_SEARCH_START_IDX;
@@ -77,7 +77,7 @@ async fn find_wallet_share_index_phase_one(
         let public_blinder = get_public_blinder_at_idx(curr_max, blinder_seed);
 
         // Check if the blinder has been seen on-chain
-        match arbitrum_client
+        match darkpool_client
             .get_public_blinder_tx(public_blinder)
             .await
             .map_err(|e| e.to_string())?
@@ -99,7 +99,7 @@ async fn find_wallet_share_index_phase_two(
     min_idx: usize,
     max_idx: usize,
     blinder_seed: Scalar,
-    arbitrum_client: &ArbitrumClient,
+    darkpool_client: &DarkpoolClient,
 ) -> Result<(usize, Scalar, Scalar), String> {
     let mut curr_min = min_idx;
     let mut curr_max = max_idx;
@@ -122,7 +122,7 @@ async fn find_wallet_share_index_phase_two(
         let curr_blinder_public = curr_blinder - curr_blinder_private;
 
         // Check if the blinder has been seen on-chain
-        match arbitrum_client
+        match darkpool_client
             .get_public_blinder_tx(curr_blinder_public)
             .await
             .map_err(|e| e.to_string())?

@@ -892,7 +892,6 @@ name = "api-server"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "arbitrum-client",
  "async-trait",
  "base64 0.21.7",
  "circuit-types 0.1.0",
@@ -901,6 +900,7 @@ dependencies = [
  "config",
  "constants 0.1.0",
  "crossbeam",
+ "darkpool-client",
  "ecdsa 0.16.9",
  "external-api 0.1.0",
  "futures",
@@ -949,45 +949,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
 dependencies = [
  "derive_arbitrary",
-]
-
-[[package]]
-name = "arbitrum-client"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "alloy-contract",
- "alloy-primitives 1.0.0",
- "alloy-sol-types 1.0.0",
- "ark-bn254",
- "ark-ec",
- "ark-ff 0.4.2",
- "circuit-types 0.1.0",
- "circuits 0.1.0",
- "clap 4.5.32",
- "colored",
- "common 0.1.0",
- "constants 0.1.0",
- "eyre",
- "inventory",
- "itertools 0.12.1",
- "json",
- "lazy_static",
- "mpc-plonk",
- "mpc-relation",
- "num-bigint",
- "num-traits",
- "postcard",
- "rand 0.8.5",
- "renegade-crypto 0.1.0",
- "renegade-metrics",
- "ruint",
- "serde",
- "serde_with",
- "test-helpers",
- "tokio",
- "tracing",
- "util 0.1.0",
 ]
 
 [[package]]
@@ -2579,12 +2540,12 @@ name = "chain-events"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "arbitrum-client",
  "async-trait",
  "circuit-types 0.1.0",
  "common 0.1.0",
  "constants 0.1.0",
  "crossbeam",
+ "darkpool-client",
  "futures-util",
  "gossip-api",
  "job-types",
@@ -3090,7 +3051,6 @@ name = "config"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "arbitrum-client",
  "base64 0.13.1",
  "bimap",
  "circuit-types 0.1.0",
@@ -3098,6 +3058,7 @@ dependencies = [
  "colored",
  "common 0.1.0",
  "constants 0.1.0",
+ "darkpool-client",
  "ed25519-dalek 1.0.1",
  "json",
  "libp2p",
@@ -3570,6 +3531,45 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "darkpool-client"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-contract",
+ "alloy-primitives 1.0.0",
+ "alloy-sol-types 1.0.0",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "circuit-types 0.1.0",
+ "circuits 0.1.0",
+ "clap 4.5.32",
+ "colored",
+ "common 0.1.0",
+ "constants 0.1.0",
+ "eyre",
+ "inventory",
+ "itertools 0.12.1",
+ "json",
+ "lazy_static",
+ "mpc-plonk",
+ "mpc-relation",
+ "num-bigint",
+ "num-traits",
+ "postcard",
+ "rand 0.8.5",
+ "renegade-crypto 0.1.0",
+ "renegade-metrics",
+ "ruint",
+ "serde",
+ "serde_with",
+ "test-helpers",
+ "tokio",
+ "tracing",
+ "util 0.1.0",
 ]
 
 [[package]]
@@ -5039,12 +5039,12 @@ dependencies = [
 name = "gossip-server"
 version = "0.1.0"
 dependencies = [
- "arbitrum-client",
  "async-trait",
  "circuit-types 0.1.0",
  "circuits 0.1.0",
  "common 0.1.0",
  "constants 0.1.0",
+ "darkpool-client",
  "futures",
  "gossip-api",
  "itertools 0.10.5",
@@ -5157,7 +5157,6 @@ dependencies = [
 name = "handshake-manager"
 version = "0.1.0"
 dependencies = [
- "arbitrum-client",
  "ark-mpc",
  "ark-serialize 0.4.2",
  "async-trait",
@@ -5168,6 +5167,7 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "crossbeam",
+ "darkpool-client",
  "external-api 0.1.0",
  "eyre",
  "futures",
@@ -5200,7 +5200,6 @@ name = "handshake-manager-tests"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "arbitrum-client",
  "ark-mpc",
  "base64 0.13.1",
  "circuit-types 0.1.0",
@@ -5209,6 +5208,7 @@ dependencies = [
  "common 0.1.0",
  "config",
  "constants 0.1.0",
+ "darkpool-client",
  "eyre",
  "inventory",
  "job-types",
@@ -7021,11 +7021,11 @@ name = "mock-node"
 version = "0.1.0"
 dependencies = [
  "api-server",
- "arbitrum-client",
  "chain-events",
  "circuit-types 0.1.0",
  "common 0.1.0",
  "config",
+ "darkpool-client",
  "ed25519-dalek 1.0.1",
  "external-api 0.1.0",
  "futures",
@@ -8977,7 +8977,6 @@ name = "renegade-relayer"
 version = "0.1.0"
 dependencies = [
  "api-server",
- "arbitrum-client",
  "chain-events",
  "circuit-types 0.1.0",
  "clap 3.2.25",
@@ -8985,6 +8984,7 @@ dependencies = [
  "config",
  "constants 0.1.0",
  "crossbeam",
+ "darkpool-client",
  "event-manager",
  "external-api 0.1.0",
  "gossip-api",
@@ -10522,7 +10522,6 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-primitives 1.0.0",
- "arbitrum-client",
  "ark-mpc",
  "async-trait",
  "circuit-types 0.1.0",
@@ -10532,6 +10531,7 @@ dependencies = [
  "common 0.1.0",
  "constants 0.1.0",
  "crossbeam",
+ "darkpool-client",
  "external-api 0.1.0",
  "eyre",
  "futures",
@@ -10598,12 +10598,12 @@ dependencies = [
  "alloy",
  "alloy-primitives 1.0.0",
  "alloy-sol-types 1.0.0",
- "arbitrum-client",
  "ark-mpc",
  "async-trait",
  "circuit-types 0.1.0",
  "common 0.1.0",
  "constants 0.1.0",
+ "darkpool-client",
  "dns-lookup",
  "eyre",
  "futures",

@@ -1,7 +1,6 @@
 //! The relayer CLI and config definitions
 
 use alloy::signers::local::PrivateKeySigner;
-use arbitrum_client::constants::Chain;
 use circuit_types::{
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
@@ -14,6 +13,7 @@ use common::types::{
     hmac::HmacKey,
     token::Token,
 };
+use darkpool_client::constants::Chain;
 use ed25519_dalek::Keypair as DalekKeypair;
 use libp2p::{identity::Keypair, Multiaddr};
 use serde::{Deserialize, Serialize};
@@ -216,11 +216,10 @@ pub struct Cli {
     /// The Ethereum RPC node websocket address to dial for on-chain data
     #[clap(long = "eth-websocket-url", value_parser, env = "ETH_WEBSOCKET_URL")]
     pub eth_websocket_addr: Option<String>,
-    /// The HTTP addressable Arbitrum JSON-RPC node
+    /// The HTTP addressable Ethereum JSON-RPC node
     #[clap(long = "rpc-url", value_parser, env = "RPC_URL")]
     pub rpc_url: Option<String>,
-    /// The Arbitrum private keys used to send transactions.
-    /// Multiple keys can be provided to mitigate nonce contention across a node / cluster.
+    /// The on-chain private key used to send transactions.
     /// 
     /// Defaults to the devnet pre-funded key
     #[clap(
@@ -385,7 +384,7 @@ pub struct RelayerConfig {
     pub coinbase_key_name: Option<String>,
     /// The Coinbase API secret to use for price streaming
     pub coinbase_key_secret: Option<String>,
-    /// The HTTP addressable Arbitrum JSON-RPC node
+    /// The HTTP addressable Ethereum JSON-RPC node
     pub rpc_url: Option<String>,
     /// The private key used to send transactions
     pub private_key: PrivateKeySigner,

@@ -8,12 +8,12 @@ use alloy::{
     rpc::types::Filter,
     sol_types::SolEvent,
 };
-use arbitrum_client::{
-    abi::Darkpool::NullifierSpent, client::ArbitrumClient, conversion::u256_to_scalar,
-};
 use circuit_types::wallet::Nullifier;
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
+use darkpool_client::{
+    abi::Darkpool::NullifierSpent, client::DarkpoolClient, conversion::u256_to_scalar,
+};
 use futures_util::StreamExt;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use rand::{thread_rng, Rng};
@@ -40,10 +40,10 @@ const TASK_COMPLETION_DELAY_S: u64 = 10; // 10 seconds
 pub struct OnChainEventListenerConfig {
     /// The ethereum websocket address to use for streaming events
     ///
-    /// If not configured, the listener will poll using the arbitrum client
+    /// If not configured, the listener will poll using the darkpool client
     pub websocket_addr: Option<String>,
-    /// An arbitrum client for listening to events
-    pub arbitrum_client: ArbitrumClient,
+    /// A darkpool client for listening to events
+    pub darkpool_client: DarkpoolClient,
     /// A copy of the relayer global state
     pub global_state: State,
     /// A sender to the handshake manager's job queue, used to enqueue
@@ -99,9 +99,9 @@ impl OnChainEventListenerExecutor {
         Self { config }
     }
 
-    /// Shorthand for fetching a reference to the arbitrum client
-    fn arbitrum_client(&self) -> &ArbitrumClient {
-        &self.config.arbitrum_client
+    /// Shorthand for fetching a reference to the darkpool client
+    fn darkpool_client(&self) -> &DarkpoolClient {
+        &self.config.darkpool_client
     }
 
     /// Shorthand for fetching a reference to the global state
@@ -122,10 +122,10 @@ impl OnChainEventListenerExecutor {
 
         // Get the current block number to start from
         let starting_block_number = self
-            .arbitrum_client()
+            .darkpool_client()
             .block_number()
             .await
-            .map_err(|err| OnChainEventListenerError::Arbitrum(err.to_string()))?;
+            .map_err(OnChainEventListenerError::darkpool)?;
         info!("Starting on-chain event listener from current block {starting_block_number}");
 
         // Begin the watch loop
@@ -148,7 +148,7 @@ impl OnChainEventListenerExecutor {
         info!("listening for nullifiers via websocket");
         // Create the contract instance and the event stream
         let client = self.config.ws_client().await?;
-        let contract_addr = self.arbitrum_client().darkpool_addr();
+        let contract_addr = self.darkpool_client().darkpool_addr();
         let filter = Filter::new().address(contract_addr).event(NullifierSpent::SIGNATURE);
         let mut stream = client.subscribe_logs(&filter).await?.into_stream();
 
@@ -156,7 +156,7 @@ impl OnChainEventListenerExecutor {
         while let Some(log) = stream.next().await {
             let tx_hash = log
                 .transaction_hash
-                .ok_or_else(|| OnChainEventListenerError::arbitrum("no tx hash"))?;
+                .ok_or_else(|| OnChainEventListenerError::darkpool("no tx hash"))?;
 
             let event = log.log_decode::<NullifierSpent>()?;
             let nullifier = u256_to_scalar(event.data().nullifier);
@@ -170,13 +170,13 @@ impl OnChainEventListenerExecutor {
     async fn watch_nullifiers_http(&self) -> Result<(), OnChainEventListenerError> {
         info!("listening for nullifiers via HTTP polling");
         // Build a filtered stream on events that the chain-events worker listens for
-        let filter = self.arbitrum_client().darkpool_client().NullifierSpent_filter();
+        let filter = self.darkpool_client().darkpool_client().NullifierSpent_filter();
         let mut event_stream =
-            filter.subscribe().await.map_err(OnChainEventListenerError::arbitrum)?.into_stream();
+            filter.subscribe().await.map_err(OnChainEventListenerError::darkpool)?.into_stream();
 
         // Listen for events in a loop
         while let Some(res) = event_stream.next().await {
-            let (event, meta) = res.map_err(OnChainEventListenerError::arbitrum)?;
+            let (event, meta) = res.map_err(OnChainEventListenerError::darkpool)?;
             let tx_hash = meta.transaction_hash.expect("no tx hash for log");
             let nullifier = u256_to_scalar(event.nullifier);
             self.handle_nullifier_spent(tx_hash, nullifier).await?;
@@ -293,7 +293,7 @@ impl OnChainEventListenerExecutor {
 
         // Clear the queue
         let waiter = self.state().clear_task_queue(&id).await?;
-        waiter.await.map_err(OnChainEventListenerError::arbitrum)?;
+        waiter.await.map_err(OnChainEventListenerError::darkpool)?;
 
         // Refresh the wallet
         self.state().append_wallet_refresh_task(id).await?;
@@ -308,7 +308,7 @@ impl OnChainEventListenerExecutor {
         &self,
         tx: TxHash,
     ) -> Result<bool, OnChainEventListenerError> {
-        let matches = self.arbitrum_client().find_external_matches_in_tx(tx).await?;
+        let matches = self.darkpool_client().find_external_matches_in_tx(tx).await?;
         let external_match = !matches.is_empty();
 
         // Record metrics for each match
@@ -318,7 +318,7 @@ impl OnChainEventListenerExecutor {
         // nullifier and record a fill on the order with matching mint
         for match_result in matches {
             let match_result =
-                match_result.try_into().map_err(OnChainEventListenerError::arbitrum)?;
+                match_result.try_into().map_err(OnChainEventListenerError::darkpool)?;
             renegade_metrics::record_match_volume(&match_result, true /* is_external_match */);
         }
 

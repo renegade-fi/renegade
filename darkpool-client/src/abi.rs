@@ -1,5 +1,5 @@
 //! Solidity ABI definitions of smart contracts, events, and other on-chain
-//! data structures used by the Arbitrum client.
+//! data structures used by the darkpool client.
 #![allow(missing_docs)]
 #![allow(unused_doc_comments)]
 

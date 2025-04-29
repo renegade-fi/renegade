@@ -1,14 +1,14 @@
-//! Possible errors thrown by the Arbitrum client
+//! Possible errors thrown by the darkpool client
 
 use std::{error::Error, fmt::Display};
 
 use alloy_sol_types::Error as SolError;
 
-/// The error type returned by the Arbitrum client interface
+/// The error type returned by the darkpool client interface
 #[derive(Clone, Debug)]
-pub enum ArbitrumClientError {
-    /// Error thrown when the Arbitrum client configuration fails
-    Config(ArbitrumClientConfigError),
+pub enum DarkpoolClientError {
+    /// Error thrown when the darkpool client configuration fails
+    Config(DarkpoolClientConfigError),
     /// Error thrown when a contract call fails
     ContractInteraction(String),
     /// Error thrown when a darkpool sub-call cannot be found in a tx
@@ -38,7 +38,7 @@ pub enum ArbitrumClientError {
     BlinderNotFound,
 }
 
-impl ArbitrumClientError {
+impl DarkpoolClientError {
     /// Create a new contract interaction error
     #[allow(clippy::needless_pass_by_value)]
     pub fn contract_interaction<T: ToString>(msg: T) -> Self {
@@ -64,31 +64,31 @@ impl ArbitrumClientError {
     }
 }
 
-impl Display for ArbitrumClientError {
+impl Display for DarkpoolClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
 }
-impl Error for ArbitrumClientError {}
+impl Error for DarkpoolClientError {}
 
-/// The error type returned by the Arbitrum client configuration interface
+/// The error type returned by the darkpool client configuration interface
 #[derive(Clone, Debug)]
-pub enum ArbitrumClientConfigError {
+pub enum DarkpoolClientConfigError {
     /// Error thrown when the RPC client fails to initialize
     RpcClientInitialization(String),
     /// Error thrown when a contract address can't be parsed
     AddressParsing(String),
 }
 
-impl Display for ArbitrumClientConfigError {
+impl Display for DarkpoolClientConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
 }
-impl Error for ArbitrumClientConfigError {}
+impl Error for DarkpoolClientConfigError {}
 
-impl From<ArbitrumClientConfigError> for ArbitrumClientError {
-    fn from(e: ArbitrumClientConfigError) -> Self {
+impl From<DarkpoolClientConfigError> for DarkpoolClientError {
+    fn from(e: DarkpoolClientConfigError) -> Self {
         Self::Config(e)
     }
 }
@@ -110,13 +110,13 @@ impl Display for ConversionError {
 }
 impl Error for ConversionError {}
 
-impl From<ConversionError> for ArbitrumClientError {
+impl From<ConversionError> for DarkpoolClientError {
     fn from(e: ConversionError) -> Self {
         Self::Conversion(e)
     }
 }
 
-impl From<SolError> for ArbitrumClientError {
+impl From<SolError> for DarkpoolClientError {
     fn from(e: SolError) -> Self {
         Self::ContractInteraction(e.to_string())
     }

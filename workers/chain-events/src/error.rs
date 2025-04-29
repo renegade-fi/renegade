@@ -2,16 +2,14 @@
 
 use std::{error::Error, fmt::Display};
 
-use arbitrum_client::errors::ArbitrumClientError;
+use darkpool_client::errors::DarkpoolClientError;
 use state::error::StateError;
 
 /// The error type that the event listener emits
 #[derive(Clone, Debug)]
 pub enum OnChainEventListenerError {
-    /// An error executing some method in the Arbitrum client
-    Arbitrum(String),
-    /// An RPC error with the provider
-    Rpc(String),
+    /// An error with the darkpool client
+    Darkpool(String),
     /// An error sending a message to another worker in the local node
     SendMessage(String),
     /// Error setting up the on-chain event listener
@@ -25,10 +23,10 @@ pub enum OnChainEventListenerError {
 }
 
 impl OnChainEventListenerError {
-    /// Create a new arbitrum error
+    /// Create a new darkpool error
     #[allow(clippy::needless_pass_by_value)]
-    pub fn arbitrum<T: ToString>(e: T) -> Self {
-        OnChainEventListenerError::Arbitrum(e.to_string())
+    pub fn darkpool<T: ToString>(e: T) -> Self {
+        OnChainEventListenerError::Darkpool(e.to_string())
     }
 }
 
@@ -45,20 +43,20 @@ impl From<StateError> for OnChainEventListenerError {
     }
 }
 
-impl From<ArbitrumClientError> for OnChainEventListenerError {
-    fn from(e: ArbitrumClientError) -> Self {
-        OnChainEventListenerError::arbitrum(e)
+impl From<DarkpoolClientError> for OnChainEventListenerError {
+    fn from(e: DarkpoolClientError) -> Self {
+        OnChainEventListenerError::darkpool(e)
     }
 }
 
 impl<E: Display> From<alloy::transports::RpcError<E>> for OnChainEventListenerError {
     fn from(e: alloy::transports::RpcError<E>) -> Self {
-        OnChainEventListenerError::Rpc(e.to_string())
+        OnChainEventListenerError::darkpool(e)
     }
 }
 
 impl From<alloy::sol_types::Error> for OnChainEventListenerError {
     fn from(e: alloy::sol_types::Error) -> Self {
-        OnChainEventListenerError::Rpc(e.to_string())
+        OnChainEventListenerError::darkpool(e)
     }
 }

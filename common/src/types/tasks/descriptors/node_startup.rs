@@ -15,7 +15,7 @@ pub struct NodeStartupTaskDescriptor {
     /// The amount of time to wait for the gossip layer to warmup before setting
     /// up the rest of the node
     pub gossip_warmup_ms: u64,
-    /// The relayer's Arbitrum keypair
+    /// The relayer's on-chain keypair
     ///
     /// We store the byte serialization here to allow the descriptor to be
     /// serialized

@@ -12,7 +12,7 @@ tokio = { workspace = true, features = ["rt"] }
 
 # === Workspace Dependencies === #
 api-server = { workspace = true }
-arbitrum-client = { workspace = true }
+darkpool-client = { workspace = true }
 circuit-types = { workspace = true }
 chain-events = { workspace = true }
 common = { workspace = true }

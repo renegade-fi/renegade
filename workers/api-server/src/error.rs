@@ -2,7 +2,7 @@
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use arbitrum_client::errors::ArbitrumClientError;
+use darkpool_client::errors::DarkpoolClientError;
 use external_api::auth::AuthError;
 use hyper::{Body, Response, StatusCode};
 use state::error::StateError;
@@ -43,8 +43,8 @@ impl From<StateError> for ApiServerError {
     }
 }
 
-impl From<ArbitrumClientError> for ApiServerError {
-    fn from(value: ArbitrumClientError) -> Self {
+impl From<DarkpoolClientError> for ApiServerError {
+    fn from(value: DarkpoolClientError) -> Self {
         internal_error(value)
     }
 }
