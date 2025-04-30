@@ -4,13 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+arbitrum = []
+base = []
 integration = [
     "dep:rand",
     "circuit-types/test-helpers",
     "circuits/test_helpers",
     "common/mocks",
 ]
-rand = ["dep:rand"]
 
 [[test]]
 name = "integration"
@@ -28,7 +29,7 @@ num-traits = "0.2"
 ruint = { version = "1.11.1", features = ["num-bigint"] }
 mpc-relation = { workspace = true }
 
-# === Networking / Blockchain === #
+# === Blockchain === #
 alloy = { workspace = true, features = ["provider-debug-api"] }
 alloy-contract = { workspace = true }
 alloy-primitives = { workspace = true }
@@ -49,6 +50,7 @@ serde_with = "3.4"
 postcard = { version = "1", features = ["alloc"] }
 
 # === Misc === #
+async-trait = "0.1"
 itertools = "0.12"
 lazy_static = { workspace = true }
 tokio = { workspace = true }
