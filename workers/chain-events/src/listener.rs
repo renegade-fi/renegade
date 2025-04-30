@@ -12,7 +12,7 @@ use circuit_types::wallet::Nullifier;
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use darkpool_client::{
-    abi::Darkpool::NullifierSpent, client::DarkpoolClient, conversion::u256_to_scalar,
+    conversion::u256_to_scalar, traits::DarkpoolImpl, DarkpoolClient, DarkpoolImplementation,
 };
 use futures_util::StreamExt;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
@@ -30,6 +30,9 @@ const MAX_NULLIFIER_REFRESH_DELAY_S: u64 = 40; // 40 seconds
 /// The delay to wait for a task to complete before attempting to refresh a
 /// nullifier's wallet
 const TASK_COMPLETION_DELAY_S: u64 = 10; // 10 seconds
+
+/// The nullifier spent event configured by the darkpool implementation
+type NullifierSpentEvent = <DarkpoolImplementation as DarkpoolImpl>::NullifierSpent;
 
 // ----------
 // | Worker |
@@ -149,7 +152,7 @@ impl OnChainEventListenerExecutor {
         // Create the contract instance and the event stream
         let client = self.config.ws_client().await?;
         let contract_addr = self.darkpool_client().darkpool_addr();
-        let filter = Filter::new().address(contract_addr).event(NullifierSpent::SIGNATURE);
+        let filter = Filter::new().address(contract_addr).event(NullifierSpentEvent::SIGNATURE);
         let mut stream = client.subscribe_logs(&filter).await?.into_stream();
 
         // Listen for events in a loop
@@ -158,7 +161,7 @@ impl OnChainEventListenerExecutor {
                 .transaction_hash
                 .ok_or_else(|| OnChainEventListenerError::darkpool("no tx hash"))?;
 
-            let event = log.log_decode::<NullifierSpent>()?;
+            let event = log.log_decode::<NullifierSpentEvent>()?;
             let nullifier = u256_to_scalar(event.data().nullifier);
             self.handle_nullifier_spent(tx_hash, nullifier).await?;
         }
@@ -170,7 +173,7 @@ impl OnChainEventListenerExecutor {
     async fn watch_nullifiers_http(&self) -> Result<(), OnChainEventListenerError> {
         info!("listening for nullifiers via HTTP polling");
         // Build a filtered stream on events that the chain-events worker listens for
-        let filter = self.darkpool_client().darkpool_client().NullifierSpent_filter();
+        let filter = self.darkpool_client().event_filter::<NullifierSpentEvent>();
         let mut event_stream =
             filter.subscribe().await.map_err(OnChainEventListenerError::darkpool)?.into_stream();
 
@@ -316,9 +319,8 @@ impl OnChainEventListenerExecutor {
         // things simple, but when internal volumes increase we should start
         // recording order fills. One way to do this is to lookup the wallet by
         // nullifier and record a fill on the order with matching mint
-        for match_result in matches {
-            let match_result =
-                match_result.try_into().map_err(OnChainEventListenerError::darkpool)?;
+        for external_match_result in matches {
+            let match_result = external_match_result.to_match_result();
             renegade_metrics::record_match_volume(&match_result, true /* is_external_match */);
         }
 

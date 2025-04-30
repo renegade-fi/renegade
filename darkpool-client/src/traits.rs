@@ -166,6 +166,14 @@ pub trait DarkpoolImpl: Clone {
     fn parse_external_match(
         calldata: &[u8],
     ) -> Result<Option<ExternalMatchResult>, DarkpoolClientError>;
+
+    // -----------
+    // | Testing |
+    // -----------
+
+    /// Clear the Merkle tree for testing
+    #[cfg(feature = "integration")]
+    async fn clear_merkle_tree(&self) -> Result<TransactionReceipt, DarkpoolClientError>;
 }
 
 // ----------------

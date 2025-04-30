@@ -21,8 +21,9 @@ use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use common::{default_wrapper::default_option, types::new_cancel_channel};
 use constants::{in_bootstrap_mode, VERSION};
 use darkpool_client::{
-    client::{DarkpoolClient, DarkpoolClientConfig},
+    client::DarkpoolClientConfig,
     constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
+    DarkpoolClient,
 };
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use external_api::bus_message::SystemBusMessage;

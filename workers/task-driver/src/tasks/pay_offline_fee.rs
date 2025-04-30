@@ -14,7 +14,7 @@ use circuits::zk_circuits::valid_offline_fee_settlement::{
 use common::types::{
     proof_bundles::OfflineFeeSettlementBundle, tasks::PayOfflineFeeTaskDescriptor, wallet::Wallet,
 };
-use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
+use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::{ProofJob, ProofManagerQueue},

@@ -58,12 +58,10 @@ use super::{
     ValidReblindStatement as ContractValidReblindStatement,
     ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
     ValidWalletCreateStatement as ContractValidWalletCreateStatement,
-    ValidWalletUpdateStatement as ContractValidWalletUpdateStatement, NUM_SCALARS_PK,
+    ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
 };
 use crate::{
-    conversion::{
-        address_to_biguint, amount_to_u256, biguint_to_address, scalar_to_u256, u256_to_amount,
-    },
+    conversion::{address_to_biguint, amount_to_u256, biguint_to_address, u256_to_amount},
     errors::ConversionError,
 };
 
@@ -548,17 +546,6 @@ pub fn to_contract_valid_fee_redemption_statement(
             .collect(),
         old_pk_root: to_contract_public_signing_key(&statement.recipient_root_key)?,
     })
-}
-
-/// Converts a [`PublicSigningKey`] to a fixed-length array of [`AlloyU256`]
-/// elements
-pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[U256; NUM_SCALARS_PK], ConversionError> {
-    pk.to_scalars()
-        .iter()
-        .map(|s| scalar_to_u256(*s))
-        .collect::<Vec<_>>()
-        .try_into()
-        .map_err(|_| ConversionError::InvalidLength)
 }
 
 // ------------------------

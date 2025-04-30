@@ -17,10 +17,7 @@ use alloy_primitives::Address;
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use crossbeam::channel::Sender as CrossbeamSender;
-use darkpool_client::{
-    client::{DarkpoolClient, DarkpoolClientConfig},
-    constants::Chain,
-};
+use darkpool_client::{client::DarkpoolClientConfig, constants::Chain, DarkpoolClient};
 use helpers::new_mock_task_driver;
 use job_types::{
     event_manager::{new_event_manager_queue, EventManagerReceiver},

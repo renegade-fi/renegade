@@ -21,7 +21,7 @@ use common::types::{
     },
 };
 use constants::{in_bootstrap_mode, Scalar, NATIVE_ASSET_ADDRESS};
-use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
+use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
     proof_manager::ProofManagerQueue,

@@ -22,9 +22,9 @@ use util::telemetry::helpers::backfill_trace_field;
 use crate::errors::DarkpoolClientError;
 use crate::traits::DarkpoolImpl;
 
-use super::DarkpoolClient;
+use super::DarkpoolClientInner;
 
-impl<D: DarkpoolImpl> DarkpoolClient<D> {
+impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     // -----------
     // | GETTERS |
     // -----------

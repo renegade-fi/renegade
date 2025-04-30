@@ -19,8 +19,7 @@ use common::{
 };
 use config::RelayerConfig;
 use darkpool_client::{
-    client::{DarkpoolClient, DarkpoolClientConfig},
-    constants::BLOCK_POLLING_INTERVAL_MS,
+    client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL_MS, DarkpoolClient,
 };
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;

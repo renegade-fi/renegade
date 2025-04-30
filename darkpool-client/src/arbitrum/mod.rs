@@ -1,7 +1,8 @@
-//! Arbitrum implementation of the `DarkpoolImpl` trait and functionality
+//! Arbitrum implementation of the darkpool client
+
 pub mod abi;
-mod contract_types;
-mod helpers;
+pub mod contract_types;
+pub mod helpers;
 
 use crate::{
     client::{DarkpoolCallBuilder, RenegadeProvider},
@@ -592,6 +593,17 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         }?;
 
         Ok(Some(match_res))
+    }
+
+    // -----------
+    // | Testing |
+    // -----------
+
+    /// Clear the Merkle tree for testing
+    #[cfg(feature = "integration")]
+    async fn clear_merkle_tree(&self) -> Result<TransactionReceipt, DarkpoolClientError> {
+        let call = self.darkpool().clearMerkle();
+        self.send_tx(call).await
     }
 }
 

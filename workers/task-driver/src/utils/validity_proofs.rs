@@ -23,8 +23,8 @@ use common::types::proof_bundles::{
 };
 use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
-use darkpool_client::client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::DarkpoolClient;
 use gossip_api::pubsub::orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC};
 use gossip_api::pubsub::PubsubMessage;
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};

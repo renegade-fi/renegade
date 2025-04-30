@@ -9,7 +9,7 @@ use common::{
     types::{gossip::WrappedPeerId, CancelChannel},
 };
 use constants::in_bootstrap_mode;
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use gossip_api::{
     pubsub::{
         cluster::{ClusterManagementMessage, ClusterManagementMessageType},

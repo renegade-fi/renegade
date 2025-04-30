@@ -4,7 +4,7 @@ use std::thread::{self, JoinHandle};
 
 use async_trait::async_trait;
 use common::{default_wrapper::DefaultOption, worker::Worker};
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue,

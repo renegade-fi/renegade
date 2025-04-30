@@ -10,13 +10,14 @@ use alloy_sol_types::{
 };
 use circuit_types::{
     keychain::PublicSigningKey,
+    traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
-use darkpool_client::{
-    conversion::{pk_to_u256s, to_contract_external_transfer},
-    helpers::serialize_calldata,
+use darkpool_client::arbitrum::{
+    contract_types::conversion::to_contract_external_transfer, helpers::serialize_calldata,
 };
+use darkpool_client::{conversion::scalar_to_u256, errors::ConversionError};
 use eyre::Result;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
@@ -27,6 +28,8 @@ mod abi;
 
 /// The name of the domain separator for Permit2 typed data
 const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
+/// The number of scalars in a secp256k1 public key
+const NUM_SCALARS_PK: usize = 4;
 
 /// Generates an external transfer augmented with auth data
 pub fn gen_transfer_with_auth(
@@ -179,4 +182,15 @@ fn permit_signing_hash(permit: &PermitWitnessTransferFrom, domain: &Eip712Domain
 /// Convert a `U256` to a `BigUint`
 fn u256_to_biguint(u: U256) -> BigUint {
     BigUint::from_bytes_le(u.as_le_slice())
+}
+
+/// Converts a [`PublicSigningKey`] to a fixed-length array of [`AlloyU256`]
+/// elements
+pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[U256; NUM_SCALARS_PK], ConversionError> {
+    pk.to_scalars()
+        .iter()
+        .map(|s| scalar_to_u256(*s))
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| ConversionError::InvalidLength)
 }

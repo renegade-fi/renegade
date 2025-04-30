@@ -5,6 +5,8 @@ edition = "2018"
 default-run = "renegade-relayer"
 
 [features]
+arbitrum = ["chain-events/arbitrum", "darkpool-client/arbitrum"]
+base = ["chain-events/base", "darkpool-client/base"]
 metered-channels = ["util/metered-channels"]
 
 [dependencies]

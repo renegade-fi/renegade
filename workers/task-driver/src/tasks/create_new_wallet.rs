@@ -20,8 +20,8 @@ use circuits::zk_circuits::valid_wallet_create::{
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use constants::Scalar;
-use darkpool_client::client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::DarkpoolClient;
 use job_types::event_manager::{
     try_send_event, EventManagerQueue, RelayerEvent, WalletCreationEvent,
 };

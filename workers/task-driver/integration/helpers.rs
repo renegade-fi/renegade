@@ -14,7 +14,7 @@ use common::{
     worker::Worker,
 };
 use constants::Scalar;
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use eyre::Result;
 use job_types::{
     event_manager::EventManagerQueue,

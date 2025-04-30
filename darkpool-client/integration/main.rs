@@ -21,10 +21,7 @@ use ::constants::Scalar;
 use alloy::signers::local::PrivateKeySigner;
 use circuit_types::SizedWalletShare;
 use clap::Parser;
-use darkpool_client::{
-    client::{DarkpoolClient, DarkpoolClientConfig},
-    constants::Chain,
-};
+use darkpool_client::{client::DarkpoolClientConfig, constants::Chain, DarkpoolClient};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,

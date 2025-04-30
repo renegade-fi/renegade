@@ -11,7 +11,6 @@ use alloy::rpc::types::trace::geth::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
 };
 use alloy::rpc::types::TransactionReceipt;
-use alloy_contract::Event;
 use alloy_primitives::{Log, Selector, TxHash};
 use alloy_sol_types::SolEvent;
 use circuit_types::r#match::ExternalMatchResult;
@@ -26,21 +25,14 @@ use crate::conversion::scalar_to_u256;
 use crate::errors::DarkpoolClientError;
 use crate::traits::{DarkpoolImpl, MerkleInsertionEvent, MerkleOpeningNodeEvent};
 
-use super::{DarkpoolClient, RenegadeProvider};
+use super::DarkpoolClientInner;
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 /// The error message emitted when a TX hash is not found in a log
 const ERR_NO_TX_HASH: &str = "no tx hash for log";
 
-impl<D: DarkpoolImpl> DarkpoolClient<D> {
-    /// Create an event filter
-    fn event_filter<E: SolEvent>(&self) -> Event<&RenegadeProvider, E> {
-        let provider = self.provider();
-        let address = self.darkpool_addr();
-        Event::new_sol(provider, &address)
-    }
-
+impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     /// Return the hash of the transaction that last indexed secret shares for
     /// the given public blinder share
     ///

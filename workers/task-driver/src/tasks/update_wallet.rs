@@ -19,8 +19,8 @@ use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
-use darkpool_client::client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::DarkpoolClient;
 use itertools::Itertools;
 use job_types::event_manager::{
     try_send_event, EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent,

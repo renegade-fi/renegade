@@ -28,7 +28,7 @@ use common::types::{
 use constants::{
     Scalar, EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER,
 };
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use external_api::{
     bus_message::SystemBusMessage,
     http::external_match::{

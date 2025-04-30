@@ -152,6 +152,7 @@ pub struct ExternalTransfer {
 }
 
 /// Auxiliary data passed alongside an external transfer to verify its validity.
+///
 /// This includes a signature over the external transfer, and in the case of a
 /// deposit, the associated Permit2 data ([reference](https://docs.uniswap.org/contracts/permit2/reference/signature-transfer))
 #[serde_as]
@@ -241,6 +242,7 @@ pub struct BoundedMatchResult {
 }
 
 /// Represents the affine coordinates of a secp256k1 ECDSA public key.
+///
 /// Since the secp256k1 base field order is larger than that of Bn254's scalar
 /// field, it takes 2 Bn254 scalar field elements to represent each coordinate.
 #[serde_as]

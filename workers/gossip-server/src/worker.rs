@@ -5,7 +5,7 @@ use common::default_wrapper::DefaultWrapper;
 use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
 use common::worker::Worker;
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use futures::executor::block_on;
 use job_types::gossip_server::{GossipServerQueue, GossipServerReceiver};
 use job_types::network_manager::NetworkManagerQueue;
