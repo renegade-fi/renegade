@@ -19,3 +19,7 @@ pub mod contract_types;
 pub mod conversion;
 pub mod errors;
 pub mod helpers;
+pub mod traits;
+
+#[cfg(feature = "arbitrum")]
+pub mod arbitrum;

@@ -3544,6 +3544,7 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff 0.4.2",
+ "async-trait",
  "circuit-types 0.1.0",
  "circuits 0.1.0",
  "clap 4.5.32",
