@@ -4,64 +4,35 @@
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 
+use alloy::consensus::constants::SELECTOR_LEN;
 use alloy::consensus::Transaction;
 use alloy::providers::{ext::DebugApi, Provider};
 use alloy::rpc::types::trace::geth::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
 };
 use alloy::rpc::types::TransactionReceipt;
-use alloy_primitives::{Log, TxHash, U256};
-use alloy_sol_types::{SolCall, SolEventInterface};
+use alloy_primitives::{Log, Selector, TxHash};
+use alloy_sol_types::SolEvent;
+use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::SizedWalletShare;
 use common::types::merkle::MerkleAuthenticationPath;
 use constants::{Scalar, MERKLE_HEIGHT};
 use itertools::Itertools;
 use num_bigint::BigUint;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 
-use crate::abi::Darkpool::{DarkpoolEvents, MerkleInsertion, MerkleOpeningNode};
-use crate::constants::{
-    KNOWN_SELECTORS, PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
-    PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
-    PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR,
-    PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
-};
-use crate::contract_types::{
-    ExternalMatchResult,
-    ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
-    ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
-};
-use crate::conversion::{scalar_to_u256, to_circuit_fixed_point, u256_to_scalar};
-use crate::helpers::{
-    deserialize_calldata, parse_shares_from_process_malleable_atomic_match_settle,
-    parse_shares_from_process_malleable_atomic_match_settle_with_receiver,
-};
-use crate::{
-    abi::Darkpool::{
-        newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
-        processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
-        processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
-        updateWalletCall,
-    },
-    constants::SELECTOR_LEN,
-    errors::DarkpoolClientError,
-    helpers::{
-        parse_shares_from_new_wallet, parse_shares_from_process_atomic_match_settle,
-        parse_shares_from_process_atomic_match_settle_with_receiver,
-        parse_shares_from_process_match_settle, parse_shares_from_redeem_fee,
-        parse_shares_from_settle_offline_fee, parse_shares_from_settle_online_relayer_fee,
-        parse_shares_from_update_wallet,
-    },
-};
+use crate::conversion::scalar_to_u256;
+use crate::errors::DarkpoolClientError;
+use crate::traits::{DarkpoolImpl, MerkleInsertionEvent, MerkleOpeningNodeEvent};
 
-use super::DarkpoolClient;
+use super::DarkpoolClientInner;
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
 /// The error message emitted when a TX hash is not found in a log
 const ERR_NO_TX_HASH: &str = "no tx hash for log";
 
-impl DarkpoolClient {
+impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     /// Return the hash of the transaction that last indexed secret shares for
     /// the given public blinder share
     ///
@@ -74,9 +45,8 @@ impl DarkpoolClient {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, DarkpoolClientError> {
-        let darkpool_client = self.darkpool_client();
-        let events = darkpool_client
-            .WalletUpdated_filter()
+        let events = self
+            .event_filter::<D::WalletUpdated>()
             .topic1(scalar_to_u256(public_blinder_share))
             .from_block(self.deploy_block)
             .query()
@@ -116,27 +86,25 @@ impl DarkpoolClient {
         // Parse the Merkle path from the transaction logs
         let mut all_insertion_events = vec![];
         for log in tx.logs().iter().cloned().map(Log::from) {
-            match DarkpoolEvents::decode_log(&log).map(|l| l.data) {
-                Ok(DarkpoolEvents::MerkleOpeningNode(MerkleOpeningNode {
-                    height: depth,
-                    new_value,
-                    ..
-                })) => {
-                    all_insertion_events.push((depth, u256_to_scalar(new_value)));
-                },
+            // Matches cannot depend on associated constants, so we if-else
+            let topic0 = log.topics()[0];
+            if topic0 == D::MerkleInsertion::SIGNATURE_HASH {
+                // Track the number of Merkle insertions in the tx, so that we may properly find
+                // our commitment in the log stream
+                let event = D::MerkleInsertion::decode_log(&log)
+                    .map_err(DarkpoolClientError::event_querying)?;
 
-                // Track the number of Merkle insertions in the tx, so that we may properly find our
-                // commitment in the log stream
-                Ok(DarkpoolEvents::MerkleInsertion(MerkleInsertion { value, .. })) => {
-                    if u256_to_scalar(value) == commitment {
-                        insertion_idx = n_insertions;
-                    }
-
-                    n_insertions += 1;
-                },
-
+                if event.value() == commitment {
+                    insertion_idx = n_insertions;
+                }
+                n_insertions += 1;
+            } else if topic0 == D::MerkleOpening::SIGNATURE_HASH {
+                let event = D::MerkleOpening::decode_log(&log)
+                    .map_err(DarkpoolClientError::event_querying)?;
+                all_insertion_events.push((event.height(), event.new_value()));
+            } else {
                 // Ignore other events and unknown events
-                _ => continue,
+                continue;
             }
         }
 
@@ -163,8 +131,7 @@ impl DarkpoolClient {
         commitment: Scalar,
     ) -> Result<(u128, TxHash), DarkpoolClientError> {
         let events = self
-            .darkpool_client()
-            .MerkleInsertion_filter()
+            .event_filter::<D::MerkleInsertion>()
             .topic2(scalar_to_u256(commitment))
             .from_block(self.deploy_block)
             .query()
@@ -173,7 +140,7 @@ impl DarkpoolClient {
 
         events
             .last()
-            .map(|(event, meta)| (event.index, meta.transaction_hash.expect(ERR_NO_TX_HASH)))
+            .map(|(event, meta)| (event.index(), meta.transaction_hash.expect(ERR_NO_TX_HASH)))
             .ok_or(DarkpoolClientError::CommitmentNotFound)
     }
 
@@ -197,9 +164,9 @@ impl DarkpoolClient {
             .ok_or(DarkpoolClientError::TxNotFound(tx_hash.to_string()))?;
 
         let calldata: Vec<u8> = tx.input().to_vec();
-        let selector: [u8; 4] = calldata[..SELECTOR_LEN].try_into().unwrap();
-        if KNOWN_SELECTORS.contains(&selector) {
-            Self::parse_shares_from_selector_and_calldata(selector, &calldata, public_blinder_share)
+        let selector = Selector::from_slice(&calldata[..SELECTOR_LEN]);
+        if D::is_known_selector(selector) {
+            D::parse_shares(selector, &calldata, public_blinder_share)
         } else {
             info!("unknown selector {selector:?}, searching calldata...");
             self.fetch_public_shares_for_unknown_selector(tx_hash, public_blinder_share).await
@@ -216,42 +183,9 @@ impl DarkpoolClient {
         let darkpool_calls = self.fetch_tx_darkpool_calls(tx_hash).await?;
         for frame in darkpool_calls.into_iter() {
             let calldata: &[u8] = &frame.input;
-            let selector = calldata[..SELECTOR_LEN].try_into().unwrap();
-
-            // Parse the `VALID MATCH SETTLE ATOMIC` statement from the calldata
-            let match_res = match selector {
-                PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR => {
-                    let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
-                    Self::parse_external_match_from_calldata(
-                        &call.valid_match_settle_atomic_statement,
-                    )
-                },
-                PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
-                    let call = processAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
-                    Self::parse_external_match_from_calldata(
-                        &call.valid_match_settle_atomic_statement,
-                    )
-                },
-                PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR => {
-                    let call =
-                        processMalleableAtomicMatchSettleWithReceiverCall::abi_decode(calldata)?;
-                    Self::parse_external_match_from_malleable(
-                        call.base_amount,
-                        &call.valid_match_settle_statement,
-                    )
-                },
-                PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR => {
-                    let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
-                    Self::parse_external_match_from_malleable(
-                        call.base_amount,
-                        &call.valid_match_settle_statement,
-                    )
-                },
-                _ => continue,
-            }?;
-
-            // Deserialize the statement, and store the match
-            matches.push(match_res);
+            if let Some(match_res) = D::parse_external_match(calldata)? {
+                matches.push(match_res);
+            }
         }
 
         Ok(matches)
@@ -280,94 +214,13 @@ impl DarkpoolClient {
         for call in calls {
             let data = call.input;
             let selector = data[..SELECTOR_LEN].try_into().unwrap();
-            let public_share = Self::parse_shares_from_selector_and_calldata(
-                selector,
-                &data,
-                public_blinder_share,
-            )?;
-
+            let public_share = D::parse_shares(selector, &data, public_blinder_share)?;
             if public_share.blinder == public_blinder_share {
                 return Ok(public_share);
             }
         }
 
         Err(DarkpoolClientError::InvalidSelector)
-    }
-
-    /// Parse wallet shares given a selector and calldata
-    fn parse_shares_from_selector_and_calldata(
-        selector: [u8; SELECTOR_LEN],
-        calldata: &[u8],
-        public_blinder_share: Scalar,
-    ) -> Result<SizedWalletShare, DarkpoolClientError> {
-        match selector {
-            <newWalletCall as SolCall>::SELECTOR => parse_shares_from_new_wallet(calldata),
-            <updateWalletCall as SolCall>::SELECTOR => parse_shares_from_update_wallet(calldata),
-            <processMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_match_settle(calldata, public_blinder_share)
-            },
-            <processAtomicMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_atomic_match_settle(calldata)
-            },
-            <processAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_atomic_match_settle_with_receiver(calldata)
-            },
-            <processMalleableAtomicMatchSettleCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_malleable_atomic_match_settle(calldata)
-            },
-            <processMalleableAtomicMatchSettleWithReceiverCall as SolCall>::SELECTOR => {
-                parse_shares_from_process_malleable_atomic_match_settle_with_receiver(calldata)
-            },
-            <settleOnlineRelayerFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_online_relayer_fee(calldata, public_blinder_share)
-            },
-            <settleOfflineFeeCall as SolCall>::SELECTOR => {
-                parse_shares_from_settle_offline_fee(calldata)
-            },
-            <redeemFeeCall as SolCall>::SELECTOR => parse_shares_from_redeem_fee(calldata),
-            _ => {
-                error!("invalid selector when parsing public shares: {selector:?}");
-                Err(DarkpoolClientError::InvalidSelector)
-            },
-        }
-    }
-
-    // --- Parse External Matches --- //
-
-    /// Parse an external match from a `VALID MATCH SETTLE ATOMIC` statement
-    /// serialized as calldata bytes
-    fn parse_external_match_from_calldata(
-        statement_bytes: &[u8],
-    ) -> Result<ExternalMatchResult, DarkpoolClientError> {
-        let statement: ContractValidMatchSettleAtomicStatement =
-            deserialize_calldata(statement_bytes)?;
-        Ok(statement.match_result)
-    }
-
-    /// Parse an external match from a `VALID MALLEABLE MATCH SETTLE ATOMIC`
-    /// statement and the calldata of the `processMalleableAtomicMatchSettle`
-    fn parse_external_match_from_malleable(
-        base_amount: U256,
-        statement_bytes: &[u8],
-    ) -> Result<ExternalMatchResult, DarkpoolClientError> {
-        let statement: ContractValidMalleableMatchSettleAtomicStatement =
-            deserialize_calldata(statement_bytes)?;
-        let match_res = statement.match_result;
-
-        // Compute the quote amount from the price and the base amount
-        let price = to_circuit_fixed_point(&match_res.price);
-        let base_scalar = u256_to_scalar(base_amount);
-        let quote_scalar = (price * base_scalar).floor();
-        let base_amount = scalar_to_u256(base_scalar);
-        let quote_amount = scalar_to_u256(quote_scalar);
-
-        Ok(ExternalMatchResult {
-            base_mint: match_res.base_mint,
-            quote_mint: match_res.quote_mint,
-            base_amount,
-            quote_amount,
-            direction: match_res.direction,
-        })
     }
 
     // --- Call Tracing --- //

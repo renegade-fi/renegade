@@ -3,7 +3,7 @@
 use std::fmt::{Debug, Display};
 
 use async_trait::async_trait;
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use external_api::bus_message::SystemBusMessage;
 use job_types::{
     event_manager::EventManagerQueue, network_manager::NetworkManagerQueue,

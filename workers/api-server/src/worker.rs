@@ -5,7 +5,7 @@ use common::{
     types::{hmac::HmacKey, CancelChannel},
     worker::Worker,
 };
-use darkpool_client::{client::DarkpoolClient, constants::Chain};
+use darkpool_client::{constants::Chain, DarkpoolClient};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{

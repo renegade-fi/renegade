@@ -26,8 +26,8 @@ use common::types::{
     wallet::Wallet,
 };
 use constants::Scalar;
-use darkpool_client::client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::DarkpoolClient;
 use job_types::event_manager::{try_send_event, EventManagerQueue, FillEvent, RelayerEvent};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};

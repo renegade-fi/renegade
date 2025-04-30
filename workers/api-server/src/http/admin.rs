@@ -16,7 +16,7 @@ use common::types::{
 };
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;
-use darkpool_client::{client::DarkpoolClient, constants::Chain};
+use darkpool_client::{constants::Chain, DarkpoolClient};
 use external_api::{
     http::{
         admin::{

@@ -2,18 +2,14 @@
 
 use alloy::primitives::{Bytes, U256};
 use alloy_sol_types::SolCall;
-use circuit_types::{
-    elgamal::{BabyJubJubPoint, ElGamalCiphertext},
-    note::NOTE_CIPHERTEXT_SIZE,
-    r#match::OrderSettlementIndices,
-    traits::BaseType,
-    Amount, SizedWalletShare,
-};
+use circuit_types::{r#match::OrderSettlementIndices, traits::BaseType, Amount, SizedWalletShare};
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 use util::matching_engine::apply_match_to_shares;
 
-use crate::{
+use crate::errors::DarkpoolClientError;
+
+use super::{
     abi::Darkpool::{
         newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
         processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
@@ -21,6 +17,10 @@ use crate::{
         updateWalletCall,
     },
     contract_types::{
+        conversion::{
+            to_circuit_bounded_match_result, to_circuit_fee_rates,
+            to_circuit_order_settlement_indices,
+        },
         MatchPayload, ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
         ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
         ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
@@ -30,10 +30,6 @@ use crate::{
         ValidWalletCreateStatement as ContractValidWalletCreateStatement,
         ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
     },
-    conversion::{
-        to_circuit_bounded_match_result, to_circuit_fee_rates, to_circuit_order_settlement_indices,
-    },
-    errors::DarkpoolClientError,
 };
 
 // ---------------------
@@ -262,23 +258,6 @@ pub fn parse_shares_from_redeem_fee(
     let mut shares = statement.new_wallet_public_shares.into_iter().map(Scalar::new);
 
     Ok(SizedWalletShare::from_scalars(&mut shares))
-}
-
-/// Parse a note from calldata of a `settleOfflineFee` call
-pub fn parse_note_ciphertext_from_settle_offline_fee(
-    calldata: &[u8],
-) -> Result<ElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>, DarkpoolClientError> {
-    let call = settleOfflineFeeCall::abi_decode(calldata)?;
-
-    let statement = deserialize_calldata::<ContractValidOfflineFeeSettlementStatement>(
-        &call.valid_offline_fee_settlement_statement,
-    )?;
-    let cipher = statement.note_ciphertext;
-    let key_encryption = BabyJubJubPoint { x: Scalar::new(cipher.0.x), y: Scalar::new(cipher.0.y) };
-    let symmetric_ciphertext =
-        [Scalar::new(cipher.1), Scalar::new(cipher.2), Scalar::new(cipher.3)];
-
-    Ok(ElGamalCiphertext { ephemeral_key: key_encryption, ciphertext: symmetric_ciphertext })
 }
 
 // ---------------------

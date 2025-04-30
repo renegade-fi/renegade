@@ -3,6 +3,10 @@ name = "chain-events"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+arbitrum = ["darkpool-client/arbitrum"]
+base = ["darkpool-client/base"]
+
 [dependencies]
 # === Concurrency + Runtime === #
 crossbeam = { workspace = true }

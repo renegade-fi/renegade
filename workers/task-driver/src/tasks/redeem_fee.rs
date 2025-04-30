@@ -11,7 +11,7 @@ use common::types::{
     merkle::MerkleAuthenticationPath, proof_bundles::FeeRedemptionBundle,
     tasks::RedeemFeeTaskDescriptor, wallet::Wallet,
 };
-use darkpool_client::{client::DarkpoolClient, errors::DarkpoolClientError};
+use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::{ProofJob, ProofManagerQueue},

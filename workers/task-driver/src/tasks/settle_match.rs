@@ -18,8 +18,8 @@ use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
 };
-use darkpool_client::client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::DarkpoolClient;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::ProofManagerQueue;
 use serde::Serialize;

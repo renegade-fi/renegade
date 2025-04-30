@@ -12,8 +12,8 @@ use circuits::zk_circuits::valid_relayer_fee_settlement::{
 use common::types::proof_bundles::RelayerFeeSettlementBundle;
 use common::types::tasks::PayRelayerFeeTaskDescriptor;
 use common::types::wallet::Wallet;
-use darkpool_client::client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
+use darkpool_client::DarkpoolClient;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use num_bigint::BigUint;

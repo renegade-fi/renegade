@@ -4,7 +4,7 @@ use std::iter;
 
 use circuit_types::{traits::BaseType, SizedWallet, SizedWalletShare};
 use constants::Scalar;
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use itertools::Itertools;
 use renegade_crypto::hash::PoseidonCSPRNG;
 

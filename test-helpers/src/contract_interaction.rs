@@ -7,11 +7,12 @@ use common::types::{
     wallet::{mocks::mock_empty_wallet, Wallet},
 };
 use constants::Scalar;
-use darkpool_client::client::DarkpoolClient;
+use darkpool_client::DarkpoolClient;
 use eyre::Result;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
 
+#[cfg(feature = "arbitrum")]
 pub mod transfer_auth;
 
 // ---------------------

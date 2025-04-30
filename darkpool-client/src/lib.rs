@@ -12,14 +12,19 @@
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
 
-pub mod abi;
 pub mod client;
 pub mod constants;
-pub mod contract_types;
 pub mod conversion;
 pub mod errors;
-pub mod helpers;
 pub mod traits;
 
 #[cfg(feature = "arbitrum")]
 pub mod arbitrum;
+#[cfg(feature = "arbitrum")]
+/// The darkpool client for the Arbitrum chain
+pub type DarkpoolClient = client::DarkpoolClientInner<arbitrum::ArbitrumDarkpool>;
+#[cfg(feature = "arbitrum")]
+/// The darkpool implementation for the Arbitrum chain
+///
+/// Exported here to allow lower level access from other workers
+pub type DarkpoolImplementation = arbitrum::ArbitrumDarkpool;
