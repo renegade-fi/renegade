@@ -13,7 +13,9 @@ use constants::Scalar;
 use serde::{Deserialize, Serialize};
 use util::matching_engine::apply_match_to_shares;
 
-use crate::{
+use crate::errors::DarkpoolClientError;
+
+use super::{
     abi::Darkpool::{
         newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
         processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
@@ -21,6 +23,10 @@ use crate::{
         updateWalletCall,
     },
     contract_types::{
+        conversion::{
+            to_circuit_bounded_match_result, to_circuit_fee_rates,
+            to_circuit_order_settlement_indices,
+        },
         MatchPayload, ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
         ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
         ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
@@ -30,10 +36,6 @@ use crate::{
         ValidWalletCreateStatement as ContractValidWalletCreateStatement,
         ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
     },
-    conversion::{
-        to_circuit_bounded_match_result, to_circuit_fee_rates, to_circuit_order_settlement_indices,
-    },
-    errors::DarkpoolClientError,
 };
 
 // ---------------------

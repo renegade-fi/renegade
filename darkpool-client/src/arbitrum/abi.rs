@@ -3,7 +3,9 @@
 #![allow(missing_docs)]
 #![allow(unused_doc_comments)]
 
-use alloy_sol_types::sol;
+use alloy::consensus::constants::SELECTOR_LEN;
+use alloy_sol_types::{sol, SolCall};
+use Darkpool::*;
 
 sol! {
     #[sol(rpc)]
@@ -38,3 +40,41 @@ sol! {
         function clearMerkle() external;
     }
 }
+
+/// A list of known selectors for the darkpool contract
+pub(crate) const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 8] = [
+    NEW_WALLET_SELECTOR,
+    UPDATE_WALLET_SELECTOR,
+    PROCESS_MATCH_SETTLE_SELECTOR,
+    PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
+    PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
+    SETTLE_ONLINE_RELAYER_FEE_SELECTOR,
+    SETTLE_OFFLINE_FEE_SELECTOR,
+    REDEEM_FEE_SELECTOR,
+];
+
+/// Selector for `newWallet`
+pub const NEW_WALLET_SELECTOR: [u8; SELECTOR_LEN] = newWalletCall::SELECTOR;
+/// Selector for `updateWallet`
+pub const UPDATE_WALLET_SELECTOR: [u8; SELECTOR_LEN] = updateWalletCall::SELECTOR;
+/// Selector for `processMatchSettle`
+pub const PROCESS_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] = processMatchSettleCall::SELECTOR;
+/// Selector for `processAtomicMatchSettle`
+pub const PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] =
+    processAtomicMatchSettleCall::SELECTOR;
+/// Selector for `processAtomicMatchSettleWithReceiver`
+pub const PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR: [u8; SELECTOR_LEN] =
+    processAtomicMatchSettleWithReceiverCall::SELECTOR;
+/// Selector for `processMalleableAtomicMatchSettleWithReceiver`
+pub const PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR: [u8; SELECTOR_LEN] =
+    processMalleableAtomicMatchSettleWithReceiverCall::SELECTOR;
+/// Selector for `processMalleableAtomicMatchSettle`
+pub const PROCESS_MALLEABLE_ATOMIC_MATCH_SETTLE_SELECTOR: [u8; SELECTOR_LEN] =
+    processMalleableAtomicMatchSettleCall::SELECTOR;
+/// Selector for `settleOnlineRelayerFee`
+pub const SETTLE_ONLINE_RELAYER_FEE_SELECTOR: [u8; SELECTOR_LEN] =
+    settleOnlineRelayerFeeCall::SELECTOR;
+/// Selector for `settleOfflineFee`
+pub const SETTLE_OFFLINE_FEE_SELECTOR: [u8; SELECTOR_LEN] = settleOfflineFeeCall::SELECTOR;
+/// Selector for `redeemFee`
+pub const REDEEM_FEE_SELECTOR: [u8; SELECTOR_LEN] = redeemFeeCall::SELECTOR;

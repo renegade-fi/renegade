@@ -1,10 +1,11 @@
 //! Trait definitions for the `DarkpoolClient`
 
-use alloy::primitives::Address;
 use alloy::rpc::types::TransactionRequest;
+use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use alloy_primitives::Selector;
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
+use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
     SizedWalletShare,
@@ -20,12 +21,13 @@ use common::types::{
 };
 use constants::Scalar;
 
+use crate::client::RenegadeProvider;
 use crate::errors::DarkpoolClientError;
 
 /// The `DarkpoolImpl` trait defines the functionality that must be implemented
 /// for a given blockchain.
 #[async_trait]
-pub(crate) trait DarkpoolImpl {
+pub trait DarkpoolImpl: Clone {
     /// The Merkle insertion event type
     type MerkleInsertion: MerkleInsertionEvent;
     /// The Merkle opening event type
@@ -35,9 +37,18 @@ pub(crate) trait DarkpoolImpl {
     /// The wallet updated event type
     type WalletUpdated: WalletUpdatedEvent;
 
+    /// Create a new darkpool implementation
+    fn new(darkpool_addr: Address, provider: RenegadeProvider) -> Self;
+
     // -----------
     // | Getters |
     // -----------
+
+    /// Get the address of the darkpool contract
+    fn address(&self) -> Address;
+
+    /// Get a reference to the provider
+    fn provider(&self) -> &RenegadeProvider;
 
     /// Get the current Merkle root in the contract
     async fn get_merkle_root(&self) -> Result<Scalar, DarkpoolClientError>;
@@ -58,17 +69,17 @@ pub(crate) trait DarkpoolImpl {
     async fn check_merkle_root(&self, root: MerkleRoot) -> Result<bool, DarkpoolClientError>;
 
     /// Check whether a given nullifier is used
-    async fn check_nullifier(&self, nullifier: Nullifier) -> Result<bool, DarkpoolClientError>;
+    async fn is_nullifier_spent(&self, nullifier: Nullifier) -> Result<bool, DarkpoolClientError>;
 
     /// Check whether a given blinder is used
-    async fn check_public_blinder(&self, blinder: Scalar) -> Result<bool, DarkpoolClientError>;
+    async fn is_blinder_used(&self, blinder: Scalar) -> Result<bool, DarkpoolClientError>;
 
     /// Whether a given selector is known to the darkpool implementation
     ///
     /// This method is used in share recovery to decide whether a top level
     /// trace calls the darkpool directly. If not, the relayer should trace the
     /// transaction's calls and parse shares from darkpool subcalls.
-    fn is_known_selector(&self, selector: Selector) -> bool;
+    fn is_known_selector(selector: Selector) -> bool;
 
     // -----------
     // | Setters |
@@ -78,7 +89,7 @@ pub(crate) trait DarkpoolImpl {
     async fn new_wallet(
         &self,
         valid_wallet_create: &SizedValidWalletCreateBundle,
-    ) -> Result<(), DarkpoolClientError>;
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Update a wallet in the darkpool contract
     async fn update_wallet(
@@ -86,7 +97,7 @@ pub(crate) trait DarkpoolImpl {
         valid_wallet_update: &SizedValidWalletUpdateBundle,
         wallet_commitment_signature: Vec<u8>,
         transfer_auth: Option<TransferAuth>,
-    ) -> Result<(), DarkpoolClientError>;
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Process a match settle in the darkpool contract
     async fn process_match_settle(
@@ -94,7 +105,7 @@ pub(crate) trait DarkpoolImpl {
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
         match_bundle: &MatchBundle,
-    ) -> Result<(), DarkpoolClientError>;
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Settle an fee online; i.e. wherein the receiving part directly receives
     /// the note in their wallet.
@@ -104,21 +115,21 @@ pub(crate) trait DarkpoolImpl {
         &self,
         valid_relayer_fee_settlement: &SizedRelayerFeeSettlementBundle,
         relayer_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<(), DarkpoolClientError>;
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Settle an offline fee; committing a note to the Merkle state that can be
     /// later redeemed
     async fn settle_offline_fee(
         &self,
         valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
-    ) -> Result<(), DarkpoolClientError>;
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Redeem a fee note into a wallet
     async fn redeem_fee(
         &self,
         valid_fee_redemption: &SizedFeeRedemptionBundle,
         recipient_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<(), DarkpoolClientError>;
+    ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     // ----------------
     // | Calldata Gen |
@@ -150,6 +161,11 @@ pub(crate) trait DarkpoolImpl {
         calldata: &[u8],
         public_blinder_share: Scalar,
     ) -> Result<SizedWalletShare, DarkpoolClientError>;
+
+    /// Parse an external match from a given transaction's calldata
+    fn parse_external_match(
+        calldata: &[u8],
+    ) -> Result<Option<ExternalMatchResult>, DarkpoolClientError>;
 }
 
 // ----------------
@@ -157,31 +173,31 @@ pub(crate) trait DarkpoolImpl {
 // ----------------
 
 /// A trait for the Merkle insertion event
-pub(crate) trait MerkleInsertionEvent: SolEvent {
-    /// The height of the insertion
-    fn height(&self) -> Result<u64, DarkpoolClientError>;
-    /// The new value of the insertion
-    fn new_value(&self) -> Result<Scalar, DarkpoolClientError>;
+pub trait MerkleInsertionEvent: SolEvent {
+    /// The index of the insertion
+    fn index(&self) -> u128;
+    /// The value that was inserted
+    fn value(&self) -> Scalar;
 }
 
 /// A trait for the Merkle opening event
-pub(crate) trait MerkleOpeningNodeEvent: SolEvent {
+pub trait MerkleOpeningNodeEvent: SolEvent {
     /// The height of the opening
-    fn height(&self) -> Result<u64, DarkpoolClientError>;
+    fn height(&self) -> u64;
     /// The index of the opening
-    fn index(&self) -> Result<u64, DarkpoolClientError>;
+    fn index(&self) -> u64;
     /// The new value of the opening
-    fn new_value(&self) -> Result<Scalar, DarkpoolClientError>;
+    fn new_value(&self) -> Scalar;
 }
 
 /// A trait for the nullifier spent event
-pub(crate) trait NullifierSpentEvent: SolEvent {
+pub trait NullifierSpentEvent: SolEvent {
     /// The nullifier that was spent
-    fn nullifier(&self) -> Result<Nullifier, DarkpoolClientError>;
+    fn nullifier(&self) -> Nullifier;
 }
 
 /// A trait for the wallet updated event
-pub(crate) trait WalletUpdatedEvent: SolEvent {
+pub trait WalletUpdatedEvent: SolEvent {
     /// The public blinder share that was used
-    fn blinder_share(&self) -> Result<Scalar, DarkpoolClientError>;
+    fn blinder_share(&self) -> Scalar;
 }

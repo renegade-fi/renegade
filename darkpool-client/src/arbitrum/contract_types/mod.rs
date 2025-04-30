@@ -7,6 +7,7 @@
 //! See: https://github.com/renegade-fi/renegade-contracts/tree/main/contracts-common
 //! for the original types
 
+pub(crate) mod conversion;
 mod serde_def_types;
 mod types;
 pub(crate) use types::*;
