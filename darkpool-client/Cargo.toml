@@ -11,6 +11,7 @@ integration = [
     "circuit-types/test-helpers",
     "circuits/test_helpers",
     "common/mocks",
+    "test-helpers/arbitrum",
 ]
 
 [[test]]
@@ -60,7 +61,7 @@ rand = { workspace = true, optional = true }
 [dev-dependencies]
 clap = { version = "4.0", features = ["derive"] }
 eyre = { workspace = true }
-test-helpers = { workspace = true, features = ["arbitrum"] }
+test-helpers = { workspace = true }
 util = { workspace = true }
 json = "0.12"
 tokio = { workspace = true }
