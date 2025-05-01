@@ -2,7 +2,6 @@
 
 use alloy::primitives::Bytes;
 use alloy::primitives::U256;
-use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField};
 use circuit_types::elgamal::BabyJubJubPoint as CircuitJubJubPoint;
 use circuit_types::elgamal::ElGamalCiphertext as CircuitElGamalCiphertext;
@@ -40,226 +39,242 @@ use renegade_solidity_abi::BN254::G1Point;
 use crate::conversion::biguint_to_address;
 use crate::conversion::biguint_to_u256;
 use crate::conversion::scalar_to_u256;
+use crate::errors::ConversionError;
+use crate::errors::DarkpoolClientError;
 
-/// A helper method to convert a circuit type into a contract type
-pub(crate) fn to_contract_type<T, C>(t: T) -> C
-where
-    C: From<ConversionWrapper<T>>,
-{
-    C::from(ConversionWrapper(t))
+// ----------
+// | Traits |
+// ----------
+
+/// Convert a relayer type into a contract type
+///
+/// We define this trait here to allow us to implement conversions between two
+/// types that are defined in different crates
+pub trait ToContractType {
+    /// The type that this trait converts to
+    type ContractType;
+    /// Convert a circuit type into a contract type
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError>;
 }
 
-/// A wrapper type that allows us to define conversions between circuit and
-/// contract types outside of the circuit crate
-struct ConversionWrapper<T>(T);
-impl<T> From<T> for ConversionWrapper<T> {
-    fn from(value: T) -> Self {
-        Self(value)
-    }
+/// Convert a contract type into a relayer type
+///
+/// We define this trait here to allow us to implement conversions between two
+/// types that are defined in different crates
+pub trait ToCircuitType {
+    /// The type that this trait converts to
+    type CircuitType;
+    /// Convert a contract type into a circuit type
+    fn to_circuit_type(&self) -> Result<Self::CircuitType, DarkpoolClientError>;
 }
 
-impl From<ConversionWrapper<SizedValidWalletCreateStatement>> for ValidWalletCreateStatement {
-    fn from(wrapper: ConversionWrapper<SizedValidWalletCreateStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            walletShareCommitment: scalar_to_u256(statement.wallet_share_commitment),
-            publicShares: statement
+// -------------------
+// | Statement Types |
+// -------------------
+
+impl ToContractType for SizedValidWalletCreateStatement {
+    type ContractType = ValidWalletCreateStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            walletShareCommitment: scalar_to_u256(self.wallet_share_commitment),
+            publicShares: self
                 .public_wallet_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-        }
+        })
     }
 }
 
-/// Convert a relayer [`SizedValidWalletUpdateStatement`] to a contract
-/// [`ValidWalletUpdateStatement`]
-impl From<ConversionWrapper<SizedValidWalletUpdateStatement>> for ValidWalletUpdateStatement {
-    fn from(wrapper: ConversionWrapper<SizedValidWalletUpdateStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            previousNullifier: scalar_to_u256(statement.old_shares_nullifier),
-            newWalletCommitment: scalar_to_u256(statement.new_wallet_commitment),
-            newPublicShares: statement
+impl ToContractType for SizedValidWalletUpdateStatement {
+    type ContractType = ValidWalletUpdateStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            previousNullifier: scalar_to_u256(self.old_shares_nullifier),
+            newWalletCommitment: scalar_to_u256(self.new_wallet_commitment),
+            newPublicShares: self
                 .new_public_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            merkleRoot: scalar_to_u256(statement.merkle_root),
-            externalTransfer: to_contract_type(statement.external_transfer),
-            oldPkRoot: to_contract_type(statement.old_pk_root),
-        }
+            merkleRoot: scalar_to_u256(self.merkle_root),
+            externalTransfer: self.external_transfer.to_contract_type()?,
+            oldPkRoot: self.old_pk_root.to_contract_type()?,
+        })
     }
 }
 
-impl From<ConversionWrapper<CircuitValidReblindStatement>> for ValidReblindStatement {
-    fn from(wrapper: ConversionWrapper<CircuitValidReblindStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            originalSharesNullifier: scalar_to_u256(statement.original_shares_nullifier),
-            newPrivateShareCommitment: scalar_to_u256(statement.reblinded_private_share_commitment),
-            merkleRoot: scalar_to_u256(statement.merkle_root),
-        }
+impl ToContractType for CircuitValidReblindStatement {
+    type ContractType = ValidReblindStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            originalSharesNullifier: scalar_to_u256(self.original_shares_nullifier),
+            newPrivateShareCommitment: scalar_to_u256(self.reblinded_private_share_commitment),
+            merkleRoot: scalar_to_u256(self.merkle_root),
+        })
     }
 }
 
-impl From<ConversionWrapper<CircuitValidCommitmentsStatement>> for ValidCommitmentsStatement {
-    fn from(wrapper: ConversionWrapper<CircuitValidCommitmentsStatement>) -> Self {
-        let statement = wrapper.0;
-        Self { indices: to_contract_type(statement.indices) }
+impl ToContractType for CircuitValidCommitmentsStatement {
+    type ContractType = ValidCommitmentsStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType { indices: self.indices.to_contract_type()? })
     }
 }
 
-impl From<ConversionWrapper<OrderValidityProofBundle>> for PartyMatchPayload {
-    fn from(wrapper: ConversionWrapper<OrderValidityProofBundle>) -> Self {
-        let proof_bundle = wrapper.0;
-        let commitments_statement =
-            to_contract_type(proof_bundle.commitment_proof.statement.clone());
-        let reblind_statement = to_contract_type(proof_bundle.reblind_proof.statement.clone());
-        PartyMatchPayload {
+impl ToContractType for OrderValidityProofBundle {
+    type ContractType = PartyMatchPayload;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        let commitments_statement = self.commitment_proof.statement.to_contract_type()?;
+        let reblind_statement = self.reblind_proof.statement.clone().to_contract_type()?;
+        Ok(Self::ContractType {
             validCommitmentsStatement: commitments_statement,
             validReblindStatement: reblind_statement,
-        }
+        })
     }
 }
 
-impl From<ConversionWrapper<SizedValidMatchSettleStatement>> for ValidMatchSettleStatement {
-    fn from(wrapper: ConversionWrapper<SizedValidMatchSettleStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            firstPartyPublicShares: statement
+impl ToContractType for SizedValidMatchSettleStatement {
+    type ContractType = ValidMatchSettleStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            firstPartyPublicShares: self
                 .party0_modified_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            secondPartyPublicShares: statement
+            secondPartyPublicShares: self
                 .party1_modified_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            firstPartySettlementIndices: to_contract_type(statement.party0_indices),
-            secondPartySettlementIndices: to_contract_type(statement.party1_indices),
-            protocolFeeRate: scalar_to_u256(statement.protocol_fee.repr),
-        }
+            firstPartySettlementIndices: self.party0_indices.to_contract_type()?,
+            secondPartySettlementIndices: self.party1_indices.to_contract_type()?,
+            protocolFeeRate: scalar_to_u256(self.protocol_fee.repr),
+        })
     }
 }
 
-impl From<ConversionWrapper<SizedValidMatchSettleWithCommitmentsStatement>>
-    for ValidMatchSettleWithCommitmentsStatement
-{
-    fn from(wrapper: ConversionWrapper<SizedValidMatchSettleWithCommitmentsStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            privateShareCommitment0: scalar_to_u256(statement.private_share_commitment0),
-            privateShareCommitment1: scalar_to_u256(statement.private_share_commitment1),
-            newShareCommitment0: scalar_to_u256(statement.new_share_commitment0),
-            newShareCommitment1: scalar_to_u256(statement.new_share_commitment1),
-            firstPartyPublicShares: statement
+impl ToContractType for SizedValidMatchSettleWithCommitmentsStatement {
+    type ContractType = ValidMatchSettleWithCommitmentsStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            privateShareCommitment0: scalar_to_u256(self.private_share_commitment0),
+            privateShareCommitment1: scalar_to_u256(self.private_share_commitment1),
+            newShareCommitment0: scalar_to_u256(self.new_share_commitment0),
+            newShareCommitment1: scalar_to_u256(self.new_share_commitment1),
+            firstPartyPublicShares: self
                 .party0_modified_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            secondPartyPublicShares: statement
+            secondPartyPublicShares: self
                 .party1_modified_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            firstPartySettlementIndices: to_contract_type(statement.party0_indices),
-            secondPartySettlementIndices: to_contract_type(statement.party1_indices),
-            protocolFeeRate: scalar_to_u256(statement.protocol_fee.repr),
-        }
+            firstPartySettlementIndices: self.party0_indices.to_contract_type()?,
+            secondPartySettlementIndices: self.party1_indices.to_contract_type()?,
+            protocolFeeRate: scalar_to_u256(self.protocol_fee.repr),
+        })
     }
 }
 
-impl From<ConversionWrapper<SizedValidMatchSettleAtomicStatement>>
-    for ValidMatchSettleAtomicStatement
-{
-    fn from(wrapper: ConversionWrapper<SizedValidMatchSettleAtomicStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            matchResult: to_contract_type(statement.match_result),
-            externalPartyFees: to_contract_type(statement.external_party_fees),
-            internalPartyModifiedShares: statement
+impl ToContractType for SizedValidMatchSettleAtomicStatement {
+    type ContractType = ValidMatchSettleAtomicStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            matchResult: self.match_result.to_contract_type()?,
+            externalPartyFees: self.external_party_fees.to_contract_type()?,
+            internalPartyModifiedShares: self
                 .internal_party_modified_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            internalPartySettlementIndices: to_contract_type(statement.internal_party_indices),
-            protocolFeeRate: scalar_to_u256(statement.protocol_fee.repr),
-            relayerFeeAddress: biguint_to_address(&statement.relayer_fee_address)
-                .expect("invalid relayer fee address"),
-        }
+            internalPartySettlementIndices: self.internal_party_indices.to_contract_type()?,
+            protocolFeeRate: scalar_to_u256(self.protocol_fee.repr),
+            relayerFeeAddress: biguint_to_address(&self.relayer_fee_address)?,
+        })
     }
 }
 
-impl From<ConversionWrapper<SizedValidMalleableMatchSettleAtomicStatement>>
-    for ValidMalleableMatchSettleAtomicStatement
-{
-    fn from(wrapper: ConversionWrapper<SizedValidMalleableMatchSettleAtomicStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            matchResult: to_contract_type(statement.bounded_match_result),
-            internalPartyPublicShares: statement
+impl ToContractType for SizedValidMalleableMatchSettleAtomicStatement {
+    type ContractType = ValidMalleableMatchSettleAtomicStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            matchResult: self.bounded_match_result.to_contract_type()?,
+            internalPartyPublicShares: self
                 .internal_party_public_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            externalFeeRates: to_contract_type(statement.external_fee_rates),
-            internalFeeRates: to_contract_type(statement.internal_fee_rates),
-            relayerFeeAddress: biguint_to_address(&statement.relayer_fee_address)
-                .expect("invalid relayer fee address"),
-        }
+            externalFeeRates: self.external_fee_rates.to_contract_type()?,
+            internalFeeRates: self.internal_fee_rates.to_contract_type()?,
+            relayerFeeAddress: biguint_to_address(&self.relayer_fee_address)?,
+        })
     }
 }
 
-impl From<ConversionWrapper<SizedValidOfflineFeeSettlementStatement>>
-    for ValidOfflineFeeSettlementStatement
-{
-    fn from(wrapper: ConversionWrapper<SizedValidOfflineFeeSettlementStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            merkleRoot: scalar_to_u256(statement.merkle_root),
-            walletNullifier: scalar_to_u256(statement.nullifier),
-            newWalletCommitment: scalar_to_u256(statement.new_wallet_commitment),
-            updatedWalletPublicShares: statement
+impl ToContractType for SizedValidOfflineFeeSettlementStatement {
+    type ContractType = ValidOfflineFeeSettlementStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        let protocol_key_inner = self.protocol_key.to_contract_type()?;
+        let protocol_key = EncryptionKey { point: protocol_key_inner };
+
+        Ok(Self::ContractType {
+            merkleRoot: scalar_to_u256(self.merkle_root),
+            walletNullifier: scalar_to_u256(self.nullifier),
+            newWalletCommitment: scalar_to_u256(self.new_wallet_commitment),
+            updatedWalletPublicShares: self
                 .updated_wallet_public_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            noteCiphertext: to_contract_type(statement.note_ciphertext),
-            noteCommitment: scalar_to_u256(statement.note_commitment),
-            protocolKey: to_contract_type(statement.protocol_key),
-            isProtocolFee: statement.is_protocol_fee,
-        }
+            noteCiphertext: self.note_ciphertext.to_contract_type()?,
+            noteCommitment: scalar_to_u256(self.note_commitment),
+            protocolKey: protocol_key,
+            isProtocolFee: self.is_protocol_fee,
+        })
     }
 }
 
-impl From<ConversionWrapper<SizedValidFeeRedemptionStatement>> for ValidFeeRedemptionStatement {
-    fn from(wrapper: ConversionWrapper<SizedValidFeeRedemptionStatement>) -> Self {
-        let statement = wrapper.0;
-        Self {
-            walletRoot: scalar_to_u256(statement.wallet_root),
-            noteRoot: scalar_to_u256(statement.note_root),
-            walletNullifier: scalar_to_u256(statement.wallet_nullifier),
-            noteNullifier: scalar_to_u256(statement.note_nullifier),
-            newSharesCommitment: scalar_to_u256(statement.new_shares_commitment),
-            newWalletPublicShares: statement
+impl ToContractType for SizedValidFeeRedemptionStatement {
+    type ContractType = ValidFeeRedemptionStatement;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            walletRoot: scalar_to_u256(self.wallet_root),
+            noteRoot: scalar_to_u256(self.note_root),
+            walletNullifier: scalar_to_u256(self.wallet_nullifier),
+            noteNullifier: scalar_to_u256(self.note_nullifier),
+            newSharesCommitment: scalar_to_u256(self.new_shares_commitment),
+            newWalletPublicShares: self
                 .new_wallet_public_shares
                 .to_scalars()
                 .into_iter()
                 .map(scalar_to_u256)
                 .collect(),
-            walletRootKey: to_contract_type(statement.recipient_root_key),
-        }
+            walletRootKey: self.recipient_root_key.to_contract_type()?,
+        })
     }
 }
 
@@ -267,151 +282,161 @@ impl From<ConversionWrapper<SizedValidFeeRedemptionStatement>> for ValidFeeRedem
 // | Application Types |
 // ---------------------
 
-/// Convert a relayer [`ExternalTransfer`] to a contract [`ExternalTransfer`]
-impl From<ConversionWrapper<CircuitExternalTransfer>> for ExternalTransfer {
-    fn from(wrapper: ConversionWrapper<CircuitExternalTransfer>) -> Self {
-        let transfer = wrapper.0;
-        let transfer_type = match transfer.direction {
+impl ToContractType for CircuitExternalTransfer {
+    type ContractType = ExternalTransfer;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        let transfer_type = match self.direction {
             ExternalTransferDirection::Deposit => 0,
             ExternalTransferDirection::Withdrawal => 1,
         };
 
-        ExternalTransfer {
-            account: biguint_to_address(&transfer.account_addr).expect("invalid account"),
-            mint: biguint_to_address(&transfer.mint).expect("invalid mint"),
-            amount: U256::from(transfer.amount),
+        Ok(Self::ContractType {
+            account: biguint_to_address(&self.account_addr)?,
+            mint: biguint_to_address(&self.mint)?,
+            amount: U256::from(self.amount),
             transferType: transfer_type,
-        }
+        })
     }
 }
 
-impl From<ConversionWrapper<CircuitTransferAuth>> for TransferAuthorization {
-    fn from(wrapper: ConversionWrapper<CircuitTransferAuth>) -> Self {
-        let auth = wrapper.0;
-        match auth {
+impl ToContractType for CircuitTransferAuth {
+    type ContractType = TransferAuthorization;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        match self {
             CircuitTransferAuth::Deposit(deposit_auth) => {
-                let permit_sig = Bytes::from(deposit_auth.permit_signature);
+                let permit_sig = Bytes::from(deposit_auth.permit_signature.clone());
                 let permit_deadline =
                     biguint_to_u256(&deposit_auth.permit_deadline).expect("invalid deadline");
                 let permit_nonce =
                     biguint_to_u256(&deposit_auth.permit_nonce).expect("invalid nonce");
 
-                TransferAuthorization {
+                Ok(Self::ContractType {
                     permit2Nonce: permit_nonce,
                     permit2Deadline: permit_deadline,
                     permit2Signature: permit_sig,
-                    externalTransferSignature: Bytes::default(),
-                }
+                    ..Default::default()
+                })
             },
-            CircuitTransferAuth::Withdrawal(withdrawal_auth) => TransferAuthorization {
-                permit2Nonce: U256::ZERO,
-                permit2Deadline: U256::ZERO,
-                permit2Signature: Bytes::default(),
-                externalTransferSignature: Bytes::from(withdrawal_auth.external_transfer_signature),
-            },
+            CircuitTransferAuth::Withdrawal(withdrawal_auth) => Ok(Self::ContractType {
+                externalTransferSignature: Bytes::from(
+                    withdrawal_auth.external_transfer_signature.clone(),
+                ),
+                ..Default::default()
+            }),
         }
     }
 }
 
-/// Convert a relayer [`PublicSigningKey`] to a contract [`PublicRootKey`]
-impl From<ConversionWrapper<PublicSigningKey>> for PublicRootKey {
-    fn from(wrapper: ConversionWrapper<PublicSigningKey>) -> Self {
-        let key = wrapper.0;
-        let x_words = &key.x.scalar_words;
-        let y_words = &key.y.scalar_words;
+impl ToContractType for PublicSigningKey {
+    type ContractType = PublicRootKey;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        let x_words = &self.x.scalar_words;
+        let y_words = &self.y.scalar_words;
         let x = [scalar_to_u256(x_words[0]), scalar_to_u256(x_words[1])];
         let y = [scalar_to_u256(y_words[0]), scalar_to_u256(y_words[1])];
 
-        PublicRootKey { x, y }
+        Ok(Self::ContractType { x, y })
     }
 }
 
-/// Convert a relayer [`OrderSettlementIndices`] to a contract
-/// [`OrderSettlementIndices`]
-impl From<ConversionWrapper<CircuitOrderSettlementIndices>> for OrderSettlementIndices {
-    fn from(wrapper: ConversionWrapper<CircuitOrderSettlementIndices>) -> Self {
-        let indices = wrapper.0;
-        Self {
-            balanceSend: U256::from(indices.balance_send),
-            balanceReceive: U256::from(indices.balance_receive),
-            order: U256::from(indices.order),
-        }
+impl ToContractType for CircuitOrderSettlementIndices {
+    type ContractType = OrderSettlementIndices;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            balanceSend: U256::from(self.balance_send),
+            balanceReceive: U256::from(self.balance_receive),
+            order: U256::from(self.order),
+        })
     }
 }
 
-/// Convert a relayer [`ExternalMatchResult`] to a contract
-/// [`ExternalMatchResult`]
-impl From<ConversionWrapper<CircuitExternalMatchResult>> for ExternalMatchResult {
-    fn from(wrapper: ConversionWrapper<CircuitExternalMatchResult>) -> Self {
-        let result = wrapper.0;
-        Self {
-            quoteMint: biguint_to_address(&result.quote_mint).expect("invalid quote mint"),
-            baseMint: biguint_to_address(&result.base_mint).expect("invalid base mint"),
-            quoteAmount: U256::from(result.quote_amount),
-            baseAmount: U256::from(result.base_amount),
-            direction: result.direction as u8,
-        }
+impl ToCircuitType for OrderSettlementIndices {
+    type CircuitType = CircuitOrderSettlementIndices;
+
+    fn to_circuit_type(&self) -> Result<Self::CircuitType, DarkpoolClientError> {
+        // Unwraps generally safe here because circuit constraints ensure the values are
+        // `usize` coercible
+        Ok(Self::CircuitType {
+            balance_send: self.balanceSend.try_into().unwrap(),
+            balance_receive: self.balanceReceive.try_into().unwrap(),
+            order: self.order.try_into().unwrap(),
+        })
     }
 }
 
-/// Convert a relayer [`BoundedMatchResult`] to a contract
-/// [`BoundedMatchResult`]
-impl From<ConversionWrapper<CircuitBoundedMatchResult>> for BoundedMatchResult {
-    fn from(wrapper: ConversionWrapper<CircuitBoundedMatchResult>) -> Self {
-        let result = wrapper.0;
-        Self {
-            quoteMint: biguint_to_address(&result.quote_mint).expect("invalid quote mint"),
-            baseMint: biguint_to_address(&result.base_mint).expect("invalid base mint"),
-            price: to_contract_type(result.price),
-            minBaseAmount: U256::from(result.min_base_amount),
-            maxBaseAmount: U256::from(result.max_base_amount),
-            direction: result.direction as u8,
-        }
-    }
-}
-impl From<ConversionWrapper<CircuitFeeTake>> for FeeTake {
-    fn from(wrapper: ConversionWrapper<CircuitFeeTake>) -> Self {
-        let fee = wrapper.0;
-        Self { relayerFee: U256::from(fee.relayer_fee), protocolFee: U256::from(fee.protocol_fee) }
+impl ToContractType for CircuitExternalMatchResult {
+    type ContractType = ExternalMatchResult;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            quoteMint: biguint_to_address(&self.quote_mint)?,
+            baseMint: biguint_to_address(&self.base_mint)?,
+            quoteAmount: U256::from(self.quote_amount),
+            baseAmount: U256::from(self.base_amount),
+            direction: self.direction as u8,
+        })
     }
 }
 
-impl From<ConversionWrapper<CircuitFeeTakeRate>> for FeeTakeRate {
-    fn from(wrapper: ConversionWrapper<CircuitFeeTakeRate>) -> Self {
-        let rate = wrapper.0;
-        Self {
-            relayerFeeRate: to_contract_type(rate.relayer_fee_rate),
-            protocolFeeRate: to_contract_type(rate.protocol_fee_rate),
-        }
+impl ToContractType for CircuitBoundedMatchResult {
+    type ContractType = BoundedMatchResult;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            quoteMint: biguint_to_address(&self.quote_mint)?,
+            baseMint: biguint_to_address(&self.base_mint)?,
+            price: self.price.to_contract_type()?,
+            minBaseAmount: U256::from(self.min_base_amount),
+            maxBaseAmount: U256::from(self.max_base_amount),
+            direction: self.direction as u8,
+        })
     }
 }
 
-/// A sized ElGamal ciphertext
+impl ToContractType for CircuitFeeTake {
+    type ContractType = FeeTake;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            relayerFee: U256::from(self.relayer_fee),
+            protocolFee: U256::from(self.protocol_fee),
+        })
+    }
+}
+
+impl ToContractType for CircuitFeeTakeRate {
+    type ContractType = FeeTakeRate;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            relayerFeeRate: self.relayer_fee_rate.to_contract_type()?,
+            protocolFeeRate: self.protocol_fee_rate.to_contract_type()?,
+        })
+    }
+}
+
+/// A type alias for a ciphertext sized to the `Note` type
 type NoteCiphertext = CircuitElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>;
-/// Convert a relayer [`ElGamalCiphertext`] to a contract [`ElGamalCiphertext`]
-impl From<ConversionWrapper<NoteCiphertext>> for ElGamalCiphertext {
-    fn from(wrapper: ConversionWrapper<NoteCiphertext>) -> Self {
-        let elgamal = wrapper.0;
-        Self {
-            ephemeralKey: convert_jubjub_point(elgamal.ephemeral_key),
-            ciphertext: elgamal.ciphertext.into_iter().map(scalar_to_u256).collect(),
-        }
+impl ToContractType for NoteCiphertext {
+    type ContractType = ElGamalCiphertext;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            ephemeralKey: self.ephemeral_key.to_contract_type()?,
+            ciphertext: self.ciphertext.into_iter().map(scalar_to_u256).collect(),
+        })
     }
 }
 
-/// Convert a relayer [`BabyJubJubPoint`] to a contract [`EncryptionKey`]
-impl From<ConversionWrapper<CircuitJubJubPoint>> for EncryptionKey {
-    fn from(wrapper: ConversionWrapper<CircuitJubJubPoint>) -> Self {
-        let point = wrapper.0;
-        Self { point: convert_jubjub_point(point) }
-    }
-}
+impl ToContractType for CircuitFixedPoint {
+    type ContractType = FixedPoint;
 
-/// Convert a circuit `FixedPoint` to a contract `FixedPoint`
-impl From<ConversionWrapper<CircuitFixedPoint>> for FixedPoint {
-    fn from(wrapper: ConversionWrapper<CircuitFixedPoint>) -> Self {
-        let point = wrapper.0;
-        Self { repr: scalar_to_u256(point.repr) }
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType { repr: scalar_to_u256(self.repr) })
     }
 }
 
@@ -419,35 +444,66 @@ impl From<ConversionWrapper<CircuitFixedPoint>> for FixedPoint {
 // | Proof System Types |
 // ----------------------
 
-/// Convert from a relayer's `PlonkProof` to a contract's `Proof`
-impl From<ConversionWrapper<CircuitPlonkProof>> for PlonkProof {
-    fn from(wrapper: ConversionWrapper<CircuitPlonkProof>) -> Self {
-        let proof = wrapper.0;
-        let evals = proof.poly_evals;
-        Self {
-            wire_comms: size_vec(
-                proof.wires_poly_comms.into_iter().map(convert_jf_commitment).collect(),
-            ),
-            z_comm: convert_jf_commitment(proof.prod_perm_poly_comm),
-            quotient_comms: size_vec(
-                proof.split_quot_poly_comms.into_iter().map(convert_jf_commitment).collect(),
-            ),
-            w_zeta: convert_jf_commitment(proof.opening_proof),
-            w_zeta_omega: convert_jf_commitment(proof.shifted_opening_proof),
-            wire_evals: size_vec(evals.wires_evals.into_iter().map(fr_to_u256).collect()),
-            sigma_evals: size_vec(evals.wire_sigma_evals.into_iter().map(fr_to_u256).collect()),
+impl ToContractType for CircuitPlonkProof {
+    type ContractType = PlonkProof;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        let evals = &self.poly_evals;
+        let wire_comms =
+            self.wires_poly_comms.iter().map(ToContractType::to_contract_type).try_collect()?;
+        let quotient_comms = self
+            .split_quot_poly_comms
+            .iter()
+            .map(ToContractType::to_contract_type)
+            .try_collect()?;
+
+        Ok(Self::ContractType {
+            wire_comms: size_vec(wire_comms)?,
+            z_comm: self.prod_perm_poly_comm.to_contract_type()?,
+            quotient_comms: size_vec(quotient_comms)?,
+            w_zeta: self.opening_proof.to_contract_type()?,
+            w_zeta_omega: self.shifted_opening_proof.to_contract_type()?,
+            wire_evals: size_vec(evals.wires_evals.iter().copied().map(fr_to_u256).collect())?,
+            sigma_evals: size_vec(
+                evals.wire_sigma_evals.iter().copied().map(fr_to_u256).collect(),
+            )?,
             z_bar: fr_to_u256(evals.perm_next_eval),
-        }
+        })
     }
 }
 
-impl From<ConversionWrapper<CircuitPlonkLinkProof>> for LinkingProof {
-    fn from(wrapper: ConversionWrapper<CircuitPlonkLinkProof>) -> Self {
-        let proof = wrapper.0;
-        Self {
-            linking_quotient_poly_comm: convert_jf_commitment(proof.quotient_commitment),
-            linking_poly_opening: convert_g1_point(proof.opening_proof.proof),
-        }
+impl ToContractType for CircuitPlonkLinkProof {
+    type ContractType = LinkingProof;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType {
+            linking_quotient_poly_comm: self.quotient_commitment.to_contract_type()?,
+            linking_poly_opening: self.opening_proof.proof.to_contract_type()?,
+        })
+    }
+}
+
+impl ToContractType for CircuitJubJubPoint {
+    type ContractType = BabyJubJubPoint;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType { x: scalar_to_u256(self.x), y: scalar_to_u256(self.y) })
+    }
+}
+
+impl ToContractType for ark_bn254::G1Affine {
+    type ContractType = G1Point;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        Ok(Self::ContractType { x: base_field_to_u256(self.x), y: base_field_to_u256(self.y) })
+    }
+}
+
+impl ToContractType for PolynomialCommitment {
+    type ContractType = G1Point;
+
+    fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
+        self.0.to_contract_type()
     }
 }
 
@@ -456,12 +512,8 @@ impl From<ConversionWrapper<CircuitPlonkLinkProof>> for LinkingProof {
 // -----------
 
 /// Size a vector of values to be a known fixed size
-pub fn size_vec<const N: usize, T>(vec: Vec<T>) -> [T; N] {
-    let size = vec.len();
-    if size != N {
-        panic!("vector is not the correct size: expected {N}, got {size}");
-    }
-    vec.try_into().map_err(|_| ()).unwrap()
+pub fn size_vec<const N: usize, T>(vec: Vec<T>) -> Result<[T; N], DarkpoolClientError> {
+    vec.try_into().map_err(|_| DarkpoolClientError::Conversion(ConversionError::InvalidLength))
 }
 
 /// Convert a `Fr` to a `U256`
@@ -484,36 +536,4 @@ fn bytes_to_u256(bytes: &[u8]) -> U256 {
     let mut buf = [0u8; 32];
     buf[..bytes.len()].copy_from_slice(bytes);
     U256::from_be_bytes(buf)
-}
-
-/// Pad big endian bytes to a fixed size
-fn pad_bytes<const N: usize>(bytes: &[u8]) -> [u8; N] {
-    assert!(bytes.len() <= N, "bytes are too long for padding");
-
-    let mut padded = [0u8; N];
-    padded[N - bytes.len()..].copy_from_slice(bytes);
-    padded
-}
-
-// --- Curve Points --- //
-
-/// Convert a point on the BN254 curve to a `G1Point` in the contract's format
-fn convert_g1_point(point: ark_bn254::G1Affine) -> G1Point {
-    let x = point.x().expect("x is zero");
-    let y = point.y().expect("y is zero");
-
-    G1Point { x: base_field_to_u256(*x), y: base_field_to_u256(*y) }
-}
-
-/// Convert a `BabyJubJubPoint` to a `G1Point`
-fn convert_jubjub_point(point: CircuitJubJubPoint) -> BabyJubJubPoint {
-    let x = point.x;
-    let y = point.y;
-
-    BabyJubJubPoint { x: scalar_to_u256(x), y: scalar_to_u256(y) }
-}
-
-/// Convert a `JfCommitment` to a `G1Point`
-fn convert_jf_commitment(commitment: PolynomialCommitment) -> G1Point {
-    convert_g1_point(commitment.0)
 }

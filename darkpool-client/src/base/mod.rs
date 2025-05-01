@@ -1,15 +1,8 @@
 //! The Base implementation of the darkpool client
 mod conversion;
+mod helpers;
 
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
-use conversion::to_contract_type;
-use renegade_solidity_abi::IDarkpool::{
-    IDarkpoolInstance, MalleableMatchAtomicProofs, MatchAtomicLinkingProofs, MatchAtomicProofs,
-    MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
-    MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,
-    ValidMalleableMatchSettleAtomicStatement, WalletUpdated as AbiWalletUpdated,
-};
-
 use alloy_primitives::{Address, Bytes, Selector, U256};
 use async_trait::async_trait;
 use circuit_types::{
@@ -26,6 +19,13 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::Scalar;
+use conversion::ToContractType;
+use renegade_solidity_abi::IDarkpool::{
+    IDarkpoolInstance, MalleableMatchAtomicProofs, MatchAtomicLinkingProofs, MatchAtomicProofs,
+    MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
+    MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,
+    WalletUpdated as AbiWalletUpdated,
+};
 
 use crate::{
     client::RenegadeProvider,
@@ -156,8 +156,8 @@ impl DarkpoolImpl for BaseDarkpool {
         &self,
         valid_wallet_create: &SizedValidWalletCreateBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        let statement = to_contract_type(valid_wallet_create.statement.clone());
-        let proof = to_contract_type(valid_wallet_create.proof.clone());
+        let statement = valid_wallet_create.statement.to_contract_type()?;
+        let proof = valid_wallet_create.proof.to_contract_type()?;
         let call = self.darkpool.createWallet(statement, proof);
         self.send_tx(call).await
     }
@@ -169,9 +169,12 @@ impl DarkpoolImpl for BaseDarkpool {
         transfer_auth: Option<TransferAuth>,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
         // TODO: re-serialize the signature using the ABI encoding
-        let statement = to_contract_type(valid_wallet_update.statement.clone());
-        let proof = to_contract_type(valid_wallet_update.proof.clone());
-        let transfer_auth = transfer_auth.map(to_contract_type).unwrap_or_default();
+        let statement = valid_wallet_update.statement.to_contract_type()?;
+        let proof = valid_wallet_update.proof.to_contract_type()?;
+        let transfer_auth = match transfer_auth {
+            Some(transfer_auth) => transfer_auth.to_contract_type()?,
+            None => Default::default(),
+        };
 
         let call = self.darkpool.updateWallet(
             Bytes::from(wallet_commitment_signature),
@@ -185,20 +188,20 @@ impl DarkpoolImpl for BaseDarkpool {
 
     async fn process_match_settle(
         &self,
-        party0_validity_proofs: &OrderValidityProofBundle,
-        party1_validity_proofs: &OrderValidityProofBundle,
+        party0_validity: &OrderValidityProofBundle,
+        party1_validity: &OrderValidityProofBundle,
         match_bundle: &MatchBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        let party0_payload = to_contract_type(party0_validity_proofs.clone());
-        let party1_payload = to_contract_type(party1_validity_proofs.clone());
-        let statement = to_contract_type(match_bundle.match_proof.statement.clone());
+        let party0_payload = party0_validity.to_contract_type()?;
+        let party1_payload = party1_validity.to_contract_type()?;
+        let statement = match_bundle.match_proof.statement.to_contract_type()?;
 
         // Build the match proof bundle
-        let commitments0 = to_contract_type(party0_validity_proofs.commitment_proof.proof.clone());
-        let reblind0 = to_contract_type(party0_validity_proofs.reblind_proof.proof.clone());
-        let commitments1 = to_contract_type(party1_validity_proofs.commitment_proof.proof.clone());
-        let reblind1 = to_contract_type(party1_validity_proofs.reblind_proof.proof.clone());
-        let match_proof = to_contract_type(match_bundle.match_proof.proof.clone());
+        let commitments0 = party0_validity.commitment_proof.proof.to_contract_type()?;
+        let reblind0 = party0_validity.reblind_proof.proof.to_contract_type()?;
+        let commitments1 = party1_validity.commitment_proof.proof.to_contract_type()?;
+        let reblind1 = party1_validity.reblind_proof.proof.to_contract_type()?;
+        let match_proof = match_bundle.match_proof.proof.to_contract_type()?;
         let proofs = MatchProofs {
             validCommitments0: commitments0,
             validReblind0: reblind0,
@@ -208,10 +211,10 @@ impl DarkpoolImpl for BaseDarkpool {
         };
 
         // Build the link proofs bundle
-        let commitments_reblind0 = to_contract_type(party0_validity_proofs.linking_proof.clone());
-        let commitments_match0 = to_contract_type(match_bundle.commitments_link0.clone());
-        let commitments_reblind1 = to_contract_type(party1_validity_proofs.linking_proof.clone());
-        let commitments_match1 = to_contract_type(match_bundle.commitments_link1.clone());
+        let commitments_reblind0 = party0_validity.linking_proof.to_contract_type()?;
+        let commitments_match0 = match_bundle.commitments_link0.to_contract_type()?;
+        let commitments_reblind1 = party1_validity.linking_proof.to_contract_type()?;
+        let commitments_match1 = match_bundle.commitments_link1.to_contract_type()?;
         let link_proofs = MatchLinkingProofs {
             validReblindCommitments0: commitments_reblind0,
             validCommitmentsMatchSettle0: commitments_match0,
@@ -243,8 +246,8 @@ impl DarkpoolImpl for BaseDarkpool {
         &self,
         valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        let statement = to_contract_type(valid_offline_fee_settlement.statement.clone());
-        let proof = to_contract_type(valid_offline_fee_settlement.proof.clone());
+        let statement = valid_offline_fee_settlement.statement.to_contract_type()?;
+        let proof = valid_offline_fee_settlement.proof.to_contract_type()?;
         let call = self.darkpool.settleOfflineFee(statement, proof);
         self.send_tx(call).await
     }
@@ -255,8 +258,8 @@ impl DarkpoolImpl for BaseDarkpool {
         recipient_wallet_commitment_signature: Vec<u8>,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
         // TODO: re-serialize the signature using the ABI encoding
-        let statement = to_contract_type(valid_fee_redemption.statement.clone());
-        let proof = to_contract_type(valid_fee_redemption.proof.clone());
+        let statement = valid_fee_redemption.statement.to_contract_type()?;
+        let proof = valid_fee_redemption.proof.to_contract_type()?;
         let call = self.darkpool.redeemFee(
             Bytes::from(recipient_wallet_commitment_signature),
             statement,
@@ -275,13 +278,13 @@ impl DarkpoolImpl for BaseDarkpool {
         validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &AtomicMatchSettleBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
-        let internal_party_payload = to_contract_type(validity_proofs.clone());
-        let statement = to_contract_type(match_atomic_bundle.atomic_match_proof.statement.clone());
+        let internal_party_payload = validity_proofs.to_contract_type()?;
+        let statement = match_atomic_bundle.atomic_match_proof.statement.to_contract_type()?;
 
         // Build the match proofs bundle
-        let commitments_proof = to_contract_type(validity_proofs.commitment_proof.proof.clone());
-        let reblind_proof = to_contract_type(validity_proofs.reblind_proof.proof.clone());
-        let match_proof = to_contract_type(match_atomic_bundle.atomic_match_proof.proof.clone());
+        let commitments_proof = validity_proofs.commitment_proof.proof.to_contract_type()?;
+        let reblind_proof = validity_proofs.reblind_proof.proof.to_contract_type()?;
+        let match_proof = match_atomic_bundle.atomic_match_proof.proof.to_contract_type()?;
         let match_proofs = MatchAtomicProofs {
             validCommitments: commitments_proof,
             validReblind: reblind_proof,
@@ -290,10 +293,10 @@ impl DarkpoolImpl for BaseDarkpool {
 
         // Build the link proofs bundle
         let link_proofs = MatchAtomicLinkingProofs {
-            validReblindCommitments: to_contract_type(validity_proofs.linking_proof.clone()),
-            validCommitmentsMatchSettleAtomic: to_contract_type(
-                match_atomic_bundle.commitments_link.clone(),
-            ),
+            validReblindCommitments: validity_proofs.linking_proof.to_contract_type()?,
+            validCommitmentsMatchSettleAtomic: match_atomic_bundle
+                .commitments_link
+                .to_contract_type()?,
         };
 
         let receiver = receiver_address.unwrap_or_default();
@@ -317,14 +320,13 @@ impl DarkpoolImpl for BaseDarkpool {
         validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
-        let internal_party_payload = to_contract_type(validity_proofs.clone());
-        let statement: ValidMalleableMatchSettleAtomicStatement =
-            to_contract_type(match_atomic_bundle.atomic_match_proof.statement.clone());
+        let internal_party_payload = validity_proofs.to_contract_type()?;
+        let statement = match_atomic_bundle.atomic_match_proof.statement.to_contract_type()?;
 
         // Build the match proofs bundle
-        let commitments_proof = to_contract_type(validity_proofs.commitment_proof.proof.clone());
-        let reblind_proof = to_contract_type(validity_proofs.reblind_proof.proof.clone());
-        let match_proof = to_contract_type(match_atomic_bundle.atomic_match_proof.proof.clone());
+        let commitments_proof = validity_proofs.commitment_proof.proof.to_contract_type()?;
+        let reblind_proof = validity_proofs.reblind_proof.proof.to_contract_type()?;
+        let match_proof = match_atomic_bundle.atomic_match_proof.proof.to_contract_type()?;
         let match_proofs = MalleableMatchAtomicProofs {
             validCommitments: commitments_proof,
             validReblind: reblind_proof,
@@ -332,10 +334,10 @@ impl DarkpoolImpl for BaseDarkpool {
         };
 
         let link_proofs = MatchAtomicLinkingProofs {
-            validReblindCommitments: to_contract_type(validity_proofs.linking_proof.clone()),
-            validCommitmentsMatchSettleAtomic: to_contract_type(
-                match_atomic_bundle.commitments_link.clone(),
-            ),
+            validReblindCommitments: validity_proofs.linking_proof.to_contract_type()?,
+            validCommitmentsMatchSettleAtomic: match_atomic_bundle
+                .commitments_link
+                .to_contract_type()?,
         };
 
         let receiver = receiver_address.unwrap_or_default();
