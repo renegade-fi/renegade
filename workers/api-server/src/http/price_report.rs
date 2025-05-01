@@ -149,6 +149,6 @@ fn get_all_tokens_filtered(filtered_tokens: &[&str]) -> Vec<Token> {
     token_map
         .iter()
         .map(|(addr, _)| Token::from_addr(addr))
-        .filter(|token| !filtered_tokens.contains(&token.get_addr().as_str()))
+        .filter(|t| !filtered_tokens.contains(&t.get_ticker().unwrap().as_str()))
         .collect_vec()
 }
