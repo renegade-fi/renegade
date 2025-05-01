@@ -5,48 +5,33 @@
 
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::PlonkCircuit;
-use circuits::zk_circuits::valid_match_settle_atomic::ValidMatchSettleAtomic;
+use circuits::zk_circuits::valid_match_settle_atomic::test_helpers::create_witness_statement as create_witness_statement_helper;
 use circuits::zk_circuits::valid_match_settle_atomic::{
-    test_helpers::create_witness_statement, ValidMatchSettleAtomicStatement,
-    ValidMatchSettleAtomicWitness,
+    SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+    SizedValidMatchSettleAtomicWitness, ValidMatchSettleAtomic,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{MAX_BALANCES, MAX_ORDERS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mpc_relation::proof_linking::LinkableCircuit;
 
-/// The small parameter set for the `VALID MATCH SETTLE ATOMIC` circuit
-const SMALL_PARAM_SET: (usize, usize) = (2, 2);
-/// The large parameter set for the `VALID MATCH SETTLE ATOMIC` circuit
-const LARGE_PARAM_SET: (usize, usize) = (MAX_BALANCES, MAX_ORDERS);
-
-/// Create a sized witness and statement for the `VALID MATCH SETTLE ATOMIC`
-pub fn create_sized_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
-    ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
-    ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-)
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
-    create_witness_statement::<MAX_BALANCES, MAX_ORDERS>()
+/// Attaches the default sizing parameters to the create witness helper
+fn create_witness_statement(
+) -> (SizedValidMatchSettleAtomicWitness, SizedValidMatchSettleAtomicStatement) {
+    create_witness_statement_helper()
 }
 
 /// Benchmarks constraint generation for the `VALID MATCH SETTLE ATOMIC` circuit
-pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    c: &mut Criterion,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub fn bench_apply_constraints(c: &mut Criterion) {
     let mut group = c.benchmark_group("valid_match_settle_atomic");
     let benchmark_id =
         BenchmarkId::new("constraint-generation", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
 
     group.bench_function(benchmark_id, |b| {
         let mut cs = PlonkCircuit::new_turbo_plonk();
-        let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
+        let (witness, statement) = create_witness_statement();
         // Add proof linking groups to the circuit
-        let layout =
-            ValidMatchSettleAtomic::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout().unwrap();
+        let layout = SizedValidMatchSettleAtomic::get_circuit_layout().unwrap();
         for (id, layout) in layout.group_layouts.into_iter() {
             cs.create_link_group(id, Some(layout));
         }
@@ -65,104 +50,45 @@ pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_O
 }
 
 /// Benchmarks the prover for the `VALID MATCH SETTLE ATOMIC` circuit
-pub fn bench_prover_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    c: &mut Criterion,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub fn bench_prover(c: &mut Criterion) {
     let mut group = c.benchmark_group("valid_match_settle_atomic");
     let benchmark_id = BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
     group.bench_function(benchmark_id, |b| {
-        let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
-
+        let (witness, statement) = create_witness_statement();
         b.iter(|| {
-            singleprover_prove::<ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>>(
-                witness.clone(),
-                statement.clone(),
-            )
-            .unwrap();
+            singleprover_prove::<SizedValidMatchSettleAtomic>(witness.clone(), statement.clone())
+                .unwrap();
         });
     });
 }
 
 /// Benchmarks the verifier for the `VALID MATCH SETTLE ATOMIC` circuit
-pub fn bench_verifier_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    c: &mut Criterion,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub fn bench_verifier(c: &mut Criterion) {
     // Create a proof
-    let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
-    let proof = singleprover_prove::<ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>>(
-        witness,
-        statement.clone(),
-    )
-    .unwrap();
+    let (witness, statement) = create_witness_statement();
+    let proof =
+        singleprover_prove::<SizedValidMatchSettleAtomic>(witness, statement.clone()).unwrap();
 
     let mut group = c.benchmark_group("valid_match_settle_atomic");
     let benchmark_id = BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>>(
-                statement.clone(),
-                &proof,
-            )
-            .unwrap();
+            verify_singleprover_proof::<SizedValidMatchSettleAtomic>(statement.clone(), &proof)
+                .unwrap();
         });
     });
 }
 
-#[allow(non_snake_case)]
-pub fn bench_apply_constraints__small_circuit(c: &mut Criterion) {
-    bench_apply_constraints_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c)
-}
+// -------------------
+// | Criterion Setup |
+// -------------------
 
-#[allow(non_snake_case)]
-pub fn bench_prover__small_circuit(c: &mut Criterion) {
-    bench_prover_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c)
-}
-
-#[allow(non_snake_case)]
-pub fn bench_verifier__small_circuit(c: &mut Criterion) {
-    bench_verifier_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c)
-}
-
-#[allow(non_snake_case)]
-pub fn bench_apply_constraints__large_circuit(c: &mut Criterion) {
-    bench_apply_constraints_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c)
-}
-
-#[allow(non_snake_case)]
-pub fn bench_prover__large_circuit(c: &mut Criterion) {
-    bench_prover_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c)
-}
-
-#[allow(non_snake_case)]
-pub fn bench_verifier__large_circuit(c: &mut Criterion) {
-    bench_verifier_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c)
-}
-
-#[cfg(feature = "large_benchmarks")]
 criterion_group!(
     name = valid_match_settle_atomic;
     config = Criterion::default().sample_size(10);
     targets =
-        bench_apply_constraints__small_circuit,
-        bench_prover__small_circuit,
-        bench_verifier__small_circuit,
-        bench_apply_constraints__large_circuit,
-        bench_prover__large_circuit,
-        bench_verifier__large_circuit,
+        bench_apply_constraints,
+        bench_prover,
+        bench_verifier,
 );
-
-#[cfg(not(feature = "large_benchmarks"))]
-criterion_group!(
-    name = valid_match_settle_atomic;
-    config = Criterion::default().sample_size(10);
-    targets =
-        bench_apply_constraints__small_circuit,
-        bench_prover__small_circuit,
-        bench_verifier__small_circuit,
-);
-
 criterion_main!(valid_match_settle_atomic);

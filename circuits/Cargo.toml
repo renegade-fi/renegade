@@ -5,7 +5,6 @@ edition = "2021"
 
 [features]
 test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
-large_benchmarks = []
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
 
@@ -51,7 +50,17 @@ harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
+name = "valid_match_settle_with_commitments"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
 name = "valid_match_settle_atomic"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
+name = "valid_match_settle_atomic_with_commitments"
 harness = false
 required-features = ["test_helpers"]
 
@@ -125,4 +134,8 @@ rand = "0.8"
 serde_json = "1.0"
 test-helpers = { workspace = true, features = ["mpc-network"] }
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
-util = { workspace = true, features = ["mocks", "matching-engine"] }
+util = { workspace = true, features = [
+    "mocks",
+    "matching-engine",
+    "telemetry",
+] }

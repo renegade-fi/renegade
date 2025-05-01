@@ -164,14 +164,14 @@ pub async fn mock_wallet_update(wallet: &mut Wallet, client: &DarkpoolClient) ->
     wallet.reblind_wallet();
 
     let mut rng = thread_rng();
-    let share_comm = wallet.get_private_share_commitment();
+    let share_comm = wallet.get_wallet_share_commitment();
     let nullifier = Scalar::random(&mut rng);
 
     // Mock a `VALID WALLET UPDATE` proof bundle
     let mut proof = dummy_valid_wallet_update_bundle();
     proof.statement.external_transfer = ExternalTransfer::default();
     proof.statement.old_shares_nullifier = nullifier;
-    proof.statement.new_private_shares_commitment = share_comm;
+    proof.statement.new_wallet_commitment = share_comm;
     proof.statement.new_public_shares = wallet.blinded_public_shares.clone();
 
     client

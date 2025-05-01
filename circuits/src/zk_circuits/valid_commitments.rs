@@ -18,7 +18,7 @@ use crate::{
     },
     zk_gadgets::{
         comparators::{EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqGadget},
-        wallet_operations::{OrderGadget, WalletGadget},
+        wallet_operations::{FeeGadget, OrderGadget, WalletGadget},
     },
     SingleProverCircuit,
 };
@@ -83,6 +83,7 @@ where
         // take rate in the wallet
         let relayer_fee_repr = witness.relayer_fee.repr;
         let max_match_fee_repr = base_wallet.max_match_fee.repr;
+        FeeGadget::constrain_valid_fee(witness.relayer_fee, cs)?;
         GreaterThanEqGadget::<FEE_BITS>::constrain_greater_than_eq(
             max_match_fee_repr,
             relayer_fee_repr,
@@ -609,6 +610,24 @@ mod test {
 
     /// A type alias for the VALID COMMITMENTS circuit with size parameters
     pub type SizedCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
+
+    /// A helper to print the number of constraints in the circuit
+    ///
+    /// Useful when benchmarking the circuit
+    #[test]
+    #[ignore]
+    fn test_n_constraints() {
+        let layout = ValidCommitments::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
+    }
 
     // --------------
     // | Test Cases |

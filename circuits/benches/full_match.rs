@@ -184,7 +184,7 @@ fn bench_full_match__large_delay(c: &mut Criterion) {
     benchmark_match_with_delay(c, delay);
 }
 
-#[cfg(all(feature = "large_benchmarks", not(feature = "stats")))]
+#[cfg(not(feature = "stats"))]
 criterion_group! {
     name = full_match;
     config = Criterion::default().sample_size(10);
@@ -193,15 +193,6 @@ criterion_group! {
         bench_full_match__medium_delay,
         bench_full_match__large_delay
 }
-
-#[cfg(all(not(feature = "large_benchmarks"), not(feature = "stats")))]
-criterion_group! {
-    name = full_match;
-    config = Criterion::default().sample_size(10);
-    targets =
-        bench_full_match__small_delay,
-}
-
 #[cfg(not(feature = "stats"))]
 criterion_main!(full_match);
 
