@@ -101,7 +101,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
             } else if topic0 == D::MerkleOpening::SIGNATURE_HASH {
                 let event = D::MerkleOpening::decode_log(&log)
                     .map_err(DarkpoolClientError::event_querying)?;
-                all_insertion_events.push((event.height(), event.new_value()));
+                all_insertion_events.push((event.depth(), event.new_value()));
             } else {
                 // Ignore other events and unknown events
                 continue;

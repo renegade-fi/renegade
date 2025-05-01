@@ -1,7 +1,10 @@
 //! Trait definitions for the `DarkpoolClient`
 
+use alloy::eips::BlockId;
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::{primitives::Address, rpc::types::TransactionReceipt};
+use alloy_contract::CallDecoder;
 use alloy_primitives::Selector;
 use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
@@ -21,7 +24,7 @@ use common::types::{
 };
 use constants::Scalar;
 
-use crate::client::RenegadeProvider;
+use crate::client::{DarkpoolCallBuilder, RenegadeProvider};
 use crate::errors::DarkpoolClientError;
 
 /// The `DarkpoolImpl` trait defines the functionality that must be implemented
@@ -176,6 +179,66 @@ pub trait DarkpoolImpl: Clone {
     async fn clear_merkle_tree(&self) -> Result<TransactionReceipt, DarkpoolClientError>;
 }
 
+/// A trait defining useful methods automatically implemented for all darkpool
+/// implementations
+#[async_trait]
+pub trait DarkpoolImplExt: DarkpoolImpl {
+    // ----------------
+    // | Transactions |
+    // ----------------
+
+    /// Send a txn and return the receipt
+    ///
+    /// We implement this at the trait level to give a useful default
+    /// implementation
+    async fn send_tx<'a, C>(
+        &self,
+        tx: DarkpoolCallBuilder<'a, C>,
+    ) -> Result<TransactionReceipt, DarkpoolClientError>
+    where
+        C: CallDecoder + Send + Sync,
+    {
+        let gas_price = self.get_adjusted_gas_price().await?;
+        let receipt = tx
+            .gas_price(gas_price)
+            .send()
+            .await
+            .map_err(DarkpoolClientError::contract_interaction)?
+            .get_receipt()
+            .await
+            .map_err(DarkpoolClientError::contract_interaction)?;
+
+        // Check for failure
+        if !receipt.status() {
+            let error_msg = format!("tx ({:#x}) failed with status 0", receipt.transaction_hash);
+            return Err(DarkpoolClientError::contract_interaction(error_msg));
+        }
+
+        Ok(receipt)
+    }
+
+    /// Get the adjusted gas price for submitting a transaction
+    ///
+    /// We double the latest basefee to prevent reverts
+    async fn get_adjusted_gas_price(&self) -> Result<u128, DarkpoolClientError> {
+        // Set the gas price to 2x the latest basefee for simplicity
+        let latest_block = self
+            .provider()
+            .get_block(BlockId::latest())
+            .await
+            .map_err(DarkpoolClientError::rpc)?
+            .ok_or(DarkpoolClientError::rpc("No latest block found"))?;
+
+        let latest_basefee = latest_block
+            .header
+            .base_fee_per_gas
+            .ok_or(DarkpoolClientError::rpc("No basefee found"))?;
+        let gas_price = (latest_basefee * 2) as u128;
+        Ok(gas_price)
+    }
+}
+impl<T: DarkpoolImpl> DarkpoolImplExt for T {}
+
 // ----------------
 // | Event Traits |
 // ----------------
@@ -191,7 +254,7 @@ pub trait MerkleInsertionEvent: SolEvent {
 /// A trait for the Merkle opening event
 pub trait MerkleOpeningNodeEvent: SolEvent {
     /// The height of the opening
-    fn height(&self) -> u64;
+    fn depth(&self) -> u64;
     /// The index of the opening
     fn index(&self) -> u64;
     /// The new value of the opening

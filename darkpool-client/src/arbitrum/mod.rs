@@ -5,12 +5,12 @@ pub mod contract_types;
 pub mod helpers;
 
 use crate::{
-    client::{DarkpoolCallBuilder, RenegadeProvider},
+    client::RenegadeProvider,
     conversion::{scalar_to_u256, u256_to_amount, u256_to_scalar},
     errors::DarkpoolClientError,
     traits::{
-        DarkpoolImpl, MerkleInsertionEvent, MerkleOpeningNodeEvent, NullifierSpentEvent,
-        WalletUpdatedEvent,
+        DarkpoolImpl, DarkpoolImplExt, MerkleInsertionEvent, MerkleOpeningNodeEvent,
+        NullifierSpentEvent, WalletUpdatedEvent,
     },
 };
 use abi::{
@@ -29,11 +29,8 @@ use abi::{
 };
 use alloy::{
     consensus::constants::SELECTOR_LEN,
-    eips::BlockId,
-    providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
-use alloy_contract::CallDecoder;
 use alloy_primitives::{Address, Bytes, Selector, U256};
 use alloy_sol_types::SolCall;
 use async_trait::async_trait;
@@ -707,52 +704,6 @@ impl ArbitrumDarkpool {
 
         Ok(external_match)
     }
-
-    // --- Send Transactions --- //
-
-    /// Sends a transaction, awaiting its confirmation and returning the receipt
-    pub async fn send_tx<C: CallDecoder>(
-        &self,
-        tx: DarkpoolCallBuilder<'_, C>,
-    ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        let gas_price = self.get_adjusted_gas_price().await?;
-        let receipt = tx
-            .gas_price(gas_price)
-            .send()
-            .await
-            .map_err(DarkpoolClientError::contract_interaction)?
-            .get_receipt()
-            .await
-            .map_err(DarkpoolClientError::contract_interaction)?;
-
-        // Check for failure
-        if !receipt.status() {
-            let error_msg = format!("tx ({:#x}) failed with status 0", receipt.transaction_hash);
-            return Err(DarkpoolClientError::contract_interaction(error_msg));
-        }
-
-        Ok(receipt)
-    }
-
-    /// Get the adjusted gas price for submitting a transaction
-    ///
-    /// We double the latest basefee to prevent reverts
-    async fn get_adjusted_gas_price(&self) -> Result<u128, DarkpoolClientError> {
-        // Set the gas price to 2x the latest basefee for simplicity
-        let latest_block = self
-            .provider()
-            .get_block(BlockId::latest())
-            .await
-            .map_err(DarkpoolClientError::rpc)?
-            .ok_or(DarkpoolClientError::rpc("No latest block found"))?;
-
-        let latest_basefee = latest_block
-            .header
-            .base_fee_per_gas
-            .ok_or(DarkpoolClientError::rpc("No basefee found"))?;
-        let gas_price = (latest_basefee * 2) as u128;
-        Ok(gas_price)
-    }
 }
 
 // ----------
@@ -770,7 +721,8 @@ impl MerkleInsertionEvent for AbiMerkleInsertion {
 }
 
 impl MerkleOpeningNodeEvent for AbiMerkleOpeningNode {
-    fn height(&self) -> u64 {
+    // The stylus contracts use "height" to refer to "depth"
+    fn depth(&self) -> u64 {
         self.height as u64
     }
 
