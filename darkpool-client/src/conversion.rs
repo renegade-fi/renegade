@@ -2,17 +2,11 @@
 //! proofs, and their analogues as expected by the smart contracts.
 
 use alloy_primitives::{Address, U160, U256};
-use ark_bn254::g1::Config as G1Config;
-use ark_ec::short_weierstrass::Affine;
 use circuit_types::Amount;
 use constants::Scalar;
 use num_bigint::BigUint;
 
 use crate::errors::ConversionError;
-
-/// Type alias for the affine representation of the
-/// system curve's G1 group
-pub type G1Affine = Affine<G1Config>;
 
 // ------------------------
 // | CONVERSION UTILITIES |
@@ -22,6 +16,12 @@ pub type G1Affine = Affine<G1Config>;
 pub fn biguint_to_address(biguint: &BigUint) -> Result<Address, ConversionError> {
     let u160: U160 = biguint.try_into().map_err(|_| ConversionError::InvalidUint)?;
     Ok(Address::from(u160))
+}
+
+/// Convert a `BigUint` to a `U256`
+pub fn biguint_to_u256(biguint: &BigUint) -> Result<U256, ConversionError> {
+    let u256: U256 = biguint.try_into().map_err(|_| ConversionError::InvalidUint)?;
+    Ok(u256)
 }
 
 /// Convert an `Address` to a `BigUint`

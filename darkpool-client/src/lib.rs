@@ -12,6 +12,10 @@
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
 
+// Make sure we don't enable both features at the same time
+#[cfg(all(feature = "arbitrum", feature = "base"))]
+compile_error!("Only one of features 'arbitrum' or 'base' should be enabled at a time");
+
 pub mod client;
 pub mod constants;
 pub mod conversion;
@@ -28,3 +32,14 @@ pub type DarkpoolClient = client::DarkpoolClientInner<arbitrum::ArbitrumDarkpool
 ///
 /// Exported here to allow lower level access from other workers
 pub type DarkpoolImplementation = arbitrum::ArbitrumDarkpool;
+
+#[cfg(feature = "base")]
+pub mod base;
+#[cfg(feature = "base")]
+/// The darkpool client for the Base chain
+pub type DarkpoolClient = client::DarkpoolClientInner<base::BaseDarkpool>;
+#[cfg(feature = "base")]
+/// The darkpool implementation for the Base chain
+///
+/// Exported here to allow lower level access from other workers
+pub type DarkpoolImplementation = base::BaseDarkpool;

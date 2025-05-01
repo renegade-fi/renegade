@@ -13,6 +13,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "abi"
+version = "0.1.0"
+source = "git+https://github.com/renegade-fi/renegade-solidity-contracts#b129fee7c277fa09dea680b4dd437e64176aca02"
+dependencies = [
+ "alloy",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3457,6 +3465,7 @@ dependencies = [
 name = "darkpool-client"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "alloy",
  "alloy-contract",
  "alloy-primitives",
@@ -3474,16 +3483,13 @@ dependencies = [
  "eyre",
  "inventory",
  "itertools 0.12.1",
- "json",
  "lazy_static",
  "mpc-plonk",
- "mpc-relation",
  "num-bigint",
  "num-traits",
  "postcard",
  "rand 0.8.5",
  "renegade-crypto 0.1.0",
- "renegade-metrics",
  "ruint",
  "serde",
  "serde_with",
