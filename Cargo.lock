@@ -15,7 +15,7 @@ dependencies = [
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade-solidity-contracts#b129fee7c277fa09dea680b4dd437e64176aca02"
+source = "git+https://github.com/renegade-fi/renegade-solidity-contracts#9808fd9d0d0148ab086865cbbf33821dbbe0f471"
 dependencies = [
  "alloy",
 ]
@@ -2569,7 +2569,7 @@ dependencies = [
 [[package]]
 name = "circuit-macros"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "itertools 0.10.5",
  "proc-macro2",
@@ -2612,7 +2612,7 @@ dependencies = [
 [[package]]
 name = "circuit-types"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -2681,7 +2681,7 @@ dependencies = [
 [[package]]
 name = "circuits"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "ark-crypto-primitives",
  "ark-ec",
@@ -2936,7 +2936,7 @@ dependencies = [
 [[package]]
 name = "common"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "alloy",
  "ark-mpc",
@@ -3081,7 +3081,7 @@ dependencies = [
 [[package]]
 name = "constants"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -4490,7 +4490,7 @@ dependencies = [
 [[package]]
 name = "external-api"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "alloy",
  "base64 0.22.1",
@@ -8864,7 +8864,7 @@ dependencies = [
 [[package]]
 name = "renegade-crypto"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "ark-ec",
  "ark-ff 0.4.2",
@@ -11423,7 +11423,7 @@ dependencies = [
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/renegade-fi/renegade.git#178bf8a8fb16aece0ccb1082817f99c087d18dd2"
+source = "git+https://github.com/renegade-fi/renegade.git#a34b679f401e930370a5b28a7c20c412c8caeae0"
 dependencies = [
  "alloy",
  "ark-ec",

@@ -4,7 +4,14 @@ use alloy::primitives::Bytes;
 use alloy::primitives::U256;
 use ark_ec::AffineRepr;
 use ark_ff::{BigInteger, PrimeField};
+use circuit_types::elgamal::BabyJubJubPoint as CircuitJubJubPoint;
+use circuit_types::elgamal::ElGamalCiphertext as CircuitElGamalCiphertext;
+use circuit_types::fees::{FeeTake as CircuitFeeTake, FeeTakeRate as CircuitFeeTakeRate};
+use circuit_types::fixed_point::FixedPoint as CircuitFixedPoint;
 use circuit_types::keychain::PublicSigningKey;
+use circuit_types::note::NOTE_CIPHERTEXT_SIZE;
+use circuit_types::r#match::BoundedMatchResult as CircuitBoundedMatchResult;
+use circuit_types::r#match::ExternalMatchResult as CircuitExternalMatchResult;
 use circuit_types::r#match::OrderSettlementIndices as CircuitOrderSettlementIndices;
 use circuit_types::traits::BaseType;
 use circuit_types::transfers::ExternalTransfer as CircuitExternalTransfer;
@@ -13,9 +20,13 @@ use circuit_types::PlonkLinkProof as CircuitPlonkLinkProof;
 use circuit_types::PlonkProof as CircuitPlonkProof;
 use circuit_types::PolynomialCommitment;
 use circuits::zk_circuits::valid_commitments::ValidCommitmentsStatement as CircuitValidCommitmentsStatement;
+use circuits::zk_circuits::valid_fee_redemption::SizedValidFeeRedemptionStatement;
+use circuits::zk_circuits::valid_malleable_match_settle_atomic::SizedValidMalleableMatchSettleAtomicStatement;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWithCommitmentsStatement,
 };
+use circuits::zk_circuits::valid_match_settle_atomic::SizedValidMatchSettleAtomicStatement;
+use circuits::zk_circuits::valid_offline_fee_settlement::SizedValidOfflineFeeSettlementStatement;
 use circuits::zk_circuits::valid_reblind::ValidReblindStatement as CircuitValidReblindStatement;
 use circuits::zk_circuits::valid_wallet_create::SizedValidWalletCreateStatement;
 use circuits::zk_circuits::valid_wallet_update::SizedValidWalletUpdateStatement;
@@ -166,6 +177,92 @@ impl From<ConversionWrapper<SizedValidMatchSettleWithCommitmentsStatement>>
     }
 }
 
+impl From<ConversionWrapper<SizedValidMatchSettleAtomicStatement>>
+    for ValidMatchSettleAtomicStatement
+{
+    fn from(wrapper: ConversionWrapper<SizedValidMatchSettleAtomicStatement>) -> Self {
+        let statement = wrapper.0;
+        Self {
+            matchResult: to_contract_type(statement.match_result),
+            externalPartyFees: to_contract_type(statement.external_party_fees),
+            internalPartyModifiedShares: statement
+                .internal_party_modified_shares
+                .to_scalars()
+                .into_iter()
+                .map(scalar_to_u256)
+                .collect(),
+            internalPartySettlementIndices: to_contract_type(statement.internal_party_indices),
+            protocolFeeRate: scalar_to_u256(statement.protocol_fee.repr),
+            relayerFeeAddress: biguint_to_address(&statement.relayer_fee_address)
+                .expect("invalid relayer fee address"),
+        }
+    }
+}
+
+impl From<ConversionWrapper<SizedValidMalleableMatchSettleAtomicStatement>>
+    for ValidMalleableMatchSettleAtomicStatement
+{
+    fn from(wrapper: ConversionWrapper<SizedValidMalleableMatchSettleAtomicStatement>) -> Self {
+        let statement = wrapper.0;
+        Self {
+            matchResult: to_contract_type(statement.bounded_match_result),
+            internalPartyPublicShares: statement
+                .internal_party_public_shares
+                .to_scalars()
+                .into_iter()
+                .map(scalar_to_u256)
+                .collect(),
+            externalFeeRates: to_contract_type(statement.external_fee_rates),
+            internalFeeRates: to_contract_type(statement.internal_fee_rates),
+            relayerFeeAddress: biguint_to_address(&statement.relayer_fee_address)
+                .expect("invalid relayer fee address"),
+        }
+    }
+}
+
+impl From<ConversionWrapper<SizedValidOfflineFeeSettlementStatement>>
+    for ValidOfflineFeeSettlementStatement
+{
+    fn from(wrapper: ConversionWrapper<SizedValidOfflineFeeSettlementStatement>) -> Self {
+        let statement = wrapper.0;
+        Self {
+            merkleRoot: scalar_to_u256(statement.merkle_root),
+            walletNullifier: scalar_to_u256(statement.nullifier),
+            newWalletCommitment: scalar_to_u256(statement.new_wallet_commitment),
+            updatedWalletPublicShares: statement
+                .updated_wallet_public_shares
+                .to_scalars()
+                .into_iter()
+                .map(scalar_to_u256)
+                .collect(),
+            noteCiphertext: to_contract_type(statement.note_ciphertext),
+            noteCommitment: scalar_to_u256(statement.note_commitment),
+            protocolKey: to_contract_type(statement.protocol_key),
+            isProtocolFee: statement.is_protocol_fee,
+        }
+    }
+}
+
+impl From<ConversionWrapper<SizedValidFeeRedemptionStatement>> for ValidFeeRedemptionStatement {
+    fn from(wrapper: ConversionWrapper<SizedValidFeeRedemptionStatement>) -> Self {
+        let statement = wrapper.0;
+        Self {
+            walletRoot: scalar_to_u256(statement.wallet_root),
+            noteRoot: scalar_to_u256(statement.note_root),
+            walletNullifier: scalar_to_u256(statement.wallet_nullifier),
+            noteNullifier: scalar_to_u256(statement.note_nullifier),
+            newSharesCommitment: scalar_to_u256(statement.new_shares_commitment),
+            newWalletPublicShares: statement
+                .new_wallet_public_shares
+                .to_scalars()
+                .into_iter()
+                .map(scalar_to_u256)
+                .collect(),
+            walletRootKey: to_contract_type(statement.recipient_root_key),
+        }
+    }
+}
+
 // ---------------------
 // | Application Types |
 // ---------------------
@@ -239,6 +336,82 @@ impl From<ConversionWrapper<CircuitOrderSettlementIndices>> for OrderSettlementI
             balanceReceive: U256::from(indices.balance_receive),
             order: U256::from(indices.order),
         }
+    }
+}
+
+/// Convert a relayer [`ExternalMatchResult`] to a contract
+/// [`ExternalMatchResult`]
+impl From<ConversionWrapper<CircuitExternalMatchResult>> for ExternalMatchResult {
+    fn from(wrapper: ConversionWrapper<CircuitExternalMatchResult>) -> Self {
+        let result = wrapper.0;
+        Self {
+            quoteMint: biguint_to_address(&result.quote_mint).expect("invalid quote mint"),
+            baseMint: biguint_to_address(&result.base_mint).expect("invalid base mint"),
+            quoteAmount: U256::from(result.quote_amount),
+            baseAmount: U256::from(result.base_amount),
+            direction: result.direction as u8,
+        }
+    }
+}
+
+/// Convert a relayer [`BoundedMatchResult`] to a contract
+/// [`BoundedMatchResult`]
+impl From<ConversionWrapper<CircuitBoundedMatchResult>> for BoundedMatchResult {
+    fn from(wrapper: ConversionWrapper<CircuitBoundedMatchResult>) -> Self {
+        let result = wrapper.0;
+        Self {
+            quoteMint: biguint_to_address(&result.quote_mint).expect("invalid quote mint"),
+            baseMint: biguint_to_address(&result.base_mint).expect("invalid base mint"),
+            price: to_contract_type(result.price),
+            minBaseAmount: U256::from(result.min_base_amount),
+            maxBaseAmount: U256::from(result.max_base_amount),
+            direction: result.direction as u8,
+        }
+    }
+}
+impl From<ConversionWrapper<CircuitFeeTake>> for FeeTake {
+    fn from(wrapper: ConversionWrapper<CircuitFeeTake>) -> Self {
+        let fee = wrapper.0;
+        Self { relayerFee: U256::from(fee.relayer_fee), protocolFee: U256::from(fee.protocol_fee) }
+    }
+}
+
+impl From<ConversionWrapper<CircuitFeeTakeRate>> for FeeTakeRate {
+    fn from(wrapper: ConversionWrapper<CircuitFeeTakeRate>) -> Self {
+        let rate = wrapper.0;
+        Self {
+            relayerFeeRate: to_contract_type(rate.relayer_fee_rate),
+            protocolFeeRate: to_contract_type(rate.protocol_fee_rate),
+        }
+    }
+}
+
+/// A sized ElGamal ciphertext
+type NoteCiphertext = CircuitElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>;
+/// Convert a relayer [`ElGamalCiphertext`] to a contract [`ElGamalCiphertext`]
+impl From<ConversionWrapper<NoteCiphertext>> for ElGamalCiphertext {
+    fn from(wrapper: ConversionWrapper<NoteCiphertext>) -> Self {
+        let elgamal = wrapper.0;
+        Self {
+            ephemeralKey: convert_jubjub_point(elgamal.ephemeral_key),
+            ciphertext: elgamal.ciphertext.into_iter().map(scalar_to_u256).collect(),
+        }
+    }
+}
+
+/// Convert a relayer [`BabyJubJubPoint`] to a contract [`EncryptionKey`]
+impl From<ConversionWrapper<CircuitJubJubPoint>> for EncryptionKey {
+    fn from(wrapper: ConversionWrapper<CircuitJubJubPoint>) -> Self {
+        let point = wrapper.0;
+        Self { point: convert_jubjub_point(point) }
+    }
+}
+
+/// Convert a circuit `FixedPoint` to a contract `FixedPoint`
+impl From<ConversionWrapper<CircuitFixedPoint>> for FixedPoint {
+    fn from(wrapper: ConversionWrapper<CircuitFixedPoint>) -> Self {
+        let point = wrapper.0;
+        Self { repr: scalar_to_u256(point.repr) }
     }
 }
 
@@ -330,6 +503,14 @@ fn convert_g1_point(point: ark_bn254::G1Affine) -> G1Point {
     let y = point.y().expect("y is zero");
 
     G1Point { x: base_field_to_u256(*x), y: base_field_to_u256(*y) }
+}
+
+/// Convert a `BabyJubJubPoint` to a `G1Point`
+fn convert_jubjub_point(point: CircuitJubJubPoint) -> BabyJubJubPoint {
+    let x = point.x;
+    let y = point.y;
+
+    BabyJubJubPoint { x: scalar_to_u256(x), y: scalar_to_u256(y) }
 }
 
 /// Convert a `JfCommitment` to a `G1Point`

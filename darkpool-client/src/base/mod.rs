@@ -4,12 +4,13 @@ mod conversion;
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 use conversion::to_contract_type;
 use renegade_solidity_abi::IDarkpool::{
-    IDarkpoolInstance, MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
+    IDarkpoolInstance, MalleableMatchAtomicProofs, MatchAtomicLinkingProofs, MatchAtomicProofs,
+    MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
     MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,
-    WalletUpdated as AbiWalletUpdated,
+    ValidMalleableMatchSettleAtomicStatement, WalletUpdated as AbiWalletUpdated,
 };
 
-use alloy_primitives::{Address, Bytes, Selector};
+use alloy_primitives::{Address, Bytes, Selector, U256};
 use async_trait::async_trait;
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
@@ -229,19 +230,23 @@ impl DarkpoolImpl for BaseDarkpool {
         self.send_tx(call).await
     }
 
+    // This method is unused in the relayer and not supported on Base
     async fn settle_online_relayer_fee(
         &self,
-        valid_relayer_fee_settlement: &SizedRelayerFeeSettlementBundle,
-        relayer_wallet_commitment_signature: Vec<u8>,
+        _: &SizedRelayerFeeSettlementBundle,
+        _: Vec<u8>,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        todo!()
+        unimplemented!("`settle_online_relayer_fee` is not supported on Base")
     }
 
     async fn settle_offline_fee(
         &self,
         valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        todo!()
+        let statement = to_contract_type(valid_offline_fee_settlement.statement.clone());
+        let proof = to_contract_type(valid_offline_fee_settlement.proof.clone());
+        let call = self.darkpool.settleOfflineFee(statement, proof);
+        self.send_tx(call).await
     }
 
     async fn redeem_fee(
@@ -249,7 +254,15 @@ impl DarkpoolImpl for BaseDarkpool {
         valid_fee_redemption: &SizedFeeRedemptionBundle,
         recipient_wallet_commitment_signature: Vec<u8>,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
-        todo!()
+        // TODO: re-serialize the signature using the ABI encoding
+        let statement = to_contract_type(valid_fee_redemption.statement.clone());
+        let proof = to_contract_type(valid_fee_redemption.proof.clone());
+        let call = self.darkpool.redeemFee(
+            Bytes::from(recipient_wallet_commitment_signature),
+            statement,
+            proof,
+        );
+        self.send_tx(call).await
     }
 
     // ----------------
@@ -259,19 +272,87 @@ impl DarkpoolImpl for BaseDarkpool {
     fn gen_atomic_match_settle_calldata(
         &self,
         receiver_address: Option<Address>,
-        internal_party_validity_proofs: &OrderValidityProofBundle,
+        validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &AtomicMatchSettleBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
-        todo!()
+        let internal_party_payload = to_contract_type(validity_proofs.clone());
+        let statement = to_contract_type(match_atomic_bundle.atomic_match_proof.statement.clone());
+
+        // Build the match proofs bundle
+        let commitments_proof = to_contract_type(validity_proofs.commitment_proof.proof.clone());
+        let reblind_proof = to_contract_type(validity_proofs.reblind_proof.proof.clone());
+        let match_proof = to_contract_type(match_atomic_bundle.atomic_match_proof.proof.clone());
+        let match_proofs = MatchAtomicProofs {
+            validCommitments: commitments_proof,
+            validReblind: reblind_proof,
+            validMatchSettleAtomic: match_proof,
+        };
+
+        // Build the link proofs bundle
+        let link_proofs = MatchAtomicLinkingProofs {
+            validReblindCommitments: to_contract_type(validity_proofs.linking_proof.clone()),
+            validCommitmentsMatchSettleAtomic: to_contract_type(
+                match_atomic_bundle.commitments_link.clone(),
+            ),
+        };
+
+        let receiver = receiver_address.unwrap_or_default();
+        let req = self
+            .darkpool
+            .processAtomicMatchSettle(
+                receiver,
+                internal_party_payload,
+                statement,
+                match_proofs,
+                link_proofs,
+            )
+            .into_transaction_request();
+
+        Ok(req)
     }
 
     fn gen_malleable_atomic_match_settle_calldata(
         &self,
         receiver_address: Option<Address>,
-        internal_party_validity_proofs: &OrderValidityProofBundle,
+        validity_proofs: &OrderValidityProofBundle,
         match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
-        todo!()
+        let internal_party_payload = to_contract_type(validity_proofs.clone());
+        let statement: ValidMalleableMatchSettleAtomicStatement =
+            to_contract_type(match_atomic_bundle.atomic_match_proof.statement.clone());
+
+        // Build the match proofs bundle
+        let commitments_proof = to_contract_type(validity_proofs.commitment_proof.proof.clone());
+        let reblind_proof = to_contract_type(validity_proofs.reblind_proof.proof.clone());
+        let match_proof = to_contract_type(match_atomic_bundle.atomic_match_proof.proof.clone());
+        let match_proofs = MalleableMatchAtomicProofs {
+            validCommitments: commitments_proof,
+            validReblind: reblind_proof,
+            validMalleableMatchSettleAtomic: match_proof,
+        };
+
+        let link_proofs = MatchAtomicLinkingProofs {
+            validReblindCommitments: to_contract_type(validity_proofs.linking_proof.clone()),
+            validCommitmentsMatchSettleAtomic: to_contract_type(
+                match_atomic_bundle.commitments_link.clone(),
+            ),
+        };
+
+        let receiver = receiver_address.unwrap_or_default();
+        let base_amount = U256::from(statement.matchResult.maxBaseAmount);
+        let req = self
+            .darkpool
+            .processMalleableAtomicMatchSettle(
+                base_amount,
+                receiver,
+                internal_party_payload,
+                statement,
+                match_proofs,
+                link_proofs,
+            )
+            .into_transaction_request();
+
+        Ok(req)
     }
 
     fn parse_shares(
