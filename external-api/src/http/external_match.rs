@@ -190,6 +190,7 @@ pub struct ExternalOrder {
 
 impl ExternalOrder {
     /// Validate the external order
+    #[cfg(feature = "full-api")]
     pub fn validate(&self) -> Result<(), &'static str> {
         // Only one of the order sizing options can be set
         let base_zero = self.base_amount.is_zero();

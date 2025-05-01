@@ -300,6 +300,11 @@ impl ExternalMatchProcessor {
             return Err(bad_request(ERR_QUOTE_TOKEN_NOT_USDC));
         }
 
+        // The base token cannot be another stablecoin
+        if base == Token::usdt() {
+            return Err(bad_request(ERR_UNSUPPORTED_PAIR));
+        }
+
         // Check that the base token is in the token configuration -- i.e. if it is
         // named or the native asset
         if !(base.is_named() || base.addr == NATIVE_ASSET_ADDRESS) {
