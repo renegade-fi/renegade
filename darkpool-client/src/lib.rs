@@ -11,6 +11,7 @@
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
+#![feature(iterator_try_collect)]
 
 // Make sure we don't enable both features at the same time
 #[cfg(all(feature = "arbitrum", feature = "base"))]
