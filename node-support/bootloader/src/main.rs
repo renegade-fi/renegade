@@ -162,7 +162,7 @@ async fn modify_config(whitelist_path: Option<String>) -> Result<(), String> {
         toml::from_str(&config_content).map_err(raw_err_str!("Failed to parse config: {}"))?;
 
     // Setup the peer id and register a gas wallet under this peer id
-    let peer_id = set_p2p_key(&mut config);
+    let peer_id = set_p2p_key(&mut config)?;
     setup_gas_wallet(peer_id, &mut config).await?;
 
     // Add values from the environment variables
@@ -265,16 +265,39 @@ where
         .map_err(|e| format!("Failed to read env var {}: {:?}", var_name, e))
 }
 
+/// Get the p2p key from the relayer config
+fn get_p2p_key(config: &HashMap<String, Value>) -> Result<Option<PeerId>, String> {
+    config
+        .get(CONFIG_P2P_KEY)
+        .map(|val| {
+            let key_base64 = val.as_str().ok_or("P2P key is not a string".to_string())?;
+            let key_bytes = BASE64_STANDARD
+                .decode(key_base64)
+                .map_err(raw_err_str!("Failed to decode p2p key from base64: {}"))?;
+
+            let keypair = Keypair::from_protobuf_encoding(&key_bytes)
+                .map_err(raw_err_str!("Failed to decode p2p key from protobuf encoding: {}"))?;
+
+            Ok(keypair.public().to_peer_id())
+        })
+        .transpose()
+}
+
 /// Set the p2p key in the relayer config and return the associated peer id
-fn set_p2p_key(config: &mut HashMap<String, Value>) -> PeerId {
+fn set_p2p_key(config: &mut HashMap<String, Value>) -> Result<PeerId, String> {
+    if let Some(peer_id) = get_p2p_key(config)? {
+        return Ok(peer_id);
+    }
+
     let keypair = Keypair::generate_ed25519();
     let peer_id = keypair.public().to_peer_id();
 
-    let key_bytes = keypair.to_protobuf_encoding().unwrap();
+    let key_bytes =
+        keypair.to_protobuf_encoding().map_err(raw_err_str!("Failed to encode p2p key: {}"))?;
     let encoded = BASE64_STANDARD.encode(key_bytes);
     config.insert(CONFIG_P2P_KEY.to_string(), Value::String(encoded));
 
-    peer_id
+    Ok(peer_id)
 }
 
 /// Build an s3 client
