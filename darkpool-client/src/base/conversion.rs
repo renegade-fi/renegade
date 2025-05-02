@@ -385,6 +385,20 @@ impl ToContractType for CircuitExternalMatchResult {
     }
 }
 
+impl ToCircuitType for ExternalMatchResult {
+    type CircuitType = CircuitExternalMatchResult;
+
+    fn to_circuit_type(&self) -> Result<Self::CircuitType, DarkpoolClientError> {
+        Ok(Self::CircuitType {
+            quote_mint: address_to_biguint(&self.quoteMint)?,
+            base_mint: address_to_biguint(&self.baseMint)?,
+            quote_amount: u256_to_amount(self.quoteAmount)?,
+            base_amount: u256_to_amount(self.baseAmount)?,
+            direction: self.direction == 1, // cast from u8 to bool
+        })
+    }
+}
+
 impl ToContractType for CircuitBoundedMatchResult {
     type ContractType = BoundedMatchResult;
 
