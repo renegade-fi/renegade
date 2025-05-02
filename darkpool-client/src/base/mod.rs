@@ -23,7 +23,7 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::Scalar;
-use conversion::ToContractType;
+use conversion::{ToCircuitType, ToContractType};
 use helpers::{
     parse_shares_from_new_wallet, parse_shares_from_process_atomic_match_settle,
     parse_shares_from_process_malleable_atomic_match_settle,
@@ -42,7 +42,7 @@ use tracing::error;
 
 use crate::{
     client::RenegadeProvider,
-    conversion::{scalar_to_u256, u256_to_scalar},
+    conversion::{scalar_to_u256, u256_to_amount, u256_to_scalar},
     errors::DarkpoolClientError,
     traits::{
         DarkpoolImpl, DarkpoolImplExt, MerkleInsertionEvent, MerkleOpeningNodeEvent,
@@ -410,7 +410,23 @@ impl DarkpoolImpl for BaseDarkpool {
     fn parse_external_match(
         calldata: &[u8],
     ) -> Result<Option<ExternalMatchResult>, DarkpoolClientError> {
-        todo!()
+        let selector = calldata[..SELECTOR_LEN].try_into().unwrap();
+        let match_res = match selector {
+            processAtomicMatchSettleCall::SELECTOR => {
+                let call = processAtomicMatchSettleCall::abi_decode(calldata)?;
+                call.matchSettleStatement.matchResult.to_circuit_type()?
+            },
+            processMalleableAtomicMatchSettleCall::SELECTOR => {
+                let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
+                let bounded_res = call.matchSettleStatement.matchResult.to_circuit_type()?;
+                let base_amount = u256_to_amount(call.baseAmount)?;
+                let external_res = bounded_res.to_external_match_result(base_amount);
+                external_res
+            },
+            _ => return Ok(None),
+        };
+
+        Ok(Some(match_res))
     }
 }
 
