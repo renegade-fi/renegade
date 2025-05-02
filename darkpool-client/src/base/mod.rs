@@ -2,8 +2,12 @@
 mod conversion;
 mod helpers;
 
-use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
+use alloy::{
+    consensus::constants::SELECTOR_LEN,
+    rpc::types::{TransactionReceipt, TransactionRequest},
+};
 use alloy_primitives::{Address, Bytes, Selector, U256};
+use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
@@ -20,12 +24,21 @@ use common::types::{
 };
 use constants::Scalar;
 use conversion::ToContractType;
+use helpers::{
+    parse_shares_from_new_wallet, parse_shares_from_process_atomic_match_settle,
+    parse_shares_from_process_malleable_atomic_match_settle,
+    parse_shares_from_process_match_settle, parse_shares_from_redeem_fee,
+    parse_shares_from_settle_offline_fee, parse_shares_from_update_wallet,
+};
 use renegade_solidity_abi::IDarkpool::{
+    createWalletCall, processAtomicMatchSettleCall, processMalleableAtomicMatchSettleCall,
+    processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, updateWalletCall,
     IDarkpoolInstance, MalleableMatchAtomicProofs, MatchAtomicLinkingProofs, MatchAtomicProofs,
     MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
     MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,
     WalletUpdated as AbiWalletUpdated,
 };
+use tracing::error;
 
 use crate::{
     client::RenegadeProvider,
@@ -36,6 +49,17 @@ use crate::{
         NullifierSpentEvent, WalletUpdatedEvent,
     },
 };
+
+/// The set of known selectors for the Base darkpool
+const KNOWN_SELECTORS: [[u8; SELECTOR_LEN]; 7] = [
+    createWalletCall::SELECTOR,
+    updateWalletCall::SELECTOR,
+    processMatchSettleCall::SELECTOR,
+    processAtomicMatchSettleCall::SELECTOR,
+    processMalleableAtomicMatchSettleCall::SELECTOR,
+    settleOfflineFeeCall::SELECTOR,
+    redeemFeeCall::SELECTOR,
+];
 
 /// The Base darkpool implementation
 #[derive(Clone)]
@@ -145,7 +169,7 @@ impl DarkpoolImpl for BaseDarkpool {
     }
 
     fn is_known_selector(selector: Selector) -> bool {
-        todo!()
+        KNOWN_SELECTORS.contains(&selector.0)
     }
 
     // -----------
@@ -362,7 +386,25 @@ impl DarkpoolImpl for BaseDarkpool {
         calldata: &[u8],
         public_blinder_share: Scalar,
     ) -> Result<SizedWalletShare, DarkpoolClientError> {
-        todo!()
+        match selector.0 {
+            createWalletCall::SELECTOR => parse_shares_from_new_wallet(calldata),
+            updateWalletCall::SELECTOR => parse_shares_from_update_wallet(calldata),
+            processMatchSettleCall::SELECTOR => {
+                parse_shares_from_process_match_settle(calldata, public_blinder_share)
+            },
+            processAtomicMatchSettleCall::SELECTOR => {
+                parse_shares_from_process_atomic_match_settle(calldata)
+            },
+            processMalleableAtomicMatchSettleCall::SELECTOR => {
+                parse_shares_from_process_malleable_atomic_match_settle(calldata)
+            },
+            settleOfflineFeeCall::SELECTOR => parse_shares_from_settle_offline_fee(calldata),
+            redeemFeeCall::SELECTOR => parse_shares_from_redeem_fee(calldata),
+            _ => {
+                error!("invalid selector when parsing public shares: {selector:?}");
+                Err(DarkpoolClientError::InvalidSelector)
+            },
+        }
     }
 
     fn parse_external_match(

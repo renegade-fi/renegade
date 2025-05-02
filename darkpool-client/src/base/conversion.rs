@@ -36,9 +36,12 @@ use constants::Scalar;
 use renegade_solidity_abi::IDarkpool::*;
 use renegade_solidity_abi::BN254::G1Point;
 
+use crate::conversion::address_to_biguint;
 use crate::conversion::biguint_to_address;
 use crate::conversion::biguint_to_u256;
 use crate::conversion::scalar_to_u256;
+use crate::conversion::u256_to_amount;
+use crate::conversion::u256_to_scalar;
 use crate::errors::ConversionError;
 use crate::errors::DarkpoolClientError;
 
@@ -397,6 +400,21 @@ impl ToContractType for CircuitBoundedMatchResult {
     }
 }
 
+impl ToCircuitType for BoundedMatchResult {
+    type CircuitType = CircuitBoundedMatchResult;
+
+    fn to_circuit_type(&self) -> Result<Self::CircuitType, DarkpoolClientError> {
+        Ok(Self::CircuitType {
+            quote_mint: address_to_biguint(&self.quoteMint)?,
+            base_mint: address_to_biguint(&self.baseMint)?,
+            price: self.price.to_circuit_type()?,
+            min_base_amount: u256_to_amount(self.minBaseAmount)?,
+            max_base_amount: u256_to_amount(self.maxBaseAmount)?,
+            direction: self.direction == 1, // cast from u8 to bool
+        })
+    }
+}
+
 impl ToContractType for CircuitFeeTake {
     type ContractType = FeeTake;
 
@@ -419,6 +437,17 @@ impl ToContractType for CircuitFeeTakeRate {
     }
 }
 
+impl ToCircuitType for FeeTakeRate {
+    type CircuitType = CircuitFeeTakeRate;
+
+    fn to_circuit_type(&self) -> Result<Self::CircuitType, DarkpoolClientError> {
+        Ok(Self::CircuitType {
+            relayer_fee_rate: self.relayerFeeRate.to_circuit_type()?,
+            protocol_fee_rate: self.protocolFeeRate.to_circuit_type()?,
+        })
+    }
+}
+
 /// A type alias for a ciphertext sized to the `Note` type
 type NoteCiphertext = CircuitElGamalCiphertext<NOTE_CIPHERTEXT_SIZE>;
 impl ToContractType for NoteCiphertext {
@@ -437,6 +466,15 @@ impl ToContractType for CircuitFixedPoint {
 
     fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
         Ok(Self::ContractType { repr: scalar_to_u256(self.repr) })
+    }
+}
+
+impl ToCircuitType for FixedPoint {
+    type CircuitType = CircuitFixedPoint;
+
+    fn to_circuit_type(&self) -> Result<Self::CircuitType, DarkpoolClientError> {
+        let repr = u256_to_scalar(self.repr);
+        Ok(Self::CircuitType { repr })
     }
 }
 
