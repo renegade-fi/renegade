@@ -20,11 +20,8 @@ use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use common::{default_wrapper::default_option, types::new_cancel_channel};
 use constants::{in_bootstrap_mode, VERSION};
-use darkpool_client::{
-    client::DarkpoolClientConfig,
-    constants::{BLOCK_POLLING_INTERVAL_MS, EVENT_FILTER_POLLING_INTERVAL_MS},
-    DarkpoolClient,
-};
+use darkpool_client::constants::{BLOCK_POLLING_INTERVAL, EVENT_FILTER_POLLING_INTERVAL};
+use darkpool_client::{client::DarkpoolClientConfig, DarkpoolClient};
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
 use external_api::bus_message::SystemBusMessage;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
@@ -160,7 +157,7 @@ async fn main() -> Result<(), CoordinatorError> {
         chain: args.chain_id,
         rpc_url: args.rpc_url.clone().expect("rpc url not set"),
         private_key: args.private_key.clone(),
-        block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
+        block_polling_interval: BLOCK_POLLING_INTERVAL,
     })
     .map_err(err_str!(CoordinatorError::DarkpoolClient))?;
 
@@ -170,7 +167,7 @@ async fn main() -> Result<(), CoordinatorError> {
         chain: args.chain_id,
         rpc_url: args.rpc_url.unwrap(),
         private_key: args.private_key.clone(),
-        block_polling_interval_ms: EVENT_FILTER_POLLING_INTERVAL_MS,
+        block_polling_interval: EVENT_FILTER_POLLING_INTERVAL,
     })
     .map_err(err_str!(CoordinatorError::DarkpoolClient))?;
 

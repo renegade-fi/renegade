@@ -1,10 +1,13 @@
 //! The definition of the darkpool client, which holds the configuration
 //! details, along with a lower-level handle for the darkpool smart contract
 
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use alloy::{
-    providers::{DynProvider, Provider, ProviderBuilder},
+    providers::{
+        fillers::{BlobGasFiller, ChainIdFiller, GasFiller},
+        DynProvider, Provider, ProviderBuilder,
+    },
     signers::local::PrivateKeySigner,
     transports::http::reqwest::Url,
 };
@@ -46,7 +49,7 @@ pub struct DarkpoolClientConfig {
     /// The private key of the account to use for signing transactions
     pub private_key: PrivateKeySigner,
     /// The interval at which to poll for event filters and pending transactions
-    pub block_polling_interval_ms: u64,
+    pub block_polling_interval: Duration,
 }
 
 impl DarkpoolClientConfig {
@@ -65,7 +68,15 @@ impl DarkpoolClientConfig {
         let url = Url::parse(&self.rpc_url)
             .map_err(err_str!(DarkpoolClientConfigError::RpcClientInitialization))?;
         let key = self.private_key.clone();
-        let provider = ProviderBuilder::new().wallet(key).on_http(url);
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .with_simple_nonce_management()
+            .filler(ChainIdFiller::default())
+            .filler(GasFiller)
+            .filler(BlobGasFiller)
+            .wallet(key)
+            .on_http(url);
+        provider.client().set_poll_interval(self.block_polling_interval);
 
         Ok(DynProvider::new(provider))
     }

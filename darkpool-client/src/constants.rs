@@ -1,6 +1,6 @@
 //! Constant values referenced by the darkpool client.
 
-use std::{fmt::Display, marker::PhantomData, str::FromStr};
+use std::{fmt::Display, marker::PhantomData, str::FromStr, time::Duration};
 
 use ark_ff::{BigInt, Fp};
 use constants::{Scalar, MERKLE_HEIGHT};
@@ -43,9 +43,9 @@ impl FromStr for Chain {
 }
 
 /// The interval at which to poll for pending transactions
-pub const BLOCK_POLLING_INTERVAL_MS: u64 = 100;
+pub const BLOCK_POLLING_INTERVAL: Duration = Duration::from_millis(100);
 /// The interval at which to poll for event filters
-pub const EVENT_FILTER_POLLING_INTERVAL_MS: u64 = 7000;
+pub const EVENT_FILTER_POLLING_INTERVAL: Duration = Duration::from_secs(7);
 
 lazy_static! {
     // ------------------------
