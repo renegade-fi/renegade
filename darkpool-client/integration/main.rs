@@ -15,7 +15,7 @@ mod contract_interaction;
 mod event_indexing;
 mod helpers;
 
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use ::constants::Scalar;
 use alloy::signers::local::PrivateKeySigner;
@@ -114,7 +114,7 @@ impl From<CliArgs> for IntegrationTestArgs {
             darkpool_addr,
             private_key,
             rpc_url: test_args.rpc_url,
-            block_polling_interval_ms: 100,
+            block_polling_interval: Duration::from_millis(100),
         })
         .unwrap();
 
