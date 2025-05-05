@@ -19,7 +19,7 @@ use common::{
 };
 use config::RelayerConfig;
 use darkpool_client::{
-    client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL_MS, DarkpoolClient,
+    client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL, DarkpoolClient,
 };
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
@@ -254,7 +254,7 @@ impl MockNodeController {
             chain: self.config.chain_id,
             rpc_url: self.config.rpc_url.clone().unwrap(),
             private_key: self.config.relayer_wallet_key().clone(),
-            block_polling_interval_ms: BLOCK_POLLING_INTERVAL_MS,
+            block_polling_interval: BLOCK_POLLING_INTERVAL,
         };
 
         // Expects to be running in a Tokio runtime

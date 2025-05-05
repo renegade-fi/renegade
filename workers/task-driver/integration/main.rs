@@ -10,7 +10,7 @@
 mod helpers;
 mod tests;
 
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
@@ -197,7 +197,7 @@ fn setup_darkpool_client_mock(test_args: &CliArgs) -> DarkpoolClient {
         darkpool_addr,
         private_key,
         rpc_url: test_args.devnet_url.clone(),
-        block_polling_interval_ms: 100,
+        block_polling_interval: Duration::from_millis(100),
     })
     .unwrap()
 }
