@@ -1,6 +1,6 @@
 #!/bin/sh
 REGION=us-east-2
-DEFAULT_ENVIRONMENT=dev
+DEFAULT_CHAIN=arbitrum-sepolia
 
 # Get the current git commit hash (long form)
 DEFAULT_IMAGE_TAG=$(git rev-parse HEAD)
@@ -9,24 +9,24 @@ DEFAULT_IMAGE_TAG=$(git rev-parse HEAD)
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --image-tag) IMAGE_TAG="$2"; shift ;;
-        --env) ENVIRONMENT="$2"; shift ;;
+        --chain) CHAIN="$2"; shift ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
     esac
     shift
 done
 
 # Use defaults if not provided
-ENVIRONMENT=${ENVIRONMENT:-$DEFAULT_ENVIRONMENT}
+CHAIN=${CHAIN:-$DEFAULT_CHAIN}
 IMAGE_TAG=${IMAGE_TAG:-$DEFAULT_IMAGE_TAG}
 
-CLUSTER_NAME=$ENVIRONMENT-cluster0
-SERVICE_NAME=$ENVIRONMENT-cluster0-service
-TASK_FAMILY=$ENVIRONMENT-cluster0-task-def
-ECR_URL=377928551571.dkr.ecr.us-east-2.amazonaws.com/relayer-$ENVIRONMENT
+CLUSTER_NAME=$CHAIN-relayer
+SERVICE_NAME=$CHAIN-relayer-service
+TASK_FAMILY=$CHAIN-relayer-task-def
+ECR_URL=377928551571.dkr.ecr.us-east-2.amazonaws.com/relayer-$CHAIN
 
 FULL_IMAGE_URI="$ECR_URL:$IMAGE_TAG"
 echo "Using image URI: $FULL_IMAGE_URI"
-echo "Deploying relayer to: $ENVIRONMENT"
+echo "Deploying relayer to: $CHAIN"
 
 # Fetch the existing definition of the task and create a new revision with the updated URI
 TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --region $REGION --query 'taskDefinition')
