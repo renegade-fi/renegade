@@ -11,7 +11,7 @@ use circuit_types::{
 use circuits::{
     singleprover_prove, verify_singleprover_proof,
     zk_circuits::{
-        test_helpers::PUBLIC_KEYS,
+        test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, PUBLIC_KEYS},
         valid_commitments::{
             test_helpers::create_witness_and_statement, SizedValidCommitments,
             SizedValidCommitmentsWitness, ValidCommitments, ValidCommitmentsStatement,
@@ -30,8 +30,11 @@ use mpc_relation::proof_linking::LinkableCircuit;
 /// generics
 pub fn create_sized_witness_statement() -> (SizedValidCommitmentsWitness, ValidCommitmentsStatement)
 {
-    let wallet =
+    let mut wallet =
         Wallet::<MAX_BALANCES, MAX_ORDERS> { keys: PUBLIC_KEYS.clone(), ..Default::default() };
+    wallet.balances[0] = INITIAL_BALANCES[0].clone();
+    wallet.balances[1] = INITIAL_BALANCES[1].clone();
+    wallet.orders[0] = INITIAL_ORDERS[0].clone();
     create_witness_and_statement(&wallet)
 }
 
