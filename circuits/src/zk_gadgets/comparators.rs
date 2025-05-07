@@ -557,6 +557,7 @@ mod test {
         assert!(res);
     }
 
+    /// Tests the `GreaterThanEqGadget`
     #[test]
     #[rustfmt::skip]
     fn test_geq_gadget() {
@@ -598,6 +599,23 @@ mod test {
         cs.enforce_false(lt3).unwrap();
 
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    /// Tests the `GreaterThanEqGadget` with a value that is out of bit range
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_geq_gadget__out_of_bitrange() {
+        let mut rng = thread_rng();
+
+        const BITS: usize = 10;
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let a_var = Scalar::random(&mut rng).create_witness(&mut cs);
+        let b_var = Scalar::random(&mut rng).create_witness(&mut cs);
+
+        GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, b_var, &mut cs).unwrap();
+
+        // The difference a - b should fail to bit-reconstruct in the gadget
+        assert!(cs.check_circuit_satisfiability(&[]).is_err());
     }
 
     #[tokio::test]
