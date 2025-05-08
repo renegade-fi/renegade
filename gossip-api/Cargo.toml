@@ -11,7 +11,7 @@ sha2 = { version = "0.10", features = ["asm"] }
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
 common = { workspace = true }
-util = { workspace = true }
+util = { workspace = true, features = ["telemetry"] }
 
 # === Serialization === #
 bincode = "1.3"

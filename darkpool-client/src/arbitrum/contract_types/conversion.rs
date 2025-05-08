@@ -137,7 +137,7 @@ pub fn to_contract_valid_wallet_create_statement(
     let public_wallet_shares = wallet_shares_to_scalar_vec(&statement.public_wallet_shares);
 
     ContractValidWalletCreateStatement {
-        private_shares_commitment: statement.private_shares_commitment.inner(),
+        wallet_share_commitment: statement.wallet_share_commitment.inner(),
         public_wallet_shares,
     }
 }
@@ -159,7 +159,7 @@ pub fn to_contract_valid_wallet_update_statement(
 
     Ok(ContractValidWalletUpdateStatement {
         old_shares_nullifier: statement.old_shares_nullifier.inner(),
-        new_private_shares_commitment: statement.new_private_shares_commitment.inner(),
+        new_wallet_commitment: statement.new_wallet_commitment.inner(),
         new_public_shares,
         merkle_root: statement.merkle_root.inner(),
         external_transfer,
@@ -513,7 +513,7 @@ pub fn to_contract_valid_offline_fee_settlement_statement(
     ContractValidOfflineFeeSettlementStatement {
         merkle_root: statement.merkle_root.inner(),
         nullifier: statement.nullifier.inner(),
-        updated_wallet_commitment: statement.updated_wallet_commitment.inner(),
+        new_wallet_commitment: statement.new_wallet_commitment.inner(),
         updated_wallet_public_shares: statement
             .updated_wallet_public_shares
             .to_scalars()
@@ -537,7 +537,7 @@ pub fn to_contract_valid_fee_redemption_statement(
         note_root: statement.note_root.inner(),
         nullifier: statement.wallet_nullifier.inner(),
         note_nullifier: statement.note_nullifier.inner(),
-        new_wallet_commitment: statement.new_wallet_commitment.inner(),
+        new_shares_commitment: statement.new_shares_commitment.inner(),
         new_wallet_public_shares: statement
             .new_wallet_public_shares
             .to_scalars()

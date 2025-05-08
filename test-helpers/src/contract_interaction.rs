@@ -40,11 +40,11 @@ pub async fn allocate_wallet_in_darkpool(
     wallet: &mut Wallet,
     client: &DarkpoolClient,
 ) -> Result<()> {
-    let share_comm = wallet.get_private_share_commitment();
+    let share_comm = wallet.get_wallet_share_commitment();
 
     let mut proof = dummy_valid_wallet_create_bundle();
     proof.statement.public_wallet_shares = wallet.blinded_public_shares.clone();
-    proof.statement.private_shares_commitment = share_comm;
+    proof.statement.wallet_share_commitment = share_comm;
 
     client.new_wallet(&proof).await?;
 

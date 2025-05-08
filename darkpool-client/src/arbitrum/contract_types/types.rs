@@ -278,7 +278,7 @@ pub type PublicEncryptionKey = BabyJubJubPoint;
 pub struct ValidWalletCreateStatement {
     /// The commitment to the private secret shares of the wallet
     #[serde_as(as = "ScalarFieldDef")]
-    pub private_shares_commitment: ScalarField,
+    pub wallet_share_commitment: ScalarField,
     /// The blinded public secret shares of the wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub public_wallet_shares: Vec<ScalarField>,
@@ -291,9 +291,9 @@ pub struct ValidWalletUpdateStatement {
     /// The nullifier of the old wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
     pub old_shares_nullifier: ScalarField,
-    /// A commitment to the new wallet's private secret shares
+    /// A commitment to the new wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
-    pub new_private_shares_commitment: ScalarField,
+    pub new_wallet_commitment: ScalarField,
     /// The blinded public secret shares of the new wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub new_public_shares: Vec<ScalarField>,
@@ -468,9 +468,9 @@ pub struct ValidOfflineFeeSettlementStatement {
     /// The nullifier of the old wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
     pub nullifier: ScalarField,
-    /// A commitment to the new wallet's private secret shares
+    /// A commitment to the new wallet's updated secret shares
     #[serde_as(as = "ScalarFieldDef")]
-    pub updated_wallet_commitment: ScalarField,
+    pub new_wallet_commitment: ScalarField,
     /// The blinded public secret shares of the new wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub updated_wallet_public_shares: Vec<ScalarField>,
@@ -503,9 +503,9 @@ pub struct ValidFeeRedemptionStatement {
     /// The nullifier of the note
     #[serde_as(as = "ScalarFieldDef")]
     pub note_nullifier: ScalarField,
-    /// A commitment to the new wallet's private secret shares
+    /// A commitment to the new wallet's secret shares
     #[serde_as(as = "ScalarFieldDef")]
-    pub new_wallet_commitment: ScalarField,
+    pub new_shares_commitment: ScalarField,
     /// The blinded public secret shares of the new wallet
     #[serde_as(as = "Vec<ScalarFieldDef>")]
     pub new_wallet_public_shares: Vec<ScalarField>,

@@ -11,10 +11,10 @@ use circuit_types::{
 use circuits::{
     singleprover_prove, verify_singleprover_proof,
     zk_circuits::{
-        test_helpers::PUBLIC_KEYS,
+        test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, PUBLIC_KEYS},
         valid_commitments::{
-            test_helpers::create_witness_and_statement, ValidCommitments,
-            ValidCommitmentsStatement, ValidCommitmentsWitness,
+            test_helpers::create_witness_and_statement, SizedValidCommitments,
+            SizedValidCommitmentsWitness, ValidCommitments, ValidCommitmentsStatement,
         },
     },
 };
@@ -22,44 +22,35 @@ use constants::{MAX_BALANCES, MAX_ORDERS};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use mpc_relation::proof_linking::LinkableCircuit;
 
-/// The parameter set for the small sized circuit (MAX_BALANCES, MAX_ORDERS)
-const SMALL_PARAM_SET: (usize, usize) = (2, 2);
-/// The parameter set for the large sized circuit
-const LARGE_PARAM_SET: (usize, usize) = (MAX_BALANCES, MAX_ORDERS);
-
 // -----------
 // | Helpers |
 // -----------
 
 /// Create a witness and statement for `VALID COMMITMENTS` with the given sizing
 /// generics
-pub fn create_sized_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement)
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+pub fn create_sized_witness_statement() -> (SizedValidCommitmentsWitness, ValidCommitmentsStatement)
 {
-    let wallet =
+    let mut wallet =
         Wallet::<MAX_BALANCES, MAX_ORDERS> { keys: PUBLIC_KEYS.clone(), ..Default::default() };
+    wallet.balances[0] = INITIAL_BALANCES[0].clone();
+    wallet.balances[1] = INITIAL_BALANCES[1].clone();
+    wallet.orders[0] = INITIAL_ORDERS[0].clone();
     create_witness_and_statement(&wallet)
 }
 
 /// Tests the time taken to apply the constraints of `VALID COMMITMENTS` circuit
-pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    c: &mut Criterion,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub fn bench_apply_constraints(c: &mut Criterion) {
     let mut group = c.benchmark_group("valid_commitments");
     let benchmark_id =
         BenchmarkId::new("constraint-generation", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
 
     group.bench_function(benchmark_id, |b| {
         // Build a witness and statement
-        let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
+        let (witness, statement) = create_sized_witness_statement();
         let mut cs = PlonkCircuit::new_turbo_plonk();
 
         // Add proof linking groups to the circuit
-        let layout = ValidCommitments::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout().unwrap();
+        let layout = SizedValidCommitments::get_circuit_layout().unwrap();
         for (id, layout) in layout.group_layouts.into_iter() {
             cs.create_link_group(id, Some(layout));
         }
@@ -79,49 +70,30 @@ pub fn bench_apply_constraints_with_sizes<const MAX_BALANCES: usize, const MAX_O
 }
 
 /// Tests the time taken to prove `VALID COMMITMENTS`
-pub fn bench_prover_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    c: &mut Criterion,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub fn bench_prover(c: &mut Criterion) {
     let mut group = c.benchmark_group("valid_commitments");
     let benchmark_id = BenchmarkId::new("prover", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
 
     group.bench_function(benchmark_id, |b| {
         // Build a witness and statement
-        let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
+        let (witness, statement) = create_sized_witness_statement();
         b.iter(|| {
-            singleprover_prove::<ValidCommitments<MAX_BALANCES, MAX_ORDERS>>(
-                witness.clone(),
-                statement,
-            )
-            .unwrap();
+            singleprover_prove::<SizedValidCommitments>(witness.clone(), statement).unwrap();
         });
     });
 }
 
 /// Tests the time taken to verify `VALID COMMITMENTS`
-pub fn bench_verifier_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    c: &mut Criterion,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub fn bench_verifier(c: &mut Criterion) {
     let mut group = c.benchmark_group("valid_commitments");
     let benchmark_id = BenchmarkId::new("verifier", format!("({MAX_BALANCES}, {MAX_ORDERS})"));
 
     group.bench_function(benchmark_id, |b| {
         // First generate a proof that will be verified multiple times
-        let (witness, statement) = create_sized_witness_statement::<MAX_BALANCES, MAX_ORDERS>();
-
-        let proof =
-            singleprover_prove::<ValidCommitments<MAX_BALANCES, MAX_ORDERS>>(witness, statement)
-                .unwrap();
-
+        let (witness, statement) = create_sized_witness_statement();
+        let proof = singleprover_prove::<SizedValidCommitments>(witness, statement).unwrap();
         b.iter(|| {
-            let res = verify_singleprover_proof::<ValidCommitments<MAX_BALANCES, MAX_ORDERS>>(
-                statement, &proof,
-            );
-
+            let res = verify_singleprover_proof::<SizedValidCommitments>(statement, &proof);
             #[allow(unused_must_use)]
             {
                 black_box(res)
@@ -130,73 +102,16 @@ pub fn bench_verifier_with_sizes<const MAX_BALANCES: usize, const MAX_ORDERS: us
     });
 }
 
-// --------------
-// | Benchmarks |
-// --------------
-
-/// Benchmarks constraint generation latency on a small `VALID COMMITMENTS`
-/// circuit
-#[allow(non_snake_case)]
-fn bench_apply_constraints__small_circuit(c: &mut Criterion) {
-    bench_apply_constraints_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c);
-}
-
-/// Benchmarks prover latency on a small `VALID COMMITMENTS` circuit
-#[allow(non_snake_case)]
-fn bench_prover__small_circuit(c: &mut Criterion) {
-    bench_prover_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c);
-}
-
-/// Benchmarks verifier latency on a small `VALID COMMITMENTS` circuit
-#[allow(non_snake_case)]
-fn bench_verifier__small_circuit(c: &mut Criterion) {
-    bench_verifier_with_sizes::<{ SMALL_PARAM_SET.0 }, { SMALL_PARAM_SET.1 }>(c);
-}
-
-/// Benchmarks constraint generation latency on a large `VALID COMMITMENTS`
-/// circuit
-#[allow(non_snake_case)]
-fn bench_apply_constraints__large_circuit(c: &mut Criterion) {
-    bench_apply_constraints_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c);
-}
-
-/// Benchmarks prover latency on a large `VALID COMMITMENTS` circuit
-#[allow(non_snake_case)]
-fn bench_prover__large_circuit(c: &mut Criterion) {
-    bench_prover_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c);
-}
-
-/// Benchmarks verifier latency on a large `VALID COMMITMENTS` circuit
-#[allow(non_snake_case)]
-fn bench_verifier__large_circuit(c: &mut Criterion) {
-    bench_verifier_with_sizes::<{ LARGE_PARAM_SET.0 }, { LARGE_PARAM_SET.1 }>(c);
-}
-
 // -------------------
 // | Criterion Setup |
 // -------------------
 
-#[cfg(feature = "large_benchmarks")]
 criterion_group! {
     name = valid_commitments;
     config = Criterion::default().sample_size(10);
     targets =
-        bench_apply_constraints__small_circuit,
-        bench_prover__small_circuit,
-        bench_verifier__small_circuit,
-        bench_apply_constraints__large_circuit,
-        bench_prover__large_circuit,
-        bench_verifier__large_circuit,
+        bench_apply_constraints,
+        bench_prover,
+        bench_verifier,
 }
-
-#[cfg(not(feature = "large_benchmarks"))]
-criterion_group! {
-    name = valid_commitments;
-    config = Criterion::default().sample_size(10);
-    targets =
-        bench_apply_constraints__small_circuit,
-        bench_prover__small_circuit,
-        bench_verifier__small_circuit,
-}
-
 criterion_main!(valid_commitments);

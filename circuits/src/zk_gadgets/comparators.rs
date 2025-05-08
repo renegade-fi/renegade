@@ -185,17 +185,35 @@ impl NotEqualGadget {
 /// The sizing parameter `D` represents the maximum bitlength of positive
 /// scalars under the caller's representation
 #[derive(Clone, Debug)]
-pub struct GreaterThanEqZeroGadget<const D: usize> {}
+pub struct GreaterThanEqZeroGadget<const D: usize>;
 impl<const D: usize> GreaterThanEqZeroGadget<D> {
     /// Evaluate the condition x >= 0; returns 1 if true, otherwise 0
-    pub fn greater_than_eq_zero(
-        x: Variable,
-        cs: &mut PlonkCircuit,
-    ) -> Result<BoolVar, CircuitError> {
-        // Decompose and reconstruct the value in the given bitlength, if we can do so
-        // then the value is greater than zero
-        let reconstructed = ToBitsGadget::<D>::decompose_and_reconstruct(x, cs)?;
-        EqGadget::eq(&reconstructed, &x, cs)
+    ///
+    /// We check the GEQ gadget following the example in circomlib:
+    ///  https://github.com/iden3/circomlib/blob/35e54ea21da3e8762557234298dbb553c175ea8d/circuits/comparators.circom#L89-L99
+    ///
+    /// That is, we bit decompose and reconstruct the value x + 2^D in D+1 bits.
+    /// This gives two cases:
+    ///  1. If x is negative, then x + 2^D < 2^D so the MSB will be zero.
+    ///  2. If x is positive or zero, then x + 2^D >= 2^D so the MSB will be
+    ///     one.
+    ///
+    /// In either case we have x >= 0 <=> MSB(x + 2^D) == 1
+    ///
+    /// Note: The `to_bits` method will enforce that the decomposed bits recover
+    /// the input value, so for completeness sake we assume x is in the range
+    /// [-2^D, 2^D - 1]
+    pub fn greater_than_eq_zero(x: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
+    where
+        [(); D + 1]: Sized,
+    {
+        // Add 2^D to the input
+        let two_to_d = Scalar::from(2u8).pow(D as u64);
+        let x_plus_2_to_d = cs.add_constant(x, &two_to_d.inner())?;
+
+        // Return the MSB
+        let bits = ToBitsGadget::<{ D + 1 }>::to_bits(x_plus_2_to_d, cs)?;
+        Ok(bits[D])
     }
 
     /// Constrain the value to be greater than zero
@@ -212,14 +230,17 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
 /// Enforces the constraint a >= b
 ///
 /// `D` is the bitlength of the values being compared
-pub struct GreaterThanEqGadget<const D: usize> {}
+pub struct GreaterThanEqGadget<const D: usize>;
 impl<const D: usize> GreaterThanEqGadget<D> {
     /// Evaluates the comparator a >= b; returns 1 if true, otherwise 0
     pub fn greater_than_eq(
         a: Variable,
         b: Variable,
         cs: &mut PlonkCircuit,
-    ) -> Result<BoolVar, CircuitError> {
+    ) -> Result<BoolVar, CircuitError>
+    where
+        [(); D + 1]: Sized,
+    {
         let a_minus_b = cs.sub(a, b)?;
         GreaterThanEqZeroGadget::<D>::greater_than_eq_zero(a_minus_b, cs)
     }
@@ -239,14 +260,17 @@ impl<const D: usize> GreaterThanEqGadget<D> {
 ///
 /// D is the bitlength of the inputs
 #[derive(Clone, Debug)]
-pub struct LessThanGadget<const D: usize> {}
+pub struct LessThanGadget<const D: usize>;
 impl<const D: usize> LessThanGadget<D> {
     /// Compute the boolean a < b; returns 1 if true, otherwise 0
     pub fn less_than(
         a: Variable,
         b: Variable,
         cs: &mut PlonkCircuit,
-    ) -> Result<BoolVar, CircuitError> {
+    ) -> Result<BoolVar, CircuitError>
+    where
+        [(); D + 1]: Sized,
+    {
         let a_geq_b = GreaterThanEqGadget::<D>::greater_than_eq(a, b, cs)?;
         cs.logic_neg(a_geq_b)
     }
@@ -256,7 +280,10 @@ impl<const D: usize> LessThanGadget<D> {
         a: Variable,
         b: Variable,
         cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError> {
+    ) -> Result<(), CircuitError>
+    where
+        [(); D + 1]: Sized,
+    {
         let lt_result = Self::less_than(a, b, cs)?;
         cs.enforce_true(lt_result)
     }
@@ -530,6 +557,7 @@ mod test {
         assert!(res);
     }
 
+    /// Tests the `GreaterThanEqGadget`
     #[test]
     #[rustfmt::skip]
     fn test_geq_gadget() {
@@ -571,6 +599,23 @@ mod test {
         cs.enforce_false(lt3).unwrap();
 
         assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+    }
+
+    /// Tests the `GreaterThanEqGadget` with a value that is out of bit range
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_geq_gadget__out_of_bitrange() {
+        let mut rng = thread_rng();
+
+        const BITS: usize = 10;
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let a_var = Scalar::random(&mut rng).create_witness(&mut cs);
+        let b_var = Scalar::random(&mut rng).create_witness(&mut cs);
+
+        GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, b_var, &mut cs).unwrap();
+
+        // The difference a - b should fail to bit-reconstruct in the gadget
+        assert!(cs.check_circuit_satisfiability(&[]).is_err());
     }
 
     #[tokio::test]

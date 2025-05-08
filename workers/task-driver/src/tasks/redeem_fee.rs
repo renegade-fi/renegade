@@ -335,7 +335,7 @@ impl RedeemFeeTask {
             note_root: note_opening.compute_root(),
             wallet_nullifier: self.old_wallet.get_wallet_nullifier(),
             note_nullifier: self.note.nullifier(),
-            new_wallet_commitment: self.new_wallet.get_private_share_commitment(),
+            new_shares_commitment: self.new_wallet.get_wallet_share_commitment(),
             new_wallet_public_shares,
             recipient_root_key: self.old_wallet.key_chain.public_keys.pk_root.clone(),
         };

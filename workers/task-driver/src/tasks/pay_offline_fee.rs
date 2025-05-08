@@ -367,7 +367,7 @@ impl PayOfflineFeeTask {
 
         // Generate new wallet shares
         let new_wallet = &self.new_wallet;
-        let updated_wallet_commitment = new_wallet.get_private_share_commitment();
+        let new_wallet_commitment = new_wallet.get_wallet_share_commitment();
         let updated_wallet_public_shares = new_wallet.blinded_public_shares.clone();
         let updated_wallet_private_shares = new_wallet.private_shares.clone();
 
@@ -375,7 +375,7 @@ impl PayOfflineFeeTask {
         let statement = SizedValidOfflineFeeSettlementStatement {
             merkle_root: opening.compute_root(),
             nullifier,
-            updated_wallet_commitment,
+            new_wallet_commitment,
             updated_wallet_public_shares,
             note_ciphertext,
             note_commitment,

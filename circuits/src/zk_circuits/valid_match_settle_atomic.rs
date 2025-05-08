@@ -17,7 +17,7 @@ use crate::{
         comparators::GreaterThanEqGadget,
         fixed_point::FixedPointGadget,
         select::{CondSelectGadget, CondSelectVectorGadget},
-        wallet_operations::{AmountGadget, PriceGadget},
+        wallet_operations::{AmountGadget, PriceGadget, WalletGadget},
     },
     SingleProverCircuit,
 };
@@ -29,7 +29,7 @@ use circuit_types::{
     order::{Order, OrderVar},
     r#match::{ExternalMatchResult, ExternalMatchResultVar, OrderSettlementIndices},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
-    wallet::WalletShare,
+    wallet::{WalletShare, WalletShareStateCommitment},
     Address, PlonkCircuit, AMOUNT_BITS,
 };
 use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
@@ -52,6 +52,10 @@ use super::{valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE
 pub struct ValidMatchSettleAtomic<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 /// A `VALID MATCH SETTLE ATOMIC` with default state element sizing
 pub type SizedValidMatchSettleAtomic = ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>;
+/// A `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS` with default state element
+/// sizing
+pub type SizedValidMatchSettleAtomicWithCommitments =
+    ValidMatchSettleAtomicWithCommitments<MAX_BALANCES, MAX_ORDERS>;
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
     ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>
@@ -233,6 +237,49 @@ where
     }
 }
 
+/// The circuit implementation of `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS`
+///
+/// This circuit applies identical constraints as `VALID MATCH SETTLE ATOMIC`
+/// except that it also computes the commitment to the internal party's updated
+/// shares in the circuit
+///
+/// This is done to remove that computation from the contracts, where hashing is
+/// somewhat expensive
+pub struct ValidMatchSettleAtomicWithCommitments<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
+
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidMatchSettleAtomicWithCommitments<MAX_BALANCES, MAX_ORDERS>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    /// The circuit constraints for `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS`
+    pub fn circuit(
+        statement: &ValidMatchSettleAtomicWithCommitmentsStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        witness: &ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), CircuitError> {
+        // Apply all the constraints from the standard match settle atomic circuit
+        let match_settle_atomic_statement = ValidMatchSettleAtomicStatementVar {
+            match_result: statement.match_result.clone(),
+            external_party_fees: statement.external_party_fees.clone(),
+            internal_party_modified_shares: statement.internal_party_modified_shares.clone(),
+            internal_party_indices: statement.internal_party_indices.clone(),
+            protocol_fee: statement.protocol_fee,
+            relayer_fee_address: statement.relayer_fee_address,
+        };
+        ValidMatchSettleAtomic::circuit(&match_settle_atomic_statement, witness, cs)?;
+
+        // Validate the commitment to the internal party's updated shares
+        let commitment = WalletGadget::compute_wallet_commitment_from_private(
+            &statement.internal_party_modified_shares,
+            statement.private_share_commitment,
+            cs,
+        )?;
+        cs.enforce_equal(commitment, statement.new_share_commitment)?;
+        Ok(())
+    }
+}
+
 // ---------------------------
 // | Witness Type Definition |
 // ---------------------------
@@ -296,10 +343,42 @@ where
     pub relayer_fee_address: Address,
 }
 
+/// The statement type for `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS`
+#[circuit_type(singleprover_circuit)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ValidMatchSettleAtomicWithCommitmentsStatement<
+    const MAX_BALANCES: usize,
+    const MAX_ORDERS: usize,
+> where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    /// A commitment to the internal party's private shares
+    pub private_share_commitment: WalletShareStateCommitment,
+    /// A commitment to the new wallet shares of the internal party
+    pub new_share_commitment: WalletShareStateCommitment,
+    /// The result of the match
+    pub match_result: ExternalMatchResult,
+    /// The external party's fee obligations as a result of the match
+    pub external_party_fees: FeeTake,
+    /// The modified public shares of the internal party
+    pub internal_party_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
+    /// The indices that settlement should modify in the internal party's wallet
+    pub internal_party_indices: OrderSettlementIndices,
+    /// The protocol fee used in the match
+    pub protocol_fee: FixedPoint,
+    /// The address at which the relayer wishes to receive their fee due from
+    /// the external party
+    pub relayer_fee_address: Address,
+}
+
 /// A `VALID MATCH SETTLE ATOMIC` statement with default const generic sizing
 /// parameters
 pub type SizedValidMatchSettleAtomicStatement =
     ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>;
+/// A `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS` statement with default const
+/// generic sizing parameters
+pub type SizedValidMatchSettleAtomicWithCommitmentsStatement =
+    ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
 
 // ---------------------
 // | Prove Verify Flow |
@@ -337,6 +416,34 @@ where
     }
 }
 
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
+    for ValidMatchSettleAtomicWithCommitments<MAX_BALANCES, MAX_ORDERS>
+where
+    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+{
+    type Statement = ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
+    type Witness = ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
+
+    fn name() -> String {
+        format!("Valid Match Settle Atomic With Commitments ({MAX_BALANCES}, {MAX_ORDERS})")
+    }
+
+    fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
+        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
+
+        Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
+    }
+
+    fn apply_constraints(
+        witness_var: ValidMatchSettleAtomicWitnessVar<MAX_BALANCES, MAX_ORDERS>,
+        statement_var: ValidMatchSettleAtomicWithCommitmentsStatementVar<MAX_BALANCES, MAX_ORDERS>,
+        cs: &mut PlonkCircuit,
+    ) -> Result<(), PlonkError> {
+        Self::circuit(&statement_var, &witness_var, cs).map_err(PlonkError::CircuitError)
+    }
+}
+
 // ---------
 // | Tests |
 // ---------
@@ -345,9 +452,12 @@ where
 pub mod test_helpers {
     use circuit_types::{
         fixed_point::FixedPoint,
+        native_helpers::compute_wallet_commitment_from_private,
         order::Order,
         r#match::{ExternalMatchResult, MatchResult},
     };
+    use constants::Scalar;
+    use rand::thread_rng;
     use util::{
         matching_engine::{apply_match_to_shares, compute_fee_obligation},
         on_chain::get_protocol_fee,
@@ -362,11 +472,17 @@ pub mod test_helpers {
     };
 
     use super::{
-        ValidMatchSettleAtomic, ValidMatchSettleAtomicStatement, ValidMatchSettleAtomicWitness,
+        ValidMatchSettleAtomic, ValidMatchSettleAtomicStatement,
+        ValidMatchSettleAtomicWithCommitments, ValidMatchSettleAtomicWithCommitmentsStatement,
+        ValidMatchSettleAtomicWitness,
     };
 
     /// An atomic match settle circuit with testing sizing parameters
     pub type SizedValidMatchSettleAtomic = ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>;
+    /// An atomic match settle circuit with commitments with testing sizing
+    /// parameters
+    pub type SizedValidMatchSettleAtomicWithCommitments =
+        ValidMatchSettleAtomicWithCommitments<MAX_BALANCES, MAX_ORDERS>;
     /// A witness with testing sizing parameters
     pub type SizedValidMatchSettleAtomicWitness =
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
@@ -380,6 +496,54 @@ pub mod test_helpers {
     /// Get the default relayer fee as a fixed point
     pub fn default_relayer_fee() -> FixedPoint {
         FixedPoint::from_f64_round_down(DEFAULT_RELAYER_FEE)
+    }
+
+    /// Convert a statement of `VALID MATCH SETTLE ATOMIC` to a statement of
+    /// `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS`
+    pub fn convert_to_with_commitments_statement<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >(
+        statement: &ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
+    ) -> ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let mut rng = thread_rng();
+        let private_share_commitment = Scalar::random(&mut rng);
+        let new_share_commitment = compute_wallet_commitment_from_private(
+            &statement.internal_party_modified_shares,
+            private_share_commitment,
+        );
+
+        ValidMatchSettleAtomicWithCommitmentsStatement {
+            private_share_commitment,
+            new_share_commitment,
+            match_result: statement.match_result.clone(),
+            external_party_fees: statement.external_party_fees,
+            internal_party_modified_shares: statement.internal_party_modified_shares.clone(),
+            internal_party_indices: statement.internal_party_indices,
+            protocol_fee: statement.protocol_fee,
+            relayer_fee_address: statement.relayer_fee_address.clone(),
+        }
+    }
+
+    /// Create a valid witness and statement for the `VALID MATCH SETTLE ATOMIC
+    /// WITH COMMITMENTS` circuit
+    pub fn create_witness_statement_with_commitments<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >() -> (
+        ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
+        ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>,
+    )
+    where
+        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+    {
+        let (witness, statement) = create_witness_statement();
+        let statement_with_commitments = convert_to_with_commitments_statement(&statement);
+
+        (witness, statement_with_commitments)
     }
 
     /// Create a valid witness and statement for the circuit
@@ -521,9 +685,12 @@ mod test {
         zk_circuits::{
             check_constraint_satisfaction,
             test_helpers::{MAX_BALANCES, MAX_ORDERS},
-            valid_match_settle_atomic::test_helpers::{
-                create_witness_statement, create_witness_statement_buy_side,
-                create_witness_statement_sell_side,
+            valid_match_settle_atomic::{
+                test_helpers::{
+                    create_witness_statement, create_witness_statement_buy_side,
+                    create_witness_statement_sell_side, create_witness_statement_with_commitments,
+                },
+                ValidMatchSettleAtomic, ValidMatchSettleAtomicWithCommitments,
             },
         },
     };
@@ -542,7 +709,8 @@ mod test {
 
     use super::{
         test_helpers::{
-            SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+            convert_to_with_commitments_statement, SizedValidMatchSettleAtomic,
+            SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWithCommitments,
             SizedValidMatchSettleAtomicWitness,
         },
         ValidMatchSettleAtomicStatementVar, ValidMatchSettleAtomicWitnessVar,
@@ -564,7 +732,14 @@ mod test {
         witness: &SizedValidMatchSettleAtomicWitness,
         statement: &SizedValidMatchSettleAtomicStatement,
     ) -> bool {
-        check_constraint_satisfaction::<SizedValidMatchSettleAtomic>(witness, statement)
+        let statement_with_commitments = convert_to_with_commitments_statement(statement);
+        let res1 = check_constraint_satisfaction::<SizedValidMatchSettleAtomic>(witness, statement);
+        let res2 = check_constraint_satisfaction::<SizedValidMatchSettleAtomicWithCommitments>(
+            witness,
+            &statement_with_commitments,
+        );
+
+        res1 && res2
     }
 
     /// Check only the matching engine constraints
@@ -618,6 +793,39 @@ mod test {
         let statement_var = statement.create_public_var(&mut cs);
 
         (witness_var, statement_var, cs)
+    }
+
+    /// A helper to print the size of the `VALID MATCH SETTLE ATOMIC` circuit
+    #[test]
+    #[ignore]
+    fn print_valid_match_settle_atomic_size() {
+        let layout = ValidMatchSettleAtomic::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
+    }
+
+    /// A helper to print the size of the `VALID MATCH SETTLE ATOMIC WITH
+    /// COMMITMENTS` circuit
+    #[test]
+    #[ignore]
+    fn print_valid_match_settle_atomic_with_commitments_size() {
+        let layout = ValidMatchSettleAtomicWithCommitments::<
+            { constants::MAX_BALANCES },
+            { constants::MAX_ORDERS },
+        >::get_circuit_layout()
+        .unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
     }
 
     // -----------------------
@@ -875,5 +1083,35 @@ mod test {
         let mut statement = original_statement.clone();
         statement.internal_party_modified_shares.blinder += Scalar::one();
         assert!(!check_settlement_constraints(&witness, &statement));
+    }
+
+    // ---------------------
+    // | Commitments Tests |
+    // ---------------------
+
+    /// Test the case in which the prover modifies the private share commitment
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_commitments__modified_private_comm() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = create_witness_statement_with_commitments();
+        statement.private_share_commitment = Scalar::random(&mut rng);
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettleAtomicWithCommitments>(
+            &witness, &statement,
+        ));
+    }
+
+    /// Test the case in which the prover modifies the new share commitment
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_commitments__modified_new_comm() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = create_witness_statement_with_commitments();
+        statement.new_share_commitment = Scalar::random(&mut rng);
+
+        assert!(!check_constraint_satisfaction::<SizedValidMatchSettleAtomicWithCommitments>(
+            &witness, &statement,
+        ));
     }
 }
