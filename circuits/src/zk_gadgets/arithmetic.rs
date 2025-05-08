@@ -67,7 +67,10 @@ where
         a: Variable,
         b: Variable,
         cs: &mut PlonkCircuit,
-    ) -> Result<(Variable, Variable), CircuitError> {
+    ) -> Result<(Variable, Variable), CircuitError>
+    where
+        [(); D + 1]: Sized,
+    {
         assert!(D <= DIVREM_MAX_BITSIZE, "Bitlength of divisor is too large");
 
         let a_bigint = scalar_to_biguint(&a.eval(cs));
