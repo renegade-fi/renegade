@@ -307,7 +307,7 @@ impl ExternalMatchProcessor {
 
         // Check that the base token is in the token configuration -- i.e. if it is
         // named or the native asset
-        if !(base.is_named() || base.addr == NATIVE_ASSET_ADDRESS) {
+        if !(base.is_named() || base.is_native_asset()) {
             return Err(bad_request(ERR_UNSUPPORTED_PAIR));
         }
 

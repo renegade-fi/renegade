@@ -17,6 +17,7 @@
 //! Unnamed Tokens only use Uniswap V3 for the price feed.
 use alloy::primitives::Address;
 use bimap::BiMap;
+use constants::NATIVE_ASSET_ADDRESS;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -100,6 +101,11 @@ impl Token {
     /// Get the USDT token
     pub fn usdt() -> Self {
         Self::from_ticker(USDT_TICKER)
+    }
+
+    /// Return whether the token represents the native asset
+    pub fn is_native_asset(&self) -> bool {
+        self.addr.to_lowercase() == NATIVE_ASSET_ADDRESS.to_lowercase()
     }
 
     /// Given an ERC-20 contract address, returns a new Token
