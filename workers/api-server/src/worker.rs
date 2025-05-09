@@ -2,10 +2,10 @@
 
 use async_trait::async_trait;
 use common::{
-    types::{hmac::HmacKey, CancelChannel},
+    types::{chain::Chain, hmac::HmacKey, CancelChannel},
     worker::Worker,
 };
-use darkpool_client::{constants::Chain, DarkpoolClient};
+use darkpool_client::DarkpoolClient;
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{

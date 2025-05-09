@@ -14,11 +14,11 @@ use alloy::{
 use alloy_contract::{CallBuilder, Event};
 use alloy_primitives::{Address, BlockNumber, ChainId};
 use alloy_sol_types::SolEvent;
+use common::types::chain::Chain;
 use constants::{DEVNET_DEPLOY_BLOCK, MAINNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
 use util::err_str;
 
 use crate::{
-    constants::Chain,
     errors::{DarkpoolClientConfigError, DarkpoolClientError},
     traits::DarkpoolImpl,
 };

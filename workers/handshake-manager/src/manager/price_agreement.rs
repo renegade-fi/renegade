@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use common::types::{
     exchange::PriceReporterState,
-    token::{read_token_remap, Token},
+    token::{get_all_tokens, Token},
     wallet::OrderIdentifier,
     TimestampedPrice,
 };
@@ -35,9 +35,8 @@ pub fn init_price_streams(
 ) -> Result<(), HandshakeManagerError> {
     let quote = Token::usdc();
 
-    for (addr, _) in read_token_remap().iter() {
-        let base = Token::from_addr(addr);
-        if base == quote {
+    for base in get_all_tokens().iter() {
+        if base == &quote {
             // Skip the USDC-USDC pair
             continue;
         }
@@ -57,13 +56,12 @@ impl HandshakeExecutor {
         // We do this in a separate scope to avoid holding the read lock on the token
         // remap across an await point.
         let channels = {
-            let token_maps = read_token_remap();
+            let token_maps = get_all_tokens();
             let quote = Token::usdc();
 
             let mut channels = Vec::with_capacity(token_maps.len());
-            for (base_addr, _ticker) in token_maps.iter() {
-                let base = Token::from_addr(base_addr);
-                let receiver = self.request_price(base, quote.clone())?;
+            for base in token_maps.iter() {
+                let receiver = self.request_price(base.clone(), quote.clone())?;
                 channels.push(receiver);
             }
             channels

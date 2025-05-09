@@ -18,6 +18,7 @@ pub mod tasks;
 pub mod transfer_auth;
 
 // --- External Types --- //
+pub mod chain;
 pub mod exchange;
 #[cfg(feature = "hmac")]
 pub mod hmac;

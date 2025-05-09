@@ -9,6 +9,7 @@ use std::iter;
 use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
+    chain::Chain,
     tasks::UpdateWalletTaskDescriptor,
     token::{get_all_tokens, Token},
     wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
@@ -16,7 +17,7 @@ use common::types::{
 };
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;
-use darkpool_client::{constants::Chain, DarkpoolClient};
+use darkpool_client::DarkpoolClient;
 use external_api::{
     http::{
         admin::{
