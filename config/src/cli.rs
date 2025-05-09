@@ -8,12 +8,12 @@ use circuit_types::{
 };
 use clap::Parser;
 use common::types::{
+    chain::Chain,
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
     hmac::HmacKey,
     token::Token,
 };
-use darkpool_client::constants::Chain;
 use ed25519_dalek::Keypair as DalekKeypair;
 use libp2p::{identity::Keypair, Multiaddr};
 use serde::{Deserialize, Serialize};

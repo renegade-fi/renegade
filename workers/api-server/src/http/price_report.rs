@@ -1,7 +1,7 @@
 //! Groups price reporting API handlers and types
 
 use async_trait::async_trait;
-use common::types::token::{read_token_remap, Token, USDC_TICKER, USDT_TICKER, USD_TICKER};
+use common::types::token::{get_all_tokens, Token, USDC_TICKER, USDT_TICKER, USD_TICKER};
 use external_api::{
     http::price_report::{
         GetPriceReportRequest, GetPriceReportResponse, GetSupportedTokensResponse,
@@ -145,10 +145,8 @@ impl TypedHandler for TokenPricesHandler {
 
 /// Get all tokens from the token map filtering out given tokens
 fn get_all_tokens_filtered(filtered_tokens: &[&str]) -> Vec<Token> {
-    let token_map = read_token_remap();
-    token_map
-        .iter()
-        .map(|(addr, _)| Token::from_addr(addr))
+    get_all_tokens()
+        .into_iter()
         .filter(|t| !filtered_tokens.contains(&t.get_ticker().unwrap().as_str()))
         .collect_vec()
 }

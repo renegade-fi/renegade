@@ -1,46 +1,11 @@
 //! Constant values referenced by the darkpool client.
 
-use std::{fmt::Display, marker::PhantomData, str::FromStr, time::Duration};
+use std::{marker::PhantomData, time::Duration};
 
 use ark_ff::{BigInt, Fp};
 use constants::{Scalar, MERKLE_HEIGHT};
 use lazy_static::lazy_static;
 use renegade_crypto::hash::compute_poseidon_hash;
-use serde::{Deserialize, Serialize};
-
-/// The chain environment
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum Chain {
-    /// Mainnet chain
-    Mainnet,
-    /// Testnet chain
-    Testnet,
-    /// Devnet chain
-    Devnet,
-}
-
-impl Display for Chain {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Chain::Mainnet => write!(f, "mainnet"),
-            Chain::Testnet => write!(f, "testnet"),
-            Chain::Devnet => write!(f, "devnet"),
-        }
-    }
-}
-
-impl FromStr for Chain {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "mainnet" => Ok(Chain::Mainnet),
-            "testnet" => Ok(Chain::Testnet),
-            "devnet" => Ok(Chain::Devnet),
-            _ => Err(format!("Invalid chain: {s}")),
-        }
-    }
-}
 
 /// The interval at which to poll for pending transactions
 pub const BLOCK_POLLING_INTERVAL: Duration = Duration::from_millis(100);

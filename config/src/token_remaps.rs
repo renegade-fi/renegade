@@ -5,10 +5,10 @@
 use std::collections::HashMap;
 
 use common::types::{
+    chain::Chain,
     exchange::Exchange,
-    token::{write_exchange_support, write_token_decimals_map, write_token_remap, USD_TICKER},
+    token::{write_exchange_support, write_token_decimals_map, write_token_remaps, USD_TICKER},
 };
-use darkpool_client::constants::Chain;
 use serde::{Deserialize, Serialize};
 use util::raw_err_str;
 
@@ -50,8 +50,9 @@ struct TokenInfo {
 impl TokenRemap {
     /// Set the static mapping of token addresses to tickers using the token
     /// mapping
-    pub fn set_token_remap(&self) {
-        let mut token_remap = write_token_remap();
+    pub fn set_token_remap(&self, chain: Chain) {
+        let mut all_maps = write_token_remaps();
+        let token_remap = all_maps.entry(chain).or_default();
 
         // Clear the existing static token remapping so that it can be completely
         // overwritten
@@ -68,8 +69,9 @@ impl TokenRemap {
 
     /// Set the static mapping of token addresses to decimals using the token
     /// mapping
-    pub fn set_decimal_map(&self) {
-        let mut decimals_map = write_token_decimals_map();
+    pub fn set_decimal_map(&self, chain: Chain) {
+        let mut all_maps = write_token_decimals_map();
+        let decimals_map = all_maps.entry(chain).or_default();
 
         // Clear the existing decimal mapping so that it can be completely overwritten
         decimals_map.clear();
@@ -117,10 +119,10 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     lowercase_addresses(&mut map);
 
     // Update the static token remap with the given one
-    map.set_token_remap();
+    map.set_token_remap(chain);
 
     // Update the static decimals map with the decimals in the token remap
-    map.set_decimal_map();
+    map.set_decimal_map(chain);
 
     // Update the static exchange support map with the supported exchanges
     // in the token remap
@@ -157,8 +159,8 @@ fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
 mod test {
     use std::{collections::HashMap, fs::File};
 
-    use common::types::token::read_token_remap;
-    use darkpool_client::constants::Chain;
+    use common::types::chain::Chain;
+    use common::types::token::read_token_remaps;
     use tempfile::{tempdir, TempDir};
 
     use crate::token_remaps::parse_remap_from_file;
@@ -218,17 +220,20 @@ mod test {
 
         // Setup the token remap
         setup_token_remaps(Some(path), Chain::Devnet).unwrap();
+        let chain = Chain::Devnet;
 
         // Check the remap
         let token = &remap.tokens[0];
-        let token_remap = read_token_remap();
-        assert_eq!(token_remap.get_by_left(&token.address), Some(&token.ticker));
+        let token_remaps = read_token_remaps();
+        let chain_map = token_remaps.get(&chain).unwrap();
+        assert_eq!(chain_map.get_by_left(&token.address), Some(&token.ticker));
 
         // Check the remap in a separate thread
         let handle = std::thread::spawn(move || {
             let token = &remap.tokens[0];
-            let token_remap = read_token_remap();
-            assert_eq!(token_remap.get_by_left(&token.address), Some(&token.ticker));
+            let token_remaps = read_token_remaps();
+            let chain_map = token_remaps.get(&chain).unwrap();
+            assert_eq!(chain_map.get_by_left(&token.address), Some(&token.ticker));
         });
         handle.join().unwrap();
     }
