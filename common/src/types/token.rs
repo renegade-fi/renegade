@@ -121,8 +121,12 @@ impl Token {
 
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
-        let chain = default_chain().expect("multiple chains; use from_ticker_on");
-        Self::from_ticker_on(chain, ticker)
+        let chain = default_chain()
+            .expect("no default chain configured; use ChainToken for multi-chain support");
+        let remaps = read_token_remaps();
+        let bimap = remaps.get(&chain).expect("chain not in remaps");
+        let addr = bimap.get_by_right(ticker).expect("ticker not in chain remap").to_string();
+        Self { addr }
     }
 
     /// Returns the ERC-20 address.
@@ -140,32 +144,21 @@ impl Token {
         self.addr.parse::<Address>().expect("invalid token address in mapping")
     }
 
-    /// Returns the ERC-20 ticker by scanning all chain remaps. Assumes each
-    /// address is globally unique and maps to one ticker; if an address
-    /// appears on multiple chains, it maps to the same ticker. Returns None
-    /// if the address isn't found in any chain.
+    /// Returns the ERC-20 ticker by scanning the default chain's remaps.
     pub fn get_ticker(&self) -> Option<String> {
+        let chain = default_chain().expect("multiple chains configured; use ChainToken");
         let remaps = read_token_remaps();
-        for bimap in remaps.values() {
-            if let Some(ticker) = bimap.get_by_left(&self.get_addr()).cloned() {
-                return Some(ticker);
-            }
-        }
-        None
+        let bimap = remaps.get(&chain).expect("chain not in remaps");
+        bimap.get_by_left(&self.get_addr()).cloned()
     }
 
-    /// Returns the ERC-20 `decimals` field by scanning all chain decimals maps.
-    /// Assumes each address is globally unique and maps to one decimals
-    /// value; if an address appears on multiple chains, it maps to the same
-    /// decimals. Returns None if the address isn't found in any chain.
+    /// Returns the ERC-20 `decimals` field by scanning the default chain's
+    /// decimals.
     pub fn get_decimals(&self) -> Option<u8> {
+        let chain = default_chain().expect("multiple chains configured; use ChainToken");
         let decimals_map = read_token_decimals_map();
-        for map in decimals_map.values() {
-            if let Some(decimals) = map.get(&self.get_addr()).copied() {
-                return Some(decimals);
-            }
-        }
-        None
+        let map = decimals_map.get(&chain).expect("chain not in decimals map");
+        map.get(&self.get_addr()).copied()
     }
 
     /// Returns true if the Token has a Renegade-native ticker.
@@ -220,24 +213,6 @@ impl Token {
         let decimal_adjustment = 10u128.pow(decimals as u32);
         amount as f64 / decimal_adjustment as f64
     }
-
-    /// Given an ERC-20 ticker and a chain, returns a new Token.
-    pub fn from_ticker_on(chain: Chain, ticker: &str) -> Self {
-        let remaps = read_token_remaps();
-        let bimap = remaps.get(&chain).expect("chain not in remaps");
-        let addr = bimap.get_by_right(ticker).expect("ticker not in chain remap").to_string();
-        Token { addr }
-    }
-
-    /// Given a chain, returns the ERC-20 ticker for the token, if available.
-    pub fn get_ticker_on(&self, chain: Chain) -> Option<String> {
-        read_token_remaps().get(&chain).and_then(|b| b.get_by_left(&self.get_addr()).cloned())
-    }
-
-    /// Given a chain, returns the ERC-20 decimals for the token, if available.
-    pub fn get_decimals_on(&self, chain: Chain) -> Option<u8> {
-        read_token_decimals_map().get(&chain).and_then(|m| m.get(&self.get_addr()).copied())
-    }
 }
 
 // -----------
@@ -249,22 +224,15 @@ pub fn read_token_remaps() -> RwLockReadGuard<'static, HashMap<Chain, BiMap<Stri
     TOKEN_REMAPS_BY_CHAIN.read().expect("Token remaps lock poisoned")
 }
 
-/// Get all tokens in the remap
+/// Get all tokens for the default chain.
 ///
-/// If there is a default chain, return all tokens on that chain. Otherwise,
-/// return all tokens across all chains.
+/// Panics if multiple chains are configured; use `ChainToken` to enumerate
+/// across chains.
 pub fn get_all_tokens() -> Vec<Token> {
-    if let Some(chain) = default_chain() {
-        read_token_remaps().get(&chain).map_or(Vec::new(), |bimap| {
-            bimap.left_values().map(|addr| Token::from_addr(addr)).collect()
-        })
-    } else {
-        read_token_remaps()
-            .values()
-            .flat_map(|bimap| bimap.left_values())
-            .map(|addr| Token::from_addr(addr))
-            .collect()
-    }
+    let chain = default_chain().expect("multiple chains configured; use ChainToken");
+    read_token_remaps().get(&chain).map_or(Vec::new(), |bimap| {
+        bimap.left_values().map(|addr| Token::from_addr(addr)).collect()
+    })
 }
 
 /// Returns a read lock quard to the per-chain decimals map
