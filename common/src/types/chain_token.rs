@@ -4,8 +4,7 @@ use util::hex::biguint_to_hex_addr;
 
 use super::{
     chain::Chain,
-    exchange::Exchange,
-    token::{read_token_remaps, Token, USDT_TICKER, USD_TICKER},
+    token::{read_token_remaps, Token},
 };
 
 impl Token {
@@ -36,26 +35,12 @@ impl Token {
     pub fn from_ticker_on_chain(ticker: &str, chain: Chain) -> Self {
         let all_maps = read_token_remaps();
         let token_map = all_maps.get(&chain).expect("Chain has not been setup");
-        let addr = token_map.get_by_right(ticker).expect("Ticker could not be found on chain; try a different chain or specify unnamed token by ERC-20 address using from_addr instead.");
+        let addr = token_map.get_by_right(ticker).expect("Ticker could not be found on chain");
         Self { addr: addr.to_string(), chain }
     }
 
     /// Returns the chain the token is on.
     pub fn get_chain(&self) -> Chain {
         self.chain
-    }
-}
-
-/// Returns the default stable quote asset for the given exchange.
-pub fn default_exchange_stable_on_chain(exchange: &Exchange, chain: Chain) -> Token {
-    match exchange {
-        Exchange::Binance => Token::from_ticker_on_chain(USDT_TICKER, chain),
-        Exchange::Coinbase => Token::from_ticker_on_chain(USD_TICKER, chain),
-        Exchange::Kraken => Token::from_ticker_on_chain(USD_TICKER, chain),
-        Exchange::Okx => Token::from_ticker_on_chain(USDT_TICKER, chain),
-        _ => panic!(
-            "No default stable quote asset for exchange: {:?} on chain: {:?}",
-            exchange, chain
-        ),
     }
 }

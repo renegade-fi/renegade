@@ -274,12 +274,12 @@ pub fn is_pair_named(base: &Token, quote: &Token) -> bool {
 }
 
 /// Returns the default stable quote asset for the given exchange.
-pub fn default_exchange_stable(exchange: &Exchange) -> Token {
+pub fn default_exchange_stable(exchange: &Exchange) -> &str {
     match exchange {
-        Exchange::Binance => Token::from_ticker(USDT_TICKER),
-        Exchange::Coinbase => Token::from_ticker(USD_TICKER),
-        Exchange::Kraken => Token::from_ticker(USD_TICKER),
-        Exchange::Okx => Token::from_ticker(USDT_TICKER),
+        Exchange::Binance => USDT_TICKER,
+        Exchange::Coinbase => USD_TICKER,
+        Exchange::Kraken => USD_TICKER,
+        Exchange::Okx => USDT_TICKER,
         _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
     }
 }
