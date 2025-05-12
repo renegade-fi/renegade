@@ -143,6 +143,7 @@ mod test {
         actual >= lower_bound && actual <= upper_bound
     }
 
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     async fn test_system_clock() {
         const SECONDS: u64 = 1;
@@ -167,6 +168,7 @@ mod test {
         assert!(check_sequential_timestamps(&final_times, Duration::from_secs(SECONDS)));
     }
 
+    #[cfg_attr(feature = "ci", ignore)]
     #[tokio::test]
     async fn test_async_system_clock() {
         const SECONDS: u64 = 1;

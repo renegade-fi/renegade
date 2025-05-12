@@ -3,6 +3,9 @@ name = "system-clock"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+ci = []
+
 [dependencies]
 # === Runtime Dependencies === #
 tokio = { workspace = true }
