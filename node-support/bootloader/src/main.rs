@@ -74,6 +74,8 @@ const CONFIG_FEE_WHITELIST: &str = "relayer-fee-whitelist";
 const CONFIG_P2P_KEY: &str = "p2p-key";
 /// The gas wallet in the relayer config
 const CONFIG_GAS_WALLET: &str = "private-key";
+/// The bootstrap mode flag in the relayer config
+const CONFIG_BOOTSTRAP_MODE: &str = "bootstrap-mode";
 
 /// The name of the file in the s3 bucket
 const WHITELIST_FILE_NAME: &str = "fee-whitelist.json";
@@ -90,6 +92,11 @@ const EVENT_EXPORT_SIDECAR_BIN: &str = "/bin/event-export-sidecar";
 /// The location of the relayer binary
 const RELAYER_BIN: &str = "/bin/renegade-relayer";
 
+/// A type alias for the parsed config
+///
+/// Mapping from key to toml value
+type ConfigContents = HashMap<String, Value>;
+
 // --- Main --- //
 
 #[tokio::main]
@@ -102,8 +109,8 @@ async fn main() -> Result<(), String> {
     // Fetch the config, modify it, and download the most recent snapshot
     let whitelist = fetch_fee_whitelist(&s3_client).await?;
     fetch_config(&s3_client).await?;
-    modify_config(whitelist).await?;
-    download_snapshot(&s3_client).await?;
+    let cfg = modify_config(whitelist).await?;
+    download_snapshot(&s3_client, &cfg).await?;
 
     // Start the snapshot sidecar, event export sidecar, and the relayer
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
@@ -153,12 +160,14 @@ async fn fetch_config(s3: &S3Client) -> Result<(), String> {
 }
 
 /// Modify the config using environment variables set at runtime
-async fn modify_config(whitelist_path: Option<String>) -> Result<(), String> {
+///
+/// Returns the modified config's contents
+async fn modify_config(whitelist_path: Option<String>) -> Result<ConfigContents, String> {
     // Read the config file
     let config_content = fs::read_to_string(CONFIG_PATH)
         .await
         .map_err(raw_err_str!("Failed to read config file: {}"))?;
-    let mut config: HashMap<String, Value> =
+    let mut config: ConfigContents =
         toml::from_str(&config_content).map_err(raw_err_str!("Failed to parse config: {}"))?;
 
     // Setup the peer id and register a gas wallet under this peer id
@@ -193,7 +202,9 @@ async fn modify_config(whitelist_path: Option<String>) -> Result<(), String> {
         toml::to_string(&config).map_err(raw_err_str!("Failed to serialize config: {}"))?;
     fs::write(CONFIG_PATH, new_config_content)
         .await
-        .map_err(raw_err_str!("Failed to write config file: {}"))
+        .map_err(raw_err_str!("Failed to write config file: {}"))?;
+
+    Ok(config)
 }
 
 /// Fetch the fee whitelist file from s3
@@ -215,7 +226,12 @@ async fn fetch_fee_whitelist(s3: &S3Client) -> Result<Option<String>, String> {
 }
 
 /// Download the most recent snapshot
-async fn download_snapshot(s3_client: &S3Client) -> Result<(), String> {
+async fn download_snapshot(s3_client: &S3Client, cfg: &ConfigContents) -> Result<(), String> {
+    if in_bootstrap_mode(cfg) {
+        info!("skipping snapshot download in bootstrap mode");
+        return Ok(());
+    }
+
     info!("downloading latest snapshot...");
     let bucket = read_env_var::<String>(ENV_SNAP_BUCKET)?;
 
@@ -263,6 +279,11 @@ where
         .map_err(raw_err_str!("{var_name} not set: {}"))?
         .parse::<T>()
         .map_err(|e| format!("Failed to read env var {}: {:?}", var_name, e))
+}
+
+/// Return whether the relayer is in bootstrap mode
+fn in_bootstrap_mode(config: &ConfigContents) -> bool {
+    config.get(CONFIG_BOOTSTRAP_MODE).map(|val| val.as_bool().unwrap_or(false)).unwrap_or(false)
 }
 
 /// Get the p2p key from the relayer config
