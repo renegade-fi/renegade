@@ -33,6 +33,7 @@ test-helpers = { workspace = true, features = ["mpc-network", "mocks"] }
 util = { workspace = true }
 
 # === Misc Dependencies === #
+alloy = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 reqwest = { version = "0.11", features = ["blocking"] }
 serde = { workspace = true }
