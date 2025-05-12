@@ -293,3 +293,14 @@ pub fn default_chain() -> Option<Chain> {
         None
     }
 }
+
+/// Returns the set of Exchanges that support this token.
+pub fn supported_exchanges(ticker: &str) -> HashSet<Exchange> {
+    let mut supported_exchanges: HashSet<Exchange> = read_exchange_support()
+        .get(ticker)
+        .map(|exchanges| exchanges.keys().copied().collect())
+        .unwrap_or_default();
+    supported_exchanges.insert(Exchange::UniswapV3);
+
+    supported_exchanges
+}
