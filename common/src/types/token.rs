@@ -44,6 +44,19 @@ use super::exchange::Exchange;
 /// token's price from that exchange
 pub type ExchangeSupport = HashMap<Exchange, String>;
 
+/// A type alias representing the mapping from a chain to a mapping from the
+/// token address to the ticker of the token
+pub type TokenRemapsByChain = HashMap<Chain, BiMap<String, String>>;
+
+/// A type alias representing the mapping from a chain to a mapping from the
+/// token address to the number of decimals the token uses (fixed-point offset)
+pub type TokenDecimalsByChain = HashMap<Chain, HashMap<String, u8>>;
+
+/// A type alias representing the mapping from a token ticker to the set of
+/// exchanges that list the token, along with the the ticker used to fetch the
+/// token's price from the exchange
+pub type ExchangeSupportMap = HashMap<String, ExchangeSupport>;
+
 // ----------------
 // | Quote Tokens |
 // ----------------
@@ -64,17 +77,17 @@ pub const USD_TICKER: &str = "USD";
 pub const STABLECOIN_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
 
 /// Maps a chain to a mapping from the token address to the ticker of the token
-pub static TOKEN_REMAPS_BY_CHAIN: RwStatic<HashMap<Chain, BiMap<String, String>>> =
+pub static TOKEN_REMAPS_BY_CHAIN: RwStatic<TokenRemapsByChain> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 
 /// Maps a chain to a mapping from the token address to the number of decimals
 /// the token uses (fixed-point offset)
-pub static DECIMALS_BY_CHAIN: RwStatic<HashMap<Chain, HashMap<String, u8>>> =
+pub static DECIMALS_BY_CHAIN: RwStatic<TokenDecimalsByChain> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 
 /// The mapping from ERC-20 ticker to the set of exchanges that list the token,
 /// along with the the ticker used to fetch the token's price from the exchange
-pub static EXCHANGE_SUPPORT_MAP: RwStatic<HashMap<String, ExchangeSupport>> =
+pub static EXCHANGE_SUPPORT_MAP: RwStatic<ExchangeSupportMap> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20
@@ -95,6 +108,11 @@ impl Display for Token {
 }
 
 impl Token {
+    /// Create a new Token from an ERC-20 contract address
+    pub fn new(addr: &str, chain: Chain) -> Self {
+        Self { addr: String::from(addr).to_lowercase(), chain }
+    }
+
     /// Get the USDC token
     pub fn usdc() -> Self {
         Self::from_ticker(USDC_TICKER)
@@ -228,7 +246,7 @@ impl Token {
 // -----------
 
 /// Returns a read lock guard to the per-chain token remaps
-pub fn read_token_remaps<'a>() -> RwLockReadGuard<'a, HashMap<Chain, BiMap<String, String>>> {
+pub fn read_token_remaps<'a>() -> RwLockReadGuard<'a, TokenRemapsByChain> {
     TOKEN_REMAPS_BY_CHAIN.read().expect("Token remaps lock poisoned")
 }
 
@@ -243,27 +261,27 @@ pub fn get_all_tokens() -> Vec<Token> {
 }
 
 /// Returns a read lock quard to the per-chain decimals map
-pub fn read_token_decimals_map<'a>() -> RwLockReadGuard<'a, HashMap<Chain, HashMap<String, u8>>> {
+pub fn read_token_decimals_map<'a>() -> RwLockReadGuard<'a, TokenDecimalsByChain> {
     DECIMALS_BY_CHAIN.read().expect("Decimals map lock poisoned")
 }
 
 /// Returns a read lock quard to the exchange support map
-pub fn read_exchange_support<'a>() -> RwLockReadGuard<'a, HashMap<String, ExchangeSupport>> {
+pub fn read_exchange_support<'a>() -> RwLockReadGuard<'a, ExchangeSupportMap> {
     EXCHANGE_SUPPORT_MAP.read().expect("Exchange support map lock poisoned")
 }
 
 /// Returns a write lock guard to the per-chain token remaps
-pub fn write_token_remaps<'a>() -> RwLockWriteGuard<'a, HashMap<Chain, BiMap<String, String>>> {
+pub fn write_token_remaps<'a>() -> RwLockWriteGuard<'a, TokenRemapsByChain> {
     TOKEN_REMAPS_BY_CHAIN.write().expect("Token remaps lock poisoned")
 }
 
 /// Returns a write lock quard to the per-chain decimals map
-pub fn write_token_decimals_map<'a>() -> RwLockWriteGuard<'a, HashMap<Chain, HashMap<String, u8>>> {
+pub fn write_token_decimals_map<'a>() -> RwLockWriteGuard<'a, TokenDecimalsByChain> {
     DECIMALS_BY_CHAIN.write().expect("Decimals map lock poisoned")
 }
 
 /// Returns a write lock quard to the exchange support map
-pub fn write_exchange_support<'a>() -> RwLockWriteGuard<'a, HashMap<String, ExchangeSupport>> {
+pub fn write_exchange_support<'a>() -> RwLockWriteGuard<'a, ExchangeSupportMap> {
     EXCHANGE_SUPPORT_MAP.write().expect("Exchange support map lock poisoned")
 }
 
