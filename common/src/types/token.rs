@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
+    hash::{Hash, Hasher},
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use util::{
@@ -90,9 +91,12 @@ pub static DECIMALS_BY_CHAIN: RwStatic<TokenDecimalsByChain> =
 pub static EXCHANGE_SUPPORT_MAP: RwStatic<ExchangeSupportMap> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 
+/// Holds the "default" chain once it's been configured.
+pub static DEFAULT_CHAIN: RwStatic<Option<Chain>> = RwStatic::new(|| RwLock::new(None));
+
 /// The core Token abstraction, used for unambiguous definition of an ERC-20
 /// asset.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Token {
     /// The ERC-20 address of the Token.
     #[serde(deserialize_with = "deserialize_str_lower", serialize_with = "serialize_str_lower")]
@@ -130,30 +134,25 @@ impl Token {
 
     /// Given an ERC-20 contract address, returns a new Token
     pub fn from_addr(addr: &str) -> Self {
-        let chain =
-            default_chain().expect("Multiple chains configured; use from_addr_on_chain instead.");
-        Self { addr: String::from(addr).to_lowercase(), chain }
+        Self::new(addr, default_chain())
     }
 
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
-        let chain = default_chain()
-            .expect("Multiple chains configured; use from_addr_biguint_on_chain instead.");
-        Self { addr: biguint_to_hex_addr(addr).to_lowercase(), chain }
+        Self::new(&biguint_to_hex_addr(addr), default_chain())
     }
 
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
-        let chain =
-            default_chain().expect("Multiple chains configured; use from_ticker_on_chain instead.");
+        let chain = default_chain();
         let all_maps = read_token_remaps();
         let token_map = all_maps.get(&chain).expect("Chain has not been setup");
         let addr = token_map
             .get_by_right(ticker)
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
 
-        Self { addr: addr.to_string(), chain }
+        Self::new(addr, chain)
     }
 
     /// Returns the ERC-20 address.
@@ -176,16 +175,14 @@ impl Token {
     /// assets.
     pub fn get_ticker(&self) -> Option<String> {
         let all_remaps = read_token_remaps();
-        let token_remap = all_remaps.get(&self.chain).expect("Chain has not been setup");
-        token_remap.get_by_left(&self.get_addr()).cloned()
+        all_remaps.get(&self.chain).and_then(|remap| remap.get_by_left(&self.get_addr()).cloned())
     }
 
     /// Returns the ERC-20 `decimals` field by scanning the default chain's
     /// decimals.
     pub fn get_decimals(&self) -> Option<u8> {
         let all_maps = read_token_decimals_map();
-        let addr_decimals_map = all_maps.get(&self.chain).expect("Chain has not been setup");
-        addr_decimals_map.get(&self.get_addr()).copied()
+        all_maps.get(&self.chain).and_then(|map| map.get(&self.get_addr()).copied())
     }
     /// Returns true if the Token has a Renegade-native ticker.
     pub fn is_named(&self) -> bool {
@@ -238,6 +235,20 @@ impl Token {
         let decimals = self.get_decimals().unwrap_or_default();
         let decimal_adjustment = 10u128.pow(decimals as u32);
         amount as f64 / decimal_adjustment as f64
+    }
+}
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr.to_lowercase() == other.addr.to_lowercase()
+    }
+}
+
+impl Eq for Token {}
+
+impl Hash for Token {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.addr.to_lowercase().hash(state);
     }
 }
 
@@ -301,15 +312,20 @@ pub fn default_exchange_stable(exchange: &Exchange) -> &str {
         _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
     }
 }
-
-/// Returns the configured chain if exactly one is present
-pub fn default_chain() -> Option<Chain> {
-    let remaps = read_token_remaps();
-    if remaps.len() == 1 {
-        remaps.keys().next().copied()
-    } else {
-        None
+/// Set the default chain. Subsequent calls are no-ops.
+pub fn set_default_chain(chain: Chain) {
+    let mut guard: RwLockWriteGuard<'_, Option<Chain>> =
+        DEFAULT_CHAIN.write().expect("DEFAULT_CHAIN lock poisoned");
+    if guard.is_none() {
+        *guard = Some(chain);
     }
+}
+
+/// Return the default Chain, or panic if none has ever been set.
+pub fn default_chain() -> Chain {
+    let guard: RwLockReadGuard<'_, Option<Chain>> =
+        DEFAULT_CHAIN.read().expect("DEFAULT_CHAIN lock poisoned");
+    guard.expect("no default chain configured")
 }
 
 /// Returns the set of Exchanges that support this token.

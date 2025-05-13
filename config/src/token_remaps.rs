@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use common::types::{
     chain::Chain,
     exchange::Exchange,
-    token::{write_exchange_support, write_token_decimals_map, write_token_remaps, USD_TICKER},
+    token::{
+        set_default_chain, write_exchange_support, write_token_decimals_map, write_token_remaps,
+        USD_TICKER,
+    },
 };
 use serde::{Deserialize, Serialize};
 use util::raw_err_str;
@@ -127,6 +130,9 @@ pub fn setup_token_remaps(remap_file: Option<String>, chain: Chain) -> Result<()
     // Update the static exchange support map with the supported exchanges
     // in the token remap
     map.set_exchange_support_map();
+
+    // Set the default chain, if it has not already been set
+    set_default_chain(chain);
 
     Ok(())
 }
