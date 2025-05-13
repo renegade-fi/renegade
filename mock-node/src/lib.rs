@@ -537,12 +537,12 @@ impl MockNodeController {
 
 #[cfg(test)]
 mod test {
+    use alloy::signers::local::LocalSigner;
     use api_server::http::PING_ROUTE;
     use config::RelayerConfig;
     use external_api::{http::PingResponse, EmptyRequestResponse};
     use reqwest::Method;
     use state::test_helpers::tmp_db_path;
-    use test_helpers::arbitrum::get_devnet_key;
 
     use crate::MockNodeController;
 
@@ -551,9 +551,10 @@ mod test {
     #[ignore]
     fn test_ping_mock() {
         let db_path = tmp_db_path();
+        let private_key = LocalSigner::random();
         let conf = RelayerConfig {
             rpc_url: Some("http://localhost:1234".to_string()),
-            private_key: get_devnet_key(),
+            private_key,
             raft_snapshot_path: db_path.clone(),
             db_path,
             ..Default::default()

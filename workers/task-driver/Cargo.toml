@@ -5,9 +5,10 @@ edition = "2021"
 
 [features]
 integration = [
-    "state/mocks",
     "common/mocks",
     "darkpool-client/integration",
+    "state/mocks",
+    "test-helpers/arbitrum",
     "util/mocks",
 ]
 
@@ -66,7 +67,7 @@ lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }
-test-helpers = { workspace = true, features = ["arbitrum"] }
+test-helpers = { workspace = true }
 util = { workspace = true, features = [
     "blockchain",
     "concurrency",

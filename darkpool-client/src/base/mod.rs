@@ -420,8 +420,7 @@ impl DarkpoolImpl for BaseDarkpool {
                 let call = processMalleableAtomicMatchSettleCall::abi_decode(calldata)?;
                 let bounded_res = call.matchSettleStatement.matchResult.to_circuit_type()?;
                 let base_amount = u256_to_amount(call.baseAmount)?;
-                let external_res = bounded_res.to_external_match_result(base_amount);
-                external_res
+                bounded_res.to_external_match_result(base_amount)
             },
             _ => return Ok(None),
         };

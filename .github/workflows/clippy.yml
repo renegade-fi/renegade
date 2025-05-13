@@ -5,6 +5,9 @@ name: Clippy Check
 jobs:
   clippy-check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chain: [arbitrum, base]
     steps:
       - uses: actions/checkout@v1
       - name: Install Protoc
@@ -18,7 +21,8 @@ jobs:
           args: >
             --tests
             --benches
-            --all-features -- 
+            --workspace
+            --features "${{ matrix.chain }}" --
             -D warnings 
             -D unsafe_code 
             -D missing_docs
