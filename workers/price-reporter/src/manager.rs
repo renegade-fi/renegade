@@ -251,7 +251,7 @@ impl SharedPriceStreamStates {
     ) -> Option<(Price, u64)> {
         let states = self.0.read().await;
 
-        let default_stable = Token::from_ticker(default_exchange_stable(&exchange));
+        let default_stable = default_exchange_stable(&exchange);
 
         // Get the base / default stable price
         let (base_price, base_ts) =
@@ -409,7 +409,7 @@ pub fn required_streams_for_pair(
     for exchange in exchanges {
         let pairs =
             if eligible_for_stable_quote_conversion(requested_base, requested_quote, &exchange) {
-                let default_stable = Token::from_ticker(default_exchange_stable(&exchange));
+                let default_stable = default_exchange_stable(&exchange);
                 vec![
                     (exchange, requested_base.clone(), default_stable.clone()),
                     (exchange, requested_quote.clone(), default_stable),
@@ -431,7 +431,5 @@ pub fn eligible_for_stable_quote_conversion(
     quote: &Token,
     exchange: &Exchange,
 ) -> bool {
-    !base.is_stablecoin()
-        && quote.is_stablecoin()
-        && quote != &Token::from_ticker(default_exchange_stable(exchange))
+    !base.is_stablecoin() && quote.is_stablecoin() && quote != &default_exchange_stable(exchange)
 }

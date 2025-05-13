@@ -165,8 +165,7 @@ fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
 mod test {
     use std::{collections::HashMap, fs::File};
 
-    use common::types::chain::Chain;
-    use common::types::token::read_token_remaps;
+    use common::types::{chain::Chain, token::read_token_remaps};
     use tempfile::{tempdir, TempDir};
 
     use crate::token_remaps::parse_remap_from_file;

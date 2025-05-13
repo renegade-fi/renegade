@@ -137,20 +137,41 @@ impl Token {
         Self::new(addr, default_chain())
     }
 
+    /// Given an ERC-20 contract address, returns a new Token on a specific
+    /// chain.
+    pub fn from_addr_on_chain(addr: &str, chain: Chain) -> Self {
+        Self::new(addr, chain)
+    }
+
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
         Self::new(&biguint_to_hex_addr(addr), default_chain())
     }
 
+    /// Given an ERC-20 contract address represented as a `BigUint`, returns a
+    /// Token
+    pub fn from_addr_biguint_on_chain(addr: &BigUint, chain: Chain) -> Self {
+        Self::new(&biguint_to_hex_addr(addr), chain)
+    }
+
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
         let chain = default_chain();
-        let all_maps = read_token_remaps();
-        let token_map = all_maps.get(&chain).expect("Chain has not been setup");
+        let remaps = read_token_remaps();
+        let token_map = remaps.get(&chain).expect("Chain has not been setup");
         let addr = token_map
             .get_by_right(ticker)
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
+
+        Self::new(addr, chain)
+    }
+
+    /// Given an ERC-20 ticker, returns a new Token on a specific chain.
+    pub fn from_ticker_on_chain(ticker: &str, chain: Chain) -> Self {
+        let remaps = read_token_remaps();
+        let token_map = remaps.get(&chain).expect("Chain has not been setup");
+        let addr = token_map.get_by_right(ticker).expect("Ticker could not be found on chain");
 
         Self::new(addr, chain)
     }
@@ -174,16 +195,22 @@ impl Token {
     /// Tickers do not have any ERC-20 ticker, as we support long-tail
     /// assets.
     pub fn get_ticker(&self) -> Option<String> {
-        let all_remaps = read_token_remaps();
-        all_remaps.get(&self.chain).and_then(|remap| remap.get_by_left(&self.get_addr()).cloned())
+        let remaps = read_token_remaps();
+        remaps.get(&self.chain).and_then(|remap| remap.get_by_left(&self.get_addr()).cloned())
     }
 
     /// Returns the ERC-20 `decimals` field by scanning the default chain's
     /// decimals.
     pub fn get_decimals(&self) -> Option<u8> {
-        let all_maps = read_token_decimals_map();
-        all_maps.get(&self.chain).and_then(|map| map.get(&self.get_addr()).copied())
+        let decimals_map = read_token_decimals_map();
+        decimals_map.get(&self.chain).and_then(|map| map.get(&self.get_addr()).copied())
     }
+
+    /// Returns the chain the token is on.
+    pub fn get_chain(&self) -> Chain {
+        self.chain
+    }
+
     /// Returns true if the Token has a Renegade-native ticker.
     pub fn is_named(&self) -> bool {
         self.get_ticker().is_some()
@@ -303,15 +330,16 @@ pub fn is_pair_named(base: &Token, quote: &Token) -> bool {
 }
 
 /// Returns the default stable quote asset for the given exchange.
-pub fn default_exchange_stable(exchange: &Exchange) -> &str {
+pub fn default_exchange_stable(exchange: &Exchange) -> Token {
     match exchange {
-        Exchange::Binance => USDT_TICKER,
-        Exchange::Coinbase => USD_TICKER,
-        Exchange::Kraken => USD_TICKER,
-        Exchange::Okx => USDT_TICKER,
+        Exchange::Binance => Token::from_ticker(USDT_TICKER),
+        Exchange::Coinbase => Token::from_ticker(USD_TICKER),
+        Exchange::Kraken => Token::from_ticker(USD_TICKER),
+        Exchange::Okx => Token::from_ticker(USDT_TICKER),
         _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
     }
 }
+
 /// Set the default chain. Subsequent calls are no-ops.
 pub fn set_default_chain(chain: Chain) {
     let mut guard: RwLockWriteGuard<'_, Option<Chain>> =
@@ -326,15 +354,4 @@ pub fn default_chain() -> Chain {
     let guard: RwLockReadGuard<'_, Option<Chain>> =
         DEFAULT_CHAIN.read().expect("DEFAULT_CHAIN lock poisoned");
     guard.expect("no default chain configured")
-}
-
-/// Returns the set of Exchanges that support this token.
-pub fn supported_exchanges(ticker: &str) -> HashSet<Exchange> {
-    let mut supported_exchanges: HashSet<Exchange> = read_exchange_support()
-        .get(ticker)
-        .map(|exchanges| exchanges.keys().copied().collect())
-        .unwrap_or_default();
-    supported_exchanges.insert(Exchange::UniswapV3);
-
-    supported_exchanges
 }
