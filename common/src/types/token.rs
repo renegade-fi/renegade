@@ -342,7 +342,16 @@ pub fn default_exchange_stable(exchange: &Exchange) -> Token {
 
 /// Return the default Chain, or panic if none has ever been set
 pub fn default_chain() -> Chain {
-    *DEFAULT_CHAIN.get().expect("no default chain configured")
+    // Fetch the default chain if it's configured
+    let maybe_chain = DEFAULT_CHAIN.get().cloned();
+    if let Some(chain) = maybe_chain {
+        return chain;
+    }
+
+    // Otherwise, if only one chain is configured, use that
+    let chains = read_token_remaps();
+    assert!(chains.len() == 1, "No default chain configured, and multiple chains are configured");
+    *chains.keys().next().expect("No chains configured")
 }
 
 /// Set the default chain
