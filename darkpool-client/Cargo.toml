@@ -7,6 +7,7 @@ edition = "2021"
 default = []
 arbitrum = ["dep:serde_with", "dep:postcard"]
 base = ["dep:renegade-solidity-abi"]
+all-chains = ["arbitrum", "base"]
 integration = [
     "dep:rand",
     "circuit-types/test-helpers",

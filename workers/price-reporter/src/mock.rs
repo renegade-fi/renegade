@@ -44,18 +44,17 @@ const MOCK_TICKER_NAMES: &[&str] = &[
 #[allow(unused_must_use)]
 pub fn setup_mock_token_remap() {
     // Setup the mock token map
-    let mut remaps = write_token_remaps();
-    let chain = Chain::Mainnet;
-    let token_map = remaps.entry(chain).or_default();
-
-    // Set the default chain
-    set_default_chain(chain);
-
+    let mut all_maps = write_token_remaps();
+    let chain = Chain::ArbitrumOne;
+    let token_map = all_maps.entry(chain).or_default();
+    token_map.clear();
     for (i, &ticker) in MOCK_TICKER_NAMES.iter().enumerate() {
         let addr = format!("{i:x}");
 
         token_map.insert(addr, ticker.to_string());
     }
+
+    set_default_chain(chain);
 }
 
 /// The mock price reporter, reports a constant price
