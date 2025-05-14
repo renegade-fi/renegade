@@ -71,7 +71,7 @@ impl OnChainEventListenerConfig {
         // Connect to the websocket
         let addr = self.websocket_addr.clone().unwrap();
         let conn = WsConnect::new(addr);
-        let provider = ProviderBuilder::new().on_ws(conn).await?;
+        let provider = ProviderBuilder::new().connect_ws(conn).await?;
         Ok(DynProvider::new(provider))
     }
 }

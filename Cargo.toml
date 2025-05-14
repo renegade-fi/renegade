@@ -67,10 +67,10 @@ futures = "0.3"
 tokio = { version = "1" }
 
 # === Ethereum Libraries === #
-alloy = "0.14"
-alloy-contract = "0.14"
-alloy-primitives = "1.0.0"
-alloy-sol-types = "1.0.0"
+alloy = "1.0.1"
+alloy-contract = "1.0.1"
+alloy-primitives = "1.0.1"
+alloy-sol-types = "1.0.1"
 
 # === Workspace Dependencies === #
 darkpool-client = { path = "darkpool-client" }
