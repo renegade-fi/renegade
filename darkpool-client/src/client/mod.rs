@@ -80,7 +80,7 @@ impl DarkpoolClientConfig {
             .filler(GasFiller)
             .filler(BlobGasFiller)
             .wallet(key)
-            .on_http(url);
+            .connect_http(url);
         provider.client().set_poll_interval(self.block_polling_interval);
 
         Ok(DynProvider::new(provider))
