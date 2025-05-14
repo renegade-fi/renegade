@@ -26,14 +26,14 @@ const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 ///
 /// Contains a series of token info objects
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-struct TokenRemap {
+pub struct TokenRemap {
     /// The token information in the remap file
     tokens: Vec<TokenInfo>,
 }
 
 /// The token info type
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-struct TokenInfo {
+pub struct TokenInfo {
     /// The name of the token
     name: String,
     /// The token's ticker
@@ -145,7 +145,7 @@ fn parse_remap_from_file(file_path: String) -> Result<TokenRemap, String> {
 }
 
 /// Pull the token remap from the repo
-fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
+pub fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
     let url = format!("{}{}.json", REMAP_BASE_URL, chain);
     let resp =
         reqwest::blocking::get(url).map_err(raw_err_str!("Failed to fetch remap from repo: {}"))?;
