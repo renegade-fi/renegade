@@ -23,7 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Display},
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    hash::{Hash, Hasher},
+    sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 use util::{
     concurrency::RwStatic,
@@ -31,6 +32,7 @@ use util::{
     serde::{deserialize_str_lower, serialize_str_lower},
 };
 
+use super::chain::Chain;
 use super::exchange::Exchange;
 
 // ---------
@@ -42,6 +44,19 @@ use super::exchange::Exchange;
 /// The type is a mapping from exchanges to the ticker used to fetch the
 /// token's price from that exchange
 pub type ExchangeSupport = HashMap<Exchange, String>;
+
+/// A type alias representing the mapping from a chain to a mapping from the
+/// token address to the ticker of the token
+pub type TokenRemapsByChain = HashMap<Chain, BiMap<String, String>>;
+
+/// A type alias representing the mapping from a chain to a mapping from the
+/// token address to the number of decimals the token uses (fixed-point offset)
+pub type TokenDecimalsByChain = HashMap<Chain, HashMap<String, u8>>;
+
+/// A type alias representing the mapping from a token ticker to the set of
+/// exchanges that list the token, along with the the ticker used to fetch the
+/// token's price from the exchange
+pub type ExchangeSupportMap = HashMap<String, ExchangeSupport>;
 
 // ----------------
 // | Quote Tokens |
@@ -62,28 +77,32 @@ pub const USD_TICKER: &str = "USD";
 /// be invoked if they are the quote
 pub const STABLECOIN_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
 
-/// The token remapping for the given environment, maps from the token address
-/// to the ticker of the token
-pub static TOKEN_REMAPS: RwStatic<BiMap<String, String>> =
-    RwStatic::new(|| RwLock::new(BiMap::new()));
+/// Maps a chain to a mapping from the token address to the ticker of the token
+pub static TOKEN_REMAPS_BY_CHAIN: RwStatic<TokenRemapsByChain> =
+    RwStatic::new(|| RwLock::new(HashMap::new()));
 
-/// The decimal mapping for the given environment, maps from the token address
-/// to the number of decimals the token uses (fixed-point offset)
-pub static ADDR_DECIMALS_MAP: RwStatic<HashMap<String, u8>> =
+/// Maps a chain to a mapping from the token address to the number of decimals
+/// the token uses (fixed-point offset)
+pub static DECIMALS_BY_CHAIN: RwStatic<TokenDecimalsByChain> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
 
 /// The mapping from ERC-20 ticker to the set of exchanges that list the token,
 /// along with the the ticker used to fetch the token's price from the exchange
-pub static EXCHANGE_SUPPORT_MAP: RwStatic<HashMap<String, ExchangeSupport>> =
+pub static EXCHANGE_SUPPORT_MAP: RwStatic<ExchangeSupportMap> =
     RwStatic::new(|| RwLock::new(HashMap::new()));
+
+/// Holds the "default" chain once it's been configured.
+pub static DEFAULT_CHAIN: OnceLock<Chain> = OnceLock::new();
 
 /// The core Token abstraction, used for unambiguous definition of an ERC-20
 /// asset.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Token {
     /// The ERC-20 address of the Token.
     #[serde(deserialize_with = "deserialize_str_lower", serialize_with = "serialize_str_lower")]
     pub addr: String,
+    /// The chain the token is on.
+    pub chain: Chain,
 }
 
 impl Display for Token {
@@ -93,6 +112,11 @@ impl Display for Token {
 }
 
 impl Token {
+    /// Create a new Token from an ERC-20 contract address
+    pub fn new(addr: &str, chain: Chain) -> Self {
+        Self { addr: String::from(addr).to_lowercase(), chain }
+    }
+
     /// Get the USDC token
     pub fn usdc() -> Self {
         Self::from_ticker(USDC_TICKER)
@@ -110,23 +134,46 @@ impl Token {
 
     /// Given an ERC-20 contract address, returns a new Token
     pub fn from_addr(addr: &str) -> Self {
-        Self { addr: String::from(addr).to_lowercase() }
+        Self::new(addr, default_chain())
+    }
+
+    /// Given an ERC-20 contract address, returns a new Token on a specific
+    /// chain.
+    pub fn from_addr_on_chain(addr: &str, chain: Chain) -> Self {
+        Self::new(addr, chain)
     }
 
     /// Given an ERC-20 contract address represented as a `BigUint`, returns a
     /// Token
     pub fn from_addr_biguint(addr: &BigUint) -> Self {
-        Self { addr: biguint_to_hex_addr(addr).to_lowercase() }
+        Self::new(&biguint_to_hex_addr(addr), default_chain())
+    }
+
+    /// Given an ERC-20 contract address represented as a `BigUint`, returns a
+    /// Token
+    pub fn from_addr_biguint_on_chain(addr: &BigUint, chain: Chain) -> Self {
+        Self::new(&biguint_to_hex_addr(addr), chain)
     }
 
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
-        let token_remap = read_token_remap();
-        let addr = token_remap
+        let chain = default_chain();
+        let remaps = read_token_remaps();
+        let token_map = remaps.get(&chain).expect("Chain has not been setup");
+        let addr = token_map
             .get_by_right(ticker)
             .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
 
-        Self { addr: addr.to_string() }
+        Self::new(addr, chain)
+    }
+
+    /// Given an ERC-20 ticker, returns a new Token on a specific chain.
+    pub fn from_ticker_on_chain(ticker: &str, chain: Chain) -> Self {
+        let remaps = read_token_remaps();
+        let token_map = remaps.get(&chain).expect("Chain has not been setup");
+        let addr = token_map.get_by_right(ticker).expect("Ticker could not be found on chain");
+
+        Self::new(addr, chain)
     }
 
     /// Returns the ERC-20 address.
@@ -148,14 +195,20 @@ impl Token {
     /// Tickers do not have any ERC-20 ticker, as we support long-tail
     /// assets.
     pub fn get_ticker(&self) -> Option<String> {
-        let token_remap = read_token_remap();
-        token_remap.get_by_left(&self.get_addr()).cloned()
+        let remaps = read_token_remaps();
+        remaps.get(&self.chain).and_then(|remap| remap.get_by_left(&self.get_addr()).cloned())
     }
 
-    /// Returns the ERC-20 `decimals` field, if available.
+    /// Returns the ERC-20 `decimals` field by scanning the default chain's
+    /// decimals.
     pub fn get_decimals(&self) -> Option<u8> {
-        let addr_decimals_map = read_token_decimals_map();
-        addr_decimals_map.get(&self.get_addr()).copied()
+        let decimals_map = read_token_decimals_map();
+        decimals_map.get(&self.chain).and_then(|map| map.get(&self.get_addr()).copied())
+    }
+
+    /// Returns the chain the token is on.
+    pub fn get_chain(&self) -> Chain {
+        self.chain
     }
 
     /// Returns true if the Token has a Renegade-native ticker.
@@ -212,42 +265,61 @@ impl Token {
     }
 }
 
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        self.addr.to_lowercase() == other.addr.to_lowercase()
+    }
+}
+
+impl Eq for Token {}
+
+impl Hash for Token {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.addr.to_lowercase().hash(state);
+    }
+}
+
 // -----------
 // | HELPERS |
 // -----------
 
-/// Returns a read lock quard to the token remap
-pub fn read_token_remap<'a>() -> RwLockReadGuard<'a, BiMap<String, String>> {
-    TOKEN_REMAPS.read().expect("Token remap lock poisoned")
+/// Returns a read lock guard to the per-chain token remaps
+pub fn read_token_remaps<'a>() -> RwLockReadGuard<'a, TokenRemapsByChain> {
+    TOKEN_REMAPS_BY_CHAIN.read().expect("Token remaps lock poisoned")
 }
 
 /// Get all tokens in the remap
 pub fn get_all_tokens() -> Vec<Token> {
-    read_token_remap().left_values().map(|addr| Token::from_addr(addr)).collect()
+    let remaps = read_token_remaps();
+    let mut tokens = Vec::new();
+    for (chain, bimap) in remaps.iter() {
+        tokens.extend(bimap.left_values().map(|addr| Token::from_addr_on_chain(addr, *chain)));
+    }
+    tokens
 }
 
-/// Returns a read lock quard to the decimal map
-pub fn read_token_decimals_map<'a>() -> RwLockReadGuard<'a, HashMap<String, u8>> {
-    ADDR_DECIMALS_MAP.read().expect("Decimal map lock poisoned")
+/// Returns a read lock quard to the per-chain decimals map
+pub fn read_token_decimals_map<'a>() -> RwLockReadGuard<'a, TokenDecimalsByChain> {
+    DECIMALS_BY_CHAIN.read().expect("Decimals map lock poisoned")
 }
 
 /// Returns a read lock quard to the exchange support map
-pub fn read_exchange_support<'a>() -> RwLockReadGuard<'a, HashMap<String, ExchangeSupport>> {
+pub fn read_exchange_support<'a>() -> RwLockReadGuard<'a, ExchangeSupportMap> {
     EXCHANGE_SUPPORT_MAP.read().expect("Exchange support map lock poisoned")
 }
 
-/// Returns a write lock quard to the token remap
-pub fn write_token_remap<'a>() -> RwLockWriteGuard<'a, BiMap<String, String>> {
-    TOKEN_REMAPS.write().expect("Token remap lock poisoned")
+/// Returns a write lock guard to the per-chain token remaps
+pub fn write_token_remaps<'a>() -> RwLockWriteGuard<'a, TokenRemapsByChain> {
+    TOKEN_REMAPS_BY_CHAIN.write().expect("Token remaps lock poisoned")
 }
 
-/// Returns a write lock quard to the decimal map
-pub fn write_token_decimals_map<'a>() -> RwLockWriteGuard<'a, HashMap<String, u8>> {
-    ADDR_DECIMALS_MAP.write().expect("Decimal map lock poisoned")
+/// Returns a write lock quard to the per-chain decimals map
+pub fn write_token_decimals_map<'a>() -> RwLockWriteGuard<'a, TokenDecimalsByChain> {
+    DECIMALS_BY_CHAIN.write().expect("Decimals map lock poisoned")
 }
 
 /// Returns a write lock quard to the exchange support map
-pub fn write_exchange_support<'a>() -> RwLockWriteGuard<'a, HashMap<String, ExchangeSupport>> {
+pub fn write_exchange_support<'a>() -> RwLockWriteGuard<'a, ExchangeSupportMap> {
     EXCHANGE_SUPPORT_MAP.write().expect("Exchange support map lock poisoned")
 }
 
@@ -266,4 +338,16 @@ pub fn default_exchange_stable(exchange: &Exchange) -> Token {
         Exchange::Okx => Token::from_ticker(USDT_TICKER),
         _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
     }
+}
+
+/// Return the default Chain, or panic if none has ever been set
+pub fn default_chain() -> Chain {
+    *DEFAULT_CHAIN.get().expect("no default chain configured")
+}
+
+/// Set the default chain
+pub fn set_default_chain(chain: Chain) {
+    DEFAULT_CHAIN
+        .set(chain)
+        .expect("DEFAULT_CHAIN should not be initialized before calling set_default_chain()")
 }

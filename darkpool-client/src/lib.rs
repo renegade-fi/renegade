@@ -14,7 +14,7 @@
 #![feature(iterator_try_collect)]
 
 // Make sure we don't enable both features at the same time
-#[cfg(all(feature = "arbitrum", feature = "base"))]
+#[cfg(all(feature = "arbitrum", feature = "base", not(feature = "all-chains")))]
 compile_error!("Only one of features 'arbitrum' or 'base' should be enabled at a time");
 
 pub mod client;
@@ -25,10 +25,10 @@ pub mod traits;
 
 #[cfg(feature = "arbitrum")]
 pub mod arbitrum;
-#[cfg(feature = "arbitrum")]
+#[cfg(all(feature = "arbitrum", not(feature = "all-chains")))]
 /// The darkpool client for the Arbitrum chain
 pub type DarkpoolClient = client::DarkpoolClientInner<arbitrum::ArbitrumDarkpool>;
-#[cfg(feature = "arbitrum")]
+#[cfg(all(feature = "arbitrum", not(feature = "all-chains")))]
 /// The darkpool implementation for the Arbitrum chain
 ///
 /// Exported here to allow lower level access from other workers
@@ -36,10 +36,10 @@ pub type DarkpoolImplementation = arbitrum::ArbitrumDarkpool;
 
 #[cfg(feature = "base")]
 pub mod base;
-#[cfg(feature = "base")]
+#[cfg(all(feature = "base", not(feature = "all-chains")))]
 /// The darkpool client for the Base chain
 pub type DarkpoolClient = client::DarkpoolClientInner<base::BaseDarkpool>;
-#[cfg(feature = "base")]
+#[cfg(all(feature = "base", not(feature = "all-chains")))]
 /// The darkpool implementation for the Base chain
 ///
 /// Exported here to allow lower level access from other workers

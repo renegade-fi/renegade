@@ -53,7 +53,7 @@ impl FromStr for Exchange {
 
 /// The PriceReport is the universal format for price feeds from all external
 /// exchanges.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceReport {
     /// The base Token

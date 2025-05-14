@@ -117,11 +117,19 @@ pub type AuthenticatedScalar = AuthenticatedScalarResult<SystemCurveGroup>;
 /// The block number at which the darkpool was deployed on devnet
 pub const DEVNET_DEPLOY_BLOCK: u64 = 0;
 
-/// The block number at which the darkpool was deployed on testnet
-pub const TESTNET_DEPLOY_BLOCK: u64 = 55713322;
+/// The block number at which the darkpool was deployed on Arbitrum Sepolia
+pub const ARBITRUM_SEPOLIA_DEPLOY_BLOCK: u64 = 55713322;
 
-/// The block number at which the darkpool was deployed on mainnet
-pub const MAINNET_DEPLOY_BLOCK: u64 = 249416532;
+/// The block number at which the darkpool was deployed on Arbitrum One
+pub const ARBITRUM_ONE_DEPLOY_BLOCK: u64 = 249416532;
+
+/// The block number at which the darkpool was deployed on Base Sepolia
+// TODO: Fill in w/ correct value once deployed
+pub const BASE_SEPOLIA_DEPLOY_BLOCK: u64 = 0; // Placeholder
+
+/// The block number at which the darkpool was deployed on Base Mainnet
+// TODO: Fill in w/ correct value once deployed
+pub const BASE_MAINNET_DEPLOY_BLOCK: u64 = 0; // Placeholder
 
 /// The number of bytes in an Arbitrum address
 pub const ADDRESS_BYTE_LENGTH: usize = 20;

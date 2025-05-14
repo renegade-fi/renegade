@@ -8,12 +8,12 @@ use circuit_types::{
 };
 use clap::Parser;
 use common::types::{
+    chain::Chain,
     exchange::Exchange,
     gossip::{ClusterId, WrappedPeerId},
     hmac::HmacKey,
     token::Token,
 };
-use darkpool_client::constants::Chain;
 use ed25519_dalek::Keypair as DalekKeypair;
 use libp2p::{identity::Keypair, Multiaddr};
 use serde::{Deserialize, Serialize};
@@ -80,7 +80,7 @@ pub struct Cli {
     // -----------------------
 
     /// The chain that the relayer settles to
-    #[clap(long, value_parser, default_value = "testnet", env = "CHAIN")]
+    #[clap(long, value_parser, default_value = "arbitrum-sepolia", env = "CHAIN")]
     pub chain_id: Chain,
     /// The address of the darkpool contract, defaults to the internal testnet deployment
     #[clap(long, value_parser, env = "DARKPOOL_ADDRESS", default_value = "0x2f88458fc25591f1de247dd3297f039eecfcd534")]

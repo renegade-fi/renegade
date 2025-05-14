@@ -2,8 +2,11 @@
 
 use std::thread;
 
+use common::types::chain::Chain;
 use common::types::exchange::{PriceReport, PriceReporterState};
-use common::types::token::{write_token_remap, Token, USDC_TICKER, USDT_TICKER, USD_TICKER};
+use common::types::token::{
+    set_default_chain, write_token_remaps, Token, USDC_TICKER, USDT_TICKER, USD_TICKER,
+};
 use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
@@ -41,12 +44,17 @@ const MOCK_TICKER_NAMES: &[&str] = &[
 #[allow(unused_must_use)]
 pub fn setup_mock_token_remap() {
     // Setup the mock token map
-    let mut token_map = write_token_remap();
+    let mut all_maps = write_token_remaps();
+    let chain = Chain::ArbitrumOne;
+    let token_map = all_maps.entry(chain).or_default();
+    token_map.clear();
     for (i, &ticker) in MOCK_TICKER_NAMES.iter().enumerate() {
         let addr = format!("{i:x}");
 
         token_map.insert(addr, ticker.to_string());
     }
+
+    set_default_chain(chain);
 }
 
 /// The mock price reporter, reports a constant price

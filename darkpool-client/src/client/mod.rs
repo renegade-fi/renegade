@@ -14,11 +14,14 @@ use alloy::{
 use alloy_contract::{CallBuilder, Event};
 use alloy_primitives::{Address, BlockNumber, ChainId};
 use alloy_sol_types::SolEvent;
-use constants::{DEVNET_DEPLOY_BLOCK, MAINNET_DEPLOY_BLOCK, TESTNET_DEPLOY_BLOCK};
+use common::types::chain::Chain;
+use constants::{
+    ARBITRUM_ONE_DEPLOY_BLOCK, ARBITRUM_SEPOLIA_DEPLOY_BLOCK, BASE_MAINNET_DEPLOY_BLOCK,
+    BASE_SEPOLIA_DEPLOY_BLOCK, DEVNET_DEPLOY_BLOCK,
+};
 use util::err_str;
 
 use crate::{
-    constants::Chain,
     errors::{DarkpoolClientConfigError, DarkpoolClientError},
     traits::DarkpoolImpl,
 };
@@ -42,7 +45,7 @@ pub struct DarkpoolClientConfig {
     /// This is the main entrypoint to interaction with the darkpool.
     pub darkpool_addr: String,
     /// Which chain the client should interact with,
-    /// e.g. mainnet, testnet, or devnet
+    /// e.g. arbitrum-sepolia, base-mainnet, etc.
     pub chain: Chain,
     /// HTTP-addressable RPC endpoint for the client to connect to
     pub rpc_url: String,
@@ -56,8 +59,10 @@ impl DarkpoolClientConfig {
     /// Gets the block number at which the darkpool was deployed
     fn get_deploy_block(&self) -> BlockNumber {
         match self.chain {
-            Chain::Mainnet => MAINNET_DEPLOY_BLOCK,
-            Chain::Testnet => TESTNET_DEPLOY_BLOCK,
+            Chain::ArbitrumSepolia => ARBITRUM_SEPOLIA_DEPLOY_BLOCK,
+            Chain::ArbitrumOne => ARBITRUM_ONE_DEPLOY_BLOCK,
+            Chain::BaseSepolia => BASE_SEPOLIA_DEPLOY_BLOCK,
+            Chain::BaseMainnet => BASE_MAINNET_DEPLOY_BLOCK,
             Chain::Devnet => DEVNET_DEPLOY_BLOCK,
         }
     }
