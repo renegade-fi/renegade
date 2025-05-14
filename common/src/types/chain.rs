@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// The chain environment
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
 pub enum Chain {
     /// The Arbitrum Sepolia chain
     ArbitrumSepolia,
