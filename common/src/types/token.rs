@@ -354,9 +354,7 @@ pub fn default_chain() -> Chain {
     *chains.keys().next().expect("No chains configured")
 }
 
-/// Set the default chain
+/// Set the default chain in an idempotent manner
 pub fn set_default_chain(chain: Chain) {
-    DEFAULT_CHAIN
-        .set(chain)
-        .expect("DEFAULT_CHAIN should not be initialized before calling set_default_chain()")
+    DEFAULT_CHAIN.get_or_init(|| chain);
 }
