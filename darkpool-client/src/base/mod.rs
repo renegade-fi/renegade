@@ -427,6 +427,11 @@ impl DarkpoolImpl for BaseDarkpool {
 
         Ok(Some(match_res))
     }
+
+    #[cfg(feature = "integration")]
+    async fn clear_merkle_tree(&self) -> Result<TransactionReceipt, DarkpoolClientError> {
+        unimplemented!("We don't currently integration test the Base client")
+    }
 }
 
 // ----------
