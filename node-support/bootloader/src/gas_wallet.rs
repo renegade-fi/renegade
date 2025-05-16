@@ -78,8 +78,8 @@ pub(crate) async fn setup_gas_wallet(
 
     // Prepare the request
     let client = Client::new();
-    let chain = read_env_var::<String>(ENV_CHAIN)?;
-    let path = format!("/custody/{chain}/gas-wallets/{REGISTER_GAS_WALLET_ROUTE}");
+    let _chain = read_env_var::<String>(ENV_CHAIN)?;
+    let path = format!("/custody/gas-wallets/{REGISTER_GAS_WALLET_ROUTE}");
     let body = RegisterGasWalletRequest { peer_id: peer_id.to_string() };
     let body_json = serde_json::to_vec(&body).unwrap();
 
