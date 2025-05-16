@@ -7,6 +7,7 @@ description = "Helpers for setting up and running integration tests for the rela
 [features]
 default = ["test-harness"]
 arbitrum = ["blockchain", "darkpool-client/arbitrum"]
+base = ["blockchain", "darkpool-client/base"]
 blockchain = [
     "dep:alloy",
     "dep:alloy-primitives",
@@ -15,6 +16,7 @@ blockchain = [
     "dep:circuit-types",
     "dep:common",
     "dep:constants",
+    "dep:darkpool-client",
     "dep:num-bigint",
     "dep:k256",
     "dep:renegade-crypto",

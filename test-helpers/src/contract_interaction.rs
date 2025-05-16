@@ -12,7 +12,7 @@ use eyre::Result;
 use rand::thread_rng;
 use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
 
-#[cfg(feature = "arbitrum")]
+#[cfg(any(feature = "arbitrum", feature = "base"))]
 pub mod transfer_auth;
 
 // ---------------------
