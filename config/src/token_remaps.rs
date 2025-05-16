@@ -91,10 +91,6 @@ impl TokenRemap {
     pub fn set_exchange_support_map(&self) {
         let mut exchange_support_map = write_exchange_support();
 
-        // Clear the existing exchange support map so that it can be completely
-        // overwritten
-        exchange_support_map.clear();
-
         for info in &self.tokens {
             exchange_support_map.insert(info.ticker.clone(), info.supported_exchanges.clone());
         }
