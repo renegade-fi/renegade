@@ -102,6 +102,7 @@ pub struct Token {
     #[serde(deserialize_with = "deserialize_str_lower", serialize_with = "serialize_str_lower")]
     pub addr: String,
     /// The chain the token is on.
+    #[serde(default = "default_chain")]
     pub chain: Chain,
 }
 
