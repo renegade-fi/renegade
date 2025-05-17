@@ -10,7 +10,9 @@ use alloy::providers::{ext::DebugApi, Provider};
 use alloy::rpc::types::trace::geth::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
 };
+use alloy::rpc::types::Log as RpcLog;
 use alloy::rpc::types::TransactionReceipt;
+use alloy_contract::Event;
 use alloy_primitives::{Log, Selector, TxHash};
 use alloy_sol_types::SolEvent;
 use circuit_types::r#match::ExternalMatchResult;
@@ -25,7 +27,12 @@ use crate::conversion::scalar_to_u256;
 use crate::errors::DarkpoolClientError;
 use crate::traits::{DarkpoolImpl, MerkleInsertionEvent, MerkleOpeningNodeEvent};
 
-use super::DarkpoolClientInner;
+use super::{DarkpoolClientInner, RenegadeProvider};
+
+/// The starting range of blocks to query for events
+const STARTING_BLOCK_RANGE: u64 = 10;
+/// The rate at which to increase the block range
+const BLOCK_RANGE_INCREASE_RATE: u64 = 10;
 
 /// The error message emitted when not enough Merkle path siblings are found
 const ERR_MERKLE_PATH_SIBLINGS: &str = "not enough Merkle path siblings found";
@@ -45,21 +52,19 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         public_blinder_share: Scalar,
     ) -> Result<Option<TxHash>, DarkpoolClientError> {
-        let events = self
-            .event_filter::<D::WalletUpdated>()
-            .topic1(scalar_to_u256(public_blinder_share))
-            .from_block(self.deploy_block)
-            .query()
-            .await
-            .map_err(DarkpoolClientError::event_querying)?;
+        let filter =
+            self.event_filter::<D::WalletUpdated>().topic1(scalar_to_u256(public_blinder_share));
 
-        // Fetch the tx hash from the latest event
-        let tx_hash = events.last().map(|(_, meta)| meta.transaction_hash.expect(ERR_NO_TX_HASH));
-        if let Some(tx_hash) = tx_hash {
-            tracing::Span::current().record("tx_hash", format!("{:#x}", tx_hash));
+        let maybe_event = self.query_latest_event(filter).await?;
+        if maybe_event.is_none() {
+            return Ok(None);
         }
 
-        Ok(tx_hash)
+        let (_event, log) = maybe_event.unwrap();
+        let tx_hash = log.transaction_hash.expect(ERR_NO_TX_HASH);
+        tracing::Span::current().record("tx_hash", format!("{tx_hash:#x}"));
+
+        Ok(Some(tx_hash))
     }
 
     /// Searches on-chain state for the insertion of the given wallet, then
@@ -130,18 +135,16 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         commitment: Scalar,
     ) -> Result<(u128, TxHash), DarkpoolClientError> {
-        let events = self
+        let filter = self
             .event_filter::<D::MerkleInsertion>()
             .topic2(scalar_to_u256(commitment))
-            .from_block(self.deploy_block)
-            .query()
-            .await
-            .map_err(DarkpoolClientError::event_querying)?;
+            .from_block(self.deploy_block);
+        let (event, log) = self
+            .query_latest_event(filter)
+            .await?
+            .ok_or(DarkpoolClientError::CommitmentNotFound)?;
 
-        events
-            .last()
-            .map(|(event, meta)| (event.index(), meta.transaction_hash.expect(ERR_NO_TX_HASH)))
-            .ok_or(DarkpoolClientError::CommitmentNotFound)
+        Ok((event.index(), log.transaction_hash.expect(ERR_NO_TX_HASH)))
     }
 
     /// Fetch and parse the public secret shares from the calldata of the
@@ -273,5 +276,33 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         }
 
         darkpool_calls
+    }
+
+    /// Query events paginating by block number
+    async fn query_latest_event<E: SolEvent>(
+        &self,
+        mut filter: Event<&RenegadeProvider, E>,
+    ) -> Result<Option<(E, RpcLog)>, DarkpoolClientError> {
+        let mut range_size = STARTING_BLOCK_RANGE;
+        let mut end = self.block_number().await?;
+        let mut start = end.saturating_sub(range_size);
+
+        while end > self.deploy_block {
+            // Query events
+            filter = filter.from_block(start);
+            filter = filter.to_block(end);
+            let mut block_events =
+                filter.query().await.map_err(DarkpoolClientError::event_querying)?;
+            if let Some((event, log)) = block_events.pop() {
+                return Ok(Some((event, log)));
+            }
+
+            // Update the range if none are found
+            end = start;
+            range_size *= BLOCK_RANGE_INCREASE_RATE;
+            start = end.saturating_sub(range_size);
+        }
+
+        Ok(None)
     }
 }
