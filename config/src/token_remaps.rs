@@ -48,6 +48,8 @@ pub struct TokenInfo {
     /// The exchanges that list the token, along with the ticker that we should
     /// use to fetch the token's price from the exchange
     supported_exchanges: HashMap<Exchange, String>,
+    /// The canonical exchange from which to source the token's price
+    canonical_exchange: Exchange,
 }
 
 impl TokenRemap {
@@ -103,6 +105,11 @@ impl TokenRemap {
                 .into_iter()
                 .collect(),
         );
+    }
+
+    /// Get the canonical exchange map from the token remap
+    pub fn get_canonical_exchange_map(&self) -> HashMap<String, Exchange> {
+        self.tokens.iter().map(|t| (t.ticker.clone(), t.canonical_exchange)).collect()
     }
 }
 
@@ -161,7 +168,7 @@ pub fn fetch_remap_from_repo(chain: Chain) -> Result<TokenRemap, String> {
 mod test {
     use std::{collections::HashMap, fs::File};
 
-    use common::types::{chain::Chain, token::read_token_remaps};
+    use common::types::{chain::Chain, exchange::Exchange, token::read_token_remaps};
     use tempfile::{tempdir, TempDir};
 
     use crate::token_remaps::parse_remap_from_file;
@@ -194,6 +201,7 @@ mod test {
                 address: "0x1234".to_string(),
                 decimals: 18,
                 supported_exchanges: HashMap::new(),
+                canonical_exchange: Exchange::Renegade,
             }],
         };
 
