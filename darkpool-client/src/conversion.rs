@@ -24,6 +24,11 @@ pub fn biguint_to_u256(biguint: &BigUint) -> Result<U256, ConversionError> {
     Ok(u256)
 }
 
+/// Convert a `U256` to a `BigUint`
+pub fn u256_to_biguint(u: U256) -> BigUint {
+    BigUint::from_bytes_le(u.as_le_slice())
+}
+
 /// Convert an `Address` to a `BigUint`
 pub fn address_to_biguint(address: &Address) -> Result<BigUint, ConversionError> {
     let bytes = address.0.to_vec();

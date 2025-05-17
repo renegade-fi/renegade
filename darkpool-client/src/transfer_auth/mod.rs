@@ -7,7 +7,10 @@
 //! For withdrawals, this is just the serialized transfer struct, signed by the
 //! root key.
 
+mod common;
 mod permit2_abi;
 
 #[cfg(feature = "arbitrum")]
 pub mod arbitrum;
+#[cfg(feature = "base")]
+pub mod base;
