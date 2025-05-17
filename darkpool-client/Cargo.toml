@@ -15,6 +15,7 @@ integration = [
     "common/mocks",
     "test-helpers/arbitrum",
 ]
+transfer-auth = ["dep:rand"]
 
 [[test]]
 name = "integration"

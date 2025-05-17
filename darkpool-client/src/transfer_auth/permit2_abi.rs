@@ -4,6 +4,9 @@
 
 use alloy_sol_types::sol;
 
+/// The name of the domain separator for Permit2 typed data
+pub(crate) const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
+
 // Types & methods from the Permit2 `ISignatureTransfer` interface, taken from https://github.com/Uniswap/permit2/blob/main/src/interfaces/ISignatureTransfer.sol
 sol! {
     /// The token and amount details for a transfer signed in the permit transfer signature
