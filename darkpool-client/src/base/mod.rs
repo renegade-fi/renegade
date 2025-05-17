@@ -1,5 +1,5 @@
 //! The Base implementation of the darkpool client
-mod conversion;
+pub(crate) mod conversion;
 mod helpers;
 
 use alloy::{

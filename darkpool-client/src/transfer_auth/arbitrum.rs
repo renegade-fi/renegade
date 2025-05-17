@@ -1,7 +1,7 @@
 //! Arbitrum implementation of transfer auth
 
-use alloy::signers::{local::PrivateKeySigner, SignerSync};
-use alloy_primitives::{keccak256, Address, B256};
+use alloy::signers::local::PrivateKeySigner;
+use alloy_primitives::Address;
 use circuit_types::{
     keychain::PublicSigningKey,
     transfers::{ExternalTransfer, ExternalTransferDirection},
@@ -15,7 +15,9 @@ use crate::{
     errors::DarkpoolClientError,
 };
 
-use super::common::build_deposit_auth;
+// Re-export the deposit auth builder under the `arbitrum` module
+pub use super::common::build_deposit_auth;
+use super::common::sign_bytes;
 
 /// Generates an external transfer augmented with auth data
 pub fn build_transfer_auth(
@@ -40,15 +42,13 @@ pub fn build_transfer_auth(
 }
 
 /// Generate a withdrawal payload with proper auth data
-fn build_withdrawal_auth(
+pub fn build_withdrawal_auth(
     wallet: &PrivateKeySigner,
     transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth, DarkpoolClientError> {
     let contract_transfer = to_contract_external_transfer(&transfer)?;
     let transfer_bytes = serialize_calldata(&contract_transfer)?;
-    let transfer_hash = B256::from_slice(keccak256(&transfer_bytes).as_slice());
-    let signature = wallet.sign_hash_sync(&transfer_hash).map_err(DarkpoolClientError::signing)?;
-    let sig_bytes = signature.as_bytes().to_vec();
+    let sig_bytes = sign_bytes(wallet, &transfer_bytes)?;
 
     Ok(ExternalTransferWithAuth::withdrawal(
         transfer.account_addr,
