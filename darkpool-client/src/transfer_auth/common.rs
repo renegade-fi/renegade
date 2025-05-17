@@ -1,7 +1,7 @@
 //! Common helpers across chains
 
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_sol_types::{eip712_domain, SolStruct};
 use circuit_types::{keychain::PublicSigningKey, traits::BaseType, transfers::ExternalTransfer};
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth};
@@ -20,7 +20,7 @@ use super::permit2_abi::{
 const NUM_SCALARS_PK: usize = 4;
 
 /// Generate a deposit payload with proper auth data
-pub(crate) fn build_deposit_auth(
+pub fn build_deposit_auth(
     wallet: &PrivateKeySigner,
     pk_root: &PublicSigningKey,
     transfer: ExternalTransfer,
@@ -96,9 +96,21 @@ fn gen_permit_nonce() -> U256 {
     U256::from_be_slice(&nonce_bytes)
 }
 
+/// Sign a set of bytes with the given key
+///
+/// Returns the signature byte serialized
+pub(crate) fn sign_bytes(
+    wallet: &PrivateKeySigner,
+    bytes: &[u8],
+) -> Result<Vec<u8>, DarkpoolClientError> {
+    let hash = B256::from_slice(keccak256(bytes).as_slice());
+    let signature = wallet.sign_hash_sync(&hash).map_err(DarkpoolClientError::signing)?;
+    Ok(signature.as_bytes().to_vec())
+}
+
 /// Converts a [`PublicSigningKey`] to a fixed-length array of [`AlloyU256`]
 /// elements
-pub fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[U256; NUM_SCALARS_PK], ConversionError> {
+fn pk_to_u256s(pk: &PublicSigningKey) -> Result<[U256; NUM_SCALARS_PK], ConversionError> {
     pk.to_scalars()
         .iter()
         .map(|s| scalar_to_u256(*s))
