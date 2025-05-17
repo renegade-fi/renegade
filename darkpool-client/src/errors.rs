@@ -15,6 +15,8 @@ pub enum DarkpoolClientError {
     DarkpoolSubcallNotFound(String),
     /// Error thrown when serializing/deserializing calldata/retdata
     Serde(String),
+    /// An signing error
+    Signing(String),
     /// Error thrown when converting between relayer & smart contract types
     Conversion(ConversionError),
     /// Error thrown when querying events
@@ -55,6 +57,12 @@ impl DarkpoolClientError {
     #[allow(clippy::needless_pass_by_value)]
     pub fn rpc<T: ToString>(msg: T) -> Self {
         Self::Rpc(msg.to_string())
+    }
+
+    /// Create a new signing error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn signing<T: ToString>(msg: T) -> Self {
+        Self::Signing(msg.to_string())
     }
 
     /// Create a new transaction querying error

@@ -23,6 +23,9 @@ pub mod conversion;
 pub mod errors;
 pub mod traits;
 
+#[cfg(feature = "transfer-auth")]
+pub mod transfer_auth;
+
 #[cfg(feature = "arbitrum")]
 pub mod arbitrum;
 #[cfg(all(feature = "arbitrum", not(feature = "all-chains")))]

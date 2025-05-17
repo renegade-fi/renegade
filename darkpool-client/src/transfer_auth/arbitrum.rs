@@ -1,5 +1,4 @@
-//! Test helpers for constructing auth data for external transfers
-//! Much of this is ported over from https://github.com/renegade-fi/renegade-contracts/blob/main/integration/src/utils.rs
+//! Arbitrum implementation of transfer auth
 
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy_primitives::{keccak256, Address, B256, U256};
@@ -14,20 +13,21 @@ use circuit_types::{
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth};
-use darkpool_client::arbitrum::{
-    contract_types::conversion::to_contract_external_transfer, helpers::serialize_calldata,
-};
-use darkpool_client::{conversion::scalar_to_u256, errors::ConversionError};
-use eyre::Result;
 use num_bigint::BigUint;
 use rand::{thread_rng, RngCore};
 
-use self::abi::{DepositWitness, PermitWitnessTransferFrom, TokenPermissions};
+use crate::{
+    arbitrum::{
+        contract_types::conversion::to_contract_external_transfer, helpers::serialize_calldata,
+    },
+    conversion::scalar_to_u256,
+    errors::{ConversionError, DarkpoolClientError},
+};
 
-mod abi;
+use super::permit2_abi::{
+    DepositWitness, PermitWitnessTransferFrom, TokenPermissions, PERMIT2_EIP712_DOMAIN_NAME,
+};
 
-/// The name of the domain separator for Permit2 typed data
-const PERMIT2_EIP712_DOMAIN_NAME: &str = "Permit2";
 /// The number of scalars in a secp256k1 public key
 const NUM_SCALARS_PK: usize = 4;
 
@@ -39,7 +39,7 @@ pub fn gen_transfer_with_auth(
     darkpool_address: Address,
     chain_id: u64,
     transfer: ExternalTransfer,
-) -> Result<ExternalTransferWithAuth> {
+) -> Result<ExternalTransferWithAuth, DarkpoolClientError> {
     match transfer.direction {
         ExternalTransferDirection::Deposit => gen_deposit_with_auth(
             wallet,
@@ -57,17 +57,18 @@ pub fn gen_transfer_with_auth(
 pub fn gen_withdrawal_with_auth(
     wallet: &PrivateKeySigner,
     transfer: ExternalTransfer,
-) -> Result<ExternalTransferWithAuth> {
+) -> Result<ExternalTransferWithAuth, DarkpoolClientError> {
     let contract_transfer = to_contract_external_transfer(&transfer)?;
     let transfer_bytes = serialize_calldata(&contract_transfer)?;
     let transfer_hash = B256::from_slice(keccak256(&transfer_bytes).as_slice());
-    let transfer_signature = wallet.sign_hash_sync(&transfer_hash)?.as_bytes().to_vec();
+    let signature = wallet.sign_hash_sync(&transfer_hash).map_err(DarkpoolClientError::signing)?;
+    let sig_bytes = signature.as_bytes().to_vec();
 
     Ok(ExternalTransferWithAuth::withdrawal(
         transfer.account_addr,
         transfer.mint,
         transfer.amount,
-        WithdrawalAuth { external_transfer_signature: transfer_signature },
+        WithdrawalAuth { external_transfer_signature: sig_bytes },
     ))
 }
 
@@ -79,7 +80,7 @@ pub fn gen_deposit_with_auth(
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
-) -> Result<ExternalTransferWithAuth> {
+) -> Result<ExternalTransferWithAuth, DarkpoolClientError> {
     let contract_transfer = to_contract_external_transfer(&transfer)?;
     let (permit_nonce, permit_deadline, permit_signature) = gen_permit_payload(
         wallet,
@@ -111,7 +112,7 @@ fn gen_permit_payload(
     permit2_address: Address,
     darkpool_address: Address,
     chain_id: u64,
-) -> Result<(U256, U256, Vec<u8>)> {
+) -> Result<(U256, U256, Vec<u8>), DarkpoolClientError> {
     let permitted = TokenPermissions { token, amount };
 
     // Generate a random nonce
@@ -121,9 +122,7 @@ fn gen_permit_payload(
 
     // Set an effectively infinite deadline
     let deadline = U256::from(u64::MAX);
-
     let witness = DepositWitness { pkRoot: pk_to_u256s(pk_root)? };
-
     let signable_permit = PermitWitnessTransferFrom {
         permitted,
         spender: darkpool_address,
@@ -140,8 +139,9 @@ fn gen_permit_payload(
     );
 
     let msg_hash = permit_signing_hash(&signable_permit, &permit_domain);
-    let signature = wallet.sign_hash_sync(&msg_hash)?.as_bytes().to_vec();
-    Ok((nonce, deadline, signature))
+    let signature = wallet.sign_hash_sync(&msg_hash).map_err(DarkpoolClientError::signing)?;
+    let sig_bytes = signature.as_bytes().to_vec();
+    Ok((nonce, deadline, sig_bytes))
 }
 
 /// This is a re-implementation of `eip712_signing_hash` (https://github.com/alloy-rs/core/blob/v0.3.1/crates/sol-types/src/types/struct.rs#L117)
