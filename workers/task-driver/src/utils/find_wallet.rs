@@ -76,18 +76,18 @@ async fn find_wallet_share_index_phase_one(
     loop {
         let public_blinder = get_public_blinder_at_idx(curr_max, blinder_seed);
 
-        // Check if the blinder has been seen on-chain
-        match darkpool_client
-            .get_public_blinder_tx(public_blinder)
+        // If the blinder has not been seen on-chain, we have found the latest
+        // update, break early
+        if !darkpool_client
+            .is_public_blinder_used(public_blinder)
             .await
             .map_err(|e| e.to_string())?
         {
-            None => break,
-            Some(_) => {
-                curr_min = curr_max;
-                curr_max *= EXPONENTIAL_SEARCH_MULTIPLIER;
-            },
+            break;
         }
+
+        curr_min = curr_max;
+        curr_max *= EXPONENTIAL_SEARCH_MULTIPLIER;
     }
 
     Ok((curr_min, curr_max))
@@ -122,19 +122,16 @@ async fn find_wallet_share_index_phase_two(
         let curr_blinder_public = curr_blinder - curr_blinder_private;
 
         // Check if the blinder has been seen on-chain
-        match darkpool_client
-            .get_public_blinder_tx(curr_blinder_public)
+        if darkpool_client
+            .is_public_blinder_used(curr_blinder_public)
             .await
             .map_err(|e| e.to_string())?
         {
-            None => {
-                curr_max = curr_idx;
-            },
-            Some(_) => {
-                curr_min = curr_idx;
-                curr_min_blinder = curr_blinder;
-                curr_min_blinder_private = curr_blinder_private;
-            },
+            curr_min = curr_idx;
+            curr_min_blinder = curr_blinder;
+            curr_min_blinder_private = curr_blinder_private;
+        } else {
+            curr_max = curr_idx;
         }
     }
 }
