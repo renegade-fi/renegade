@@ -3,10 +3,10 @@
 
 use std::{path::Path, thread::JoinHandle};
 
-use common::types::CancelChannel;
+use common::types::{chain::Chain, CancelChannel};
 use constants::in_bootstrap_mode;
 use futures::sink::SinkExt;
-use job_types::event_manager::{EventManagerReceiver, RelayerEvent};
+use job_types::event_manager::{EventManagerReceiver, RelayerEvent, RelayerEventType};
 use renegade_metrics::labels::NUM_EVENT_EXPORT_FAILURES_METRIC;
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedWrite, LengthDelimitedCodec};
@@ -52,6 +52,8 @@ pub struct EventManagerExecutor {
     event_queue: EventManagerReceiver,
     /// The address to export relayer events to
     event_export_addr: Option<Url>,
+    /// The chain for which the relayer is configured
+    chain: Chain,
     /// The channel on which the coordinator may cancel event manager execution
     cancel_channel: CancelChannel,
 }
@@ -59,10 +61,14 @@ pub struct EventManagerExecutor {
 impl EventManagerExecutor {
     /// Constructs a new event manager executor
     pub fn new(config: EventManagerConfig) -> Self {
-        let EventManagerConfig { event_queue, event_export_url: event_export_addr, cancel_channel } =
-            config;
+        let EventManagerConfig {
+            event_queue,
+            event_export_url: event_export_addr,
+            chain,
+            cancel_channel,
+        } = config;
 
-        Self { event_queue, event_export_addr, cancel_channel }
+        Self { event_queue, event_export_addr, chain, cancel_channel }
     }
 
     /// Constructs the export sink for the event manager.
@@ -106,7 +112,7 @@ impl EventManagerExecutor {
                     }
                     let sink = sink.as_mut().unwrap();
 
-                    if let Err(e) = handle_relayer_event(&event, sink).await {
+                    if let Err(e) = self.handle_relayer_event(event, sink).await {
                         metrics::counter!(NUM_EVENT_EXPORT_FAILURES_METRIC).increment(1);
                         error!("Failed to handle relayer event: {e}");
                     }
@@ -119,16 +125,20 @@ impl EventManagerExecutor {
             }
         }
     }
-}
 
-/// Handles a relayer event by exporting it to the configured sink
-async fn handle_relayer_event(
-    event: &RelayerEvent,
-    sink: &mut FramedUnixSink,
-) -> Result<(), EventManagerError> {
-    let event_bytes = serde_json::to_vec(event).map_err(err_str!(EventManagerError::Serialize))?;
-    sink.send(event_bytes.into()).await.map_err(err_str!(EventManagerError::SocketWrite))?;
-    Ok(())
+    /// Handles a relayer event by exporting it to the configured sink
+    async fn handle_relayer_event(
+        &self,
+        event_type: RelayerEventType,
+        sink: &mut FramedUnixSink,
+    ) -> Result<(), EventManagerError> {
+        let event = RelayerEvent::new(self.chain, event_type);
+        let event_bytes =
+            serde_json::to_vec(&event).map_err(err_str!(EventManagerError::Serialize))?;
+
+        sink.send(event_bytes.into()).await.map_err(err_str!(EventManagerError::SocketWrite))?;
+        Ok(())
+    }
 }
 
 /// Extracts a Unix socket path from the event export URL

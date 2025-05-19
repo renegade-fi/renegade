@@ -24,7 +24,7 @@ use darkpool_client::DarkpoolClient;
 use itertools::Itertools;
 use job_types::event_manager::{
     try_send_event, EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent,
-    OrderPlacementEvent, OrderUpdateEvent, RelayerEvent,
+    OrderPlacementEvent, OrderUpdateEvent, RelayerEventType,
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
@@ -210,7 +210,7 @@ pub struct UpdateWalletTask {
     /// We construct this event before emitting it, as we may need to
     /// access state that is deleted by the end of the task to do so
     /// (e.g., in the case of an order cancellation).
-    pub completion_event: Option<RelayerEvent>,
+    pub completion_event: Option<RelayerEventType>,
 }
 
 #[async_trait]
@@ -493,7 +493,7 @@ impl UpdateWalletTask {
     }
 
     /// Construct an external transfer event
-    fn construct_external_transfer_event(&self) -> Result<RelayerEvent, UpdateWalletTaskError> {
+    fn construct_external_transfer_event(&self) -> Result<RelayerEventType, UpdateWalletTaskError> {
         let wallet_id = self.new_wallet.wallet_id;
         let transfer = self
             .transfer
@@ -501,7 +501,7 @@ impl UpdateWalletTask {
             .map(|t| t.external_transfer)
             .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_TRANSFER.to_string()))?;
 
-        Ok(RelayerEvent::ExternalTransfer(ExternalTransferEvent::new(wallet_id, transfer)))
+        Ok(RelayerEventType::ExternalTransfer(ExternalTransferEvent::new(wallet_id, transfer)))
     }
 
     /// Construct either an order placement or an order update event,
@@ -511,21 +511,21 @@ impl UpdateWalletTask {
         order_id: &OrderIdentifier,
         order: &Order,
         matching_pool: &Option<MatchingPoolName>,
-    ) -> RelayerEvent {
+    ) -> RelayerEventType {
         let wallet_id = self.new_wallet.wallet_id;
         let order_id = *order_id;
         let order = order.clone();
         let matching_pool = matching_pool.clone().unwrap_or(GLOBAL_MATCHING_POOL.to_string());
 
         if self.old_wallet.contains_order(&order_id) {
-            RelayerEvent::OrderUpdate(OrderUpdateEvent::new(
+            RelayerEventType::OrderUpdate(OrderUpdateEvent::new(
                 wallet_id,
                 order_id,
                 order,
                 matching_pool,
             ))
         } else {
-            RelayerEvent::OrderPlacement(OrderPlacementEvent::new(
+            RelayerEventType::OrderPlacement(OrderPlacementEvent::new(
                 wallet_id,
                 order_id,
                 order,
@@ -538,7 +538,7 @@ impl UpdateWalletTask {
     async fn construct_order_cancellation_event(
         &self,
         order: &Order,
-    ) -> Result<RelayerEvent, UpdateWalletTaskError> {
+    ) -> Result<RelayerEventType, UpdateWalletTaskError> {
         let wallet_id = self.new_wallet.wallet_id;
         let order = order.clone();
 
@@ -560,7 +560,7 @@ impl UpdateWalletTask {
             .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_ORDER_METADATA.to_string()))?
             .total_filled();
 
-        Ok(RelayerEvent::OrderCancellation(OrderCancellationEvent::new(
+        Ok(RelayerEventType::OrderCancellation(OrderCancellationEvent::new(
             wallet_id,
             order_id,
             order,

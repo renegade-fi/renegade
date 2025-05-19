@@ -3,7 +3,10 @@
 use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
-use common::{types::CancelChannel, worker::Worker};
+use common::{
+    types::{chain::Chain, CancelChannel},
+    worker::Worker,
+};
 use job_types::event_manager::EventManagerReceiver;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::info;
@@ -35,6 +38,8 @@ pub struct EventManagerConfig {
     pub event_export_url: Option<Url>,
     /// The queue on which to receive events
     pub event_queue: EventManagerReceiver,
+    /// The chain for which the relayer is configured
+    pub chain: Chain,
     /// The channel on which the coordinator may mandate that the
     /// event manager cancel its execution
     pub cancel_channel: CancelChannel,

@@ -23,7 +23,7 @@ use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
 use job_types::event_manager::{
-    try_send_event, EventManagerQueue, RelayerEvent, WalletCreationEvent,
+    try_send_event, EventManagerQueue, RelayerEventType, WalletCreationEvent,
 };
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
@@ -318,7 +318,7 @@ impl NewWalletTask {
 
     /// Emit a wallet creation event to the event manager
     fn emit_event(&self) -> Result<(), NewWalletTaskError> {
-        let event = RelayerEvent::WalletCreation(WalletCreationEvent::new(
+        let event = RelayerEventType::WalletCreation(WalletCreationEvent::new(
             self.wallet.wallet_id,
             self.wallet.key_chain.symmetric_key().to_base64_string(),
         ));

@@ -28,7 +28,7 @@ use common::types::{
 use constants::Scalar;
 use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
-use job_types::event_manager::{try_send_event, EventManagerQueue, FillEvent, RelayerEvent};
+use job_types::event_manager::{try_send_event, EventManagerQueue, FillEvent, RelayerEventType};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::record_match_volume;
@@ -573,14 +573,14 @@ impl SettleMatchInternalTask {
         let fee_take0 = compute_fee_obligation(relayer_fee0, order_side0, &self.match_result);
         let fee_take1 = compute_fee_obligation(relayer_fee1, order_side1, &self.match_result);
 
-        let fill_event0 = RelayerEvent::Fill(FillEvent::new(
+        let fill_event0 = RelayerEventType::Fill(FillEvent::new(
             self.wallet_id1,
             self.order_id1,
             self.execution_price,
             self.match_result.clone(),
             fee_take0,
         ));
-        let fill_event1 = RelayerEvent::Fill(FillEvent::new(
+        let fill_event1 = RelayerEventType::Fill(FillEvent::new(
             self.wallet_id2,
             self.order_id2,
             self.execution_price,
