@@ -182,8 +182,8 @@ impl SharedPriceStreamStates {
             return PriceReporterState::UnsupportedPair(base_token, quote_token);
         }
 
-        // Fetch the most recent Binance price
-        match self.get_latest_price(Exchange::Binance, &base_token, &quote_token).await {
+        // Fetch the most recent price from the canonical exchange
+        match self.get_latest_price(Exchange::Renegade, &base_token, &quote_token).await {
             None => PriceReporterState::NotEnoughDataReported(0),
             Some((price, ts)) => {
                 // Fetch the most recent prices from all other exchanges

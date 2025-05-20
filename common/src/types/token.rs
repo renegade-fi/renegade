@@ -235,6 +235,7 @@ impl Token {
             .map(|exchanges| exchanges.keys().copied().collect())
             .unwrap_or_default();
         supported_exchanges.insert(Exchange::UniswapV3);
+        supported_exchanges.insert(Exchange::Renegade);
 
         supported_exchanges
     }
@@ -337,6 +338,7 @@ pub fn default_exchange_stable(exchange: &Exchange) -> Token {
         Exchange::Coinbase => Token::from_ticker(USD_TICKER),
         Exchange::Kraken => Token::from_ticker(USD_TICKER),
         Exchange::Okx => Token::from_ticker(USDT_TICKER),
+        Exchange::Renegade => Token::from_ticker(USDC_TICKER),
         _ => panic!("No default stable quote asset for exchange: {:?}", exchange),
     }
 }
