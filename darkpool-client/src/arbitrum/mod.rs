@@ -508,7 +508,13 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         // as a placeholder for the calldata base amount
         let base_amount = valid_match_settle_atomic_statement.bounded_match_result.max_base_amount;
         let base_amount_calldata = U256::from(base_amount);
+
+        let price = valid_match_settle_atomic_statement.bounded_match_result.price;
+        let quote_amount_fp = price * Scalar::from(base_amount);
+        let quote_amount_calldata = scalar_to_u256(quote_amount_fp.floor());
+
         Ok(self.build_malleable_atomic_match_from_serialized_data(
+            quote_amount_calldata,
             base_amount_calldata,
             receiver_address,
             internal_party_match_payload_calldata,
@@ -645,8 +651,10 @@ impl ArbitrumDarkpool {
 
     /// Build a `process_malleable_atomic_match_settle` transaction from
     /// calldata serialized values
+    #[allow(clippy::too_many_arguments)]
     fn build_malleable_atomic_match_from_serialized_data(
         &self,
+        quote_amount: U256,
         base_amount: U256,
         receiver: Option<Address>,
         internal_party_match_payload_calldata: Bytes,
@@ -657,6 +665,7 @@ impl ArbitrumDarkpool {
         if let Some(receiver) = receiver {
             self.darkpool()
                 .processMalleableAtomicMatchSettleWithReceiver(
+                    quote_amount,
                     base_amount,
                     receiver,
                     internal_party_match_payload_calldata,
@@ -668,6 +677,7 @@ impl ArbitrumDarkpool {
         } else {
             self.darkpool()
                 .processMalleableAtomicMatchSettle(
+                    quote_amount,
                     base_amount,
                     internal_party_match_payload_calldata,
                     valid_match_settle_atomic_statement_calldata,
