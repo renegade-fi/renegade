@@ -1,21 +1,17 @@
-//! Arbitrum implementation of transfer auth
+//! Base implementation of transfer auth
 
 use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::Address;
+use alloy_sol_types::SolValue;
 use circuit_types::{
     keychain::PublicSigningKey,
     transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use common::types::transfer_auth::{ExternalTransferWithAuth, WithdrawalAuth};
 
-use crate::{
-    arbitrum::{
-        contract_types::conversion::to_contract_external_transfer, helpers::serialize_calldata,
-    },
-    errors::DarkpoolClientError,
-};
+use crate::{base::conversion::ToContractType, errors::DarkpoolClientError};
 
-// Re-export the deposit auth builder under the `arbitrum` module
+// Re-export the deposit auth builder under the `base` module
 pub use super::common::build_deposit_auth;
 use super::common::sign_bytes;
 
@@ -46,8 +42,9 @@ pub fn build_withdrawal_auth(
     wallet: &PrivateKeySigner,
     transfer: ExternalTransfer,
 ) -> Result<ExternalTransferWithAuth, DarkpoolClientError> {
-    let contract_transfer = to_contract_external_transfer(&transfer)?;
-    let transfer_bytes = serialize_calldata(&contract_transfer)?;
+    // Sign the ABI encoded transfer struct
+    let contract_transfer = transfer.to_contract_type()?;
+    let transfer_bytes = contract_transfer.abi_encode();
     let sig_bytes = sign_bytes(wallet, &transfer_bytes)?;
 
     Ok(ExternalTransferWithAuth::withdrawal(
