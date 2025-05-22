@@ -6,7 +6,7 @@ use alloy::{
     consensus::constants::SELECTOR_LEN,
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
-use alloy_primitives::{Address, Bytes, Selector, U256};
+use alloy_primitives::{Address, Bytes, Selector};
 use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 use circuit_types::{
@@ -42,7 +42,7 @@ use tracing::error;
 
 use crate::{
     client::RenegadeProvider,
-    conversion::{scalar_to_u256, u256_to_amount, u256_to_scalar},
+    conversion::{amount_to_u256, scalar_to_u256, u256_to_amount, u256_to_scalar},
     errors::DarkpoolClientError,
     traits::{
         DarkpoolImpl, DarkpoolImplExt, MerkleInsertionEvent, MerkleOpeningNodeEvent,
@@ -364,12 +364,21 @@ impl DarkpoolImpl for BaseDarkpool {
                 .to_contract_type()?,
         };
 
+        // Compute the quote and base amounts, defaulting to the max tradable amounts
+        let match_res = &match_atomic_bundle.atomic_match_proof.statement.bounded_match_result;
+        let price = match_res.price;
+        let base_amount = match_res.max_base_amount;
+        let base_amount_calldata = amount_to_u256(base_amount)?;
+
+        let quote_amount_fp = price * Scalar::from(base_amount);
+        let quote_amount_calldata = scalar_to_u256(quote_amount_fp.floor());
+
         let receiver = receiver_address.unwrap_or_default();
-        let base_amount = U256::from(statement.matchResult.maxBaseAmount);
         let req = self
             .darkpool
             .processMalleableAtomicMatchSettle(
-                base_amount,
+                quote_amount_calldata,
+                base_amount_calldata,
                 receiver,
                 internal_party_payload,
                 statement,
