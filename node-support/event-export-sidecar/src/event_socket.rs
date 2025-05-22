@@ -98,7 +98,7 @@ impl EventSocket {
     /// Handles an event received from the event export socket
     async fn handle_relayer_event(&self, msg: Vec<u8>) -> Result<(), Error> {
         let event: RelayerEvent = serde_json::from_slice(&msg)?;
-        let event_id = event.event_id();
+        let event_id = event.meta.event_id;
         let wallet_id = event.wallet_id();
 
         let msg = String::from_utf8(msg)?;

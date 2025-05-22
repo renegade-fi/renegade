@@ -11,7 +11,7 @@ use external_api::{
     types::ApiHistoricalTask,
 };
 use job_types::{
-    event_manager::{try_send_event, RelayerEvent, TaskCompletionEvent},
+    event_manager::{try_send_event, RelayerEventType, TaskCompletionEvent},
     handshake_manager::HandshakeManagerJob,
     task_driver::TaskDriverJob,
 };
@@ -380,7 +380,7 @@ impl StateApplicator {
             // to avoid duplicate events across the cluster
             let my_peer_id = tx.get_peer_id()?;
             if my_peer_id == executor {
-                let event = RelayerEvent::TaskCompletion(TaskCompletionEvent::new(key, t));
+                let event = RelayerEventType::TaskCompletion(TaskCompletionEvent::new(key, t));
                 if let Err(e) = try_send_event(event, &self.config.event_queue) {
                     error!("error sending task completion event: {e}");
                 }

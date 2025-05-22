@@ -263,6 +263,7 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the event manager
     let (event_manager_cancel_sender, event_manager_cancel_receiver) = new_cancel_channel();
     let mut event_manager = EventManager::new(EventManagerConfig {
+        chain: args.chain_id,
         event_export_url: args.event_export_url,
         event_queue: event_manager_receiver,
         cancel_channel: event_manager_cancel_receiver,
