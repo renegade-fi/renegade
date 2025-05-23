@@ -41,6 +41,9 @@ pub enum ExchangeConnectionError {
     /// Tried to initialize an ExchangeConnection that was already initialized
     #[error("tried to initialize an ExchangeConnection that was already initialized: {0}")]
     AlreadyInitialized(Exchange, Token, Token),
+    /// Rate limit exceeded
+    #[error("rate limit exceeded: {0}")]
+    RateLimit(String),
 }
 
 /// The core error type thrown by the PriceReporter worker.

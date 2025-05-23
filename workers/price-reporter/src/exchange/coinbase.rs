@@ -12,7 +12,7 @@ use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use jsonwebtoken::{encode, Algorithm, EncodingKey as JwtEncodingKey, Header as JwtHeader};
 use reqwest::{
     header::{CONTENT_TYPE, USER_AGENT},
-    Client,
+    Client, StatusCode,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -152,6 +152,8 @@ impl CoinbaseConnection {
     /// Construct a JWT for the Coinbase advanced trade API
     fn construct_jwt(key_name: &str, key_secret: &str) -> Result<String, ExchangeConnectionError> {
         // Parse the key secret as a PEM-encoded EC private key
+        // NOTE: Coinbase provides EC private keys in traditional SEC1 format but
+        // jsonwebtoken crate requires PKCS#8 format, so conversion is necessary.
         let key = JwtEncodingKey::from_ec_pem(key_secret.as_bytes())
             .map_err(err_str!(ExchangeConnectionError::Crypto))?;
 
@@ -252,7 +254,7 @@ impl ExchangeConnection for CoinbaseConnection {
 
         // Setup the topic subscription
         writer
-            .send(Message::Text(authenticated_subscribe_msg))
+            .send(Message::Text(authenticated_subscribe_msg.clone()))
             .await
             .map_err(|err| ExchangeConnectionError::ConnectionHangup(err.to_string()))?;
 
@@ -319,8 +321,15 @@ impl ExchangeConnection for CoinbaseConnection {
             .send()
             .await
             .map_err(err_str!(ExchangeConnectionError::ConnectionHangup))?;
+        let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(ExchangeConnectionError::RateLimit(format!(
+                "checking support for {}",
+                product_id
+            )));
+        }
 
         // A successful response will only be sent if the pair is supported
-        Ok(response.status().is_success())
+        Ok(status.is_success())
     }
 }
