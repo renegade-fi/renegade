@@ -229,7 +229,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     // --- Call Tracing --- //
 
     /// Fetch the darkpool calls from a given transaction
-    async fn fetch_tx_darkpool_calls(
+    pub async fn fetch_tx_darkpool_calls(
         &self,
         tx_hash: TxHash,
     ) -> Result<Vec<CallFrame>, DarkpoolClientError> {

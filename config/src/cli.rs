@@ -305,7 +305,7 @@ pub struct RelayerConfig {
     ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api
     pub compliance_service_url: Option<String>,
     /// The URL to export relayer events to.
-    /// If ommitted, the event manager is disabled.
+    /// If omitted, the event manager is disabled.
     pub event_export_url: Option<Url>,
 
     // ----------------------------
