@@ -182,7 +182,11 @@ impl OnChainEventListenerExecutor {
             let (event, meta) = res.map_err(OnChainEventListenerError::darkpool)?;
             let tx_hash = meta.transaction_hash.expect("no tx hash for log");
             let nullifier = u256_to_scalar(event.nullifier);
-            self.handle_nullifier_spent(tx_hash, nullifier).await?;
+
+            // Handle the nullifier spent event
+            if let Err(e) = self.handle_nullifier_spent(tx_hash, nullifier).await {
+                self.handle_nullifier_spent_error(nullifier, e).await;
+            }
         }
 
         unreachable!()
@@ -207,6 +211,19 @@ impl OnChainEventListenerExecutor {
 
         // Update internal state
         self.handle_nullifier_wallet_updates(nullifier, tx).await
+    }
+
+    /// Handle an error processing a nullifier spent event
+    async fn handle_nullifier_spent_error(
+        &self,
+        nullifier: Nullifier,
+        err: OnChainEventListenerError,
+    ) {
+        // Clear the wallet's queue and refresh to sync with on-chain state
+        error!("error handling nullifier spent event: {err}");
+        if let Err(e) = self.clear_queue_for_nullifier(nullifier).await {
+            error!("error clearing queue for nullifier {nullifier}: {e}");
+        }
     }
 
     /// Handle the internal wallet updates resulting from a nullifier spend
