@@ -102,7 +102,7 @@ impl StateApplicator {
         for id in wallet.get_nonzero_orders().into_keys() {
             let mut md = tx
                 .get_order_metadata(wallet_id, id)?
-                .ok_or(StateApplicatorError::MissingEntry(ERR_NO_METADATA))?;
+                .ok_or(StateApplicatorError::reject(ERR_NO_METADATA))?;
             md.state = OrderState::Created;
             self.update_order_metadata_with_tx(md, tx)?;
         }
@@ -150,7 +150,7 @@ impl StateApplicator {
             if !wallet.contains_order(&id) {
                 let old_meta = tx
                     .get_order_metadata(wallet_id, id)?
-                    .ok_or(StateApplicatorError::MissingEntry(ERR_NO_METADATA))?;
+                    .ok_or(StateApplicatorError::reject(ERR_NO_METADATA))?;
 
                 // Only update the state if it has not already entered a terminal state
                 if !old_meta.state.is_terminal() {
