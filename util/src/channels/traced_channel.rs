@@ -1,7 +1,12 @@
 //! A channel wrapper which adds traces across the channel boundary
 
+use crossbeam::channel::{
+    unbounded as crossbeam_unbounded_channel, Receiver as CrossbeamReceiver,
+    SendError as CrossbeamSendError, Sender as CrossbeamSender,
+};
 use tokio::sync::mpsc::{
-    error::SendError, UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
+    error::SendError, unbounded_channel as tokio_unbounded_channel,
+    UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
 
 use crate::telemetry::propagation::{
@@ -20,8 +25,32 @@ pub struct TracedMessage<T> {
 impl<T> TracedMessage<T> {
     /// Create a new traced message
     pub fn new(message: T) -> Self {
-        Self { tracing_context: trace_context_headers(), message }
+        let tracing_context = trace_context_headers();
+        Self { tracing_context, message }
     }
+
+    /// Consume the traced message, setting the parent span and returning the
+    /// original message
+    pub fn into_message(self) -> T {
+        set_parent_span_from_headers(&self.tracing_context);
+        self.message
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Create a new traced Tokio sender and receiver
+pub fn new_traced_tokio_channel<T>() -> (TracedTokioSender<T>, TracedTokioReceiver<T>) {
+    let (tx, rx) = tokio_unbounded_channel();
+    (TracedTokioSender::new(tx), TracedTokioReceiver::new(rx))
+}
+
+/// Create a new traced Crossbeam sender and receiver
+pub fn new_traced_crossbeam_channel<T>() -> (TracedCrossbeamSender<T>, TracedCrossbeamReceiver<T>) {
+    let (tx, rx) = crossbeam_unbounded_channel();
+    (TracedCrossbeamSender::new(tx), TracedCrossbeamReceiver::new(rx))
 }
 
 // ------------------
@@ -41,7 +70,7 @@ impl<T> TracedTokioSender<T> {
     }
 
     /// Send a message to the channel
-    pub async fn send(&self, message: T) -> Result<(), SendError<T>> {
+    pub fn send(&self, message: T) -> Result<(), SendError<T>> {
         let traced_msg = TracedMessage::new(message);
         self.inner.send(traced_msg).map_err(|e| SendError(e.0.message))
     }
@@ -63,8 +92,56 @@ impl<T> TracedTokioReceiver<T> {
     pub async fn recv(&mut self) -> Option<T> {
         // Unwrap the traced message and set the parent span
         let traced_message = self.inner.recv().await?;
-        set_parent_span_from_headers(&traced_message.tracing_context);
+        Some(traced_message.into_message())
+    }
+}
 
-        Some(traced_message.message)
+// ----------------------
+// | Crossbeam Channels |
+// ----------------------
+
+/// A traced Crossbeam sender
+pub struct TracedCrossbeamSender<T> {
+    /// The inner channel
+    inner: CrossbeamSender<TracedMessage<T>>,
+}
+
+impl<T> TracedCrossbeamSender<T> {
+    /// Create a new traced Crossbeam sender
+    pub fn new(inner: CrossbeamSender<TracedMessage<T>>) -> Self {
+        Self { inner }
+    }
+
+    /// Send a message to the channel
+    pub fn send(&self, message: T) -> Result<(), CrossbeamSendError<T>> {
+        let traced_msg = TracedMessage::new(message);
+        self.inner.send(traced_msg).map_err(|e| CrossbeamSendError(e.0.message))
+    }
+}
+
+/// A traced Crossbeam receiver
+pub struct TracedCrossbeamReceiver<T> {
+    /// The inner channel
+    inner: CrossbeamReceiver<TracedMessage<T>>,
+}
+
+impl<T> TracedCrossbeamReceiver<T> {
+    /// Create a new traced Crossbeam receiver
+    pub fn new(inner: CrossbeamReceiver<TracedMessage<T>>) -> Self {
+        Self { inner }
+    }
+
+    /// Receive a message from the channel
+    pub fn recv(&self) -> Result<T, crossbeam::channel::RecvError> {
+        // Unwrap the traced message and set the parent span
+        let traced_message = self.inner.recv()?;
+        Ok(traced_message.into_message())
+    }
+
+    /// Try to receive a message from the channel (non-blocking)
+    pub fn try_recv(&self) -> Result<T, crossbeam::channel::TryRecvError> {
+        // Unwrap the traced message and set the parent span
+        let traced_message = self.inner.try_recv()?;
+        Ok(traced_message.into_message())
     }
 }
