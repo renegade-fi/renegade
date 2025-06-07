@@ -18,7 +18,7 @@ use common::types::{
 use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender as TokioSender};
-use util::metered_channels::MeteredTokioReceiver;
+use util::channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
 // ---------------

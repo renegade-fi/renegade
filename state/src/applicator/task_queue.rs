@@ -446,7 +446,7 @@ mod test {
     };
     use eyre::Result;
     use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
-    use util::metered_channels::MeteredCrossbeamReceiver;
+    use util::channels::MeteredCrossbeamReceiver;
 
     use crate::{
         applicator::{

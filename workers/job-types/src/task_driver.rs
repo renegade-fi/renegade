@@ -5,7 +5,7 @@ use crossbeam::channel::Sender as CrossbeamSender;
 use tokio::sync::oneshot::{
     channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
 };
-use util::metered_channels::MeteredCrossbeamReceiver;
+use util::channels::MeteredCrossbeamReceiver;
 
 /// The name of the task driver queue, used to label queue length metrics
 const TASK_DRIVER_QUEUE_NAME: &str = "task_driver";

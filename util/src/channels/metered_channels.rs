@@ -15,7 +15,7 @@ pub struct MeteredTokioReceiver<T> {
     inner: UnboundedReceiver<T>,
 
     /// The name of the channel
-    #[cfg_attr(not(feature = "metered-channels"), allow(dead_code))]
+    #[cfg_attr(not(feature = "channels"), allow(dead_code))]
     name: &'static str,
 }
 
@@ -27,7 +27,7 @@ impl<T> MeteredTokioReceiver<T> {
 
     /// Receive a message from the channel, recording the queue length
     pub async fn recv(&mut self) -> Option<T> {
-        #[cfg(feature = "metered-channels")]
+        #[cfg(feature = "channels")]
         {
             let metric_name = format!("{}_{}", self.name, QUEUE_LENGTH_METRIC);
             let queue_len = self.inner.len();
@@ -61,7 +61,7 @@ impl<T> MeteredCrossbeamReceiver<T> {
 
     /// Receive a message from the channel, recording the queue length
     pub fn recv(&self) -> Result<T, RecvError> {
-        #[cfg(feature = "metered-channels")]
+        #[cfg(feature = "channels")]
         {
             let metric_name = format!("{}_{}", self.name, QUEUE_LENGTH_METRIC);
             let queue_len = self.inner.len();

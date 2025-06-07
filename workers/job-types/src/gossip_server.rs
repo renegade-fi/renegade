@@ -8,7 +8,7 @@ use gossip_api::{
 };
 use libp2p::request_response::ResponseChannel;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
-use util::metered_channels::MeteredTokioReceiver;
+use util::channels::MeteredTokioReceiver;
 
 /// The name of the gossip server queue, used to label queue length metrics
 const GOSSIP_SERVER_QUEUE_NAME: &str = "gossip_server";

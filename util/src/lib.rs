@@ -8,6 +8,8 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "channels")]
+pub mod channels;
 #[cfg(feature = "concurrency")]
 pub mod concurrency;
 #[cfg(feature = "errors")]
@@ -16,8 +18,6 @@ pub mod errors;
 pub mod hex;
 #[cfg(feature = "matching-engine")]
 pub mod matching_engine;
-#[cfg(feature = "metered-channels")]
-pub mod metered_channels;
 #[cfg(feature = "networking")]
 pub mod networking;
 #[cfg(feature = "blockchain")]

@@ -14,7 +14,7 @@ use external_api::bus_message::gen_atomic_match_response_topic;
 use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
 use libp2p::request_response::ResponseChannel;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
-use util::metered_channels::MeteredTokioReceiver;
+use util::channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
 /// The name of the handshake manager queue, used to label queue length metrics
