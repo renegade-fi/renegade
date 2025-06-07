@@ -67,5 +67,11 @@ metrics-util = "0.16"
 metrics-exporter-statsd = "0.7"
 metrics-tracing-context = "0.15"
 
+[[bench]]
+name = "matching_engine"
+harness = false
+required-features = ["matching-engine"]
+
 [dev-dependencies]
 lazy_static = { workspace = true }
+criterion = { version = "0.5", features = ["async", "async_tokio"] }

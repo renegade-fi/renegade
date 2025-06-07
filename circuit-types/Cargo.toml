@@ -37,6 +37,7 @@ mpc-relation = { workspace = true, optional = true }
 bigdecimal = "0.3"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
+num-traits = "0.2"
 rand = "0.8"
 
 # === Async + Runtime === #

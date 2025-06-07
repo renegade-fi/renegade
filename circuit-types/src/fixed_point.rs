@@ -5,11 +5,12 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInteger, Field, PrimeField};
-use bigdecimal::{BigDecimal, FromPrimitive, Num, ToPrimitive};
+use bigdecimal::{BigDecimal, FromPrimitive, Num};
 use constants::{Scalar, ScalarField};
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigInt};
 use num_integer::Integer;
+use num_traits::ToPrimitive;
 use renegade_crypto::fields::{
     bigint_to_scalar, biguint_to_scalar, scalar_to_bigint, scalar_to_biguint, scalar_to_u64,
 };
@@ -34,6 +35,10 @@ use {
 /// The default fixed point decimal precision in bits
 /// i.e. the number of bits allocated to a fixed point's decimal
 pub const DEFAULT_FP_PRECISION: usize = 63;
+/// The shift used to generated a scalar representation from a fixed point
+///
+/// As an f64, this is 2^63
+pub const DEFAULT_FP_PRECISION_F64: f64 = (1u64 << DEFAULT_FP_PRECISION) as f64;
 
 lazy_static! {
     /// The shift used to generate a scalar representation from a fixed point
@@ -162,11 +167,16 @@ impl FixedPoint {
 
     /// Return the represented value as an f64
     pub fn to_f64(&self) -> f64 {
-        let dec = BigDecimal::from(scalar_to_bigint(&self.abs().repr));
-        let result = &dec / (1u64 << DEFAULT_FP_PRECISION);
+        let is_negative = self.is_negative();
+        let repr = if is_negative { self.repr.inner().neg() } else { self.repr.inner() };
 
-        let neg = self.is_negative();
-        result.to_f64().map(|x| if neg { -x } else { x }).unwrap()
+        let repr_bigint: BigUint = repr.into_bigint().into();
+        let fp = repr_bigint.to_f64().unwrap() / DEFAULT_FP_PRECISION_F64;
+        if is_negative {
+            -fp
+        } else {
+            fp
+        }
     }
 
     /// Return the represented value as an f32
