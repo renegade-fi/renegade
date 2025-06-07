@@ -13,22 +13,17 @@ use constants::SystemCurveGroup;
 use external_api::bus_message::gen_atomic_match_response_topic;
 use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
 use libp2p::request_response::ResponseChannel;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioSender};
-use util::channels::MeteredTokioReceiver;
+use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
 use uuid::Uuid;
 
-/// The name of the handshake manager queue, used to label queue length metrics
-const HANDSHAKE_MANAGER_QUEUE_NAME: &str = "handshake_manager";
-
 /// The job queue for the handshake manager
-pub type HandshakeManagerQueue = TokioSender<HandshakeManagerJob>;
+pub type HandshakeManagerQueue = TracedTokioSender<HandshakeManagerJob>;
 /// The job queue receiver for the handshake manager
-pub type HandshakeManagerReceiver = MeteredTokioReceiver<HandshakeManagerJob>;
+pub type HandshakeManagerReceiver = TracedTokioReceiver<HandshakeManagerJob>;
 
 /// Create a new handshake manager queue and receiver
 pub fn new_handshake_manager_queue() -> (HandshakeManagerQueue, HandshakeManagerReceiver) {
-    let (send, recv) = unbounded_channel();
-    (send, MeteredTokioReceiver::new(recv, HANDSHAKE_MANAGER_QUEUE_NAME))
+    new_traced_tokio_channel()
 }
 
 /// Represents a job for the handshake manager's thread pool to execute

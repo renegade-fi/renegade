@@ -445,8 +445,8 @@ mod test {
         wallet_mocks::mock_empty_wallet,
     };
     use eyre::Result;
-    use job_types::task_driver::{new_task_driver_queue, TaskDriverJob};
-    use util::channels::MeteredCrossbeamReceiver;
+    use job_types::task_driver::{new_task_driver_queue, TaskDriverJob, TaskDriverReceiver};
+    use util::channels::TracedMessage;
 
     use crate::{
         applicator::{
@@ -471,8 +471,7 @@ mod test {
     }
 
     /// Setup a mock applicator, and return with a task driver's work queue
-    fn setup_mock_applicator_with_driver_queue(
-    ) -> (StateApplicator, MeteredCrossbeamReceiver<TaskDriverJob>) {
+    fn setup_mock_applicator_with_driver_queue() -> (StateApplicator, TaskDriverReceiver) {
         let (task_queue, recv) = new_task_driver_queue();
         let applicator = mock_applicator_with_task_queue(task_queue);
 
@@ -511,7 +510,8 @@ mod test {
     }
 
     /// Check that a task driver job is a run task with the given id
-    fn assert_run_task(job: &TaskDriverJob, task_id: TaskIdentifier) {
+    fn assert_run_task(msg: TracedMessage<TaskDriverJob>, task_id: TaskIdentifier) {
+        let job = msg.into_message();
         assert!(
             matches!(job, TaskDriverJob::Run { task: queued_task, .. } if queued_task.id == task_id)
         );
@@ -547,7 +547,7 @@ mod test {
         // Check the task was started
         assert!(!task_recv.is_empty());
         let job = task_recv.recv()?;
-        assert_run_task(&job, task_id);
+        assert_run_task(job, task_id);
         Ok(())
     }
 
@@ -690,7 +690,7 @@ mod test {
         // Ensure the second task was started
         assert!(!task_recv.is_empty());
         let job = task_recv.recv()?;
-        assert_run_task(&job, task2.id);
+        assert_run_task(job, task2.id);
         Ok(())
     }
 
@@ -913,7 +913,7 @@ mod test {
 
         // Lastly, the applicator should have sent the task to the driver
         let job = task_recv.recv().unwrap();
-        assert_run_task(&job, preemptive_task.id);
+        assert_run_task(job, preemptive_task.id);
         Ok(())
     }
 
@@ -959,8 +959,8 @@ mod test {
         // The applicator should have forwarded both tasks to the driver
         let job1 = task_recv.recv().unwrap();
         let job2 = task_recv.recv().unwrap();
-        assert_run_task(&job1, task1.id);
-        assert_run_task(&job2, task2.id);
+        assert_run_task(job1, task1.id);
+        assert_run_task(job2, task2.id);
         Ok(())
     }
 
@@ -995,7 +995,7 @@ mod test {
 
         // The applicator should have forwarded the original task to the driver
         let job = task_recv.recv().unwrap();
-        assert_run_task(&job, serial_task.id);
+        assert_run_task(job, serial_task.id);
         Ok(())
     }
 
@@ -1035,7 +1035,7 @@ mod test {
 
         // The applicator should have forwarded the original task to the driver
         let job = task_recv.recv().unwrap();
-        assert_run_task(&job, serial_task.id);
+        assert_run_task(job, serial_task.id);
         Ok(())
     }
 
@@ -1062,7 +1062,7 @@ mod test {
             true, // is_serial
         )?;
         let job = task_recv.recv().expect("expected applicator to enqueue task for execution");
-        assert_run_task(&job, preemptive_task.id);
+        assert_run_task(job, preemptive_task.id);
 
         // Check that the queues have been updated correctly
         let tx = applicator.db().new_read_tx()?;
@@ -1087,7 +1087,7 @@ mod test {
         // on the first queue
         applicator.pop_task(preemptive_task.id, true)?;
         let job = task_recv.recv().unwrap();
-        assert_run_task(&job, task1.id);
+        assert_run_task(job, task1.id);
 
         // Check the task status of the original task
         let tx = applicator.db().new_read_tx()?;
@@ -1125,7 +1125,7 @@ mod test {
             false, // is_serial
         )?;
         let job = task_recv.recv().expect("expected applicator to enqueue task for execution");
-        assert_run_task(&job, preemptive_task.id);
+        assert_run_task(job, preemptive_task.id);
 
         // Add a serial task behind the concurrent task on the second queue
         let task2 = mock_queued_task(queue_key2);
@@ -1135,7 +1135,7 @@ mod test {
         // serial task
         applicator.pop_task(preemptive_task.id, true /* success */)?;
         let job = task_recv.recv().unwrap();
-        assert_run_task(&job, task2.id);
+        assert_run_task(job, task2.id);
 
         // Check the task status of the original task
         let tx = applicator.db().new_read_tx()?;
@@ -1214,7 +1214,7 @@ mod test {
 
         // Verify the task was started on the local peer
         assert!(!task_recv.is_empty());
-        assert_run_task(&task_recv.recv()?, task.id);
+        assert_run_task(task_recv.recv()?, task.id);
         Ok(())
     }
 
@@ -1255,7 +1255,7 @@ mod test {
 
         // The second task should now be started on the local peer
         assert!(!task_recv.is_empty());
-        assert_run_task(&task_recv.recv()?, task2.id);
+        assert_run_task(task_recv.recv()?, task2.id);
         Ok(())
     }
 }

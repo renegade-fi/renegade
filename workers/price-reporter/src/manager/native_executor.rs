@@ -9,7 +9,8 @@ use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::sync::oneshot::Sender as TokioSender;
-use tracing::{error, info, info_span, warn, Instrument};
+use tracing::{error, info, info_span, instrument, warn, Instrument};
+use util::channels::TracedMessage;
 use util::concurrency::runtime::sleep_forever_async;
 
 use crate::{
@@ -87,8 +88,12 @@ impl PriceReporterExecutor {
     }
 
     /// Handles a job for the PriceReporter worker.
-    pub(super) async fn handle_job(&self, job: PriceReporterJob) -> Result<(), PriceReporterError> {
-        match job {
+    #[instrument(name = "handle_price_reporter_job", skip(self, job))]
+    pub(super) async fn handle_job(
+        &self,
+        job: TracedMessage<PriceReporterJob>,
+    ) -> Result<(), PriceReporterError> {
+        match job.consume() {
             PriceReporterJob::StreamPrice { base_token, quote_token } => {
                 self.stream_price(base_token, quote_token).await
             },

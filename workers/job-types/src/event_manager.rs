@@ -17,26 +17,22 @@ use common::types::{
 };
 use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender as TokioSender};
-use util::channels::MeteredTokioReceiver;
+use tokio::sync::mpsc::error::SendError;
+use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
 use uuid::Uuid;
 
 // ---------------
 // | Queue Types |
 // ---------------
 
-/// The name of the event manager queue, used to label queue length metrics
-const EVENT_MANAGER_QUEUE_NAME: &str = "event_manager";
-
 /// The queue sender type to send events to the event manager
-pub type EventManagerQueue = TokioSender<RelayerEventType>;
+pub type EventManagerQueue = TracedTokioSender<RelayerEventType>;
 /// The queue receiver type to receive events in the event manager
-pub type EventManagerReceiver = MeteredTokioReceiver<RelayerEventType>;
+pub type EventManagerReceiver = TracedTokioReceiver<RelayerEventType>;
 
 /// Create a new event manager queue and receiver
 pub fn new_event_manager_queue() -> (EventManagerQueue, EventManagerReceiver) {
-    let (send, recv) = unbounded_channel();
-    (send, MeteredTokioReceiver::new(recv, EVENT_MANAGER_QUEUE_NAME))
+    new_traced_tokio_channel()
 }
 
 /// A helper for sending an event to the event manager queue, recording a

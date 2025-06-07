@@ -1,31 +1,27 @@
 //! Defines all possible jobs for the PriceReporter.
 use common::types::TimestampedPrice;
 use common::types::{exchange::PriceReporterState, token::Token};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioUnboundedSender};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver, Sender as TokioSender};
-use util::channels::MeteredTokioReceiver;
-
-/// The name of the price reporter queue, used to label queue length metrics
-const PRICE_REPORTER_QUEUE_NAME: &str = "price_reporter";
+use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
 
 /// The queue receiver type for the price reporter
-pub type PriceReporterReceiver = MeteredTokioReceiver<PriceReporterJob>;
+pub type PriceReporterReceiver = TracedTokioReceiver<PriceReporterJob>;
 
 /// Create a new price reporter queue and receiver
 pub fn new_price_reporter_queue() -> (PriceReporterQueue, PriceReporterReceiver) {
-    let (send, recv) = unbounded_channel();
-    (send.into(), MeteredTokioReceiver::new(recv, PRICE_REPORTER_QUEUE_NAME))
+    let (send, recv) = new_traced_tokio_channel();
+    (send.into(), recv)
 }
 
 /// The queue type for the price reporter
 #[derive(Clone)]
 pub struct PriceReporterQueue {
     /// The inner sender
-    inner: TokioUnboundedSender<PriceReporterJob>,
+    inner: TracedTokioSender<PriceReporterJob>,
 }
 
-impl From<TokioUnboundedSender<PriceReporterJob>> for PriceReporterQueue {
-    fn from(inner: TokioUnboundedSender<PriceReporterJob>) -> Self {
+impl From<TracedTokioSender<PriceReporterJob>> for PriceReporterQueue {
+    fn from(inner: TracedTokioSender<PriceReporterJob>) -> Self {
         Self { inner }
     }
 }

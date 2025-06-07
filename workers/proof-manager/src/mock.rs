@@ -41,9 +41,10 @@ use common::types::proof_bundles::{
     mocks::{dummy_link_hint, dummy_proof},
     ProofBundle,
 };
-use job_types::proof_manager::{ProofJob, ProofManagerReceiver};
-use tokio::{runtime::Handle, sync::oneshot::Sender as TokioSender};
-use tracing::error;
+use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
+use tokio::runtime::Handle;
+use tracing::{error, instrument};
+use util::channels::TracedMessage;
 
 use crate::error::ProofManagerError;
 
@@ -74,17 +75,16 @@ impl MockProofManager {
                 Err(_) => {
                     return Err(ProofManagerError::JobQueueClosed("job queue closed".to_string()));
                 },
-                Ok(job) => Self::handle_job(job.type_, job.response_channel)?,
+                Ok(job) => Self::handle_job(job)?,
             }
         }
     }
 
     /// Handle a job by immediately returning a dummy proof
-    fn handle_job(
-        job_type: ProofJob,
-        response_channel: TokioSender<ProofBundle>,
-    ) -> Result<(), ProofManagerError> {
-        let bundle = match job_type {
+    #[instrument(name = "handle_proof_manager_job", skip(job))]
+    fn handle_job(job: TracedMessage<ProofManagerJob>) -> Result<(), ProofManagerError> {
+        let ProofManagerJob { type_, response_channel } = job.consume();
+        let bundle = match type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 Self::valid_wallet_create(witness, statement)
             },

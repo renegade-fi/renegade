@@ -46,6 +46,7 @@ use std::thread::JoinHandle;
 use system_bus::SystemBus;
 use tracing::{error, info, info_span, instrument, Instrument};
 use util::{
+    channels::TracedMessage,
     concurrency::{new_async_shared, runtime::sleep_forever_async},
     err_str, get_current_time_millis,
 };
@@ -191,9 +192,9 @@ impl HandshakeExecutor {
     #[instrument(name = "handle_handshake_job", skip_all)]
     pub async fn handle_handshake_job(
         &self,
-        job: HandshakeManagerJob,
+        job: TracedMessage<HandshakeManagerJob>,
     ) -> Result<(), HandshakeManagerError> {
-        match job {
+        match job.consume() {
             // The timer thread has scheduled an outbound handshake
             HandshakeManagerJob::PerformHandshake { order } => self.perform_handshake(order).await,
 

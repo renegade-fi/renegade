@@ -8,7 +8,10 @@ use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotification
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::{error, info, instrument, warn};
-use util::concurrency::{new_shared, Shared};
+use util::{
+    channels::TracedMessage,
+    concurrency::{new_shared, Shared},
+};
 
 use crate::{
     error::TaskDriverError,
@@ -156,8 +159,8 @@ impl TaskExecutor {
     }
 
     /// Handle a job sent to the task driver
-    async fn handle_job(&self, job: TaskDriverJob) -> Result<(), TaskDriverError> {
-        match job {
+    async fn handle_job(&self, job: TracedMessage<TaskDriverJob>) -> Result<(), TaskDriverError> {
+        match job.consume() {
             TaskDriverJob::Run { task, channel } => {
                 let affected_wallets = task.descriptor.affected_wallets();
                 self.start_task(

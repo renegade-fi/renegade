@@ -112,7 +112,7 @@ impl EventManagerExecutor {
                     }
                     let sink = sink.as_mut().unwrap();
 
-                    if let Err(e) = self.handle_relayer_event(event, sink).await {
+                    if let Err(e) = self.handle_relayer_event(event.into_message(), sink).await {
                         metrics::counter!(NUM_EVENT_EXPORT_FAILURES_METRIC).increment(1);
                         error!("Failed to handle relayer event: {e}");
                     }

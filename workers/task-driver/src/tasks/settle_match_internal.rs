@@ -36,7 +36,7 @@ use serde::Serialize;
 use state::error::StateError;
 use state::State;
 use tokio::task::JoinHandle as TokioJoinHandle;
-use tracing::instrument;
+use tracing::{instrument, Instrument};
 use util::err_str;
 use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
@@ -554,9 +554,12 @@ impl SettleMatchInternalTask {
         state: State,
         network_sender: NetworkManagerQueue,
     ) -> TokioJoinHandle<Result<(), String>> {
-        tokio::spawn(async move {
-            update_wallet_validity_proofs(&wallet, proof_queue, state, network_sender).await
-        })
+        tokio::spawn(
+            async move {
+                update_wallet_validity_proofs(&wallet, proof_queue, state, network_sender).await
+            }
+            .in_current_span(),
+        )
     }
 
     /// Emit a pair of fill events to the event manager
