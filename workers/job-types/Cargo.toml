@@ -18,7 +18,7 @@ common = { workspace = true }
 constants = { workspace = true }
 external-api = { workspace = true }
 gossip-api = { workspace = true }
-util = { workspace = true, features = ["metered-channels"] }
+util = { workspace = true, features = ["channels"] }
 renegade-metrics = { workspace = true }
 
 # === Misc === #

@@ -7,7 +7,7 @@ default-run = "renegade-relayer"
 [features]
 arbitrum = ["chain-events/arbitrum", "darkpool-client/arbitrum"]
 base = ["chain-events/base", "darkpool-client/base"]
-metered-channels = ["util/metered-channels"]
+metered-channels = ["util/channels"]
 
 [dependencies]
 # === Runtime + Async === #

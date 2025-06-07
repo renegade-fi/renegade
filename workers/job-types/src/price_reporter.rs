@@ -3,7 +3,7 @@ use common::types::TimestampedPrice;
 use common::types::{exchange::PriceReporterState, token::Token};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender as TokioUnboundedSender};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver, Sender as TokioSender};
-use util::metered_channels::MeteredTokioReceiver;
+use util::channels::MeteredTokioReceiver;
 
 /// The name of the price reporter queue, used to label queue length metrics
 const PRICE_REPORTER_QUEUE_NAME: &str = "price_reporter";

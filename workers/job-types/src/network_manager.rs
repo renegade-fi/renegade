@@ -14,7 +14,7 @@ use tokio::sync::{
     mpsc::{unbounded_channel, UnboundedSender as TokioSender},
     oneshot::{Receiver as OneshotReceiver, Sender as OneshotSender},
 };
-use util::metered_channels::MeteredTokioReceiver;
+use util::channels::MeteredTokioReceiver;
 use uuid::Uuid;
 
 use crate::new_response_channel;

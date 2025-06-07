@@ -27,7 +27,7 @@ use circuits::zk_circuits::{
 use common::types::proof_bundles::ProofBundle;
 use crossbeam::channel::{unbounded, Sender as CrossbeamSender};
 use tokio::sync::oneshot::Sender;
-use util::metered_channels::MeteredCrossbeamReceiver;
+use util::channels::MeteredCrossbeamReceiver;
 
 /// The name of the proof manager queue, used to label queue length metrics
 const PROOF_MANAGER_QUEUE_NAME: &str = "proof_manager";
