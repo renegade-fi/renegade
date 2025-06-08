@@ -33,6 +33,7 @@ use num_bigint::BigUint;
 use state::State;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver as TokioReceiver;
+use tracing::instrument;
 
 use super::{
     ERR_BALANCE_NOT_FOUND, ERR_ENQUEUING_JOB, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
@@ -293,6 +294,7 @@ pub(crate) async fn update_wallet_validity_proofs(
 ///
 /// The proof is gossipped to the network so that peers may verify the validity
 /// bundle and schedule matches on the proven order
+#[instrument(skip_all)]
 async fn link_and_store_proofs(
     order_id: &OrderIdentifier,
     commitments_witness: &SizedValidCommitmentsWitness,

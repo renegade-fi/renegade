@@ -31,10 +31,13 @@ use tokio::{
     },
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{error, info, info_span, warn, Instrument};
+use tracing::{error, info, info_span, instrument, warn, Instrument};
 use tungstenite::Message;
 use url::Url;
-use util::{concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis};
+use util::{
+    channels::TracedMessage, concurrency::runtime::sleep_forever_async, err_str,
+    get_current_time_millis,
+};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -192,12 +195,13 @@ impl ExternalPriceReporterExecutor {
     }
 
     /// Handles a job for the PriceReporter worker.
+    #[instrument(name = "handle_price_reporter_job", skip(self, job, msg_out_tx))]
     pub(super) async fn handle_job(
         &self,
-        job: PriceReporterJob,
+        job: TracedMessage<PriceReporterJob>,
         msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
-        match job {
+        match job.consume() {
             PriceReporterJob::StreamPrice { base_token, quote_token } => {
                 self.stream_price(base_token, quote_token, msg_out_tx).await
             },

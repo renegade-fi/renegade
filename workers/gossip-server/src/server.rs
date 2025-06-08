@@ -30,7 +30,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::{error, info, instrument, warn};
-use util::err_str;
+use util::{channels::TracedMessage, err_str};
 
 use crate::peer_discovery::{
     expiry_window::PeerExpiryWindows,
@@ -196,10 +196,10 @@ impl GossipProtocolExecutor {
     }
 
     /// The main dispatch method for handling jobs
-    #[instrument(name = "gossip_server_job", skip(self))]
-    async fn handle_job(&self, job: GossipServerJob) -> Result<(), GossipError> {
+    #[instrument(name = "gossip_server_job", skip(self, message))]
+    async fn handle_job(&self, message: TracedMessage<GossipServerJob>) -> Result<(), GossipError> {
         let start = Instant::now();
-        match job {
+        match message.consume() {
             GossipServerJob::ExecuteHeartbeat(peer_id) => self.send_heartbeat(peer_id).await?,
             GossipServerJob::NetworkRequest(peer_id, req, response_chan) => {
                 let resp = self.handle_request(peer_id, req).await?;

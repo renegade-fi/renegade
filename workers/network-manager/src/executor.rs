@@ -22,7 +22,10 @@ use libp2p::{
 };
 use state::State;
 use tracing::{debug, error, info};
-use util::concurrency::{new_async_shared, AsyncShared};
+use util::{
+    channels::TracedMessage,
+    concurrency::{new_async_shared, AsyncShared},
+};
 
 use std::sync::{atomic::AtomicBool, Arc};
 
@@ -250,8 +253,11 @@ impl NetworkManagerExecutor {
     }
 
     /// Handle a job originating from elsewhere in the local node
-    async fn handle_job(&self, job: NetworkManagerJob) -> Result<(), NetworkManagerError> {
-        match job {
+    async fn handle_job(
+        &self,
+        job: TracedMessage<NetworkManagerJob>,
+    ) -> Result<(), NetworkManagerError> {
+        match job.consume() {
             NetworkManagerJob::Pubsub(topic, msg) => self.forward_outbound_pubsub(topic, msg).await,
             NetworkManagerJob::Request(peer, req, chan) => {
                 self.handle_outbound_req(peer.inner(), req, chan).await

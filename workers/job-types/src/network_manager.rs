@@ -10,22 +10,16 @@ use gossip_api::{
 };
 use libp2p::request_response::ResponseChannel;
 use libp2p_core::Multiaddr;
-use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedSender as TokioSender},
-    oneshot::{Receiver as OneshotReceiver, Sender as OneshotSender},
-};
-use util::channels::MeteredTokioReceiver;
+use tokio::sync::oneshot::{Receiver as OneshotReceiver, Sender as OneshotSender};
+use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
 use uuid::Uuid;
 
 use crate::new_response_channel;
 
-/// The name of the network manager queue, used to label queue length metrics
-const NETWORK_MANAGER_QUEUE_NAME: &str = "network_manager";
-
 /// The task queue type for the network manager
-pub type NetworkManagerQueue = TokioSender<NetworkManagerJob>;
+pub type NetworkManagerQueue = TracedTokioSender<NetworkManagerJob>;
 /// The task queue receiver type for the network manager
-pub type NetworkManagerReceiver = MeteredTokioReceiver<NetworkManagerJob>;
+pub type NetworkManagerReceiver = TracedTokioReceiver<NetworkManagerJob>;
 /// The channel type on which the network manager forwards a response to a
 /// particular request
 pub type NetworkResponseChannel = OneshotSender<GossipResponse>;
@@ -35,8 +29,7 @@ pub type NetworkResponseReceiver = OneshotReceiver<GossipResponse>;
 
 /// Create a new network manager queue and receiver
 pub fn new_network_manager_queue() -> (NetworkManagerQueue, NetworkManagerReceiver) {
-    let (send, recv) = unbounded_channel();
-    (send, MeteredTokioReceiver::new(recv, NETWORK_MANAGER_QUEUE_NAME))
+    new_traced_tokio_channel()
 }
 
 /// The job type for the network manager

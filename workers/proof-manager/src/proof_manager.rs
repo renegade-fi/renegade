@@ -48,7 +48,7 @@ use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;
 use tracing::{error, info, info_span, instrument};
-use util::{concurrency::runtime::sleep_forever_blocking, err_str};
+use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking, err_str};
 
 use super::error::ProofManagerError;
 
@@ -121,8 +121,10 @@ impl ProofManager {
     }
 
     /// The main job handler, run by a thread in the pool
-    fn handle_proof_job(job: ProofManagerJob) -> Result<(), ProofManagerError> {
-        let proof_bundle = match job.type_ {
+    #[instrument(name = "handle_proof_job", skip(job))]
+    fn handle_proof_job(job: TracedMessage<ProofManagerJob>) -> Result<(), ProofManagerError> {
+        let ProofManagerJob { type_, response_channel } = job.consume();
+        let proof_bundle = match type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 // Prove `VALID WALLET CREATE`
                 Self::prove_valid_wallet_create(witness, statement)
@@ -173,7 +175,7 @@ impl ProofManager {
             },
         }?;
 
-        job.response_channel
+        response_channel
             .send(proof_bundle)
             .map_err(|_| ProofManagerError::Response(ERR_SENDING_RESPONSE.to_string()))
     }
