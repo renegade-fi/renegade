@@ -93,4 +93,3 @@ pub(crate) fn not_found<E: ToString>(e: E) -> ApiServerError {
 pub(crate) fn internal_error<E: ToString>(e: E) -> ApiServerError {
     ApiServerError::HttpStatusCode(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
-

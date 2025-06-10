@@ -135,7 +135,7 @@ mod test {
 
     /// Test that wallet auth fails correctly when the signature is expired
     #[test]
-    #[should_panic(expected = "signature expired")]
+    #[should_panic(expected = "SignatureExpired")]
     #[allow(non_snake_case)]
     fn test_wallet_auth__expired() {
         let key = HmacKey::random();
@@ -149,7 +149,7 @@ mod test {
 
     /// Test that wallet auth fails correctly when the signature is invalid
     #[test]
-    #[should_panic(expected = "invalid signature")]
+    #[should_panic(expected = "InvalidSignature")]
     #[allow(non_snake_case)]
     fn test_wallet_auth__invalid_signature() {
         let key = HmacKey::random();
@@ -174,7 +174,7 @@ mod test {
 
     /// Test that admin auth fails correctly when the signature is expired
     #[test]
-    #[should_panic(expected = "signature expired")]
+    #[should_panic(expected = "SignatureExpired")]
     #[allow(non_snake_case)]
     fn test_admin_auth__expired() {
         let key = HmacKey::random();
@@ -188,7 +188,7 @@ mod test {
 
     /// Test that admin auth fails correctly when the signature is invalid
     #[test]
-    #[should_panic(expected = "invalid signature")]
+    #[should_panic(expected = "InvalidSignature")]
     #[allow(non_snake_case)]
     fn test_admin_auth__invalid_signature() {
         let key = HmacKey::random();
