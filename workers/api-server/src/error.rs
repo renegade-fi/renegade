@@ -82,12 +82,6 @@ pub(crate) fn bad_request<E: ToString>(e: E) -> ApiServerError {
     ApiServerError::HttpStatusCode(StatusCode::BAD_REQUEST, e.to_string())
 }
 
-/// Create an `ApiServerError` with a 401 unauthorized code
-#[allow(clippy::needless_pass_by_value)]
-pub(crate) fn unauthorized<E: ToString>(e: E) -> ApiServerError {
-    ApiServerError::HttpStatusCode(StatusCode::UNAUTHORIZED, e.to_string())
-}
-
 /// Create an `ApiServerError` with a 404 not found code
 #[allow(clippy::needless_pass_by_value)]
 pub(crate) fn not_found<E: ToString>(e: E) -> ApiServerError {

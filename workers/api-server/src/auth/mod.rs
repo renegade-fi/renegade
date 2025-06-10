@@ -2,25 +2,16 @@
 
 use common::types::{hmac::HmacKey, wallet::WalletIdentifier};
 use external_api::auth::validate_expiring_auth;
-use hyper::{HeaderMap, StatusCode};
+use hyper::HeaderMap;
 use state::State;
-use tracing::warn;
 
 use crate::{
     error::{not_found, ApiServerError},
     router::ERR_WALLET_NOT_FOUND,
 };
 
-use self::{admin_auth::authenticate_admin_request, wallet_auth::authenticate_wallet_request};
-
-mod admin_auth;
-mod helpers;
-mod wallet_auth;
-
 /// Error message emitted when the admin API is disabled
 const ERR_ADMIN_API_DISABLED: &str = "Admin API is disabled";
-/// Error message emitted when the path is invalid
-const ERR_INVALID_PATH: &str = "Invalid path";
 
 /// Represents the auth type required for a request
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -69,42 +60,7 @@ impl AuthMiddleware {
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
         let symmetric_key = wallet.key_chain.symmetric_key();
 
-        // Try v2 auth first, then fall back to v1
-        if Self::authenticate_wallet_request_v2(path, headers, payload, &symmetric_key).is_ok() {
-            return Ok(());
-        }
-
-        // TODO: REMOVE THIS SHIM CODE ONCE CLIENTS ARE UPDATED
-        // Try authenticating the request when the query string is excluded from the
-        // path
-        let path_without_query = path.split('?').next().ok_or(ApiServerError::HttpStatusCode(
-            StatusCode::BAD_REQUEST,
-            ERR_INVALID_PATH.to_string(),
-        ))?;
-        if Self::authenticate_wallet_request_v2(
-            path_without_query,
-            headers,
-            payload,
-            &symmetric_key,
-        )
-        .is_ok()
-        {
-            return Ok(());
-        }
-
-        authenticate_wallet_request(headers, payload, &symmetric_key)?;
-        warn!("Use of v1 wallet auth will be deprecated soon");
-        Ok(())
-    }
-
-    /// Authenticate a wallet request using v2 auth
-    pub(crate) fn authenticate_wallet_request_v2(
-        path: &str,
-        headers: &HeaderMap,
-        payload: &[u8],
-        key: &HmacKey,
-    ) -> Result<(), ApiServerError> {
-        validate_expiring_auth(path, headers, payload, key)?;
+        validate_expiring_auth(path, headers, payload, &symmetric_key)?;
         Ok(())
     }
 
@@ -119,38 +75,8 @@ impl AuthMiddleware {
             return Err(not_found(ERR_ADMIN_API_DISABLED));
         }
 
-        // Try v2 auth first, then fall back to v1
         let admin_key = self.admin_key.as_ref().unwrap();
-        if Self::authenticate_admin_request_v2(path, headers, payload, admin_key).is_ok() {
-            return Ok(());
-        }
-
-        // TODO: REMOVE THIS SHIM CODE ONCE CLIENTS ARE UPDATED
-        // Try authenticating the request when the query string is excluded from the
-        // path
-        let path_without_query = path.split('?').next().ok_or(ApiServerError::HttpStatusCode(
-            StatusCode::BAD_REQUEST,
-            ERR_INVALID_PATH.to_string(),
-        ))?;
-        if Self::authenticate_admin_request_v2(path_without_query, headers, payload, admin_key)
-            .is_ok()
-        {
-            return Ok(());
-        }
-
-        authenticate_admin_request(admin_key, headers, payload)?;
-        warn!("Use of v1 admin auth will be deprecated soon");
-        Ok(())
-    }
-
-    /// Authenticate an admin request using v2 auth
-    pub(crate) fn authenticate_admin_request_v2(
-        path: &str,
-        headers: &HeaderMap,
-        payload: &[u8],
-        key: &HmacKey,
-    ) -> Result<(), ApiServerError> {
-        validate_expiring_auth(path, headers, payload, key)?;
+        validate_expiring_auth(path, headers, payload, admin_key)?;
         Ok(())
     }
 }
@@ -196,43 +122,43 @@ mod test {
         headers.insert(RENEGADE_AUTH_HEADER_NAME, sig_header);
     }
 
-    /// Test that v2 wallet auth works correctly
+    /// Test that wallet auth works correctly
     #[test]
     #[allow(non_snake_case)]
-    fn test_v2_wallet_auth__successful() {
+    fn test_wallet_auth__successful() {
         let key = HmacKey::random();
         let (path, mut headers, payload) = get_dummy_path_header_map_payload();
 
         sign_request_add_expiration(path, &mut headers, payload, &key);
-        AuthMiddleware::authenticate_wallet_request_v2(path, &headers, payload, &key).unwrap();
+        validate_expiring_auth(path, &headers, payload, &key).unwrap();
     }
 
-    /// Test that v2 wallet auth fails correctly when the signature is expired
+    /// Test that wallet auth fails correctly when the signature is expired
     #[test]
-    #[should_panic(expected = "signature expired")]
+    #[should_panic(expected = "SignatureExpired")]
     #[allow(non_snake_case)]
-    fn test_v2_wallet_auth__expired() {
+    fn test_wallet_auth__expired() {
         let key = HmacKey::random();
         let (path, mut headers, payload) = get_dummy_path_header_map_payload();
         let ts = get_current_time_millis() - 1000; // Expired one second ago
         headers.insert(RENEGADE_SIG_EXPIRATION_HEADER_NAME, ts.into());
 
         sign_request(path, &mut headers, payload, &key);
-        AuthMiddleware::authenticate_wallet_request_v2(path, &headers, payload, &key).unwrap();
+        validate_expiring_auth(path, &headers, payload, &key).unwrap();
     }
 
-    /// Test that v2 wallet auth fails correctly when the signature is invalid
+    /// Test that wallet auth fails correctly when the signature is invalid
     #[test]
-    #[should_panic(expected = "invalid signature")]
+    #[should_panic(expected = "InvalidSignature")]
     #[allow(non_snake_case)]
-    fn test_v2_wallet_auth__invalid_signature() {
+    fn test_wallet_auth__invalid_signature() {
         let key = HmacKey::random();
         let (path, mut headers, payload) = get_dummy_path_header_map_payload();
         sign_request_add_expiration(path, &mut headers, payload, &key);
 
         // Add an extra header to change the mac payload
         headers.insert("x-renegade-extra-header", "extra".parse().unwrap());
-        AuthMiddleware::authenticate_wallet_request_v2(path, &headers, payload, &key).unwrap();
+        validate_expiring_auth(path, &headers, payload, &key).unwrap();
     }
 
     /// Test that admin auth works correctly
@@ -243,12 +169,12 @@ mod test {
         let (path, mut headers, payload) = get_dummy_path_header_map_payload();
 
         sign_request_add_expiration(path, &mut headers, payload, &key);
-        AuthMiddleware::authenticate_admin_request_v2(path, &headers, payload, &key).unwrap();
+        validate_expiring_auth(path, &headers, payload, &key).unwrap();
     }
 
     /// Test that admin auth fails correctly when the signature is expired
     #[test]
-    #[should_panic(expected = "signature expired")]
+    #[should_panic(expected = "SignatureExpired")]
     #[allow(non_snake_case)]
     fn test_admin_auth__expired() {
         let key = HmacKey::random();
@@ -257,12 +183,12 @@ mod test {
         headers.insert(RENEGADE_SIG_EXPIRATION_HEADER_NAME, ts.into());
 
         sign_request(path, &mut headers, payload, &key);
-        AuthMiddleware::authenticate_admin_request_v2(path, &headers, payload, &key).unwrap();
+        validate_expiring_auth(path, &headers, payload, &key).unwrap();
     }
 
     /// Test that admin auth fails correctly when the signature is invalid
     #[test]
-    #[should_panic(expected = "invalid signature")]
+    #[should_panic(expected = "InvalidSignature")]
     #[allow(non_snake_case)]
     fn test_admin_auth__invalid_signature() {
         let key = HmacKey::random();
@@ -271,6 +197,6 @@ mod test {
 
         // Add an extra header to change the mac payload
         headers.insert("x-renegade-extra-header", "extra".parse().unwrap());
-        AuthMiddleware::authenticate_admin_request_v2(path, &headers, payload, &key).unwrap();
+        validate_expiring_auth(path, &headers, payload, &key).unwrap();
     }
 }
