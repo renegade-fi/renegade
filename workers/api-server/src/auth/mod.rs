@@ -2,21 +2,16 @@
 
 use common::types::{hmac::HmacKey, wallet::WalletIdentifier};
 use external_api::auth::validate_expiring_auth;
-use hyper::{HeaderMap, StatusCode};
+use hyper::HeaderMap;
 use state::State;
-use tracing::warn;
 
 use crate::{
     error::{not_found, ApiServerError},
     router::ERR_WALLET_NOT_FOUND,
 };
 
-mod helpers;
-
 /// Error message emitted when the admin API is disabled
 const ERR_ADMIN_API_DISABLED: &str = "Admin API is disabled";
-/// Error message emitted when the path is invalid
-const ERR_INVALID_PATH: &str = "Invalid path";
 
 /// Represents the auth type required for a request
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
