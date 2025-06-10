@@ -23,6 +23,11 @@ name = "interface"
 harness = false
 required-features = ["mocks"]
 
+[[bench]]
+name = "caching"
+harness = false
+required-features = ["mocks"]
+
 [dependencies]
 
 # === Replication === #
