@@ -17,6 +17,8 @@ pub const GET_NETWORK_ORDER_BY_ID_ROUTE: &str = "/v0/order_book/orders/:order_id
 pub const GET_EXTERNAL_MATCH_FEE_ROUTE: &str = "/v0/order_book/external-match-fee";
 /// Route to get the liquidity depth of a given mint
 pub const GET_DEPTH_BY_MINT_ROUTE: &str = "/v0/order_book/depth/:mint";
+/// Route to get the liquidity depth for all supported pairs
+pub const GET_DEPTH_FOR_ALL_PAIRS_ROUTE: &str = "/v0/order_book/depth";
 
 // -------------
 // | API Types |
@@ -57,12 +59,29 @@ impl GetExternalMatchFeeResponse {
 /// Response for the GET /order_book/depth/:mint route
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetDepthByMintResponse {
+    /// The liquidity depth for the given mint
+    #[serde(flatten)]
+    pub depth: PriceAndDepth,
+}
+
+/// Response for the GET /order_book/depth route
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetDepthForAllPairsResponse {
+    /// The liquidity depth for all supported pairs
+    pub pairs: Vec<PriceAndDepth>,
+}
+
+/// The liquidity depth for a given pair
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PriceAndDepth {
+    /// The token address
+    pub address: String,
     /// The current price of the token in USD
     pub price: Price,
     /// The timestamp of the price
     pub timestamp: u64,
-    /// The buy side depth
+    /// The liquidity depth for the buy side
     pub buy: DepthSide,
-    /// The sell side depth
+    /// The liquidity depth for the sell side
     pub sell: DepthSide,
 }

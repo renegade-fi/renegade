@@ -1,3 +1,6 @@
+//! Benchmarks the caching layer
+#![allow(missing_docs, clippy::missing_docs_in_private_items)]
+
 use circuit_types::{order::OrderSide, Amount};
 use common::types::wallet::{pair_from_mints, Pair};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
