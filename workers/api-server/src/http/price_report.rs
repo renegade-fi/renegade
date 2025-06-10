@@ -24,7 +24,7 @@ use crate::{
 /// Tokens filtered from the supported token endpoint
 const FILTERED_TOKENS: [&str; 2] = [USD_TICKER, USDT_TICKER];
 /// Tokens filtered from the token prices endpoint
-const FILTERED_TOKENS_PRICES: [&str; 3] = [USD_TICKER, USDT_TICKER, USDC_TICKER];
+pub(crate) const FILTERED_TOKENS_PRICES: [&str; 3] = [USD_TICKER, USDT_TICKER, USDC_TICKER];
 
 // ------------------
 // | Route Handlers |
@@ -144,7 +144,7 @@ impl TypedHandler for TokenPricesHandler {
 // -----------
 
 /// Get all tokens from the token map filtering out given tokens
-fn get_all_tokens_filtered(filtered_tokens: &[&str]) -> Vec<Token> {
+pub(crate) fn get_all_tokens_filtered(filtered_tokens: &[&str]) -> Vec<Token> {
     get_all_tokens()
         .into_iter()
         .filter(|t| !filtered_tokens.contains(&t.get_ticker().unwrap().as_str()))

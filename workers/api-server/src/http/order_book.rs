@@ -5,8 +5,8 @@ use common::types::{token::Token, wallet::pair_from_mints};
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     http::order_book::{
-        GetDepthByMintResponse, GetExternalMatchFeeResponse, GetNetworkOrderByIdResponse,
-        GetNetworkOrdersResponse,
+        GetDepthByMintResponse, GetDepthForAllPairsResponse, GetExternalMatchFeeResponse,
+        GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, PriceAndDepth,
     },
     types::DepthSide,
     EmptyRequestResponse,
@@ -20,6 +20,7 @@ use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{internal_error, not_found, ApiServerError},
+    http::price_report::{get_all_tokens_filtered, FILTERED_TOKENS_PRICES},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -105,6 +106,10 @@ impl TypedHandler for GetNetworkOrderByIdHandler {
     }
 }
 
+// ---------------
+// | Fees Routes |
+// ---------------
+
 /// Handler for the GET /order_book/external-match-fee route
 #[derive(Clone)]
 pub struct GetExternalMatchFeesHandler;
@@ -131,19 +136,75 @@ impl TypedHandler for GetExternalMatchFeesHandler {
     }
 }
 
-/// Handler for the GET /order_book/depth/:mint route
+// ---------------------------
+// | Order Book Depth Routes |
+// ---------------------------
+
+/// A helper struct encapsulating common logic between depth routes
 #[derive(Clone)]
-pub struct GetDepthByMintHandler {
+struct DepthCalculator {
     /// A handle to the relayer state
     state: State,
     /// The price reporter work queue
     price_reporter_work_queue: PriceReporterQueue,
 }
 
-impl GetDepthByMintHandler {
+impl DepthCalculator {
     /// Constructor
     pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
         Self { state, price_reporter_work_queue }
+    }
+
+    /// Get the price and depth information for a single token
+    async fn get_price_and_depth(&self, token: Token) -> Result<PriceAndDepth, ApiServerError> {
+        let quote_token = Token::usdc();
+
+        // Get the price
+        let ts_price = self
+            .price_reporter_work_queue
+            .peek_price_usdc(token.clone())
+            .await
+            .map_err(internal_error)?;
+
+        // Get the matchable amount
+        let pair = pair_from_mints(token.get_addr_biguint(), quote_token.get_addr_biguint());
+        let (buy_liquidity_quote, sell_liquidity) = self.state.get_liquidity_for_pair(&pair).await;
+
+        let buy_usd = quote_token.convert_to_decimal(buy_liquidity_quote);
+        let sell_usd = token.convert_to_decimal(sell_liquidity) * ts_price.price;
+
+        // Convert buy_liquidity (in terms of quote token) to be in terms of the base
+        let base_decimals = token.get_decimals().unwrap();
+        let buy_liquidity_base_decimal = buy_usd / ts_price.price;
+        let buy_liquidity_base = buy_liquidity_base_decimal * 10f64.powi(base_decimals as i32);
+        let buy_liquidity_base: u128 = buy_liquidity_base.to_u128().unwrap();
+
+        let buy = DepthSide { total_quantity: buy_liquidity_base, total_quantity_usd: buy_usd };
+        let sell = DepthSide { total_quantity: sell_liquidity, total_quantity_usd: sell_usd };
+        let address = token.get_addr();
+
+        Ok(PriceAndDepth {
+            address,
+            price: ts_price.price,
+            timestamp: ts_price.timestamp,
+            buy,
+            sell,
+        })
+    }
+}
+
+/// Handler for the GET /order_book/depth/:mint route
+#[derive(Clone)]
+pub struct GetDepthByMintHandler {
+    /// The depth calculator for fetching price and depth data
+    depth_calculator: DepthCalculator,
+}
+
+impl GetDepthByMintHandler {
+    /// Constructor
+    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
+        let depth_calculator = DepthCalculator::new(state, price_reporter_work_queue);
+        Self { depth_calculator }
     }
 }
 
@@ -161,37 +222,57 @@ impl TypedHandler for GetDepthByMintHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let mint = parse_mint_from_params(&params)?;
         let base_token = Token::from_addr_biguint(&mint);
+        let depth = self.depth_calculator.get_price_and_depth(base_token).await?;
+        Ok(GetDepthByMintResponse { depth })
+    }
+}
+
+/// Handler for the GET /order_book/depth route
+#[derive(Clone)]
+pub struct GetDepthForAllPairsHandler {
+    /// The depth calculator for fetching price and depth data
+    depth_calculator: DepthCalculator,
+}
+
+impl GetDepthForAllPairsHandler {
+    /// Constructor
+    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
+        let depth_calculator = DepthCalculator::new(state, price_reporter_work_queue);
+        Self { depth_calculator }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetDepthForAllPairsHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetDepthForAllPairsResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        _query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        // Get all tokens for which we support price data
+        // Practically, this is all non-stablecoin tokens
+        let supported_tokens = get_all_tokens_filtered(&FILTERED_TOKENS_PRICES);
         let quote_token = Token::usdc();
 
-        // Get the price
-        let ts_price = self
-            .price_reporter_work_queue
-            .peek_price_usdc(base_token.clone())
-            .await
-            .map_err(internal_error)?;
+        let mut pairs = Vec::new();
+        for token in supported_tokens {
+            // Skip USDC since we don't need USDC/USDC pair
+            if token == quote_token {
+                continue;
+            }
 
-        // Get the matchable amount
-        let pair = pair_from_mints(mint, quote_token.get_addr_biguint());
-        let (buy_liquidity_quote, sell_liquidity) = self.state.get_liquidity_for_pair(&pair).await;
+            // Get the price and depth for this token, skip if error
+            match self.depth_calculator.get_price_and_depth(token).await {
+                Ok(price_and_depth) => pairs.push(price_and_depth),
+                Err(_) => continue, // Skip tokens without price data or other errors
+            }
+        }
 
-        let buy_usd = quote_token.convert_to_decimal(buy_liquidity_quote);
-        let sell_usd = base_token.convert_to_decimal(sell_liquidity) * ts_price.price;
-
-        // Convert buy_liquidity (in terms of quote token) to be in terms of the
-        // base token
-        let base_decimals = base_token.get_decimals().unwrap();
-        let buy_liquidity_base_decimal = buy_usd / ts_price.price;
-        let buy_liquidity_base = buy_liquidity_base_decimal * 10f64.powi(base_decimals as i32);
-        let buy_liquidity_base: u128 = buy_liquidity_base.to_u128().unwrap();
-
-        let buy = DepthSide { total_quantity: buy_liquidity_base, total_quantity_usd: buy_usd };
-        let sell = DepthSide { total_quantity: sell_liquidity, total_quantity_usd: sell_usd };
-
-        Ok(GetDepthByMintResponse {
-            price: ts_price.price,
-            timestamp: ts_price.timestamp,
-            buy,
-            sell,
-        })
+        Ok(GetDepthForAllPairsResponse { pairs })
     }
 }

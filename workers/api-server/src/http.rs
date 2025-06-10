@@ -36,8 +36,8 @@ use external_api::{
         },
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{
-            GET_DEPTH_BY_MINT_ROUTE, GET_EXTERNAL_MATCH_FEE_ROUTE, GET_NETWORK_ORDERS_ROUTE,
-            GET_NETWORK_ORDER_BY_ID_ROUTE,
+            GET_DEPTH_BY_MINT_ROUTE, GET_DEPTH_FOR_ALL_PAIRS_ROUTE, GET_EXTERNAL_MATCH_FEE_ROUTE,
+            GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE,
         },
         price_report::{GET_SUPPORTED_TOKENS_ROUTE, GET_TOKEN_PRICES_ROUTE, PRICE_REPORT_ROUTE},
         task::{GET_TASK_QUEUE_PAUSED_ROUTE, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
@@ -75,6 +75,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{bad_request, not_found},
+    http::order_book::GetDepthForAllPairsHandler,
     router::QueryParams,
 };
 
@@ -503,6 +504,16 @@ impl HttpServer {
             &Method::GET,
             GET_DEPTH_BY_MINT_ROUTE.to_string(),
             GetDepthByMintHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
+        );
+
+        // The "/order_book/depth" route
+        router.add_admin_authenticated_route(
+            &Method::GET,
+            GET_DEPTH_FOR_ALL_PAIRS_ROUTE.to_string(),
+            GetDepthForAllPairsHandler::new(
+                state.clone(),
+                config.price_reporter_work_queue.clone(),
+            ),
         );
 
         // --- Network Routes --- //
