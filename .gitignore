@@ -20,3 +20,6 @@ rustc-ice-*
 *.sw[a-p]
 secrets.env
 /.gitattributes
+
+# macos
+**/.DS_Store
