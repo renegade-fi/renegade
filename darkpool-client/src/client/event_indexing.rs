@@ -91,8 +91,12 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         // Parse the Merkle path from the transaction logs
         let mut all_insertion_events = vec![];
         for log in tx.logs().iter().cloned().map(Log::from) {
+            let topic0 = match log.topics().first() {
+                Some(topic) => *topic,
+                None => continue,
+            };
+
             // Matches cannot depend on associated constants, so we if-else
-            let topic0 = log.topics()[0];
             if topic0 == D::MerkleInsertion::SIGNATURE_HASH {
                 // Track the number of Merkle insertions in the tx, so that we may properly find
                 // our commitment in the log stream
