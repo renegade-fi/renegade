@@ -163,7 +163,9 @@ impl OnChainEventListenerExecutor {
 
             let event = log.log_decode::<NullifierSpentEvent>()?;
             let nullifier = u256_to_scalar(event.data().nullifier);
-            self.handle_nullifier_spent(tx_hash, nullifier).await?;
+            if let Err(e) = self.handle_nullifier_spent(tx_hash, nullifier).await {
+                self.handle_nullifier_spent_error(nullifier, e).await;
+            }
         }
 
         unreachable!()
