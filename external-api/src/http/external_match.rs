@@ -216,6 +216,16 @@ impl ExternalOrder {
         self.base_mint == native_mint
     }
 
+    /// Returns whether the order size is base denominated
+    pub fn is_base_denominated(&self) -> bool {
+        self.base_amount != 0 || self.exact_base_output != 0
+    }
+
+    /// Returns whether the order size is quote denominated
+    pub fn is_quote_denominated(&self) -> bool {
+        self.quote_amount != 0 || self.exact_quote_output != 0
+    }
+
     /// Convert the external order to the standard `Order` type used throughout
     /// the relayer
     ///
@@ -298,7 +308,7 @@ impl ExternalOrder {
     /// field, we must convert through the price
     fn get_min_fill_in_base(&self, price: FixedPoint) -> Amount {
         let min_fill = self.min_fill_size;
-        if self.base_amount != 0 {
+        if self.is_base_denominated() {
             return min_fill;
         }
 
