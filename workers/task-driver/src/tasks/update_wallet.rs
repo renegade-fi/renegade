@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use async_trait::async_trait;
-use circuit_types::transfers::ExternalTransferDirection;
+use circuit_types::{transfers::ExternalTransferDirection, SizedWallet as CircuitWallet};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
@@ -33,7 +33,7 @@ use serde::Serialize;
 use state::error::StateError;
 use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use state::State;
-use tracing::instrument;
+use tracing::{info, instrument};
 use util::err_str;
 
 use crate::task_state::StateWrapper;
@@ -78,6 +78,9 @@ pub enum UpdateWalletTaskState {
     /// The task is updating the validity proofs for all orders in the
     /// now nullified wallet
     UpdatingValidityProofs,
+    /// The task state in which we update the wallet in the global state for
+    /// updates that don't require an on-chain update
+    UpdatingConsensusState,
     /// The task has finished
     Completed,
 }
@@ -100,6 +103,7 @@ impl Display for UpdateWalletTaskState {
             Self::SubmittingTx => write!(f, "Submitting Tx"),
             Self::FindingOpening => write!(f, "Finding Opening"),
             Self::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
+            Self::UpdatingConsensusState => write!(f, "Updating Consensus State"),
             Self::Completed => write!(f, "Completed"),
         }
     }
@@ -199,7 +203,7 @@ pub struct UpdateWalletTask {
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
     /// A copy of the relayer-global state
-    pub global_state: State,
+    pub state: State,
     /// The work queue to add proof management jobs to
     pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task
@@ -246,7 +250,7 @@ impl Task for UpdateWalletTask {
             proof_bundle: None,
             darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
-            global_state: ctx.state,
+            state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
             task_state: UpdateWalletTaskState::Pending,
             event_queue: ctx.event_queue,
@@ -270,7 +274,13 @@ impl Task for UpdateWalletTask {
         // Dispatch based on the current transaction step
         match self.state() {
             UpdateWalletTaskState::Pending => {
-                self.task_state = UpdateWalletTaskState::Proving;
+                // Skip proving and tx submission if the update doesn't require
+                // an on-chain update
+                if self.requires_onchain_update() {
+                    self.task_state = UpdateWalletTaskState::Proving;
+                } else {
+                    self.task_state = UpdateWalletTaskState::UpdatingConsensusState;
+                }
             },
             UpdateWalletTaskState::Proving => {
                 // Begin the proof of `VALID WALLET UPDATE`
@@ -294,6 +304,11 @@ impl Task for UpdateWalletTask {
                 self.emit_event()?;
                 maybe_record_transfer_metrics(&self.transfer);
 
+                self.task_state = UpdateWalletTaskState::Completed;
+            },
+            UpdateWalletTaskState::UpdatingConsensusState => {
+                // Update the wallet in the global state
+                self.update_consensus_state().await?;
                 self.task_state = UpdateWalletTaskState::Completed;
             },
             UpdateWalletTaskState::Completed => {
@@ -364,7 +379,7 @@ impl UpdateWalletTask {
 
         // After the state is finalized on-chain, re-index the wallet in the global
         // state
-        let waiter = self.global_state.update_wallet(self.new_wallet.clone()).await?;
+        let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
 
         // If we're placing a new order into a matching pool, assign it as
@@ -375,7 +390,7 @@ impl UpdateWalletTask {
             ..
         } = self.update_type
         {
-            self.global_state.assign_order_to_matching_pool(id, matching_pool_name.clone()).await?;
+            self.state.assign_order_to_matching_pool(id, matching_pool_name.clone()).await?;
         }
 
         Ok(())
@@ -388,16 +403,53 @@ impl UpdateWalletTask {
         update_wallet_validity_proofs(
             &self.new_wallet,
             self.proof_manager_work_queue.clone(),
-            self.global_state.clone(),
+            self.state.clone(),
             self.network_sender.clone(),
         )
         .await
         .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
     }
 
+    /// Update the wallet directly in the global state
+    async fn update_consensus_state(&self) -> Result<(), UpdateWalletTaskError> {
+        info!("Wallet update does not require on-chain update, updating consensus state directly");
+        // No reblind occurs here, so force the new wallet to have the same secret
+        // shares as the old one
+        let mut new_wallet = self.new_wallet.clone();
+        new_wallet.private_shares = self.old_wallet.private_shares.clone();
+        new_wallet.blinded_public_shares = self.old_wallet.blinded_public_shares.clone();
+        new_wallet.blinder = self.old_wallet.blinder;
+        new_wallet.merkle_proof = self.old_wallet.merkle_proof.clone();
+
+        let waiter = self.state.update_wallet(new_wallet).await?;
+        waiter.await?;
+        Ok(())
+    }
+
     // -----------
     // | Helpers |
     // -----------
+
+    /// Whether the wallet update requires an on-chain update
+    ///
+    /// Some wallet updates do not modify the on-chain state, e.g. marking an
+    /// order as externally matchable. In these cases, we can skip the on-chain
+    /// interaction and just update the local copy of the wallet
+    ///
+    /// Concretely, if an update doesn't change the circuit representation of
+    /// the wallet, we can skip the on-chain update
+    ///
+    /// TODO: In the future we'll want to allow reblind-only updates, for which
+    /// we can force an on-chain update
+    pub(crate) fn requires_onchain_update(&self) -> bool {
+        let old_circuit_wallet: CircuitWallet = self.old_wallet.clone().into();
+        let mut new_circuit_wallet: CircuitWallet = self.new_wallet.clone().into();
+
+        // The wallet blinders are allowed to be different, all other fields must
+        // match exactly to skip the on-chain update
+        new_circuit_wallet.blinder = self.old_wallet.blinder;
+        new_circuit_wallet != old_circuit_wallet
+    }
 
     /// Check that the wallet's blinder and private shares are the result of
     /// applying a reblind to the old wallet
@@ -554,7 +606,7 @@ impl UpdateWalletTask {
         let amount_remaining = order.amount;
 
         let amount_filled = self
-            .global_state
+            .state
             .get_order_metadata(&order_id)
             .await?
             .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_ORDER_METADATA.to_string()))?
