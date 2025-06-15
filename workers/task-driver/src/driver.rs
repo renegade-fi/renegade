@@ -163,14 +163,7 @@ impl TaskExecutor {
         match job.consume() {
             TaskDriverJob::Run { task, channel } => {
                 let affected_wallets = task.descriptor.affected_wallets();
-                self.start_task(
-                    false, // immediate
-                    task.id,
-                    task.descriptor,
-                    affected_wallets,
-                    channel,
-                )
-                .await
+                self.start_task(task.id, task.descriptor, affected_wallets, channel).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await
@@ -213,7 +206,6 @@ impl TaskExecutor {
     ))]
     async fn start_task(
         &self,
-        immediate: bool,
         id: TaskIdentifier,
         task: TaskDescriptor,
         affected_wallets: Vec<WalletIdentifier>,
@@ -228,69 +220,43 @@ impl TaskExecutor {
         // Construct the task from the descriptor
         let res = match task {
             TaskDescriptor::NewWallet(desc) => {
-                self.start_task_helper::<NewWalletTask>(immediate, id, desc, affected_wallets).await
+                self.start_task_helper::<NewWalletTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::LookupWallet(desc) => {
-                self.start_task_helper::<LookupWalletTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<LookupWalletTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::RefreshWallet(desc) => {
-                self.start_task_helper::<RefreshWalletTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<RefreshWalletTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::OfflineFee(desc) => {
-                self.start_task_helper::<PayOfflineFeeTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<PayOfflineFeeTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::RelayerFee(desc) => {
-                self.start_task_helper::<PayRelayerFeeTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<PayRelayerFeeTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::RedeemFee(desc) => {
-                self.start_task_helper::<RedeemFeeTask>(immediate, id, desc, affected_wallets).await
+                self.start_task_helper::<RedeemFeeTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::UpdateWallet(desc) => {
-                self.start_task_helper::<UpdateWalletTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<UpdateWalletTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::SettleMatch(desc) => {
-                self.start_task_helper::<SettleMatchTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<SettleMatchTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::SettleMatchInternal(desc) => {
-                self.start_task_helper::<SettleMatchInternalTask>(
-                    immediate,
-                    id,
-                    desc,
-                    affected_wallets,
-                )
-                .await
+                self.start_task_helper::<SettleMatchInternalTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::UpdateMerkleProof(desc) => {
-                self.start_task_helper::<UpdateMerkleProofTask>(
-                    immediate,
-                    id,
-                    desc,
-                    affected_wallets,
-                )
-                .await
+                self.start_task_helper::<UpdateMerkleProofTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::NodeStartup(desc) => {
-                self.start_task_helper::<NodeStartupTask>(immediate, id, desc, affected_wallets)
-                    .await
+                self.start_task_helper::<NodeStartupTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::SettleExternalMatch(desc) => {
-                self.start_task_helper::<SettleMatchExternalTask>(
-                    immediate,
-                    id,
-                    desc,
-                    affected_wallets,
-                )
-                .await
+                self.start_task_helper::<SettleMatchExternalTask>(id, desc, affected_wallets).await
             },
             TaskDescriptor::SettleMalleableExternalMatch(desc) => {
                 self.start_task_helper::<SettleMalleableExternalMatchTask>(
-                    immediate,
                     id,
                     desc,
                     affected_wallets,
@@ -312,7 +278,6 @@ impl TaskExecutor {
     /// time
     async fn start_task_helper<T: Task>(
         &self,
-        immediate: bool,
         id: TaskIdentifier,
         descriptor: T::Descriptor,
         affected_wallets: Vec<WalletIdentifier>,
@@ -322,7 +287,7 @@ impl TaskExecutor {
         let args = self.runtime_config;
 
         // Create and run the task
-        let task_res = RunnableTask::<T>::from_descriptor(immediate, id, descriptor, ctx).await;
+        let task_res = RunnableTask::<T>::from_descriptor(id, descriptor, ctx).await;
 
         // If we fail to create the task, pop it from the queue so it isn't stuck there
         // in a pending state. For immediate tasks, this is handled by queue

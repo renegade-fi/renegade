@@ -438,6 +438,7 @@ impl SettleMatchExternalTask {
 
     /// Create link proofs between the proof of `VALID MATCH SETTLE ATOMIC` and
     /// the internal party's proof of `VALID COMMITMENTS`
+    #[instrument(skip_all)]
     fn create_link_proofs(
         &self,
         atomic_match_proof: ProofBundle,

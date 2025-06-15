@@ -42,7 +42,7 @@ pub fn new_apply_error<T: ToString>(
 
 /// Convert a snapshot error to a raft error
 pub fn new_snapshot_error(
-    err: ReplicationV2Error,
+    err: ReplicationError,
 ) -> RaftStorageError<<TypeConfig as RaftTypeConfig>::NodeId> {
     let io_err = IoError::new(IoErrorKind::Other, Box::new(err));
     RaftStorageError::from_io_error(ErrorSubject::Snapshot(None), ErrorVerb::Write, io_err)
@@ -50,13 +50,13 @@ pub fn new_snapshot_error(
 
 /// Convert a replication error into a networking error
 #[allow(clippy::needless_pass_by_value)]
-pub fn new_network_error(err: ReplicationV2Error) -> RPCError<NodeId, Node, RaftError<NodeId>> {
+pub fn new_network_error(err: ReplicationError) -> RPCError<NodeId, Node, RaftError<NodeId>> {
     RPCError::Network(NetworkError::new(&err))
 }
 
 /// The error type emitted by the replication interface
 #[derive(Debug)]
-pub enum ReplicationV2Error {
+pub enum ReplicationError {
     /// An error deserializing a raft response
     Deserialize(String),
     /// An error proposing a state transition
@@ -73,29 +73,29 @@ pub enum ReplicationV2Error {
     Storage(StorageError),
 }
 
-impl Display for ReplicationV2Error {
+impl Display for ReplicationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReplicationV2Error::Deserialize(e) => write!(f, "Deserialization error: {e}"),
-            ReplicationV2Error::Proposal(e) => write!(f, "Proposal error: {e}"),
-            ReplicationV2Error::Raft(e) => write!(f, "Raft error: {e}"),
-            ReplicationV2Error::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
-            ReplicationV2Error::RaftTeardown(e) => write!(f, "Raft teardown error: {e}"),
-            ReplicationV2Error::Snapshot(e) => write!(f, "Snapshot error: {e}"),
-            ReplicationV2Error::Storage(e) => write!(f, "Storage error: {e}"),
+            ReplicationError::Deserialize(e) => write!(f, "Deserialization error: {e}"),
+            ReplicationError::Proposal(e) => write!(f, "Proposal error: {e}"),
+            ReplicationError::Raft(e) => write!(f, "Raft error: {e}"),
+            ReplicationError::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
+            ReplicationError::RaftTeardown(e) => write!(f, "Raft teardown error: {e}"),
+            ReplicationError::Snapshot(e) => write!(f, "Snapshot error: {e}"),
+            ReplicationError::Storage(e) => write!(f, "Storage error: {e}"),
         }
     }
 }
-impl Error for ReplicationV2Error {}
+impl Error for ReplicationError {}
 
-impl From<StorageError> for ReplicationV2Error {
+impl From<StorageError> for ReplicationError {
     fn from(value: StorageError) -> Self {
-        ReplicationV2Error::Storage(value)
+        ReplicationError::Storage(value)
     }
 }
 
-impl<E: Debug> From<RaftError<NodeId, E>> for ReplicationV2Error {
+impl<E: Debug> From<RaftError<NodeId, E>> for ReplicationError {
     fn from(value: RaftError<NodeId, E>) -> Self {
-        ReplicationV2Error::Raft(format!("{value:?}"))
+        ReplicationError::Raft(format!("{value:?}"))
     }
 }

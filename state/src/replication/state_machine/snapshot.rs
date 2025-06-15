@@ -14,7 +14,7 @@ use openraft::{
 use tracing::error;
 use util::{err_str, get_current_time_millis};
 
-use crate::replication::error::{new_snapshot_error, ReplicationV2Error};
+use crate::replication::error::{new_snapshot_error, ReplicationError};
 use crate::storage::db::{DbConfig, DB};
 use crate::{
     ALL_TABLES, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE, RAFT_LOGS_TABLE,
@@ -102,26 +102,24 @@ impl StateMachine {
     fn write_snapshot_metadata(
         &self,
         meta: &SnapshotMeta<NodeId, Node>,
-    ) -> Result<(), ReplicationV2Error> {
-        let tx = self.db().new_write_tx().map_err(ReplicationV2Error::Storage)?;
+    ) -> Result<(), ReplicationError> {
+        let tx = self.db().new_write_tx().map_err(ReplicationError::Storage)?;
         tx.set_snapshot_metadata(meta)?;
-        tx.commit().map_err(ReplicationV2Error::Storage)?;
+        tx.commit().map_err(ReplicationError::Storage)?;
 
         Ok(())
     }
 
     /// Take a snapshot of the DB
-    pub(crate) async fn take_db_snapshot(&self) -> Result<SnapshotInfo, ReplicationV2Error> {
+    pub(crate) async fn take_db_snapshot(&self) -> Result<SnapshotInfo, ReplicationError> {
         // Start a tx to prevent writers from modifying the DB while copying
-        let tx = self.db().new_read_tx().map_err(ReplicationV2Error::Storage)?;
+        let tx = self.db().new_read_tx().map_err(ReplicationError::Storage)?;
         let snapshot_path = self.make_data_copy().await?;
-        tx.commit().map_err(ReplicationV2Error::Storage)?;
+        tx.commit().map_err(ReplicationError::Storage)?;
 
         // Build the snapshot
         let build_task = tokio::task::spawn_blocking(move || Self::build_snapshot(&snapshot_path));
-        build_task
-            .await
-            .map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_BUILD.to_string()))??;
+        build_task.await.map_err(|_| ReplicationError::Snapshot(ERR_AWAIT_BUILD.to_string()))??;
 
         // Create the snapshot info
         let location = self.snapshot_archive_path();
@@ -134,7 +132,7 @@ impl StateMachine {
     /// Copy the data file of the DB
     ///
     /// Returns the location at which the data was copied
-    async fn make_data_copy(&self) -> Result<PathBuf, ReplicationV2Error> {
+    async fn make_data_copy(&self) -> Result<PathBuf, ReplicationError> {
         // Create the directory if it doesn't exist
         self.create_snapshot_dir().await?;
 
@@ -145,14 +143,14 @@ impl StateMachine {
         // Make a copy of the data
         tokio::fs::copy(data_path, snapshot_path.clone())
             .await
-            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            .map_err(err_str!(ReplicationError::Snapshot))?;
         Ok(snapshot_path)
     }
 
     /// Build the snapshot from a copy of the data file
     ///
     /// This involves removing excluded tables and zipping the data file
-    fn build_snapshot(copy_path: &PathBuf) -> Result<(), ReplicationV2Error> {
+    fn build_snapshot(copy_path: &PathBuf) -> Result<(), ReplicationError> {
         Self::remove_excluded_tables(copy_path.to_str().unwrap())?;
         Self::zip_file(copy_path)
     }
@@ -161,22 +159,22 @@ impl StateMachine {
     ///
     /// These tables are those that need not show up in a snapshot, or for which
     /// it would cause errors to snapshot on the consumer side
-    fn remove_excluded_tables(copy_path: &str) -> Result<(), ReplicationV2Error> {
+    fn remove_excluded_tables(copy_path: &str) -> Result<(), ReplicationError> {
         let path_str = copy_path.to_string();
         let db_config = DbConfig::new_with_path(&path_str);
-        let snapshot_db = DB::new(&db_config).map_err(ReplicationV2Error::Storage)?;
+        let snapshot_db = DB::new(&db_config).map_err(ReplicationError::Storage)?;
 
         for table in EXCLUDED_TABLES {
             #[allow(unsafe_code)]
-            unsafe { snapshot_db.drop_table(table) }.map_err(ReplicationV2Error::Storage)?;
+            unsafe { snapshot_db.drop_table(table) }.map_err(ReplicationError::Storage)?;
         }
 
         Ok(())
     }
 
     /// Zip a file and delete the original
-    fn zip_file(path: &PathBuf) -> Result<(), ReplicationV2Error> {
-        let source_file = File::open(path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+    fn zip_file(path: &PathBuf) -> Result<(), ReplicationError> {
+        let source_file = File::open(path).map_err(err_str!(ReplicationError::Snapshot))?;
         let mut source_reader = BufReader::new(source_file);
 
         // Create a temporary archive file to write the snapshot to while compression is
@@ -184,23 +182,23 @@ impl StateMachine {
         // currently be in the process of streaming to a peer.
         let tmp_zip_path = path.with_extension("tmp.gz");
         let zip_file =
-            File::create(tmp_zip_path.clone()).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            File::create(tmp_zip_path.clone()).map_err(err_str!(ReplicationError::Snapshot))?;
 
         // gzip the file
         let mut encoder = GzEncoder::new(zip_file, Compression::best());
         std::io::copy(&mut source_reader, &mut encoder)
-            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
-        encoder.finish().map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            .map_err(err_str!(ReplicationError::Snapshot))?;
+        encoder.finish().map_err(err_str!(ReplicationError::Snapshot))?;
 
         // Delete the file
-        fs::remove_file(path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        fs::remove_file(path).map_err(err_str!(ReplicationError::Snapshot))?;
 
         // Delete the old snapshot file if it exists & rename the temp file
         let zip_path = path.with_extension("gz");
         if zip_path.exists() {
-            fs::remove_file(zip_path.clone()).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            fs::remove_file(zip_path.clone()).map_err(err_str!(ReplicationError::Snapshot))?;
         }
-        fs::rename(tmp_zip_path, zip_path).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        fs::rename(tmp_zip_path, zip_path).map_err(err_str!(ReplicationError::Snapshot))?;
 
         Ok(())
     }
@@ -211,12 +209,11 @@ impl StateMachine {
 
     /// Unzip a snapshot and open a DB from the data
     #[allow(unused)]
-    pub(crate) async fn open_snap_db(&self) -> Result<DB, ReplicationV2Error> {
+    pub(crate) async fn open_snap_db(&self) -> Result<DB, ReplicationError> {
         // Open the file
         let zip_path = self.snapshot_archive_path();
-        let file = tokio::fs::File::open(zip_path)
-            .await
-            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        let file =
+            tokio::fs::File::open(zip_path).await.map_err(err_str!(ReplicationError::Snapshot))?;
         self.open_snap_db_with_file(file).await
     }
 
@@ -224,20 +221,20 @@ impl StateMachine {
     pub(crate) async fn open_snap_db_with_file(
         &self,
         file: tokio::fs::File,
-    ) -> Result<DB, ReplicationV2Error> {
+    ) -> Result<DB, ReplicationError> {
         // Unzip the snapshot
         let dest_path = self.snapshot_data_path();
         let db_path = dest_path.clone();
         let std_file = file
             .try_into_std()
-            .map_err(|_| ReplicationV2Error::Snapshot(ERR_CONVERT_FILE.to_string()))?;
+            .map_err(|_| ReplicationError::Snapshot(ERR_CONVERT_FILE.to_string()))?;
         let job = tokio::task::spawn_blocking(move || Self::unzip_data_file(&std_file, &dest_path));
-        job.await.map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_BUILD.to_string()))??;
+        job.await.map_err(|_| ReplicationError::Snapshot(ERR_AWAIT_BUILD.to_string()))??;
 
         // Open the DB
         let path = db_path.to_str().unwrap().to_string();
         let db_config = DbConfig::new_with_path(&path);
-        let db = DB::new(&db_config).map_err(ReplicationV2Error::Storage)?;
+        let db = DB::new(&db_config).map_err(ReplicationError::Storage)?;
 
         Ok(db)
     }
@@ -247,7 +244,7 @@ impl StateMachine {
         &mut self,
         meta: &SnapshotMeta<NodeId, Node>,
         snapshot_db: DB,
-    ) -> Result<(), ReplicationV2Error> {
+    ) -> Result<(), ReplicationError> {
         self.last_applied_log = meta.last_log_id;
         self.last_membership = meta.last_membership.clone();
         self.write_snapshot_metadata(meta)?;
@@ -265,11 +262,11 @@ impl StateMachine {
 
             Ok(())
         });
-        jh.await.map_err(|_| ReplicationV2Error::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
+        jh.await.map_err(|_| ReplicationError::Snapshot(ERR_AWAIT_INSTALL.to_string()))?
     }
 
     /// Deletes the snapshot data
-    pub async fn delete_snapshot_data(&self) -> Result<(), ReplicationV2Error> {
+    pub async fn delete_snapshot_data(&self) -> Result<(), ReplicationError> {
         let snapshot_data_path = self.snapshot_data_path();
         if !snapshot_data_path.exists() {
             return Ok(());
@@ -278,12 +275,12 @@ impl StateMachine {
         // Delete the snapshot DB
         tokio::fs::remove_file(snapshot_data_path)
             .await
-            .map_err(err_str!(ReplicationV2Error::Snapshot))
+            .map_err(err_str!(ReplicationError::Snapshot))
             .map(|_| ())
     }
 
     /// Copy all data from one DB to another
-    pub(crate) fn copy_db_data(src: &DB, dest: &DB) -> Result<(), ReplicationV2Error> {
+    pub(crate) fn copy_db_data(src: &DB, dest: &DB) -> Result<(), ReplicationError> {
         let src_tx = src.new_read_tx()?;
         for table in ALL_TABLES.iter() {
             if EXCLUDED_TABLES.contains(table) {
@@ -310,20 +307,17 @@ impl StateMachine {
     }
 
     /// Unzip the given file to the given location
-    fn unzip_data_file(
-        data_file: &std::fs::File,
-        dest: &PathBuf,
-    ) -> Result<(), ReplicationV2Error> {
+    fn unzip_data_file(data_file: &std::fs::File, dest: &PathBuf) -> Result<(), ReplicationError> {
         // Remove a preexisting data temp file if it exists
         if dest.exists() {
-            fs::remove_file(dest).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            fs::remove_file(dest).map_err(err_str!(ReplicationError::Snapshot))?;
         }
-        let mut dest_writer = File::create(dest).map_err(err_str!(ReplicationV2Error::Snapshot))?;
+        let mut dest_writer = File::create(dest).map_err(err_str!(ReplicationError::Snapshot))?;
 
         // Unzip the data file into the dest file
         let mut decoder = GzDecoder::new(data_file);
         std::io::copy(&mut decoder, &mut dest_writer)
-            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            .map_err(err_str!(ReplicationError::Snapshot))?;
         Ok(())
     }
 }

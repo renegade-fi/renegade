@@ -27,7 +27,7 @@ use crate::{
 };
 
 use super::{
-    error::{new_log_read_error, new_snapshot_error, ReplicationV2Error},
+    error::{new_log_read_error, new_snapshot_error, ReplicationError},
     Entry, Node, NodeId, SnapshotData, TypeConfig,
 };
 
@@ -87,7 +87,7 @@ impl StateMachine {
         config: StateMachineConfig,
         notifications: OpenNotifications,
         applicator: StateApplicator,
-    ) -> Result<Self, ReplicationV2Error> {
+    ) -> Result<Self, ReplicationError> {
         let mut this = Self {
             recovered_from_snapshot: false,
             last_applied_log: None,
@@ -137,19 +137,19 @@ impl StateMachine {
     }
 
     /// Create the snapshot directory if it doesn't exist
-    pub async fn create_snapshot_dir(&self) -> Result<(), ReplicationV2Error> {
+    pub async fn create_snapshot_dir(&self) -> Result<(), ReplicationError> {
         let snap_dir = self.snapshot_dir();
         if !snap_dir.exists() {
             tokio::fs::create_dir_all(&snap_dir)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+                .map_err(err_str!(ReplicationError::Snapshot))?;
         }
 
         Ok(())
     }
 
     /// Create the snapshot lock file
-    pub async fn create_snapshot_lock(&self) -> Result<(), ReplicationV2Error> {
+    pub async fn create_snapshot_lock(&self) -> Result<(), ReplicationError> {
         let snapshot_lock = self.snapshot_lock_path();
 
         // Create the directory if it doesn't exist
@@ -157,29 +157,29 @@ impl StateMachine {
         if let Some(dir) = parent_dir
             && !dir.exists()
         {
-            tokio::fs::create_dir_all(dir).await.map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            tokio::fs::create_dir_all(dir).await.map_err(err_str!(ReplicationError::Snapshot))?;
         }
 
         tokio::fs::File::create(&snapshot_lock)
             .await
-            .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+            .map_err(err_str!(ReplicationError::Snapshot))?;
 
         Ok(())
     }
 
     /// Delete the snapshot lock file
-    pub async fn delete_snapshot_lock(&self) -> Result<(), ReplicationV2Error> {
+    pub async fn delete_snapshot_lock(&self) -> Result<(), ReplicationError> {
         let snapshot_lock = self.snapshot_lock_path();
-        tokio::fs::remove_file(&snapshot_lock).await.map_err(err_str!(ReplicationV2Error::Snapshot))
+        tokio::fs::remove_file(&snapshot_lock).await.map_err(err_str!(ReplicationError::Snapshot))
     }
 
     /// Open the file containing the snapshot
-    pub async fn open_snapshot_file(&self) -> Result<Option<File>, ReplicationV2Error> {
+    pub async fn open_snapshot_file(&self) -> Result<Option<File>, ReplicationError> {
         let snapshot_path = self.snapshot_archive_path();
         if snapshot_path.exists() {
             let file = tokio::fs::File::open(snapshot_path)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Snapshot))?;
+                .map_err(err_str!(ReplicationError::Snapshot))?;
             Ok(Some(file))
         } else {
             Ok(None)

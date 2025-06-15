@@ -19,8 +19,6 @@ use crate::{
 ///
 /// Used to simplify driver logic
 pub struct RunnableTask<T: Task> {
-    /// Whether or not the task is a preemptive task
-    preemptive: bool,
     /// The id of the underlying task
     task_id: TaskIdentifier,
     /// The underlying task
@@ -31,13 +29,12 @@ pub struct RunnableTask<T: Task> {
 
 impl<T: Task> RunnableTask<T> {
     /// Creates a new running task from the given task and state
-    pub fn new(preemptive: bool, task_id: TaskIdentifier, task: T, state: State) -> Self {
-        Self { preemptive, task_id, task, state }
+    pub fn new(task_id: TaskIdentifier, task: T, state: State) -> Self {
+        Self { task_id, task, state }
     }
 
     /// Create a runnable from the given descriptor and context
     pub async fn from_descriptor(
-        preemptive: bool,
         id: TaskIdentifier,
         descriptor: T::Descriptor,
         ctx: TaskContext,
@@ -45,7 +42,7 @@ impl<T: Task> RunnableTask<T> {
         let state = ctx.state.clone();
         let task = T::new(descriptor, ctx).await?;
 
-        Ok(Self::new(preemptive, id, task, state))
+        Ok(Self::new(id, task, state))
     }
 
     /// The ID of the underlying task
@@ -66,7 +63,7 @@ impl<T: Task> RunnableTask<T> {
     /// `true` if the task does not need to update the task queue during state
     /// transitions or cleanup
     pub fn bypass_task_queue(&self) -> bool {
-        self.task.bypass_task_queue() || self.preemptive
+        self.task.bypass_task_queue()
     }
 
     /// Step the underlying task, returns whether the driver should continue or
