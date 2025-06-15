@@ -11,7 +11,7 @@ use util::err_str;
 use crate::{
     ciborium_serialize,
     replication::{
-        error::{new_network_error, ReplicationV2Error},
+        error::{new_network_error, ReplicationError},
         Node, NodeId,
     },
 };
@@ -44,11 +44,11 @@ impl GossipNetwork {
     }
 
     /// Convert a gossip response into a raft response
-    fn to_raft_response(resp: GossipResponse) -> Result<RaftResponse, ReplicationV2Error> {
+    fn to_raft_response(resp: GossipResponse) -> Result<RaftResponse, ReplicationError> {
         let resp_bytes = match resp.body {
             GossipResponseType::Raft(x) => x,
             _ => {
-                return Err(ReplicationV2Error::Deserialize(ERR_INVALID_RESPONSE.to_string()));
+                return Err(ReplicationError::Deserialize(ERR_INVALID_RESPONSE.to_string()));
             },
         };
 
@@ -57,8 +57,8 @@ impl GossipNetwork {
     }
 
     /// Deserialize a raft response from bytes
-    fn deserialize_raft_response(msg_bytes: &[u8]) -> Result<RaftResponse, ReplicationV2Error> {
-        ciborium::de::from_reader(msg_bytes).map_err(err_str!(ReplicationV2Error::Deserialize))
+    fn deserialize_raft_response(msg_bytes: &[u8]) -> Result<RaftResponse, ReplicationError> {
+        ciborium::de::from_reader(msg_bytes).map_err(err_str!(ReplicationError::Deserialize))
     }
 }
 
