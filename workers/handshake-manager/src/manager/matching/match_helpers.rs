@@ -17,7 +17,7 @@ pub type SuccessfulMatch = (OrderIdentifier, MatchResult);
 
 impl HandshakeExecutor {
     /// Run a match between two orders
-    pub async fn find_match<I>(
+    pub async fn find_match<'a, I>(
         &self,
         order: &Order,
         balance: &Balance,
@@ -25,21 +25,37 @@ impl HandshakeExecutor {
         target_orders: I,
     ) -> Result<Option<SuccessfulMatch>, HandshakeManagerError>
     where
-        I: IntoIterator<Item = OrderIdentifier>,
+        I: Iterator<Item = &'a OrderIdentifier>,
+    {
+        let min_quote = self.min_fill_size;
+        self.find_match_with_min_quote_amount(order, balance, price, min_quote, target_orders).await
+    }
+
+    /// Try a match with a minimum quote amount specified
+    pub async fn find_match_with_min_quote_amount<'a, I>(
+        &self,
+        order: &Order,
+        balance: &Balance,
+        price: FixedPoint,
+        min_quote_amount: Amount,
+        target_orders: I,
+    ) -> Result<Option<SuccessfulMatch>, HandshakeManagerError>
+    where
+        I: Iterator<Item = &'a OrderIdentifier>,
     {
         // Match against each other order in the local book
         for order_id in target_orders.into_iter() {
             // Lookup the other order and attempt to match with it
             let (order2, balance2) =
-                match self.state.get_managed_order_and_balance(&order_id).await? {
+                match self.state.get_managed_order_and_balance(order_id).await? {
                     Some((order, balance)) => (order, balance),
                     None => continue,
                 };
 
             // If a match is successful, return the result
-            let res = self.try_match(order, &order2, balance, &balance2, price);
+            let res = self.try_match(order, &order2, balance, &balance2, price, min_quote_amount);
             if let Some(match_result) = res {
-                return Ok(Some((order_id, match_result)));
+                return Ok(Some((*order_id, match_result)));
             }
         }
 
@@ -54,10 +70,11 @@ impl HandshakeExecutor {
         b1: &Balance,
         b2: &Balance,
         price: FixedPoint,
+        min_quote_amount: Amount,
     ) -> Option<MatchResult> {
         // Match the orders
         let min_base_amount = Amount::max(o1.min_fill_size, o2.min_fill_size);
-        let min_quote_amount = self.min_fill_size;
+        let min_quote_amount = u128::max(min_quote_amount, self.min_fill_size);
 
         match_orders_with_min_base_amount(
             &o1.clone().into(),

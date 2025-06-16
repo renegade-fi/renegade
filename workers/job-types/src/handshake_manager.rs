@@ -184,6 +184,8 @@ pub struct ExternalMatchingEngineOptions {
     pub price: Option<TimestampedPrice>,
     /// The exact quote amount to use for a full fill
     pub exact_quote_amount: Option<Amount>,
+    /// The minimum quote amount to use for a full fill
+    pub min_quote_amount: Option<Amount>,
 }
 
 impl ExternalMatchingEngineOptions {

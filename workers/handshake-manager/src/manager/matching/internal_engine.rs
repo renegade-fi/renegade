@@ -64,7 +64,7 @@ impl HandshakeExecutor {
             self.get_internal_match_candidates(order_id, &my_order, &wallet).await?;
         while !match_candidates.is_empty() {
             let (other_order_id, match_res) = match self
-                .find_match(&my_order, &my_balance, price, match_candidates.clone())
+                .find_match(&my_order, &my_balance, price, match_candidates.iter())
                 .await?
             {
                 Some(match_res) => match_res,
