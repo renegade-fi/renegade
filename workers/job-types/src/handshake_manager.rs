@@ -234,4 +234,10 @@ impl ExternalMatchingEngineOptions {
         self.exact_quote_amount = Some(amount);
         self
     }
+
+    /// Set the min quote amount
+    pub fn with_min_quote_amount(mut self, amount: Amount) -> Self {
+        self.min_quote_amount = Some(amount);
+        self
+    }
 }

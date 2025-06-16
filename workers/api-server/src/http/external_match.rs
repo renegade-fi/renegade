@@ -237,56 +237,27 @@ impl ExternalMatchProcessor {
     ) -> Result<(Order, ExternalMatchingEngineOptions), ApiServerError> {
         // Validate the pair
         self.check_supported_pair(&o)?;
-
-        // Get the tokens being traded, swapping WETH for ETH if necessary
-        let base = if o.trades_native_asset() {
-            let native_wrapper = get_native_asset_wrapper_token();
-            o.base_mint = biguint_from_hex_string(&native_wrapper.get_addr()).unwrap();
-            native_wrapper
-        } else {
-            Token::from_addr_biguint(&o.base_mint)
-        };
-        let quote = Token::from_addr_biguint(&o.quote_mint);
-
-        // Fetch a price for the pair
-        let decimal_corrected_price = self
-            .price_queue
-            .peek_price(base.clone(), quote.clone())
-            .await
-            .and_then(|p| p.get_decimal_corrected_price(&base, &quote))
-            .map(|p| p.as_fixed_point())
-            .map_err(|_| internal_error(ERR_FAILED_TO_FETCH_PRICE))?;
+        let (base, quote) = self.setup_order_tokens(&mut o)?;
+        let price = self.get_external_match_price(base, quote).await?;
 
         // TODO: Currently we set the relayer fee to zero, remove this
         let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
-        let order = o.to_internal_order(decimal_corrected_price, relayer_fee);
+        let order = o.to_internal_order(price, relayer_fee);
 
         // Enforce an exact quote amount if specified
         if o.exact_quote_output != 0 {
-            let quote_amount = o.get_quote_amount(decimal_corrected_price, relayer_fee);
+            let quote_amount = o.get_quote_amount(price, relayer_fee);
             options = options.with_exact_quote_amount(quote_amount);
+        }
+
+        // If the order is quote denominated and a min fill size is specified, we should
+        // require the matching engine match at least this amount
+        if o.is_quote_denominated() && o.min_fill_size > 0 {
+            options = options.with_min_quote_amount(o.min_fill_size);
         }
 
         self.check_external_order_size(&order).await?;
         Ok((order, options))
-    }
-
-    /// Check the USDC denominated value of an external order and assert that it
-    /// is greater than the configured minimum size
-    async fn check_external_order_size(&self, o: &Order) -> Result<(), ApiServerError> {
-        let usdc_value =
-            get_usdc_denominated_value(&o.base_mint, o.amount, &self.price_queue).await?;
-
-        // If we cannot fetch a price, do not block the order
-        let min_size = self.min_order_size;
-        if let Some(usdc_value) = usdc_value {
-            if usdc_value < min_size {
-                let msg = format!("order value too small, ${usdc_value} < ${min_size}");
-                return Err(bad_request(msg));
-            }
-        }
-
-        Ok(())
     }
 
     /// Check that the pair on an external order is supported
@@ -313,6 +284,59 @@ impl ExternalMatchProcessor {
 
         Ok(())
     }
+
+    /// Set the tokens for an external order, converting WETH to ETH if
+    /// necessary
+    ///
+    /// Returns the base and quote tokens
+    fn setup_order_tokens(&self, o: &mut ExternalOrder) -> Result<(Token, Token), ApiServerError> {
+        // Get the tokens being traded, swapping WETH for ETH if necessary
+        let quote = Token::from_addr_biguint(&o.quote_mint);
+        let base = if o.trades_native_asset() {
+            let native_wrapper = get_native_asset_wrapper_token();
+            o.base_mint = biguint_from_hex_string(&native_wrapper.get_addr()).unwrap();
+            native_wrapper
+        } else {
+            Token::from_addr_biguint(&o.base_mint)
+        };
+
+        Ok((base, quote))
+    }
+
+    /// Get the external match compatible price for a given token pair
+    ///
+    /// Handles decimal correction for the pair
+    async fn get_external_match_price(
+        &self,
+        base: Token,
+        quote: Token,
+    ) -> Result<FixedPoint, ApiServerError> {
+        self.price_queue
+            .peek_price(base.clone(), quote.clone())
+            .await
+            .and_then(|p| p.get_decimal_corrected_price(&base, &quote))
+            .map(|p| p.as_fixed_point())
+            .map_err(|_| internal_error(ERR_FAILED_TO_FETCH_PRICE))
+    }
+
+    /// Check the USDC denominated value of an external order and assert that it
+    /// is greater than the configured minimum size
+    async fn check_external_order_size(&self, o: &Order) -> Result<(), ApiServerError> {
+        let usdc_value =
+            get_usdc_denominated_value(&o.base_mint, o.amount, &self.price_queue).await?;
+
+        // If we cannot fetch a price, do not block the order
+        let min_size = self.min_order_size;
+        if let Some(usdc_value) = usdc_value {
+            if usdc_value < min_size {
+                let msg = format!("order value too small, ${usdc_value} < ${min_size}");
+                return Err(bad_request(msg));
+            }
+        }
+
+        Ok(())
+    }
+
     // --- Handshake Manager Interactions --- //
 
     /// Request a quote from the external matching engine
