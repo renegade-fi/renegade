@@ -184,6 +184,8 @@ pub struct ExternalMatchingEngineOptions {
     pub price: Option<TimestampedPrice>,
     /// The exact quote amount to use for a full fill
     pub exact_quote_amount: Option<Amount>,
+    /// The minimum quote amount to use for a full fill
+    pub min_quote_amount: Option<Amount>,
 }
 
 impl ExternalMatchingEngineOptions {
@@ -230,6 +232,12 @@ impl ExternalMatchingEngineOptions {
     /// Set the exact quote amount
     pub fn with_exact_quote_amount(mut self, amount: Amount) -> Self {
         self.exact_quote_amount = Some(amount);
+        self
+    }
+
+    /// Set the min quote amount
+    pub fn with_min_quote_amount(mut self, amount: Amount) -> Self {
+        self.min_quote_amount = Some(amount);
         self
     }
 }

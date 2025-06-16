@@ -45,6 +45,10 @@ use common::types::{
 /// and base size
 const ERR_MULTIPLE_SIZING_PARAMS: &str =
     "exactly one of base_amount, quote_amount, or exact_output_amount must be set";
+/// The error message emitted when an exact output amount is specified and a
+/// min fill size is also specified
+const ERR_MIN_FILL_SIZE_NOT_ZERO: &str =
+    "Cannot set `min_fill_size` if `exact_output_amount` is specified";
 
 // ---------------
 // | HTTP Routes |
@@ -207,6 +211,11 @@ impl ExternalOrder {
             return Err(ERR_MULTIPLE_SIZING_PARAMS);
         }
 
+        // If an exact output is specified, the min size must be zero
+        if self.is_exact_output() && self.min_fill_size > 0 {
+            return Err(ERR_MIN_FILL_SIZE_NOT_ZERO);
+        }
+
         Ok(())
     }
 
@@ -226,6 +235,11 @@ impl ExternalOrder {
         self.quote_amount != 0 || self.exact_quote_output != 0
     }
 
+    /// Whether the order requests an exact output amount
+    pub fn is_exact_output(&self) -> bool {
+        self.exact_base_output != 0 || self.exact_quote_output != 0
+    }
+
     /// Convert the external order to the standard `Order` type used throughout
     /// the relayer
     ///
@@ -233,9 +247,9 @@ impl ExternalOrder {
     /// denominated order
     #[cfg(feature = "full-api")]
     pub fn to_internal_order(&self, price: FixedPoint, relayer_fee: FixedPoint) -> Order {
-        let base_amount = self.get_base_amount(price, relayer_fee);
-        let mut min_fill_size = self.get_min_fill_in_base(price);
-        min_fill_size = u128::min(min_fill_size, base_amount); // Ensure min fill size is not greater than the order size
+        let mut base_amount = self.get_base_amount(price, relayer_fee);
+        let min_fill_size = self.get_min_fill_base();
+        base_amount = Amount::max(min_fill_size, base_amount); // Ensure that base amount is at least the min fill size
 
         // If the min fill size is zero, set it to the base amount
         let worst_case_price = match self.side {
@@ -273,7 +287,7 @@ impl ExternalOrder {
         }
 
         let quote_amount = self.get_quote_amount(price, relayer_fee);
-        let implied_base_amount = FixedPoint::floor_div_int(quote_amount, price);
+        let implied_base_amount = FixedPoint::ceil_div_int(quote_amount, price);
         scalar_to_u128(&implied_base_amount)
     }
 
@@ -302,19 +316,27 @@ impl ExternalOrder {
     }
 
     /// Get the min fill size in units of the base token
-    ///
-    /// If the order size is specified in the `base_amount` field, this is
-    /// trivial. If instead the order size is specified in the `quote_amount`
-    /// field, we must convert through the price
-    fn get_min_fill_in_base(&self, price: FixedPoint) -> Amount {
-        let min_fill = self.min_fill_size;
-        if self.is_base_denominated() {
-            return min_fill;
+    pub fn get_min_fill_base(&self) -> Amount {
+        if self.is_quote_denominated() {
+            return 0;
+        } else if self.is_exact_output() {
+            // If an exact output is specified, set the min fill size equal to it
+            return self.exact_base_output;
         }
 
-        // Add one to round up
-        let div = FixedPoint::floor_div_int(min_fill, price) + Scalar::one();
-        scalar_to_u128(&div)
+        self.min_fill_size
+    }
+
+    /// Get the minimum fill size in the quote token
+    pub fn get_min_fill_quote(&self) -> Amount {
+        if self.is_base_denominated() {
+            return 0;
+        } else if self.is_exact_output() {
+            // If an exact output is specified, set the min fill size equal to it
+            return self.exact_quote_output;
+        }
+
+        self.min_fill_size
     }
 
     /// Get the amount necessary to match the order at such that after fees the

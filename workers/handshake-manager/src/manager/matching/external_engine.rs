@@ -120,6 +120,7 @@ impl HandshakeExecutor {
         // Get all orders that consent to external matching
         let mut matchable_orders = self.get_external_match_candidates(&order).await?;
         let price = ts_price.as_fixed_point();
+        let min_quote = options.min_quote_amount.unwrap_or_default();
 
         // Mock a balance for the external order, assuming it's fully capitalized
         let balance = self.mock_balance_for_external_order(&order, price);
@@ -127,18 +128,24 @@ impl HandshakeExecutor {
         // Try to find a match iteratively, we wrap this in a retry loop in case
         // settlement fails on a match
         while !matchable_orders.is_empty() {
-            let (other_order_id, mut match_res) =
-                match self.find_match(&order, &balance, price, matchable_orders.clone()).await? {
-                    Some(match_res) => match_res,
-                    None => {
-                        self.handle_no_match(response_topic);
-                        return Ok(());
-                    },
-                };
+            let res = self
+                .find_match_with_min_quote_amount(
+                    &order,
+                    &balance,
+                    price,
+                    min_quote,
+                    matchable_orders.iter(),
+                )
+                .await?;
+            if res.is_none() {
+                self.handle_no_match(response_topic);
+                return Ok(());
+            }
 
             // For an external match, the direction of the match should always equal the
             // internal order's direction, make sure this is the case. The core engine logic
             // may match the external order as the first party
+            let (other_order_id, mut match_res) = res.unwrap();
             match_res.direction = order.side.opposite().match_direction();
             let id = other_order_id;
             let topic = response_topic.clone();
