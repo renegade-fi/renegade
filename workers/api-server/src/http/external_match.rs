@@ -252,10 +252,10 @@ impl ExternalMatchProcessor {
 
         // If the order is quote denominated and a min fill size is specified, we should
         // require the matching engine match at least this amount
-        if o.is_quote_denominated() && o.min_fill_size > 0 {
-            options = options.with_min_quote_amount(o.min_fill_size);
-        }
+        let min_fill_quote = o.get_min_fill_quote();
+        options = options.with_min_quote_amount(min_fill_quote);
 
+        // Check that the order size is at least the min fill size
         self.check_external_order_size(&order).await?;
         Ok((order, options))
     }
