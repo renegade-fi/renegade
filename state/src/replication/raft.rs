@@ -9,15 +9,17 @@ use std::{
 use common::types::gossip::WrappedPeerId;
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tokio::sync::Mutex;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{
-    notifications::ProposalId, replication::get_raft_id, storage::db::DB, Proposal, StateTransition,
+    notifications::ProposalId,
+    replication::{error::ReplicationError, get_raft_id},
+    storage::db::DB,
+    Proposal, StateTransition,
 };
 
 use super::{
-    error::ReplicationV2Error,
     log_store::LogStore,
     network::{
         P2PNetworkFactory, P2PNetworkFactoryWrapper, P2PRaftNetwork, RaftRequest, RaftResponse,
@@ -130,7 +132,7 @@ impl RaftClient {
         db: Arc<DB>,
         net_factory: N,
         state_machine: StateMachine,
-    ) -> Result<Self, ReplicationV2Error> {
+    ) -> Result<Self, ReplicationError> {
         let raft_config = Arc::new(RaftConfig {
             cluster_name: config.cluster_name.clone(),
             heartbeat_interval: config.heartbeat_interval,
@@ -148,13 +150,13 @@ impl RaftClient {
         let log_store = LogStore::new(db.clone());
         let raft = Raft::new(config.id, raft_config, p2p_factory.clone(), log_store, state_machine)
             .await
-            .map_err(err_str!(ReplicationV2Error::RaftSetup))?;
+            .map_err(err_str!(ReplicationError::RaftSetup))?;
 
         // Initialize the raft
         if config.init {
             let initial_nodes = config.initial_nodes.clone();
             let members = initial_nodes.into_iter().collect::<BTreeMap<_, _>>();
-            raft.initialize(members).await.map_err(err_str!(ReplicationV2Error::RaftSetup))?;
+            raft.initialize(members).await.map_err(err_str!(ReplicationError::RaftSetup))?;
         }
 
         Ok(Self {
@@ -181,8 +183,8 @@ impl RaftClient {
     }
 
     /// Whether the raft is initialized
-    pub async fn is_initialized(&self) -> Result<bool, ReplicationV2Error> {
-        self.raft.is_initialized().await.map_err(err_str!(ReplicationV2Error::Raft))
+    pub async fn is_initialized(&self) -> Result<bool, ReplicationError> {
+        self.raft.is_initialized().await.map_err(err_str!(ReplicationError::Raft))
     }
 
     /// Get a copy of the raft metrics
@@ -238,8 +240,8 @@ impl RaftClient {
     }
 
     /// Shutdown the raft
-    pub async fn shutdown(&self) -> Result<(), ReplicationV2Error> {
-        self.raft.shutdown().await.map_err(err_str!(ReplicationV2Error::RaftTeardown))
+    pub async fn shutdown(&self) -> Result<(), ReplicationError> {
+        self.raft.shutdown().await.map_err(err_str!(ReplicationError::RaftTeardown))
     }
 
     // -------------------
@@ -247,24 +249,24 @@ impl RaftClient {
     // -------------------
 
     /// Await the promotion of the local peer to a voter
-    pub async fn await_promotion(&self) -> Result<(), ReplicationV2Error> {
+    pub async fn await_promotion(&self) -> Result<(), ReplicationError> {
         let timeout = Duration::from_millis(DEFAULT_PROMOTION_TIMEOUT_MS);
         self.raft
             .wait(Some(timeout))
             .state(ServerState::Follower, "local-node-promotion")
             .await
-            .map_err(err_str!(ReplicationV2Error::Raft))
+            .map_err(err_str!(ReplicationError::Raft))
             .map(|_| ())
     }
 
     /// Await the election of a leader in the raft
-    pub async fn await_leader_election(&self) -> Result<(), ReplicationV2Error> {
+    pub async fn await_leader_election(&self) -> Result<(), ReplicationError> {
         let timeout = Duration::from_millis(DEFAULT_LEADER_ELECTION_TIMEOUT_MS);
         self.raft
             .wait(Some(timeout))
             .metrics(|metrics| metrics.current_leader.is_some(), "leader-election")
             .await
-            .map_err(err_str!(ReplicationV2Error::Raft))
+            .map_err(err_str!(ReplicationError::Raft))
             .map(|_| ())
     }
 
@@ -276,8 +278,8 @@ impl RaftClient {
     ///
     /// Does not wait for the snapshot to build, returns immediately after
     /// sending the command to the raft core
-    pub async fn trigger_snapshot(&self) -> Result<(), ReplicationV2Error> {
-        self.raft().trigger().snapshot().await.map_err(err_str!(ReplicationV2Error::Raft))
+    pub async fn trigger_snapshot(&self) -> Result<(), ReplicationError> {
+        self.raft().trigger().snapshot().await.map_err(err_str!(ReplicationError::Raft))
     }
 
     // -------------
@@ -285,11 +287,11 @@ impl RaftClient {
     // -------------
 
     /// Propose an update to the raft
-    pub async fn propose_transition(&self, update: Proposal) -> Result<(), ReplicationV2Error> {
+    pub async fn propose_transition(&self, update: Proposal) -> Result<(), ReplicationError> {
         // If the current node is not the leader, forward to the leader
         let (mut leader_nid, leader_info) = self
             .leader_info()
-            .ok_or_else(|| ReplicationV2Error::Proposal(ERR_NO_LEADER.to_string()))?;
+            .ok_or_else(|| ReplicationError::Proposal(ERR_NO_LEADER.to_string()))?;
 
         // If we're expiring the leader, first change leader then propose an expiry
         if let StateTransition::RemoveRaftPeers { peer_ids } = update.transition.as_ref()
@@ -307,7 +309,7 @@ impl RaftClient {
             let msg = RaftRequest::ForwardedProposal(update);
             net.send_request(leader_nid, msg)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+                .map_err(err_str!(ReplicationError::Proposal))?;
             return Ok(());
         }
 
@@ -319,20 +321,39 @@ impl RaftClient {
             StateTransition::RemoveRaftPeers { peer_ids } => {
                 self.handle_remove_peers(peer_ids).await
             },
-            _ => self
-                .raft()
-                .client_write(update)
-                .await
-                .map_err(err_str!(ReplicationV2Error::Proposal))
-                .map(|_| ()),
+            _ => self.handle_client_write(update).await,
         }
+    }
+
+    /// Handle a proposal for an application level write
+    async fn handle_client_write(&self, update: Proposal) -> Result<(), ReplicationError> {
+        let rx = self
+            .raft()
+            .client_write_ff(update)
+            .await
+            .map_err(err_str!(ReplicationError::Proposal))?;
+
+        // Watch the proposal for errors in a separate thread, return to the client
+        tokio::spawn(async move {
+            match rx.await {
+                Err(e) => {
+                    error!("error watching proposal: {e}");
+                },
+                Ok(Err(raft_err)) => {
+                    error!("raft error: {raft_err}");
+                },
+                _ => (),
+            }
+        });
+
+        Ok(())
     }
 
     /// Handle a proposal to add learners
     async fn handle_add_learners(
         &self,
         learners: Vec<(NodeId, RaftNode)>,
-    ) -> Result<(), ReplicationV2Error> {
+    ) -> Result<(), ReplicationError> {
         let _lock = self.membership_change_lock.lock().await;
 
         // Only add learners that haven't already been added
@@ -351,14 +372,14 @@ impl RaftClient {
             self.raft()
                 .change_membership(change, true /* retain */)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+                .map_err(err_str!(ReplicationError::Proposal))?;
         }
 
         Ok(())
     }
 
     /// Handle a proposal to add voters
-    async fn handle_add_voters(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
+    async fn handle_add_voters(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationError> {
         let _lock = self.membership_change_lock.lock().await;
 
         // Only add voters that haven't already been added
@@ -376,14 +397,14 @@ impl RaftClient {
             self.raft()
                 .change_membership(change, false /* retain */)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+                .map_err(err_str!(ReplicationError::Proposal))?;
         }
 
         Ok(())
     }
 
     /// Handle a proposal to remove a peer
-    async fn handle_remove_peers(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationV2Error> {
+    async fn handle_remove_peers(&self, peer_ids: Vec<NodeId>) -> Result<(), ReplicationError> {
         let _lock = self.membership_change_lock.lock().await;
 
         let peers: HashSet<_> = peer_ids.into_iter().collect();
@@ -402,7 +423,7 @@ impl RaftClient {
             self.raft()
                 .change_membership(voter_removal_change, false /* retain */)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+                .map_err(err_str!(ReplicationError::Proposal))?;
         }
 
         // Remove learners
@@ -412,7 +433,7 @@ impl RaftClient {
             self.raft()
                 .change_membership(learner_removal_change, false /* retain */)
                 .await
-                .map_err(err_str!(ReplicationV2Error::Proposal))?;
+                .map_err(err_str!(ReplicationError::Proposal))?;
         }
 
         Ok(())
@@ -427,7 +448,7 @@ impl RaftClient {
     pub(crate) async fn handle_raft_request(
         &self,
         req: RaftRequest,
-    ) -> Result<RaftResponse, ReplicationV2Error> {
+    ) -> Result<RaftResponse, ReplicationError> {
         backfill_trace_field("req_type", req.type_str());
         match req {
             RaftRequest::AppendEntries(req) => {
@@ -457,18 +478,18 @@ impl RaftClient {
     pub async fn initialize(
         &self,
         peers: BTreeMap<NodeId, RaftNode>,
-    ) -> Result<(), ReplicationV2Error> {
-        self.raft().initialize(peers).await.map_err(err_str!(ReplicationV2Error::RaftSetup))
+    ) -> Result<(), ReplicationError> {
+        self.raft().initialize(peers).await.map_err(err_str!(ReplicationError::RaftSetup))
     }
 
     /// Force the leader to change by starting an election and waiting until a
     /// new leader is elected
     ///
     /// Returns the new leader
-    pub async fn change_leader(&self) -> Result<NodeId, ReplicationV2Error> {
+    pub async fn change_leader(&self) -> Result<NodeId, ReplicationError> {
         // Trigger an election
         let curr_leader = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
-        self.raft().trigger().elect().await.map_err(err_str!(ReplicationV2Error::Raft))?;
+        self.raft().trigger().elect().await.map_err(err_str!(ReplicationError::Raft))?;
 
         // Await leadership change away from current leader
         let timeout = Duration::from_millis(DEFAULT_LEADER_ELECTION_TIMEOUT_MS);
@@ -480,7 +501,7 @@ impl RaftClient {
                 "leader-change",
             )
             .await
-            .map_err(err_str!(ReplicationV2Error::Raft))?;
+            .map_err(err_str!(ReplicationError::Raft))?;
 
         Ok(metrics.current_leader.expect("wait condition ensures leader exists"))
     }
@@ -490,7 +511,7 @@ impl RaftClient {
         &self,
         nid: NodeId,
         info: RaftNode,
-    ) -> Result<ProposalId, ReplicationV2Error> {
+    ) -> Result<ProposalId, ReplicationError> {
         self.add_learners(vec![(nid, info)]).await
     }
 
@@ -498,14 +519,14 @@ impl RaftClient {
     pub async fn add_learners(
         &self,
         learners: Vec<(NodeId, RaftNode)>,
-    ) -> Result<ProposalId, ReplicationV2Error> {
+    ) -> Result<ProposalId, ReplicationError> {
         let proposal = Proposal::from(StateTransition::AddRaftLearners { learners });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
 
     /// Promote a single learner to a voter
-    pub async fn promote_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationV2Error> {
+    pub async fn promote_learner(&self, learner: NodeId) -> Result<ProposalId, ReplicationError> {
         self.promote_learners(vec![learner]).await
     }
 
@@ -513,19 +534,19 @@ impl RaftClient {
     pub async fn promote_learners(
         &self,
         learners: Vec<NodeId>,
-    ) -> Result<ProposalId, ReplicationV2Error> {
+    ) -> Result<ProposalId, ReplicationError> {
         let proposal = Proposal::from(StateTransition::AddRaftVoters { peer_ids: learners });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
     }
 
     /// Remove a peer from the raft
-    pub async fn remove_peer(&self, peer: NodeId) -> Result<ProposalId, ReplicationV2Error> {
+    pub async fn remove_peer(&self, peer: NodeId) -> Result<ProposalId, ReplicationError> {
         self.remove_peers(vec![peer]).await
     }
 
     /// Remove the given peers from the raft
-    pub async fn remove_peers(&self, peers: Vec<NodeId>) -> Result<ProposalId, ReplicationV2Error> {
+    pub async fn remove_peers(&self, peers: Vec<NodeId>) -> Result<ProposalId, ReplicationError> {
         let proposal = Proposal::from(StateTransition::RemoveRaftPeers { peer_ids: peers });
         let id = proposal.id;
         self.propose_transition(proposal).await.map(|_| id)
@@ -542,7 +563,7 @@ impl RaftClient {
     pub async fn sync_membership(
         &self,
         known_peers: Vec<WrappedPeerId>,
-    ) -> Result<(), ReplicationV2Error> {
+    ) -> Result<(), ReplicationError> {
         // Only the leader should update raft membership
         let leader = self.leader().await.unwrap_or(0 /* invalid id */);
         if leader != self.node_id() {
@@ -568,7 +589,7 @@ impl RaftClient {
     pub async fn add_missed_learners(
         &self,
         known_peers: &[WrappedPeerId],
-    ) -> Result<usize, ReplicationV2Error> {
+    ) -> Result<usize, ReplicationError> {
         let membership = self.membership();
         let mut learners_to_add = Vec::new();
 
@@ -591,7 +612,7 @@ impl RaftClient {
     /// Try promoting all learners if the current node is the leader
     ///
     /// Returns the number of learners promoted
-    pub async fn try_promote_learners(&self) -> Result<usize, ReplicationV2Error> {
+    pub async fn try_promote_learners(&self) -> Result<usize, ReplicationError> {
         // Check all learners replication progress
         let learners = self.learners();
         if self.learners().is_empty() {
@@ -637,7 +658,7 @@ impl RaftClient {
     pub async fn check_expired_nodes(
         &self,
         known_peers: &[WrappedPeerId],
-    ) -> Result<usize, ReplicationV2Error> {
+    ) -> Result<usize, ReplicationError> {
         // Only the leader should expire old raft nodes
         let leader_id = self.leader_info().map(|(id, _)| id).unwrap_or(0 /* invalid id */);
         if self.node_id() != leader_id {

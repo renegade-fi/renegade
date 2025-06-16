@@ -6,7 +6,7 @@ use std::error::Error;
 use system_clock::SystemClockError;
 
 use crate::{
-    applicator::error::StateApplicatorError, replication::error::ReplicationV2Error,
+    applicator::error::StateApplicatorError, replication::error::ReplicationError,
     storage::error::StorageError,
 };
 
@@ -24,7 +24,7 @@ pub enum StateError {
     /// An error sending a proposal to the replication layer
     Proposal(String),
     /// An error in the replication substrate
-    Replication(ReplicationV2Error),
+    Replication(ReplicationError),
     /// An error awaiting a runtime task
     Runtime(String),
     /// An error deserializing a message
@@ -53,8 +53,8 @@ impl From<StateError> for String {
     }
 }
 
-impl From<ReplicationV2Error> for StateError {
-    fn from(e: ReplicationV2Error) -> Self {
+impl From<ReplicationError> for StateError {
+    fn from(e: ReplicationError) -> Self {
         StateError::Replication(e)
     }
 }
