@@ -23,6 +23,7 @@ use darkpool_client::{
 };
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
+use eyre::Result;
 use futures::Future;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
@@ -56,14 +57,14 @@ use price_reporter::{
 use proof_manager::{
     mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
 };
-use reqwest::{blocking::Client, Method};
+use reqwest::{Client, Method};
 use serde::{de::DeserializeOwned, Serialize};
 use state::{create_global_state, State};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};
 use test_helpers::mocks::mock_cancel;
-use tokio::runtime::Runtime as TokioRuntime;
+use tokio::runtime::Handle;
 
 /// A helper that creates a dummy runtime and blocks a task on it
 ///
@@ -73,8 +74,7 @@ fn run_fut<F>(fut: F) -> F::Output
 where
     F: Future,
 {
-    let rt = TokioRuntime::new().expect("Failed to create tokio runtime");
-    rt.block_on(fut)
+    Handle::current().block_on(fut)
 }
 
 /// The mock node struct, used to build testing nodes
@@ -190,57 +190,56 @@ impl MockNodeController {
 
     /// Send an API request to the mock node
     #[allow(clippy::needless_pass_by_value)]
-    pub fn send_api_req<B: Serialize, R: DeserializeOwned>(
+    pub async fn send_api_req<B: Serialize, R: DeserializeOwned>(
         &self,
         route: &str,
         method: Method,
         body: B,
-    ) -> Result<R, String> {
+    ) -> Result<R> {
         let client = Client::new();
         let url = format!("http://localhost:{}{}", self.config.http_port, route);
 
         let resp = match method {
-            Method::GET => client.get(url).send().map_err(|e| e.to_string()),
-            Method::POST => client.post(url).json(&body).send().map_err(|e| e.to_string()),
-            _ => Err("Unsupported method".to_string()),
-        }
-        .map_err(|e| e.to_string())?;
+            Method::GET => client.get(url).send().await.map_err(|e| eyre::eyre!(e)),
+            Method::POST => client.post(url).json(&body).send().await.map_err(|e| eyre::eyre!(e)),
+            _ => eyre::bail!("Unsupported method"),
+        }?;
 
         if resp.status().is_success() {
-            resp.json().map_err(|e| e.to_string())
+            resp.json().await.map_err(|e| eyre::eyre!(e))
         } else {
-            Err(format!("Request failed with status: {}", resp.status()))
+            Err(eyre::eyre!("Request failed with status: {}", resp.status()))
         }
     }
 
     /// Send a job to the task driver
-    pub fn send_task_job(&self, job: TaskDriverJob) -> Result<(), String> {
-        self.task_queue.0.send(job).map_err(|e| e.to_string())
+    pub fn send_task_job(&self, job: TaskDriverJob) -> Result<()> {
+        self.task_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the network manager
-    pub fn send_network_job(&self, job: NetworkManagerJob) -> Result<(), String> {
-        self.network_queue.0.send(job).map_err(|e| e.to_string())
+    pub fn send_network_job(&self, job: NetworkManagerJob) -> Result<()> {
+        self.network_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the gossip server
-    pub fn send_gossip_job(&self, job: GossipServerJob) -> Result<(), String> {
-        self.gossip_queue.0.send(job).map_err(|e| e.to_string())
+    pub fn send_gossip_job(&self, job: GossipServerJob) -> Result<()> {
+        self.gossip_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the handshake manager
-    pub fn send_handshake_job(&self, job: HandshakeManagerJob) -> Result<(), String> {
-        self.handshake_queue.0.send(job).map_err(|e| e.to_string())
+    pub fn send_handshake_job(&self, job: HandshakeManagerJob) -> Result<()> {
+        self.handshake_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the price reporter
-    pub fn send_price_reporter_job(&self, job: PriceReporterJob) -> Result<(), String> {
-        self.price_queue.0.send(job).map_err(|e| e.to_string())
+    pub fn send_price_reporter_job(&self, job: PriceReporterJob) -> Result<()> {
+        self.price_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the proof manager
-    pub fn send_proof_job(&self, job: ProofManagerJob) -> Result<(), String> {
-        self.proof_queue.0.send(job).map_err(|e| e.to_string())
+    pub fn send_proof_job(&self, job: ProofManagerJob) -> Result<()> {
+        self.proof_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     // ------------
@@ -532,39 +531,5 @@ impl MockNodeController {
         MockProofManager::start(job_queue);
 
         self
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use alloy::signers::local::LocalSigner;
-    use api_server::http::PING_ROUTE;
-    use config::RelayerConfig;
-    use external_api::{http::PingResponse, EmptyRequestResponse};
-    use reqwest::Method;
-    use state::test_helpers::tmp_db_path;
-
-    use crate::MockNodeController;
-
-    /// Tests a simple constructor of the mock node
-    #[test]
-    #[ignore]
-    fn test_ping_mock() {
-        let db_path = tmp_db_path();
-        let private_key = LocalSigner::random();
-        let conf = RelayerConfig {
-            rpc_url: Some("http://localhost:1234".to_string()),
-            private_key,
-            raft_snapshot_path: db_path.clone(),
-            db_path,
-            ..Default::default()
-        };
-
-        // A simple no-panic test
-        let node = MockNodeController::new(conf.clone()).with_state().with_api_server();
-
-        // Send a ping to check the health of the mock
-        let _ping_resp: PingResponse =
-            node.send_api_req(PING_ROUTE, Method::GET, EmptyRequestResponse {}).unwrap();
     }
 }
