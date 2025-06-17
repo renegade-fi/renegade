@@ -21,10 +21,12 @@ num-traits = "0.2"
 sha2 = { version = "0.10", features = ["asm"] }
 
 # === HTTP + Websocket === #
-hyper = { version = "0.14", features = ["http1", "http2", "server", "tcp"] }
+hyper = { version = "1.6.0", features = ["http1", "http2", "server"] }
+hyper-util = "0.1"
+http-body-util = "0.1"
 matchit = "0.7"
 ratelimit_meter = "5.0.0"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { workspace = true, features = ["json"] }
 tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.18", features = ["native-tls"] }
 tungstenite = "0.18"
