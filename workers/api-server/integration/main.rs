@@ -7,6 +7,7 @@ use config::setup_token_remaps;
 use external_api::{http::PingResponse, EmptyRequestResponse};
 use eyre::Result;
 use mock_node::MockNodeController;
+use rand::{distributions::uniform::SampleRange, thread_rng};
 use reqwest::Method;
 use test_helpers::{
     assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
@@ -44,15 +45,20 @@ impl From<CliArgs> for IntegrationTestCtx {
         setup_token_remaps(None /* remap_file */, Chain::ArbitrumSepolia)
             .expect("failed to setup token remaps");
 
+        // Sample a mock price
+        let mut rng = thread_rng();
+        let mock_price = (0.0001..1000.).sample_single(&mut rng);
+
         let admin_api_key = HmacKey::random();
         let cfg = Self::relayer_config(admin_api_key);
         let mock_node = MockNodeController::new(cfg)
             .with_darkpool_client()
             .with_state()
             .with_handshake_manager()
+            .with_mock_price_reporter(mock_price)
             .with_api_server();
 
-        Self { mock_node, admin_api_key }
+        Self { admin_api_key, mock_node }
     }
 }
 

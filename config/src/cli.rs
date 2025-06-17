@@ -452,6 +452,7 @@ impl RelayerConfig {
         .map_err(|e| e.to_string())
     }
 }
+
 impl Default for RelayerConfig {
     fn default() -> Self {
         // Parse a dummy set of command line args and convert this to a config
