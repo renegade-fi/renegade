@@ -36,6 +36,6 @@ util = { workspace = true }
 alloy = { workspace = true }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 eyre = { workspace = true }
-reqwest = { version = "0.11" }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

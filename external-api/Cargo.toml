@@ -28,7 +28,7 @@ full-api = [
 num-bigint = { workspace = true }
 
 # === Auth Dependencies === #
-http = { version = "0.2.12", optional = true }
+http = { workspace = true, optional = true }
 thiserror = { version = "1.0.61", optional = true }
 
 # === Workspace Dependencies === #

@@ -17,6 +17,7 @@
 //! Unnamed Tokens only use Uniswap V3 for the price feed.
 use alloy::primitives::Address;
 use bimap::BiMap;
+use circuit_types::Amount;
 use constants::NATIVE_ASSET_ADDRESS;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
@@ -260,10 +261,20 @@ impl Token {
     /// associated number of decimals.
     ///
     /// Note that due to conversion to f64, the result may lose precision.
-    pub fn convert_to_decimal(&self, amount: u128) -> f64 {
+    pub fn convert_to_decimal(&self, amount: Amount) -> f64 {
         let decimals = self.get_decimals().unwrap_or_default();
         let decimal_adjustment = 10u128.pow(decimals as u32);
         amount as f64 / decimal_adjustment as f64
+    }
+
+    /// Converts the amount of the token as an f64 to an `Amount`, accounting
+    /// for the associated number of decimals.
+    ///
+    /// Note that due to conversion from f64, the result may lose precision.
+    pub fn convert_from_decimal(&self, amount: f64) -> Amount {
+        let decimals = self.get_decimals().unwrap_or_default();
+        let decimal_adjustment = 10u128.pow(decimals as u32);
+        (amount * decimal_adjustment as f64) as u128
     }
 }
 

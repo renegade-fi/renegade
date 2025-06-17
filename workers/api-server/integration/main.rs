@@ -1,19 +1,22 @@
 //! Integration tests for the `api-server` crate
 
-use std::env::temp_dir;
-
 use api_server::http::PING_ROUTE;
 use clap::Parser;
-use common::types::chain::Chain;
-use config::{setup_token_remaps, RelayerConfig};
+use common::types::{chain::Chain, hmac::HmacKey};
+use config::setup_token_remaps;
 use external_api::{http::PingResponse, EmptyRequestResponse};
 use eyre::Result;
-use hyper::Method;
 use mock_node::MockNodeController;
-use state::test_helpers::tmp_db_path;
+use reqwest::Method;
 use test_helpers::{
     assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
 };
+
+use crate::ctx::IntegrationTestCtx;
+
+mod ctx;
+mod external_match;
+mod to_eyre;
 
 // -------------
 // | Arguments |
@@ -31,53 +34,37 @@ struct CliArgs {
     verbosity: TestVerbosity,
 }
 
-/// The arguments used for the integration tests
-#[derive(Clone)]
-struct IntegrationTestArgs {
-    /// The mock node controller
-    mock_node: MockNodeController,
-}
-
-impl IntegrationTestArgs {
-    /// Get the relayer config for the integration tests
-    pub fn relayer_config() -> RelayerConfig {
-        let raft_snapshot_path = temp_dir().to_str().unwrap().to_string();
-        let db_path = tmp_db_path();
-        RelayerConfig { raft_snapshot_path, db_path, ..Default::default() }
-    }
-}
-
 // ---------
 // | Setup |
 // ---------
 
-impl From<CliArgs> for IntegrationTestArgs {
+impl From<CliArgs> for IntegrationTestCtx {
     fn from(_args: CliArgs) -> Self {
         // Use the Arbitrum Sepolia token remap for testing
         setup_token_remaps(None /* remap_file */, Chain::ArbitrumSepolia)
             .expect("failed to setup token remaps");
 
-        let cfg = Self::relayer_config();
-        let mock_node =
-            MockNodeController::new(cfg).with_darkpool_client().with_state().with_api_server();
+        let admin_api_key = HmacKey::random();
+        let cfg = Self::relayer_config(admin_api_key);
+        let mock_node = MockNodeController::new(cfg)
+            .with_darkpool_client()
+            .with_state()
+            .with_handshake_manager()
+            .with_api_server();
 
-        Self { mock_node }
+        Self { mock_node, admin_api_key }
     }
 }
 
-integration_test_main!(CliArgs, IntegrationTestArgs);
+integration_test_main!(CliArgs, IntegrationTestCtx);
 
 // ---------
 // | Tests |
 // ---------
 
 /// Tests that the api server can be pinged
-async fn test_ping(test_args: IntegrationTestArgs) -> Result<()> {
-    let node = &test_args.mock_node;
-    let resp: PingResponse =
-        node.send_api_req(PING_ROUTE, Method::GET, EmptyRequestResponse {}).await?;
-
-    assert_true_result!(resp.timestamp > 0)?;
-    Ok(())
+async fn test_ping(ctx: IntegrationTestCtx) -> Result<()> {
+    let resp: PingResponse = ctx.send_req(PING_ROUTE, Method::GET, EmptyRequestResponse {}).await?;
+    assert_true_result!(resp.timestamp > 0)
 }
 integration_test_async!(test_ping);
