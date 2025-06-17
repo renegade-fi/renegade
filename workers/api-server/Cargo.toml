@@ -3,6 +3,15 @@ name = "api-server"
 version = "0.1.0"
 edition = "2021"
 
+[[test]]
+name = "integration"
+path = "integration/main.rs"
+harness = false
+required-features = ["test_helpers"]
+
+[features]
+test_helpers = ["darkpool-client/arbitrum"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 hmac = "0.12"
@@ -58,3 +67,14 @@ uuid = "1.1.2"
 ecdsa = "0.16"
 rand = { workspace = true }
 util = { workspace = true }
+
+# === Integration Test Dependencies === #
+clap = { version = "4.0", features = ["derive"] }
+colored = "2"
+criterion = { version = "0.5", features = ["async", "async_tokio"] }
+ctor = "0.1"
+eyre = { workspace = true }
+inventory = "0.3"
+test-helpers = { workspace = true, features = ["mpc-network"] }
+tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
+mock-node = { workspace = true }
