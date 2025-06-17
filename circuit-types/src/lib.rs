@@ -170,6 +170,11 @@ pub fn max_price() -> FixedPoint {
     FixedPoint::from_repr(repr)
 }
 
+/// Get the maximum representable amount
+pub fn max_amount() -> Amount {
+    (1u128 << AMOUNT_BITS) - 1
+}
+
 /// Verify that an amount is within the correct bitlength
 pub fn validate_amount_bitlength(amount: Amount) -> bool {
     let max_amount = (1u128 << AMOUNT_BITS) - 1;

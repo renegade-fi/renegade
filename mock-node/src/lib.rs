@@ -57,7 +57,7 @@ use price_reporter::{
 use proof_manager::{
     mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
 };
-use reqwest::{Client, Method};
+use reqwest::{header::HeaderMap, Client, Method, Response};
 use serde::{de::DeserializeOwned, Serialize};
 use state::{create_global_state, State};
 use system_bus::SystemBus;
@@ -194,21 +194,40 @@ impl MockNodeController {
         &self,
         route: &str,
         method: Method,
+        headers: HeaderMap,
         body: B,
     ) -> Result<R> {
-        let client = Client::new();
-        let url = format!("http://localhost:{}{}", self.config.http_port, route);
-
-        let resp = match method {
-            Method::GET => client.get(url).send().await.map_err(|e| eyre::eyre!(e)),
-            Method::POST => client.post(url).json(&body).send().await.map_err(|e| eyre::eyre!(e)),
-            _ => eyre::bail!("Unsupported method"),
-        }?;
-
+        let resp = self.send_api_req_raw(route, method, headers, body).await?;
         if resp.status().is_success() {
             resp.json().await.map_err(|e| eyre::eyre!(e))
         } else {
             Err(eyre::eyre!("Request failed with status: {}", resp.status()))
+        }
+    }
+
+    /// Send an API request to the mock node and return the raw response
+    pub async fn send_api_req_raw<B: Serialize>(
+        &self,
+        route: &str,
+        method: Method,
+        headers: HeaderMap,
+        body: B,
+    ) -> Result<Response> {
+        let client = Client::new();
+        let url = format!("http://localhost:{}{}", self.config.http_port, route);
+
+        match method {
+            Method::GET => {
+                client.get(url).headers(headers).send().await.map_err(|e| eyre::eyre!(e))
+            },
+            Method::POST => client
+                .post(url)
+                .headers(headers)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| eyre::eyre!(e)),
+            _ => eyre::bail!("Unsupported method"),
         }
     }
 

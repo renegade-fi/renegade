@@ -159,7 +159,7 @@ pub struct AssembleExternalMatchRequest {
 // ------------------
 
 /// An external order
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ExternalOrder {
     /// The mint (erc20 address) of the quote token
     #[serde(
