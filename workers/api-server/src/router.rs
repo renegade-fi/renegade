@@ -4,12 +4,14 @@ use std::{collections::HashMap, iter};
 
 use async_trait::async_trait;
 use common::types::hmac::HmacKey;
+use http_body_util::{BodyExt, Full};
 use hyper::{
-    body::to_bytes, header::CONTENT_TYPE, Body, HeaderMap, Method, Request, Response, StatusCode,
-    Uri,
+    body::{Bytes as BytesBody, Incoming as IncomingBody},
+    header::CONTENT_TYPE,
+    HeaderMap, Method, Request, Response, StatusCode, Uri,
 };
 use itertools::Itertools;
-use matchit::Router as MatchRouter;
+use matchit::{Params, Router as MatchRouter};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use state::State;
 use tracing::{debug, instrument, warn};
@@ -25,6 +27,8 @@ use super::{error::ApiServerError, http::parse_wallet_id_from_params};
 pub(super) type UrlParams = HashMap<String, String>;
 /// A type alias for query params, i.e. /path/to/resource?id=123
 pub(super) type QueryParams = HashMap<String, String>;
+/// A type for the full response body
+pub(super) type ResponseBody = Full<BytesBody>;
 
 /// The maximum time an OPTIONS request to our HTTP API may be cached, we go
 /// above the default of 5 seconds to avoid unnecessary pre-flights
@@ -41,17 +45,17 @@ const ERR_INVALID_PATH: &str = "invalid path";
 // -----------
 
 /// Builds an empty HTTP 400 (Bad Request) response
-pub(super) fn build_400_response(err: String) -> Response<Body> {
+pub(super) fn build_400_response(err: String) -> Response<ResponseBody> {
     build_response_from_status_code(StatusCode::BAD_REQUEST, err)
 }
 
 /// Builds an empty HTTP 404 (Not Found) response
-pub(super) fn build_404_response(err: String) -> Response<Body> {
+pub(super) fn build_404_response(err: String) -> Response<ResponseBody> {
     build_response_from_status_code(StatusCode::NOT_FOUND, err)
 }
 
 /// Builds an empty HTTP 500 (Internal Server Error) response
-pub(super) fn build_500_response(err: String) -> Response<Body> {
+pub(super) fn build_500_response(err: String) -> Response<ResponseBody> {
     build_response_from_status_code(StatusCode::INTERNAL_SERVER_ERROR, err)
 }
 
@@ -59,11 +63,11 @@ pub(super) fn build_500_response(err: String) -> Response<Body> {
 pub(super) fn build_response_from_status_code(
     status_code: StatusCode,
     err: String,
-) -> Response<Body> {
+) -> Response<ResponseBody> {
     Response::builder()
         .status(status_code)
         .header("Access-Control-Allow-Origin", "*")
-        .body(Body::from(err))
+        .body(Full::new(BytesBody::from(err)))
         .unwrap()
 }
 
@@ -93,10 +97,11 @@ pub trait Handler: Send + Sync {
     /// The handler method for the request/response on the handler's route
     async fn handle(
         &self,
-        req: Request<Body>,
         url_params: UrlParams,
         query_params: QueryParams,
-    ) -> Response<Body>;
+        headers: HeaderMap,
+        body: BytesBody,
+    ) -> Response<ResponseBody>;
 }
 
 /// A handler that has associated Request/Response type information attached to
@@ -132,32 +137,22 @@ impl<
 {
     async fn handle(
         &self,
-        req: Request<Body>,
         url_params: UrlParams,
         query_params: QueryParams,
-    ) -> Response<Body> {
-        // Copy the headers before consuming the body
-        let headers = req.headers().clone();
-
-        // Deserialize the request into the request type, return HTTP 400 if
-        // deserialization fails
-        let req_body_bytes = hyper::body::to_bytes(req.into_body()).await;
-        if let Err(e) = req_body_bytes {
-            return build_400_response(e.to_string());
-        }
-
-        let mut unwrapped: &[u8] = &req_body_bytes.unwrap(); // Necessary to explicitly hold temporary value
-        if unwrapped.is_empty() {
+        headers: HeaderMap,
+        mut body: BytesBody,
+    ) -> Response<ResponseBody> {
+        if body.is_empty() {
             // If no HTTP body data was passed, replace the data with "null". Serde expects
             // "null" as the serialized version of an empty struct
-            unwrapped = "null".as_bytes();
-        }
-        let deserialized = serde_json::from_reader(unwrapped);
-        if let Err(e) = deserialized {
-            return build_400_response(e.to_string());
+            body = "null".as_bytes().into();
         }
 
-        let req_body: Req = deserialized.unwrap();
+        let deserialized = serde_json::from_reader(body.as_ref());
+        let req_body: Req = match deserialized {
+            Ok(body) => body,
+            Err(e) => return build_400_response(e.to_string()),
+        };
 
         // Forward to the typed handler
         let res = self.handle_typed(headers, req_body, url_params, query_params).await;
@@ -172,7 +167,8 @@ impl<
 
                 // TODO: Either remove this in the future, or ensure that no sensitive
                 // information can leak from cross-origin requests.
-                builder.body(Body::from(serde_json::to_vec(&resp).unwrap())).unwrap()
+                let body_bytes = serde_json::to_vec(&resp).unwrap();
+                builder.body(Full::new(BytesBody::from(body_bytes))).unwrap()
             },
             Err(e) => e.into(),
         }
@@ -276,47 +272,22 @@ impl Router {
         &self,
         method: Method,
         route: Uri,
-        mut req: Request<Body>,
-    ) -> Response<Body> {
+        req: Request<IncomingBody>,
+    ) -> Response<Full<BytesBody>> {
         let path = route.path();
         let res = if method == Method::OPTIONS {
             // If the request is an options request, handle it directly
             self.handle_options_req(path)
         } else {
-            // Get the full routable path
-            let full_route = Self::create_full_route(&method, path.to_string());
-
             // Dispatch to handler
+            let full_route = Self::create_full_route(&method, path.to_string());
             if let Ok(matched_path) = self.router.at(&full_route) {
                 let (handler, auth) = matched_path.value;
                 let params = matched_path.params;
-
-                // Clone the params to take ownership
-                let mut params_map = HashMap::with_capacity(params.len());
-                for (key, value) in params.iter() {
-                    params_map.insert(key.to_string(), value.to_string());
+                match self.handle_req_inner(route, params, *auth, req, handler.as_ref()).await {
+                    Ok(res) => res,
+                    Err(e) => e.into(),
                 }
-
-                // Parse query params
-                let query_params = match parse_query_params(route.query().unwrap_or("")) {
-                    Ok(params) => params,
-                    Err(e) => {
-                        return build_400_response(e.to_string());
-                    },
-                };
-
-                // Auth check and handler
-                let path_with_query = match route.path_and_query() {
-                    Some(path_and_query) => path_and_query.as_str(),
-                    None => return build_400_response(ERR_INVALID_PATH.to_string()),
-                };
-
-                if let Err(e) = self.check_auth(*auth, path_with_query, &params_map, &mut req).await
-                {
-                    return e.into();
-                }
-
-                handler.as_ref().handle(req, params_map, query_params).await
             } else {
                 build_404_response(format!("Route {route} for method {method} not found"))
             }
@@ -326,8 +297,48 @@ impl Router {
         res
     }
 
+    /// Helper for handling a request
+    async fn handle_req_inner<'a>(
+        &self,
+        route: Uri,
+        params: Params<'a, 'a>,
+        auth_type: AuthType,
+        req: Request<IncomingBody>,
+        handler: &dyn Handler,
+    ) -> Result<Response<ResponseBody>, ApiServerError> {
+        // Clone the params to take ownership
+        let mut params_map = HashMap::with_capacity(params.len());
+        for (key, value) in params.iter() {
+            params_map.insert(key.to_string(), value.to_string());
+        }
+
+        // Parse query params
+        let query_params = match parse_query_params(route.query().unwrap_or("")) {
+            Ok(params) => params,
+            Err(e) => {
+                return Err(bad_request(e));
+            },
+        };
+
+        // Collect the full path
+        let path_with_query = match route.path_and_query() {
+            Some(path_and_query) => path_and_query.as_str(),
+            None => return Err(bad_request(ERR_INVALID_PATH)),
+        };
+
+        // Collect the headers and body
+        let headers = req.headers().to_owned();
+        let body = req.into_body().collect().await.map_err(bad_request)?;
+        let body_bytes = body.to_bytes();
+
+        // Check auth then forward to handler
+        self.check_auth(auth_type, path_with_query, &params_map, &headers, &body_bytes).await?;
+        let resp = handler.handle(params_map, query_params, headers, body_bytes).await;
+        Ok(resp)
+    }
+
     /// Handle an options request
-    fn handle_options_req(&self, route: &str) -> Response<Body> {
+    fn handle_options_req(&self, route: &str) -> Response<ResponseBody> {
         // Get the set of allowed methods for this route
         let allowed_methods = vec![Method::GET, Method::POST]
             .into_iter()
@@ -349,7 +360,7 @@ impl Router {
             .header("Access-Control-Allow-Methods", allowed_methods_str)
             .header("Access-Control-Allow-Credentials", "true")
             .header("Access-Control-Max-Age", PREFLIGHT_CACHE_TIME)
-            .body(Body::from(""))
+            .body(Full::new(BytesBody::from("")))
             .unwrap()
     }
 
@@ -359,31 +370,23 @@ impl Router {
         auth_type: AuthType,
         path: &str,
         url_params: &HashMap<String, String>,
-        req: &mut Request<Body>,
+        headers: &HeaderMap,
+        req_body: &[u8],
     ) -> Result<(), ApiServerError> {
-        if auth_type == AuthType::None {
-            return Ok(());
-        }
-
-        // Serialize the request then authenticate it
-        let req_body =
-            to_bytes(req.body_mut()).await.map_err(|err| bad_request(err.to_string()))?;
-
         match auth_type {
             AuthType::Wallet => {
                 // Parse the wallet ID from the URL params
                 let wallet_id = parse_wallet_id_from_params(url_params)?;
                 self.auth_middleware
-                    .authenticate_wallet_request(wallet_id, path, req.headers(), &req_body)
+                    .authenticate_wallet_request(wallet_id, path, headers, req_body)
                     .await?;
             },
             AuthType::Admin => {
-                self.auth_middleware.authenticate_admin_request(path, req.headers(), &req_body)?;
+                self.auth_middleware.authenticate_admin_request(path, headers, req_body)?;
             },
-            AuthType::None => unreachable!(),
+            AuthType::None => {},
         }
 
-        *req.body_mut() = Body::from(req_body);
         Ok(())
     }
 }

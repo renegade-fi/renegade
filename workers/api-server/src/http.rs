@@ -58,18 +58,20 @@ use external_match::{
     RequestExternalMatchHandler, RequestExternalQuoteHandler,
 };
 use hyper::{
-    server::conn::AddrStream,
-    service::{make_service_fn, service_fn},
-    Body, Error as HyperError, HeaderMap, Method, Request, Response, Server,
+    body::Incoming as IncomingBody, server::conn::http1::Builder as Http1Builder,
+    service::service_fn, Error as HyperError, HeaderMap, Method, Request,
 };
+use hyper_util::rt::{TokioIo, TokioTimer};
 use num_bigint::BigUint;
 use num_traits::Num;
 use order_book::{GetDepthByMintHandler, GetExternalMatchFeesHandler};
 use price_report::{GetSupportedTokensHandler, TokenPricesHandler};
 use rate_limit::WalletTaskRateLimiter;
 use state::State;
-use std::{convert::Infallible, net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 use task::GetTaskQueuePausedHandler;
+use tokio::net::{TcpListener, TcpStream};
+use tracing::error;
 use util::get_current_time_millis;
 use uuid::Uuid;
 
@@ -634,31 +636,47 @@ impl HttpServer {
     /// The execution loop for the http server, accepts incoming connections,
     /// serves them, and awaits the next connection
     pub async fn execution_loop(self) -> Result<(), ApiServerError> {
-        // Build an HTTP handler callback
-        // Clone self and move it into each layer of the callback so that each
-        // scope has its own copy of self
-        let self_clone = self.clone();
-        let make_service = make_service_fn(move |_: &AddrStream| {
-            let self_clone = self_clone.clone();
+        // Bind to the configured port
+        let addr: SocketAddr = format!("0.0.0.0:{}", self.config.http_port)
+            .parse()
+            .map_err(ApiServerError::server_failure)?;
+        let listener = TcpListener::bind(addr).await.map_err(ApiServerError::server_failure)?;
+
+        // Main execution loop
+        loop {
+            let (stream, _) = listener.accept().await.map_err(ApiServerError::server_failure)?;
+            let self_clone = self.clone();
+            tokio::spawn(async move {
+                if let Err(e) = self_clone.handle_stream(stream).await {
+                    error!("Error handling stream: {e}");
+                }
+            });
+        }
+    }
+
+    /// Handle an incoming TCP stream from a client
+    async fn handle_stream(&self, stream: TcpStream) -> Result<(), ApiServerError> {
+        let service_fn = service_fn(move |req: Request<IncomingBody>| {
+            let self_clone = self.clone();
             async move {
-                Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
-                    let self_clone = self_clone.clone();
-                    async move { Ok::<_, HyperError>(self_clone.serve_request(req).await) }
-                }))
+                let resp = self_clone
+                    .router
+                    .handle_req(req.method().to_owned(), req.uri().clone(), req)
+                    .await;
+
+                Ok::<_, HyperError>(resp)
             }
         });
 
-        // Build the http server and enter its execution loop
-        let addr: SocketAddr = format!("0.0.0.0:{}", self.config.http_port).parse().unwrap();
-        Server::bind(&addr)
-            .serve(make_service)
-            .await
-            .map_err(|err| ApiServerError::HttpServerFailure(err.to_string()))
-    }
+        // Build an HTTP/1 stream handler and service the connection
+        // TODO: We should add h2c upgrade support, especially because practically
+        // speaking relayers are frequently behind proxies that terminate all incoming
+        // http/1 connections and support http/2.
+        let stream_io = TokioIo::new(stream);
+        let timer = TokioTimer::new();
+        Http1Builder::new().timer(timer).serve_connection(stream_io, service_fn).await?;
 
-    /// Serve an http request
-    async fn serve_request(&self, req: Request<Body>) -> Response<Body> {
-        self.router.handle_req(req.method().to_owned(), req.uri().clone(), req).await
+        Ok(())
     }
 }
 

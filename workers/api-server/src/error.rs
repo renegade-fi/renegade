@@ -4,10 +4,10 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::auth::AuthError;
-use hyper::{Body, Response, StatusCode};
+use hyper::{Response, StatusCode};
 use state::error::StateError;
 
-use super::router::{build_500_response, build_response_from_status_code};
+use super::router::{build_500_response, build_response_from_status_code, ResponseBody};
 
 /// The error message for rate limit exceeded errors
 const ERR_RATE_LIMIT_EXCEEDED: &str = "Rate limit exceeded";
@@ -31,9 +31,23 @@ pub enum ApiServerError {
     WebsocketServerFailure(String),
 }
 
+impl ApiServerError {
+    /// An error with the server's main loop
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn server_failure<T: ToString>(e: T) -> Self {
+        ApiServerError::HttpServerFailure(e.to_string())
+    }
+}
+
 impl Display for ApiServerError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<hyper::Error> for ApiServerError {
+    fn from(value: hyper::Error) -> Self {
+        ApiServerError::server_failure(value)
     }
 }
 
@@ -49,7 +63,7 @@ impl From<DarkpoolClientError> for ApiServerError {
     }
 }
 
-impl From<ApiServerError> for Response<Body> {
+impl From<ApiServerError> for Response<ResponseBody> {
     fn from(err: ApiServerError) -> Self {
         match err {
             ApiServerError::HttpStatusCode(status, message) => {
