@@ -70,21 +70,20 @@ macro_rules! integration_test_main {
                 // | Setup |
                 // ---------
 
-                // Call the setup callback if requested
-                $setup(&args);
-
-                // ----------------
-                // | Test Harness |
-                // ----------------
-
                 if print_harness {
                     println!("\n\n{}\n", "Running integration tests...".blue());
                 }
 
                 // Assumed From<$cli_args> is implemented for $test_args
                 let test_args: $test_args = args.clone().into();
-                let mut all_success = true;
+                // Call the setup callback if requested
+                $setup(&test_args);
 
+                // ----------------
+                // | Test Harness |
+                // ----------------
+
+                let mut all_success = true;
                 for test_wrapper in inventory::iter::<TestWrapper>.into_iter() {
                     let test = &test_wrapper.0;
                     if args.borrow().test.is_some()

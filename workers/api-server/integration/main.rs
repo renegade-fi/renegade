@@ -1,22 +1,26 @@
 //! Integration tests for the `api-server` crate
 
 use api_server::http::PING_ROUTE;
+use circuit_types::fixed_point::FixedPoint;
 use clap::Parser;
 use common::types::{chain::Chain, hmac::HmacKey};
 use config::setup_token_remaps;
 use external_api::{http::PingResponse, EmptyRequestResponse};
 use eyre::Result;
+use futures::executor::block_on;
 use mock_node::MockNodeController;
 use rand::{distributions::uniform::SampleRange, thread_rng};
 use reqwest::Method;
 use test_helpers::{
     assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
 };
+use util::on_chain::PROTOCOL_FEE;
 
 use crate::ctx::IntegrationTestCtx;
 
 mod ctx;
 mod external_match;
+mod helpers;
 mod to_eyre;
 
 // -------------
@@ -58,11 +62,29 @@ impl From<CliArgs> for IntegrationTestCtx {
             .with_mock_price_reporter(mock_price)
             .with_api_server();
 
-        Self { admin_api_key, mock_node }
+        Self { mock_price, admin_api_key, mock_node }
     }
 }
 
-integration_test_main!(CliArgs, IntegrationTestCtx);
+/// Setup the test harness
+fn setup_tests(ctx: &IntegrationTestCtx) {
+    // Set the global protocol fee
+    PROTOCOL_FEE.set(FixedPoint::from_f64_round_down(0.0001)).expect("failed to set protocol fee");
+    // Setup the raft
+    block_on(setup_async(ctx)).expect("failed to setup raft");
+}
+
+/// The async setup operations
+async fn setup_async(ctx: &IntegrationTestCtx) -> Result<()> {
+    // Setup the raft, becoming the leader
+    let state = ctx.mock_node.state();
+    let this_peer = state.get_peer_id().await?;
+    state.initialize_raft(vec![this_peer] /* this_peer */).await?;
+
+    Ok(())
+}
+
+integration_test_main!(CliArgs, IntegrationTestCtx, setup_tests);
 
 // ---------
 // | Tests |
