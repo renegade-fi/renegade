@@ -1,7 +1,6 @@
 //! Tests for the external match API
 
 use circuit_types::order::OrderSide;
-use common::types::token::Token;
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 use rand::Rng;
@@ -15,16 +14,17 @@ const DIFF_TOLERANCE: f64 = 0.000001;
 
 /// Test a basic external match with no quote found
 #[allow(non_snake_case)]
-async fn test_basic_external_match__no_quote_found(ctx: IntegrationTestCtx) -> Result<()> {
+async fn test_basic_external_match__no_quote_found(mut ctx: IntegrationTestCtx) -> Result<()> {
+    // Clear the state
+    ctx.clear_state().await?;
+
     // Use a non-standard quote and base mint so that the order is not matched
     // with an order created by another test
-    let base_mint = Token::from_ticker("UNI").get_addr_biguint();
-    let quote_mint = Token::from_ticker("USDC").get_addr_biguint();
     let quote_amount = ctx.quote_token().convert_from_decimal(1000.);
 
     let external_order = ExternalOrder {
-        base_mint,
-        quote_mint,
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
         side: OrderSide::Buy,
         quote_amount,
         ..Default::default()
@@ -51,7 +51,7 @@ async fn test_basic_external_match__buy_side__send_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -95,7 +95,7 @@ async fn test_basic_external_match__sell_side__send_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -139,7 +139,7 @@ async fn test_basic_external_match__buy_side__receive_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -184,7 +184,7 @@ async fn test_basic_external_match__sell_side__receive_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -241,7 +241,7 @@ async fn test_assemble_quote_into_match_bundle(ctx: IntegrationTestCtx) -> Resul
     }
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
 
     // Fetch a quote, then assemble the quote into a match bundle
     let quote_resp = ctx.request_external_quote(&external_order).await?;

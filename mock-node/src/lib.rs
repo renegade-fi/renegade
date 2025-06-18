@@ -167,6 +167,11 @@ impl MockNodeController {
     // | Getters |
     // -----------
 
+    /// Get a copy of the relayer config
+    pub fn config(&self) -> RelayerConfig {
+        self.config.clone()
+    }
+
     /// Get a copy of the global state
     ///
     /// Panics if the state is not initialized
@@ -261,9 +266,42 @@ impl MockNodeController {
         self.proof_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
-    // ------------
-    // | Builders |
-    // ------------
+    // -----------
+    // | Setters |
+    // -----------
+
+    /// Clear the state of the mock node
+    ///
+    /// This will clear the configured tables as well as all snapshots created
+    /// by the raft
+    pub async fn clear_state(&mut self, tables: &[&str]) -> Result<()> {
+        self.clear_raft_snapshots().await?;
+        for table in tables {
+            self.clear_table(table).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Clear a table on the state's database
+    async fn clear_table(&self, name: &str) -> Result<()> {
+        let db = &self.state().db;
+        let tx = db.new_write_tx()?;
+
+        tx.clear_table(name)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Delete any snapshots the raft has taken
+    async fn clear_raft_snapshots(&self) -> Result<()> {
+        let snapshot_path = self.config().raft_snapshot_path;
+        clear_dir_contents(&snapshot_path).await
+    }
+
+    // -------------------
+    // | Builder Methods |
+    // -------------------
 
     /// Add a darkpool client to the mock node
     pub fn with_darkpool_client(mut self) -> Self {
@@ -551,4 +589,29 @@ impl MockNodeController {
 
         self
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Clear all files and directories within a directory, keeping the directory
+/// itself
+async fn clear_dir_contents(path: &str) -> Result<()> {
+    // If the directory doesn't exist, do nothing
+    if !std::path::Path::new(path).exists() {
+        return Ok(());
+    }
+
+    let mut entries = tokio::fs::read_dir(path).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let entry_path = entry.path();
+        if entry_path.is_dir() {
+            tokio::fs::remove_dir_all(entry_path).await?;
+        } else {
+            tokio::fs::remove_file(entry_path).await?;
+        }
+    }
+
+    Ok(())
 }

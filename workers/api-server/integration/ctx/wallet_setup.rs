@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use circuit_types::{
-    balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
+    balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide, Amount,
 };
 use common::types::{
     proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
@@ -19,16 +19,20 @@ use crate::to_eyre::WrapEyre;
 impl IntegrationTestCtx {
     /// Setup a wallet with a balance capitalized to match against the given
     /// order
-    pub async fn setup_wallet_for_order(&self, order: &ExternalOrder) -> Result<Wallet> {
-        let mut wallet = mock_empty_wallet();
-
+    pub async fn setup_crossing_wallet(&self, order: &ExternalOrder) -> Result<Wallet> {
         // Add a matching order to the wallet
-        let oid = OrderIdentifier::new_v4();
         let matching_order = self.build_matching_order(order)?;
-        wallet.add_order(oid, matching_order.clone()).to_eyre()?;
+        self.setup_wallet_with_order(matching_order).await
+    }
+
+    /// Setup a well capitalized wallet with the given order
+    pub async fn setup_wallet_with_order(&self, order: Order) -> Result<Wallet> {
+        let mut wallet = mock_empty_wallet();
+        let oid = OrderIdentifier::new_v4();
+        wallet.add_order(oid, order.clone()).to_eyre()?;
 
         // Add a balance to capitalize the order
-        let balance = self.build_capitalizing_balance(&matching_order);
+        let balance = self.build_capitalizing_balance(&order);
         wallet.add_balance(balance).to_eyre()?;
 
         // Add the wallet to the state
@@ -36,13 +40,22 @@ impl IntegrationTestCtx {
         waiter.await.to_eyre()?;
 
         // Add a validity proof bundle to the state for the order
-        self.add_validity_proof_bundle(oid, matching_order).await?;
+        self.add_validity_proof_bundle(oid, order).await?;
         Ok(wallet)
     }
 
     /// Build an order to cross with the given order
-    fn build_matching_order(&self, order: &ExternalOrder) -> Result<Order> {
+    pub fn build_matching_order(&self, order: &ExternalOrder) -> Result<Order> {
         let amount = max_amount(); // Place a max amount order
+        self.build_matching_order_with_amount(order, amount)
+    }
+
+    /// Build a matching order with the given amount
+    pub fn build_matching_order_with_amount(
+        &self,
+        order: &ExternalOrder,
+        amount: Amount,
+    ) -> Result<Order> {
         let matching_side = order.side.opposite();
         let worst_case_price = match matching_side {
             OrderSide::Buy => max_price(),

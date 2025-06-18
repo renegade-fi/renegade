@@ -114,6 +114,7 @@ impl StateConfig {
 
 /// The inner state struct, wrapped in an `Arc` to allow for efficient clones
 #[derive(Clone)]
+#[cfg(not(feature = "mocks"))]
 pub struct StateInner {
     /// The runtime config of the state
     pub(crate) config: StateConfig,
@@ -127,6 +128,27 @@ pub struct StateInner {
     pub(crate) notifications: OpenNotifications,
     /// The raft client
     pub(crate) raft: RaftClient,
+}
+
+/// The inner state struct, wrapped in an `Arc` to allow for efficient clones
+///
+/// When the `mocks` feature is enabled, all fields are public to allow tests to
+/// modify the state directly
+#[derive(Clone)]
+#[cfg(feature = "mocks")]
+pub struct StateInner {
+    /// The runtime config of the state
+    pub config: StateConfig,
+    /// The order book cache
+    pub order_cache: Arc<OrderBookCache>,
+    /// A handle on the database
+    pub db: Arc<DB>,
+    /// The system bus for sending notifications to other workers
+    pub bus: SystemBus<SystemBusMessage>,
+    /// The notifications map
+    pub notifications: OpenNotifications,
+    /// The raft client
+    pub raft: RaftClient,
 }
 
 impl StateInner {

@@ -1,0 +1,38 @@
+//! Helpers for working with the integration node's state
+
+use eyre::Result;
+use state::State;
+
+use crate::ctx::IntegrationTestCtx;
+
+/// The tables that are cleared when the state is cleared
+///
+/// We'd rather keep the constants in the state private, so we copy them here
+const TABLES_TO_CLEAR: [&str; 6] = [
+    "orders",
+    "order-history",
+    "matching-pools",
+    "order-to-wallet",
+    "nullifier-to-wallet",
+    "wallet-info",
+];
+
+impl IntegrationTestCtx {
+    /// Get the state of the integration node
+    pub fn state(&self) -> State {
+        self.mock_node.state()
+    }
+
+    /// Setup the state of the mock node
+    pub async fn setup_state(&mut self) -> Result<()> {
+        let state = self.state();
+        let this_peer = state.get_peer_id().await?;
+        state.initialize_raft(vec![this_peer] /* this_peer */).await?;
+        Ok(())
+    }
+
+    /// Clear the state of the mock node
+    pub async fn clear_state(&mut self) -> Result<()> {
+        self.mock_node.clear_state(&TABLES_TO_CLEAR).await
+    }
+}
