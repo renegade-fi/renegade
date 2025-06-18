@@ -46,7 +46,7 @@ impl IntegrationTestCtx {
             order.base_mint.clone(),
             matching_side,
             order.quote_amount,
-            worst_cast_price,
+            worst_case_price,
             order.min_fill_size,
             true, // allow_external_matches
         )

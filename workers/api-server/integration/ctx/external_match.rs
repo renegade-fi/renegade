@@ -24,13 +24,13 @@ impl IntegrationTestCtx {
         let path = REQUEST_EXTERNAL_QUOTE_ROUTE;
         let body_bytes = serde_json::to_vec(&req).expect("failed to serialize request");
         add_expiring_auth_to_headers(
-            &path,
+            path,
             &mut headers,
             &body_bytes,
             &self.admin_api_key,
             REQUEST_AUTH_DURATION,
         );
 
-        self.send_req_with_headers(REQUEST_EXTERNAL_QUOTE_ROUTE, Method::POST, headers, req).await
+        self.send_req_raw(path, Method::POST, headers, req).await
     }
 }
