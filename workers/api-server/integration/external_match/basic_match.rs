@@ -15,16 +15,17 @@ const DIFF_TOLERANCE: f64 = 0.000001;
 
 /// Test a basic external match with no quote found
 #[allow(non_snake_case)]
-async fn test_basic_external_match__no_quote_found(ctx: IntegrationTestCtx) -> Result<()> {
+async fn test_basic_external_match__no_quote_found(mut ctx: IntegrationTestCtx) -> Result<()> {
+    // Clear the state
+    ctx.clear_state().await?;
+
     // Use a non-standard quote and base mint so that the order is not matched
     // with an order created by another test
-    let base_mint = Token::from_ticker("UNI").get_addr_biguint();
-    let quote_mint = Token::from_ticker("USDC").get_addr_biguint();
     let quote_amount = ctx.quote_token().convert_from_decimal(1000.);
 
     let external_order = ExternalOrder {
-        base_mint,
-        quote_mint,
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
         side: OrderSide::Buy,
         quote_amount,
         ..Default::default()

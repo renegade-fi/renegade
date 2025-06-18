@@ -78,18 +78,8 @@ impl From<CliArgs> for IntegrationTestCtx {
 fn setup_tests(ctx: &IntegrationTestCtx) {
     // Set the global protocol fee
     PROTOCOL_FEE.set(FixedPoint::from_f64_round_down(0.0001)).expect("failed to set protocol fee");
-    // Setup the raft
-    block_on(setup_async(ctx)).expect("failed to setup raft");
-}
-
-/// The async setup operations
-async fn setup_async(ctx: &IntegrationTestCtx) -> Result<()> {
-    // Setup the raft, becoming the leader
-    let state = ctx.mock_node.state();
-    let this_peer = state.get_peer_id().await?;
-    state.initialize_raft(vec![this_peer] /* this_peer */).await?;
-
-    Ok(())
+    // Setup the state
+    block_on(ctx.clone().setup_state()).expect("failed to setup state");
 }
 
 integration_test_main!(CliArgs, IntegrationTestCtx, setup_tests);

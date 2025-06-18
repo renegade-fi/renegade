@@ -167,6 +167,11 @@ impl MockNodeController {
     // | Getters |
     // -----------
 
+    /// Get a copy of the relayer config
+    pub fn config(&self) -> RelayerConfig {
+        self.config.clone()
+    }
+
     /// Get a copy of the global state
     ///
     /// Panics if the state is not initialized
