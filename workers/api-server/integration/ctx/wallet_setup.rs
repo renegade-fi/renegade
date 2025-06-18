@@ -68,7 +68,7 @@ impl IntegrationTestCtx {
             matching_side,
             amount,
             worst_case_price,
-            order.min_fill_size,
+            0,    // min_fill_size
             true, // allow_external_matches
         )
         .to_eyre()
