@@ -194,15 +194,22 @@ impl FixedPoint {
         bigint_to_scalar(&self_bigint)
     }
 
+    /// Multiplies the fixed point by the given integer, floors the result
+    pub fn floor_mul_int(&self, val: u128) -> Scalar {
+        let val_scalar = Scalar::from(val);
+        let product = *self * val_scalar;
+        product.floor()
+    }
+
     /// Divides the given integer by the fixed point value returning the
     /// quotient without remainder
     ///
     /// Stated different; returns the maximal integer `a` such that `a * fp`
     /// < `val`
-    pub fn floor_div_int(val: u128, fp: Self) -> Scalar {
+    pub fn floor_div_int(&self, val: u128) -> Scalar {
         let val_repr = Scalar::from(val) * Scalar::new(*TWO_TO_M_SCALAR);
         let val_repr_bigint = scalar_to_biguint(&val_repr);
-        let self_repr_bigint = scalar_to_biguint(&fp.repr);
+        let self_repr_bigint = scalar_to_biguint(&self.repr);
 
         let (q, _r) = val_repr_bigint.div_rem(&self_repr_bigint);
         biguint_to_scalar(&q)
@@ -213,10 +220,10 @@ impl FixedPoint {
     ///
     /// Stated different; returns the minimal integer `a` such that `a * fp >
     /// val`
-    pub fn ceil_div_int(val: u128, fp: Self) -> Scalar {
+    pub fn ceil_div_int(&self, val: u128) -> Scalar {
         let val_repr = Scalar::from(val) * Scalar::new(*TWO_TO_M_SCALAR);
         let val_repr_bigint = scalar_to_biguint(&val_repr);
-        let self_repr_bigint = scalar_to_biguint(&fp.repr);
+        let self_repr_bigint = scalar_to_biguint(&self.repr);
 
         let (q, r) = val_repr_bigint.div_rem(&self_repr_bigint);
         let q_scalar = biguint_to_scalar(&q);
@@ -663,7 +670,7 @@ mod fixed_point_tests {
         let divisor: f64 = rng.gen();
 
         let fp = FixedPoint::from_f64_round_down(divisor);
-        let quotient = FixedPoint::floor_div_int(val, fp);
+        let quotient = fp.floor_div_int(val);
 
         let less_than = fp * quotient;
         let lt_bigint = scalar_to_biguint(&less_than.floor());
@@ -684,7 +691,7 @@ mod fixed_point_tests {
         let val = (divisor as u128) * (expected_quotient as u128);
 
         let fp = FixedPoint::from_integer(divisor);
-        let quotient = FixedPoint::floor_div_int(val, fp);
+        let quotient = fp.floor_div_int(val);
 
         assert_eq!(Scalar::from(expected_quotient), quotient);
     }

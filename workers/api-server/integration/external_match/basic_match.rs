@@ -5,7 +5,7 @@ use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 use rand::Rng;
 use reqwest::StatusCode;
-use test_helpers::{assert_eq_result, integration_test_async};
+use test_helpers::{assert_eq_result, assert_true_result, integration_test_async};
 
 use crate::{ctx::IntegrationTestCtx, helpers::assert_approx_eq};
 
@@ -61,7 +61,8 @@ async fn test_basic_external_match__buy_side__send_amount_specified(
     let send_mint = quote.send.mint;
     let send_amount = quote.send.amount;
     assert_eq_result!(send_mint, quote_mint)?;
-    assert_eq_result!(send_amount, quote_amount)?;
+    assert_true_result!(send_amount <= quote_amount)?;
+    assert_approx_eq(send_amount, quote_amount, DIFF_TOLERANCE)?;
 
     let recv_mint = quote.receive.mint;
     let recv_amount = quote.receive.amount;
@@ -105,6 +106,7 @@ async fn test_basic_external_match__sell_side__send_amount_specified(
     let send_mint = quote.send.mint;
     let send_amount = quote.send.amount;
     assert_eq_result!(send_mint, base_mint)?;
+    assert_true_result!(send_amount <= base_amount)?;
     assert_eq_result!(send_amount, base_amount)?;
 
     let recv_mint = quote.receive.mint;
@@ -155,8 +157,10 @@ async fn test_basic_external_match__buy_side__receive_amount_specified(
     let recv_mint = quote.receive.mint;
     let recv_amount = quote.receive.amount;
     let total_fees = quote.fees.total();
+    let base_traded = recv_amount + total_fees;
     assert_eq_result!(recv_mint, base_mint)?;
-    assert_eq_result!(recv_amount + total_fees, base_amount)?;
+    assert_true_result!(base_traded <= base_amount)?;
+    assert_approx_eq(base_traded, base_amount, DIFF_TOLERANCE)?;
 
     // Verify the match result
     let match_res = quote.match_result;
@@ -200,8 +204,10 @@ async fn test_basic_external_match__sell_side__receive_amount_specified(
     let recv_mint = quote.receive.mint;
     let recv_amount = quote.receive.amount;
     let total_fees = quote.fees.total();
+    let quote_traded = recv_amount + total_fees;
     assert_eq_result!(recv_mint, quote_mint)?;
-    assert_eq_result!(recv_amount + total_fees, quote_amount)?;
+    assert_true_result!(quote_traded <= quote_amount)?;
+    assert_approx_eq(quote_traded, quote_amount, DIFF_TOLERANCE)?;
 
     // Verify the match result
     let match_res = quote.match_result;

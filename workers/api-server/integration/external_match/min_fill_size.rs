@@ -1,6 +1,6 @@
 //! Integration tests for the min fill size parameter
 
-use circuit_types::order::OrderSide;
+use circuit_types::{order::OrderSide, Amount};
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 use hyper::StatusCode;
@@ -56,12 +56,14 @@ async fn test_min_fill_size__quote_denominated__no_quote(
     };
 
     // Setup an order which is too small to match
-    let order = ctx.build_matching_order_with_amount(&external_order, base_amount - 1)?;
+    let amt = base_amount as f64 * 0.99;
+    let order = ctx.build_matching_order_with_amount(&external_order, amt as Amount)?;
     ctx.setup_wallet_with_order(order).await?;
 
     // Fetch a quote, it should return no content
     let resp = ctx.send_external_quote_req(&external_order).await?;
-    assert_eq_result!(resp.status(), StatusCode::NO_CONTENT)
+    let status = resp.status();
+    assert_eq_result!(status, StatusCode::NO_CONTENT)
 }
 integration_test_async!(test_min_fill_size__quote_denominated__no_quote);
 

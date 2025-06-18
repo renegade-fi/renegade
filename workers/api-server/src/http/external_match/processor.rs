@@ -335,7 +335,7 @@ impl ExternalMatchProcessor {
         let order = o.to_internal_order(price, relayer_fee);
 
         // Enforce an exact quote amount if specified
-        if o.exact_quote_output != 0 {
+        if self.requires_exact_quote_amount(&o, price) {
             let quote_amount = o.get_quote_amount(price, relayer_fee);
             options = options.with_exact_quote_amount(quote_amount);
         }
@@ -391,6 +391,47 @@ impl ExternalMatchProcessor {
         };
 
         Ok((base, quote))
+    }
+
+    /// Determine whether an external order requires an exact quote amount
+    ///
+    /// Some orders may require exact quote amounts even when the order
+    /// originally did not specify one.
+    ///
+    /// Specifically, suppose an order is sent to the API with `quote_amount`
+    /// set and `min_fill_size` set to a non-zero value. The valid matched quote
+    /// amounts are then all values in `[min_fill_size, quote_amount]`. However,
+    /// if `quote_amount - min_fill_size < price` it may be the case that no
+    /// value in the range is representable with a whole number base amount.
+    ///
+    /// For example, suppose `min_fill_size = 3`, `quote_amount = 4`, and `price
+    /// = 5`. Trading one base token gives 5 quote tokens, which outside the
+    /// range, and trading 0 base tokens gives 0 quote tokens, which is also
+    /// invalid.
+    ///
+    /// In this case, we use the `exact_quote_output` feature to select a quote
+    /// amount. The matching engine will fuzz the price to find a valid match in
+    /// this range.
+    pub fn requires_exact_quote_amount(&self, order: &ExternalOrder, price: FixedPoint) -> bool {
+        if !order.is_quote_denominated() {
+            return false;
+        } else if order.is_exact_output_configured() {
+            return true;
+        }
+
+        // Compute the minimum and maximum base amounts implied by the order
+        let min_fill_size = order.get_min_fill_quote();
+        let quote_amount = order.get_quote_amount(price, FixedPoint::zero());
+        let min_base = price.floor_div_int(min_fill_size);
+        let max_base = price.floor_div_int(quote_amount);
+
+        // If the min and max base amounts are the same, the situation described in the
+        // doc comment applies, so we choose the largest quote amount allowable
+        if min_base >= max_base {
+            return true;
+        }
+
+        false
     }
 
     // ----------------------------------

@@ -40,6 +40,12 @@ impl HandshakeManagerError {
     pub fn state<T: ToString>(e: T) -> Self {
         HandshakeManagerError::State(e.to_string())
     }
+
+    /// Create a new error from an invalid request
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn invalid_request<T: ToString>(e: T) -> Self {
+        HandshakeManagerError::InvalidRequest(e.to_string())
+    }
 }
 
 impl Display for HandshakeManagerError {
