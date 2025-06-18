@@ -194,3 +194,72 @@ async fn test_min_fill_size__quote_denominated__buy_side(
     assert_true_result!(send_amount <= quote_amount)
 }
 integration_test_async!(test_min_fill_size__quote_denominated__buy_side);
+
+/// Test a base denominated min fill size when `min_fill_size` equals the base
+/// amount
+#[allow(non_snake_case)]
+async fn test_min_fill_size__base_denominated__equal_to_base_amount(
+    mut ctx: IntegrationTestCtx,
+) -> Result<()> {
+    // Clear the state
+    ctx.clear_state().await?;
+
+    // Create an external order with a min fill size
+    let base_amount = ctx.base_token().convert_from_decimal(1.); // 1 WETH
+    let min_fill_size = base_amount;
+    let external_order = ExternalOrder {
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
+        side: OrderSide::Buy,
+        base_amount,
+        min_fill_size,
+        ..Default::default()
+    };
+
+    // Setup an order to match against, then fetch a quote
+    let order = ctx.build_matching_order_with_amount(&external_order, base_amount)?;
+    ctx.setup_wallet_with_order(order).await?;
+    let resp = ctx.request_external_quote(&external_order).await?;
+
+    // Check that the size bounds are respected
+    let quote = resp.signed_quote.quote;
+    let recv_amount = quote.receive.amount;
+    let total_fees = quote.fees.total();
+    assert_eq_result!(recv_amount + total_fees, base_amount)
+}
+integration_test_async!(test_min_fill_size__base_denominated__equal_to_base_amount);
+
+/// Test a quote denominated min fill size when `min_fill_size` equals the quote
+/// amount
+#[allow(non_snake_case)]
+async fn test_min_fill_size__quote_denominated__equal_to_quote_amount(
+    mut ctx: IntegrationTestCtx,
+) -> Result<()> {
+    // Clear the state
+    ctx.clear_state().await?;
+
+    // Create an external order with a min fill size
+    let quote_amount = ctx.quote_token().convert_from_decimal(100.); // 100 USDC
+    let base_amount = ctx.expected_base_amount(quote_amount);
+    let min_fill_size = quote_amount;
+    let external_order = ExternalOrder {
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
+        side: OrderSide::Sell,
+        quote_amount,
+        min_fill_size,
+        ..Default::default()
+    };
+
+    // Setup an order to match against, then fetch a quote
+    let order = ctx.build_matching_order_with_amount(&external_order, base_amount)?;
+    ctx.setup_wallet_with_order(order).await?;
+    let resp = ctx.request_external_quote(&external_order).await?;
+
+    // Check that the size bounds are respected
+    let quote = resp.signed_quote.quote;
+    let recv_amount = quote.receive.amount;
+    let total_fees = quote.fees.total();
+    assert_eq_result!(recv_amount + total_fees, quote_amount)
+}
+integration_test_async!(test_min_fill_size__quote_denominated__equal_to_quote_amount);

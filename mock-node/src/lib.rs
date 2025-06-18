@@ -277,14 +277,14 @@ impl MockNodeController {
     pub async fn clear_state(&mut self, tables: &[&str]) -> Result<()> {
         self.clear_raft_snapshots().await?;
         for table in tables {
-            self.clear_table(table).await?;
+            self.clear_table(table)?;
         }
 
         Ok(())
     }
 
     /// Clear a table on the state's database
-    async fn clear_table(&self, name: &str) -> Result<()> {
+    fn clear_table(&self, name: &str) -> Result<()> {
         let db = &self.state().db;
         let tx = db.new_write_tx()?;
 
