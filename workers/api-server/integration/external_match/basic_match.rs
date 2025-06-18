@@ -1,7 +1,6 @@
 //! Tests for the external match API
 
 use circuit_types::order::OrderSide;
-use common::types::token::Token;
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 use rand::Rng;
@@ -52,7 +51,7 @@ async fn test_basic_external_match__buy_side__send_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -96,7 +95,7 @@ async fn test_basic_external_match__sell_side__send_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -140,7 +139,7 @@ async fn test_basic_external_match__buy_side__receive_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -185,7 +184,7 @@ async fn test_basic_external_match__sell_side__receive_amount_specified(
     };
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
     let quote = resp.signed_quote.quote;
 
@@ -242,7 +241,7 @@ async fn test_assemble_quote_into_match_bundle(ctx: IntegrationTestCtx) -> Resul
     }
 
     // Setup a matching order, then request a quote
-    ctx.setup_wallet_for_order(&external_order).await?;
+    ctx.setup_crossing_wallet(&external_order).await?;
 
     // Fetch a quote, then assemble the quote into a match bundle
     let quote_resp = ctx.request_external_quote(&external_order).await?;

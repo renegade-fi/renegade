@@ -3,7 +3,8 @@
 use circuit_types::order::OrderSide;
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
-use test_helpers::integration_test_async;
+use hyper::StatusCode;
+use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::ctx::IntegrationTestCtx;
 
@@ -20,18 +21,16 @@ async fn test_min_fill_size__no_quote(mut ctx: IntegrationTestCtx) -> Result<()>
         quote_mint: ctx.quote_mint(),
         side: OrderSide::Buy,
         base_amount,
-        // min_fill_size: base_amount,
+        min_fill_size: base_amount,
         ..Default::default()
     };
 
-    // Setup a matching order, then request a quote
-    let wallet = ctx.setup_wallet_for_order(&external_order).await?;
-    let state_wallet =
-        ctx.mock_node.state().get_wallet(&wallet.wallet_id).await?.expect("wallet not found");
+    // Setup an order which is too small to match
+    let order = ctx.build_matching_order_with_amount(&external_order, base_amount - 1)?;
+    ctx.setup_wallet_with_order(order).await?;
 
-    let resp = ctx.request_external_quote(&external_order).await?;
-    let quote = resp.signed_quote.quote;
-
-    Ok(())
+    // Fetch a quote, it should return no content
+    let resp = ctx.send_external_quote_req(&external_order).await?;
+    assert_eq_result!(resp.status(), StatusCode::NO_CONTENT)
 }
 integration_test_async!(test_min_fill_size__no_quote);
