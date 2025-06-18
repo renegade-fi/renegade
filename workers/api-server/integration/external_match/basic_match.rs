@@ -75,3 +75,47 @@ async fn test_basic_external_match__buy_side__send_amount_specified(
     assert_eq_result!(match_res.direction, OrderSide::Buy)
 }
 integration_test_async!(test_basic_external_match__buy_side__send_amount_specified);
+
+/// Test a basic external match
+#[allow(non_snake_case)]
+async fn test_basic_external_match__sell_side__send_amount_specified(
+    ctx: IntegrationTestCtx,
+) -> Result<()> {
+    let base_amount = ctx.base_token().convert_from_decimal(1.); // 1 WETH
+    let external_order = ExternalOrder {
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
+        side: OrderSide::Sell,
+        base_amount,
+        ..Default::default()
+    };
+
+    // Setup a matching order, then request a quote
+    ctx.setup_wallet_for_order(&external_order).await?;
+    let resp = ctx.request_external_quote(&external_order).await?;
+    let quote = resp.signed_quote.quote;
+
+    // Verify the response contents
+    let base_mint = ctx.base_token().get_addr();
+    let quote_mint = ctx.quote_token().get_addr();
+    let send_mint = quote.send.mint;
+    let send_amount = quote.send.amount;
+    assert_eq_result!(send_mint, base_mint)?;
+    assert_eq_result!(send_amount, base_amount)?;
+
+    let recv_mint = quote.receive.mint;
+    let recv_amount = quote.receive.amount;
+    let expected_quote_amt = ctx.expected_quote_amount(base_amount);
+    assert_eq_result!(recv_mint, quote_mint)?;
+    assert_approx_eq(recv_amount, expected_quote_amt, 0.0005)?;
+
+    // Verify the match result
+    let match_res = quote.match_result;
+    let total_fees = quote.fees.total();
+    assert_eq_result!(match_res.base_mint, base_mint)?;
+    assert_eq_result!(match_res.quote_mint, quote_mint)?;
+    assert_eq_result!(match_res.quote_amount, recv_amount + total_fees)?;
+    assert_eq_result!(match_res.base_amount, send_amount)?;
+    assert_eq_result!(match_res.direction, OrderSide::Sell)
+}
+integration_test_async!(test_basic_external_match__sell_side__send_amount_specified);
