@@ -3,7 +3,7 @@
 //! This module's definitions provide helpers for interacting with the mock
 //! and setting up tests.
 
-use std::env::temp_dir;
+use std::{env::temp_dir, time::Duration};
 
 use alloy::primitives::Address;
 use circuit_types::{fixed_point::FixedPoint, Amount};
@@ -11,6 +11,7 @@ use common::types::{hmac::HmacKey, token::Token, TimestampedPrice};
 use config::RelayerConfig;
 use constants::Scalar;
 use darkpool_client::conversion::address_to_biguint;
+use external_api::auth::add_expiring_auth_to_headers;
 use eyre::Result;
 use mock_node::MockNodeController;
 use num_bigint::BigUint;
@@ -24,6 +25,8 @@ mod wallet_setup;
 
 /// A dummy RPC url for the integration tests
 const DUMMY_RPC_URL: &str = "https://dummy-rpc-url.com";
+/// The duration of the admin auth for external match requests
+const REQUEST_AUTH_DURATION: Duration = Duration::from_secs(60);
 
 /// The arguments used for the integration tests
 #[derive(Clone)]
@@ -135,5 +138,25 @@ impl IntegrationTestCtx {
         body: Req,
     ) -> Result<Response> {
         self.mock_node.send_api_req_raw(route, method, headers, body).await
+    }
+
+    /// Send an admin request to the mock API server
+    pub async fn send_admin_req_raw<Req: Serialize>(
+        &self,
+        route: &str,
+        method: Method,
+        mut headers: HeaderMap,
+        body: Req,
+    ) -> Result<Response> {
+        let body_bytes = serde_json::to_vec(&body).expect("failed to serialize request");
+        add_expiring_auth_to_headers(
+            route,
+            &mut headers,
+            &body_bytes,
+            &self.admin_api_key,
+            REQUEST_AUTH_DURATION,
+        );
+
+        self.send_req_raw(route, method, headers, body).await
     }
 }

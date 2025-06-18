@@ -545,9 +545,9 @@ impl MockNodeController {
     }
 
     /// Add a mock proof generation module to the mock node
-    pub fn with_mock_proof_generation(mut self) -> Self {
+    pub fn with_mock_proof_generation(mut self, skip_constraints: bool) -> Self {
         let job_queue = self.proof_queue.1.take().unwrap();
-        MockProofManager::start(job_queue);
+        MockProofManager::start(job_queue, skip_constraints);
 
         self
     }

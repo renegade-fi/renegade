@@ -60,6 +60,9 @@ impl From<CliArgs> for IntegrationTestCtx {
             .with_state()
             .with_handshake_manager()
             .with_mock_price_reporter(mock_price)
+            .with_task_driver()
+            // We skip constraint checks here because we use dummy validity proofs
+            .with_mock_proof_generation(true /* skip_constraints */)
             .with_api_server();
 
         Self { mock_price, admin_api_key, mock_node }

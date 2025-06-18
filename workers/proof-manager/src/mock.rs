@@ -56,64 +56,71 @@ const ERR_RESPONSE_CHANNEL_CLOSED: &str = "error sending proof, channel closed";
 // -----------
 
 /// The mock proof manager
+#[derive(Default)]
 pub struct MockProofManager;
 #[allow(clippy::needless_pass_by_value)]
 impl MockProofManager {
     /// Start a mock proof manager
-    pub fn start(job_queue: ProofManagerReceiver) {
+    pub fn start(job_queue: ProofManagerReceiver, skip_constraints: bool) {
         Handle::current().spawn_blocking(move || {
-            if let Err(e) = Self::execution_loop(&job_queue) {
+            if let Err(e) = Self::execution_loop(&job_queue, skip_constraints) {
                 error!("error in mock proof manager: {e}");
             }
         });
     }
 
     /// The execution loop for the mock
-    fn execution_loop(job_queue: &ProofManagerReceiver) -> Result<(), ProofManagerError> {
+    fn execution_loop(
+        job_queue: &ProofManagerReceiver,
+        skip_constraints: bool,
+    ) -> Result<(), ProofManagerError> {
         loop {
             match job_queue.recv() {
                 Err(_) => {
                     return Err(ProofManagerError::JobQueueClosed("job queue closed".to_string()));
                 },
-                Ok(job) => Self::handle_job(job)?,
+                Ok(job) => Self::handle_job(job, skip_constraints)?,
             }
         }
     }
 
     /// Handle a job by immediately returning a dummy proof
     #[instrument(name = "handle_proof_manager_job", skip(job))]
-    fn handle_job(job: TracedMessage<ProofManagerJob>) -> Result<(), ProofManagerError> {
+    fn handle_job(
+        job: TracedMessage<ProofManagerJob>,
+        skip_constraints: bool,
+    ) -> Result<(), ProofManagerError> {
         let ProofManagerJob { type_, response_channel } = job.consume();
         let bundle = match type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
-                Self::valid_wallet_create(witness, statement)
+                Self::valid_wallet_create(witness, statement, skip_constraints)
             },
             ProofJob::ValidWalletUpdate { witness, statement } => {
-                Self::valid_wallet_update(witness, statement)
+                Self::valid_wallet_update(witness, statement, skip_constraints)
             },
             ProofJob::ValidReblind { witness, statement } => {
-                Self::valid_reblind(witness, statement)
+                Self::valid_reblind(witness, statement, skip_constraints)
             },
             ProofJob::ValidCommitments { witness, statement } => {
-                Self::valid_commitments(witness, statement)
+                Self::valid_commitments(witness, statement, skip_constraints)
             },
             ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
-                Self::valid_match_settle(witness, statement)
+                Self::valid_match_settle(witness, statement, skip_constraints)
             },
             ProofJob::ValidMatchSettleAtomic { witness, statement } => {
-                Self::valid_match_settle_atomic(witness, statement)
+                Self::valid_match_settle_atomic(witness, statement, skip_constraints)
             },
             ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
-                Self::valid_malleable_match_settle_atomic(witness, statement)
+                Self::valid_malleable_match_settle_atomic(witness, statement, skip_constraints)
             },
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
-                Self::valid_relayer_fee_settlement(witness, statement)
+                Self::valid_relayer_fee_settlement(witness, statement, skip_constraints)
             },
             ProofJob::ValidOfflineFeeSettlement { witness, statement } => {
-                Self::valid_offline_fee_settlement(witness, statement)
+                Self::valid_offline_fee_settlement(witness, statement, skip_constraints)
             },
             ProofJob::ValidFeeRedemption { witness, statement } => {
-                Self::valid_fee_redemption(witness, statement)
+                Self::valid_fee_redemption(witness, statement, skip_constraints)
             },
         }?;
 
@@ -125,8 +132,11 @@ impl MockProofManager {
     fn valid_wallet_create(
         witness: SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidWalletCreate>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidWalletCreate>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -137,8 +147,11 @@ impl MockProofManager {
     fn valid_wallet_update(
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidWalletUpdate>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidWalletUpdate>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -149,8 +162,11 @@ impl MockProofManager {
     fn valid_reblind(
         witness: SizedValidReblindWitness,
         statement: ValidReblindStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidReblind>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidReblind>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -161,8 +177,11 @@ impl MockProofManager {
     fn valid_commitments(
         witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidCommitments>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidCommitments>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -173,8 +192,11 @@ impl MockProofManager {
     fn valid_match_settle(
         witness: SizedValidMatchSettleWitness,
         statement: SizedValidMatchSettleStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidMatchSettle>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidMatchSettle>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -185,8 +207,11 @@ impl MockProofManager {
     fn valid_match_settle_atomic(
         witness: SizedValidMatchSettleAtomicWitness,
         statement: SizedValidMatchSettleAtomicStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidMatchSettleAtomic>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidMatchSettleAtomic>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -197,8 +222,11 @@ impl MockProofManager {
     fn valid_malleable_match_settle_atomic(
         witness: SizedValidMalleableMatchSettleAtomicWitness,
         statement: SizedValidMalleableMatchSettleAtomicStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidMalleableMatchSettleAtomic>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidMalleableMatchSettleAtomic>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -209,8 +237,11 @@ impl MockProofManager {
     fn valid_relayer_fee_settlement(
         witness: SizedValidRelayerFeeSettlementWitness,
         statement: SizedValidRelayerFeeSettlementStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidRelayerFeeSettlement>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidRelayerFeeSettlement>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -221,8 +252,11 @@ impl MockProofManager {
     fn valid_offline_fee_settlement(
         witness: SizedValidOfflineFeeSettlementWitness,
         statement: SizedValidOfflineFeeSettlementStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidOfflineFeeSettlement>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidOfflineFeeSettlement>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
@@ -233,8 +267,11 @@ impl MockProofManager {
     fn valid_fee_redemption(
         witness: SizedValidFeeRedemptionWitness,
         statement: SizedValidFeeRedemptionStatement,
+        skip_constraints: bool,
     ) -> Result<ProofBundle, ProofManagerError> {
-        Self::check_constraints::<SizedValidFeeRedemption>(&witness, &statement)?;
+        if !skip_constraints {
+            Self::check_constraints::<SizedValidFeeRedemption>(&witness, &statement)?;
+        }
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
