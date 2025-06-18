@@ -1,21 +1,15 @@
 //! Helpers for interacting with the external match API
 
-use std::time::Duration;
-
-use external_api::{
-    auth::add_expiring_auth_to_headers,
-    http::external_match::{
-        ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,
-    },
+use external_api::http::external_match::{
+    AssembleExternalMatchRequest, ExternalMatchResponse, ExternalOrder, ExternalQuoteRequest,
+    ExternalQuoteResponse, SignedExternalQuote, ASSEMBLE_EXTERNAL_MATCH_ROUTE,
+    REQUEST_EXTERNAL_QUOTE_ROUTE,
 };
 use eyre::Result;
 use hyper::StatusCode;
 use reqwest::{header::HeaderMap, Method, Response};
 
 use crate::ctx::IntegrationTestCtx;
-
-/// The duration of the admin auth for external match requests
-const REQUEST_AUTH_DURATION: Duration = Duration::from_secs(60);
 
 impl IntegrationTestCtx {
     /// Request an external quote for the given order
@@ -36,22 +30,37 @@ impl IntegrationTestCtx {
         }
     }
 
+    /// Request to assemble a quote into a match bundle
+    pub async fn request_assemble_quote(
+        &self,
+        quote: &SignedExternalQuote,
+    ) -> Result<ExternalMatchResponse> {
+        let path = ASSEMBLE_EXTERNAL_MATCH_ROUTE;
+        let req = AssembleExternalMatchRequest {
+            signed_quote: quote.clone(),
+            do_gas_estimation: false,
+            allow_shared: false,
+            receiver_address: None,
+            updated_order: None,
+        };
+
+        let resp = self.send_admin_req_raw(path, Method::POST, HeaderMap::default(), req).await?;
+        let status = resp.status();
+        if status == StatusCode::OK {
+            let resp_body: ExternalMatchResponse = resp.json().await?;
+            Ok(resp_body)
+        } else {
+            let txt = resp.text().await?;
+            eyre::bail!("failed to assemble quote into match bundle: (status = {status}) {txt}");
+        }
+    }
+
     /// Send an external match request
     pub async fn send_external_quote_req(&self, order: &ExternalOrder) -> Result<Response> {
         let req = ExternalQuoteRequest { external_order: order.clone() };
-        let mut headers = HeaderMap::new();
 
         // Add admin auth then send the request
         let path = REQUEST_EXTERNAL_QUOTE_ROUTE;
-        let body_bytes = serde_json::to_vec(&req).expect("failed to serialize request");
-        add_expiring_auth_to_headers(
-            path,
-            &mut headers,
-            &body_bytes,
-            &self.admin_api_key,
-            REQUEST_AUTH_DURATION,
-        );
-
-        self.send_req_raw(path, Method::POST, headers, req).await
+        self.send_admin_req_raw(path, Method::POST, HeaderMap::default(), req).await
     }
 }

@@ -1,5 +1,7 @@
 //! Setup wallets for an order
 
+use std::sync::Arc;
+
 use circuit_types::{
     balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
 };
@@ -34,7 +36,7 @@ impl IntegrationTestCtx {
         waiter.await.to_eyre()?;
 
         // Add a validity proof bundle to the state for the order
-        self.add_validity_proof_bundle(oid).await?;
+        self.add_validity_proof_bundle(oid, matching_order).await?;
         Ok(wallet)
     }
 
@@ -67,9 +69,14 @@ impl IntegrationTestCtx {
     }
 
     /// Add a validity proof bundle to the state for the given order
-    async fn add_validity_proof_bundle(&self, order_id: OrderIdentifier) -> Result<()> {
+    async fn add_validity_proof_bundle(
+        &self,
+        order_id: OrderIdentifier,
+        order: Order,
+    ) -> Result<()> {
         let bundle = dummy_validity_proof_bundle();
-        let witness = dummy_validity_witness_bundle();
+        let mut witness = dummy_validity_witness_bundle();
+        Arc::make_mut(&mut witness.commitment_witness).order = order.into();
         let waiter = self
             .mock_node
             .state()

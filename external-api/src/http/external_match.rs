@@ -381,8 +381,8 @@ impl AtomicMatchApiBundle {
 
         // Compute the received and sent assets net of fees
         let (received_mint, mut received_amount) = match_result.external_party_receive();
-        received_amount -= fees.total();
         let (sent_mint, sent_amount) = match_result.external_party_send();
+        received_amount -= fees.total();
 
         // Update the format of the settlement transaction
         process_settlement_tx(&mut settlement_tx);
@@ -476,7 +476,7 @@ impl MalleableAtomicMatchApiBundle {
 }
 
 /// An asset transfer from an external party
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiExternalAssetTransfer {
     /// The mint of the asset
     pub mint: String,
@@ -485,7 +485,7 @@ pub struct ApiExternalAssetTransfer {
 }
 
 /// An API server external match result
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApiExternalMatchResult {
     /// The mint of the quote token in the matched asset pair
     pub quote_mint: String,

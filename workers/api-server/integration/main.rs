@@ -14,7 +14,7 @@ use reqwest::Method;
 use test_helpers::{
     assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
 };
-use util::on_chain::PROTOCOL_FEE;
+use util::{on_chain::PROTOCOL_FEE, telemetry::LevelFilter};
 
 use crate::ctx::IntegrationTestCtx;
 
@@ -44,7 +44,12 @@ struct CliArgs {
 // ---------
 
 impl From<CliArgs> for IntegrationTestCtx {
-    fn from(_args: CliArgs) -> Self {
+    fn from(args: CliArgs) -> Self {
+        // Setup logging for integration tests
+        if matches!(args.verbosity, TestVerbosity::Full) {
+            util::telemetry::setup_system_logger(LevelFilter::INFO);
+        }
+
         // Use the Arbitrum Sepolia token remap for testing
         setup_token_remaps(None /* remap_file */, Chain::ArbitrumSepolia)
             .expect("failed to setup token remaps");
@@ -60,6 +65,9 @@ impl From<CliArgs> for IntegrationTestCtx {
             .with_state()
             .with_handshake_manager()
             .with_mock_price_reporter(mock_price)
+            .with_task_driver()
+            // We skip constraint checks here because we use dummy validity proofs
+            .with_mock_proof_generation(true /* skip_constraints */)
             .with_api_server();
 
         Self { mock_price, admin_api_key, mock_node }

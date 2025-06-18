@@ -46,17 +46,13 @@ struct IntegrationTestArgs {
 
 impl From<CliArgs> for IntegrationTestArgs {
     fn from(args: CliArgs) -> Self {
-        let mpc_fabric = setup_mpc_fabric(args.party, args.port1, args.port2, args.docker);
+        if matches!(args.verbosity, TestVerbosity::Full) {
+            util::telemetry::setup_system_logger(LevelFilter::INFO);
+        }
 
+        let mpc_fabric = setup_mpc_fabric(args.party, args.port1, args.port2, args.docker);
         Self { mpc_fabric }
     }
 }
 
-/// Setup logging for integration tests
-fn setup_integration_tests(test_args: &CliArgs) {
-    if matches!(test_args.verbosity, TestVerbosity::Full) {
-        util::telemetry::setup_system_logger(LevelFilter::INFO);
-    }
-}
-
-integration_test_main!(CliArgs, IntegrationTestArgs, setup_integration_tests);
+integration_test_main!(CliArgs, IntegrationTestArgs);
