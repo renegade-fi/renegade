@@ -4,7 +4,8 @@ use circuit_types::{
     balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
 };
 use common::types::{
-    wallet::{Order, OrderIdentifier},
+    proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
+    wallet::{Order, OrderIdentifier, Wallet},
     wallet_mocks::mock_empty_wallet,
 };
 use external_api::http::external_match::ExternalOrder;
@@ -16,7 +17,7 @@ use crate::to_eyre::WrapEyre;
 impl IntegrationTestCtx {
     /// Setup a wallet with a balance capitalized to match against the given
     /// order
-    pub async fn setup_wallet_for_order(&self, order: &ExternalOrder) -> Result<()> {
+    pub async fn setup_wallet_for_order(&self, order: &ExternalOrder) -> Result<Wallet> {
         let mut wallet = mock_empty_wallet();
 
         // Add a matching order to the wallet
@@ -29,12 +30,17 @@ impl IntegrationTestCtx {
         wallet.add_balance(balance).to_eyre()?;
 
         // Add the wallet to the state
-        let waiter = self.mock_node.state().update_wallet(wallet).await?;
-        waiter.await.to_eyre().map(|_| ())
+        let waiter = self.mock_node.state().update_wallet(wallet.clone()).await?;
+        waiter.await.to_eyre()?;
+
+        // Add a validity proof bundle to the state for the order
+        self.add_validity_proof_bundle(oid).await?;
+        Ok(wallet)
     }
 
     /// Build an order to cross with the given order
     fn build_matching_order(&self, order: &ExternalOrder) -> Result<Order> {
+        let amount = max_amount(); // Place a max amount order
         let matching_side = order.side.opposite();
         let worst_case_price = match matching_side {
             OrderSide::Buy => max_price(),
@@ -45,7 +51,7 @@ impl IntegrationTestCtx {
             order.quote_mint.clone(),
             order.base_mint.clone(),
             matching_side,
-            order.quote_amount,
+            amount,
             worst_case_price,
             order.min_fill_size,
             true, // allow_external_matches
@@ -58,5 +64,19 @@ impl IntegrationTestCtx {
         let mint = order.send_mint().clone();
         let amount = max_amount();
         Balance::new_from_mint_and_amount(mint, amount)
+    }
+
+    /// Add a validity proof bundle to the state for the given order
+    async fn add_validity_proof_bundle(&self, order_id: OrderIdentifier) -> Result<()> {
+        let bundle = dummy_validity_proof_bundle();
+        let witness = dummy_validity_witness_bundle();
+        let waiter = self
+            .mock_node
+            .state()
+            .add_local_order_validity_bundle(order_id, bundle, witness)
+            .await?;
+        waiter.await.to_eyre()?;
+
+        Ok(())
     }
 }
