@@ -88,7 +88,7 @@ impl IntegrationTestCtx {
     pub fn expected_base_amount(&self, quote_amount: Amount) -> Amount {
         // quote_amount / price
         let price = self.decimal_corrected_price();
-        let quote_scalar = FixedPoint::floor_div_int(quote_amount, price);
+        let quote_scalar = price.floor_div_int(quote_amount);
         scalar_to_u128(&quote_scalar)
     }
 

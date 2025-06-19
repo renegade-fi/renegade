@@ -212,7 +212,7 @@ impl ExternalOrder {
         }
 
         // If an exact output is specified, the min size must be zero
-        if self.is_exact_output() && self.min_fill_size > 0 {
+        if self.is_exact_output_configured() && self.min_fill_size > 0 {
             return Err(ERR_MIN_FILL_SIZE_NOT_ZERO);
         }
 
@@ -236,7 +236,7 @@ impl ExternalOrder {
     }
 
     /// Whether the order requests an exact output amount
-    pub fn is_exact_output(&self) -> bool {
+    pub fn is_exact_output_configured(&self) -> bool {
         self.exact_base_output != 0 || self.exact_quote_output != 0
     }
 
@@ -273,21 +273,25 @@ impl ExternalOrder {
     /// The price here is expected to be decimal corrected; i.e. multiplied by
     /// the decimal diff for the two tokens
     pub fn get_base_amount(&self, price: FixedPoint, relayer_fee: FixedPoint) -> Amount {
+        // If the base is specifically configured, use it
         if self.base_amount != 0 {
             return self.base_amount;
         }
 
-        // If an exact amount is specified, compensate for the fee in the receive amount
+        // If an exact base amount is specified, use it, and compensate for the
+        // receive side fee if necessary
         if self.exact_base_output != 0 && self.side == OrderSide::Buy {
             let protocol_fee = get_external_match_fee(&self.base_mint);
             let total_fee = relayer_fee + protocol_fee;
-            return Self::get_match_amount_for_receive(self.exact_base_output, total_fee);
+            return Self::compensate_for_fees(self.exact_base_output, total_fee);
         } else if self.exact_base_output != 0 {
             return self.exact_base_output;
         }
 
+        // Otherwise, if the order is quote denominated compute the implied base amount
+        // from the quote amount
         let quote_amount = self.get_quote_amount(price, relayer_fee);
-        let implied_base_amount = FixedPoint::ceil_div_int(quote_amount, price);
+        let implied_base_amount = price.floor_div_int(quote_amount);
         scalar_to_u128(&implied_base_amount)
     }
 
@@ -296,19 +300,23 @@ impl ExternalOrder {
     /// The price here is expected to be decimal corrected; i.e. multiplied by
     /// the decimal diff for the two tokens
     pub fn get_quote_amount(&self, price: FixedPoint, relayer_fee: FixedPoint) -> Amount {
+        // If the quote amount is specifically configured, use it
         if self.quote_amount != 0 {
             return self.quote_amount;
         }
 
-        // If an exact amount is specified, compensate for the fee in the receive amount
+        // If an exact quote amount is specified, use it, and compensate for the
+        // receive side fee if necessary
         if self.exact_quote_output != 0 && self.side == OrderSide::Sell {
             let protocol_fee = get_external_match_fee(&self.base_mint);
             let total_fee = relayer_fee + protocol_fee;
-            return Self::get_match_amount_for_receive(self.exact_quote_output, total_fee);
+            return Self::compensate_for_fees(self.exact_quote_output, total_fee);
         } else if self.exact_quote_output != 0 {
             return self.exact_quote_output;
         }
 
+        // Otherwise, if the order is base denominated compute the implied quote
+        // amount from the base amount
         let base_amount = self.get_base_amount(price, relayer_fee);
         let base_amount_scalar = Scalar::from(base_amount);
         let implied_quote_amount = price * base_amount_scalar;
@@ -319,7 +327,7 @@ impl ExternalOrder {
     pub fn get_min_fill_base(&self) -> Amount {
         if self.is_quote_denominated() {
             return 0;
-        } else if self.is_exact_output() {
+        } else if self.is_exact_output_configured() {
             // If an exact output is specified, set the min fill size equal to it
             return self.exact_base_output;
         }
@@ -331,7 +339,7 @@ impl ExternalOrder {
     pub fn get_min_fill_quote(&self) -> Amount {
         if self.is_base_denominated() {
             return 0;
-        } else if self.is_exact_output() {
+        } else if self.is_exact_output_configured() {
             // If an exact output is specified, set the min fill size equal to it
             return self.exact_quote_output;
         }
@@ -341,12 +349,9 @@ impl ExternalOrder {
 
     /// Get the amount necessary to match the order at such that after fees the
     /// given amount is received exactly
-    pub(super) fn get_match_amount_for_receive(
-        receive_amount: Amount,
-        total_fee: FixedPoint,
-    ) -> Amount {
+    pub(super) fn compensate_for_fees(receive_amount: Amount, total_fee: FixedPoint) -> Amount {
         let one_minus_fee = FixedPoint::one() - total_fee;
-        let match_amount = FixedPoint::floor_div_int(receive_amount, one_minus_fee);
+        let match_amount = one_minus_fee.floor_div_int(receive_amount);
         scalar_to_u128(&match_amount)
     }
 }
@@ -665,12 +670,12 @@ mod test {
 
     /// Test the method that computes match amounts for exact receive orders
     #[test]
-    fn test_get_match_amount_for_receive() {
+    fn test_compensate_for_fees() {
         let mut rng = thread_rng();
         let desired_amount = rng.gen_range(1e10..1e25) as u128;
         let full_fee = rng.gen_range(0.00001..0.01);
         let full_fee_fp = FixedPoint::from_f64_round_down(full_fee);
-        let match_amt = ExternalOrder::get_match_amount_for_receive(desired_amount, full_fee_fp);
+        let match_amt = ExternalOrder::compensate_for_fees(desired_amount, full_fee_fp);
 
         // Apply the fee to this amount and ensure the result is the desired amount
         let match_amt_scalar = Scalar::from(match_amt);

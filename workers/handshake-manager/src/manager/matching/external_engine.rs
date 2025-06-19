@@ -28,7 +28,7 @@ use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
 use job_types::handshake_manager::ExternalMatchingEngineOptions;
 use renegade_crypto::fields::scalar_to_u128;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, instrument};
 use util::{matching_engine::compute_max_amount, telemetry::helpers::backfill_trace_field};
 
 use crate::{
@@ -67,7 +67,7 @@ impl HandshakeExecutor {
         &self,
         mut order: Order,
         response_topic: String,
-        options: &ExternalMatchingEngineOptions,
+        mut options: ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         // Sample an execution price if one is not provided
         let ts_price = match options.price {
@@ -79,16 +79,20 @@ impl HandshakeExecutor {
             },
         };
 
-        // If the quote amount is exact, we must modify the order's base amount
-        // accordingly
+        // If we're using an exact quote amount, we should modify the order's base
+        // amount and min fill size to ensure the order is matchable
         if let Some(quote_amount) = options.exact_quote_amount {
-            let base_amount = FixedPoint::ceil_div_int(quote_amount, ts_price.as_fixed_point());
-            order.amount = scalar_to_u128(&base_amount);
+            let price_fp = ts_price.as_fixed_point();
+            let base_amount_scalar = price_fp.floor_div_int(quote_amount);
+            let base_amount = scalar_to_u128(&base_amount_scalar);
+            let min_quote = price_fp.floor_mul_int(base_amount);
+            order.amount = base_amount;
+            options.min_quote_amount = Some(scalar_to_u128(&min_quote));
         }
 
         // Run the matching engine
         match self
-            .run_external_matching_engine_inner(order, response_topic.clone(), ts_price, options)
+            .run_external_matching_engine_inner(order, response_topic.clone(), ts_price, &options)
             .await
         {
             Ok(()) => Ok(()),
@@ -201,7 +205,7 @@ impl HandshakeExecutor {
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         // Possibly override the quote amount if an exact quote amount is specified
-        self.maybe_override_quote_amount(&mut match_res, options);
+        self.maybe_override_quote_amount(&mut match_res, options)?;
 
         // If the request only requires a quote, we can stop here
         if options.only_quote {
@@ -238,18 +242,21 @@ impl HandshakeExecutor {
         &self,
         match_res: &mut MatchResult,
         options: &ExternalMatchingEngineOptions,
-    ) {
+    ) -> Result<(), HandshakeManagerError> {
         let exact_quote = match options.exact_quote_amount {
             Some(amount) => amount,
-            None => return,
+            None => return Ok(()),
         };
 
         let override_diff =
             (match_res.quote_amount as f64 - exact_quote as f64) / match_res.quote_amount as f64;
         if override_diff.abs() < MAX_QUOTE_OVERRIDE_DIFF {
             match_res.quote_amount = exact_quote;
+            Ok(())
         } else {
-            warn!("quote difference too large, cannot override with exact quote amount")
+            Err(HandshakeManagerError::invalid_request(
+                "quote difference too large, cannot override with exact quote amount",
+            ))
         }
     }
 

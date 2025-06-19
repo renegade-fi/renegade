@@ -133,7 +133,7 @@ pub fn compute_max_amount(price: &FixedPoint, order: &Order, balance: &Balance) 
         // Buy the base, the max amount is possibly limited by the quote
         // balance
         OrderSide::Buy => {
-            let balance_limit = FixedPoint::floor_div_int(balance.amount, *price);
+            let balance_limit = price.floor_div_int(balance.amount);
             let limit = scalar_to_u128(&balance_limit);
 
             u128::min(order.amount, limit)
