@@ -3,6 +3,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::balance::Balance;
 use circuit_types::Amount;
@@ -27,7 +28,7 @@ use util::err_str;
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::{
-    enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
+    enqueue_proof_job, find_merkle_path_with_tx, update_wallet_validity_proofs,
 };
 
 use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
@@ -157,6 +158,8 @@ pub struct PayRelayerFeeTask {
     pub new_recipient_wallet: Wallet,
     /// The proof of `VALID RELAYER FEE SETTLEMENT` used to pay the protocol fee
     pub proof: Option<RelayerFeeSettlementBundle>,
+    /// The transaction receipt of the fee payment
+    pub tx: Option<TransactionReceipt>,
     /// The darkpool client used for submitting transactions
     pub darkpool_client: DarkpoolClient,
     /// A hand to the global state
@@ -203,6 +206,7 @@ impl Task for PayRelayerFeeTask {
             old_recipient_wallet: recipient_wallet,
             new_recipient_wallet,
             proof: None,
+            tx: None,
             darkpool_client: ctx.darkpool_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
@@ -284,7 +288,7 @@ impl PayRelayerFeeTask {
     }
 
     /// Submit a `settle_relayer_fee` transaction to the contract
-    async fn submit_payment(&self) -> Result<(), PayRelayerFeeTaskError> {
+    async fn submit_payment(&mut self) -> Result<(), PayRelayerFeeTaskError> {
         let proof = self.proof.clone().unwrap();
 
         // Sign the commitment to the new wallet, authorizing the fee receipt
@@ -295,20 +299,22 @@ impl PayRelayerFeeTask {
             .map_err(err_str!(PayRelayerFeeTaskError::Signature))?;
         let sig_bytes = sig.as_bytes().to_vec();
 
-        self.darkpool_client.settle_online_relayer_fee(&proof, sig_bytes).await?;
+        let tx = self.darkpool_client.settle_online_relayer_fee(&proof, sig_bytes).await?;
+        self.tx = Some(tx);
         Ok(())
     }
 
     /// Find the new Merkle opening for the user and relayer's wallets
     async fn find_opening(&mut self) -> Result<(), PayRelayerFeeTaskError> {
         // Find the opening for the sender's wallet
+        let tx = self.tx.as_ref().unwrap();
         let sender_opening =
-            find_merkle_path(&self.new_sender_wallet, &self.darkpool_client).await?;
+            find_merkle_path_with_tx(&self.new_sender_wallet, &self.darkpool_client, tx)?;
         self.new_sender_wallet.merkle_proof = Some(sender_opening);
 
         // Find the opening for the recipient's wallet
         let recipient_opening =
-            find_merkle_path(&self.new_recipient_wallet, &self.darkpool_client).await?;
+            find_merkle_path_with_tx(&self.new_recipient_wallet, &self.darkpool_client, tx)?;
         self.new_recipient_wallet.merkle_proof = Some(recipient_opening);
 
         let waiter1 = self.state.update_wallet(self.new_sender_wallet.clone()).await?;

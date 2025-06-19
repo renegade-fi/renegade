@@ -71,7 +71,6 @@ use state::State;
 use std::{net::SocketAddr, sync::Arc};
 use task::GetTaskQueuePausedHandler;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::error;
 use util::get_current_time_millis;
 use uuid::Uuid;
 

@@ -2,6 +2,7 @@
 
 use std::{error::Error, fmt::Display};
 
+use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use circuits::zk_circuits::valid_fee_redemption::{
@@ -25,7 +26,7 @@ use crate::{
     task_state::StateWrapper,
     tasks::ERR_NO_MERKLE_PROOF,
     traits::{Task, TaskContext, TaskError, TaskState},
-    utils::validity_proofs::{enqueue_proof_job, find_merkle_path},
+    utils::validity_proofs::{enqueue_proof_job, find_merkle_path_with_tx},
 };
 
 /// The name of the task
@@ -153,6 +154,8 @@ pub struct RedeemFeeTask {
     pub new_wallet: Wallet,
     /// The proof of `VALID FEE REDEMPTION` used to pay the fee
     pub proof: Option<FeeRedemptionBundle>,
+    /// The transaction receipt of the note redemption
+    pub tx: Option<TransactionReceipt>,
     /// The darkpool client used for submitting transactions
     pub darkpool_client: DarkpoolClient,
     /// A handle on the global state
@@ -188,6 +191,7 @@ impl Task for RedeemFeeTask {
             old_wallet,
             new_wallet,
             proof: None,
+            tx: None,
             darkpool_client: ctx.darkpool_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
@@ -272,7 +276,7 @@ impl RedeemFeeTask {
     }
 
     /// Submit a `redeem_fee` transaction to the contract
-    async fn submit_redemption(&self) -> Result<(), RedeemFeeError> {
+    async fn submit_redemption(&mut self) -> Result<(), RedeemFeeError> {
         let proof = self.proof.as_ref().unwrap();
 
         // Sign a commitment to the new wallet after redemption
@@ -281,13 +285,15 @@ impl RedeemFeeTask {
             self.old_wallet.sign_commitment(new_wallet_comm).map_err(RedeemFeeError::Signature)?;
         let sig_bytes = sig.as_bytes().to_vec();
 
-        self.darkpool_client.redeem_fee(proof, sig_bytes).await?;
+        let tx = self.darkpool_client.redeem_fee(proof, sig_bytes).await?;
+        self.tx = Some(tx);
         Ok(())
     }
 
     /// Find the opening for the relayer wallet
     async fn find_wallet_opening(&mut self) -> Result<(), RedeemFeeError> {
-        let opening = find_merkle_path(&self.new_wallet, &self.darkpool_client).await?;
+        let tx = self.tx.as_ref().unwrap();
+        let opening = find_merkle_path_with_tx(&self.new_wallet, &self.darkpool_client, tx)?;
         self.new_wallet.merkle_proof = Some(opening);
 
         let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;

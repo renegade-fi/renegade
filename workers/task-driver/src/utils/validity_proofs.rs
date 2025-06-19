@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use alloy::rpc::types::TransactionReceipt;
 use circuit_types::balance::Balance;
 use circuit_types::native_helpers::{
     compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
@@ -68,6 +69,17 @@ pub(crate) async fn find_merkle_path(
     // The contract indexes the wallet by its commitment to the public and private
     // secret shares, find this in the Merkle tree
     darkpool_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
+}
+
+/// Find the merkle authentication path of a wallet given an updating
+/// transaction
+pub(crate) fn find_merkle_path_with_tx(
+    wallet: &Wallet,
+    darkpool_client: &DarkpoolClient,
+    tx: &TransactionReceipt,
+) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
+    let commitment = wallet.get_wallet_share_commitment();
+    darkpool_client.find_merkle_authentication_path_with_tx(commitment, tx)
 }
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet

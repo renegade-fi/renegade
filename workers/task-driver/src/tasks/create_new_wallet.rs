@@ -11,6 +11,7 @@ use core::panic;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::native_helpers::compute_wallet_share_commitment;
 use circuits::zk_circuits::valid_wallet_create::{
@@ -35,7 +36,7 @@ use util::err_str;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
-use crate::utils::validity_proofs::{enqueue_proof_job, find_merkle_path};
+use crate::utils::validity_proofs::{enqueue_proof_job, find_merkle_path_with_tx};
 
 /// The task name to display when logging
 const NEW_WALLET_TASK_NAME: &str = "create-new-wallet";
@@ -164,6 +165,8 @@ pub struct NewWalletTask {
     /// The proof of `VALID WALLET CREATE` for the wallet, generated in the
     /// first step
     pub proof_bundle: Option<ValidWalletCreateBundle>,
+    /// The transaction receipt of the wallet creation
+    pub tx: Option<TransactionReceipt>,
     /// A darkpool client for the task to submit transactions
     pub darkpool_client: DarkpoolClient,
     /// A copy of the relayer-global state
@@ -191,6 +194,7 @@ impl Task for NewWalletTask {
             wallet: descriptor.wallet,
             blinder_seed: descriptor.blinder_seed,
             proof_bundle: None, // Initialize as None since it's not part of the descriptor
+            tx: None,
             darkpool_client: ctx.darkpool_client,
             global_state: ctx.state,
             proof_manager_work_queue: ctx.proof_queue,
@@ -270,9 +274,10 @@ impl NewWalletTask {
     }
 
     /// Submit the newly created wallet on-chain with proof of validity
-    async fn submit_wallet_tx(&self) -> Result<(), NewWalletTaskError> {
+    async fn submit_wallet_tx(&mut self) -> Result<(), NewWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
-        self.darkpool_client.new_wallet(&proof).await?;
+        let tx = self.darkpool_client.new_wallet(&proof).await?;
+        self.tx = Some(tx);
         Ok(())
     }
 
@@ -281,7 +286,8 @@ impl NewWalletTask {
     /// authentication path
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
         // Find the authentication path of the wallet's private shares
-        let wallet_auth_path = find_merkle_path(&self.wallet, &self.darkpool_client).await?;
+        let tx = self.tx.as_ref().unwrap();
+        let wallet_auth_path = find_merkle_path_with_tx(&self.wallet, &self.darkpool_client, tx)?;
 
         // Index the wallet in the global state
         let mut wallet = self.wallet.clone();

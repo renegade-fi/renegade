@@ -7,6 +7,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::{transfers::ExternalTransferDirection, SizedWallet as CircuitWallet};
 use circuits::zk_circuits::valid_wallet_update::{
@@ -39,7 +40,7 @@ use util::err_str;
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::{
-    enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
+    enqueue_proof_job, find_merkle_path_with_tx, update_wallet_validity_proofs,
 };
 
 /// The human-readable name of the the task
@@ -198,6 +199,8 @@ pub struct UpdateWalletTask {
     pub wallet_update_signature: Vec<u8>,
     /// A proof of `VALID WALLET UPDATE` created in the first step
     pub proof_bundle: Option<ValidWalletUpdateBundle>,
+    /// The transaction receipt of the wallet update transaction
+    pub tx: Option<TransactionReceipt>,
     /// The darkpool client to use for submitting transactions
     pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
@@ -248,6 +251,7 @@ impl Task for UpdateWalletTask {
             new_wallet: descriptor.new_wallet,
             wallet_update_signature: descriptor.wallet_update_signature,
             proof_bundle: None,
+            tx: None,
             darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
@@ -360,11 +364,12 @@ impl UpdateWalletTask {
 
     /// Submit the `update_wallet` transaction to the contract and await
     /// finality
-    async fn submit_tx(&self) -> Result<(), UpdateWalletTaskError> {
+    async fn submit_tx(&mut self) -> Result<(), UpdateWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
         let transfer_auth = self.transfer.as_ref().map(|t| t.transfer_auth.clone());
         let sig = self.wallet_update_signature.clone();
-        self.darkpool_client.update_wallet(&proof, sig, transfer_auth).await?;
+        let tx = self.darkpool_client.update_wallet(&proof, sig, transfer_auth).await?;
+        self.tx = Some(tx);
 
         Ok(())
     }
@@ -374,7 +379,8 @@ impl UpdateWalletTask {
     async fn find_opening(&mut self) -> Result<(), UpdateWalletTaskError> {
         // Attach the opening to the new wallet, and index the wallet in the global
         // state
-        let merkle_opening = find_merkle_path(&self.new_wallet, &self.darkpool_client).await?;
+        let tx = self.tx.as_ref().unwrap();
+        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, &self.darkpool_client, tx)?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // After the state is finalized on-chain, re-index the wallet in the global
