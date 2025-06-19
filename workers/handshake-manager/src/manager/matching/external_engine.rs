@@ -83,9 +83,9 @@ impl HandshakeExecutor {
         // amount and min fill size to ensure the order is matchable
         if let Some(quote_amount) = options.exact_quote_amount {
             let price_fp = ts_price.as_fixed_point();
-            let base_amount_scalar = price_fp.floor_div_int(quote_amount);
+            let base_amount_scalar = price_fp.ceil_div_int(quote_amount);
             let base_amount = scalar_to_u128(&base_amount_scalar);
-            let min_quote = price_fp.floor_mul_int(base_amount);
+            let min_quote = price_fp.floor_mul_int(order.amount);
             order.amount = base_amount;
             options.min_quote_amount = Some(scalar_to_u128(&min_quote));
         }
