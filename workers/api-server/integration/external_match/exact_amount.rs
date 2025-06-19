@@ -1,11 +1,66 @@
 //! Integration tests for specifying exact output amounts
 
-use circuit_types::order::OrderSide;
+use circuit_types::{order::OrderSide, Amount};
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
+use hyper::StatusCode;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::ctx::IntegrationTestCtx;
+
+/// Test specifying an exact quote amount which cannot be matched
+#[allow(non_snake_case)]
+async fn test_exact_quote_amount__no_quote(mut ctx: IntegrationTestCtx) -> Result<()> {
+    // Clear the state
+    ctx.clear_state().await?;
+
+    // Create an external order with an exact quote amount
+    let exact_quote_output = ctx.quote_token().convert_from_decimal(1000.);
+    let base_amount = ctx.expected_base_amount(exact_quote_output);
+    let external_order = ExternalOrder {
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
+        side: OrderSide::Sell,
+        exact_quote_output,
+        ..Default::default()
+    };
+
+    // Setup a matching order, then request a quote
+    let amt = base_amount as f64 * 0.99;
+    let order = ctx.build_matching_order_with_amount(&external_order, amt as Amount)?;
+    ctx.setup_wallet_with_order(order).await?;
+
+    // Fetch a quote, it should return no content
+    let resp = ctx.send_external_quote_req(&external_order).await?;
+    assert_eq_result!(resp.status(), StatusCode::NO_CONTENT)
+}
+integration_test_async!(test_exact_quote_amount__no_quote);
+
+/// Test specifying an exact base amount which cannot be matched
+#[allow(non_snake_case)]
+async fn test_exact_base_amount__no_quote(mut ctx: IntegrationTestCtx) -> Result<()> {
+    // Clear the state
+    ctx.clear_state().await?;
+
+    // Create an external order with an exact base amount
+    let exact_base_output = ctx.base_token().convert_from_decimal(1.);
+    let external_order = ExternalOrder {
+        base_mint: ctx.base_mint(),
+        quote_mint: ctx.quote_mint(),
+        side: OrderSide::Buy,
+        exact_base_output,
+        ..Default::default()
+    };
+
+    // Setup a matching order, then request a quote
+    let order = ctx.build_matching_order_with_amount(&external_order, exact_base_output - 1)?;
+    ctx.setup_wallet_with_order(order).await?;
+
+    // Fetch a quote, it should return no content
+    let resp = ctx.send_external_quote_req(&external_order).await?;
+    assert_eq_result!(resp.status(), StatusCode::NO_CONTENT)
+}
+integration_test_async!(test_exact_base_amount__no_quote);
 
 /// Test specifying an exact quote amount on the buy side
 #[allow(non_snake_case)]
