@@ -421,7 +421,8 @@ impl ExternalMatchProcessor {
 
         // Compute the minimum and maximum base amounts implied by the order
         let min_fill_size = order.get_min_fill_quote();
-        let quote_amount = order.get_quote_amount(price, FixedPoint::zero());
+        let relayer_fee = FixedPoint::zero();
+        let quote_amount = order.get_quote_amount(price, relayer_fee);
         let min_base = price.floor_div_int(min_fill_size);
         let max_base = price.floor_div_int(quote_amount);
 

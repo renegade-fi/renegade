@@ -106,7 +106,6 @@ async fn test_basic_external_match__sell_side__send_amount_specified(
     let send_mint = quote.send.mint;
     let send_amount = quote.send.amount;
     assert_eq_result!(send_mint, base_mint)?;
-    assert_true_result!(send_amount <= base_amount)?;
     assert_eq_result!(send_amount, base_amount)?;
 
     let recv_mint = quote.receive.mint;
