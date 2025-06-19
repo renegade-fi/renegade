@@ -55,9 +55,9 @@ type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Messa
 type WsReadStream = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 /// A message that is sent by the price reporter to the client indicating
-/// a price udpate for the given topic
+/// a price update for the given topic
 ///
-/// Ported over from https://github.com/renegade-fi/renegade-price-reporter/blob/main/src/utils.rs
+/// Ported over from https://github.com/renegade-fi/renegade/blob/main/util/src/lib.rs
 #[derive(Serialize, Deserialize)]
 pub struct PriceMessage {
     /// The topic for which the price update is being sent
