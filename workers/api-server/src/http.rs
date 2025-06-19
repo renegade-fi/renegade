@@ -646,11 +646,7 @@ impl HttpServer {
         loop {
             let (stream, _) = listener.accept().await.map_err(ApiServerError::server_failure)?;
             let self_clone = self.clone();
-            tokio::spawn(async move {
-                if let Err(e) = self_clone.handle_stream(stream).await {
-                    error!("Error handling stream: {e}");
-                }
-            });
+            tokio::spawn(async move { self_clone.handle_stream(stream).await });
         }
     }
 
