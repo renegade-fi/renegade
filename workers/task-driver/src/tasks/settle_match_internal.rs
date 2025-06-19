@@ -272,7 +272,12 @@ impl Task for SettleMatchInternalTask {
             SettleMatchInternalTaskState::UpdatingValidityProofs => {
                 self.update_proofs().await?;
                 self.emit_events()?;
-                record_match_volume(&self.match_result, false /* is_external_match */);
+                record_match_volume(
+                    &self.match_result,
+                    false, // is_external_match
+                    Some(self.wallet_id1),
+                    Some(self.wallet_id2),
+                );
 
                 self.task_state = SettleMatchInternalTaskState::Completed;
             },

@@ -421,7 +421,12 @@ impl HandshakeExecutor {
         self.publish_completion_messages(state.local_order_id, state.peer_order_id).await?;
 
         // Record the volume of the match
-        record_match_volume(match_result, false /* is_external_match */);
+        record_match_volume(
+            match_result,
+            false, // is_external_match
+            None,  // wallet_id1
+            None,  // wallet_id2
+        );
         Ok(())
     }
 

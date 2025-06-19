@@ -56,3 +56,7 @@ pub const NUM_EVENT_EXPORT_FAILURES_METRIC: &str = "num_event_export_failures";
 pub const ASSET_METRIC_TAG: &str = "asset";
 /// Metric tag for whether a match is external
 pub const EXTERNAL_MATCH_METRIC_TAG: &str = "is_external_match";
+/// Metric tag for the wallet ID of the first wallet in a match
+pub const WALLET_ID1_METRIC_TAG: &str = "wallet_id1";
+/// Metric tag for the wallet ID of the second wallet in a match
+pub const WALLET_ID2_METRIC_TAG: &str = "wallet_id2";
