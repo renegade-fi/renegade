@@ -247,12 +247,13 @@ impl OnChainEventListenerExecutor {
 
         // Check whether any wallet is indexed by the nullifier
         let maybe_wallet = self.state().get_wallet_for_nullifier(&nullifier).await?;
-        if maybe_wallet.is_none() {
-            return Ok(());
-        }
+        let wallet = match maybe_wallet {
+            Some(w) => w,
+            None => return Ok(()),
+        };
 
         // Record metrics for any external matches in the transaction
-        let external_match = self.check_external_match_settlement(tx, maybe_wallet).await?;
+        let external_match = self.check_external_match_settlement(tx, wallet).await?;
 
         // External matches will not automatically update the wallet, so we should
         // enqueue a wallet refresh immediately. Otherwise, we wait some time
@@ -329,11 +330,10 @@ impl OnChainEventListenerExecutor {
     async fn check_external_match_settlement(
         &self,
         tx: TxHash,
-        wallet_id: Option<WalletIdentifier>,
+        wallet_id: WalletIdentifier,
     ) -> Result<bool, OnChainEventListenerError> {
         let matches = self.darkpool_client().find_external_matches_in_tx(tx).await?;
         let external_match = !matches.is_empty();
-        let wallet_ids = wallet_id.into_iter().collect::<Vec<_>>();
 
         // Record metrics for each match
         // TODO: Record a fill on the internal order. We don't do this for now to keep
@@ -345,7 +345,7 @@ impl OnChainEventListenerExecutor {
             renegade_metrics::record_match_volume(
                 &match_result,
                 true, // is_external_match
-                &wallet_ids,
+                &[wallet_id],
             );
         }
 
