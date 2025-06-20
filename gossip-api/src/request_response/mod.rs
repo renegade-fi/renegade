@@ -3,7 +3,7 @@
 use common::types::hmac::HmacKey;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
-use util::telemetry::propagation::{trace_context_headers, TraceContextHeaders};
+use util::telemetry::propagation::{trace_context, TraceContext};
 
 use crate::{check_hmac, create_hmac, GossipDestination};
 
@@ -62,7 +62,7 @@ impl AuthenticatedGossipRequest {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GossipRequest {
     /// The tracing context
-    pub tracing_context: Option<TraceContextHeaders>,
+    pub tracing_context: Option<TraceContext>,
     /// The type of the request
     pub body: GossipRequestType,
 }
@@ -70,14 +70,14 @@ pub struct GossipRequest {
 impl GossipRequest {
     /// Construct a new request and add the current tracing information
     pub fn new(body: GossipRequestType) -> Self {
-        let tracing_context = Some(trace_context_headers());
+        let tracing_context = Some(trace_context());
         Self { tracing_context, body }
     }
 
     /// Get the tracing headers
     ///
-    /// Returns an empty `TraceContextHeaders` if no tracing context is present
-    pub fn tracing_headers(&self) -> TraceContextHeaders {
+    /// Returns an empty `TraceContext` if no tracing context is present
+    pub fn tracing_headers(&self) -> TraceContext {
         self.tracing_context.clone().unwrap_or_default()
     }
 }
@@ -203,7 +203,7 @@ impl AuthenticatedGossipResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GossipResponse {
     /// The tracing context
-    pub tracing_context: Option<TraceContextHeaders>,
+    pub tracing_context: Option<TraceContext>,
     /// The type of response
     pub body: GossipResponseType,
 }
@@ -211,14 +211,14 @@ pub struct GossipResponse {
 impl GossipResponse {
     /// Construct a new response and add the current tracing information
     pub fn new(body: GossipResponseType) -> Self {
-        let tracing_context = Some(trace_context_headers());
+        let tracing_context = Some(trace_context());
         Self { tracing_context, body }
     }
 
     /// Get the tracing headers
     ///
-    /// Returns an empty `TraceContextHeaders` if no tracing context is present
-    pub fn tracing_headers(&self) -> TraceContextHeaders {
+    /// Returns an empty `TraceContext` if no tracing context is present
+    pub fn tracing_headers(&self) -> TraceContext {
         self.tracing_context.clone().unwrap_or_default()
     }
 }

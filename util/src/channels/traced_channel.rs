@@ -9,15 +9,13 @@ use tokio::sync::mpsc::{
     UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
 };
 
-use crate::telemetry::propagation::{
-    set_parent_span_from_headers, trace_context_headers, TraceContextHeaders,
-};
+use crate::telemetry::propagation::{set_parent_span_from_context, trace_context, TraceContext};
 
 /// A traced wrapper type that adds tracing information to the channel message
 /// type
 pub struct TracedMessage<T> {
     /// The tracing context
-    pub tracing_context: TraceContextHeaders,
+    pub trace_context: TraceContext,
     /// The message
     pub message: T,
 }
@@ -31,8 +29,8 @@ impl<T: std::fmt::Debug> std::fmt::Debug for TracedMessage<T> {
 impl<T> TracedMessage<T> {
     /// Create a new traced message
     pub fn new(message: T) -> Self {
-        let tracing_context = trace_context_headers();
-        Self { tracing_context, message }
+        let trace_context = trace_context();
+        Self { trace_context, message }
     }
 
     /// Convert the traced message to the original message
@@ -43,7 +41,7 @@ impl<T> TracedMessage<T> {
     /// Consume the traced message, setting the parent span and returning the
     /// original message
     pub fn consume(self) -> T {
-        set_parent_span_from_headers(&self.tracing_context);
+        set_parent_span_from_context(&self.trace_context);
         self.message
     }
 }

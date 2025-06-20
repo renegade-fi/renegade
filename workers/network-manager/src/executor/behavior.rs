@@ -14,7 +14,7 @@ use tokio::sync::{
     oneshot,
 };
 use tracing::instrument;
-use util::{err_str, telemetry::propagation::set_parent_span_from_headers};
+use util::{err_str, telemetry::propagation::set_parent_span_from_context};
 
 use crate::{composed_protocol::ComposedNetworkBehavior, error::NetworkManagerError};
 
@@ -72,7 +72,7 @@ impl NetworkManagerExecutor {
     ) -> Result<(), NetworkManagerError> {
         match job {
             BehaviorJob::SendReq(peer_id, req, chan) => {
-                set_parent_span_from_headers(&req.inner.tracing_headers());
+                set_parent_span_from_context(&req.inner.tracing_headers());
 
                 let rid = swarm.behaviour_mut().request_response.send_request(&peer_id, req);
                 if let Some(chan) = chan {
@@ -82,7 +82,7 @@ impl NetworkManagerExecutor {
                 Ok(())
             },
             BehaviorJob::SendResp(channel, resp) => {
-                set_parent_span_from_headers(&resp.inner.tracing_headers());
+                set_parent_span_from_context(&resp.inner.tracing_headers());
 
                 swarm
                     .behaviour_mut()

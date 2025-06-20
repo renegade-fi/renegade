@@ -23,8 +23,6 @@ use common::types::{
     MatchingPoolName,
 };
 use notifications::ProposalId;
-#[cfg(not(feature = "mocks"))]
-use replication::network::gossip::GossipNetwork;
 use replication::{NodeId, RaftNode};
 use serde::{Deserialize, Serialize};
 

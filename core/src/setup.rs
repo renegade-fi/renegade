@@ -1,11 +1,9 @@
 //! Setup logic for the node
 
-use common::types::tasks::{
-    NodeStartupTaskDescriptor, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier,
-};
+use common::types::tasks::{NodeStartupTaskDescriptor, QueuedTask, TaskDescriptor};
 use config::RelayerConfig;
 use job_types::task_driver::{TaskDriverJob, TaskDriverQueue};
-use util::{err_str, get_current_time_millis};
+use util::err_str;
 
 use crate::error::CoordinatorError;
 
@@ -26,16 +24,9 @@ pub async fn node_setup(
     )
     .into();
 
-    let tid = TaskIdentifier::new_v4();
-    let queued_task = QueuedTask {
-        id: tid,
-        state: QueuedTaskState::Preemptive,
-        descriptor: desc,
-        created_at: get_current_time_millis(),
-    };
-
     // Send the task to the task driver
-    let (job, rx) = TaskDriverJob::run_with_notification(queued_task);
+    let task = QueuedTask::new(desc);
+    let (job, rx) = TaskDriverJob::run_with_notification(task);
     task_queue.send(job).map_err(|_| CoordinatorError::setup(ERR_SENDING_STARTUP_TASK))?;
 
     // Await the task driver to complete the task

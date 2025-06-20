@@ -15,7 +15,7 @@ use libp2p::request_response::{Message as RequestResponseMessage, ResponseChanne
 use libp2p::PeerId;
 use tracing::{error, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use util::{err_str, telemetry::propagation::set_parent_span_from_headers};
+use util::{err_str, telemetry::propagation::set_parent_span_from_context};
 
 use crate::error::NetworkManagerError;
 
@@ -43,7 +43,7 @@ impl NetworkManagerExecutor {
             // Handle inbound request from another peer
             RequestResponseMessage::Request { request, channel, .. } => {
                 // Use the request's span if provided
-                set_parent_span_from_headers(&request.inner.tracing_headers());
+                set_parent_span_from_context(&request.inner.tracing_headers());
 
                 // Authenticate the request
                 let pkey = self.cluster_key;
@@ -76,7 +76,7 @@ impl NetworkManagerExecutor {
             // Handle inbound response
             RequestResponseMessage::Response { request_id, response } => {
                 // Use the response's span if provided
-                set_parent_span_from_headers(&response.inner.tracing_headers());
+                set_parent_span_from_context(&response.inner.tracing_headers());
 
                 // Authenticate the response
                 let pkey = self.cluster_key;
@@ -175,7 +175,7 @@ impl NetworkManagerExecutor {
         req: GossipRequest,
         chan: Option<NetworkResponseChannel>,
     ) -> Result<(), NetworkManagerError> {
-        set_parent_span_from_headers(&req.tracing_headers());
+        set_parent_span_from_context(&req.tracing_headers());
 
         // Authenticate the request
         let key = self.cluster_key;
@@ -195,7 +195,7 @@ impl NetworkManagerExecutor {
         resp: GossipResponse,
         chan: ResponseChannel<AuthenticatedGossipResponse>,
     ) -> Result<(), NetworkManagerError> {
-        set_parent_span_from_headers(&resp.tracing_headers());
+        set_parent_span_from_context(&resp.tracing_headers());
 
         // Authenticate the response
         let key = self.cluster_key;
