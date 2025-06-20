@@ -75,8 +75,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         commitment: Scalar,
     ) -> Result<MerkleAuthenticationPath, DarkpoolClientError> {
-        let (index, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
-        let leaf_index = BigUint::from(index);
+        let (_, tx) = self.find_commitment_in_state_with_tx(commitment).await?;
         let tx: TransactionReceipt = self
             .provider()
             .get_transaction_receipt(tx)
@@ -84,11 +83,22 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
             .map_err(|e| DarkpoolClientError::TxQuerying(e.to_string()))?
             .ok_or(DarkpoolClientError::TxNotFound(tx.to_string()))?;
 
+        self.find_merkle_authentication_path_with_tx(commitment, &tx)
+    }
+
+    /// Parses the Merkle authentication path from a transaction receipt
+    #[instrument(skip_all, err, fields(commitment = %commitment))]
+    pub fn find_merkle_authentication_path_with_tx(
+        &self,
+        commitment: Scalar,
+        tx: &TransactionReceipt,
+    ) -> Result<MerkleAuthenticationPath, DarkpoolClientError> {
         // The number of Merkle insertions that occurred in a transaction
         let mut n_insertions = 0;
         let mut insertion_idx = 0;
 
         // Parse the Merkle path from the transaction logs
+        let mut leaf_index = None;
         let mut all_insertion_events = vec![];
         for log in tx.logs().iter().cloned().map(Log::from) {
             let topic0 = match log.topics().first() {
@@ -105,6 +115,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
 
                 if event.value() == commitment {
                     insertion_idx = n_insertions;
+                    leaf_index = Some(BigUint::from(event.index()));
                 }
                 n_insertions += 1;
             } else if topic0 == D::MerkleOpening::SIGNATURE_HASH {
@@ -129,6 +140,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
                 |_| DarkpoolClientError::EventQuerying(ERR_MERKLE_PATH_SIBLINGS.to_string()),
             )?;
 
+        let leaf_index = leaf_index.ok_or(DarkpoolClientError::CommitmentNotFound)?;
         Ok(MerkleAuthenticationPath::new(siblings, leaf_index, commitment))
     }
 

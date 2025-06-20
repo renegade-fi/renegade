@@ -6,6 +6,7 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
 };
 
+use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::{native_helpers::encrypt_note, note::Note};
 use circuits::zk_circuits::valid_offline_fee_settlement::{
@@ -29,7 +30,7 @@ use crate::{
     task_state::StateWrapper,
     traits::{Task, TaskContext, TaskError, TaskState},
     utils::validity_proofs::{
-        enqueue_proof_job, enqueue_relayer_redeem_job, find_merkle_path,
+        enqueue_proof_job, enqueue_relayer_redeem_job, find_merkle_path_with_tx,
         update_wallet_validity_proofs,
     },
 };
@@ -159,6 +160,8 @@ pub struct PayOfflineFeeTask {
     pub note: Note,
     /// The proof of `VALID OFFLINE FEE SETTLEMENT` used to pay the fee
     pub proof: Option<OfflineFeeSettlementBundle>,
+    /// The transaction receipt of the fee payment
+    pub tx: Option<TransactionReceipt>,
     /// The darkpool client used for submitting transactions
     pub darkpool_client: DarkpoolClient,
     /// A hand to the global state
@@ -197,6 +200,7 @@ impl Task for PayOfflineFeeTask {
             new_wallet,
             note,
             proof: None,
+            tx: None,
             darkpool_client: ctx.darkpool_client,
             state: ctx.state,
             proof_queue: ctx.proof_queue,
@@ -275,15 +279,17 @@ impl PayOfflineFeeTask {
     }
 
     /// Submit the `settle_offline_fee` transaction for the balance
-    async fn submit_payment(&self) -> Result<(), PayOfflineFeeTaskError> {
+    async fn submit_payment(&mut self) -> Result<(), PayOfflineFeeTaskError> {
         let proof = self.proof.clone().unwrap();
-        self.darkpool_client.settle_offline_fee(&proof).await?;
+        let tx = self.darkpool_client.settle_offline_fee(&proof).await?;
+        self.tx = Some(tx);
         Ok(())
     }
 
     /// Find the Merkle opening for the new wallet
     async fn find_merkle_opening(&mut self) -> Result<(), PayOfflineFeeTaskError> {
-        let merkle_opening = find_merkle_path(&self.new_wallet, &self.darkpool_client).await?;
+        let tx = self.tx.as_ref().unwrap();
+        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, &self.darkpool_client, tx)?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // Update the global state to include the new wallet

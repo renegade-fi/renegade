@@ -8,8 +8,9 @@ use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::validity_proofs::{
-    enqueue_proof_job, find_merkle_path, update_wallet_validity_proofs,
+    enqueue_proof_job, find_merkle_path_with_tx, update_wallet_validity_proofs,
 };
+use alloy::rpc::types::TransactionReceipt;
 use ark_mpc::{PARTY0, PARTY1};
 use async_trait::async_trait;
 use circuit_types::r#match::MatchResult;
@@ -181,6 +182,8 @@ pub struct SettleMatchInternalTask {
     match_result: MatchResult,
     /// The proof of `VALID MATCH SETTLE` generated in the first task step
     match_bundle: Option<MatchBundle>,
+    /// The transaction receipt of the match settlement
+    tx: Option<TransactionReceipt>,
     /// The darkpool client to use for submitting transactions
     darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
@@ -227,6 +230,7 @@ impl Task for SettleMatchInternalTask {
             order2_validity_witness,
             match_result,
             match_bundle: None, // Assuming default initialization
+            tx: None,
             darkpool_client: ctx.darkpool_client,
             network_sender: ctx.network_queue,
             state: ctx.state,
@@ -325,7 +329,7 @@ impl SettleMatchInternalTask {
     }
 
     /// Submit the match transaction
-    async fn submit_match(&self) -> Result<(), SettleMatchInternalTaskError> {
+    async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
         // Transition both orders to the `SettlingMatch` state
         transition_order_settling(self.order_id1, &self.state)
             .await
@@ -335,13 +339,15 @@ impl SettleMatchInternalTask {
             .map_err(SettleMatchInternalTaskError::State)?;
 
         // Submit a `match` transaction
-        self.darkpool_client
+        let tx = self
+            .darkpool_client
             .process_match_settle(
                 &self.order1_proof,
                 &self.order2_proof,
                 self.match_bundle.as_ref().unwrap(),
             )
             .await?;
+        self.tx = Some(tx);
         Ok(())
     }
 
@@ -377,8 +383,8 @@ impl SettleMatchInternalTask {
         wallet1.update_from_shares(party0_private_shares, party0_public_shares);
         wallet2.update_from_shares(party1_private_shares, party1_public_shares);
 
-        self.find_opening(&mut wallet1).await?;
-        self.find_opening(&mut wallet2).await?;
+        self.find_opening(&mut wallet1)?;
+        self.find_opening(&mut wallet2)?;
 
         // Re-index the updated wallets in the global state
         let waiter1 = self.state.update_wallet(wallet1).await?;
@@ -540,8 +546,9 @@ impl SettleMatchInternalTask {
     }
 
     /// Find and update the merkle opening for the wallet
-    async fn find_opening(&self, wallet: &mut Wallet) -> Result<(), SettleMatchInternalTaskError> {
-        let opening = find_merkle_path(wallet, &self.darkpool_client).await?;
+    fn find_opening(&self, wallet: &mut Wallet) -> Result<(), SettleMatchInternalTaskError> {
+        let tx = self.tx.as_ref().unwrap();
+        let opening = find_merkle_path_with_tx(wallet, &self.darkpool_client, tx)?;
         wallet.merkle_proof = Some(opening);
         Ok(())
     }

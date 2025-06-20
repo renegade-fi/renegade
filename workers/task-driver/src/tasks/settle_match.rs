@@ -8,6 +8,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
+use alloy::rpc::types::TransactionReceipt;
 use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::r#match::MatchResult;
@@ -30,7 +31,9 @@ use tracing::instrument;
 use crate::task_state::StateWrapper;
 use crate::traits::{Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
-use crate::utils::validity_proofs::{find_merkle_path, update_wallet_validity_proofs};
+use crate::utils::validity_proofs::{
+    find_merkle_path, find_merkle_path_with_tx, update_wallet_validity_proofs,
+};
 
 /// The error message the contract emits when a nullifier has been used
 pub(crate) const NULLIFIER_USED_ERROR_MSG: &str = "nullifier already used";
@@ -164,6 +167,8 @@ pub struct SettleMatchTask {
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
     pub party1_validity_proof: OrderValidityProofBundle,
+    /// The transaction receipt of the match settlement transaction
+    pub tx: Option<TransactionReceipt>,
     /// The darkpool client to use for submitting transactions
     pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
@@ -199,6 +204,7 @@ impl Task for SettleMatchTask {
             match_bundle,
             party0_validity_proof,
             party1_validity_proof,
+            tx: None,
             darkpool_client: context.darkpool_client,
             network_sender: context.network_queue,
             global_state: context.state,
@@ -262,7 +268,7 @@ impl SettleMatchTask {
     // --------------
 
     /// Submit the match transaction to the contract
-    async fn submit_match(&self) -> Result<(), SettleMatchTaskError> {
+    async fn submit_match(&mut self) -> Result<(), SettleMatchTaskError> {
         // Place the local order in the `SubmittingMatch` state
         transition_order_settling(self.handshake_state.local_order_id, &self.global_state)
             .await
@@ -286,7 +292,7 @@ impl SettleMatchTask {
             return Ok(());
         }
 
-        tx_submit_res?;
+        self.tx = Some(tx_submit_res?);
         Ok(())
     }
 
@@ -322,7 +328,11 @@ impl SettleMatchTask {
             .await?;
 
         // Find the wallet's new Merkle opening
-        let opening = find_merkle_path(&wallet, &self.darkpool_client).await?;
+        let opening = if let Some(tx) = self.tx.as_ref() {
+            find_merkle_path_with_tx(&wallet, &self.darkpool_client, tx)?
+        } else {
+            find_merkle_path(&wallet, &self.darkpool_client).await?
+        };
         wallet.merkle_proof = Some(opening);
 
         // Index the updated wallet in global state

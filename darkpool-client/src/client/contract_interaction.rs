@@ -1,8 +1,8 @@
 //! Defines `DarkpoolClient` helpers that allow for interacting with the
 //! darkpool contract
 
-use alloy::primitives::Address;
 use alloy::rpc::types::TransactionRequest;
+use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
 };
@@ -102,13 +102,13 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     pub async fn new_wallet(
         &self,
         valid_wallet_create: &SizedValidWalletCreateBundle,
-    ) -> Result<(), DarkpoolClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self.darkpool.new_wallet(valid_wallet_create).await?;
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`new_wallet` tx hash: {}", tx_hash);
 
-        Ok(())
+        Ok(receipt)
     }
 
     /// Call the `update_wallet` contract method with the given
@@ -124,7 +124,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         valid_wallet_update: &SizedValidWalletUpdateBundle,
         wallet_commitment_signature: Vec<u8>,
         transfer_auth: Option<TransferAuth>,
-    ) -> Result<(), DarkpoolClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self
             .darkpool
             .update_wallet(valid_wallet_update, wallet_commitment_signature, transfer_auth)
@@ -133,7 +133,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
 
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`update_wallet` tx hash: {}", tx_hash);
-        Ok(())
+        Ok(receipt)
     }
 
     /// Call the `process_match_settle` contract method with the given
@@ -150,7 +150,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
         match_bundle: &MatchBundle,
-    ) -> Result<(), DarkpoolClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self
             .darkpool
             .process_match_settle(party0_validity_proofs, party1_validity_proofs, match_bundle)
@@ -159,7 +159,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
 
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`process_match_settle` tx hash: {}", tx_hash);
-        Ok(())
+        Ok(receipt)
     }
 
     /// Return the tx parameters for a `process_atomic_match_settle` call
@@ -207,7 +207,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         valid_relayer_fee_settlement: &SizedRelayerFeeSettlementBundle,
         relayer_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<(), DarkpoolClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self
             .darkpool
             .settle_online_relayer_fee(
@@ -219,7 +219,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
 
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`settle_online_relayer_fee` tx hash: {}", tx_hash);
-        Ok(())
+        Ok(receipt)
     }
 
     /// Call the `settle_offline_fee` contract method with the given
@@ -233,13 +233,13 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     pub async fn settle_offline_fee(
         &self,
         valid_offline_fee_settlement: &SizedOfflineFeeSettlementBundle,
-    ) -> Result<(), DarkpoolClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self.darkpool.settle_offline_fee(valid_offline_fee_settlement).await?;
         let tx_hash = format!("{:#x}", receipt.transaction_hash);
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`settle_offline_fee` tx hash: {}", tx_hash);
 
-        Ok(())
+        Ok(receipt)
     }
 
     /// Call the `redeem_fee` contract method with the given
@@ -254,7 +254,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         valid_fee_redemption: &SizedFeeRedemptionBundle,
         recipient_wallet_commitment_signature: Vec<u8>,
-    ) -> Result<(), DarkpoolClientError> {
+    ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self
             .darkpool
             .redeem_fee(valid_fee_redemption, recipient_wallet_commitment_signature)
@@ -263,6 +263,6 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
 
         backfill_trace_field("tx_hash", &tx_hash);
         info!("`redeem_fee` tx hash: {}", tx_hash);
-        Ok(())
+        Ok(receipt)
     }
 }
