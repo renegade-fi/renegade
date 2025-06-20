@@ -22,7 +22,7 @@ pub use update_wallet::*;
 use serde::{Deserialize, Serialize};
 use util::{
     get_current_time_millis,
-    telemetry::propagation::{trace_context, TraceContext},
+    telemetry::propagation::{set_parent_span_from_context, trace_context, TraceContext},
 };
 use uuid::Uuid;
 
@@ -63,6 +63,11 @@ impl QueuedTask {
             created_at: get_current_time_millis(),
             trace_context: trace_context(),
         }
+    }
+
+    /// Set the parent span of the caller to that described in the trace context
+    pub fn set_parent_span(&self) {
+        set_parent_span_from_context(&self.trace_context);
     }
 }
 
