@@ -56,3 +56,7 @@ pub const NUM_EVENT_EXPORT_FAILURES_METRIC: &str = "num_event_export_failures";
 pub const ASSET_METRIC_TAG: &str = "asset";
 /// Metric tag for whether a match is external
 pub const EXTERNAL_MATCH_METRIC_TAG: &str = "is_external_match";
+/// Helper to generate wallet ID tag names
+pub fn wallet_id_tag(n: usize) -> String {
+    format!("wallet_id{}", n)
+}

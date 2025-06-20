@@ -9,7 +9,7 @@ use alloy::{
     sol_types::SolEvent,
 };
 use circuit_types::wallet::Nullifier;
-use common::types::CancelChannel;
+use common::types::{wallet::WalletIdentifier, CancelChannel};
 use constants::in_bootstrap_mode;
 use darkpool_client::{
     conversion::u256_to_scalar, traits::DarkpoolImpl, DarkpoolClient, DarkpoolImplementation,
@@ -247,12 +247,13 @@ impl OnChainEventListenerExecutor {
 
         // Check whether any wallet is indexed by the nullifier
         let maybe_wallet = self.state().get_wallet_for_nullifier(&nullifier).await?;
-        if maybe_wallet.is_none() {
-            return Ok(());
-        }
+        let wallet = match maybe_wallet {
+            Some(w) => w,
+            None => return Ok(()),
+        };
 
         // Record metrics for any external matches in the transaction
-        let external_match = self.check_external_match_settlement(tx).await?;
+        let external_match = self.check_external_match_settlement(tx, wallet).await?;
 
         // External matches will not automatically update the wallet, so we should
         // enqueue a wallet refresh immediately. Otherwise, we wait some time
@@ -329,6 +330,7 @@ impl OnChainEventListenerExecutor {
     async fn check_external_match_settlement(
         &self,
         tx: TxHash,
+        wallet_id: WalletIdentifier,
     ) -> Result<bool, OnChainEventListenerError> {
         let matches = self.darkpool_client().find_external_matches_in_tx(tx).await?;
         let external_match = !matches.is_empty();
@@ -340,7 +342,11 @@ impl OnChainEventListenerExecutor {
         // nullifier and record a fill on the order with matching mint
         for external_match_result in matches {
             let match_result = external_match_result.to_match_result();
-            renegade_metrics::record_match_volume(&match_result, true /* is_external_match */);
+            renegade_metrics::record_match_volume(
+                &match_result,
+                true, // is_external_match
+                &[wallet_id],
+            );
         }
 
         Ok(external_match)
