@@ -9,20 +9,20 @@ use opentelemetry::{
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Represents the context of a trace
-pub type TraceContextHeaders = HashMap<String, String>;
+pub type TraceContext = HashMap<String, String>;
 
-/// Helper struct for injecting tracing context into a TraceContextHeaders
-pub struct TraceContextHeadersInjector<'a>(&'a mut TraceContextHeaders);
-/// Helper struct for extracting tracing context from a TraceContextHeaders
-pub struct TraceContextHeadersExtractor<'a>(&'a TraceContextHeaders);
+/// Helper struct for injecting tracing context into a TraceContext
+pub struct TraceContextInjector<'a>(&'a mut TraceContext);
+/// Helper struct for extracting tracing context from a TraceContext
+pub struct TraceContextExtractor<'a>(&'a TraceContext);
 
-impl<'a> Injector for TraceContextHeadersInjector<'a> {
+impl<'a> Injector for TraceContextInjector<'a> {
     fn set(&mut self, key: &str, value: String) {
         self.0.insert(key.to_string(), value);
     }
 }
 
-impl<'a> Extractor for TraceContextHeadersExtractor<'a> {
+impl<'a> Extractor for TraceContextExtractor<'a> {
     fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).map(String::as_str)
     }
@@ -32,31 +32,31 @@ impl<'a> Extractor for TraceContextHeadersExtractor<'a> {
     }
 }
 
-/// Create a new TraceContextHeaders containing string-keyed trace context
-pub fn trace_context_headers() -> TraceContextHeaders {
-    let mut trace_context = TraceContextHeaders::new();
+/// Create a new TraceContext containing string-keyed trace context
+pub fn trace_context() -> TraceContext {
+    let mut trace_context = TraceContext::new();
     global::get_text_map_propagator(|prop| {
         prop.inject_context(
             &tracing::Span::current().context(),
-            &mut TraceContextHeadersInjector(&mut trace_context),
+            &mut TraceContextInjector(&mut trace_context),
         )
     });
 
     trace_context
 }
 
-/// Extract trace context from a TraceContextHeaders
-pub fn trace_context_from_headers(headers: &TraceContextHeaders) -> Context {
-    let extractor = TraceContextHeadersExtractor(headers);
+/// Extract trace context from a TraceContext
+fn extract_trace_context(headers: &TraceContext) -> Context {
+    let extractor = TraceContextExtractor(headers);
     global::get_text_map_propagator(|prop| prop.extract(&extractor))
 }
 
-/// Set the parent span from a TraceContextHeaders context
-pub fn set_parent_span_from_headers(headers: &TraceContextHeaders) {
+/// Set the parent span from a TraceContext context
+pub fn set_parent_span_from_context(headers: &TraceContext) {
     let context = if headers.is_empty() {
         tracing::Span::current().context().clone()
     } else {
-        trace_context_from_headers(headers)
+        extract_trace_context(headers)
     };
 
     tracing::Span::current().set_parent(context);

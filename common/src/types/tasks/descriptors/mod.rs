@@ -20,6 +20,10 @@ pub use update_merkle_proof::*;
 pub use update_wallet::*;
 
 use serde::{Deserialize, Serialize};
+use util::{
+    get_current_time_millis,
+    telemetry::propagation::{set_parent_span_from_context, trace_context, TraceContext},
+};
 use uuid::Uuid;
 
 use crate::types::wallet::WalletIdentifier;
@@ -44,6 +48,27 @@ pub struct QueuedTask {
     pub descriptor: TaskDescriptor,
     /// The time at which the task was created
     pub created_at: u64,
+    /// The tracing context in which the task was created
+    #[serde(default)]
+    pub trace_context: TraceContext,
+}
+
+impl QueuedTask {
+    /// Create a new queued task
+    pub fn new(descriptor: TaskDescriptor) -> Self {
+        Self {
+            id: TaskIdentifier::new_v4(),
+            state: QueuedTaskState::Queued,
+            descriptor,
+            created_at: get_current_time_millis(),
+            trace_context: trace_context(),
+        }
+    }
+
+    /// Set the parent span of the caller to that described in the trace context
+    pub fn enter_parent_span(&self) {
+        set_parent_span_from_context(&self.trace_context);
+    }
 }
 
 /// The state of a queued task
@@ -222,7 +247,7 @@ pub mod mocks {
     use constants::Scalar;
     use k256::ecdsa::SigningKey as K256SigningKey;
     use rand::thread_rng;
-    use util::get_current_time_millis;
+    use util::{get_current_time_millis, telemetry::propagation::TraceContext};
 
     use crate::types::{tasks::TaskIdentifier, wallet::Wallet, wallet_mocks::mock_empty_wallet};
 
@@ -256,6 +281,7 @@ pub mod mocks {
             state: QueuedTaskState::Queued,
             descriptor: mock_task_descriptor(queue_key),
             created_at: get_current_time_millis(),
+            trace_context: TraceContext::new(),
         }
     }
 

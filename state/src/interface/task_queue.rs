@@ -9,7 +9,7 @@ use common::types::{
     wallet::WalletIdentifier,
 };
 use tracing::instrument;
-use util::{get_current_time_millis, telemetry::helpers::backfill_trace_field};
+use util::telemetry::helpers::backfill_trace_field;
 
 use crate::{
     error::StateError, notifications::ProposalWaiter,
@@ -141,22 +141,16 @@ impl StateInner {
         &self,
         task: TaskDescriptor,
     ) -> Result<(TaskIdentifier, ProposalWaiter), StateError> {
-        // Pick a task ID and create a task from the description
-        let id = TaskIdentifier::new_v4();
-        backfill_trace_field("task_id", id.to_string());
-
-        let self_id = self.get_peer_id().await?;
-        let task = QueuedTask {
-            id,
-            state: QueuedTaskState::Queued,
-            descriptor: task,
-            created_at: get_current_time_millis(),
-        };
+        // Build the task
+        let task = QueuedTask::new(task);
+        let tid = task.id;
+        backfill_trace_field("task_id", tid.to_string());
 
         // Propose the task to the task queue
-        let proposal = StateTransition::AppendTask { task, executor: self_id };
+        let executor = self.get_peer_id().await?;
+        let proposal = StateTransition::AppendTask { task, executor };
         let waiter = self.send_proposal(proposal).await?;
-        Ok((id, waiter))
+        Ok((tid, waiter))
     }
 
     /// Pop a task from the queue
@@ -203,22 +197,16 @@ impl StateInner {
         task: TaskDescriptor,
         serial: bool,
     ) -> Result<(TaskIdentifier, ProposalWaiter), StateError> {
-        // Pick a task ID and create a task from the description
-        let id = TaskIdentifier::new_v4();
-        backfill_trace_field("task_id", id.to_string());
-
-        let task = QueuedTask {
-            id,
-            state: QueuedTaskState::Queued,
-            descriptor: task,
-            created_at: get_current_time_millis(),
-        };
+        // Build the task
+        let task = QueuedTask::new(task);
+        let tid = task.id;
+        backfill_trace_field("task_id", tid.to_string());
 
         // Propose the task to the task queue, with the local peer as the executor
         let executor = self.get_peer_id().await?;
         let transition = StateTransition::EnqueuePreemptiveTask { keys, task, executor, serial };
         let waiter = self.send_proposal(transition).await?;
-        Ok((id, waiter))
+        Ok((tid, waiter))
     }
 
     /// Reassign the tasks from a failed peer to the local peer

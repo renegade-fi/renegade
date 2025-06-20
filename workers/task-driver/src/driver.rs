@@ -3,7 +3,10 @@
 
 use std::{collections::HashMap, fmt::Debug, time::Duration};
 
-use common::types::{tasks::TaskDescriptor, tasks::TaskIdentifier, wallet::WalletIdentifier};
+use common::types::{
+    tasks::{QueuedTask, TaskDescriptor, TaskIdentifier},
+    wallet::WalletIdentifier,
+};
 use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, TaskNotificationSender};
 use state::State;
 use tokio::runtime::Builder as TokioRuntimeBuilder;
@@ -163,7 +166,7 @@ impl TaskExecutor {
         match job.consume() {
             TaskDriverJob::Run { task, channel } => {
                 let affected_wallets = task.descriptor.affected_wallets();
-                self.start_task(task.id, task.descriptor, affected_wallets, channel).await
+                self.start_task(task.id, task, affected_wallets, channel).await
             },
             TaskDriverJob::Notify { task_id, channel } => {
                 self.handle_notification_request(task_id, channel).await
@@ -201,16 +204,18 @@ impl TaskExecutor {
     /// Returns the success of the task
     #[instrument(name = "task", skip_all, err, fields(
         task_id = %id,
-        task = %task.display_description(),
-        wallet_ids = ?task.affected_wallets(),
+        task = %task.descriptor.display_description(),
+        wallet_ids = ?affected_wallets,
     ))]
     async fn start_task(
         &self,
         id: TaskIdentifier,
-        task: TaskDescriptor,
+        task: QueuedTask,
         affected_wallets: Vec<WalletIdentifier>,
         channel: Option<TaskNotificationSender>,
     ) -> Result<(), TaskDriverError> {
+        task.enter_parent_span();
+
         // Register the notification if one was requested
         if let Some(c) = channel {
             let mut notifications_locked = self.task_notifications.write().expect("poisoned");
@@ -218,7 +223,7 @@ impl TaskExecutor {
         }
 
         // Construct the task from the descriptor
-        let res = match task {
+        let res = match task.descriptor {
             TaskDescriptor::NewWallet(desc) => {
                 self.start_task_helper::<NewWalletTask>(id, desc, affected_wallets).await
             },

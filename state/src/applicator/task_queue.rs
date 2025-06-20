@@ -254,7 +254,6 @@ impl StateApplicator {
     }
 
     /// Start a task if the current peer is the executor
-    #[instrument(skip_all, err, fields(task_id = %task.id, task = %task.descriptor.display_description()))]
     fn maybe_execute_task<T: TransactionKind>(
         &self,
         task: &QueuedTask,
