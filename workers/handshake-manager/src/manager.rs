@@ -424,8 +424,7 @@ impl HandshakeExecutor {
         record_match_volume(
             match_result,
             false, // is_external_match
-            None,  // wallet_id1
-            None,  // wallet_id2
+            &[],
         );
         Ok(())
     }

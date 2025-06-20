@@ -8,10 +8,9 @@ use num_bigint::BigUint;
 use util::hex::biguint_to_hex_addr;
 
 use crate::labels::{
-    ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, EXTERNAL_MATCH_METRIC_TAG, FEES_COLLECTED_METRIC,
-    MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS,
-    NUM_WITHDRAWALS_METRICS, WALLET_ID1_METRIC_TAG, WALLET_ID2_METRIC_TAG,
-    WITHDRAWAL_VOLUME_METRIC,
+    wallet_id_tag, ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, EXTERNAL_MATCH_METRIC_TAG,
+    FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC,
+    NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
 };
 
 /// Get the human-readable asset and volume of
@@ -74,20 +73,18 @@ pub fn maybe_record_transfer_metrics(transfer: &Option<ExternalTransferWithAuth>
 pub fn record_match_volume(
     res: &MatchResult,
     is_external_match: bool,
-    wallet_id1: Option<WalletIdentifier>,
-    wallet_id2: Option<WalletIdentifier>,
+    wallet_ids: &[WalletIdentifier],
 ) {
-    let mut labels = vec![];
+    // Tag with wallet IDs if provided
+    let mut labels: Vec<_> = wallet_ids
+        .iter()
+        .enumerate()
+        .map(|(i, wallet_id)| (wallet_id_tag(i + 1), wallet_id.to_string()))
+        .collect();
+
     // Label the match as external in the metric
     if is_external_match {
         labels.push((EXTERNAL_MATCH_METRIC_TAG.to_string(), "true".to_string()));
-    }
-    // Add wallet ID tags if provided
-    if let Some(wallet_id) = wallet_id1 {
-        labels.push((WALLET_ID1_METRIC_TAG.to_string(), wallet_id.to_string()));
-    }
-    if let Some(wallet_id) = wallet_id2 {
-        labels.push((WALLET_ID2_METRIC_TAG.to_string(), wallet_id.to_string()));
     }
 
     record_volume_with_tags(&res.base_mint, res.base_amount, MATCH_BASE_VOLUME_METRIC, &labels);

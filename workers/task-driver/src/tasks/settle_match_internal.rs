@@ -275,8 +275,7 @@ impl Task for SettleMatchInternalTask {
                 record_match_volume(
                     &self.match_result,
                     false, // is_external_match
-                    Some(self.wallet_id1),
-                    Some(self.wallet_id2),
+                    &[self.wallet_id1, self.wallet_id2],
                 );
 
                 self.task_state = SettleMatchInternalTaskState::Completed;

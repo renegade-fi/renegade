@@ -333,6 +333,7 @@ impl OnChainEventListenerExecutor {
     ) -> Result<bool, OnChainEventListenerError> {
         let matches = self.darkpool_client().find_external_matches_in_tx(tx).await?;
         let external_match = !matches.is_empty();
+        let wallet_ids = wallet_id.into_iter().collect::<Vec<_>>();
 
         // Record metrics for each match
         // TODO: Record a fill on the internal order. We don't do this for now to keep
@@ -344,8 +345,7 @@ impl OnChainEventListenerExecutor {
             renegade_metrics::record_match_volume(
                 &match_result,
                 true, // is_external_match
-                wallet_id,
-                None, // wallet_id2
+                &wallet_ids,
             );
         }
 
