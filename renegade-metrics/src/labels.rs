@@ -54,6 +54,8 @@ pub const NUM_EVENT_EXPORT_FAILURES_METRIC: &str = "num_event_export_failures";
 
 /// Metric tag for the asset of a deposit/withdrawal
 pub const ASSET_METRIC_TAG: &str = "asset";
+/// Metric tag for the base asset of a match
+pub const BASE_ASSET_METRIC_TAG: &str = "base_asset";
 /// Metric tag for whether a match is external
 pub const EXTERNAL_MATCH_METRIC_TAG: &str = "is_external_match";
 /// Helper to generate wallet ID tag names

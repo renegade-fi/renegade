@@ -8,9 +8,10 @@ use num_bigint::BigUint;
 use util::hex::biguint_to_hex_addr;
 
 use crate::labels::{
-    wallet_id_tag, ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC, EXTERNAL_MATCH_METRIC_TAG,
-    FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC, MATCH_QUOTE_VOLUME_METRIC,
-    NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS, WITHDRAWAL_VOLUME_METRIC,
+    wallet_id_tag, ASSET_METRIC_TAG, BASE_ASSET_METRIC_TAG, DEPOSIT_VOLUME_METRIC,
+    EXTERNAL_MATCH_METRIC_TAG, FEES_COLLECTED_METRIC, MATCH_BASE_VOLUME_METRIC,
+    MATCH_QUOTE_VOLUME_METRIC, NUM_DEPOSITS_METRICS, NUM_WITHDRAWALS_METRICS,
+    WITHDRAWAL_VOLUME_METRIC,
 };
 
 /// Get the human-readable asset and volume of
@@ -88,6 +89,10 @@ pub fn record_match_volume(
     }
 
     record_volume_with_tags(&res.base_mint, res.base_amount, MATCH_BASE_VOLUME_METRIC, &labels);
+
+    // Tag the base asset of the match
+    let (base_asset, _) = get_asset_and_volume(&res.base_mint, res.base_amount);
+    labels.push((BASE_ASSET_METRIC_TAG.to_string(), base_asset));
     record_volume_with_tags(&res.quote_mint, res.quote_amount, MATCH_QUOTE_VOLUME_METRIC, &labels);
 }
 
