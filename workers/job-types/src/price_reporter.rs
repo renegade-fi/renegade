@@ -1,5 +1,5 @@
 //! Defines all possible jobs for the PriceReporter.
-use common::types::TimestampedPrice;
+use common::types::price::TimestampedPrice;
 use common::types::{exchange::PriceReporterState, token::Token};
 use tokio::sync::oneshot::{self, Receiver as TokioReceiver, Sender as TokioSender};
 use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};

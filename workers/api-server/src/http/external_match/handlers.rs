@@ -11,7 +11,7 @@
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use circuit_types::{fees::FeeTake, r#match::ExternalMatchResult};
-use common::types::{hmac::HmacKey, TimestampedPrice};
+use common::types::{hmac::HmacKey, price::TimestampedPrice};
 use constants::Scalar;
 use external_api::http::external_match::{
     ApiExternalQuote, AssembleExternalMatchRequest, ExternalMatchRequest, ExternalMatchResponse,

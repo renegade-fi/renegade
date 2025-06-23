@@ -4,7 +4,7 @@ use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
 
-use crate::types::TimestampedPrice;
+use crate::types::price::TimestampedPrice;
 
 use super::{Order, OrderIdentifier};
 

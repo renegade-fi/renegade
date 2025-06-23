@@ -6,7 +6,7 @@
 use std::fmt;
 
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
-use common::types::{token::Token, Price};
+use common::types::{price::Price, token::Token};
 use num_bigint::BigUint;
 use serde::{
     de::{self, Error as DeserializeError, SeqAccess, Visitor},

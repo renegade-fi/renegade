@@ -9,12 +9,12 @@ use alloy::{
 use circuit_types::{fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use common::types::{
     hmac::HmacKey,
+    price::TimestampedPrice,
     proof_bundles::{
         AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
     },
     token::Token,
     wallet::Order,
-    TimestampedPrice,
 };
 use constants::{EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use darkpool_client::DarkpoolClient;

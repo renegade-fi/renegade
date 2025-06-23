@@ -1,7 +1,7 @@
 //! Defines abstract connection interfaces that can be streamed from
 
 use async_trait::async_trait;
-use common::types::{exchange::Exchange, token::Token, Price};
+use common::types::{exchange::Exchange, price::Price, token::Token};
 use futures::stream::StreamExt;
 use futures_util::{
     stream::{SplitSink, SplitStream},

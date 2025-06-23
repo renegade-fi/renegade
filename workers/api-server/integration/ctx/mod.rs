@@ -5,7 +5,7 @@
 
 use alloy::primitives::Address;
 use circuit_types::{fixed_point::FixedPoint, Amount};
-use common::types::{hmac::HmacKey, token::Token, TimestampedPrice};
+use common::types::{hmac::HmacKey, price::TimestampedPrice, token::Token};
 use config::RelayerConfig;
 use constants::Scalar;
 use darkpool_client::conversion::address_to_biguint;

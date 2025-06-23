@@ -17,7 +17,7 @@ use circuit_types::{
     r#match::{BoundedMatchResult, ExternalMatchResult},
     Amount,
 };
-use common::types::TimestampedPrice;
+use common::types::price::TimestampedPrice;
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
 use num_bigint::BigUint;
 use num_traits::Zero;

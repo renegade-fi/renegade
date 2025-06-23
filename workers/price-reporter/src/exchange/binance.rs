@@ -8,8 +8,8 @@ use std::{
 use async_trait::async_trait;
 use common::types::{
     exchange::{Exchange, PriceReport},
+    price::Price,
     token::Token,
-    Price,
 };
 use futures_util::{Sink, Stream, StreamExt};
 use serde_json::Value;

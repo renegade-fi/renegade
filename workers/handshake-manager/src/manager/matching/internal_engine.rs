@@ -2,13 +2,13 @@
 
 use std::collections::HashSet;
 
-use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
+use circuit_types::r#match::MatchResult;
 use common::types::{
     network_order::NetworkOrder,
+    price::TimestampedPriceFp,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{SettleMatchInternalTaskDescriptor, TaskDescriptor},
     wallet::{Order, OrderIdentifier, Wallet, WalletIdentifier},
-    TimestampedPrice,
 };
 use tracing::{error, info, instrument};
 
@@ -56,7 +56,6 @@ impl HandshakeExecutor {
 
         // Sample a price to match the order at
         let ts_price = self.get_execution_price_for_order(&network_order.id).await?;
-        let price = FixedPoint::from_f64_round_down(ts_price.price);
 
         // Try to find a match iteratively, we wrap this in a retry loop in case
         // settlement fails on a match
@@ -64,7 +63,7 @@ impl HandshakeExecutor {
             self.get_internal_match_candidates(order_id, &my_order, &wallet).await?;
         while !match_candidates.is_empty() {
             let (other_order_id, match_res) = match self
-                .find_match(&my_order, &my_balance, price, match_candidates.iter())
+                .find_match(&my_order, &my_balance, ts_price.price(), match_candidates.iter())
                 .await?
             {
                 Some(match_res) => match_res,
@@ -131,7 +130,7 @@ impl HandshakeExecutor {
         &self,
         order_id1: OrderIdentifier,
         order_id2: OrderIdentifier,
-        price: TimestampedPrice,
+        price: TimestampedPriceFp,
         match_result: MatchResult,
     ) -> Result<(), HandshakeManagerError> {
         // Fetch state elements needed for settlement

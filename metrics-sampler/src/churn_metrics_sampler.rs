@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use common::types::{
-    exchange::PriceReporterState, network_order::NetworkOrderState, token::Token,
-    wallet::order_metadata::OrderMetadata, Price,
+    exchange::PriceReporterState, network_order::NetworkOrderState, price::Price, token::Token,
+    wallet::order_metadata::OrderMetadata,
 };
 use futures::future::join_all;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};

@@ -12,18 +12,17 @@ use std::collections::HashSet;
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
-    order::OrderSide,
     r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
     Amount,
 };
 use common::types::{
+    price::TimestampedPriceFp,
     tasks::{
         SettleExternalMatchTaskDescriptor, SettleMalleableExternalMatchTaskDescriptor,
         TaskDescriptor,
     },
     token::Token,
     wallet::{Order, OrderIdentifier},
-    TimestampedPrice,
 };
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
@@ -72,7 +71,7 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         // Sample an execution price if one is not provided
         let ts_price = match options.price {
-            Some(price) => price,
+            Some(price) => price.into(),
             None => {
                 let base = Token::from_addr_biguint(&order.base_mint);
                 let quote = Token::from_addr_biguint(&order.quote_mint);
@@ -106,7 +105,7 @@ impl HandshakeExecutor {
         &self,
         order: Order,
         response_topic: String,
-        ts_price: TimestampedPrice,
+        ts_price: TimestampedPriceFp,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         let base = Token::from_addr_biguint(&order.base_mint);
@@ -121,7 +120,7 @@ impl HandshakeExecutor {
 
         // Get all orders that consent to external matching
         let mut matchable_orders = self.get_external_match_candidates(&order).await?;
-        let price = ts_price.as_fixed_point();
+        let price = ts_price.price;
         let min_quote = options.min_quote_amount.unwrap_or_default();
 
         // Mock a balance for the external order, assuming it's fully capitalized
@@ -179,15 +178,15 @@ impl HandshakeExecutor {
     async fn handle_match(
         &self,
         order_id: OrderIdentifier,
-        price: TimestampedPrice,
+        ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         if options.bounded_match {
-            self.handle_bounded_match(order_id, price, match_res, response_topic, options).await
+            self.handle_bounded_match(order_id, ts_price, match_res, response_topic, options).await
         } else {
-            self.handle_exact_match(order_id, price, match_res, response_topic, options).await
+            self.handle_exact_match(order_id, ts_price, match_res, response_topic, options).await
         }
     }
 
@@ -197,7 +196,7 @@ impl HandshakeExecutor {
     async fn handle_exact_match(
         &self,
         other_order_id: OrderIdentifier,
-        price: TimestampedPrice,
+        ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
@@ -212,7 +211,7 @@ impl HandshakeExecutor {
         let settle_res = self
             .try_settle_external_match(
                 other_order_id,
-                price,
+                ts_price,
                 match_res,
                 response_topic.clone(),
                 options,
@@ -235,7 +234,7 @@ impl HandshakeExecutor {
     async fn try_settle_external_match(
         &self,
         internal_order_id: OrderIdentifier,
-        price: TimestampedPrice,
+        ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
@@ -245,7 +244,7 @@ impl HandshakeExecutor {
             options.bundle_duration,
             internal_order_id,
             wallet_id,
-            price,
+            ts_price,
             match_res,
             response_topic,
         );
@@ -261,13 +260,13 @@ impl HandshakeExecutor {
     async fn handle_bounded_match(
         &self,
         order_id: OrderIdentifier,
-        price: TimestampedPrice,
+        ts_price: TimestampedPriceFp,
         match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         // Build a bounded match result
-        let price_fp = price.as_fixed_point();
+        let price_fp = ts_price.price();
         let (min_amount, max_amount) =
             self.derive_match_bounds(&order_id, price_fp, match_res.base_amount).await?;
         let bounded_res = BoundedMatchResult {
@@ -337,23 +336,19 @@ impl HandshakeExecutor {
     /// order to fulfill the quote amount constraints
     fn setup_exact_quote_amount(
         &self,
-        original_price: TimestampedPrice,
+        original_price: TimestampedPriceFp,
         order: &mut Order,
         options: &mut ExternalMatchingEngineOptions,
-    ) -> Result<Option<TimestampedPrice>, HandshakeManagerError> {
+    ) -> Result<Option<TimestampedPriceFp>, HandshakeManagerError> {
         // If no exact quote is configured, the original price will be used
         let quote_amount = match options.exact_quote_amount {
             Some(amount) => amount,
             None => return Ok(Some(original_price)),
         };
-        let price_fp = original_price.as_fixed_point();
+        let price_fp = original_price.price();
 
         // Compute a base amount that we will use to derive the modified price
-        // We round to give price improvement to the internal party
-        let base_amount_scalar = match order.side {
-            OrderSide::Buy => price_fp.ceil_div_int(quote_amount),
-            OrderSide::Sell => price_fp.floor_div_int(quote_amount),
-        };
+        let base_amount_scalar = price_fp.ceil_div_int(quote_amount);
         let base_amount = scalar_to_u128(&base_amount_scalar);
 
         // Update the order and options to reflect the new amounts
@@ -362,8 +357,8 @@ impl HandshakeExecutor {
 
         // Compute the implied price for the new amounts
         let price_fp = compute_implied_price(base_amount, quote_amount);
-        let new_price = TimestampedPrice::new(price_fp.to_f64());
-        if check_price_override_tolerance(new_price.price, original_price.price) {
+        let new_price = TimestampedPriceFp::new(price_fp);
+        if check_price_override_tolerance(new_price.price.to_f64(), original_price.price.to_f64()) {
             Ok(Some(new_price))
         } else {
             Ok(None)

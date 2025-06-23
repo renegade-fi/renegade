@@ -15,7 +15,7 @@ use std::{
 };
 
 use atomic_float::AtomicF64;
-use common::types::{exchange::Exchange, token::Token, Price};
+use common::types::{exchange::Exchange, price::Price, token::Token};
 pub use connection::ExchangeConnection;
 
 use futures_util::Stream;

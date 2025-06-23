@@ -11,9 +11,10 @@ use circuit_types::{
 };
 use common::types::{
     chain::Chain,
+    price::TimestampedPrice,
     tasks::{HistoricalTask, TaskQueueKey},
     wallet::{Order, OrderIdentifier, WalletIdentifier},
-    MatchingPoolName, TimestampedPrice,
+    MatchingPoolName,
 };
 use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};

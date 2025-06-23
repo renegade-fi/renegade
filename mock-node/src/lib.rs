@@ -14,7 +14,7 @@ use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
     default_wrapper::{default_option, DefaultOption},
-    types::Price,
+    types::price::Price,
     worker::{new_worker_failure_channel, Worker},
 };
 use config::RelayerConfig;

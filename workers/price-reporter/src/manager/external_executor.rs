@@ -11,8 +11,9 @@ use common::{
     default_wrapper::DefaultOption,
     types::{
         exchange::{Exchange, PriceReporterState},
+        price::Price,
         token::Token,
-        CancelChannel, Price,
+        CancelChannel,
     },
 };
 use constants::in_bootstrap_mode;
