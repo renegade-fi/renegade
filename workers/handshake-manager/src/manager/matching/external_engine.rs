@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use circuit_types::{
     balance::Balance,
     fixed_point::FixedPoint,
+    order::OrderSide,
     r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
     Amount,
 };
@@ -46,7 +47,7 @@ use super::matching_order_filter;
 ///
 /// This is intentionally very low, as the quote amount should only be
 /// overridden for very small differences that amount to rounding
-const MAX_QUOTE_OVERRIDE_DIFF: f64 = 0.000001;
+const MAX_PRICE_OVERRIDE_DIFF: f64 = 0.000001;
 /// The maximum one-sided range to allow on a malleable match
 ///
 /// That is, when emitting a bounded match, the range of the match is:
@@ -79,16 +80,13 @@ impl HandshakeExecutor {
             },
         };
 
-        // If we're using an exact quote amount, we should modify the order's base
-        // amount and min fill size to ensure the order is matchable
-        if let Some(quote_amount) = options.exact_quote_amount {
-            let price_fp = ts_price.as_fixed_point();
-            let base_amount_scalar = price_fp.ceil_div_int(quote_amount);
-            let base_amount = scalar_to_u128(&base_amount_scalar);
-            let min_quote = price_fp.floor_mul_int(order.amount);
-            order.amount = base_amount;
-            options.min_quote_amount = Some(scalar_to_u128(&min_quote));
-        }
+        let ts_price = match self.setup_exact_quote_amount(ts_price, &mut order, &mut options)? {
+            Some(price) => price,
+            None => {
+                self.handle_no_match(response_topic);
+                return Ok(());
+            },
+        };
 
         // Run the matching engine
         match self
@@ -200,13 +198,10 @@ impl HandshakeExecutor {
         &self,
         other_order_id: OrderIdentifier,
         price: TimestampedPrice,
-        mut match_res: MatchResult,
+        match_res: MatchResult,
         response_topic: String,
         options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
-        // Possibly override the quote amount if an exact quote amount is specified
-        self.maybe_override_quote_amount(&mut match_res, options)?;
-
         // If the request only requires a quote, we can stop here
         if options.only_quote {
             self.forward_quote(response_topic.clone(), match_res);
@@ -233,30 +228,6 @@ impl HandshakeExecutor {
                 );
                 Err(e)
             },
-        }
-    }
-
-    /// Possibly override the quote amount if an exact quote amount is specified
-    /// and the amount may be overridden
-    fn maybe_override_quote_amount(
-        &self,
-        match_res: &mut MatchResult,
-        options: &ExternalMatchingEngineOptions,
-    ) -> Result<(), HandshakeManagerError> {
-        let exact_quote = match options.exact_quote_amount {
-            Some(amount) => amount,
-            None => return Ok(()),
-        };
-
-        let override_diff =
-            (match_res.quote_amount as f64 - exact_quote as f64) / match_res.quote_amount as f64;
-        if override_diff.abs() < MAX_QUOTE_OVERRIDE_DIFF {
-            match_res.quote_amount = exact_quote;
-            Ok(())
-        } else {
-            Err(HandshakeManagerError::invalid_request(
-                "quote difference too large, cannot override with exact quote amount",
-            ))
         }
     }
 
@@ -355,6 +326,50 @@ impl HandshakeExecutor {
 
     // --- Helper Functions --- //
 
+    /// Setup an exact quote amount
+    ///
+    /// This requires tweaking the order's base amount and the price at which
+    /// the order executes. We verify that the tweaks do not move the price a
+    /// material amount. If this is not possible, we return `None` to indicate
+    /// that an exact match cannot be found
+    ///
+    /// The price returned is the price at which the match should execute in
+    /// order to fulfill the quote amount constraints
+    fn setup_exact_quote_amount(
+        &self,
+        original_price: TimestampedPrice,
+        order: &mut Order,
+        options: &mut ExternalMatchingEngineOptions,
+    ) -> Result<Option<TimestampedPrice>, HandshakeManagerError> {
+        // If no exact quote is configured, the original price will be used
+        let quote_amount = match options.exact_quote_amount {
+            Some(amount) => amount,
+            None => return Ok(Some(original_price)),
+        };
+        let price_fp = original_price.as_fixed_point();
+
+        // Compute a base amount that we will use to derive the modified price
+        // We round to give price improvement to the internal party
+        let base_amount_scalar = match order.side {
+            OrderSide::Buy => price_fp.ceil_div_int(quote_amount),
+            OrderSide::Sell => price_fp.floor_div_int(quote_amount),
+        };
+        let base_amount = scalar_to_u128(&base_amount_scalar);
+
+        // Update the order and options to reflect the new amounts
+        order.amount = base_amount;
+        options.min_quote_amount = Some(quote_amount);
+
+        // Compute the implied price for the new amounts
+        let price_fp = compute_implied_price(base_amount, quote_amount);
+        let new_price = TimestampedPrice::new(price_fp.to_f64());
+        if check_price_override_tolerance(new_price.price, original_price.price) {
+            Ok(Some(new_price))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Enqueue a settlement task
     async fn enqueue_settlement_task<T: Into<TaskDescriptor>>(
         &self,
@@ -411,4 +426,21 @@ fn mul_amount_f64(amount: Amount, multiplier: f64) -> Amount {
     let amount_f64 = amount as f64;
     let product = amount_f64 * multiplier;
     product.floor() as Amount
+}
+
+/// Compute the implied price for a given base and quote amount
+///
+/// We ceil div here because the `quote_amount` is constrained to equal the
+/// floor div of the price times the `base_amount` in the matching engine
+/// constraints. So we need `price * base_amount >= quote_amount` to hold.
+fn compute_implied_price(base_amount: Amount, quote_amount: Amount) -> FixedPoint {
+    let base_amount_fp = FixedPoint::from(base_amount);
+    let quote_amount_fp = FixedPoint::from(quote_amount);
+    quote_amount_fp.ceil_div(&base_amount_fp)
+}
+
+/// Check that two prices are within the price override tolerance
+fn check_price_override_tolerance(new_price: f64, old_price: f64) -> bool {
+    let override_diff = (new_price - old_price) / old_price;
+    override_diff.abs() < MAX_PRICE_OVERRIDE_DIFF
 }

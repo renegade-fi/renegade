@@ -16,7 +16,7 @@ use renegade_crypto::fields::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{scalar, SCALAR_ONE};
+use crate::{scalar, Amount, SCALAR_ONE};
 
 #[cfg(feature = "proof-system-types")]
 use {
@@ -133,6 +133,8 @@ impl FixedPoint {
         }
     }
 
+    // --- Conversion --- //
+
     /// Construct a fixed point value from its `Scalar` representation
     pub fn from_repr(repr: Scalar) -> Self {
         Self { repr }
@@ -140,8 +142,7 @@ impl FixedPoint {
 
     /// Create a new fixed point representation of the given u64
     pub fn from_integer(val: u64) -> Self {
-        let val_shifted = Scalar::from(val) * scalar!(*TWO_TO_M_SCALAR);
-        Self { repr: val_shifted }
+        (val as u128).into()
     }
 
     /// Create a new fixed point representation, rounding down to the nearest
@@ -184,6 +185,8 @@ impl FixedPoint {
         self.to_f64() as f32
     }
 
+    // --- Division --- //
+
     /// Rounds down the given value to an integer and returns the integer
     /// representation
     pub fn floor(&self) -> Scalar {
@@ -192,6 +195,26 @@ impl FixedPoint {
         self_bigint >>= DEFAULT_FP_PRECISION;
 
         bigint_to_scalar(&self_bigint)
+    }
+
+    /// Divides one fixed point by another, rounding down to the nearest
+    /// representable real value
+    pub fn floor_div(&self, rhs: &Self) -> Self {
+        let self_repr = scalar_to_biguint(&self.repr) * &*TWO_TO_M;
+        let rhs_repr = scalar_to_biguint(&rhs.repr);
+        let q = self_repr.div_floor(&rhs_repr);
+
+        Self { repr: biguint_to_scalar(&q) }
+    }
+
+    /// Divides one fixed point by another, rounding up to the nearest
+    /// representable real value
+    pub fn ceil_div(&self, rhs: &Self) -> Self {
+        let self_repr = scalar_to_biguint(&self.repr) * &*TWO_TO_M;
+        let rhs_repr = scalar_to_biguint(&rhs.repr);
+        let q = self_repr.div_ceil(&rhs_repr);
+
+        Self { repr: biguint_to_scalar(&q) }
     }
 
     /// Multiplies the fixed point by the given integer, floors the result
@@ -240,6 +263,13 @@ impl From<f32> for FixedPoint {
     fn from(val: f32) -> Self {
         let val_f64 = val as f64;
         Self::from_f64_round_down(val_f64)
+    }
+}
+
+impl From<Amount> for FixedPoint {
+    fn from(amount: Amount) -> Self {
+        let repr = Scalar::from(amount) * scalar!(*TWO_TO_M_SCALAR);
+        Self { repr }
     }
 }
 
@@ -660,6 +690,34 @@ mod fixed_point_tests {
 
         check_within_fractional_tolerance(res1.to_f64(), expected1 as f64, F64_MUL_TOLERANCE);
         check_within_fractional_tolerance(res2.to_f64(), expected2 as f64, F64_MUL_TOLERANCE);
+    }
+
+    /// Tests floor division between two fixed points
+    #[test]
+    fn test_floor_div() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+
+        let fixed1 = FixedPoint::from_f64_round_down(fp1);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2);
+
+        let res = fixed1.floor_div(&fixed2);
+        let expected = fp1 / fp2;
+        check_within_tolerance(res.to_f64(), expected, F64_TOLERANCE);
+    }
+
+    /// Tests ceil division between two fixed points
+    #[test]
+    fn test_ceil_div() {
+        let mut rng = thread_rng();
+        let (fp1, fp2) = rng.gen();
+
+        let fixed1 = FixedPoint::from_f64_round_down(fp1);
+        let fixed2 = FixedPoint::from_f64_round_down(fp2);
+
+        let res = fixed1.ceil_div(&fixed2);
+        let expected = fp1 / fp2;
+        check_within_tolerance(res.to_f64(), expected, F64_TOLERANCE);
     }
 
     /// Test the floor division with integer method
