@@ -3,9 +3,9 @@
 use circuit_types::{balance::Balance, fixed_point::FixedPoint, r#match::MatchResult, Amount};
 use common::types::{
     exchange::PriceReporterState,
+    price::{TimestampedPrice, TimestampedPriceFp},
     token::Token,
     wallet::{Order, OrderIdentifier},
-    TimestampedPrice,
 };
 use util::{err_str, matching_engine::match_orders_with_min_base_amount};
 
@@ -91,7 +91,7 @@ impl HandshakeExecutor {
     pub(crate) async fn get_execution_price_for_order(
         &self,
         order: &OrderIdentifier,
-    ) -> Result<TimestampedPrice, HandshakeManagerError> {
+    ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
         self.get_execution_price(&base, &quote).await
     }
@@ -101,7 +101,7 @@ impl HandshakeExecutor {
         &self,
         base: &Token,
         quote: &Token,
-    ) -> Result<TimestampedPrice, HandshakeManagerError> {
+    ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
         let base_addr = base.get_addr().to_string();
         let quote_addr = quote.get_addr().to_string();
         let price_recv = self.request_price(base.clone(), quote.clone())?;
@@ -120,7 +120,6 @@ impl HandshakeExecutor {
         let corrected_price = price
             .get_decimal_corrected_price(base, quote)
             .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
-
-        Ok(corrected_price)
+        Ok(corrected_price.into())
     }
 }

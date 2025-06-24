@@ -18,10 +18,10 @@ use circuits::zk_circuits::proof_linking::link_sized_commitments_match_settle;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
 };
+use common::types::price::{TimestampedPrice, TimestampedPriceFp};
 use common::types::proof_bundles::{MatchBundle, ProofBundle, ValidMatchSettleBundle};
 use common::types::tasks::SettleMatchInternalTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
-use common::types::TimestampedPrice;
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::Wallet,
@@ -161,7 +161,7 @@ impl From<DarkpoolClientError> for SettleMatchInternalTaskError {
 /// Describe the settle match internal task
 pub struct SettleMatchInternalTask {
     /// The price at which the match was executed
-    execution_price: TimestampedPrice,
+    execution_price: TimestampedPriceFp,
     /// The identifier of the first order
     order_id1: OrderIdentifier,
     /// The identifier of the second order
@@ -364,7 +364,7 @@ impl SettleMatchInternalTask {
         self.state.nullify_orders(nullifier2).await?;
 
         // Transition the orders to the `Filled` state if necessary
-        let price = self.execution_price;
+        let price: TimestampedPrice = self.execution_price.into();
         record_order_fill(self.order_id1, &self.match_result, price, &self.state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
@@ -455,7 +455,7 @@ impl SettleMatchInternalTask {
         let commitment_witness0 = &self.order1_validity_witness.commitment_witness;
         let commitment_witness1 = &self.order2_validity_witness.commitment_witness;
 
-        let price = self.execution_price.as_fixed_point();
+        let price = self.execution_price.price();
         let order0 = commitment_witness0.order.clone();
         let balance0 = commitment_witness0.balance_send.clone();
         let balance_receive0 = commitment_witness0.balance_receive.clone();
@@ -587,17 +587,18 @@ impl SettleMatchInternalTask {
         let fee_take0 = compute_fee_obligation(relayer_fee0, order_side0, &self.match_result);
         let fee_take1 = compute_fee_obligation(relayer_fee1, order_side1, &self.match_result);
 
+        let price: TimestampedPrice = self.execution_price.into();
         let fill_event0 = RelayerEventType::Fill(FillEvent::new(
             self.wallet_id1,
             self.order_id1,
-            self.execution_price,
+            price,
             self.match_result.clone(),
             fee_take0,
         ));
         let fill_event1 = RelayerEventType::Fill(FillEvent::new(
             self.wallet_id2,
             self.order_id2,
-            self.execution_price,
+            price,
             self.match_result.clone(),
             fee_take1,
         ));

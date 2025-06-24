@@ -10,10 +10,10 @@ use async_trait::async_trait;
 use circuit_types::{fixed_point::FixedPoint, Amount};
 use common::types::{
     chain::Chain,
+    price::Price,
     tasks::UpdateWalletTaskDescriptor,
     token::{get_all_tokens, Token},
     wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
-    Price,
 };
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;

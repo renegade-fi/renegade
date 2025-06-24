@@ -254,7 +254,7 @@ async fn test_min_fill_size__quote_denominated__equal_to_quote_amount(
     };
 
     // Setup an order to match against, then fetch a quote
-    let order = ctx.build_matching_order_with_amount(&external_order, base_amount)?;
+    let order = ctx.build_matching_order_with_amount(&external_order, base_amount + 1)?;
     ctx.setup_wallet_with_order(order).await?;
     let resp = ctx.request_external_quote(&external_order).await?;
 

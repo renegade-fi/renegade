@@ -140,9 +140,9 @@ mod tests {
     use std::cmp::Reverse;
 
     use common::types::{
+        price::TimestampedPrice,
         wallet::order_metadata::{OrderMetadata, OrderState},
         wallet_mocks::mock_order,
-        TimestampedPrice,
     };
     use itertools::Itertools;
     use rand::{thread_rng, Rng, RngCore};

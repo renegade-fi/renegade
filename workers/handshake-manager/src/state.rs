@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use super::error::HandshakeManagerError;
 use common::types::{
     handshake::{ConnectionRole, HandshakeState},
+    price::TimestampedPrice,
     wallet::OrderIdentifier,
-    TimestampedPrice,
 };
 use constants::Scalar;
 use crossbeam::channel::Sender;

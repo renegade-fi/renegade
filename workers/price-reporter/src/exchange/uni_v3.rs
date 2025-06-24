@@ -1,7 +1,7 @@
 //! Defines logic for streaming from decentralized exchanges
 
 use async_trait::async_trait;
-use common::types::{token::Token, Price};
+use common::types::{price::Price, token::Token};
 use core::time::Duration;
 use futures::StreamExt;
 use futures_util::Stream;

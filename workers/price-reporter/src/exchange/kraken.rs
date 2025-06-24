@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common::types::{exchange::Exchange, token::Token, Price};
+use common::types::{exchange::Exchange, price::Price, token::Token};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use lazy_static::lazy_static;
 use serde_json::{json, Value};

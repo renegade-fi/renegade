@@ -73,7 +73,7 @@ impl StateApplicator {
 #[cfg(test)]
 mod tests {
     use common::types::{
-        wallet::order_metadata::OrderState, wallet_mocks::mock_order, TimestampedPrice,
+        price::TimestampedPrice, wallet::order_metadata::OrderState, wallet_mocks::mock_order,
     };
     use uuid::Uuid;
 

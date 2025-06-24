@@ -15,13 +15,13 @@ use circuits::zk_circuits::proof_linking::link_sized_commitments_atomic_match_se
 use circuits::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
 };
+use common::types::price::TimestampedPriceFp;
 use common::types::proof_bundles::{
     AtomicMatchSettleBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
     ValidMatchSettleAtomicBundle,
 };
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
-use common::types::TimestampedPrice;
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::bus_message::SystemBusMessage;
@@ -184,7 +184,7 @@ pub struct SettleMatchExternalTask {
     /// The ID of the wallet that the local node matched an order from
     internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
-    execution_price: TimestampedPrice,
+    execution_price: TimestampedPriceFp,
     /// The match result from the external matching engine
     match_res: MatchResult,
     /// The duration for which the external match bundle is valid
@@ -429,7 +429,7 @@ impl SettleMatchExternalTask {
             internal_party_receive_balance,
             relayer_fee,
             internal_party_fees,
-            price: self.execution_price.as_fixed_point(),
+            price: self.execution_price.price(),
             internal_party_public_shares,
         };
 

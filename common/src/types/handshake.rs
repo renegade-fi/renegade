@@ -5,7 +5,9 @@ use crossbeam::channel::Sender;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{wallet::OrderIdentifier, TimestampedPrice};
+use crate::types::price::TimestampedPrice;
+
+use super::wallet::OrderIdentifier;
 
 /// The role in an MPC network setup; either Dialer or Listener depending on
 /// which node initiates the connection
@@ -137,7 +139,7 @@ pub mod mocks {
     use rand::thread_rng;
     use uuid::Uuid;
 
-    use crate::types::TimestampedPrice;
+    use crate::types::price::TimestampedPrice;
 
     use super::{ConnectionRole, HandshakeState, State};
 

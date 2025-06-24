@@ -6,8 +6,8 @@ use ark_mpc::network::QuicTwoPartyNet;
 use circuit_types::{wallet::Nullifier, Amount};
 use common::types::{
     gossip::WrappedPeerId,
+    price::TimestampedPrice,
     wallet::{Order, OrderIdentifier},
-    TimestampedPrice,
 };
 use constants::SystemCurveGroup;
 use external_api::bus_message::gen_atomic_match_response_topic;

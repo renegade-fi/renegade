@@ -1,6 +1,6 @@
 //! Groups API types for order book API operations
 
-use common::types::Price;
+use common::types::price::Price;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{ApiNetworkOrder, DepthSide};

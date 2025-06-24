@@ -1,6 +1,6 @@
 //! Groups API definitions for handshake request response
 use common::types::{
-    gossip::WrappedPeerId, token::Token, wallet::OrderIdentifier, TimestampedPrice,
+    gossip::WrappedPeerId, price::TimestampedPrice, token::Token, wallet::OrderIdentifier,
 };
 use std::collections::HashMap;
 use uuid::Uuid;

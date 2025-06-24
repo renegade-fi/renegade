@@ -10,8 +10,8 @@ use std::{
 use atomic_float::AtomicF64;
 use common::types::{
     exchange::{Exchange, PriceReport, PriceReporterState},
+    price::Price,
     token::{default_exchange_stable, is_pair_named, Token},
-    Price,
 };
 use external_api::bus_message::{price_report_topic, SystemBusMessage};
 use itertools::Itertools;

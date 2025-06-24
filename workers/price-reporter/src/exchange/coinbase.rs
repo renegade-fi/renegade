@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common::types::{token::Token, Price};
+use common::types::{price::Price, token::Token};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use jsonwebtoken::{encode, Algorithm, EncodingKey as JwtEncodingKey, Header as JwtHeader};
 use reqwest::{

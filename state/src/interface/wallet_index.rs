@@ -162,12 +162,12 @@ mod test {
 
     use circuit_types::balance::Balance;
     use common::types::{
+        price::TimestampedPrice,
         wallet::{
             order_metadata::{OrderMetadata, OrderState, PartialOrderFill},
             OrderIdentifier, WalletIdentifier,
         },
         wallet_mocks::{mock_empty_wallet, mock_order},
-        TimestampedPrice,
     };
     use itertools::Itertools;
     use num_bigint::BigUint;

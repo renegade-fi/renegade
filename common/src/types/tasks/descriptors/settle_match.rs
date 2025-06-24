@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::{
     handshake::HandshakeState,
+    price::TimestampedPriceFp,
     proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, WalletIdentifier},
-    TimestampedPrice,
 };
 
 use super::TaskDescriptor;
@@ -19,7 +19,7 @@ use super::TaskDescriptor;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleMatchInternalTaskDescriptor {
     /// The price at which the match was executed
-    pub execution_price: TimestampedPrice,
+    pub execution_price: TimestampedPriceFp,
     /// The identifier of the first order
     pub order_id1: OrderIdentifier,
     /// The identifier of the second order
@@ -44,7 +44,7 @@ impl SettleMatchInternalTaskDescriptor {
     /// Constructor
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        execution_price: TimestampedPrice,
+        execution_price: TimestampedPriceFp,
         order_id1: OrderIdentifier,
         order_id2: OrderIdentifier,
         wallet_id1: WalletIdentifier,
@@ -88,7 +88,7 @@ pub struct SettleExternalMatchTaskDescriptor {
     /// The ID of the wallet that the local node matched an order from
     pub internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
-    pub execution_price: TimestampedPrice,
+    pub execution_price: TimestampedPriceFp,
     /// The match result from the external matching engine
     pub match_res: MatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
@@ -101,7 +101,7 @@ impl SettleExternalMatchTaskDescriptor {
         bundle_duration: Duration,
         internal_order_id: OrderIdentifier,
         internal_wallet_id: WalletIdentifier,
-        execution_price: TimestampedPrice,
+        execution_price: TimestampedPriceFp,
         match_res: MatchResult,
         atomic_match_bundle_topic: String,
     ) -> Self {

@@ -4,9 +4,9 @@ use std::collections::HashMap;
 
 use common::types::{
     exchange::PriceReporterState,
+    price::TimestampedPrice,
     token::{get_all_tokens, Token},
     wallet::OrderIdentifier,
-    TimestampedPrice,
 };
 use gossip_api::request_response::handshake::PriceVector;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};

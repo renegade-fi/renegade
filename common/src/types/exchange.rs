@@ -7,7 +7,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::{token::Token, Price, TimestampedPrice};
+use super::token::Token;
+use crate::types::price::{Price, TimestampedPrice};
 
 /// The identifier of an exchange
 #[allow(clippy::missing_docs_in_private_items, missing_docs)]

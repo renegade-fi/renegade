@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use common::types::{token::Token, Price};
+use common::types::{price::Price, token::Token};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use serde_json::{json, Value};
 use tracing::error;

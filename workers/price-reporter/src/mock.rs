@@ -4,10 +4,10 @@ use std::thread;
 
 use common::types::chain::Chain;
 use common::types::exchange::{PriceReport, PriceReporterState};
+use common::types::price::Price;
 use common::types::token::{
     set_default_chain, write_token_remaps, Token, USDC_TICKER, USDT_TICKER, USD_TICKER,
 };
-use common::types::Price;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::oneshot::Sender as OneshotSender;
