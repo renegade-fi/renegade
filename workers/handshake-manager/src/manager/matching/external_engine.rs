@@ -23,6 +23,7 @@ use common::types::{
     },
     token::Token,
     wallet::{Order, OrderIdentifier},
+    MatchingPoolName,
 };
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
@@ -119,7 +120,8 @@ impl HandshakeExecutor {
         );
 
         // Get all orders that consent to external matching
-        let mut matchable_orders = self.get_external_match_candidates(&order).await?;
+        let pool = options.matching_pool.clone();
+        let mut matchable_orders = self.get_external_match_candidates(&order, pool).await?;
         let price = ts_price.price;
         let min_quote = options.min_quote_amount.unwrap_or_default();
 
@@ -167,11 +169,16 @@ impl HandshakeExecutor {
     async fn get_external_match_candidates(
         &self,
         order: &Order,
+        matching_pool: Option<MatchingPoolName>,
     ) -> Result<HashSet<OrderIdentifier>, HandshakeManagerError> {
         let filter = matching_order_filter(order, true /* external */);
-        let matchable_orders = self.state.get_matchable_orders(filter).await?;
-        backfill_trace_field("num_candidates", matchable_orders.len());
-        Ok(HashSet::from_iter(matchable_orders))
+        let candidates = match matching_pool {
+            Some(pool) => self.state.get_matchable_orders_in_matching_pool(pool, filter).await?,
+            None => self.state.get_matchable_orders(filter).await?,
+        };
+
+        backfill_trace_field("num_candidates", candidates.len());
+        Ok(HashSet::from_iter(candidates))
     }
 
     /// Handle a match against an order
