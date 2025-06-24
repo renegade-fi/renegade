@@ -1,5 +1,6 @@
 //! Helpers for working with the integration node's state
 
+use common::types::{wallet::OrderIdentifier, MatchingPoolName};
 use eyre::Result;
 use state::State;
 
@@ -34,5 +35,22 @@ impl IntegrationTestCtx {
     /// Clear the state of the mock node
     pub async fn clear_state(&mut self) -> Result<()> {
         self.mock_node.clear_state(&TABLES_TO_CLEAR).await
+    }
+
+    /// Move a given order into the given matching pool
+    pub async fn move_order_into_pool(
+        &self,
+        oid: OrderIdentifier,
+        pool: MatchingPoolName,
+    ) -> Result<()> {
+        let state = self.state();
+        let pool_exists = state.matching_pool_exists(pool.clone()).await?;
+        if !pool_exists {
+            state.create_matching_pool(pool.clone()).await?;
+        }
+
+        let waiter = state.assign_order_to_matching_pool(oid, pool).await?;
+        waiter.await?;
+        Ok(())
     }
 }
