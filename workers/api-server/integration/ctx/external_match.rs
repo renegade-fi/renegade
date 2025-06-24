@@ -42,6 +42,7 @@ impl IntegrationTestCtx {
             allow_shared: false,
             receiver_address: None,
             updated_order: None,
+            matching_pool: None,
         };
 
         let resp = self.send_admin_req_raw(path, Method::POST, HeaderMap::default(), req).await?;
@@ -57,7 +58,7 @@ impl IntegrationTestCtx {
 
     /// Send an external match request
     pub async fn send_external_quote_req(&self, order: &ExternalOrder) -> Result<Response> {
-        let req = ExternalQuoteRequest { external_order: order.clone() };
+        let req = ExternalQuoteRequest { external_order: order.clone(), matching_pool: None };
 
         // Add admin auth then send the request
         let path = REQUEST_EXTERNAL_QUOTE_ROUTE;

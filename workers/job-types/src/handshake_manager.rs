@@ -8,6 +8,7 @@ use common::types::{
     gossip::WrappedPeerId,
     price::TimestampedPrice,
     wallet::{Order, OrderIdentifier},
+    MatchingPoolName,
 };
 use constants::SystemCurveGroup;
 use external_api::bus_message::gen_atomic_match_response_topic;
@@ -186,6 +187,12 @@ pub struct ExternalMatchingEngineOptions {
     pub exact_quote_amount: Option<Amount>,
     /// The minimum quote amount to use for a full fill
     pub min_quote_amount: Option<Amount>,
+    /// The matching pool to request a quote from
+    ///
+    /// If specified, the matching engine will only consider crossing orders in
+    /// the given pool. If unspecified, all orders are considered candidates for
+    /// a match
+    pub matching_pool: Option<MatchingPoolName>,
 }
 
 impl ExternalMatchingEngineOptions {
@@ -238,6 +245,12 @@ impl ExternalMatchingEngineOptions {
     /// Set the min quote amount
     pub fn with_min_quote_amount(mut self, amount: Amount) -> Self {
         self.min_quote_amount = Some(amount);
+        self
+    }
+
+    /// Set the matching pool
+    pub fn with_matching_pool(mut self, pool: Option<MatchingPoolName>) -> Self {
+        self.matching_pool = pool;
         self
     }
 }
