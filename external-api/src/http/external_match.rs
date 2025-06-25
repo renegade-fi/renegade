@@ -17,7 +17,7 @@ use circuit_types::{
     r#match::{BoundedMatchResult, ExternalMatchResult},
     Amount,
 };
-use common::types::price::TimestampedPrice;
+use common::types::{price::TimestampedPrice, MatchingPoolName};
 use constants::{Scalar, NATIVE_ASSET_ADDRESS};
 use num_bigint::BigUint;
 use num_traits::Zero;
@@ -96,8 +96,9 @@ pub struct ExternalMatchRequest {
     /// Whether or not to include gas estimation in the response
     #[serde(default)]
     pub do_gas_estimation: bool,
+    /// The matching pool to request a quote from
+    pub matching_pool: Option<MatchingPoolName>,
     /// The receiver address of the match, if not the message sender
-    #[serde(default)]
     pub receiver_address: Option<String>,
     /// The external order
     pub external_order: ExternalOrder,
@@ -120,6 +121,8 @@ pub struct MalleableExternalMatchResponse {
 /// The request type for a quote on an external order
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExternalQuoteRequest {
+    /// The matching pool to request a quote from
+    pub matching_pool: Option<MatchingPoolName>,
     /// The external order
     pub external_order: ExternalOrder,
 }
@@ -144,6 +147,8 @@ pub struct AssembleExternalMatchRequest {
     /// match. If false, the bundle will be exclusively held for some time
     #[serde(default)]
     pub allow_shared: bool,
+    /// The matching pool to request a quote from
+    pub matching_pool: Option<MatchingPoolName>,
     /// The receiver address of the match, if not the message sender
     #[serde(default)]
     pub receiver_address: Option<String>,
