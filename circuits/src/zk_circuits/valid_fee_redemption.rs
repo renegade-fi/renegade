@@ -41,12 +41,9 @@ pub struct ValidFeeRedemption<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized;
+>;
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     ValidFeeRedemption<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     fn circuit(
         statement: &ValidFeeRedemptionStatementVar<MAX_BALANCES, MAX_ORDERS>,
@@ -221,9 +218,7 @@ pub struct ValidFeeRedemptionWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The private shares of the wallet before update    
     pub old_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The blinded public shares of the wallet before update
@@ -249,10 +244,7 @@ pub struct ValidFeeRedemptionWitness<
 /// The statement type for the `VALID FEE REDEMPTION` circuit
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidFeeRedemptionStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidFeeRedemptionStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The Merkle root to which wallet inclusion is proven to
     pub wallet_root: MerkleRoot,
     /// The Merkle root to which note inclusion is proven to
@@ -279,8 +271,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     SingleProverCircuit for ValidFeeRedemption<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidFeeRedemptionWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
@@ -330,10 +320,7 @@ pub mod test_helpers {
     ) -> (
         ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>,
         ValidFeeRedemptionWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let mut rng = thread_rng();
 
         // Reset the note key to a pair with known decryption key
@@ -399,10 +386,7 @@ pub mod test_helpers {
     pub fn settle_note<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         wallet: &mut Wallet<MAX_BALANCES, MAX_ORDERS>,
         note: &Note,
-    ) -> usize
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> usize {
         let idx = find_balance_for_note(wallet, note);
 
         // Add the note to the balance
@@ -414,10 +398,7 @@ pub mod test_helpers {
     fn find_balance_for_note<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         wallet: &mut Wallet<MAX_BALANCES, MAX_ORDERS>,
         note: &Note,
-    ) -> usize
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> usize {
         // Attempt to find an existing balance in the wallet that matches the note's
         // mint
         for (index, balance) in wallet.balances.iter().enumerate() {

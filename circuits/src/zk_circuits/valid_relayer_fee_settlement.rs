@@ -45,13 +45,10 @@ pub struct ValidRelayerFeeSettlement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized;
+>;
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     ValidRelayerFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     fn circuit(
         statement: &ValidRelayerFeeSettlementStatementVar<MAX_BALANCES, MAX_ORDERS>,
@@ -345,9 +342,7 @@ pub struct ValidRelayerFeeSettlementWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The public shares of the sender before update
     pub sender_public_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The private shares of the sender before update
@@ -381,10 +376,7 @@ pub struct ValidRelayerFeeSettlementWitness<
 /// The statement type for `VALID RELAYER FEE SETTLEMENT` circuit
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidRelayerFeeSettlementStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidRelayerFeeSettlementStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The root of the Merkle tree that inclusion of the sender's wallet is
     /// proven with respect to
     pub sender_root: MerkleRoot,
@@ -417,8 +409,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     SingleProverCircuit for ValidRelayerFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidRelayerFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidRelayerFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
@@ -468,10 +458,7 @@ pub mod test_helpers {
     ) -> (
         ValidRelayerFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
         ValidRelayerFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let mut rng = thread_rng();
         let mut sender_wallet = sender_wallet.clone();
         let mut recipient_wallet = recipient_wallet.clone();

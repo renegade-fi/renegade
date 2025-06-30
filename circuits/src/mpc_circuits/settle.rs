@@ -32,10 +32,7 @@ pub fn settle_match<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
     AuthenticatedFeeTake,
     AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
     AuthenticatedWalletShare<MAX_BALANCES, MAX_ORDERS>,
-)
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+) {
     let mut party0_new_shares = party0_public_share.clone();
     let mut party1_new_shares = party1_public_share.clone();
 

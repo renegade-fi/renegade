@@ -51,8 +51,6 @@ pub type SizedValidReblind = ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGH
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Apply the constraints of `VALID REBLIND` to the given constraint system
     pub fn circuit(
@@ -203,9 +201,7 @@ pub struct ValidReblindWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The private secret shares of the original wallet
     pub original_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public secret shares of the original wallet
@@ -246,8 +242,6 @@ pub struct ValidReblindStatement {
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     SingleProverCircuit for ValidReblind<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Witness = ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
     type Statement = ValidReblindStatement;
@@ -310,10 +304,7 @@ pub mod test_helpers {
         const MERKLE_HEIGHT: usize,
     >(
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
-    ) -> (ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>, ValidReblindStatement)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (ValidReblindWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>, ValidReblindStatement) {
         // Build shares of the original wallet, then reblind it
         let (old_wallet_private_shares, old_wallet_public_shares) = create_wallet_shares(wallet);
         let (reblinded_private_shares, reblinded_public_shares) =

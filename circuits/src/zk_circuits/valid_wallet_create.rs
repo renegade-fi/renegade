@@ -33,9 +33,8 @@ pub type SizedValidWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>;
 #[derive(Clone, Debug)]
 pub struct ValidWalletCreate<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {}
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>
 {
     /// Applies constraints to the constraint system specifying the statement of
     /// VALID WALLET CREATE
@@ -58,7 +57,11 @@ where
         // wallet
         let public_blinder = statement.public_wallet_shares.blinder;
         let blinder_seed = witness.blinder_seed;
-        WalletGadget::validate_public_blinder_from_seed(public_blinder, blinder_seed, cs)?;
+        WalletGadget::<MAX_BALANCES, MAX_ORDERS>::validate_public_blinder_from_seed(
+            public_blinder,
+            blinder_seed,
+            cs,
+        )?;
 
         // Unblind the public shares then reconstruct the wallet
         let wallet = WalletGadget::wallet_from_shares(
@@ -103,10 +106,7 @@ where
 /// The witness for the VALID WALLET CREATE statement
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug)]
-pub struct ValidWalletCreateWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidWalletCreateWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The private secret shares of the new wallet
     pub private_wallet_share: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The blinder seed, used to validate the construction of the blinder
@@ -122,10 +122,7 @@ pub type SizedValidWalletCreateWitness = ValidWalletCreateWitness<MAX_BALANCES, 
 /// The statement type for the `VALID WALLET CREATE` circuit
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletCreateStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidWalletCreateStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The commitment to the secret shares of the wallet
     pub wallet_share_commitment: Scalar,
     /// The public secret shares of the wallet
@@ -141,8 +138,6 @@ pub type SizedValidWalletCreateStatement = ValidWalletCreateStatement<MAX_BALANC
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidWalletCreateWitness<MAX_BALANCES, MAX_ORDERS>;

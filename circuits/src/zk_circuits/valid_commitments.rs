@@ -53,9 +53,8 @@ pub struct ValidCommitments<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 /// `VALID COMMITMENTS` with default state element sizing
 pub type SizedValidCommitments = ValidCommitments<MAX_BALANCES, MAX_ORDERS>;
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidCommitments<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidCommitments<MAX_BALANCES, MAX_ORDERS>
 {
     /// The circuit constraints for VALID COMMITMENTS
     pub fn circuit(
@@ -84,9 +83,10 @@ where
         let relayer_fee_repr = witness.relayer_fee.repr;
         let max_match_fee_repr = base_wallet.max_match_fee.repr;
         FeeGadget::constrain_valid_fee(witness.relayer_fee, cs)?;
-        GreaterThanEqGadget::<FEE_BITS>::constrain_greater_than_eq(
+        GreaterThanEqGadget::constrain_greater_than_eq(
             max_match_fee_repr,
             relayer_fee_repr,
+            FEE_BITS,
             cs,
         )?;
 
@@ -341,10 +341,7 @@ where
 /// The witness type for `VALID COMMITMENTS`
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidCommitmentsWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidCommitmentsWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The private secret shares of the wallet that have been reblinded for
     /// match
     #[link_groups = "valid_reblind_commitments"]
@@ -388,8 +385,6 @@ pub struct ValidCommitmentsStatement {
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidCommitments<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidCommitmentsStatement;
     type Witness = ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>;
@@ -409,7 +404,7 @@ where
     /// To place the valid_reblind_commitments group, VALID COMMITMENTS
     /// specifies `None` for the layout
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let match_layout = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()?;
         let layout0 = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
         let layout1 = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK1);
 
@@ -455,10 +450,7 @@ pub mod test_helpers {
     /// Simply chooses a random order to match against from the wallet
     pub fn create_witness_and_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
-    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement) {
         // Split the wallet into secret shares
         let (private_share, public_share) = create_wallet_shares(wallet);
         create_witness_and_statement_with_shares(wallet, &public_share, &private_share)
@@ -473,10 +465,7 @@ pub mod test_helpers {
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
         public_share: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
-    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (ValidCommitmentsWitness<MAX_BALANCES, MAX_ORDERS>, ValidCommitmentsStatement) {
         // Choose an order and fee to match on
         let ind_order = 0;
         let order = wallet.orders[ind_order].clone();

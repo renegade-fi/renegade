@@ -78,9 +78,9 @@ impl FixedPointGadget {
             &[one_var, lhs_minus_rhs, zero_var, zero_var],
             &[(*TWO_TO_M_SCALAR - ScalarField::one()), -one, one, one],
         )?;
-        GreaterThanEqZeroGadget::<{ DEFAULT_FP_PRECISION + 1 }>::constrain_greater_than_eq_zero(
-            diff, cs,
-        )
+
+        const NUM_BITS: usize = DEFAULT_FP_PRECISION + 1;
+        GreaterThanEqZeroGadget::constrain_greater_than_eq_zero(diff, NUM_BITS, cs)
     }
 
     /// Constrain an integer to be equal to the floor of a fixed point value
@@ -97,7 +97,7 @@ impl FixedPointGadget {
             cs.lc(&[fp.repr, integer, zero_var, zero_var], &[one, -*TWO_TO_M_SCALAR, one, one])?;
 
         // This diff must be a positive value representable in at most M bits
-        BitRangeGadget::<{ DEFAULT_FP_PRECISION }>::constrain_bit_range(lhs_minus_rhs, cs)
+        BitRangeGadget::constrain_bit_range(lhs_minus_rhs, DEFAULT_FP_PRECISION, cs)
     }
 
     // === Arithmetic Ops === //
@@ -108,9 +108,9 @@ impl FixedPointGadget {
     /// Returns the integer representation directly
     pub fn floor(val: FixedPointVar, cs: &mut PlonkCircuit) -> Result<Variable, CircuitError> {
         // Floor div by the scaling factor
+        const NUM_BITS: usize = DEFAULT_FP_PRECISION + 1;
         let divisor = cs.mul_constant(cs.one(), &*TWO_TO_M_SCALAR).unwrap();
-        let (div, _) =
-            DivRemGadget::<{ DEFAULT_FP_PRECISION + 1 }>::div_rem(val.repr, divisor, cs)?;
+        let (div, _) = DivRemGadget::div_rem(val.repr, divisor, NUM_BITS, cs)?;
 
         Ok(div)
     }
@@ -145,7 +145,10 @@ impl MultiproverFixedPointGadget {
             &[(*TWO_TO_M_SCALAR - ScalarField::one()), -one, one, one],
         )?;
 
-        MultiproverGreaterThanEqZeroGadget::<{DEFAULT_FP_PRECISION + 1}>::constrain_greater_than_eq_zero(diff, fabric, cs)
+        const NUM_BITS: usize = DEFAULT_FP_PRECISION + 1;
+        MultiproverGreaterThanEqZeroGadget::constrain_greater_than_eq_zero(
+            diff, NUM_BITS, fabric, cs,
+        )
     }
 
     /// Constrain a fixed point variable to equal an integral variable when
@@ -161,8 +164,9 @@ impl MultiproverFixedPointGadget {
 
         let lhs_minus_rhs =
             cs.lc(&[fp.repr, integer, zero_var, zero_var], &[one, -*TWO_TO_M_SCALAR, one, one])?;
-        MultiproverBitRangeGadget::<{ DEFAULT_FP_PRECISION }>::constrain_bit_range(
+        MultiproverBitRangeGadget::constrain_bit_range(
             lhs_minus_rhs,
+            DEFAULT_FP_PRECISION,
             fabric,
             cs,
         )
@@ -179,7 +183,7 @@ mod test {
     };
     use constants::Scalar;
     use mpc_relation::traits::Circuit;
-    use rand::{Rng, RngCore, thread_rng};
+    use rand::{Rng, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::zk_gadgets::fixed_point::MultiproverFixedPointGadget;

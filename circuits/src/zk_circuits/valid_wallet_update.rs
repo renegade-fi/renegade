@@ -43,8 +43,6 @@ pub struct ValidWalletUpdate<
 >;
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// Apply the circuit constraints to a given constraint system
     pub fn circuit(
@@ -68,7 +66,11 @@ where
         // The blinder stream is seeded by the old blinder's private share
         let public_blinder = statement.new_public_shares.blinder;
         let blinder_seed = witness.old_wallet_private_shares.blinder;
-        WalletGadget::validate_public_blinder_from_seed(public_blinder, blinder_seed, cs)?;
+        WalletGadget::<MAX_BALANCES, MAX_ORDERS>::validate_public_blinder_from_seed(
+            public_blinder,
+            blinder_seed,
+            cs,
+        )?;
 
         // Validate the commitment to the new wallet secret shares
         let new_wallet_commitment = WalletGadget::compute_wallet_share_commitment(
@@ -450,9 +452,7 @@ pub struct ValidWalletUpdateWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The private secret shares of the existing wallet
     pub old_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The public secret shares of the existing wallet
@@ -475,10 +475,7 @@ pub type SizedValidWalletUpdateWitness =
 /// The statement type for `VALID WALLET UPDATE`
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidWalletUpdateStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidWalletUpdateStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The nullifier of the old wallet's secret shares
     pub old_shares_nullifier: Nullifier,
     /// A commitment to the new wallet's secret shares
@@ -502,8 +499,6 @@ pub type SizedValidWalletUpdateStatement = ValidWalletUpdateStatement<MAX_BALANC
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     SingleProverCircuit for ValidWalletUpdate<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Witness = ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
     type Statement = ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>;
@@ -565,10 +560,7 @@ pub mod test_helpers {
     ) -> (
         ValidWalletUpdateWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
         ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         // Construct secret shares of the wallets
         let mut new_wallet = new_wallet.clone();
         let (old_wallet_private_shares, old_wallet_public_shares) =

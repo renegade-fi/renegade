@@ -1,7 +1,6 @@
 //! Groups integration tests for matching an order and proving `VALID MATCH
 //! SETTLE` collaboratively
 
-#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 #![allow(missing_docs)]
 

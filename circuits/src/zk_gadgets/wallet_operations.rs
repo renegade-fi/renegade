@@ -21,10 +21,7 @@ use super::{
 
 /// Gadget for operating on wallets and wallet shares
 pub struct WalletGadget<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletGadget<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletGadget<MAX_BALANCES, MAX_ORDERS> {
     // ----------------
     // | State Update |
     // ----------------
@@ -234,7 +231,7 @@ impl AmountGadget {
         amount: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        BitRangeGadget::<AMOUNT_BITS>::constrain_bit_range(amount, cs)
+        BitRangeGadget::constrain_bit_range(amount, AMOUNT_BITS, cs)
     }
 }
 
@@ -247,7 +244,7 @@ impl MultiproverAmountGadget {
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        MultiproverBitRangeGadget::<AMOUNT_BITS>::constrain_bit_range(amount, fabric, cs)
+        MultiproverBitRangeGadget::constrain_bit_range(amount, AMOUNT_BITS, fabric, cs)
     }
 }
 
@@ -261,7 +258,7 @@ impl FeeGadget {
         fee: FixedPointVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        BitRangeGadget::<FEE_BITS>::constrain_bit_range(fee.repr, cs)
+        BitRangeGadget::constrain_bit_range(fee.repr, FEE_BITS, cs)
     }
 }
 
@@ -274,7 +271,7 @@ impl PriceGadget {
         price: FixedPointVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        BitRangeGadget::<PRICE_BITS>::constrain_bit_range(price.repr, cs)
+        BitRangeGadget::constrain_bit_range(price.repr, PRICE_BITS, cs)
     }
 
     /// Validate that an execution price is within the user-defined limits
@@ -311,7 +308,7 @@ impl MultiproverPriceGadget {
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        MultiproverBitRangeGadget::<PRICE_BITS>::constrain_bit_range(price.repr, fabric, cs)
+        MultiproverBitRangeGadget::constrain_bit_range(price.repr, PRICE_BITS, fabric, cs)
     }
 
     /// Verify the price protection on the orders; i.e. that the executed price

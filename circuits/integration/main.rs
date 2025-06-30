@@ -2,7 +2,6 @@
 
 #![cfg(test)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(inherent_associated_types)]
 
 mod mpc_circuits;

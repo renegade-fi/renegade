@@ -252,20 +252,14 @@ pub mod test_helpers {
 
     /// Get a dummy set of wallet shares
     pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
-    -> WalletShare<MAX_BALANCES, MAX_ORDERS>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    -> WalletShare<MAX_BALANCES, MAX_ORDERS> {
         let mut iter = iter::from_fn(|| Some(Scalar::zero()));
         WalletShare::from_scalars(&mut iter)
     }
 
     /// Create a wallet with random zero'd balances
     pub fn wallet_with_random_balances<const MAX_BALANCES: usize, const MAX_FEES: usize>()
-    -> Wallet<MAX_BALANCES, MAX_FEES>
-    where
-        [(); MAX_BALANCES + MAX_FEES]: Sized,
-    {
+    -> Wallet<MAX_BALANCES, MAX_FEES> {
         let mut rng = thread_rng();
         let mut wallet = Wallet::<MAX_BALANCES, MAX_FEES>::default();
 

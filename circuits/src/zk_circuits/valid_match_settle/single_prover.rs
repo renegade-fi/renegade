@@ -24,9 +24,8 @@ use super::{ValidMatchSettle, ValidMatchSettleStatementVar, ValidMatchSettleWitn
 
 // --- Matching Engine --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 {
     /// The order crossing check, for a single prover
     ///
@@ -151,9 +150,10 @@ where
         [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
     {
         // Validate that the amount is less than the maximum amount given in the order
-        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
+        GreaterThanEqGadget::constrain_greater_than_eq(
             order.amount,
             match_res.base_amount,
+            AMOUNT_BITS,
             cs,
         )?;
 
@@ -176,9 +176,8 @@ where
 
 // --- Settlement --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 {
     /// The circuit representing `VALID SETTLE`
     pub fn validate_settlement_singleprover(

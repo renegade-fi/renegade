@@ -14,7 +14,7 @@ impl FixedPointMpcGadget {
     /// Shift the given fixed point value to the right by the given number of
     /// bits and return the result as an integer
     pub fn as_integer(val: &AuthenticatedFixedPoint, fabric: &Fabric) -> AuthenticatedScalar {
-        shift_right::<DEFAULT_FP_PRECISION>(&val.repr, fabric)
+        shift_right(&val.repr, DEFAULT_FP_PRECISION, fabric)
     }
 }
 
