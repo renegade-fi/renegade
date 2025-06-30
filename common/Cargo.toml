@@ -10,9 +10,16 @@ wallet = ["hmac", "proof-system-types", "util/matching-engine"]
 proof-system-types = ["dep:circuits", "constants/default"]
 # Types used by the relayer for internal operation
 # We add this feature flag to allow external clients to opt-out of these types
-internal-types = ["dep:circuits", "constants/default", "util/networking"]
+internal-types = [
+    "wallet",
+    "dep:circuits",
+    "constants/default",
+    "util/networking",
+    "util/telemetry",
+]
 all-types = ["wallet", "proof-system-types", "internal-types", "hmac"]
 mocks = [
+    "wallet",
     "jf-primitives",
     "mpc-relation",
     "mpc-plonk",

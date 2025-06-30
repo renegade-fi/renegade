@@ -45,7 +45,7 @@ pub fn locally_managed_key() -> String {
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     // --- Interface --- //
 
     /// Check if the order book contains an order
@@ -147,7 +147,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     // --- Interface --- //
 
     /// Add an order to the order book

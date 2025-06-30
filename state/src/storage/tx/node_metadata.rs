@@ -61,7 +61,7 @@ fn err_not_found(key: &str) -> StorageError {
 
 /// We expect the node metadata table to always contain its relevant values (it
 /// should be initialized at startup) so we promote `Option::None` to an error
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the local node's peer ID
     pub fn get_peer_id(&self) -> Result<WrappedPeerId, StorageError> {
         self.inner()
@@ -136,7 +136,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Set the local node's peer ID
     pub fn set_peer_id(&self, peer_id: &WrappedPeerId) -> Result<(), StorageError> {
         self.inner().write(NODE_METADATA_TABLE, &PEER_ID_KEY.to_string(), peer_id)

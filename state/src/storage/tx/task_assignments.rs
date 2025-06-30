@@ -22,7 +22,7 @@ fn task_assignment_key(task_id: &TaskIdentifier) -> String {
     format!("task-assignment-{task_id}")
 }
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the tasks assigned to a node
     pub fn get_assigned_tasks(
         &self,
@@ -48,7 +48,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Push a task to the list of assigned tasks for a node
     pub fn add_assigned_task(
         &self,

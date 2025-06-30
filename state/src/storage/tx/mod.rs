@@ -87,7 +87,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
     }
 }
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Create a table in the database
     pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
         self.inner.create_table(table_name)
@@ -102,7 +102,7 @@ impl<'db> StateTxn<'db, RW> {
     /// is not taken erroneously
     #[allow(unsafe_code)]
     pub unsafe fn drop_table(&self, table_name: &str) -> Result<(), StorageError> {
-        self.inner().drop_table(table_name)
+        unsafe { self.inner().drop_table(table_name) }
     }
 
     /// Clear a table in the database
@@ -254,7 +254,7 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
 }
 
 // Write-enabled implementation
-impl<'db> DbTxn<'db, RW> {
+impl DbTxn<'_, RW> {
     /// Create a new table in the database
     pub fn create_table(&self, table_name: &str) -> Result<(), StorageError> {
         self.txn
@@ -279,7 +279,7 @@ impl<'db> DbTxn<'db, RW> {
             Err(e) => return Err(e),
         };
 
-        self.txn.drop_table(table).map_err(StorageError::TxOp)
+        unsafe { self.txn.drop_table(table).map_err(StorageError::TxOp) }
     }
 
     /// Clear a table in the database

@@ -18,7 +18,7 @@ const PEER_NOT_FOUND_ERR: &str = "could not find peer in peer info table";
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Returns whether the given peer is already indexed    
     pub fn contains_peer(&self, peer_id: &WrappedPeerId) -> Result<bool, StorageError> {
         self.get_peer_info(peer_id).map(|x| x.is_some())
@@ -70,7 +70,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Write a peer to the index
     pub fn write_peer(&self, peer: &PeerInfo) -> Result<(), StorageError> {
         self.inner().write(PEER_INFO_TABLE, &peer.peer_id, peer)

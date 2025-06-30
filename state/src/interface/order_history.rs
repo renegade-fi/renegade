@@ -61,6 +61,7 @@ impl StateInner {
 
 #[cfg(test)]
 pub mod test {
+    //! Order history tests
     use std::cmp::Reverse;
 
     use common::types::{

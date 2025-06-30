@@ -211,7 +211,7 @@ impl<'txn, Tx: TransactionKind, K: Key, V: Value> DbCursor<'txn, Tx, K, V> {
 // | Mutation methods |
 // --------------------
 
-impl<'txn, K: Key, V: Value> DbCursor<'txn, RW, K, V> {
+impl<K: Key, V: Value> DbCursor<'_, RW, K, V> {
     /// Insert a key/value pair into the table, the cursor will be positioned at
     /// the inserted key or near it when this method fails
     pub fn put(&mut self, k: &K, v: &V) -> Result<(), StorageError> {
@@ -250,7 +250,7 @@ pub struct DbCursorIter<'txn, T: TransactionKind, K: Key, V: Value> {
     cursor: DbCursor<'txn, T, K, V>,
 }
 
-impl<'txn, T: TransactionKind, K: Key, V: Value> DbCursorIter<'txn, T, K, V> {
+impl<T: TransactionKind, K: Key, V: Value> DbCursorIter<'_, T, K, V> {
     /// Return an iterator over only the keys in the table
     pub fn keys(self) -> impl Iterator<Item = Result<K, StorageError>> {
         <Self as Iterator>::map(self, |res| res.map(|(k, _v)| k))
@@ -262,7 +262,7 @@ impl<'txn, T: TransactionKind, K: Key, V: Value> DbCursorIter<'txn, T, K, V> {
     }
 }
 
-impl<'txn, T: TransactionKind, K: Key, V: Value> Iterator for DbCursorIter<'txn, T, K, V> {
+impl<T: TransactionKind, K: Key, V: Value> Iterator for DbCursorIter<'_, T, K, V> {
     type Item = Result<(K, V), StorageError>;
 
     fn next(&mut self) -> Option<Self::Item> {

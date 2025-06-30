@@ -3,6 +3,7 @@
 //! Defines replication primitives on top of a base raft implementation. Raft
 //! provides a consistent, distributed log with serializable access. We describe
 //! state transitions and persist these to the raft log to the raft log
+#![allow(unexpected_cfgs)]
 
 pub mod error;
 mod log_store;

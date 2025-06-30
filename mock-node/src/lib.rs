@@ -6,7 +6,6 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 use std::mem;
 

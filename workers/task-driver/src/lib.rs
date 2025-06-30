@@ -11,7 +11,6 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![feature(let_chains)]
-#![feature(generic_const_exprs)]
 #![feature(iter_advance_by)]
 
 pub mod driver;

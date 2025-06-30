@@ -7,7 +7,6 @@
 #![deny(missing_docs)]
 #![allow(incomplete_features)]
 #![feature(let_chains)]
-#![feature(generic_const_exprs)]
 
 pub mod error;
 mod handshake_cache;

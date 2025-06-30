@@ -15,13 +15,13 @@ pub struct TraceContextInjector<'a>(&'a mut TraceContext);
 /// Helper struct for extracting tracing context from a TraceContext
 pub struct TraceContextExtractor<'a>(&'a TraceContext);
 
-impl<'a> Injector for TraceContextInjector<'a> {
+impl Injector for TraceContextInjector<'_> {
     fn set(&mut self, key: &str, value: String) {
         self.0.insert(key.to_string(), value);
     }
 }
 
-impl<'a> Extractor for TraceContextExtractor<'a> {
+impl Extractor for TraceContextExtractor<'_> {
     fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).map(String::as_str)
     }

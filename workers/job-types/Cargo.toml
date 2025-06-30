@@ -16,7 +16,7 @@ circuits = { workspace = true }
 circuit-types = { workspace = true }
 common = { workspace = true }
 constants = { workspace = true }
-external-api = { workspace = true }
+external-api = { workspace = true, features = ["full-api"] }
 gossip-api = { workspace = true }
 util = { workspace = true, features = ["channels"] }
 renegade-metrics = { workspace = true }

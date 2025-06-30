@@ -32,10 +32,7 @@ use serde::{Deserialize, Serialize};
 
 /// The response type for a request to generate a proof of `VALID WALLET CREATE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidWalletCreateBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericValidWalletCreateBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to create the proof
     pub statement: ValidWalletCreateStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
@@ -54,9 +51,7 @@ pub struct GenericValidWalletUpdateBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The statement (public variables) used to prove `VALID WALLET UPDATE`
     pub statement: ValidWalletUpdateStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
@@ -76,9 +71,7 @@ pub struct GenericValidReblindBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The statement (public variables) used to prover `VALID REBLIND`
     pub statement: ValidReblindStatement,
     /// The proof itself
@@ -93,10 +86,7 @@ pub type ValidReblindBundle = Arc<SizedValidReblindBundle>;
 
 /// The response type for a request to generate a proof of `VALID COMMITMENTS`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericValidCommitmentsBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericValidCommitmentsBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to prove `VALID COMMITMENTS`
     pub statement: ValidCommitmentsStatement,
     /// The proof itself
@@ -112,10 +102,7 @@ pub type ValidCommitmentsBundle = Arc<SizedValidCommitmentsBundle>;
 /// A bundle of the statement and proof of `VALID MATCH
 /// SETTLE`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericMatchSettleBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericMatchSettleBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to prove `VALID MATCH SETTLE`
     pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
@@ -130,10 +117,7 @@ pub type ValidMatchSettleBundle = Arc<SizedValidMatchSettleBundle>;
 
 /// A bundle of the statement and proof of `VALID MATCH SETTLE ATOMIC`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericMatchSettleAtomicBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericMatchSettleAtomicBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to prove `VALID MATCH SETTLE
     /// ATOMIC`
     pub statement: ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
@@ -153,9 +137,7 @@ pub type ValidMatchSettleAtomicBundle = Arc<SizedValidMatchSettleAtomicBundle>;
 pub struct GenericMalleableMatchSettleAtomicBundle<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The statement (public variables) used to prove `VALID MALLEABLE MATCH
     /// SETTLE ATOMIC`
     pub statement: ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
@@ -172,10 +154,7 @@ pub type ValidMalleableMatchSettleAtomicBundle = Arc<SizedMalleableMatchSettleAt
 
 /// A bundle of the statement and proof of `VALID RELAYER FEE SETTLEMENT`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericRelayerFeeSettlementBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericRelayerFeeSettlementBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to prove `VALID RELAYER FEE
     /// SETTLEMENT`
     pub statement: ValidRelayerFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
@@ -192,10 +171,7 @@ pub type RelayerFeeSettlementBundle = Arc<SizedRelayerFeeSettlementBundle>;
 
 /// A bundle of the statement and proof of `VALID OFFLINE FEE SETTLEMENT`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericOfflineFeeSettlementBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericOfflineFeeSettlementBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to prove `VALID OFFLINE FEE
     /// SETTLEMENT`
     pub statement: ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
@@ -212,10 +188,7 @@ pub type OfflineFeeSettlementBundle = Arc<SizedOfflineFeeSettlementBundle>;
 
 /// A bundle of the statement and proof of `VALID FEE REDEMPTION`
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GenericFeeRedemptionBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct GenericFeeRedemptionBundle<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The statement (public variables) used to prove `VALID FEE REDEMPTION`
     pub statement: ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself

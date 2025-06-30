@@ -5,7 +5,6 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 mod helpers;
 mod tests;
@@ -118,7 +117,7 @@ impl From<CliArgs> for IntegrationTestArgs {
 
         // Create a mock proof generation module
         let (proof_job_queue, job_receiver) = new_proof_manager_queue();
-        MockProofManager::start(job_receiver);
+        MockProofManager::start(job_receiver, false /* skip_constraints */);
 
         // Create a mock darkpool client
         let pkey = PrivateKeySigner::from_str(&test_args.pkey).unwrap();

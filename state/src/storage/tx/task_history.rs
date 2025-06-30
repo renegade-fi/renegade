@@ -18,7 +18,7 @@ fn task_history_key(key: &TaskQueueKey) -> String {
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the task history for a given task queue
     pub fn get_task_history(
         &self,
@@ -59,7 +59,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Append a task to the task history
     pub fn append_task_to_history(
         &self,

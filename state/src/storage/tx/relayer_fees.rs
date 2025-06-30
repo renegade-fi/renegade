@@ -17,7 +17,7 @@ fn relayer_fee_key(wallet_id: &WalletIdentifier) -> String {
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the relayer fee for a wallet
     ///
     /// Defaults to the default relayer fee if no fee is set
@@ -39,7 +39,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Set the relayer fee for a wallet
     pub fn set_relayer_fee(
         &self,
