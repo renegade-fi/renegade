@@ -49,9 +49,9 @@ fn scalar_powers_of_two(exponent: usize) -> Vec<Scalar> {
 
 /// Returns a list of `Scalar`s representing the `m` least significant bits of
 /// `a`
-pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarResult> {
+pub(crate) fn scalar_to_bits_le(a: &ScalarResult, num_bits: usize) -> Vec<ScalarResult> {
     // The byte (8 bit) boundary we must iterate through to fetch `M` bits
-    a.fabric().new_batch_gate_op(vec![a.id()], N, |mut args| {
+    a.fabric().new_batch_gate_op(vec![a.id()], num_bits, move |mut args| {
         let a: Scalar = args.next().unwrap().into();
         let a_bigint = a.to_biguint();
 
@@ -60,7 +60,7 @@ pub(crate) fn scalar_to_bits_le<const N: usize>(a: &ScalarResult) -> Vec<ScalarR
             .by_vals()
             .map(|bit| if bit { Scalar::one() } else { Scalar::zero() })
             .chain(iter::repeat(Scalar::zero()))
-            .take(N)
+            .take(num_bits)
             .map(ResultValue::Scalar)
             .collect_vec()
     })
@@ -203,20 +203,25 @@ pub fn carry_out_public(
 ///
 /// Here, we use the pre-processing functionality to blind and open a value
 /// that can then be used to compute bitwise decompositions of the input
-pub fn to_bits_le<const D: usize>(
+pub fn to_bits_le(
     x: &AuthenticatedScalar,
+    num_bits: usize,
     fabric: &Fabric,
 ) -> Vec<AuthenticatedScalar> {
-    assert!(D < SCALAR_MAX_BITS, "Can only support scalars of up to {:?} bits", SCALAR_MAX_BITS);
+    assert!(
+        num_bits < SCALAR_MAX_BITS,
+        "Can only support scalars of up to {:?} bits",
+        SCALAR_MAX_BITS
+    );
 
     // Sample a random batch of bits and create a random m-bit shared scalar
-    let random_bits =
-        fabric.random_shared_bits(cmp::min(D, BLINDING_FACTOR_MAX_BITS) /* num_scalars */);
+    let random_bits = fabric
+        .random_shared_bits(cmp::min(num_bits, BLINDING_FACTOR_MAX_BITS) /* num_scalars */);
     let random_scalar = scalar_from_bits_le(&random_bits);
 
     // Pop a random scalar to fill in the top k - m bits
-    let random_upper_bits = if D < SCALAR_MAX_BITS {
-        &fabric.random_shared_scalars(1 /* n */)[0] * scalar_2_to_m(D as u64)
+    let random_upper_bits = if num_bits < SCALAR_MAX_BITS {
+        &fabric.random_shared_scalars(1 /* n */)[0] * scalar_2_to_m(num_bits as u64)
     } else {
         fabric.zero_authenticated()
     };
@@ -226,14 +231,14 @@ pub fn to_bits_le<const D: usize>(
     let blinding_factor = &random_upper_bits + &random_scalar;
 
     // TODO: Do we need to `open_and_authenticate`?
-    let blinded_value = x - &blinding_factor + scalar_2_to_m((D + 1) as u64);
+    let blinded_value = x - &blinding_factor + scalar_2_to_m((num_bits + 1) as u64);
     let blinded_value_open = blinded_value.open();
 
     // Convert to bits
-    let blinded_value_bits = scalar_to_bits_le::<D>(&blinded_value_open);
+    let blinded_value_bits = scalar_to_bits_le(&blinded_value_open, num_bits);
     let (bits, _) = bit_add_public(
-        &resize_bitvector_to_length_public(blinded_value_bits, D, fabric),
-        &resize_bitvector_to_length(random_bits, D, fabric),
+        &resize_bitvector_to_length_public(blinded_value_bits, num_bits, fabric),
+        &resize_bitvector_to_length(random_bits, num_bits, fabric),
         fabric,
     );
 
@@ -328,7 +333,7 @@ mod tests {
             let scalar = Scalar::from(random_u64);
             let mpc_val = fabric.allocate_scalar(scalar);
 
-            let bits = scalar_to_bits_le::<64>(&mpc_val);
+            let bits = scalar_to_bits_le(&mpc_val, 64 /* num_bits */);
 
             let reconstructed =
                 bits.iter().rev().fold(fabric.zero(), |acc, bit| acc * Scalar::from(2u64) + bit);
@@ -348,7 +353,7 @@ mod tests {
                 (0..N).fold(Scalar::zero(), |acc, _| acc * Scalar::from(2u64) + Scalar::from(1u64));
             let allocated = fabric.allocate_scalar(scalar);
 
-            let res = join_all(scalar_to_bits_le::<N>(&allocated)).await;
+            let res = join_all(scalar_to_bits_le(&allocated, N /* num_bits */)).await;
             let expected_bits = (0..N).map(|_| Scalar::one()).collect_vec();
 
             res == expected_bits
@@ -489,8 +494,8 @@ mod tests {
                 let equal_value2 = fabric.share_scalar(value, PARTY1);
 
                 let res = bit_lt(
-                    &to_bits_le::<N>(&equal_value1, &fabric),
-                    &to_bits_le::<N>(&equal_value2, &fabric),
+                    &to_bits_le(&equal_value1, N /* num_bits */, &fabric),
+                    &to_bits_le(&equal_value2, N /* num_bits */, &fabric),
                     &fabric,
                 )
                 .open_authenticated()
@@ -514,8 +519,8 @@ mod tests {
                 let min_value = fabric.share_scalar(min_value, PARTY0);
                 let max_value = fabric.share_scalar(max_value, PARTY1);
 
-                let min_bits = to_bits_le::<N>(&min_value, &fabric);
-                let max_bits = to_bits_le::<N>(&max_value, &fabric);
+                let min_bits = to_bits_le(&min_value, N /* num_bits */, &fabric);
+                let max_bits = to_bits_le(&max_value, N /* num_bits */, &fabric);
 
                 // min_value < max_value == true
                 let res1 = bit_lt(&min_bits, &max_bits, &fabric).open_authenticated().await?;
@@ -548,8 +553,8 @@ mod tests {
                 let min_value = fabric.share_scalar(min_value, PARTY0);
                 let max_value = fabric.share_scalar(max_value, PARTY1);
 
-                let min_bits = to_bits_le::<N>(&min_value, &fabric);
-                let max_bits = to_bits_le::<N>(&max_value, &fabric);
+                let min_bits = to_bits_le(&min_value, N /* num_bits */, &fabric);
+                let max_bits = to_bits_le(&max_value, N /* num_bits */, &fabric);
 
                 // min_value < max_value == true
                 let min_bits_public = AuthenticatedScalar::open_batch(&min_bits);

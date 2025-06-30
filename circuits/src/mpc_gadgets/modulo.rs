@@ -39,15 +39,15 @@ fn scalar_mod_2m(val: &ScalarResult, m: usize) -> ScalarResult {
 ///
 /// TODO: Define a signed integer maximum for this and other MPC gadgets as per:
 ///     https://faui1-files.cs.fau.de/filepool/publications/octavian_securescm/smcint-scn10.pdf
-pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
+pub fn mod_2m(a: &AuthenticatedScalar, m: usize, fabric: &Fabric) -> AuthenticatedScalar {
     // The input has 256 bits, so any modulus larger can be ignored
-    if M >= 256 {
+    if m >= 256 {
         return a.clone();
     }
-    let scalar_2m = scalar_2_to_m(M as u64);
+    let scalar_2m = scalar_2_to_m(m as u64);
 
     // Generate random blinding bits
-    let random_bits = fabric.random_shared_bits(M);
+    let random_bits = fabric.random_shared_bits(m);
 
     let random_lower_bits = if random_bits.is_empty() {
         fabric.zero_authenticated()
@@ -63,10 +63,10 @@ pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> Authe
     let blinded_value_open = blinded_value.open_authenticated();
 
     // Take the blinded, opened value mod 2^m
-    let value_open_mod_2m = scalar_mod_2m(&blinded_value_open.value, M);
+    let value_open_mod_2m = scalar_mod_2m(&blinded_value_open.value, m);
 
     // Decompose into bits
-    let mod_opened_value_bits = scalar_to_bits_le::<M>(&value_open_mod_2m);
+    let mod_opened_value_bits = scalar_to_bits_le(&value_open_mod_2m, m);
 
     // If the modulus is negative, shift up by 2^m
     let bit_lt = bit_lt_public(&mod_opened_value_bits, &random_bits, fabric);
@@ -76,30 +76,27 @@ pub fn mod_2m<const M: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> Authe
 }
 
 /// Computes the input with the `m` least significant bits truncated
-pub fn truncate<const M: usize>(x: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
+pub fn truncate(x: &AuthenticatedScalar, m: usize, fabric: &Fabric) -> AuthenticatedScalar {
     // Apply mod2m and then subtract the result to make the value divisible by a
     // public 2^-m
-    if M >= SCALAR_MAX_BITS {
+    if m >= SCALAR_MAX_BITS {
         return fabric.zero_authenticated();
     }
 
-    let x_mod_2m = mod_2m::<M>(x, fabric);
-    scalar_2_to_m(M as u64).inverse() * (x - &x_mod_2m)
+    let x_mod_2m = mod_2m(x, m, fabric);
+    scalar_2_to_m(m as u64).inverse() * (x - &x_mod_2m)
 }
 
 /// Shifts the input right by the specified amount
 ///
 /// Effectively just calls out to truncate, but is placed here for abstraction
 /// purposes
-pub fn shift_right<const M: usize>(
-    a: &AuthenticatedScalar,
-    fabric: &Fabric,
-) -> AuthenticatedScalar {
-    if M >= 256 {
+pub fn shift_right(a: &AuthenticatedScalar, m: usize, fabric: &Fabric) -> AuthenticatedScalar {
+    if m >= 256 {
         return fabric.zero_authenticated();
     }
 
-    truncate::<M>(a, fabric)
+    truncate(a, m, fabric)
 }
 
 #[cfg(test)]
@@ -122,7 +119,7 @@ mod tests {
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);
-            let res = mod_2m::<M>(&shared_value, &fabric).open_authenticated().await.unwrap();
+            let res = mod_2m(&shared_value, M, &fabric).open_authenticated().await.unwrap();
 
             let expected = Scalar::from(value.to_biguint() % (BigUint::from(1u8) << M));
             Ok(res == expected)
@@ -141,7 +138,7 @@ mod tests {
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);
-            let res = shift_right::<SHIFT_AMOUNT>(&shared_value, &fabric)
+            let res = shift_right(&shared_value, SHIFT_AMOUNT, &fabric)
                 .open_authenticated()
                 .await
                 .unwrap();

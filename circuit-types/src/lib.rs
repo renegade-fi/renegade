@@ -5,7 +5,6 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(future_join)]
 
 pub mod balance;
@@ -303,10 +302,7 @@ pub mod native_helpers {
     pub fn wallet_from_blinded_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
-    ) -> Wallet<MAX_BALANCES, MAX_ORDERS>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> Wallet<MAX_BALANCES, MAX_ORDERS> {
         let recovered_blinder = private_shares.blinder + public_shares.blinder;
         let unblinded_public_shares = public_shares.unblind_shares(recovered_blinder);
         private_shares.clone() + unblinded_public_shares
@@ -316,10 +312,7 @@ pub mod native_helpers {
     pub fn compute_wallet_share_commitment<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
-    ) -> WalletShareStateCommitment
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> WalletShareStateCommitment {
         // Hash the private input, then append the public input and re-hash
         let private_input_commitment = compute_wallet_private_share_commitment(private_shares);
         let mut hash_input = vec![private_input_commitment];
@@ -334,10 +327,7 @@ pub mod native_helpers {
         const MAX_ORDERS: usize,
     >(
         private_share: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
-    ) -> Scalar
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> Scalar {
         compute_poseidon_hash(&private_share.to_scalars())
     }
 
@@ -349,10 +339,7 @@ pub mod native_helpers {
     >(
         public_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         private_share_comm: WalletShareStateCommitment,
-    ) -> WalletShareStateCommitment
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> WalletShareStateCommitment {
         let mut hash_input = vec![private_share_comm];
         hash_input.append(&mut public_shares.to_scalars());
         compute_poseidon_hash(&hash_input)
@@ -372,10 +359,7 @@ pub mod native_helpers {
     pub fn reblind_wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         private_secret_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
-    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>) {
         // Sample new wallet blinders from the `blinder` CSPRNG
         // See the comments in `valid_reblind.rs` for an explanation of the two CSPRNGs
         let mut blinder_samples = evaluate_hash_chain(
@@ -409,10 +393,7 @@ pub mod native_helpers {
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
         private_shares: &WalletShare<MAX_BALANCES, MAX_ORDERS>,
         blinder: Scalar,
-    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>) {
         // Serialize the wallet's private shares and use this as the secret share stream
         let private_shares_ser: Vec<Scalar> = private_shares.clone().to_scalars();
         create_wallet_shares_with_randomness(
@@ -436,7 +417,6 @@ pub mod native_helpers {
     ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
     where
         T: IntoIterator<Item = Scalar>,
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
         let share_iter = secret_shares.into_iter();
         let wallet_scalars = wallet.to_scalars();

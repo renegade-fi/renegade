@@ -49,10 +49,7 @@ pub type Nullifier = Scalar;
     circuit_type(serde, singleprover_circuit, secret_share, mpc, multiprover_circuit)
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct Wallet<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The list of balances in the wallet
     #[serde(serialize_with = "serialize_array", deserialize_with = "deserialize_array")]
     pub balances: [Balance; MAX_BALANCES],
@@ -79,8 +76,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> Default
     for Wallet<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     fn default() -> Self {
         Self {
@@ -99,10 +94,7 @@ where
 }
 
 #[cfg(feature = "proof-system-types")]
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShare<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShare<MAX_BALANCES, MAX_ORDERS> {
     /// Blinds the wallet, but does not blind the blinder itself
     ///
     /// This is necessary because the default implementation of `blind` that is
@@ -127,10 +119,7 @@ where
 }
 
 #[cfg(feature = "proof-system-types")]
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShareVar<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> WalletShareVar<MAX_BALANCES, MAX_ORDERS> {
     /// Blinds the wallet, but does not blind the blinder itself
     ///
     /// This is necessary because the default implementation of `blind` that is

@@ -59,8 +59,6 @@ pub type SizedValidMatchSettleAtomicWithCommitments =
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
     ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The circuit constraints for `VALID MATCH SETTLE ATOMIC`
     pub fn circuit(
@@ -149,9 +147,10 @@ where
         // order size
         let order_amount = internal_party_order.amount;
         let match_amount = match_res.base_amount;
-        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(
+        GreaterThanEqGadget::constrain_greater_than_eq(
             order_amount,
             match_amount,
+            AMOUNT_BITS,
             cs,
         )?;
 
@@ -249,8 +248,6 @@ pub struct ValidMatchSettleAtomicWithCommitments<const MAX_BALANCES: usize, cons
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
     ValidMatchSettleAtomicWithCommitments<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The circuit constraints for `VALID MATCH SETTLE ATOMIC WITH COMMITMENTS`
     pub fn circuit(
@@ -287,10 +284,7 @@ where
 /// The witness type for `VALID MATCH SETTLE ATOMIC`
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchSettleAtomicWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidMatchSettleAtomicWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The internal party's order
     #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_order: Order,
@@ -324,10 +318,7 @@ pub type SizedValidMatchSettleAtomicWitness =
 /// The statement type for `VALID MATCH SETTLE ATOMIC`
 #[circuit_type(singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchSettleAtomicStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidMatchSettleAtomicStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The result of the match
     pub match_result: ExternalMatchResult,
     /// The external party's fee obligations as a result of the match
@@ -349,9 +340,7 @@ where
 pub struct ValidMatchSettleAtomicWithCommitmentsStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// A commitment to the internal party's private shares
     pub private_share_commitment: WalletShareStateCommitment,
     /// A commitment to the new wallet shares of the internal party
@@ -386,8 +375,6 @@ pub type SizedValidMatchSettleAtomicWithCommitmentsStatement =
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
@@ -401,7 +388,7 @@ where
     ///   COMMITMENTS and VALID MATCH SETTLE. We directly use the first layout
     ///   from the standard match settle circuit here for simplicity
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let match_layout = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()?;
         let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
 
         Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
@@ -418,8 +405,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidMatchSettleAtomicWithCommitments<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
@@ -429,7 +414,7 @@ where
     }
 
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let match_layout = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()?;
         let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
 
         Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
@@ -505,10 +490,7 @@ pub mod test_helpers {
         const MAX_ORDERS: usize,
     >(
         statement: &ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    ) -> ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS> {
         let mut rng = thread_rng();
         let private_share_commitment = Scalar::random(&mut rng);
         let new_share_commitment = compute_wallet_commitment_from_private(
@@ -536,10 +518,7 @@ pub mod test_helpers {
     >() -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (witness, statement) = create_witness_statement();
         let statement_with_commitments = convert_to_with_commitments_statement(&statement);
 
@@ -550,10 +529,7 @@ pub mod test_helpers {
     pub fn create_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         // Setup the orders, match, and wallet
         let (o1, o2, price, mut match_res) = random_orders_and_match();
         let (internal_order, _external_order) = if rand::random() {
@@ -571,10 +547,7 @@ pub mod test_helpers {
     -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (o1, o2, price, mut match_res) = random_orders_and_match();
         let internal_order = if o1.side.is_buy() {
             o1
@@ -587,14 +560,13 @@ pub mod test_helpers {
     }
 
     /// Create a witness and statement wherein the internal order is a sell
-    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
-    -> (
+    pub fn create_witness_statement_sell_side<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >() -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (o1, o2, price, mut match_res) = random_orders_and_match();
         let internal_order = if o1.side.is_sell() {
             o1
@@ -617,10 +589,7 @@ pub mod test_helpers {
     ) -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (wallet1, party0_indices) =
             build_wallet_and_indices_from_order(internal_order, match_res);
         let (_, internal_party_public_shares) = create_wallet_shares(&wallet1);

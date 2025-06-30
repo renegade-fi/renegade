@@ -2,7 +2,6 @@
 //! circuit
 #![allow(incomplete_features)]
 #![allow(missing_docs)]
-#![feature(generic_const_exprs)]
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};

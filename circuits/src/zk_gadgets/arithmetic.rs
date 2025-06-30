@@ -55,23 +55,18 @@ const DIVREM_MAX_BITSIZE: usize = 100;
 /// A div-rem gadget which for inputs `a`, `b` returns
 /// values `q`, `r` such that a = bq + r and r < b
 ///
-/// The generic constant `D` represents the bitlength of the input `b`
+/// The `num_bits` parameter represents the bitlength of the input `b`
 #[derive(Clone, Debug)]
-pub struct DivRemGadget<const D: usize> {}
-impl<const D: usize> DivRemGadget<D>
-where
-    [(); SCALAR_BITS_MINUS_TWO - D]: Sized,
-{
+pub struct DivRemGadget {}
+impl DivRemGadget {
     /// Return (q, r) such that a = bq + r and r < b
     pub fn div_rem(
         a: Variable,
         b: Variable,
+        num_bits: usize,
         cs: &mut PlonkCircuit,
-    ) -> Result<(Variable, Variable), CircuitError>
-    where
-        [(); D + 1]: Sized,
-    {
-        assert!(D <= DIVREM_MAX_BITSIZE, "Bitlength of divisor is too large");
+    ) -> Result<(Variable, Variable), CircuitError> {
+        assert!(num_bits <= DIVREM_MAX_BITSIZE, "Bitlength of divisor is too large");
 
         let a_bigint = scalar_to_biguint(&a.eval(cs));
         let b_bigint = scalar_to_biguint(&b.eval(cs));
@@ -86,9 +81,9 @@ where
         // bitlength less than `SCALAR_BITS_MINUS_TWO - D`. Together these
         // constraints ensure that the expression b * q + r from wrapping around
         // the field modulus
-        BitRangeGadget::<D>::constrain_bit_range(b, cs)?;
-        BitRangeGadget::<{ SCALAR_BITS_MINUS_TWO - D }>::constrain_bit_range(q_var, cs)?;
-        BitRangeGadget::<D>::constrain_bit_range(r_var, cs)?;
+        BitRangeGadget::constrain_bit_range(b, num_bits, cs)?;
+        BitRangeGadget::constrain_bit_range(q_var, SCALAR_BITS_MINUS_TWO - num_bits, cs)?;
+        BitRangeGadget::constrain_bit_range(r_var, num_bits, cs)?;
 
         // Constrain a == bq + r
         let one_var = cs.one();
@@ -96,7 +91,7 @@ where
         cs.mul_add_gate(&[b, q_var, r_var, one_var, a], &[one, one])?;
 
         // Constraint r < b
-        LessThanGadget::<D>::constrain_less_than(r_var, b, cs)?;
+        LessThanGadget::constrain_less_than(r_var, b, num_bits, cs)?;
 
         Ok((q_var, r_var))
     }
@@ -160,8 +155,7 @@ mod arithmetic_tests {
         let divisor_var = biguint_to_scalar(&random_divisor).create_witness(&mut cs);
 
         let (q_res, r_res) =
-            DivRemGadget::<32 /* bitlength */>::div_rem(dividend_var, divisor_var, &mut cs)
-                .unwrap();
+            DivRemGadget::div_rem(dividend_var, divisor_var, 32 /* bitlength */, &mut cs).unwrap();
 
         cs.enforce_equal(expected_q_var, q_res).unwrap();
         cs.enforce_equal(expected_r_var, r_res).unwrap();

@@ -1,7 +1,7 @@
 //! Groups logic related to the match computation circuit
 
 use circuit_types::{
-    AMOUNT_BITS, Fabric, fixed_point::AuthenticatedFixedPoint, r#match::AuthenticatedMatchResult,
+    Fabric, fixed_point::AuthenticatedFixedPoint, r#match::AuthenticatedMatchResult,
     order::AuthenticatedOrder,
 };
 use constants::AuthenticatedScalar;
@@ -30,7 +30,7 @@ pub fn compute_match(
 ) -> AuthenticatedMatchResult {
     // Compute the amount and execution price that will be swapped if the orders
     // match
-    let (min_index, min_base_amount) = min::<AMOUNT_BITS>(amount1, amount2, fabric);
+    let (min_index, min_base_amount) = min(amount1, amount2, fabric);
 
     // The amount of quote token exchanged
     // Round down to the nearest integer value

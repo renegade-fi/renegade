@@ -1,7 +1,5 @@
 //! Groups logic around arithmetic comparator circuits
 
-use std::iter;
-
 use ark_mpc::gadgets::bit_xor_public;
 use circuit_types::{AuthenticatedBool, Fabric};
 use constants::{AuthenticatedScalar, Scalar};
@@ -26,92 +24,92 @@ use super::{
 /// top-two bit check will fail for values 2^252 <= x < (p-1) / 2
 ///
 /// So we enforce that the values are less than 2^252
-pub fn less_than_zero<const D: usize>(
-    a: &AuthenticatedScalar,
-    fabric: &Fabric,
-) -> AuthenticatedScalar {
-    assert!(D <= SCALAR_BITS_MINUS_TWO, "D must be less than 252");
+pub fn less_than_zero(a: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
     // Truncate the first `SCALAR_BITS_MINUS_TWO` bits of the input
-    let truncated = truncate::<SCALAR_BITS_MINUS_TWO>(a, fabric);
+    let truncated = truncate(a, SCALAR_BITS_MINUS_TWO, fabric);
 
     // Because the scalar field (Bn254) is a prime field of order greater than
     // 2^253, values are negative if either their 253rd bit or 254th bit are set.
     // Therefore, we truncate all bits below this and compare the value to zero.
-    ne::<2 /* bit_length */>(&truncated, &fabric.zero_authenticated(), fabric)
+    let num_bits = 2;
+    ne(&truncated, &fabric.zero_authenticated(), num_bits, fabric)
 }
 
 /// Implements the comparator a == 0
 ///
 /// D represents the bitlength of the input
-pub fn eq_zero<const D: usize>(a: &AuthenticatedScalar, fabric: &Fabric) -> AuthenticatedScalar {
-    let bits = to_bits_le::<D>(a, fabric);
-    Scalar::one() - kary_or::<D>(&bits.try_into().unwrap(), fabric)
+pub fn eq_zero(a: &AuthenticatedScalar, num_bits: usize, fabric: &Fabric) -> AuthenticatedScalar {
+    let bits = to_bits_le(a, num_bits, fabric);
+    Scalar::one() - kary_or(&bits, fabric)
 }
 
 /// Implements the comparator a == b
 ///
 /// D represents the bitlength of the inputs
-pub fn eq<const D: usize>(
+pub fn eq(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
+    num_bits: usize,
     fabric: &Fabric,
 ) -> AuthenticatedScalar {
-    eq_zero::<D>(&(a - b), fabric)
+    let diff = a - b;
+    eq_zero(&diff, num_bits, fabric)
 }
 
 /// Implements the comparator a != b
 ///
 /// D represents the bitlength of the inputs
-pub fn ne<const D: usize>(
+pub fn ne(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
+    num_bits: usize,
     fabric: &Fabric,
 ) -> AuthenticatedScalar {
-    Scalar::one() - eq::<D>(a, b, fabric)
+    Scalar::one() - eq(a, b, num_bits, fabric)
 }
 
 /// Implements the comparator a < b
 ///
 /// D represents the bitlength of a and b
-pub fn less_than<const D: usize>(
+pub fn less_than(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
     fabric: &Fabric,
 ) -> AuthenticatedScalar {
-    less_than_zero::<D>(&(a - b), fabric)
+    less_than_zero(&(a - b), fabric)
 }
 
 /// Implements the comparator a <= b
 ///
 /// D represents the bitlength of a and b
-pub fn less_than_equal<const D: usize>(
+pub fn less_than_equal(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
     fabric: &Fabric,
 ) -> AuthenticatedScalar {
-    Scalar::one() - greater_than::<D>(a, b, fabric)
+    Scalar::one() - greater_than(a, b, fabric)
 }
 
 /// Implements the comparator a > b
 ///
 /// D represents the bitlength of a and b
-pub fn greater_than<const D: usize>(
+pub fn greater_than(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
     fabric: &Fabric,
 ) -> AuthenticatedScalar {
-    less_than_zero::<D>(&(b - a), fabric)
+    less_than_zero(&(b - a), fabric)
 }
 
 /// Implements the comparator a >= b
 ///
 /// D represents the bitlength of a and b
-pub fn greater_than_equal<const D: usize>(
+pub fn greater_than_equal(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
     fabric: &Fabric,
 ) -> AuthenticatedScalar {
-    Scalar::one() - less_than::<D>(a, b, fabric)
+    Scalar::one() - less_than(a, b, fabric)
 }
 
 /// Implements a k-ary Or comparator; i.e. a_1 || a_2 || ... || a_n
@@ -123,10 +121,9 @@ pub fn greater_than_equal<const D: usize>(
 ///     4. Compute an "or" over the recovered bits
 ///
 /// `D` is the number of variables present in the OR expression
-pub fn kary_or<const D: usize>(
-    a: &[AuthenticatedScalar; D],
-    fabric: &Fabric,
-) -> AuthenticatedScalar {
+pub fn kary_or(a: &[AuthenticatedScalar], fabric: &Fabric) -> AuthenticatedScalar {
+    let num_bits = a.len();
+
     // Sample random blinding bits from the pre-processing functionality
     // We only need to be able to hold the maximum possible count, log_2(# of
     // booleans)
@@ -143,7 +140,7 @@ pub fn kary_or<const D: usize>(
     let blinded_sum_open = blinded_sum.open_authenticated();
 
     // Decompose the blinded sum into bits
-    let blinded_sum_bits = scalar_to_bits_le::<D>(&blinded_sum_open.value);
+    let blinded_sum_bits = scalar_to_bits_le(&blinded_sum_open.value, num_bits);
 
     // XOR the blinded sum bits with the blinding bits that are still shared to
     // obtain a sharing of the sum bits (unblinded)
@@ -189,12 +186,12 @@ fn constant_round_or_impl(a: &[AuthenticatedScalar], fabric: &Fabric) -> Authent
 ///
 /// D represents the bitlength of a and b
 #[allow(clippy::type_complexity)]
-pub fn min<const D: usize>(
+pub fn min(
     a: &AuthenticatedScalar,
     b: &AuthenticatedScalar,
     fabric: &Fabric,
 ) -> (AuthenticatedScalar, AuthenticatedScalar) {
-    let a_lt_b = less_than::<D>(a, b, fabric);
+    let a_lt_b = less_than(a, b, fabric);
     (Scalar::from(1u64) - a_lt_b.clone(), &a_lt_b * a + (Scalar::one() - a_lt_b) * b)
 }
 
@@ -262,9 +259,6 @@ mod test {
         open_unwrap, open_unwrap_vec,
     };
 
-    /// The maximum bitlength of an input allowed in tests
-    const MAX_BITS: usize = 252;
-
     /// Tests the `lt_zero` gadget
     #[tokio::test]
     async fn test_lt_zero() {
@@ -278,7 +272,7 @@ mod test {
 
         let (res, _) = execute_mock_mpc(move |fabric| async move {
             let shared_val = fabric.share_scalar(val, PARTY0);
-            less_than_zero::<MAX_BITS>(&shared_val, &fabric).open_authenticated().await
+            less_than_zero(&shared_val, &fabric).open_authenticated().await
         })
         .await;
 
@@ -299,13 +293,13 @@ mod test {
             let b_shared = fabric.share_scalar(b, PARTY0);
             let zero = fabric.zero_authenticated();
 
-            let mut success = open_unwrap!(eq::<BITS>(&a_shared, &b_shared, &fabric)) == Scalar::zero(); // a == b
-            success &= open_unwrap!(ne::<BITS>(&a_shared, &b_shared, &fabric)) == Scalar::one(); // a != b 
-            success &= open_unwrap!(eq::<BITS>(&a_shared, &a_shared, &fabric)) == Scalar::one(); // a == a 
-            success &= open_unwrap!(ne::<BITS>(&a_shared, &a_shared, &fabric)) == Scalar::zero(); // a != a
-            success &= open_unwrap!(eq::<BITS>(&a_shared, &zero, &fabric)) == Scalar::zero(); // a == 0 
-            success &= open_unwrap!(ne::<BITS>(&a_shared, &zero, &fabric)) == Scalar::one(); // a != 0
-            success &= open_unwrap!(eq::<BITS>(&zero, &zero, &fabric)) == Scalar::one(); // 0 == 0
+            let mut success = open_unwrap!(eq(&a_shared, &b_shared, BITS, &fabric)) == Scalar::zero(); // a == b
+            success &= open_unwrap!(ne(&a_shared, &b_shared, BITS, &fabric)) == Scalar::one(); // a != b 
+            success &= open_unwrap!(eq(&a_shared, &a_shared, BITS, &fabric)) == Scalar::one(); // a == a 
+            success &= open_unwrap!(ne(&a_shared, &a_shared, BITS, &fabric)) == Scalar::zero(); // a != a
+            success &= open_unwrap!(eq(&a_shared, &zero, BITS, &fabric)) == Scalar::zero(); // a == 0 
+            success &= open_unwrap!(ne(&a_shared, &zero, BITS, &fabric)) == Scalar::one(); // a != 0
+            success &= open_unwrap!(eq(&zero, &zero, BITS, &fabric)) == Scalar::one(); // 0 == 0
 
             success
         })
@@ -330,18 +324,18 @@ mod test {
             let b = fabric.share_scalar(b, PARTY0);
 
             // < and <=
-            let mut success = open_unwrap!(less_than::<MAX_BITS>(&a, &b, &fabric)) == ordering; // a < b
-            success &= open_unwrap!(less_than_equal::<MAX_BITS>(&a, &b, &fabric)) == ordering; // a <= b
-            success &= open_unwrap!(less_than::<MAX_BITS>(&b, &a, &fabric)) != ordering; // b < a
-            success &= open_unwrap!(less_than_equal::<MAX_BITS>(&b, &a, &fabric)) != ordering; // b <= a
-            success &= open_unwrap!(less_than_equal::<MAX_BITS>(&a, &a, &fabric)) == Scalar::one(); // a <= a
+            let mut success = open_unwrap!(less_than(&a, &b, &fabric)) == ordering; // a < b
+            success &= open_unwrap!(less_than_equal(&a, &b, &fabric)) == ordering; // a <= b
+            success &= open_unwrap!(less_than(&b, &a, &fabric)) != ordering; // b < a
+            success &= open_unwrap!(less_than_equal(&b, &a, &fabric)) != ordering; // b <= a
+            success &= open_unwrap!(less_than_equal(&a, &a, &fabric)) == Scalar::one(); // a <= a
 
             // > and >=
-            success &= open_unwrap!(greater_than::<MAX_BITS>(&a, &b, &fabric)) != ordering; // a > b
-            success &= open_unwrap!(greater_than_equal::<MAX_BITS>(&a, &b, &fabric)) != ordering; // a >= b
-            success &= open_unwrap!(greater_than::<MAX_BITS>(&b, &a, &fabric)) == ordering; // b > a
-            success &= open_unwrap!(greater_than_equal::<MAX_BITS>(&b, &a, &fabric)) == ordering; // b >= a
-            success &= open_unwrap!(greater_than_equal::<MAX_BITS>(&a, &a, &fabric)) == Scalar::one(); // a >= a
+            success &= open_unwrap!(greater_than(&a, &b, &fabric)) != ordering; // a > b
+            success &= open_unwrap!(greater_than_equal(&a, &b, &fabric)) != ordering; // a >= b
+            success &= open_unwrap!(greater_than(&b, &a, &fabric)) == ordering; // b > a
+            success &= open_unwrap!(greater_than_equal(&b, &a, &fabric)) == ordering; // b >= a
+            success &= open_unwrap!(greater_than_equal(&a, &a, &fabric)) == Scalar::one(); // a >= a
 
             success
         })
@@ -353,9 +347,7 @@ mod test {
     /// Tests the min gadget
     #[tokio::test]
     async fn test_min() {
-        const BITS: usize = 64;
         let mut rng = thread_rng();
-
         let a = Scalar::from(rng.next_u64());
         let b = Scalar::from(rng.next_u64());
 
@@ -366,7 +358,7 @@ mod test {
             let a = fabric.share_scalar(a, PARTY0);
             let b = fabric.share_scalar(b, PARTY0);
 
-            let (min_index, min) = min::<BITS>(&a, &b, &fabric);
+            let (min_index, min) = min(&a, &b, &fabric);
             (open_unwrap!(min_index), open_unwrap!(min))
         })
         .await;

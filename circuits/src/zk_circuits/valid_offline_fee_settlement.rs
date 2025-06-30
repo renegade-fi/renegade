@@ -52,8 +52,6 @@ pub struct ValidOfflineFeeSettlement<
 >;
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     fn circuit(
         statement: &ValidOfflineFeeSettlementStatementVar<MAX_BALANCES, MAX_ORDERS>,
@@ -302,9 +300,7 @@ pub struct ValidOfflineFeeSettlementWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
     const MERKLE_HEIGHT: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The pre-update wallet private shares
     pub original_wallet_private_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The pre-update wallet public shares
@@ -328,10 +324,7 @@ pub struct ValidOfflineFeeSettlementWitness<
 /// The statement type for the `VALID OFFLINE FEE SETTLEMENT` circuit
 #[circuit_type(serde, singleprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidOfflineFeeSettlementStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidOfflineFeeSettlementStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The Merkle root to which inclusion of the original wallet is proven
     pub merkle_root: MerkleRoot,
     /// The nullifier of the original wallet
@@ -356,8 +349,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: usize>
     SingleProverCircuit for ValidOfflineFeeSettlement<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidOfflineFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>;
@@ -406,10 +397,7 @@ pub mod test_helpers {
     ) -> (
         ValidOfflineFeeSettlementStatement<MAX_BALANCES, MAX_ORDERS>,
         ValidOfflineFeeSettlementWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let mut rng = thread_rng();
         let mut wallet = wallet.clone();
         let mut updated_wallet = wallet.clone();

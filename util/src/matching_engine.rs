@@ -157,9 +157,7 @@ pub fn settle_match_into_wallets<const MAX_BALANCES: usize, const MAX_ORDERS: us
     party0_indices: OrderSettlementIndices,
     party1_indices: OrderSettlementIndices,
     match_res: &MatchResult,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+) {
     let direction = OrderSide::from(match_res.direction);
     apply_match_to_shares(wallet0_share, &party0_indices, party0_fees, match_res, direction);
     apply_match_to_shares(
@@ -180,9 +178,7 @@ pub fn apply_match_to_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
     fees: FeeTake,
     match_res: &MatchResult,
     side: OrderSide,
-) where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+) {
     let (_, send_amt) = match_res.send_mint_amount(side);
     let (_, recv_amt) = match_res.receive_mint_amount(side);
 

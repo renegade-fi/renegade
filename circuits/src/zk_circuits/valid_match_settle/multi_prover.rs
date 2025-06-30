@@ -5,7 +5,7 @@ use circuit_types::{
     AMOUNT_BITS, Fabric, MpcPlonkCircuit,
     balance::BalanceVar,
     fees::FeeTakeVar,
-    fixed_point::{DEFAULT_FP_PRECISION, FixedPointVar},
+    fixed_point::FixedPointVar,
     r#match::{MatchResultVar, OrderSettlementIndicesVar},
     order::OrderVar,
     wallet::WalletShareVar,
@@ -23,9 +23,8 @@ use crate::zk_gadgets::{
 
 // --- Matching Engine --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 {
     /// The order crossing check, verifies that the matches result is valid
     /// given the orders and balances of the two parties
@@ -159,14 +158,12 @@ where
         order: &OrderVar,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
-    ) -> Result<(), CircuitError>
-    where
-        [(); AMOUNT_BITS + DEFAULT_FP_PRECISION]: Sized,
-    {
+    ) -> Result<(), CircuitError> {
         // Validate that the amount is less than the maximum amount given in the order
-        MultiproverGreaterThanEqGadget::<AMOUNT_BITS /* bitlength */>::constrain_greater_than_eq(
+        MultiproverGreaterThanEqGadget::constrain_greater_than_eq(
             order.amount,
             match_res.base_amount,
+            AMOUNT_BITS,
             fabric,
             cs,
         )?;
@@ -190,9 +187,8 @@ where
 
 // --- Settlement --- //
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 {
     /// Validate settlement of a match result into the wallets of the two
     /// parties

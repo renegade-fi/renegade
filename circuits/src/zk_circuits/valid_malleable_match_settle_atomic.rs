@@ -47,8 +47,6 @@ pub type SizedValidMalleableMatchSettleAtomic =
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
     ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The circuit constraints for `VALID MALLEABLE MATCH SETTLE ATOMIC`
     pub fn circuit(
@@ -122,7 +120,7 @@ where
         // and the min amount must be less than the max amount
         AmountGadget::constrain_valid_amount(min_amt, cs)?;
         AmountGadget::constrain_valid_amount(max_amt, cs)?;
-        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(max_amt, min_amt, cs)?;
+        GreaterThanEqGadget::constrain_greater_than_eq(max_amt, min_amt, AMOUNT_BITS, cs)?;
 
         // The price must be a valid price
         PriceGadget::constrain_valid_price(match_res.price, cs)
@@ -144,9 +142,10 @@ where
         // their maximum authorized fee
         let max_fee_repr = internal_party_max_fee.repr;
         let internal_relayer_fee_repr = internal_fee.relayer_fee_rate.repr;
-        GreaterThanEqGadget::<FEE_BITS>::constrain_greater_than_eq(
+        GreaterThanEqGadget::constrain_greater_than_eq(
             max_fee_repr,
             internal_relayer_fee_repr,
+            FEE_BITS,
             cs,
         )
     }
@@ -172,7 +171,7 @@ where
 
         // Check that the max match amount does not exceed the order size
         let max_amt = match_res.max_base_amount;
-        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(order.amount, max_amt, cs)?;
+        GreaterThanEqGadget::constrain_greater_than_eq(order.amount, max_amt, AMOUNT_BITS, cs)?;
 
         // Check that the internal party's capitalization
         Self::validate_balance_updates(match_res, send_bal, recv_bal, order, internal_fees, cs)
@@ -213,7 +212,7 @@ where
         send_bal: &BalanceVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
-        GreaterThanEqGadget::<AMOUNT_BITS>::constrain_greater_than_eq(send_bal.amount, max_send, cs)
+        GreaterThanEqGadget::constrain_greater_than_eq(send_bal.amount, max_send, AMOUNT_BITS, cs)
     }
 
     /// Validate that the maximum match does not overflow the internal party's
@@ -248,9 +247,7 @@ where
 pub struct ValidMalleableMatchSettleAtomicWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The internal party's order
     #[link_groups = "valid_commitments_match_settle0"]
     pub internal_party_order: Order,
@@ -279,9 +276,7 @@ pub type SizedValidMalleableMatchSettleAtomicWitness =
 pub struct ValidMalleableMatchSettleAtomicStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The result of the match
     pub bounded_match_result: BoundedMatchResult,
     /// The fee rates charged to the external party
@@ -306,8 +301,6 @@ pub type SizedValidMalleableMatchSettleAtomicStatement =
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidMalleableMatchSettleAtomic<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Statement = ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>;
     type Witness = ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>;
@@ -321,7 +314,7 @@ where
     ///   COMMITMENTS and VALID MATCH SETTLE. We directly use the first layout
     ///   from the standard match settle circuit here for simplicity
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let match_layout = ValidMatchSettle::get_circuit_layout()?;
+        let match_layout = ValidMatchSettle::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()?;
         let layout = match_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
 
         Ok(vec![(VALID_COMMITMENTS_MATCH_SETTLE_LINK0.to_string(), Some(layout))])
@@ -395,10 +388,7 @@ pub mod test_helpers {
     pub fn create_witness_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
         ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         // Setup the orders, match, and wallet
         let (o1, o2, price, mut match_res) = random_orders_and_match();
         let (internal_order, _external_order) = if rand::random() {
@@ -416,10 +406,7 @@ pub mod test_helpers {
     -> (
         ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (o1, o2, price, mut match_res) = random_orders_and_match();
         let internal_order = if o1.side.is_buy() {
             o1
@@ -432,14 +419,13 @@ pub mod test_helpers {
     }
 
     /// Create a witness and statement wherein the internal order is a sell
-    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
-    -> (
+    pub fn create_witness_statement_sell_side<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >() -> (
         ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (o1, o2, price, mut match_res) = random_orders_and_match();
         let internal_order = if o1.side.is_sell() {
             o1
@@ -462,10 +448,7 @@ pub mod test_helpers {
     ) -> (
         ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (wallet1, party0_indices) =
             build_wallet_and_indices_from_order(internal_order, &match_res);
         let (_, internal_party_public_shares) = create_wallet_shares(&wallet1);

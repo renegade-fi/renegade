@@ -23,7 +23,7 @@ use super::bits::{MultiproverToBitsGadget, ToBitsGadget};
 
 /// A gadget that returns whether a value is equal to zero
 #[derive(Clone, Debug)]
-pub struct EqZeroGadget {}
+pub struct EqZeroGadget;
 impl EqZeroGadget {
     /// Computes whether the given input is equal to zero
     ///
@@ -81,7 +81,7 @@ impl EqZeroGadget {
 
 /// Gadget for testing and constraining equality
 #[derive(Clone, Debug)]
-pub struct EqGadget {}
+pub struct EqGadget;
 impl EqGadget {
     /// Computes a == b
     pub fn eq<V>(a: &V, b: &V, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
@@ -111,7 +111,7 @@ impl EqGadget {
 /// Gadgets for testing or constraining the equality of vectors of variable
 /// types
 #[derive(Clone, Debug)]
-pub struct EqVecGadget {}
+pub struct EqVecGadget;
 impl EqVecGadget {
     /// Returns 1 if \vec{a} = \vec{b}, otherwise 0
     pub fn eq_vec<V>(a: &[V], b: &[V], cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
@@ -167,7 +167,7 @@ impl EqVecGadget {
 
 /// Returns a boolean representing a != b where 1 is true and 0 is false
 #[derive(Debug)]
-pub struct NotEqualGadget {}
+pub struct NotEqualGadget;
 impl NotEqualGadget {
     /// Computes a != b
     pub fn not_equal(
@@ -181,12 +181,9 @@ impl NotEqualGadget {
 }
 
 /// A gadget that enforces a value of a given bitlength is positive
-///
-/// The sizing parameter `D` represents the maximum bitlength of positive
-/// scalars under the caller's representation
 #[derive(Clone, Debug)]
-pub struct GreaterThanEqZeroGadget<const D: usize>;
-impl<const D: usize> GreaterThanEqZeroGadget<D> {
+pub struct GreaterThanEqZeroGadget;
+impl GreaterThanEqZeroGadget {
     /// Evaluate the condition x >= 0; returns 1 if true, otherwise 0
     ///
     /// We check the GEQ gadget following the example in circomlib:
@@ -200,59 +197,63 @@ impl<const D: usize> GreaterThanEqZeroGadget<D> {
     ///
     /// In either case we have x >= 0 <=> MSB(x + 2^D) == 1
     ///
+    /// The `num_bits` parameter represents the maximum bitlength of positive
+    /// scalars under the caller's representation
+    ///
     /// Note: The `to_bits` method will enforce that the decomposed bits recover
     /// the input value, so for completeness sake we assume x is in the range
     /// [-2^D, 2^D - 1]
-    pub fn greater_than_eq_zero(x: Variable, cs: &mut PlonkCircuit) -> Result<BoolVar, CircuitError>
-    where
-        [(); D + 1]: Sized,
-    {
+    pub fn greater_than_eq_zero(
+        x: Variable,
+        num_bits: usize,
+        cs: &mut PlonkCircuit,
+    ) -> Result<BoolVar, CircuitError> {
         // Add 2^D to the input
-        let two_to_d = Scalar::from(2u8).pow(D as u64);
+        let two_to_d = Scalar::from(2u8).pow(num_bits as u64);
         let x_plus_2_to_d = cs.add_constant(x, &two_to_d.inner())?;
 
         // Return the MSB
-        let bits = ToBitsGadget::<{ D + 1 }>::to_bits(x_plus_2_to_d, cs)?;
-        Ok(bits[D])
+        let bits = ToBitsGadget::to_bits(x_plus_2_to_d, num_bits + 1, cs)?;
+        Ok(bits[num_bits])
     }
 
     /// Constrain the value to be greater than zero
     pub fn constrain_greater_than_eq_zero(
         x: Variable,
+        num_bits: usize,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // If we can reconstruct the value in the given bitlength, then the value is
         // greater than zero
-        ToBitsGadget::<D>::to_bits(x, cs).map(|_| ())
+        ToBitsGadget::to_bits(x, num_bits, cs).map(|_| ())
     }
 }
 
 /// Enforces the constraint a >= b
 ///
 /// `D` is the bitlength of the values being compared
-pub struct GreaterThanEqGadget<const D: usize>;
-impl<const D: usize> GreaterThanEqGadget<D> {
+pub struct GreaterThanEqGadget;
+impl GreaterThanEqGadget {
     /// Evaluates the comparator a >= b; returns 1 if true, otherwise 0
     pub fn greater_than_eq(
         a: Variable,
         b: Variable,
+        num_bits: usize,
         cs: &mut PlonkCircuit,
-    ) -> Result<BoolVar, CircuitError>
-    where
-        [(); D + 1]: Sized,
-    {
+    ) -> Result<BoolVar, CircuitError> {
         let a_minus_b = cs.sub(a, b)?;
-        GreaterThanEqZeroGadget::<D>::greater_than_eq_zero(a_minus_b, cs)
+        GreaterThanEqZeroGadget::greater_than_eq_zero(a_minus_b, num_bits, cs)
     }
 
     /// Constrains the values to satisfy a >= b
     pub fn constrain_greater_than_eq(
         a: Variable,
         b: Variable,
+        num_bits: usize,
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         let a_minus_b = cs.sub(a, b)?;
-        GreaterThanEqZeroGadget::<D>::constrain_greater_than_eq_zero(a_minus_b, cs)
+        GreaterThanEqZeroGadget::constrain_greater_than_eq_zero(a_minus_b, num_bits, cs)
     }
 }
 
@@ -260,18 +261,16 @@ impl<const D: usize> GreaterThanEqGadget<D> {
 ///
 /// D is the bitlength of the inputs
 #[derive(Clone, Debug)]
-pub struct LessThanGadget<const D: usize>;
-impl<const D: usize> LessThanGadget<D> {
+pub struct LessThanGadget;
+impl LessThanGadget {
     /// Compute the boolean a < b; returns 1 if true, otherwise 0
     pub fn less_than(
         a: Variable,
         b: Variable,
+        num_bits: usize,
         cs: &mut PlonkCircuit,
-    ) -> Result<BoolVar, CircuitError>
-    where
-        [(); D + 1]: Sized,
-    {
-        let a_geq_b = GreaterThanEqGadget::<D>::greater_than_eq(a, b, cs)?;
+    ) -> Result<BoolVar, CircuitError> {
+        let a_geq_b = GreaterThanEqGadget::greater_than_eq(a, b, num_bits, cs)?;
         cs.logic_neg(a_geq_b)
     }
 
@@ -279,12 +278,10 @@ impl<const D: usize> LessThanGadget<D> {
     pub fn constrain_less_than(
         a: Variable,
         b: Variable,
+        num_bits: usize,
         cs: &mut PlonkCircuit,
-    ) -> Result<(), CircuitError>
-    where
-        [(); D + 1]: Sized,
-    {
-        let lt_result = Self::less_than(a, b, cs)?;
+    ) -> Result<(), CircuitError> {
+        let lt_result = Self::less_than(a, b, num_bits, cs)?;
         cs.enforce_true(lt_result)
     }
 }
@@ -402,34 +399,38 @@ impl MultiproverEqGadget {
 }
 
 /// A multiprover version of the greater than or equal to zero gadget
-pub struct MultiproverGreaterThanEqZeroGadget<const D: usize>;
-impl<const D: usize> MultiproverGreaterThanEqZeroGadget<D> {
+pub struct MultiproverGreaterThanEqZeroGadget;
+impl MultiproverGreaterThanEqZeroGadget {
     /// Constrains the input value to be greater than or equal to zero
     /// implicitly by bit-decomposing the value and re-composing it
     /// thereafter
     pub fn constrain_greater_than_eq_zero(
         x: Variable,
+        num_bits: usize,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
-        MultiproverToBitsGadget::<D>::to_bits(x, fabric, cs).map(|_| ())
+        MultiproverToBitsGadget::to_bits(x, num_bits, fabric, cs).map(|_| ())
     }
 }
 
 /// A multiprover variant of the GreaterThanEqGadget
 ///
 /// `D` is the bitlength of the input values
-pub struct MultiproverGreaterThanEqGadget<const D: usize>;
-impl<const D: usize> MultiproverGreaterThanEqGadget<D> {
+pub struct MultiproverGreaterThanEqGadget;
+impl MultiproverGreaterThanEqGadget {
     /// Constrain the relation a >= b
     pub fn constrain_greater_than_eq(
         a: Variable,
         b: Variable,
+        num_bits: usize,
         fabric: &Fabric,
         cs: &mut MpcPlonkCircuit,
     ) -> Result<(), CircuitError> {
         let a_geq_b = cs.sub(a, b)?;
-        MultiproverGreaterThanEqZeroGadget::<D>::constrain_greater_than_eq_zero(a_geq_b, fabric, cs)
+        MultiproverGreaterThanEqZeroGadget::constrain_greater_than_eq_zero(
+            a_geq_b, num_bits, fabric, cs,
+        )
     }
 }
 
@@ -575,19 +576,19 @@ mod test {
         let a_neg = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
         let b_var = b.create_witness(&mut cs);
 
-        let geq_zero1 = GreaterThanEqZeroGadget::<BITS>::greater_than_eq_zero(a_var, &mut cs).unwrap(); // a > 0
-        let geq_zero2 = GreaterThanEqZeroGadget::<BITS>::greater_than_eq_zero(a_neg, &mut cs).unwrap(); // -a > 0
-        GreaterThanEqZeroGadget::<BITS>::constrain_greater_than_eq_zero(a_var, &mut cs).unwrap();
+        let geq_zero1 = GreaterThanEqZeroGadget::greater_than_eq_zero(a_var, BITS, &mut cs).unwrap(); // a > 0
+        let geq_zero2 = GreaterThanEqZeroGadget::greater_than_eq_zero(a_neg, BITS, &mut cs).unwrap(); // -a > 0
+        GreaterThanEqZeroGadget::constrain_greater_than_eq_zero(a_var, BITS, &mut cs).unwrap();
 
-        let geq1 = GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, b_var, &mut cs).unwrap(); // a >= b
-        let geq2 = GreaterThanEqGadget::<BITS>::greater_than_eq(b_var, a_var, &mut cs).unwrap(); // b >= a 
-        let geq3 = GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, a_var, &mut cs).unwrap(); // a >= a
-        GreaterThanEqGadget::<BITS>::constrain_greater_than_eq(a_var, b_var, &mut cs).unwrap();
+        let geq1 = GreaterThanEqGadget::greater_than_eq(a_var, b_var, BITS, &mut cs).unwrap(); // a >= b
+        let geq2 = GreaterThanEqGadget::greater_than_eq(b_var, a_var, BITS, &mut cs).unwrap(); // b >= a 
+        let geq3 = GreaterThanEqGadget::greater_than_eq(a_var, a_var, BITS, &mut cs).unwrap(); // a >= a
+        GreaterThanEqGadget::constrain_greater_than_eq(a_var, b_var, BITS, &mut cs).unwrap();
 
-        let lt1 = LessThanGadget::<BITS>::less_than(a_var, b_var, &mut cs).unwrap(); // a < b
-        let lt2 = LessThanGadget::<BITS>::less_than(b_var, a_var, &mut cs).unwrap(); // b < a
-        let lt3 = LessThanGadget::<BITS>::less_than(a_var, a_var, &mut cs).unwrap(); // a < a
-        LessThanGadget::<BITS>::constrain_less_than(b_var, a_var, &mut cs).unwrap();
+        let lt1 = LessThanGadget::less_than(a_var, b_var, BITS, &mut cs).unwrap(); // a < b
+        let lt2 = LessThanGadget::less_than(b_var, a_var, BITS, &mut cs).unwrap(); // b < a
+        let lt3 = LessThanGadget::less_than(a_var, a_var, BITS, &mut cs).unwrap(); // a < a
+        LessThanGadget::constrain_less_than(b_var, a_var, BITS, &mut cs).unwrap();
 
         cs.enforce_true(geq_zero1).unwrap();
         cs.enforce_false(geq_zero2).unwrap();
@@ -612,7 +613,7 @@ mod test {
         let a_var = Scalar::random(&mut rng).create_witness(&mut cs);
         let b_var = Scalar::random(&mut rng).create_witness(&mut cs);
 
-        GreaterThanEqGadget::<BITS>::greater_than_eq(a_var, b_var, &mut cs).unwrap();
+        GreaterThanEqGadget::greater_than_eq(a_var, b_var, BITS, &mut cs).unwrap();
 
         // The difference a - b should fail to bit-reconstruct in the gadget
         assert!(cs.check_circuit_satisfiability(&[]).is_err());
@@ -637,8 +638,8 @@ mod test {
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
             let a_var = shared_a.create_shared_witness(&mut cs);
 
-            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_eq_zero(
-                a_var, &fabric, &mut cs,
+            MultiproverGreaterThanEqZeroGadget::constrain_greater_than_eq_zero(
+                a_var, BITS, &fabric, &mut cs,
             )
             .unwrap();
             let mut res = cs.check_circuit_satisfiability(&[]).is_ok();
@@ -648,8 +649,8 @@ mod test {
             let a_var = shared_a.create_shared_witness(&mut cs);
             let neg_a = cs.mul_constant(a_var, &-ScalarField::one()).unwrap();
 
-            MultiproverGreaterThanEqZeroGadget::<BITS>::constrain_greater_than_eq_zero(
-                neg_a, &fabric, &mut cs,
+            MultiproverGreaterThanEqZeroGadget::constrain_greater_than_eq_zero(
+                neg_a, BITS, &fabric, &mut cs,
             )
             .unwrap();
             res &= cs.check_circuit_satisfiability(&[]).is_err();
@@ -659,8 +660,8 @@ mod test {
             let a_var = shared_a.create_shared_witness(&mut cs);
             let b_var = shared_b.create_shared_witness(&mut cs);
 
-            MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
-                a_var, b_var, &fabric, &mut cs,
+            MultiproverGreaterThanEqGadget::constrain_greater_than_eq(
+                a_var, b_var, BITS, &fabric, &mut cs,
             )
             .unwrap();
             res &= cs.check_circuit_satisfiability(&[]).is_ok();
@@ -670,8 +671,8 @@ mod test {
             let a_var = shared_a.create_shared_witness(&mut cs);
             let b_var = shared_b.create_shared_witness(&mut cs);
 
-            MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
-                b_var, a_var, &fabric, &mut cs,
+            MultiproverGreaterThanEqGadget::constrain_greater_than_eq(
+                b_var, a_var, BITS, &fabric, &mut cs,
             )
             .unwrap();
             res &= cs.check_circuit_satisfiability(&[]).is_err();
@@ -680,8 +681,8 @@ mod test {
             let mut cs = MpcPlonkCircuit::new(fabric.clone());
             let a_var = shared_a.create_shared_witness(&mut cs);
 
-            MultiproverGreaterThanEqGadget::<BITS>::constrain_greater_than_eq(
-                a_var, a_var, &fabric, &mut cs,
+            MultiproverGreaterThanEqGadget::constrain_greater_than_eq(
+                a_var, a_var, BITS, &fabric, &mut cs,
             )
             .unwrap();
             res &= cs.check_circuit_satisfiability(&[]).is_ok();

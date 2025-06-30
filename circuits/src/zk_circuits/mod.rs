@@ -191,10 +191,7 @@ pub mod test_helpers {
     /// Construct secret shares of a wallet for testing
     pub fn create_wallet_shares<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         wallet: &Wallet<MAX_BALANCES, MAX_ORDERS>,
-    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>) {
         // Sample a random secret share for the blinder
         let mut rng = thread_rng();
         let blinder_share = Scalar::random(&mut rng);
@@ -215,10 +212,7 @@ pub mod test_helpers {
     >(
         wallet: &mut Wallet<MAX_BALANCES, MAX_ORDERS>,
         blinder_seed: Scalar,
-    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (WalletShare<MAX_BALANCES, MAX_ORDERS>, WalletShare<MAX_BALANCES, MAX_ORDERS>) {
         let mut rng = thread_rng();
         let mut csprng = PoseidonCSPRNG::new(blinder_seed);
         let (blinder, private_share) = csprng.next_tuple().unwrap();

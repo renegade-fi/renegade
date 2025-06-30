@@ -50,9 +50,8 @@ pub type SizedValidMatchSettleWithCommitments =
 #[derive(Clone, Debug)]
 pub struct ValidMatchSettle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 
-impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
+impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
+    ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
 {
     /// Applies the constraints of the match-settle circuit
     pub fn multiprover_circuit(
@@ -98,8 +97,6 @@ pub struct ValidMatchSettleWithCommitments<const MAX_BALANCES: usize, const MAX_
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
     ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     /// The order crossing check, for a single prover
     ///
@@ -148,10 +145,7 @@ where
 /// realized in the plaintext by either party
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug)]
-pub struct ValidMatchSettleWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidMatchSettleWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The first party's order
     #[link_groups = "valid_commitments_match_settle0"]
     pub order0: Order,
@@ -211,10 +205,7 @@ pub type SizedAuthenticatedMatchSettleWitness =
 /// The statement type for `VALID MATCH SETTLE`
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ValidMatchSettleStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+pub struct ValidMatchSettleStatement<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The modified public secret shares of the first party
     pub party0_modified_shares: WalletShare<MAX_BALANCES, MAX_ORDERS>,
     /// The modified public secret shares of the second party
@@ -236,9 +227,7 @@ where
 pub struct ValidMatchSettleWithCommitmentsStatement<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
-> where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-{
+> {
     /// The commitment to the first party's new wallet's private shares
     ///
     /// This is placed in the statement to allow a verifier to check this value
@@ -284,8 +273,6 @@ pub type SizedValidMatchSettleWithCommitmentsStatement =
 /// Prover implementation of the Valid Match circuit
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> MultiProverCircuit
     for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Witness = AuthenticatedValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
     type Statement = AuthenticatedValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
@@ -304,8 +291,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
     type Statement = ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>;
@@ -321,7 +306,8 @@ where
     /// We do this because `VALID MATCH SETTLE WITH COMMITMENTS` has a larger
     /// statement, so it must place the groups after its public input gates.
     fn proof_linking_groups() -> Result<Vec<(String, Option<GroupLayout>)>, PlonkError> {
-        let match_settle_layout = ValidMatchSettleWithCommitments::get_circuit_layout()?;
+        let match_settle_layout =
+            ValidMatchSettleWithCommitments::<MAX_BALANCES, MAX_ORDERS>::get_circuit_layout()?;
         let commitments_group0 =
             match_settle_layout.get_group_layout(VALID_COMMITMENTS_MATCH_SETTLE_LINK0);
         let commitments_group1 =
@@ -345,8 +331,6 @@ where
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize> SingleProverCircuit
     for ValidMatchSettleWithCommitments<MAX_BALANCES, MAX_ORDERS>
-where
-    [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {
     type Witness = ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>;
     type Statement = ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>;
@@ -425,10 +409,7 @@ pub mod test_helpers {
     /// `VALID MATCH SETTLE WITH COMMITMENTS`
     pub fn convert_statement_to_commitments<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
         statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
-    ) -> ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS> {
         let mut rng = thread_rng();
         let private_comm0 = Scalar::random(&mut rng);
         let private_comm1 = Scalar::random(&mut rng);
@@ -457,10 +438,7 @@ pub mod test_helpers {
     >() -> (
         ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleWithCommitmentsStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (witness, base_statement) = dummy_witness_and_statement::<MAX_BALANCES, MAX_ORDERS>();
         let statement = convert_statement_to_commitments(base_statement);
         (witness, statement)
@@ -470,10 +448,7 @@ pub mod test_helpers {
     pub fn dummy_witness_and_statement<const MAX_BALANCES: usize, const MAX_ORDERS: usize>() -> (
         ValidMatchSettleWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
-    )
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) {
         let (o1, o2, price, match_res) = random_orders_and_match();
 
         // Build wallets for the crossing orders
@@ -540,13 +515,13 @@ pub mod test_helpers {
 
     // Build two wallets and sample indices for the orders and balances for the
     // match to be placed into
-    pub fn build_wallet_and_indices_from_order<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
+    pub fn build_wallet_and_indices_from_order<
+        const MAX_BALANCES: usize,
+        const MAX_ORDERS: usize,
+    >(
         order: &Order,
         match_res: &MatchResult,
-    ) -> (Wallet<MAX_BALANCES, MAX_ORDERS>, OrderSettlementIndices)
-    where
-        [(); MAX_BALANCES + MAX_ORDERS]: Sized,
-    {
+    ) -> (Wallet<MAX_BALANCES, MAX_ORDERS>, OrderSettlementIndices) {
         let mut wallet = Wallet {
             keys: INITIAL_WALLET.keys.clone(),
             max_match_fee: INITIAL_WALLET.max_match_fee,
