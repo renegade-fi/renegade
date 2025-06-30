@@ -4,9 +4,9 @@
 #![allow(unused_doc_comments)]
 #![allow(clippy::too_many_arguments)]
 
-use alloy::consensus::constants::SELECTOR_LEN;
-use alloy_sol_types::{sol, SolCall};
 use Darkpool::*;
+use alloy::consensus::constants::SELECTOR_LEN;
+use alloy_sol_types::{SolCall, sol};
 
 sol! {
     #[sol(rpc)]

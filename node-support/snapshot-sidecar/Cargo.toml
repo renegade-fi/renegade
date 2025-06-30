@@ -2,7 +2,7 @@
 name = "snapshot-sidecar"
 description = "Sidecar process that manages snapshots emitted by the relayer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 # === AWS Deps === #

@@ -12,13 +12,13 @@ use common::types::{
     merkle::MerkleAuthenticationPath, proof_bundles::FeeRedemptionBundle,
     tasks::RedeemFeeTaskDescriptor, wallet::Wallet,
 };
-use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::{ProofJob, ProofManagerQueue},
 };
 use serde::Serialize;
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::instrument;
 use util::err_str;
 

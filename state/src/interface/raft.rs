@@ -7,13 +7,12 @@ use tracing::instrument;
 use util::err_str;
 
 use crate::{
+    StateInner,
     error::StateError,
     replication::{
-        get_raft_id,
+        Node, NodeId, RaftNode, get_raft_id,
         network::{RaftRequest, RaftResponse},
-        Node, NodeId, RaftNode,
     },
-    StateInner,
 };
 
 impl StateInner {

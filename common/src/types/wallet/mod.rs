@@ -14,7 +14,7 @@ mod orders;
 mod shares;
 mod types;
 
-pub use orders::{pair_from_mints, Order, OrderBuilder, Pair};
+pub use orders::{Order, OrderBuilder, Pair, pair_from_mints};
 pub use types::*;
 
 // ----------------
@@ -23,7 +23,7 @@ pub use types::*;
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{balance::Balance, fixed_point::FixedPoint, order::OrderSide, Amount};
+    use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, order::OrderSide};
     use constants::{MAX_BALANCES, MAX_ORDERS};
     use num_bigint::BigUint;
     use rand::{distributions::uniform::SampleRange, thread_rng};

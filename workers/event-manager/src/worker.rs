@@ -4,7 +4,7 @@ use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
 use common::{
-    types::{chain::Chain, CancelChannel},
+    types::{CancelChannel, chain::Chain},
     worker::Worker,
 };
 use job_types::event_manager::EventManagerReceiver;

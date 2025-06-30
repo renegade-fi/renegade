@@ -4,12 +4,12 @@ use async_trait::async_trait;
 use common::types::{token::Token, wallet::pair_from_mints};
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
+    EmptyRequestResponse,
     http::order_book::{
         GetDepthByMintResponse, GetDepthForAllPairsResponse, GetExternalMatchFeeResponse,
         GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, PriceAndDepth,
     },
     types::DepthSide,
-    EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
@@ -19,8 +19,8 @@ use state::State;
 use util::on_chain::get_external_match_fee;
 
 use crate::{
-    error::{internal_error, not_found, ApiServerError},
-    http::price_report::{get_all_tokens_filtered, FILTERED_TOKENS_PRICES},
+    error::{ApiServerError, internal_error, not_found},
+    http::price_report::{FILTERED_TOKENS_PRICES, get_all_tokens_filtered},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 

@@ -10,14 +10,14 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
+    PlonkCircuit,
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{WalletShare, WalletVar},
-    PlonkCircuit,
 };
-use constants::{Scalar, ScalarField};
 use constants::{MAX_BALANCES, MAX_ORDERS};
+use constants::{Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::wallet_operations::{FeeGadget, WalletGadget};
@@ -173,8 +173,8 @@ pub mod test_helpers {
     use rand::thread_rng;
 
     use crate::zk_circuits::test_helpers::{
-        create_wallet_shares_with_blinder_seed, SizedWallet, INITIAL_WALLET, MAX_BALANCES,
-        MAX_ORDERS,
+        INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, SizedWallet,
+        create_wallet_shares_with_blinder_seed,
     };
 
     use super::{ValidWalletCreateStatement, ValidWalletCreateWitness};
@@ -232,7 +232,7 @@ pub mod test_helpers {
 
 #[cfg(test)]
 pub mod tests {
-    use circuit_types::{fixed_point::FixedPoint, traits::SingleProverCircuit, FEE_BITS};
+    use circuit_types::{FEE_BITS, fixed_point::FixedPoint, traits::SingleProverCircuit};
     use constants::Scalar;
     use rand::thread_rng;
 
@@ -242,7 +242,7 @@ pub mod tests {
             check_constraint_satisfaction,
             test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, MAX_BALANCES, MAX_ORDERS},
             valid_wallet_create::{
-                test_helpers::create_default_witness_statement, ValidWalletCreate,
+                ValidWalletCreate, test_helpers::create_default_witness_statement,
             },
         },
     };

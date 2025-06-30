@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use aws_sdk_s3::Client as S3Client;
-use base64::{prelude::BASE64_STANDARD, Engine};
-use libp2p::{identity::Keypair, PeerId};
+use base64::{Engine, prelude::BASE64_STANDARD};
+use libp2p::{PeerId, identity::Keypair};
 use tokio::fs;
 use toml::Value;
 use util::raw_err_str;

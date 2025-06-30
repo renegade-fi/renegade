@@ -1,6 +1,6 @@
 //! Integration tests for specifying exact output amounts
 
-use circuit_types::{order::OrderSide, Amount};
+use circuit_types::{Amount, order::OrderSide};
 use external_api::http::external_match::ExternalOrder;
 use eyre::Result;
 use hyper::StatusCode;

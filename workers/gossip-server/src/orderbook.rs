@@ -16,7 +16,7 @@ use common::types::{
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
-    request_response::{orderbook::OrderInfoResponse, GossipResponseType},
+    request_response::{GossipResponseType, orderbook::OrderInfoResponse},
 };
 use tracing::debug;
 use util::err_str;

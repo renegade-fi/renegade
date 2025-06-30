@@ -2,7 +2,7 @@
 
 use std::mem;
 
-use common::types::{new_cancel_channel, CancelChannel};
+use common::types::{CancelChannel, new_cancel_channel};
 
 /// Create a cancel channel and forget the sender to avoid drops
 pub fn mock_cancel() -> CancelChannel {

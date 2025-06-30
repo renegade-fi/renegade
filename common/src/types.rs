@@ -31,7 +31,7 @@ pub mod wallet;
 pub use wallet::mocks as wallet_mocks;
 
 use tokio::sync::watch::{
-    channel as watch_channel, Receiver as WatchReceiver, Sender as WatchSender,
+    Receiver as WatchReceiver, Sender as WatchSender, channel as watch_channel,
 };
 
 /// A type alias for an empty channel used to signal cancellation to workers

@@ -1,7 +1,7 @@
 [package]
 name = "external-api"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["full-api"]
@@ -32,11 +32,11 @@ http = { workspace = true, optional = true }
 thiserror = { version = "1.0.61", optional = true }
 
 # === Workspace Dependencies === #
-circuit-types = { workspace = true, default-features = false }
-common = { workspace = true, default-features = false }
-constants = { workspace = true, default-features = false }
+circuit-types = { workspace = true }
+common = { workspace = true }
+constants = { workspace = true }
 renegade-crypto = { workspace = true }
-util = { workspace = true, default-features = false }
+util = { workspace = true }
 
 # === Misc Dependencies === #
 alloy = { workspace = true }
@@ -51,4 +51,4 @@ uuid = { version = "1.1.2", features = ["v4", "serde"] }
 [dev-dependencies]
 rand = "0.8.5"
 num-traits = "0.2.15"
-constants = { workspace = true, default-features = true }
+constants = { workspace = true }

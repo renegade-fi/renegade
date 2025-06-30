@@ -8,12 +8,12 @@
 use ark_ff::{Field, One, Zero};
 use ark_mpc::ResultValue;
 use circuit_types::{
-    traits::{CircuitBaseType, CircuitVarType, MultiproverCircuitBaseType},
     Fabric, MpcPlonkCircuit, PlonkCircuit,
+    traits::{CircuitBaseType, CircuitVarType, MultiproverCircuitBaseType},
 };
 use constants::{AuthenticatedScalar, Scalar, ScalarField, ScalarResult};
 use itertools::Itertools;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 
 use super::bits::{MultiproverToBitsGadget, ToBitsGadget};
 
@@ -438,24 +438,24 @@ mod test {
     use ark_ff::One;
     use ark_mpc::{PARTY0, PARTY1};
     use circuit_types::{
+        MpcPlonkCircuit, PlonkCircuit,
         fixed_point::FixedPoint,
         order::{Order, OrderSide},
         traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
-        MpcPlonkCircuit, PlonkCircuit,
     };
     use constants::{Scalar, ScalarField};
     use mpc_relation::traits::Circuit;
     use num_bigint::RandBigInt;
-    use rand::{seq::SliceRandom, thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, seq::SliceRandom, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
+        SCALAR_MAX_BITS,
         zk_gadgets::comparators::{
             EqGadget, GreaterThanEqGadget, GreaterThanEqZeroGadget, LessThanGadget,
             MultiproverEqGadget, MultiproverGreaterThanEqGadget,
             MultiproverGreaterThanEqZeroGadget,
         },
-        SCALAR_MAX_BITS,
     };
 
     use super::EqZeroGadget;
@@ -472,9 +472,9 @@ mod test {
         Order {
             quote_mint: rng.gen_biguint(bit_size),
             base_mint: rng.gen_biguint(bit_size),
-            amount: rng.gen(),
+            amount: rng.r#gen(),
             side: *[OrderSide::Buy, OrderSide::Sell].choose(&mut rng).unwrap(),
-            worst_case_price: FixedPoint::from_f32_round_down(rng.gen()),
+            worst_case_price: FixedPoint::from_f32_round_down(rng.r#gen()),
         }
     }
 

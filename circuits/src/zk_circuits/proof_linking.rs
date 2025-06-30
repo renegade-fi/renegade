@@ -2,10 +2,10 @@
 
 use core::panic;
 
-use ark_mpc::{network::PartyId, PARTY0, PARTY1};
+use ark_mpc::{PARTY0, PARTY1, network::PartyId};
 use circuit_types::{
-    errors::ProverError, traits::SingleProverCircuit, Fabric, MpcPlonkLinkProof,
-    MpcProofLinkingHint, PlonkLinkProof, PlonkProof, ProofLinkingHint,
+    Fabric, MpcPlonkLinkProof, MpcProofLinkingHint, PlonkLinkProof, PlonkProof, ProofLinkingHint,
+    errors::ProverError, traits::SingleProverCircuit,
 };
 use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
 use mpc_plonk::{
@@ -14,11 +14,11 @@ use mpc_plonk::{
 };
 use mpc_relation::proof_linking::GroupLayout;
 
-use crate::zk_circuits::{valid_reblind::ValidReblind, VALID_REBLIND_COMMITMENTS_LINK};
+use crate::zk_circuits::{VALID_REBLIND_COMMITMENTS_LINK, valid_reblind::ValidReblind};
 
 use super::{
-    valid_match_settle::{ValidMatchSettle, ValidMatchSettleWithCommitments},
     VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
+    valid_match_settle::{ValidMatchSettle, ValidMatchSettleWithCommitments},
 };
 
 // ---------------------------------------
@@ -389,17 +389,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use ark_mpc::{network::PartyId, test_helpers::execute_mock_mpc, PARTY0, PARTY1};
+    use ark_mpc::{PARTY0, PARTY1, network::PartyId, test_helpers::execute_mock_mpc};
     use circuit_types::{
+        Address,
         balance::Balance,
         errors::ProverError,
         fees::FeeTakeRate,
         fixed_point::FixedPoint,
-        order::OrderSide,
         r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
+        order::OrderSide,
         traits::{BaseType, MpcBaseType, SingleProverCircuit},
         wallet::WalletShare,
-        Address,
     };
     use constants::Scalar;
     use mpc_plonk::multiprover::proof_system::MpcLinkingHint;
@@ -411,27 +411,27 @@ mod test {
         zk_circuits::{
             proof_linking::link_commitments_match_settle,
             test_helpers::{
-                create_wallet_shares, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
+                INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, SizedWalletShare, create_wallet_shares,
             },
             valid_commitments::{
-                test_helpers::create_witness_and_statement_with_shares as commitments_witness_statement,
                 ValidCommitments,
+                test_helpers::create_witness_and_statement_with_shares as commitments_witness_statement,
             },
             valid_malleable_match_settle_atomic::{
                 ValidMalleableMatchSettleAtomic, ValidMalleableMatchSettleAtomicStatement,
                 ValidMalleableMatchSettleAtomicWitness,
             },
             valid_match_settle::{
-                test_helpers::dummy_witness_and_statement as match_settle_witness_statement,
                 ValidMatchSettle,
+                test_helpers::dummy_witness_and_statement as match_settle_witness_statement,
             },
             valid_match_settle_atomic::{
                 ValidMatchSettleAtomic, ValidMatchSettleAtomicStatement,
                 ValidMatchSettleAtomicWitness,
             },
             valid_reblind::{
-                test_helpers::construct_witness_statement as reblind_witness_statement,
                 ValidReblind,
+                test_helpers::construct_witness_statement as reblind_witness_statement,
             },
         },
     };
@@ -675,11 +675,7 @@ mod test {
         // Macro to select one of two options based on party id
         macro_rules! sel {
             ($a:expr, $b:expr) => {
-                if party_id == PARTY0 {
-                    $a
-                } else {
-                    $b
-                }
+                if party_id == PARTY0 { $a } else { $b }
             };
         }
 

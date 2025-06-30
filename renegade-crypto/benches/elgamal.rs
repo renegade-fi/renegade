@@ -3,7 +3,7 @@
 #![allow(missing_docs)]
 
 use constants::Scalar;
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rand::thread_rng;
 use renegade_crypto::elgamal::{decrypt_scalar, encrypt_scalar};
 

@@ -3,7 +3,7 @@
 use common::types::hmac::HmacKey;
 use serde::{Deserialize, Serialize};
 
-use crate::{check_hmac, create_hmac, GossipDestination};
+use crate::{GossipDestination, check_hmac, create_hmac};
 
 use self::{
     cluster::{ClusterManagementMessage, ClusterManagementMessageType},

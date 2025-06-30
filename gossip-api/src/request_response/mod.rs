@@ -3,9 +3,9 @@
 use common::types::hmac::HmacKey;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
-use util::telemetry::propagation::{trace_context, TraceContext};
+use util::telemetry::propagation::{TraceContext, trace_context};
 
-use crate::{check_hmac, create_hmac, GossipDestination};
+use crate::{GossipDestination, check_hmac, create_hmac};
 
 use self::{
     handshake::HandshakeMessage,

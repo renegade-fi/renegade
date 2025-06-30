@@ -7,14 +7,14 @@
 
 use std::time::{Duration, Instant};
 
-use ark_mpc::{test_helpers::execute_mock_mpc_with_size_hint, ExecutorSizeHints, PARTY0, PARTY1};
+use ark_mpc::{ExecutorSizeHints, PARTY0, PARTY1, test_helpers::execute_mock_mpc_with_size_hint};
 use circuit_types::{
+    Fabric,
     balance::Balance,
     fixed_point::FixedPoint,
     native_helpers::create_wallet_shares_with_randomness,
     order::Order,
     traits::{BaseType, MpcBaseType},
-    Fabric,
 };
 use circuits::{
     mpc_circuits::{r#match::compute_match, settle::settle_match},
@@ -25,8 +25,8 @@ use circuits::{
         SizedValidMatchSettle, ValidMatchSettle,
     },
 };
-use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use constants::{MAX_BALANCES, MAX_ORDERS, Scalar};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use test_helpers::mpc_network::{
     execute_mock_mpc_with_delay, execute_mock_mpc_with_delay_and_hint,
 };

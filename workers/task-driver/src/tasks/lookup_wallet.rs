@@ -10,13 +10,13 @@ use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use common::types::{
     tasks::LookupWalletTaskDescriptor,
-    wallet::{keychain::PrivateKeyChain, Wallet, WalletIdentifier},
+    wallet::{Wallet, WalletIdentifier, keychain::PrivateKeyChain},
 };
 use constants::Scalar;
-use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::instrument;
 
 use crate::{

@@ -7,11 +7,11 @@ use std::mem;
 use common::types::{
     tasks::mocks::mock_task_descriptor, wallet::WalletIdentifier, wallet_mocks::mock_empty_wallet,
 };
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use job_types::task_driver::new_task_driver_queue;
 use state::{
-    test_helpers::{mock_relayer_config, mock_state_with_task_queue},
     State,
+    test_helpers::{mock_relayer_config, mock_state_with_task_queue},
 };
 use tokio::runtime::Builder as RuntimeBuilder;
 

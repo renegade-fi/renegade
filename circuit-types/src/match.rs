@@ -4,20 +4,20 @@
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 
-use crate::{fixed_point::FixedPoint, order::OrderSide, Address, Amount};
+use crate::{Address, Amount, fixed_point::FixedPoint, order::OrderSide};
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType,
         },
-        Fabric,
     },
     circuit_macros::circuit_type,
     constants::{AuthenticatedScalar, Scalar, ScalarField},
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 // ----------------
@@ -152,11 +152,7 @@ impl ExternalMatchResult {
 
     /// Get the `OrderSide` for the internal party
     pub fn internal_party_side(&self) -> OrderSide {
-        if self.direction {
-            OrderSide::Sell
-        } else {
-            OrderSide::Buy
-        }
+        if self.direction { OrderSide::Sell } else { OrderSide::Buy }
     }
 
     /// Get a mock `MatchResult` type from an `ExternalMatchResult`

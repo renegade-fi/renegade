@@ -17,10 +17,10 @@ use common::types::{
     wallet::{Wallet, WalletIdentifier},
 };
 use constants::Scalar;
-use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::{info, instrument};
 
 use crate::{

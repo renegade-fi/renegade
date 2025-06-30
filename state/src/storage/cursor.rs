@@ -6,14 +6,14 @@
 
 use std::marker::PhantomData;
 
-use libmdbx::{Cursor, TransactionKind, WriteFlags, RW};
+use libmdbx::{Cursor, RW, TransactionKind, WriteFlags};
 
 use crate::storage::{db::deserialize_value, error::StorageError};
 
 use super::{
+    CowBuffer,
     db::serialize_value,
     traits::{Key, Value},
-    CowBuffer,
 };
 
 /// A cursor in a table

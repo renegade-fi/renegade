@@ -10,8 +10,8 @@ use test_helpers::{
 use uuid::Uuid;
 
 use crate::{
-    helpers::{await_task, lookup_wallet_and_check_result, mock_wallet_update},
     IntegrationTestArgs,
+    helpers::{await_task, lookup_wallet_and_check_result, mock_wallet_update},
 };
 
 /// Tests looking up a wallet that has not been created yet, the task should

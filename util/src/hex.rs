@@ -1,11 +1,11 @@
 //! Helpers for converting values to and from hex strings
-use ark_ec::{twisted_edwards::Projective, CurveGroup};
+use ark_ec::{CurveGroup, twisted_edwards::Projective};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use circuit_types::{
     elgamal::BabyJubJubPoint,
     keychain::{NonNativeScalar, PublicSigningKey},
 };
-use constants::{EmbeddedCurveConfig, Scalar, ADDRESS_BYTE_LENGTH};
+use constants::{ADDRESS_BYTE_LENGTH, EmbeddedCurveConfig, Scalar};
 use num_bigint::BigUint;
 use num_traits::Num;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
@@ -118,7 +118,7 @@ pub fn jubjub_from_hex_string(hex: &str) -> Result<BabyJubJubPoint, String> {
 
 #[cfg(test)]
 mod tests {
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
 
     use super::*;
 

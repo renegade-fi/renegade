@@ -1,6 +1,6 @@
 //! Match settlement helpers
 
-use circuit_types::{native_helpers::create_wallet_shares_from_private, r#match::MatchResult};
+use circuit_types::{r#match::MatchResult, native_helpers::create_wallet_shares_from_private};
 use util::matching_engine::compute_fee_obligation;
 
 use super::{OrderIdentifier, Wallet};

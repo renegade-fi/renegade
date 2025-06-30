@@ -7,7 +7,7 @@ use external_api::auth::AuthError;
 use hyper::{Response, StatusCode};
 use state::error::StateError;
 
-use super::router::{build_500_response, build_response_from_status_code, ResponseBody};
+use super::router::{ResponseBody, build_500_response, build_response_from_status_code};
 
 /// The error message for rate limit exceeded errors
 const ERR_RATE_LIMIT_EXCEEDED: &str = "Rate limit exceeded";

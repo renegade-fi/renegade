@@ -2,7 +2,7 @@
 
 use alloy::primitives::{Bytes, U256};
 use alloy_sol_types::SolCall;
-use circuit_types::{r#match::OrderSettlementIndices, traits::BaseType, Amount, SizedWalletShare};
+use circuit_types::{Amount, SizedWalletShare, r#match::OrderSettlementIndices, traits::BaseType};
 use constants::Scalar;
 use serde::{Deserialize, Serialize};
 use util::matching_engine::apply_match_to_shares;
@@ -17,10 +17,6 @@ use super::{
         updateWalletCall,
     },
     contract_types::{
-        conversion::{
-            to_circuit_bounded_match_result, to_circuit_fee_rates,
-            to_circuit_order_settlement_indices,
-        },
         MatchPayload, ValidFeeRedemptionStatement as ContractValidFeeRedemptionStatement,
         ValidMalleableMatchSettleAtomicStatement as ContractValidMalleableMatchSettleAtomicStatement,
         ValidMatchSettleAtomicStatement as ContractValidMatchSettleAtomicStatement,
@@ -29,6 +25,10 @@ use super::{
         ValidRelayerFeeSettlementStatement as ContractValidRelayerFeeSettlementStatement,
         ValidWalletCreateStatement as ContractValidWalletCreateStatement,
         ValidWalletUpdateStatement as ContractValidWalletUpdateStatement,
+        conversion::{
+            to_circuit_bounded_match_result, to_circuit_fee_rates,
+            to_circuit_order_settlement_indices,
+        },
     },
 };
 

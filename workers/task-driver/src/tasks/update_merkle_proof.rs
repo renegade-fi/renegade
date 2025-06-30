@@ -9,10 +9,10 @@ use std::{
 
 use async_trait::async_trait;
 use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
-use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
 use serde::Serialize;
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::instrument;
 
 use crate::{

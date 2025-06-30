@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use common::{
-    types::{chain::Chain, hmac::HmacKey, CancelChannel},
+    types::{CancelChannel, chain::Chain, hmac::HmacKey},
     worker::Worker,
 };
 use darkpool_client::DarkpoolClient;

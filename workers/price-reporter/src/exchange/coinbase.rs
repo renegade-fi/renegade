@@ -9,10 +9,10 @@ use std::{
 use async_trait::async_trait;
 use common::types::{price::Price, token::Token};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
-use jsonwebtoken::{encode, Algorithm, EncodingKey as JwtEncodingKey, Header as JwtHeader};
+use jsonwebtoken::{Algorithm, EncodingKey as JwtEncodingKey, Header as JwtHeader, encode};
 use reqwest::{
-    header::{CONTENT_TYPE, USER_AGENT},
     Client,
+    header::{CONTENT_TYPE, USER_AGENT},
 };
 use serde::Serialize;
 use serde_json::json;
@@ -27,11 +27,11 @@ use crate::{
 };
 
 use super::{
+    Exchange, InitializablePriceStream, PriceStreamType,
     connection::{
-        parse_json_field, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
+        ExchangeConnection, parse_json_field, parse_json_from_message, ws_connect, ws_ping,
     },
-    get_base_exchange_ticker, get_quote_exchange_ticker, Exchange, InitializablePriceStream,
-    PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker,
 };
 
 // -------------

@@ -6,30 +6,30 @@ mod price_agreement;
 pub(crate) mod scheduler;
 mod tasks;
 
-use circuit_types::{r#match::MatchResult, Amount};
+use circuit_types::{Amount, r#match::MatchResult};
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
     types::{
+        CancelChannel,
         gossip::WrappedPeerId,
         handshake::{ConnectionRole, HandshakeState},
         proof_bundles::{MatchBundle, OrderValidityProofBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
         wallet::OrderIdentifier,
-        CancelChannel,
     },
 };
-use constants::{in_bootstrap_mode, HANDSHAKE_STATUS_TOPIC};
+use constants::{HANDSHAKE_STATUS_TOPIC, in_bootstrap_mode};
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::{
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
         PubsubMessage,
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
     },
     request_response::{
-        handshake::HandshakeMessage, AuthenticatedGossipResponse, GossipRequestType,
-        GossipResponseType,
+        AuthenticatedGossipResponse, GossipRequestType, GossipResponseType,
+        handshake::HandshakeMessage,
     },
 };
 use job_types::{
@@ -44,7 +44,7 @@ use renegade_metrics::helpers::record_match_volume;
 use state::State;
 use std::thread::JoinHandle;
 use system_bus::SystemBus;
-use tracing::{error, info, info_span, instrument, Instrument};
+use tracing::{Instrument, error, info, info_span, instrument};
 use util::{
     channels::TracedMessage,
     concurrency::{new_async_shared, runtime::sleep_forever_async},

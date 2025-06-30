@@ -3,10 +3,10 @@
 use std::collections::HashMap;
 
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 
-use crate::{storage::error::StorageError, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE};
+use crate::{CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 
@@ -120,7 +120,7 @@ mod test {
     use common::types::gossip::mocks::mock_peer;
     use libp2p::Multiaddr;
 
-    use crate::{test_helpers::mock_db, CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE};
+    use crate::{CLUSTER_MEMBERSHIP_TABLE, PEER_INFO_TABLE, test_helpers::mock_db};
 
     /// Test adding a peer to the index
     #[test]

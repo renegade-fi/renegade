@@ -4,19 +4,19 @@
 use std::iter;
 
 use circuit_types::{
+    PlonkCircuit,
     balance::BalanceVar,
     elgamal::{ElGamalCiphertext, ElGamalCiphertextVar, EncryptionKey, EncryptionKeyVar},
     merkle::{MerkleOpening, MerkleRoot},
-    note::{Note, NoteVar, NOTE_CIPHERTEXT_SIZE},
+    note::{NOTE_CIPHERTEXT_SIZE, Note, NoteVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar, WalletVar},
-    PlonkCircuit,
 };
 use constants::{
-    EmbeddedScalarField, Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
+    EmbeddedScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT, Scalar, ScalarField,
 };
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 
 use circuit_macros::circuit_type;
 use serde::{Deserialize, Serialize};
@@ -378,19 +378,19 @@ where
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
+        Amount,
         native_helpers::{
             compute_wallet_share_commitment, compute_wallet_share_nullifier, encrypt_note,
             note_commitment, reblind_wallet,
         },
         note::Note,
         wallet::Wallet,
-        Amount,
     };
     use constants::Scalar;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, PROTOCOL_KEY,
+        PROTOCOL_KEY, create_multi_opening, create_wallet_shares,
     };
 
     use super::{ValidOfflineFeeSettlementStatement, ValidOfflineFeeSettlementWitness};
@@ -492,15 +492,15 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
     use circuit_types::{
+        Amount,
         elgamal::{DecryptionKey, ElGamalCiphertext},
         native_helpers::{compute_wallet_share_commitment, encrypt_note, note_commitment},
-        note::{Note, NOTE_CIPHERTEXT_SIZE},
+        note::{NOTE_CIPHERTEXT_SIZE, Note},
         traits::{BaseType, SingleProverCircuit},
         wallet::WalletShare,
-        Amount,
     };
     use constants::{EmbeddedScalarField, Scalar};
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use renegade_crypto::fields::scalar_to_biguint;
 
     use crate::zk_circuits::{
@@ -509,8 +509,8 @@ mod test {
     };
 
     use super::{
-        test_helpers::create_witness_statement, ValidOfflineFeeSettlement,
-        ValidOfflineFeeSettlementStatement, ValidOfflineFeeSettlementWitness,
+        ValidOfflineFeeSettlement, ValidOfflineFeeSettlementStatement,
+        ValidOfflineFeeSettlementWitness, test_helpers::create_witness_statement,
     };
 
     // -----------

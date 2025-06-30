@@ -2,13 +2,13 @@
 
 use common::types::MatchingPoolName;
 use external_api::http::external_match::{
-    AssembleExternalMatchRequest, ExternalMatchResponse, ExternalOrder, ExternalQuoteRequest,
-    ExternalQuoteResponse, SignedExternalQuote, ASSEMBLE_EXTERNAL_MATCH_ROUTE,
-    REQUEST_EXTERNAL_QUOTE_ROUTE,
+    ASSEMBLE_EXTERNAL_MATCH_ROUTE, AssembleExternalMatchRequest, ExternalMatchResponse,
+    ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,
+    SignedExternalQuote,
 };
 use eyre::Result;
 use hyper::StatusCode;
-use reqwest::{header::HeaderMap, Method, Response};
+use reqwest::{Method, Response, header::HeaderMap};
 
 use crate::ctx::IntegrationTestCtx;
 

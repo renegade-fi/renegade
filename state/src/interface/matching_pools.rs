@@ -4,9 +4,9 @@
 // | Constants |
 // -------------
 
-use common::types::{wallet::OrderIdentifier, MatchingPoolName};
+use common::types::{MatchingPoolName, wallet::OrderIdentifier};
 
-use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
+use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
 
 impl StateInner {
     // -----------

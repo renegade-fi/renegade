@@ -1,7 +1,7 @@
 [package]
 name = "test-helpers"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Helpers for setting up and running integration tests for the relayer"
 
 [features]
@@ -42,7 +42,7 @@ futures = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 
 # === Cryptography + Arithmetic === #
-ark-mpc = { workspace = true, optional = true, default-features = true }
+ark-mpc = { workspace = true, optional = true }
 num-bigint = { version = "0.4", features = ["rand"], optional = true }
 k256 = { version = "0.13", optional = true }
 

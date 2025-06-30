@@ -3,20 +3,19 @@
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    runtime,
+    Resource, runtime,
     trace::{self, BatchConfig, Tracer},
-    Resource,
 };
 use opentelemetry_semantic_conventions::{
-    resource::{DEPLOYMENT_ENVIRONMENT, SERVICE_NAME, SERVICE_VERSION},
     SCHEMA_URL,
+    resource::{DEPLOYMENT_ENVIRONMENT, SERVICE_NAME, SERVICE_VERSION},
 };
 
 use crate::err_str;
 
 use super::{
-    datadog::{get_unified_service_tags, UnifiedServiceTags},
     TelemetrySetupError,
+    datadog::{UnifiedServiceTags, get_unified_service_tags},
 };
 
 /// Constructs the resource tags for OTLP traces

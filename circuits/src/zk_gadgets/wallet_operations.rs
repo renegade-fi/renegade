@@ -2,15 +2,15 @@
 //! circuit
 
 use circuit_types::{
+    AMOUNT_BITS, FEE_BITS, Fabric, MpcPlonkCircuit, PRICE_BITS, PlonkCircuit,
     fixed_point::FixedPointVar,
     merkle::MerkleOpeningVar,
     order::OrderVar,
     traits::{CircuitVarType, SecretShareVarType},
     wallet::{WalletShareVar, WalletVar},
-    Fabric, MpcPlonkCircuit, PlonkCircuit, AMOUNT_BITS, FEE_BITS, PRICE_BITS,
 };
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use super::{
     bits::{BitRangeGadget, MultiproverBitRangeGadget},
@@ -346,6 +346,7 @@ mod test {
     use std::iter;
 
     use circuit_types::{
+        AMOUNT_BITS, FEE_BITS, PRICE_BITS, PlonkCircuit, SizedWalletShare,
         fixed_point::FixedPoint,
         native_helpers::{
             compute_wallet_commitment_from_private, compute_wallet_private_share_commitment,
@@ -353,12 +354,11 @@ mod test {
         },
         order::{Order, OrderSide},
         traits::{BaseType, CircuitBaseType},
-        PlonkCircuit, SizedWalletShare, AMOUNT_BITS, FEE_BITS, PRICE_BITS,
     };
-    use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
+    use constants::{MAX_BALANCES, MAX_ORDERS, Scalar};
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use renegade_crypto::hash::PoseidonCSPRNG;
     use std::ops::Neg;
 
@@ -501,13 +501,14 @@ mod test {
         cs.enforce_equal(full_comm.unwrap(), expected_var).unwrap();
 
         // Verify that all constraints are satisfied
-        assert!(cs
-            .check_circuit_satisfiability(&[
+        assert!(
+            cs.check_circuit_satisfiability(&[
                 expected_private.inner(),
                 expected_pub.inner(),
                 expected_full.inner()
             ])
-            .is_ok())
+            .is_ok()
+        )
     }
 
     /// Tests the nullifier gadget

@@ -4,17 +4,17 @@ use std::iter;
 
 use circuit_macros::circuit_type;
 use circuit_types::{
+    PlonkCircuit,
     balance::BalanceVar,
     elgamal::DecryptionKey,
     keychain::PublicSigningKey,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar, WalletVar},
-    PlonkCircuit,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::{
@@ -442,15 +442,15 @@ where
 /// Helper methods for testing the `VALID RELAYER FEE SETTLEMENT` circuit
 pub mod test_helpers {
     use circuit_types::{
+        Amount,
         elgamal::DecryptionKey,
         native_helpers::{
             compute_wallet_private_share_commitment, compute_wallet_share_commitment,
             compute_wallet_share_nullifier, reblind_wallet,
         },
         wallet::Wallet,
-        Amount,
     };
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
 
     use crate::zk_circuits::test_helpers::{create_multi_opening, create_wallet_shares};
 
@@ -561,6 +561,7 @@ pub mod test_helpers {
 mod test {
     use ark_mpc::algebra::Scalar;
     use circuit_types::{
+        AMOUNT_BITS, Address,
         balance::Balance,
         elgamal::DecryptionKey,
         keychain::{PublicSigningKey, PublicSigningKeyShare},
@@ -570,14 +571,13 @@ mod test {
         },
         traits::BaseType,
         wallet::{Wallet, WalletShare},
-        Address, AMOUNT_BITS,
     };
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u128};
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{create_multi_opening, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+        test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, create_multi_opening},
         valid_relayer_fee_settlement::test_helpers::create_witness_statement,
     };
 

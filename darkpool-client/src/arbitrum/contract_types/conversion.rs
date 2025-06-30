@@ -7,15 +7,15 @@ use alloy_primitives::U256;
 use ark_bn254::g1::Config as G1Config;
 use ark_ec::short_weierstrass::Affine;
 use circuit_types::{
+    PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
     elgamal::{ElGamalCiphertext, EncryptionKey},
     fees::{FeeTake, FeeTakeRate},
     fixed_point::FixedPoint,
     keychain::PublicSigningKey,
-    note::NOTE_CIPHERTEXT_SIZE,
     r#match::{BoundedMatchResult, ExternalMatchResult, OrderSettlementIndices},
+    note::NOTE_CIPHERTEXT_SIZE,
     traits::BaseType,
     transfers::{ExternalTransfer, ExternalTransferDirection},
-    PlonkLinkProof, PlonkProof, PolynomialCommitment, SizedWalletShare,
 };
 use circuits::zk_circuits::{
     valid_commitments::ValidCommitmentsStatement,

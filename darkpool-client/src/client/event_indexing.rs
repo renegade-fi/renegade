@@ -4,21 +4,21 @@
 use std::cmp::Reverse;
 use std::collections::VecDeque;
 
-use alloy::consensus::constants::SELECTOR_LEN;
 use alloy::consensus::Transaction;
-use alloy::providers::{ext::DebugApi, Provider};
+use alloy::consensus::constants::SELECTOR_LEN;
+use alloy::providers::{Provider, ext::DebugApi};
+use alloy::rpc::types::Log as RpcLog;
+use alloy::rpc::types::TransactionReceipt;
 use alloy::rpc::types::trace::geth::{
     CallFrame, GethDebugBuiltInTracerType, GethDebugTracerType, GethDebugTracingOptions, GethTrace,
 };
-use alloy::rpc::types::Log as RpcLog;
-use alloy::rpc::types::TransactionReceipt;
 use alloy_contract::Event;
 use alloy_primitives::{Log, Selector, TxHash};
 use alloy_sol_types::SolEvent;
-use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::SizedWalletShare;
+use circuit_types::r#match::ExternalMatchResult;
 use common::types::merkle::MerkleAuthenticationPath;
-use constants::{Scalar, MERKLE_HEIGHT};
+use constants::{MERKLE_HEIGHT, Scalar};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use tracing::{info, instrument};

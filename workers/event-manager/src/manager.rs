@@ -3,7 +3,7 @@
 
 use std::{path::Path, thread::JoinHandle};
 
-use common::types::{chain::Chain, CancelChannel};
+use common::types::{CancelChannel, chain::Chain};
 use constants::in_bootstrap_mode;
 use futures::sink::SinkExt;
 use job_types::event_manager::{EventManagerReceiver, RelayerEvent, RelayerEventType};

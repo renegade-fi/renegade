@@ -6,7 +6,7 @@ use hyper::HeaderMap;
 use state::State;
 
 use crate::{
-    error::{not_found, ApiServerError},
+    error::{ApiServerError, not_found},
     router::ERR_WALLET_NOT_FOUND,
 };
 
@@ -85,10 +85,10 @@ impl AuthMiddleware {
 mod test {
     use std::time::Duration;
 
-    use base64::{engine::general_purpose::STANDARD_NO_PAD as b64, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD as b64};
     use external_api::{
-        auth::{add_expiring_auth_to_headers, create_request_signature},
         RENEGADE_AUTH_HEADER_NAME, RENEGADE_SIG_EXPIRATION_HEADER_NAME,
+        auth::{add_expiring_auth_to_headers, create_request_signature},
     };
     use hyper::header::HeaderValue;
     use util::get_current_time_millis;

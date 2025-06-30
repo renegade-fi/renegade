@@ -4,16 +4,16 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use external_api::{
+    EmptyRequestResponse,
     http::network::{GetClusterInfoResponse, GetNetworkTopologyResponse, GetPeerInfoResponse},
     types::{Cluster, Peer},
-    EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
 use state::State;
 
 use crate::{
-    error::{not_found, ApiServerError},
+    error::{ApiServerError, not_found},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 

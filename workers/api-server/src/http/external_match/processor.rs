@@ -8,6 +8,7 @@ use alloy::{
 };
 use circuit_types::{fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use common::types::{
+    MatchingPoolName,
     hmac::HmacKey,
     price::TimestampedPrice,
     proof_bundles::{
@@ -15,7 +16,6 @@ use common::types::{
     },
     token::Token,
     wallet::Order,
-    MatchingPoolName,
 };
 use constants::{EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use darkpool_client::DarkpoolClient;
@@ -39,8 +39,8 @@ use util::{
 };
 
 use crate::{
-    error::{bad_request, internal_error, no_content, ApiServerError},
-    http::wallet::{get_usdc_denominated_value, ERR_FAILED_TO_FETCH_PRICE},
+    error::{ApiServerError, bad_request, internal_error, no_content},
+    http::wallet::{ERR_FAILED_TO_FETCH_PRICE, get_usdc_denominated_value},
 };
 
 // -------------

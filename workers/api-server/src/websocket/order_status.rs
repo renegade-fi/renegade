@@ -1,15 +1,15 @@
 //! Handler for the order status topic
 
 use async_trait::async_trait;
-use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
+use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use state::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
     auth::AuthType,
-    error::{not_found, ApiServerError},
+    error::{ApiServerError, not_found},
     http::parse_wallet_id_from_params,
-    router::{UrlParams, ERR_WALLET_NOT_FOUND},
+    router::{ERR_WALLET_NOT_FOUND, UrlParams},
 };
 
 use super::handler::WebsocketTopicHandler;

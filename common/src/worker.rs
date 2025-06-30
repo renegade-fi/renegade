@@ -7,7 +7,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::error;
 
 /// A channel for sending worker failures

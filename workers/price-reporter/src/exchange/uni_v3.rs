@@ -14,12 +14,12 @@ use std::{
 };
 use tracing::error;
 use web3::{
+    Web3,
     api::BaseFilter,
     ethabi::{self, Event},
     signing::keccak256,
     transports::WebSocket as Web3Socket,
-    types::{BlockNumber, FilterBuilder, Log as ContractLog, H160, H256, U256},
-    Web3,
+    types::{BlockNumber, FilterBuilder, H160, H256, Log as ContractLog, U256},
 };
 
 use crate::worker::ExchangeConnectionsConfig;

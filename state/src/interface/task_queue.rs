@@ -12,8 +12,8 @@ use tracing::instrument;
 use util::telemetry::helpers::backfill_trace_field;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter,
-    storage::tx::task_queue::TaskQueuePreemptionState, StateInner, StateTransition,
+    StateInner, StateTransition, error::StateError, notifications::ProposalWaiter,
+    storage::tx::task_queue::TaskQueuePreemptionState,
 };
 
 impl StateInner {
@@ -224,8 +224,8 @@ impl StateInner {
 mod test {
     use common::types::{
         tasks::{
-            mocks::{mock_queued_task, mock_task_descriptor},
             QueuedTaskState, TaskQueueKey,
+            mocks::{mock_queued_task, mock_task_descriptor},
         },
         wallet::WalletIdentifier,
         wallet_mocks::mock_empty_wallet,

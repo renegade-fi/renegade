@@ -1,6 +1,7 @@
 //! Wallet helpers for modifying and manipulating a wallet's secret shares
 
 use circuit_types::{
+    SizedWallet, SizedWalletShare,
     native_helpers::{
         compute_wallet_private_share_commitment, compute_wallet_share_commitment,
         compute_wallet_share_nullifier, create_wallet_shares_from_private,
@@ -8,7 +9,6 @@ use circuit_types::{
     },
     traits::BaseType,
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment},
-    SizedWallet, SizedWalletShare,
 };
 use constants::Scalar;
 use renegade_crypto::hash::evaluate_hash_chain;

@@ -9,13 +9,13 @@ use std::time::{Duration, Instant};
 
 use ark_mpc::{PARTY0, PARTY1};
 use circuit_types::{
+    MpcPlonkCircuit,
     balance::Balance,
     fees::FeeTake,
     fixed_point::FixedPoint,
-    order::Order,
     r#match::MatchResult,
+    order::Order,
     traits::{MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType},
-    MpcPlonkCircuit,
 };
 use circuits::{
     mpc_circuits::r#match::compute_match,
@@ -26,8 +26,8 @@ use circuits::{
         SizedValidMatchSettle, ValidMatchSettle, ValidMatchSettleStatement, ValidMatchSettleWitness,
     },
 };
-use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use constants::{MAX_BALANCES, MAX_ORDERS, Scalar};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use mpc_relation::traits::Circuit;
 use test_helpers::mpc_network::execute_mock_mpc_with_delay;
@@ -304,11 +304,13 @@ pub fn bench_verifier_latency(c: &mut Criterion) {
     let mut group = c.benchmark_group("match-mpc");
     group.bench_function(BenchmarkId::new("verifier", ""), |b| {
         b.iter(|| {
-            assert!(verify_singleprover_proof::<ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>>(
-                statement.clone(),
-                &proof
-            )
-            .is_err());
+            assert!(
+                verify_singleprover_proof::<ValidMatchSettle<MAX_BALANCES, MAX_ORDERS>>(
+                    statement.clone(),
+                    &proof
+                )
+                .is_err()
+            );
         })
     });
 }

@@ -2,9 +2,9 @@
 
 use crate::storage::tx::StateTxn;
 
-use super::{error::StateApplicatorError, return_type::ApplicatorReturnType, StateApplicator};
+use super::{StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType};
 use common::types::wallet::order_metadata::OrderMetadata;
-use external_api::bus_message::{wallet_order_history_topic, SystemBusMessage};
+use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use libmdbx::RW;
 
 /// Error emitted when a wallet cannot be found for an order

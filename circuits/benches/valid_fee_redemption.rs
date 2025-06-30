@@ -15,8 +15,8 @@ use circuits::zk_circuits::valid_fee_redemption::{
     ValidFeeRedemption,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::{Scalar, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT, Scalar};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::thread_rng;
 
 // -----------
@@ -25,8 +25,8 @@ use rand::thread_rng;
 
 /// Create a sized witness and statement for the `VALID FEE REDEMPTION`
 /// circuit
-pub fn create_sized_witness_statement(
-) -> (SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness) {
+pub fn create_sized_witness_statement()
+-> (SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness) {
     let mut rng = thread_rng();
     let sender_wallet = wallet_with_random_balances();
     let (_, dummy_receiver) = DecryptionKey::random_pair(&mut rng);

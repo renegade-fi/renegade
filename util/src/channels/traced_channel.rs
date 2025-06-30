@@ -1,15 +1,15 @@
 //! A channel wrapper which adds traces across the channel boundary
 
 use crossbeam::channel::{
-    unbounded as crossbeam_unbounded_channel, Receiver as CrossbeamReceiver,
-    SendError as CrossbeamSendError, Sender as CrossbeamSender,
+    Receiver as CrossbeamReceiver, SendError as CrossbeamSendError, Sender as CrossbeamSender,
+    unbounded as crossbeam_unbounded_channel,
 };
 use tokio::sync::mpsc::{
-    error::SendError, unbounded_channel as tokio_unbounded_channel,
-    UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender,
+    UnboundedReceiver as TokioReceiver, UnboundedSender as TokioSender, error::SendError,
+    unbounded_channel as tokio_unbounded_channel,
 };
 
-use crate::telemetry::propagation::{set_parent_span_from_context, trace_context, TraceContext};
+use crate::telemetry::propagation::{TraceContext, set_parent_span_from_context, trace_context};
 
 /// A traced wrapper type that adds tracing information to the channel message
 /// type

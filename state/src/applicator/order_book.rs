@@ -3,7 +3,7 @@
 
 use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::{order_metadata::OrderState, OrderIdentifier},
+    wallet::{OrderIdentifier, order_metadata::OrderState},
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
@@ -13,7 +13,7 @@ use tracing::warn;
 
 use crate::{applicator::error::StateApplicatorError, storage::tx::StateTxn};
 
-use super::{return_type::ApplicatorReturnType, Result, StateApplicator};
+use super::{Result, StateApplicator, return_type::ApplicatorReturnType};
 
 // -------------
 // | Constants |

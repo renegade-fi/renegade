@@ -7,8 +7,8 @@ use metrics_util::layers::Layer;
 use crate::err_str;
 
 use super::{
-    datadog::{get_unified_service_tags, UnifiedServiceTags, SERVICE_TAG},
     TelemetrySetupError,
+    datadog::{SERVICE_TAG, UnifiedServiceTags, get_unified_service_tags},
 };
 
 /// Default metrics prefix used for the relayer

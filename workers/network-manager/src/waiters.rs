@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use job_types::network_manager::NetworkResponseChannel;
 use libp2p::request_response::RequestId;
-use util::concurrency::{new_async_shared, AsyncShared};
+use util::concurrency::{AsyncShared, new_async_shared};
 
 /// Maps request IDs to channels waiting to be notified of the response
 #[derive(Clone)]

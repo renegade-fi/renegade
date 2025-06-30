@@ -1,13 +1,13 @@
 //! High level transaction interface for accessing the raft log
 
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use openraft::{LogId, SnapshotMeta, Vote};
 use util::res_some;
 
 use crate::{
+    RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
     replication::{Entry, Node, NodeId},
     storage::{cursor::DbCursor, error::StorageError},
-    RAFT_LOGS_TABLE, RAFT_METADATA_TABLE,
 };
 
 use super::StateTxn;

@@ -6,9 +6,9 @@ use std::{iter, ops::Add};
 use constants::{Scalar, ScalarField};
 use itertools::Itertools;
 use k256::{
+    AffinePoint, EncodedPoint, FieldElement as K256FieldElement,
     ecdsa::{SigningKey as K256SigningKey, VerifyingKey as K256VerifyingKey},
     elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint},
-    AffinePoint, EncodedPoint, FieldElement as K256FieldElement,
 };
 use num_bigint::BigUint;
 use renegade_crypto::{fields::get_scalar_field_modulus, hash::compute_poseidon_hash};
@@ -21,15 +21,15 @@ use super::{biguint_from_hex_string, biguint_to_hex_string};
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric,
     },
     circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 /// The number of keys held in a wallet's keychain
@@ -373,7 +373,7 @@ impl PublicKeyChain {
 mod test {
     use k256::ecdsa::{SigningKey, VerifyingKey};
     use num_bigint::BigUint;
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
 
     use crate::keychain::SecretSigningKey;
 

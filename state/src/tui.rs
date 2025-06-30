@@ -2,7 +2,7 @@
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 
 use itertools::Itertools;
@@ -15,16 +15,16 @@ use std::{
 use std::{io::Stdout, thread::Builder as ThreadBuilder, time::Duration};
 use tracing::log::LevelFilter;
 use tui::{
+    Frame, Terminal,
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
     widgets::{Block, Borders, List, ListItem, Row, Table, Tabs},
-    Frame, Terminal,
 };
 use tui_logger::{
-    init_logger, TuiLoggerLevelOutput, TuiLoggerSmartWidget, TuiLoggerWidget,
-    TuiWidgetEvent as LoggerEvent, TuiWidgetState as SmartLoggerState,
+    TuiLoggerLevelOutput, TuiLoggerSmartWidget, TuiLoggerWidget, TuiWidgetEvent as LoggerEvent,
+    TuiWidgetState as SmartLoggerState, init_logger,
 };
 use util::{concurrency::runtime::block_current, get_current_time_millis};
 

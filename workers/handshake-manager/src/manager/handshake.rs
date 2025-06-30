@@ -7,8 +7,8 @@
 use common::types::{handshake::ConnectionRole, wallet::OrderIdentifier};
 use gossip_api::{
     pubsub::{
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
         PubsubMessage,
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
     },
     request_response::handshake::{
         AcceptMatchCandidate, HandshakeMessage, HandshakeMessageType, MatchRejectionReason,

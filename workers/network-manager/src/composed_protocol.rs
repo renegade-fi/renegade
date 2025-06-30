@@ -10,6 +10,7 @@
 use async_trait::async_trait;
 use gossip_api::request_response::{AuthenticatedGossipRequest, AuthenticatedGossipResponse};
 use libp2p::{
+    PeerId,
     core::upgrade::{read_length_prefixed, write_length_prefixed},
     futures::{AsyncRead, AsyncWrite, AsyncWriteExt},
     gossipsub::{
@@ -18,13 +19,12 @@ use libp2p::{
     },
     identify::{Behaviour as IdentifyProtocol, Config as IdentifyConfig, Event as IdentifyEvent},
     identity::Keypair,
-    kad::{record::store::MemoryStore, Kademlia, KademliaEvent},
+    kad::{Kademlia, KademliaEvent, record::store::MemoryStore},
     request_response::{
         Behaviour as RequestResponse, Codec as RequestResponseCodec,
         Config as RequestResponseConfig, Event as RequestResponseEvent, ProtocolName,
         ProtocolSupport,
     },
-    PeerId,
 };
 use libp2p_swarm_derive::NetworkBehaviour;
 use std::{

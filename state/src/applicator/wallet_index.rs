@@ -3,18 +3,18 @@
 use common::types::{
     network_order::NetworkOrder,
     wallet::{
-        order_metadata::{OrderMetadata, OrderState},
         Order, OrderIdentifier, Wallet,
+        order_metadata::{OrderMetadata, OrderState},
     },
 };
-use external_api::bus_message::{wallet_topic, SystemBusMessage, ADMIN_WALLET_UPDATES_TOPIC};
+use external_api::bus_message::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, wallet_topic};
 use itertools::Itertools;
 use libmdbx::RW;
 
 use crate::storage::tx::StateTxn;
 
 use super::{
-    error::StateApplicatorError, return_type::ApplicatorReturnType, Result, StateApplicator,
+    Result, StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType,
 };
 
 /// Error message emitted when metadata for an order is not found
@@ -221,8 +221,8 @@ pub(crate) mod test {
     use uuid::Uuid;
 
     use crate::{
-        applicator::test_helpers::mock_applicator,
-        storage::tx::matching_pools::GLOBAL_MATCHING_POOL, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
+        ORDER_TO_WALLET_TABLE, WALLETS_TABLE, applicator::test_helpers::mock_applicator,
+        storage::tx::matching_pools::GLOBAL_MATCHING_POOL,
     };
 
     // -----------

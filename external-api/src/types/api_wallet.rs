@@ -1,20 +1,20 @@
 //! API types for wallet information
 
 use circuit_types::{
+    Amount, SizedWalletShare,
     balance::Balance,
     fixed_point::FixedPoint,
     keychain::{PublicIdentificationKey, PublicKeyChain, SecretIdentificationKey},
     order::OrderSide,
     traits::BaseType,
-    Amount, SizedWalletShare,
 };
 use common::{
     keyed_list::KeyedList,
     types::{
         hmac::HmacKey,
         wallet::{
-            keychain::{KeyChain, PrivateKeyChain},
             Order, OrderIdentifier, Wallet, WalletIdentifier,
+            keychain::{KeyChain, PrivateKeyChain},
         },
     },
 };

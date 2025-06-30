@@ -20,7 +20,7 @@ use job_types::{
     event_manager::EventManagerQueue,
     network_manager::NetworkManagerQueue,
     proof_manager::ProofManagerQueue,
-    task_driver::{new_task_notification, TaskDriverJob, TaskDriverQueue, TaskDriverReceiver},
+    task_driver::{TaskDriverJob, TaskDriverQueue, TaskDriverReceiver, new_task_notification},
 };
 use num_bigint::BigUint;
 use rand::thread_rng;

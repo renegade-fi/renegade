@@ -11,7 +11,7 @@ use common::types::{
 use constants::Scalar;
 use crossbeam::channel::Sender;
 use state::State;
-use util::concurrency::{new_async_shared, AsyncShared};
+use util::concurrency::{AsyncShared, new_async_shared};
 use uuid::Uuid;
 
 /// Error message thrown when a nullifier cannot be found

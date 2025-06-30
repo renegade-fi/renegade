@@ -1,7 +1,7 @@
 [package]
 name = "constants"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["mpc-types"]
@@ -11,5 +11,5 @@ mpc-types = ["ark-mpc/types", "scalar"]
 [dependencies]
 ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
-ark-mpc = { workspace = true, optional = true, default-features = false }
+ark-mpc = { workspace = true, optional = true }
 ark-ec = "0.4"

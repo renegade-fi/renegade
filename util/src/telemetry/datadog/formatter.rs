@@ -13,8 +13,8 @@ use std::io;
 
 use chrono::Utc;
 use opentelemetry::trace::{SpanId, TraceContextExt, TraceId};
-use serde::ser::{SerializeMap, Serializer as _};
 use serde::Serialize;
+use serde::ser::{SerializeMap, Serializer as _};
 use tracing::{Event, Subscriber};
 use tracing_opentelemetry::OtelData;
 
@@ -162,14 +162,14 @@ impl<'a> WriteAdapter<'a> {
     }
 }
 
-impl<'a> io::Write for WriteAdapter<'a> {
+impl io::Write for WriteAdapter<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s =
             std::str::from_utf8(buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         self.fmt_write.write_str(s).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        Ok(s.as_bytes().len())
+        Ok(s.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

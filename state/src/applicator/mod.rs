@@ -11,7 +11,7 @@ use job_types::{
 };
 use system_bus::SystemBus;
 
-use crate::{caching::order_cache::OrderBookCache, storage::db::DB, StateTransition};
+use crate::{StateTransition, caching::order_cache::OrderBookCache, storage::db::DB};
 
 use self::{error::StateApplicatorError, return_type::ApplicatorReturnType};
 
@@ -134,7 +134,7 @@ pub mod test_helpers {
     use job_types::{
         event_manager::new_event_manager_queue,
         handshake_manager::new_handshake_manager_queue,
-        task_driver::{new_task_driver_queue, TaskDriverQueue},
+        task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use system_bus::SystemBus;
 

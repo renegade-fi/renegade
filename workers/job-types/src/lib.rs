@@ -9,7 +9,7 @@ pub mod proof_manager;
 pub mod task_driver;
 
 use tokio::sync::oneshot::{
-    channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
+    Receiver as OneshotReceiver, Sender as OneshotSender, channel as oneshot_channel,
 };
 
 /// A response channel sender

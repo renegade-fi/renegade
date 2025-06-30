@@ -1,13 +1,13 @@
 //! Helpers for the matching engine
 
 use circuit_types::{
+    Amount,
     balance::Balance,
     fees::FeeTake,
     fixed_point::FixedPoint,
-    order::{Order, OrderSide},
     r#match::{MatchResult, OrderSettlementIndices},
+    order::{Order, OrderSide},
     wallet::WalletShare,
-    Amount,
 };
 use constants::Scalar;
 use renegade_crypto::fields::scalar_to_u128;
@@ -236,17 +236,17 @@ mod tests {
 
     use super::{apply_match_to_shares, compute_max_amount, match_orders};
     use circuit_types::{
+        Amount, SizedWalletShare,
         balance::Balance,
         fixed_point::FixedPoint,
-        order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
+        order::{Order, OrderSide},
         traits::BaseType,
-        Amount, SizedWalletShare,
     };
-    use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
+    use constants::{MAX_BALANCES, MAX_ORDERS, Scalar};
     use lazy_static::lazy_static;
     use num_bigint::RandBigInt;
-    use rand::{distributions::uniform::SampleRange, thread_rng, Rng};
+    use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
     use renegade_crypto::fields::scalar_to_biguint;
 
     // --------------
@@ -305,10 +305,10 @@ mod tests {
         MatchResult {
             base_mint: rng.gen_biguint(100 /* bits */),
             quote_mint: rng.gen_biguint(100 /* bits */),
-            base_amount: rng.gen(),
-            quote_amount: rng.gen(),
-            direction: rng.gen(),
-            min_amount_order_index: rng.gen(),
+            base_amount: rng.r#gen(),
+            quote_amount: rng.r#gen(),
+            direction: rng.r#gen(),
+            min_amount_order_index: rng.r#gen(),
         }
     }
 

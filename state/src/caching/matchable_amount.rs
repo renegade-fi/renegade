@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use circuit_types::{order::OrderSide, Amount};
+use circuit_types::{Amount, order::OrderSide};
 use common::types::wallet::Pair;
 use tokio::sync::RwLock;
 

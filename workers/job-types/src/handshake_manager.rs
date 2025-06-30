@@ -3,18 +3,18 @@
 use std::time::Duration;
 
 use ark_mpc::network::QuicTwoPartyNet;
-use circuit_types::{wallet::Nullifier, Amount};
+use circuit_types::{Amount, wallet::Nullifier};
 use common::types::{
+    MatchingPoolName,
     gossip::WrappedPeerId,
     price::TimestampedPrice,
     wallet::{Order, OrderIdentifier},
-    MatchingPoolName,
 };
 use constants::SystemCurveGroup;
 use external_api::bus_message::gen_atomic_match_response_topic;
-use gossip_api::request_response::{handshake::HandshakeMessage, AuthenticatedGossipResponse};
+use gossip_api::request_response::{AuthenticatedGossipResponse, handshake::HandshakeMessage};
 use libp2p::request_response::ResponseChannel;
-use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
+use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
 
 /// The job queue for the handshake manager

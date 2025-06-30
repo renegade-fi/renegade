@@ -2,9 +2,9 @@
 
 use alloy::signers::local::PrivateKeySigner;
 use circuit_types::{
+    Address, Amount,
     elgamal::{DecryptionKey, EncryptionKey},
     fixed_point::FixedPoint,
-    Address, Amount,
 };
 use clap::Parser;
 use common::types::{
@@ -15,7 +15,7 @@ use common::types::{
     token::Token,
 };
 use ed25519_dalek::Keypair as DalekKeypair;
-use libp2p::{identity::Keypair, Multiaddr};
+use libp2p::{Multiaddr, identity::Keypair};
 use serde::{Deserialize, Serialize};
 use std::{
     net::{IpAddr, SocketAddr},
@@ -24,7 +24,7 @@ use std::{
 use url::Url;
 use util::telemetry::configure_telemetry;
 
-use crate::parsing::{parse_config_from_args, RelayerFeeWhitelistEntry};
+use crate::parsing::{RelayerFeeWhitelistEntry, parse_config_from_args};
 
 // -------
 // | CLI |

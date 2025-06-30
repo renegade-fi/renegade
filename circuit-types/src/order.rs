@@ -7,21 +7,21 @@ use serde::{Deserialize, Serialize};
 use std::{fmt::Display, ops::Add, str::FromStr};
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_addr, fixed_point::FixedPoint, Address, Amount,
+    Address, Amount, biguint_from_hex_string, biguint_to_hex_addr, fixed_point::FixedPoint,
 };
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        AuthenticatedBool, Fabric,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        AuthenticatedBool, Fabric,
     },
     circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
-    mpc_relation::{traits::Circuit, BoolVar, Variable},
+    mpc_relation::{BoolVar, Variable, traits::Circuit},
 };
 
 /// Represents the base type of an open order, including the asset pair, the

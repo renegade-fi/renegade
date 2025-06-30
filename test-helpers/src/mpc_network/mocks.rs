@@ -14,7 +14,7 @@ use async_trait::async_trait;
 
 use constants::{Scalar, ScalarShare, SystemCurveGroup};
 use futures::{Future, Sink, Stream};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 /// The maximum message length in the mock network, used for debugging
 pub const MAX_MESSAGE_LEN: u64 = 1_000_000;

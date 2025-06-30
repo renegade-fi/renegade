@@ -4,7 +4,7 @@
 
 use constants::Scalar;
 use criterion::{
-    black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
+    BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
 };
 use rand::thread_rng;
 use renegade_crypto::hash::compute_poseidon_hash;

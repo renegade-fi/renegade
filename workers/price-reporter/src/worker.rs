@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use common::{
     default_wrapper::DefaultOption,
-    types::{exchange::Exchange, CancelChannel},
+    types::{CancelChannel, exchange::Exchange},
     worker::Worker,
 };
 use external_api::bus_message::SystemBusMessage;
@@ -18,7 +18,7 @@ use crate::manager::external_executor::ExternalPriceReporterExecutor;
 
 use super::{
     errors::PriceReporterError,
-    manager::{native_executor::PriceReporterExecutor, PriceReporter},
+    manager::{PriceReporter, native_executor::PriceReporterExecutor},
 };
 
 /// The number of threads backing the price reporter manager

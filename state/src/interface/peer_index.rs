@@ -8,15 +8,15 @@
 use std::collections::HashMap;
 
 use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
-use external_api::bus_message::{SystemBusMessage, NETWORK_TOPOLOGY_TOPIC};
+use external_api::bus_message::{NETWORK_TOPOLOGY_TOPIC, SystemBusMessage};
 use gossip_api::request_response::heartbeat::HeartbeatMessage;
 use itertools::Itertools;
 use tracing::info;
 
 use crate::{
-    error::StateError,
-    replication::{get_raft_id, RaftNode},
     StateInner,
+    error::StateError,
+    replication::{RaftNode, get_raft_id},
 };
 
 impl StateInner {
@@ -256,7 +256,7 @@ impl StateInner {
 mod test {
     use std::str::FromStr;
 
-    use common::types::gossip::{mocks::mock_peer, ClusterId};
+    use common::types::gossip::{ClusterId, mocks::mock_peer};
 
     use crate::test_helpers::mock_state;
 

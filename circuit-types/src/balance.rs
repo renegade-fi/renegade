@@ -9,21 +9,21 @@ use constants::{Scalar, ScalarField};
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric,
         elgamal::EncryptionKey,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric,
     },
     circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 use crate::{
-    biguint_from_hex_string, biguint_to_hex_addr, fees::FeeTake, note::Note,
-    validate_amount_bitlength, Address, Amount,
+    Address, Amount, biguint_from_hex_string, biguint_to_hex_addr, fees::FeeTake, note::Note,
+    validate_amount_bitlength,
 };
 
 /// Error message when a balance amount is too large

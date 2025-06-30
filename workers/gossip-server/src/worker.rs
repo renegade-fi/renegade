@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use common::default_wrapper::DefaultWrapper;
-use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::types::CancelChannel;
+use common::types::gossip::{ClusterId, WrappedPeerId};
 use common::worker::Worker;
 use darkpool_client::DarkpoolClient;
 use futures::executor::block_on;

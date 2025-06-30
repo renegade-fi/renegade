@@ -15,8 +15,8 @@ use tracing::{error, info, instrument};
 use crate::{
     error::HandshakeManagerError,
     manager::{
-        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
         HandshakeExecutor,
+        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
     },
 };
 

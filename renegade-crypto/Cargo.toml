@@ -1,7 +1,7 @@
 [package]
 name = "renegade-crypto"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["non-wasm"]
@@ -24,14 +24,12 @@ required-features = ["non-wasm"]
 # === Cryptography + Arithmetic === #
 ark-ec = "0.4"
 ark-ff = "0.4"
-ark-mpc = { workspace = true, optional = true, default-features = false, features = [
-    "scalar",
-] }
+ark-mpc = { workspace = true, optional = true, features = ["scalar"] }
 bigdecimal = "0.3"
 num-bigint = { version = "0.4", features = ["rand", "serde"] }
 
 # === Workspace Dependencies === #
-constants = { workspace = true, default-features = false }
+constants = { workspace = true }
 
 # === Misc Dependencies === #
 itertools = "0.10"

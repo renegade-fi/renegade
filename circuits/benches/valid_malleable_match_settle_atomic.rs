@@ -4,8 +4,8 @@
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
-use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::PlonkCircuit;
+use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuits::zk_circuits::valid_malleable_match_settle_atomic::test_helpers::create_witness_statement as create_witness_statement_helper;
 use circuits::zk_circuits::valid_malleable_match_settle_atomic::{
     SizedValidMalleableMatchSettleAtomic, SizedValidMalleableMatchSettleAtomicStatement,
@@ -13,12 +13,12 @@ use circuits::zk_circuits::valid_malleable_match_settle_atomic::{
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{MAX_BALANCES, MAX_ORDERS};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mpc_relation::proof_linking::LinkableCircuit;
 
 /// Create a sized witness and statement for the `VALID MATCH SETTLE ATOMIC`
-pub fn create_sized_witness_statement(
-) -> (SizedValidMalleableMatchSettleAtomicWitness, SizedValidMalleableMatchSettleAtomicStatement)
+pub fn create_sized_witness_statement()
+-> (SizedValidMalleableMatchSettleAtomicWitness, SizedValidMalleableMatchSettleAtomicStatement)
 where
     [(); MAX_BALANCES + MAX_ORDERS]: Sized,
 {

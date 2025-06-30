@@ -3,9 +3,9 @@
 use ark_ff::{Field, Zero};
 use std::ops::MulAssign;
 
-use crate::hash::{CAPACITY, RATE, R_F, R_P};
+use crate::hash::{CAPACITY, R_F, R_P, RATE};
 
-use super::{ScalarField, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, WIDTH};
+use super::{FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, ScalarField, WIDTH};
 
 /// A sponge construction on top of the Poseidon2 permutation
 #[derive(Default)]
@@ -211,13 +211,13 @@ mod test {
 
     use ark_ff::BigInt;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use zkhash::{
         fields::bn256::FpBN256,
         poseidon2::{poseidon2::Poseidon2, poseidon2_instance_bn256::POSEIDON2_BN256_PARAMS},
     };
 
-    use crate::hash::{ScalarField, RATE, WIDTH};
+    use crate::hash::{RATE, ScalarField, WIDTH};
 
     use super::Poseidon2Sponge;
 
@@ -226,7 +226,7 @@ mod test {
     fn test_permutation() {
         // Sample random values to permute on
         let mut rng = thread_rng();
-        let values: [ScalarField; WIDTH] = rng.gen();
+        let values: [ScalarField; WIDTH] = rng.r#gen();
 
         let expected_hasher = Poseidon2::new(&POSEIDON2_BN256_PARAMS);
         let mut hasher = Poseidon2Sponge::new();
@@ -255,7 +255,7 @@ mod test {
     #[test]
     fn test_hash() {
         let mut rng = thread_rng();
-        let values: [ScalarField; RATE] = rng.gen();
+        let values: [ScalarField; RATE] = rng.r#gen();
 
         let expected_hasher = Poseidon2::new(&POSEIDON2_BN256_PARAMS);
         let mut hasher = Poseidon2Sponge::new();

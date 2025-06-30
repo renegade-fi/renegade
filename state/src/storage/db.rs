@@ -5,12 +5,12 @@
 
 use std::{ops::Bound, path::Path};
 
-use libmdbx::{Database, Geometry, WriteMap, RO, RW};
+use libmdbx::{Database, Geometry, RO, RW, WriteMap};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use util::err_str;
 
-use crate::{ciborium_serialize, NUM_TABLES};
+use crate::{NUM_TABLES, ciborium_serialize};
 
 use super::{
     error::StorageError,
@@ -190,7 +190,7 @@ mod test {
 
     use crate::test_helpers::mock_db;
 
-    use super::{DbConfig, DB};
+    use super::{DB, DbConfig};
 
     /// A dummy table name
     const TABLE_NAME: &str = "test_table";

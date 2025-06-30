@@ -1,7 +1,7 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 use common::types::{wallet::Wallet, wallet_mocks::mock_empty_wallet};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use rand::{thread_rng, Rng};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use rand::{Rng, thread_rng};
 use state::{storage::db::DB, test_helpers::mock_db};
 
 // -----------

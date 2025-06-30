@@ -10,15 +10,15 @@ use std::{ops::RangeBounds, sync::Arc};
 use itertools::Itertools;
 use libmdbx::{RO, RW};
 use openraft::storage::LogFlushed;
-use openraft::{storage::RaftLogStorage, RaftLogReader};
 use openraft::{LogId, LogState, StorageError as RaftStorageError, Vote};
+use openraft::{RaftLogReader, storage::RaftLogStorage};
 use util::err_str;
 
 use crate::replication::error::new_log_read_error;
 use crate::storage::db::DB;
 use crate::storage::error::StorageError;
-use crate::storage::tx::raft_log::{lsn_to_key, parse_lsn};
 use crate::storage::tx::StateTxn;
+use crate::storage::tx::raft_log::{lsn_to_key, parse_lsn};
 
 use super::error::new_log_write_error;
 use super::{Entry, NodeId, TypeConfig};

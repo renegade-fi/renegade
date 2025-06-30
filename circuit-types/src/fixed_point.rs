@@ -16,20 +16,20 @@ use renegade_crypto::fields::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{scalar, Amount, SCALAR_ONE};
+use crate::{Amount, SCALAR_ONE, scalar};
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric, PlonkCircuit,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric, PlonkCircuit,
     },
     circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
-    mpc_relation::{errors::CircuitError, traits::Circuit, Variable},
+    mpc_relation::{Variable, errors::CircuitError, traits::Circuit},
 };
 
 /// The default fixed point decimal precision in bits
@@ -126,11 +126,7 @@ impl FixedPoint {
 
     /// Return the absolute value of the fixed point
     pub fn abs(&self) -> Self {
-        if self.is_negative() {
-            self.neg()
-        } else {
-            *self
-        }
+        if self.is_negative() { self.neg() } else { *self }
     }
 
     // --- Conversion --- //
@@ -173,11 +169,7 @@ impl FixedPoint {
 
         let repr_bigint: BigUint = repr.into_bigint().into();
         let fp = repr_bigint.to_f64().unwrap() / DEFAULT_FP_PRECISION_F64;
-        if is_negative {
-            -fp
-        } else {
-            fp
-        }
+        if is_negative { -fp } else { fp }
     }
 
     /// Return the represented value as an f32
@@ -251,11 +243,7 @@ impl FixedPoint {
         let (q, r) = val_repr_bigint.div_rem(&self_repr_bigint);
         let q_scalar = biguint_to_scalar(&q);
 
-        if r == BigUint::from(0u8) {
-            q_scalar
-        } else {
-            q_scalar + Scalar::one()
-        }
+        if r == BigUint::from(0u8) { q_scalar } else { q_scalar + Scalar::one() }
     }
 }
 
@@ -557,7 +545,7 @@ impl Sub<&AuthenticatedFixedPoint> for &AuthenticatedScalar {
 mod fixed_point_tests {
 
     use ark_mpc::{PARTY0, PARTY1};
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use super::*;
@@ -621,7 +609,7 @@ mod fixed_point_tests {
     #[test]
     fn test_repr() {
         let mut rng = thread_rng();
-        let val: f64 = rng.gen();
+        let val: f64 = rng.r#gen();
 
         let fp = FixedPoint::from_f64_round_down(val);
         let recovered = fp.to_f64();
@@ -633,8 +621,8 @@ mod fixed_point_tests {
     #[test]
     fn test_add() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f64_round_down(fp1);
         let fixed2 = FixedPoint::from_f64_round_down(fp2);
@@ -654,8 +642,8 @@ mod fixed_point_tests {
     #[test]
     fn test_sub() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f64_round_down(fp1);
         let fixed2 = FixedPoint::from_f64_round_down(fp2);
@@ -675,8 +663,8 @@ mod fixed_point_tests {
     #[test]
     fn test_mul() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f32_round_down(fp1);
         let fixed2 = FixedPoint::from_f32_round_down(fp2);
@@ -696,7 +684,7 @@ mod fixed_point_tests {
     #[test]
     fn test_floor_div() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f64_round_down(fp1);
         let fixed2 = FixedPoint::from_f64_round_down(fp2);
@@ -710,7 +698,7 @@ mod fixed_point_tests {
     #[test]
     fn test_ceil_div() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f64_round_down(fp1);
         let fixed2 = FixedPoint::from_f64_round_down(fp2);
@@ -724,8 +712,8 @@ mod fixed_point_tests {
     #[test]
     fn test_floor_div_int() {
         let mut rng = thread_rng();
-        let val: u128 = rng.gen();
-        let divisor: f64 = rng.gen();
+        let val: u128 = rng.r#gen();
+        let divisor: f64 = rng.r#gen();
 
         let fp = FixedPoint::from_f64_round_down(divisor);
         let quotient = fp.floor_div_int(val);
@@ -744,7 +732,7 @@ mod fixed_point_tests {
     #[test]
     fn test_floor_div_clean() {
         let mut rng = thread_rng();
-        let divisor: u64 = rng.gen();
+        let divisor: u64 = rng.r#gen();
         let expected_quotient = 2u64;
         let val = (divisor as u128) * (expected_quotient as u128);
 
@@ -762,7 +750,7 @@ mod fixed_point_tests {
     #[test]
     fn test_eval() {
         let mut rng = thread_rng();
-        let val: f64 = rng.gen();
+        let val: f64 = rng.r#gen();
 
         let fp = FixedPoint::from_f64_round_down(val);
 
@@ -777,8 +765,8 @@ mod fixed_point_tests {
     #[test]
     fn test_add_circuit() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let mut cs = PlonkCircuit::new_turbo_plonk();
 
@@ -800,8 +788,8 @@ mod fixed_point_tests {
     #[test]
     fn test_sub_circuit() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let mut cs = PlonkCircuit::new_turbo_plonk();
 
@@ -825,8 +813,8 @@ mod fixed_point_tests {
     #[test]
     fn test_mul_circuit() {
         let mut rng = thread_rng();
-        let fp1 = rng.gen();
-        let int: u32 = rng.gen();
+        let fp1 = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let mut cs = PlonkCircuit::new_turbo_plonk();
 
@@ -851,7 +839,7 @@ mod fixed_point_tests {
     #[tokio::test]
     async fn test_open_eval() {
         let mut rng = thread_rng();
-        let fp = rng.gen();
+        let fp = rng.r#gen();
 
         let fixed = FixedPoint::from_f64_round_down(fp);
 
@@ -870,8 +858,8 @@ mod fixed_point_tests {
     #[tokio::test]
     async fn test_add_mpc() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f64_round_down(fp1);
         let fixed2 = FixedPoint::from_f64_round_down(fp2);
@@ -903,8 +891,8 @@ mod fixed_point_tests {
     #[tokio::test]
     async fn test_sub_mpc() {
         let mut rng = thread_rng();
-        let (fp1, fp2) = rng.gen();
-        let int: u32 = rng.gen();
+        let (fp1, fp2) = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let fixed1 = FixedPoint::from_f64_round_down(fp1);
         let fixed2 = FixedPoint::from_f64_round_down(fp2);
@@ -938,8 +926,8 @@ mod fixed_point_tests {
     #[tokio::test]
     async fn test_mul_mpc() {
         let mut rng = thread_rng();
-        let fp = rng.gen();
-        let int: u32 = rng.gen();
+        let fp = rng.r#gen();
+        let int: u32 = rng.r#gen();
 
         let fixed = FixedPoint::from_f64_round_down(fp);
         let integer = Scalar::from(int);

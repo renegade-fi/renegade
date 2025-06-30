@@ -3,8 +3,8 @@
 use std::{
     iter,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -26,8 +26,9 @@ use super::{
 
 #[cfg(feature = "proof-system-types")]
 use circuit_types::{
+    SizedWallet as SizedCircuitWallet, SizedWalletShare,
     native_helpers::create_wallet_shares_with_randomness, order::Order as CircuitOrder,
-    traits::BaseType, SizedWallet as SizedCircuitWallet, SizedWalletShare,
+    traits::BaseType,
 };
 
 /// A type alias for the wallet identifier type, currently a UUID

@@ -5,14 +5,14 @@
 #![allow(missing_docs)]
 
 use ark_ec::AffineRepr;
+use circuit_types::PlonkCircuit;
 use circuit_types::elgamal::{
     BabyJubJubPointVar, DecryptionKeyVar, ElGamalCiphertextVar, EncryptionKeyVar,
 };
-use circuit_types::PlonkCircuit;
 use constants::EmbeddedCurveConfig;
 use constants::EmbeddedCurveGroupAffine;
 use jf_primitives::circuit::elgamal::{ElGamalEncryptionGadget, EncKeyVars};
-use mpc_relation::{errors::CircuitError, Variable};
+use mpc_relation::{Variable, errors::CircuitError};
 
 use super::comparators::EqGadget;
 
@@ -40,8 +40,8 @@ impl ElGamalGadget {
         cs: &mut PlonkCircuit,
     ) -> Result<(), CircuitError> {
         // k * G
-        let gen = EmbeddedCurveGroupAffine::generator();
-        let kG = cs.fixed_base_scalar_mul(decryption_key.key, &gen)?;
+        let generator = EmbeddedCurveGroupAffine::generator();
+        let kG = cs.fixed_base_scalar_mul(decryption_key.key, &generator)?;
         let kG_point = BabyJubJubPointVar::from(kG);
 
         EqGadget::constrain_eq(&kG_point, encryption_key, cs)
@@ -90,15 +90,15 @@ pub mod test_helpers {
 mod test {
     use ark_ff::UniformRand;
     use circuit_types::{
-        elgamal::DecryptionKey, native_helpers::elgamal_encrypt, traits::CircuitBaseType,
-        PlonkCircuit,
+        PlonkCircuit, elgamal::DecryptionKey, native_helpers::elgamal_encrypt,
+        traits::CircuitBaseType,
     };
     use constants::{EmbeddedScalarField, Scalar};
     use itertools::Itertools;
-    use mpc_relation::{traits::Circuit, Variable};
-    use rand::{thread_rng, Rng};
+    use mpc_relation::{Variable, traits::Circuit};
+    use rand::{Rng, thread_rng};
 
-    use super::{test_helpers::random_elgamal_keypair, ElGamalGadget};
+    use super::{ElGamalGadget, test_helpers::random_elgamal_keypair};
 
     /// Tests the `verify_decryption_key` method
     #[test]

@@ -1,8 +1,8 @@
 //! Groups logic related to the match computation circuit
 
 use circuit_types::{
-    fixed_point::AuthenticatedFixedPoint, order::AuthenticatedOrder,
-    r#match::AuthenticatedMatchResult, Fabric, AMOUNT_BITS,
+    AMOUNT_BITS, Fabric, fixed_point::AuthenticatedFixedPoint, r#match::AuthenticatedMatchResult,
+    order::AuthenticatedOrder,
 };
 use constants::AuthenticatedScalar;
 

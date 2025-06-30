@@ -2,9 +2,9 @@
 
 use circuit_types::fixed_point::FixedPoint;
 use common::types::wallet::WalletIdentifier;
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 
-use crate::{storage::error::StorageError, RELAYER_FEES_TABLE};
+use crate::{RELAYER_FEES_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 

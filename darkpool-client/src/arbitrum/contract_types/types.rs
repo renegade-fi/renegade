@@ -1,7 +1,7 @@
 //! Runtime types used in the contract
 
 use alloy_primitives::{Address, U256};
-use ark_bn254::{g1::Config as G1Config, g2::Config as G2Config, Fq, Fq2, Fr};
+use ark_bn254::{Fq, Fq2, Fr, g1::Config as G1Config, g2::Config as G2Config};
 use ark_ec::short_weierstrass::Affine;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;

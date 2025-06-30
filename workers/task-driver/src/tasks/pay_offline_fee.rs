@@ -15,14 +15,14 @@ use circuits::zk_circuits::valid_offline_fee_settlement::{
 use common::types::{
     proof_bundles::OfflineFeeSettlementBundle, tasks::PayOfflineFeeTaskDescriptor, wallet::Wallet,
 };
-use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::NetworkManagerQueue,
     proof_manager::{ProofJob, ProofManagerQueue},
 };
 use num_bigint::BigUint;
 use serde::Serialize;
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::instrument;
 use util::{err_str, on_chain::get_protocol_pubkey};
 

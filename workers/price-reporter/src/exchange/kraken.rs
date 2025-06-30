@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use common::types::{exchange::Exchange, price::Price, token::Token};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use lazy_static::lazy_static;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
@@ -22,10 +22,11 @@ use crate::{
 };
 
 use super::{
+    InitializablePriceStream, PriceStreamType,
     connection::{
-        parse_json_field_array, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
+        ExchangeConnection, parse_json_field_array, parse_json_from_message, ws_connect, ws_ping,
     },
-    get_base_exchange_ticker, get_quote_exchange_ticker, InitializablePriceStream, PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker,
 };
 
 // -------------

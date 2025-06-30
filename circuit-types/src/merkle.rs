@@ -11,7 +11,7 @@ use crate::{deserialize_array, serialize_array};
 use {
     crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
     circuit_macros::circuit_type,
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 /// A type alias for readability

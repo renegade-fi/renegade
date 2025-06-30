@@ -72,7 +72,7 @@ pub mod test_helpers {
     use std::{collections::HashMap, sync::Arc, time::Duration};
 
     use itertools::Itertools;
-    use util::concurrency::{new_async_shared, AsyncShared};
+    use util::concurrency::{AsyncShared, new_async_shared};
 
     use crate::{
         applicator::test_helpers::mock_applicator, notifications::OpenNotifications,
@@ -80,14 +80,14 @@ pub mod test_helpers {
     };
 
     use super::{
+        NodeId, RaftNode,
         log_store::LogStore,
         network::{
-            mock::{new_switch_queue, MockNetworkNode, SwitchReceiver, SwitchSender},
             RaftRequest, RaftResponse,
+            mock::{MockNetworkNode, SwitchReceiver, SwitchSender, new_switch_queue},
         },
         raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
-        NodeId, RaftNode,
     };
 
     /// The timeout which mock rafts wait for leader election
@@ -319,16 +319,16 @@ mod test {
     use std::time::Duration;
 
     use common::types::wallet_mocks::mock_empty_wallet;
-    use openraft::{testing::StoreBuilder, StorageError as RaftStorageError};
+    use openraft::{StorageError as RaftStorageError, testing::StoreBuilder};
     use rand::{seq::IteratorRandom, thread_rng};
 
-    use crate::{replication::RaftNode, Proposal, StateTransition};
+    use crate::{Proposal, StateTransition, replication::RaftNode};
 
     use super::{
+        NodeId, TypeConfig,
         log_store::LogStore,
         state_machine::StateMachine,
-        test_helpers::{mock_state_and_log, MockRaft},
-        NodeId, TypeConfig,
+        test_helpers::{MockRaft, mock_state_and_log},
     };
 
     /// A builder for the storage layer, used to fit into the `openraft` test

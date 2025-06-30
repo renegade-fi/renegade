@@ -2,13 +2,13 @@
 
 use async_trait::async_trait;
 use common::types::token::Token;
-use external_api::bus_message::{price_report_topic, SystemBusMessage};
+use external_api::bus_message::{SystemBusMessage, price_report_topic};
 use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
     auth::AuthType,
-    error::{bad_request, ApiServerError},
+    error::{ApiServerError, bad_request},
     router::UrlParams,
 };
 

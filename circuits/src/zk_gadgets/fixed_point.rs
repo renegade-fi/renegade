@@ -2,11 +2,11 @@
 
 use ark_ff::One;
 use circuit_types::{
-    fixed_point::{FixedPointVar, DEFAULT_FP_PRECISION, TWO_TO_M_SCALAR},
     Fabric, MpcPlonkCircuit, PlonkCircuit,
+    fixed_point::{DEFAULT_FP_PRECISION, FixedPointVar, TWO_TO_M_SCALAR},
 };
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 
 use super::{
     arithmetic::DivRemGadget,
@@ -173,13 +173,13 @@ impl MultiproverFixedPointGadget {
 mod test {
     use ark_mpc::PARTY0;
     use circuit_types::{
+        MpcPlonkCircuit, PlonkCircuit,
         fixed_point::FixedPoint,
         traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
-        MpcPlonkCircuit, PlonkCircuit,
     };
     use constants::Scalar;
     use mpc_relation::traits::Circuit;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, RngCore, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::zk_gadgets::fixed_point::MultiproverFixedPointGadget;
@@ -232,10 +232,10 @@ mod test {
     #[test]
     fn test_equality() {
         let mut rng = thread_rng();
-        let fp1: f64 = rng.gen();
+        let fp1: f64 = rng.r#gen();
         let fp_floor = fp1.floor() as u64;
         let fp_ceil = fp1.ceil() as u64;
-        let int: u64 = rng.gen();
+        let int: u64 = rng.r#gen();
 
         // Allocate the values in a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();
@@ -286,7 +286,7 @@ mod test {
     #[test]
     fn test_floor() {
         let mut rng = thread_rng();
-        let fp1: f64 = rng.gen();
+        let fp1: f64 = rng.r#gen();
         let floor = fp1.floor() as u64;
 
         // Compute the floor in-circuit
@@ -310,7 +310,7 @@ mod test {
         let mut rng = thread_rng();
         let test_fp = random_fixed_point();
         let test_int = test_fp.floor();
-        let test_u64 = rng.gen::<u64>();
+        let test_u64 = rng.r#gen::<u64>();
 
         let mut test_cases = vec![];
         /// A test case for the floor method
@@ -371,10 +371,10 @@ mod test {
     #[tokio::test]
     async fn test_multiprover_integer_equality() {
         let mut rng = thread_rng();
-        let fp1: f64 = rng.gen();
+        let fp1: f64 = rng.r#gen();
         let fp_floor = fp1.floor() as u64;
         let fp_ceil = fp1.ceil() as u64;
-        let int: u64 = rng.gen();
+        let int: u64 = rng.r#gen();
 
         let (res, _) = execute_mock_mpc(move |fabric| async move {
             let mut cs = MpcPlonkCircuit::new(fabric.clone());

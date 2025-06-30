@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use circuit_types::{traits::BaseType, SizedWallet, SizedWalletShare};
+use circuit_types::{SizedWallet, SizedWalletShare, traits::BaseType};
 use constants::Scalar;
 use darkpool_client::DarkpoolClient;
 use itertools::Itertools;

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use common::types::{
     exchange::PriceReporterState,
     price::TimestampedPrice,
-    token::{get_all_tokens, Token},
+    token::{Token, get_all_tokens},
     wallet::OrderIdentifier,
 };
 use gossip_api::request_response::handshake::PriceVector;

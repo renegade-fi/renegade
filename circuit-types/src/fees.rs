@@ -4,20 +4,20 @@
 use renegade_crypto::fields::scalar_to_u128;
 use serde::{Deserialize, Serialize};
 
-use crate::{fixed_point::FixedPoint, Amount};
+use crate::{Amount, fixed_point::FixedPoint};
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType,
         },
-        Fabric,
     },
     circuit_macros::circuit_type,
     constants::{AuthenticatedScalar, Scalar, ScalarField},
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 /// A pair of fee take rates

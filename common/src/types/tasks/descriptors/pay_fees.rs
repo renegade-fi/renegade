@@ -1,6 +1,6 @@
 //! Task descriptors for paying fees
 
-use circuit_types::{balance::Balance, Amount};
+use circuit_types::{Amount, balance::Balance};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 

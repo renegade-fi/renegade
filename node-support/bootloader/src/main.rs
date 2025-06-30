@@ -6,16 +6,16 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 
-use config::{fetch_config, modify_config, CONFIG_PATH, ENV_SQS_QUEUE_URL};
+use config::{CONFIG_PATH, ENV_SQS_QUEUE_URL, fetch_config, modify_config};
 use gas_wallet::setup_gas_wallet;
 use helpers::{
-    build_s3_client, download_s3_file, in_bootstrap_mode, is_env_var_set, read_env_var,
-    DEFAULT_AWS_REGION,
+    DEFAULT_AWS_REGION, build_s3_client, download_s3_file, in_bootstrap_mode, is_env_var_set,
+    read_env_var,
 };
-use snapshot::{download_snapshot, ENV_SNAP_BUCKET};
+use snapshot::{ENV_SNAP_BUCKET, download_snapshot};
 use tokio::process::Command;
 use tracing::error;
-use util::telemetry::{setup_system_logger, LevelFilter};
+use util::telemetry::{LevelFilter, setup_system_logger};
 
 mod config;
 mod gas_wallet;

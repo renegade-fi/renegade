@@ -1,8 +1,8 @@
 //! Types and utilities for HMAC keys
 
-use base64::engine::{general_purpose as b64_general_purpose, Engine};
+use base64::engine::{Engine, general_purpose as b64_general_purpose};
 use hmac::Mac;
-use rand::{thread_rng, RngCore};
+use rand::{RngCore, thread_rng};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use util::hex::{bytes_from_hex_string, bytes_to_hex_string};

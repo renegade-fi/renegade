@@ -4,7 +4,7 @@ use common::types::{tasks::NewWalletTaskDescriptor, wallet_mocks::mock_empty_wal
 use eyre::Result;
 use test_helpers::integration_test_async;
 
-use crate::{helpers::await_task, IntegrationTestArgs};
+use crate::{IntegrationTestArgs, helpers::await_task};
 
 // ---------
 // | Tests |

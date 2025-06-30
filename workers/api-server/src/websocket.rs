@@ -2,21 +2,21 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use constants::{in_bootstrap_mode, HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC};
+use constants::{HANDSHAKE_STATUS_TOPIC, ORDER_STATE_CHANGE_TOPIC, in_bootstrap_mode};
 use external_api::{
     bus_message::{
-        SystemBusMessage, SystemBusMessageWithTopic, ADMIN_WALLET_UPDATES_TOPIC,
-        NETWORK_TOPOLOGY_TOPIC,
+        ADMIN_WALLET_UPDATES_TOPIC, NETWORK_TOPOLOGY_TOPIC, SystemBusMessage,
+        SystemBusMessageWithTopic,
     },
     websocket::{ClientWebsocketMessage, SubscriptionResponse, WebsocketMessage},
 };
-use futures::{stream::SplitSink, SinkExt, StreamExt};
-use hyper::{http::HeaderValue, HeaderMap};
+use futures::{SinkExt, StreamExt, stream::SplitSink};
+use hyper::{HeaderMap, http::HeaderValue};
 use matchit::Router;
 use system_bus::TopicReader;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_stream::StreamMap;
-use tokio_tungstenite::{accept_async, WebSocketStream};
+use tokio_tungstenite::{WebSocketStream, accept_async};
 use tungstenite::Message;
 
 use crate::{

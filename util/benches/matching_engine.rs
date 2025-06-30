@@ -7,9 +7,9 @@ use circuit_types::{
     fixed_point::FixedPoint,
     order::{Order, OrderSide},
 };
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use num_bigint::RandBigInt;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use util::matching_engine::match_orders;
 
 // --------------

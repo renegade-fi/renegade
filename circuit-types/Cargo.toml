@@ -1,7 +1,7 @@
 [package]
 name = "circuit-types"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["proof-system-types"]
@@ -12,6 +12,7 @@ proof-system-types = [
     "ark-mpc/default",
     "circuit-macros",
     "constants/mpc-types",
+    "renegade-crypto/non-wasm",
     "dep:jf-primitives",
     "dep:mpc-plonk",
     "dep:mpc-relation",
@@ -46,9 +47,7 @@ futures = { workspace = true }
 
 # === Workspace Crates === #
 circuit-macros = { workspace = true, optional = true }
-constants = { workspace = true, default-features = false, features = [
-    "scalar",
-] }
+constants = { workspace = true, features = ["scalar"] }
 renegade-crypto = { workspace = true }
 
 # === Misc === #

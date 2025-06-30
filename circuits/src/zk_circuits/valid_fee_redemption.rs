@@ -2,19 +2,19 @@
 //! state
 
 use circuit_macros::circuit_type;
+use circuit_types::PlonkCircuit;
 use circuit_types::elgamal::DecryptionKey;
 use circuit_types::keychain::PublicSigningKey;
-use circuit_types::PlonkCircuit;
 use circuit_types::{
     merkle::{MerkleOpening, MerkleRoot},
     note::{Note, NoteVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::errors::CircuitError;
-use mpc_relation::{traits::Circuit, Variable};
+use mpc_relation::{Variable, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::zk_gadgets::comparators::{EqGadget, EqVecGadget, EqZeroGadget};
@@ -443,6 +443,7 @@ mod test {
     use std::iter;
 
     use circuit_types::{
+        AMOUNT_BITS, Amount,
         balance::Balance,
         elgamal::DecryptionKey,
         keychain::{PublicSigningKey, PublicSigningKeyShare},
@@ -454,15 +455,14 @@ mod test {
         note::Note,
         traits::{BaseType, SingleProverCircuit},
         wallet::{Nullifier, Wallet},
-        Amount, AMOUNT_BITS,
     };
     use constants::Scalar;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use renegade_crypto::fields::{scalar_to_biguint, scalar_to_u128};
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{create_multi_opening, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+        test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, create_multi_opening},
         valid_fee_redemption::test_helpers::create_witness_and_statement,
     };
 

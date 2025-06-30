@@ -1,6 +1,6 @@
 //! Auth helpers for the external API
 
-use base64::engine::{general_purpose as b64_general_purpose, Engine};
+use base64::engine::{Engine, general_purpose as b64_general_purpose};
 use common::types::hmac::HmacKey;
 use http::{HeaderMap, HeaderValue};
 use itertools::Itertools;

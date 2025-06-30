@@ -27,7 +27,7 @@ use circuits::zk_circuits::{
 use common::types::proof_bundles::ProofBundle;
 use tokio::sync::oneshot::Sender;
 use util::channels::{
-    new_traced_crossbeam_channel, TracedCrossbeamReceiver, TracedCrossbeamSender,
+    TracedCrossbeamReceiver, TracedCrossbeamSender, new_traced_crossbeam_channel,
 };
 
 /// The queue type for the proof manager

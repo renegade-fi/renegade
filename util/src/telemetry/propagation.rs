@@ -2,9 +2,8 @@
 use std::collections::HashMap;
 
 use opentelemetry::{
-    global,
+    Context, global,
     propagation::{Extractor, Injector},
-    Context,
 };
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 

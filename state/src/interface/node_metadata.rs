@@ -1,16 +1,16 @@
 //! Stores state information relating to the node's configuration
 
-use circuit_types::{fixed_point::FixedPoint, Address};
+use circuit_types::{Address, fixed_point::FixedPoint};
 use common::types::{
     gossip::{ClusterId, PeerInfo, WrappedPeerId},
-    wallet::{derivation::derive_wallet_id, Wallet, WalletIdentifier},
+    wallet::{Wallet, WalletIdentifier, derivation::derive_wallet_id},
 };
 use config::{RelayerConfig, RelayerFeeKey};
 use libp2p::{core::Multiaddr, identity::Keypair};
 use tracing::warn;
 use util::res_some;
 
-use crate::{error::StateError, StateInner, NODE_METADATA_TABLE};
+use crate::{NODE_METADATA_TABLE, StateInner, error::StateError};
 
 impl StateInner {
     // -----------

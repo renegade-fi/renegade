@@ -11,7 +11,7 @@ use common::types::{
     tasks::TaskIdentifier,
     token::Token,
     wallet::{
-        order_metadata::OrderMetadata, OrderIdentifier, Wallet as StateWallet, WalletIdentifier,
+        OrderIdentifier, Wallet as StateWallet, WalletIdentifier, order_metadata::OrderMetadata,
     },
 };
 use serde::Serialize;

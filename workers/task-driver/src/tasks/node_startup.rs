@@ -11,28 +11,28 @@ use alloy::signers::{k256::ecdsa::SigningKey, local::PrivateKeySigner};
 use async_trait::async_trait;
 use common::types::{
     tasks::{LookupWalletTaskDescriptor, NewWalletTaskDescriptor, NodeStartupTaskDescriptor},
-    token::{get_all_tokens, Token},
+    token::{Token, get_all_tokens},
     wallet::{
+        Wallet, WalletIdentifier,
         derivation::{
             derive_blinder_seed, derive_share_seed, derive_wallet_id, derive_wallet_keychain,
         },
         keychain::KeyChain,
-        Wallet, WalletIdentifier,
     },
 };
-use constants::{in_bootstrap_mode, Scalar, NATIVE_ASSET_ADDRESS};
-use darkpool_client::{errors::DarkpoolClientError, DarkpoolClient};
+use constants::{NATIVE_ASSET_ADDRESS, Scalar, in_bootstrap_mode};
+use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
 use job_types::{
     network_manager::{NetworkManagerControlSignal, NetworkManagerJob, NetworkManagerQueue},
     proof_manager::ProofManagerQueue,
     task_driver::TaskDriverQueue,
 };
 use serde::Serialize;
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::{error, info, instrument};
 use util::{
     err_str,
-    on_chain::{set_external_match_fee, PROTOCOL_FEE, PROTOCOL_PUBKEY},
+    on_chain::{PROTOCOL_FEE, PROTOCOL_PUBKEY, set_external_match_fee},
 };
 
 use crate::{

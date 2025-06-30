@@ -10,7 +10,7 @@ use common::types::{
 };
 use util::res_some;
 
-use crate::{error::StateError, notifications::ProposalWaiter, StateInner, StateTransition};
+use crate::{StateInner, StateTransition, error::StateError, notifications::ProposalWaiter};
 
 impl StateInner {
     // -----------
@@ -164,15 +164,15 @@ mod test {
     use common::types::{
         price::TimestampedPrice,
         wallet::{
-            order_metadata::{OrderMetadata, OrderState, PartialOrderFill},
             OrderIdentifier, WalletIdentifier,
+            order_metadata::{OrderMetadata, OrderState, PartialOrderFill},
         },
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
     use itertools::Itertools;
     use num_bigint::BigUint;
 
-    use crate::{order_history::test::setup_order_history, test_helpers::mock_state, State};
+    use crate::{State, order_history::test::setup_order_history, test_helpers::mock_state};
 
     /// Create a set of mock historical orders
     fn create_mock_historical_orders(n: usize, wallet_id: WalletIdentifier, state: &State) {

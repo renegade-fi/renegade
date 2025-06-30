@@ -6,25 +6,25 @@
 use ark_ff::{One, Zero};
 use circuit_macros::circuit_type;
 use circuit_types::{
+    PlonkCircuit,
     keychain::PublicSigningKey,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     transfers::{ExternalTransfer, ExternalTransferVar},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletVar},
-    PlonkCircuit,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    SingleProverCircuit,
     zk_gadgets::{
         comparators::{EqGadget, EqVecGadget, EqZeroGadget, NotEqualGadget},
         select::CondSelectGadget,
         wallet_operations::{AmountGadget, PriceGadget, WalletGadget},
     },
-    SingleProverCircuit,
 };
 
 // ----------------------
@@ -534,8 +534,8 @@ pub mod test_helpers {
     };
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, create_wallet_shares_with_blinder_seed,
-        MAX_BALANCES, MAX_ORDERS,
+        MAX_BALANCES, MAX_ORDERS, create_multi_opening, create_wallet_shares,
+        create_wallet_shares_with_blinder_seed,
     };
 
     use super::{ValidWalletUpdateStatement, ValidWalletUpdateWitness};
@@ -616,6 +616,7 @@ pub mod test_helpers {
 #[allow(non_snake_case)]
 mod test {
     use circuit_types::{
+        AMOUNT_BITS, Address, PRICE_BITS,
         balance::Balance,
         elgamal::DecryptionKey,
         fixed_point::FixedPoint,
@@ -624,22 +625,21 @@ mod test {
         order::Order,
         traits::{CircuitBaseType, SingleProverCircuit},
         transfers::{ExternalTransfer, ExternalTransferDirection},
-        Address, AMOUNT_BITS, PRICE_BITS,
     };
     use constants::Scalar;
     use k256::ecdsa::SigningKey;
-    use mpc_relation::{traits::Circuit, PlonkCircuit};
-    use rand::{thread_rng, Rng, RngCore};
+    use mpc_relation::{PlonkCircuit, traits::Circuit};
+    use rand::{Rng, RngCore, thread_rng};
     use renegade_crypto::fields::scalar_to_u128;
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+        test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, SizedWallet},
     };
 
     use super::{
-        test_helpers::{construct_witness_statement, MERKLE_HEIGHT},
         ValidWalletUpdate,
+        test_helpers::{MERKLE_HEIGHT, construct_witness_statement},
     };
 
     /// A marker constant for no transfer on the index

@@ -1,8 +1,8 @@
 //! Common helpers across chains
 
-use alloy::signers::{local::PrivateKeySigner, SignerSync};
-use alloy_primitives::{keccak256, Address, B256, U256};
-use alloy_sol_types::{eip712_domain, SolStruct};
+use alloy::signers::{SignerSync, local::PrivateKeySigner};
+use alloy_primitives::{Address, B256, U256, keccak256};
+use alloy_sol_types::{SolStruct, eip712_domain};
 use circuit_types::{keychain::PublicSigningKey, traits::BaseType, transfers::ExternalTransfer};
 use common::types::transfer_auth::{DepositAuth, ExternalTransferWithAuth};
 use rand::RngCore;
@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::permit2_abi::{
-    DepositWitness, PermitWitnessTransferFrom, TokenPermissions, PERMIT2_EIP712_DOMAIN_NAME,
+    DepositWitness, PERMIT2_EIP712_DOMAIN_NAME, PermitWitnessTransferFrom, TokenPermissions,
 };
 
 /// The number of scalars in a secp256k1 public key

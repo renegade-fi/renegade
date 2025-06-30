@@ -1,10 +1,10 @@
 //! Defines helpers for logging
 
 use std::{error::Error, fmt::Display};
-pub use tracing_subscriber::{filter::LevelFilter, fmt::format::Format};
 use tracing_subscriber::{
-    fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer, Registry,
+    EnvFilter, Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
+pub use tracing_subscriber::{filter::LevelFilter, fmt::format::Format};
 
 pub mod datadog;
 pub mod helpers;

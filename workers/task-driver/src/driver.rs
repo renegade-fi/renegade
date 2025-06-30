@@ -13,7 +13,7 @@ use tokio::runtime::Builder as TokioRuntimeBuilder;
 use tracing::{error, info, instrument, warn};
 use util::{
     channels::TracedMessage,
-    concurrency::{new_shared, Shared},
+    concurrency::{Shared, new_shared},
 };
 
 use crate::{
@@ -343,10 +343,6 @@ impl TaskExecutor {
             }
         }
 
-        if task.completed() {
-            Ok(())
-        } else {
-            Err(TaskDriverError::TaskFailed)
-        }
+        if task.completed() { Ok(()) } else { Err(TaskDriverError::TaskFailed) }
     }
 }

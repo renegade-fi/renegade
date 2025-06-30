@@ -11,12 +11,12 @@ pub use hash::*;
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{traits::CircuitBaseType, PlonkCircuit};
+    use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
     use constants::Scalar;
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::thread_rng;
-    use renegade_crypto::hash::{compute_poseidon_hash, Poseidon2Sponge};
+    use renegade_crypto::hash::{Poseidon2Sponge, compute_poseidon_hash};
 
     use crate::zk_gadgets::poseidon::PoseidonHashGadget;
 

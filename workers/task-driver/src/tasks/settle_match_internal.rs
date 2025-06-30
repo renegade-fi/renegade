@@ -27,17 +27,17 @@ use common::types::{
     wallet::Wallet,
 };
 use constants::Scalar;
-use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
-use job_types::event_manager::{try_send_event, EventManagerQueue, FillEvent, RelayerEventType};
+use darkpool_client::errors::DarkpoolClientError;
+use job_types::event_manager::{EventManagerQueue, FillEvent, RelayerEventType, try_send_event};
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::record_match_volume;
 use serde::Serialize;
-use state::error::StateError;
 use state::State;
+use state::error::StateError;
 use tokio::task::JoinHandle as TokioJoinHandle;
-use tracing::{instrument, Instrument};
+use tracing::{Instrument, instrument};
 use util::err_str;
 use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,

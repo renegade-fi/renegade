@@ -20,7 +20,7 @@ macro_rules! integration_test_main {
         use std::{borrow::Borrow, cell::RefCell, net::SocketAddr, process::exit, rc::Rc};
 
         use colored::Colorize;
-        use std::io::{stdout, Write};
+        use std::io::{Write, stdout};
         use tokio::runtime::{Builder as RuntimeBuilder, Handle};
 
         use $crate::types::{IntegrationTest, IntegrationTestFn};

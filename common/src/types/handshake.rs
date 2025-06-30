@@ -119,7 +119,7 @@ impl HandshakeState {
         // Assert valid transition
         assert!(
             std::matches!(self.state, State::OrderNegotiation { .. })
-            || std::matches!(self.state, State::MatchInProgress { .. }),
+                || std::matches!(self.state, State::MatchInProgress { .. }),
             "completed may only be called on a handshake in OrderNegotiation or MatchInProgress state"
         );
 

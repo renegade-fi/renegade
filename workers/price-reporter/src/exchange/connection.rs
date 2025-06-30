@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use common::types::{exchange::Exchange, price::Price, token::Token};
 use futures::stream::StreamExt;
 use futures_util::{
-    stream::{SplitSink, SplitStream},
     Sink, SinkExt, Stream,
+    stream::{SplitSink, SplitStream},
 };
 use serde_json::Value;
 use std::{str::FromStr, time::Duration};
 use tokio::{net::TcpStream, time::Instant};
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 use tracing::{error, info, warn};
 use tungstenite::Error as WsError;
 use url::Url;
@@ -18,13 +18,13 @@ use util::{err_str, get_current_time_millis};
 
 use crate::{
     manager::{
-        SharedPriceStreamStates, CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES,
-        MAX_CONN_RETRY_WINDOW_MS,
+        CONN_RETRY_DELAY_MS, KEEPALIVE_INTERVAL_MS, MAX_CONN_RETRIES, MAX_CONN_RETRY_WINDOW_MS,
+        SharedPriceStreamStates,
     },
     worker::{ExchangeConnectionsConfig, PriceReporterConfig},
 };
 
-use super::{super::errors::ExchangeConnectionError, connect_exchange, PriceStreamType};
+use super::{super::errors::ExchangeConnectionError, PriceStreamType, connect_exchange};
 
 // -------------
 // | Constants |

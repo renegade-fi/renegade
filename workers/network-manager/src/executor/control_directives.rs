@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::error::NetworkManagerError;
 
-use super::{behavior::BehaviorJob, NetworkManagerExecutor, ERR_BROKER_MPC_NET, ERR_NO_KNOWN_ADDR};
+use super::{ERR_BROKER_MPC_NET, ERR_NO_KNOWN_ADDR, NetworkManagerExecutor, behavior::BehaviorJob};
 
 impl NetworkManagerExecutor {
     /// Handles a message from another worker module that explicitly directs the

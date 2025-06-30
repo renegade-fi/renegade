@@ -15,12 +15,12 @@ use crate::{
 };
 use abi::{
     Darkpool::{
-        newWalletCall, processAtomicMatchSettleCall, processAtomicMatchSettleWithReceiverCall,
-        processMalleableAtomicMatchSettleCall, processMalleableAtomicMatchSettleWithReceiverCall,
-        processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, settleOnlineRelayerFeeCall,
-        updateWalletCall, DarkpoolInstance, MerkleInsertion as AbiMerkleInsertion,
+        DarkpoolInstance, MerkleInsertion as AbiMerkleInsertion,
         MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,
-        WalletUpdated as AbiWalletUpdated,
+        WalletUpdated as AbiWalletUpdated, newWalletCall, processAtomicMatchSettleCall,
+        processAtomicMatchSettleWithReceiverCall, processMalleableAtomicMatchSettleCall,
+        processMalleableAtomicMatchSettleWithReceiverCall, processMatchSettleCall, redeemFeeCall,
+        settleOfflineFeeCall, settleOnlineRelayerFeeCall, updateWalletCall,
     },
     KNOWN_SELECTORS, PROCESS_ATOMIC_MATCH_SETTLE_SELECTOR,
     PROCESS_ATOMIC_MATCH_SETTLE_WITH_RECEIVER_SELECTOR,
@@ -35,8 +35,8 @@ use alloy_primitives::{Address, Bytes, Selector, U256};
 use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 use circuit_types::{
-    elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
-    r#match::ExternalMatchResult, wallet::Nullifier, SizedWalletShare,
+    SizedWalletShare, elgamal::EncryptionKey, fixed_point::FixedPoint,
+    r#match::ExternalMatchResult, merkle::MerkleRoot, wallet::Nullifier,
 };
 use common::types::{
     proof_bundles::{
@@ -53,6 +53,7 @@ use common::types::{
 };
 use constants::Scalar;
 use contract_types::{
+    MatchPayload, ValidMalleableMatchSettleAtomicStatement, ValidMatchSettleAtomicStatement,
     conversion::{
         build_atomic_match_linking_proofs, build_atomic_match_proofs, build_match_linking_proofs,
         build_match_proofs, to_circuit_bounded_match_result, to_circuit_external_match_result,
@@ -64,7 +65,6 @@ use contract_types::{
         to_contract_valid_relayer_fee_settlement_statement,
         to_contract_valid_wallet_create_statement, to_contract_valid_wallet_update_statement,
     },
-    MatchPayload, ValidMalleableMatchSettleAtomicStatement, ValidMatchSettleAtomicStatement,
 };
 use helpers::{
     deserialize_calldata, parse_shares_from_new_wallet,

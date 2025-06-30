@@ -23,18 +23,18 @@ pub mod wallet_index;
 use std::collections::VecDeque;
 
 use libmdbx::{
-    Error as MdbxError, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap, RW,
+    Error as MdbxError, RW, Table, TableFlags, Transaction, TransactionKind, WriteFlags, WriteMap,
 };
 use tracing::instrument;
 
 use crate::ALL_TABLES;
 
 use super::{
+    CowBuffer,
     cursor::DbCursor,
     db::{deserialize_value, serialize_value},
     error::StorageError,
     traits::{Key, Value},
-    CowBuffer,
 };
 
 // --------------------------

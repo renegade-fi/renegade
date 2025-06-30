@@ -2,8 +2,8 @@
 #![allow(missing_docs)]
 
 use ark_ec::{
-    twisted_edwards::{Projective, TECurveConfig},
     CurveGroup, Group,
+    twisted_edwards::{Projective, TECurveConfig},
 };
 use ark_ff::UniformRand;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -16,7 +16,7 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng};
 use renegade_crypto::fields::biguint_to_jubjub;
-use serde::{ser::SerializeSeq, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
 use std::ops::Add;
 
 use crate::{deserialize_array, serialize_array};
@@ -24,11 +24,11 @@ use crate::{deserialize_array, serialize_array};
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric,
     },
     circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
@@ -36,7 +36,7 @@ use {
         circuit::elgamal::ElGamalHybridCtxtVars,
         elgamal::{Ciphertext, DecKey, EncKey},
     },
-    mpc_relation::{gadgets::ecc::PointVariable, traits::Circuit, Variable},
+    mpc_relation::{Variable, gadgets::ecc::PointVariable, traits::Circuit},
 };
 
 // ---------------------
@@ -139,9 +139,9 @@ impl BabyJubJubPoint {
 impl Default for BabyJubJubPoint {
     fn default() -> Self {
         // The group generator
-        let gen = EmbeddedCurveConfig::GENERATOR;
-        let x = Scalar::new(gen.x);
-        let y = Scalar::new(gen.y);
+        let generator = EmbeddedCurveConfig::GENERATOR;
+        let x = Scalar::new(generator.x);
+        let y = Scalar::new(generator.y);
 
         BabyJubJubPoint { x, y }
     }

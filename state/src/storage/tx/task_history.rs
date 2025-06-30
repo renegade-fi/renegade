@@ -3,9 +3,9 @@
 use std::cmp::Reverse;
 
 use common::types::tasks::{HistoricalTask, TaskQueueKey};
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 
-use crate::{storage::error::StorageError, TASK_HISTORY_TABLE};
+use crate::{TASK_HISTORY_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 

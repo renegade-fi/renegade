@@ -1,22 +1,22 @@
 //! Groups price reporting API handlers and types
 
 use async_trait::async_trait;
-use common::types::token::{get_all_tokens, Token, USDC_TICKER, USDT_TICKER, USD_TICKER};
+use common::types::token::{Token, USD_TICKER, USDC_TICKER, USDT_TICKER, get_all_tokens};
 use external_api::{
+    EmptyRequestResponse,
     http::price_report::{
         GetPriceReportRequest, GetPriceReportResponse, GetSupportedTokensResponse,
         GetTokenPricesResponse, TokenPrice,
     },
     types::ApiToken,
-    EmptyRequestResponse,
 };
-use futures::{future::join_all, FutureExt};
+use futures::{FutureExt, future::join_all};
 use hyper::HeaderMap;
 use itertools::Itertools;
 use job_types::price_reporter::PriceReporterQueue;
 
 use crate::{
-    error::{internal_error, ApiServerError},
+    error::{ApiServerError, internal_error},
     router::{QueryParams, TypedHandler, UrlParams},
     worker::ApiServerConfig,
 };

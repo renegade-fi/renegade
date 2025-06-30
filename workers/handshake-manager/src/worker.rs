@@ -19,8 +19,8 @@ use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::info;
 
 use crate::manager::{
-    init_price_streams, scheduler::HandshakeScheduler, HandshakeExecutor,
-    HANDSHAKE_EXECUTOR_N_THREADS,
+    HANDSHAKE_EXECUTOR_N_THREADS, HandshakeExecutor, init_price_streams,
+    scheduler::HandshakeScheduler,
 };
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager};

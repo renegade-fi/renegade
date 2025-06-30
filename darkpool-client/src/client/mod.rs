@@ -5,8 +5,8 @@ use std::{str::FromStr, time::Duration};
 
 use alloy::{
     providers::{
-        fillers::{BlobGasFiller, ChainIdFiller, GasFiller},
         DynProvider, Provider, ProviderBuilder,
+        fillers::{BlobGasFiller, ChainIdFiller, GasFiller},
     },
     signers::local::PrivateKeySigner,
     transports::http::reqwest::Url,

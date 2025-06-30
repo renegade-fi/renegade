@@ -22,7 +22,7 @@ pub use update_wallet::*;
 use serde::{Deserialize, Serialize};
 use util::{
     get_current_time_millis,
-    telemetry::propagation::{set_parent_span_from_context, trace_context, TraceContext},
+    telemetry::propagation::{TraceContext, set_parent_span_from_context, trace_context},
 };
 use uuid::Uuid;
 
@@ -241,7 +241,7 @@ impl TaskDescriptor {
 pub mod mocks {
     use alloy::{
         primitives::keccak256,
-        signers::{local::PrivateKeySigner, SignerSync},
+        signers::{SignerSync, local::PrivateKeySigner},
     };
     use circuit_types::keychain::SecretSigningKey;
     use constants::Scalar;
@@ -321,7 +321,7 @@ mod test {
     };
 
     use super::{
-        mocks::gen_wallet_update_sig, NewWalletTaskDescriptor, UpdateWalletTaskDescriptor,
+        NewWalletTaskDescriptor, UpdateWalletTaskDescriptor, mocks::gen_wallet_update_sig,
     };
 
     /// Tests creating a new wallet task with an invalid secret sharing

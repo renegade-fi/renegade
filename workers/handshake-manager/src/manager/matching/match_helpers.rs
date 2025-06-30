@@ -1,6 +1,6 @@
 //! Helpers for matching orders
 
-use circuit_types::{balance::Balance, fixed_point::FixedPoint, r#match::MatchResult, Amount};
+use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
 use common::types::{
     exchange::PriceReporterState,
     price::{TimestampedPrice, TimestampedPriceFp},

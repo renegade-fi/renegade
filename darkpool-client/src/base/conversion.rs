@@ -3,21 +3,21 @@
 use alloy::primitives::Bytes;
 use alloy::primitives::U256;
 use ark_ff::{BigInteger, PrimeField};
+use circuit_types::PlonkLinkProof as CircuitPlonkLinkProof;
+use circuit_types::PlonkProof as CircuitPlonkProof;
+use circuit_types::PolynomialCommitment;
 use circuit_types::elgamal::BabyJubJubPoint as CircuitJubJubPoint;
 use circuit_types::elgamal::ElGamalCiphertext as CircuitElGamalCiphertext;
 use circuit_types::fees::{FeeTake as CircuitFeeTake, FeeTakeRate as CircuitFeeTakeRate};
 use circuit_types::fixed_point::FixedPoint as CircuitFixedPoint;
 use circuit_types::keychain::PublicSigningKey;
-use circuit_types::note::NOTE_CIPHERTEXT_SIZE;
 use circuit_types::r#match::BoundedMatchResult as CircuitBoundedMatchResult;
 use circuit_types::r#match::ExternalMatchResult as CircuitExternalMatchResult;
 use circuit_types::r#match::OrderSettlementIndices as CircuitOrderSettlementIndices;
+use circuit_types::note::NOTE_CIPHERTEXT_SIZE;
 use circuit_types::traits::BaseType;
 use circuit_types::transfers::ExternalTransfer as CircuitExternalTransfer;
 use circuit_types::transfers::ExternalTransferDirection;
-use circuit_types::PlonkLinkProof as CircuitPlonkLinkProof;
-use circuit_types::PlonkProof as CircuitPlonkProof;
-use circuit_types::PolynomialCommitment;
 use circuits::zk_circuits::valid_commitments::ValidCommitmentsStatement as CircuitValidCommitmentsStatement;
 use circuits::zk_circuits::valid_fee_redemption::SizedValidFeeRedemptionStatement;
 use circuits::zk_circuits::valid_malleable_match_settle_atomic::SizedValidMalleableMatchSettleAtomicStatement;
@@ -33,8 +33,8 @@ use common::types::proof_bundles::OrderValidityProofBundle;
 use common::types::transfer_auth::TransferAuth as CircuitTransferAuth;
 use constants::Scalar;
 
-use renegade_solidity_abi::IDarkpool::*;
 use renegade_solidity_abi::BN254::G1Point;
+use renegade_solidity_abi::IDarkpool::*;
 
 use crate::conversion::address_to_biguint;
 use crate::conversion::biguint_to_address;

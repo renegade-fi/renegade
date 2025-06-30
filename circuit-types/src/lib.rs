@@ -31,13 +31,13 @@ pub mod wallet;
 use ark_ff::BigInt;
 use bigdecimal::Num;
 use constants::{
-    Scalar, ScalarField, ADDRESS_BYTE_LENGTH, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT,
+    ADDRESS_BYTE_LENGTH, MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT, Scalar, ScalarField,
 };
-use fixed_point::{FixedPoint, DEFAULT_FP_PRECISION};
+use fixed_point::{DEFAULT_FP_PRECISION, FixedPoint};
 use merkle::MerkleOpening;
 use num_bigint::BigUint;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
-use serde::{de::Error as SerdeErr, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as SerdeErr};
 use wallet::Wallet;
 
 #[cfg(feature = "proof-system-types")]
@@ -47,8 +47,8 @@ use {
     jf_primitives::pcs::prelude::Commitment,
     mpc_plonk::{
         multiprover::proof_system::{
-            proof_linking::MultiproverLinkingProof, CollaborativeProof, MpcLinkingHint,
-            MpcPlonkCircuit as GenericMpcPlonkCircuit,
+            CollaborativeProof, MpcLinkingHint, MpcPlonkCircuit as GenericMpcPlonkCircuit,
+            proof_linking::MultiproverLinkingProof,
         },
         proof_system::{
             proof_linking::LinkingProof,
@@ -290,7 +290,7 @@ pub mod native_helpers {
 
     use crate::{
         elgamal::{DecryptionKey, ElGamalCiphertext, EncryptionKey},
-        note::{Note, NOTE_CIPHERTEXT_SIZE},
+        note::{NOTE_CIPHERTEXT_SIZE, Note},
         traits::{BaseType, CircuitBaseType},
         wallet::{Nullifier, Wallet, WalletShare, WalletShareStateCommitment},
     };

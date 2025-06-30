@@ -11,13 +11,13 @@ use atomic_float::AtomicF64;
 use common::types::{
     exchange::{Exchange, PriceReport, PriceReporterState},
     price::Price,
-    token::{default_exchange_stable, is_pair_named, Token},
+    token::{Token, default_exchange_stable, is_pair_named},
 };
-use external_api::bus_message::{price_report_topic, SystemBusMessage};
+use external_api::bus_message::{SystemBusMessage, price_report_topic};
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
 use util::{
-    concurrency::{new_async_shared, AsyncShared},
+    concurrency::{AsyncShared, new_async_shared},
     get_current_time_millis,
 };
 

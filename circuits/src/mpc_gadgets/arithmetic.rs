@@ -100,7 +100,7 @@ mod test {
     use ark_mpc::PARTY0;
     use constants::Scalar;
     use itertools::Itertools;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
@@ -143,7 +143,7 @@ mod test {
     async fn test_pow() {
         let mut rng = thread_rng();
         let base = Scalar::random(&mut rng);
-        let exp = rng.gen();
+        let exp = rng.r#gen();
 
         let expected = base.pow(exp);
         let (res, _) = execute_mock_mpc(move |fabric| async move {

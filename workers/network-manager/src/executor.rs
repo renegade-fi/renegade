@@ -7,7 +7,7 @@ mod request_response;
 
 use common::{
     default_wrapper::{DefaultOption, DefaultWrapper},
-    types::{gossip::WrappedPeerId, hmac::HmacKey, CancelChannel},
+    types::{CancelChannel, gossip::WrappedPeerId, hmac::HmacKey},
 };
 use futures::StreamExt;
 use gossip_api::pubsub::PubsubMessage;
@@ -17,21 +17,21 @@ use job_types::{
     network_manager::{NetworkManagerJob, NetworkManagerReceiver},
 };
 use libp2p::{
-    gossipsub::Event as GossipsubEvent, multiaddr::Protocol,
-    request_response::Event as RequestResponseEvent, swarm::SwarmEvent, Multiaddr, Swarm,
+    Multiaddr, Swarm, gossipsub::Event as GossipsubEvent, multiaddr::Protocol,
+    request_response::Event as RequestResponseEvent, swarm::SwarmEvent,
 };
 use state::State;
 use tracing::{debug, error, info};
 use util::{
     channels::TracedMessage,
-    concurrency::{new_async_shared, AsyncShared},
+    concurrency::{AsyncShared, new_async_shared},
 };
 
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use crate::waiters::ResponseWaiters;
 
-use self::behavior::{new_behavior_queue, BehaviorReceiver, BehaviorSender};
+use self::behavior::{BehaviorReceiver, BehaviorSender, new_behavior_queue};
 
 use super::{
     composed_protocol::{ComposedNetworkBehavior, ComposedProtocolEvent},

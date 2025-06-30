@@ -3,13 +3,13 @@
 //! relayer opts for natively streaming price data from exchanges.
 
 use common::default_wrapper::{DefaultOption, DefaultWrapper};
+use common::types::CancelChannel;
 use common::types::exchange::{Exchange, PriceReporterState};
 use common::types::token::Token;
-use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::sync::oneshot::Sender as TokioSender;
-use tracing::{error, info, info_span, instrument, warn, Instrument};
+use tracing::{Instrument, error, info, info_span, instrument, warn};
 use util::channels::TracedMessage;
 use util::concurrency::runtime::sleep_forever_async;
 

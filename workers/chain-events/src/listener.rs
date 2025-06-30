@@ -9,14 +9,14 @@ use alloy::{
     sol_types::SolEvent,
 };
 use circuit_types::wallet::Nullifier;
-use common::types::{wallet::WalletIdentifier, CancelChannel};
+use common::types::{CancelChannel, wallet::WalletIdentifier};
 use constants::in_bootstrap_mode;
 use darkpool_client::{
-    conversion::u256_to_scalar, traits::DarkpoolImpl, DarkpoolClient, DarkpoolImplementation,
+    DarkpoolClient, DarkpoolImplementation, conversion::u256_to_scalar, traits::DarkpoolImpl,
 };
 use futures_util::StreamExt;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use state::State;
 use tracing::{error, info};
 use util::concurrency::runtime::sleep_forever_async;

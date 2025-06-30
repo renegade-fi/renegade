@@ -785,9 +785,9 @@ pub mod mocks {
 
     use std::{iter, sync::Arc};
 
-    use ark_ec::{pairing::Pairing, CurveGroup};
+    use ark_ec::{CurveGroup, pairing::Pairing};
     use ark_poly::univariate::DensePolynomial;
-    use circuit_types::{traits::BaseType, PlonkLinkProof, PlonkProof, ProofLinkingHint};
+    use circuit_types::{PlonkLinkProof, PlonkProof, ProofLinkingHint, traits::BaseType};
     use circuits::zk_circuits::{
         valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
         valid_fee_redemption::ValidFeeRedemptionStatement,

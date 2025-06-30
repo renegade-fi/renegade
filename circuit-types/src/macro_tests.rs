@@ -10,16 +10,16 @@ mod test {
     use ark_mpc::PARTY0;
     use circuit_macros::circuit_type;
     use constants::{AuthenticatedScalar, Scalar, ScalarField};
-    use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit, Variable};
+    use mpc_relation::{Variable, proof_linking::LinkableCircuit, traits::Circuit};
     use std::ops::Add;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
+        Fabric, MpcPlonkCircuit, PlonkCircuit,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric, MpcPlonkCircuit, PlonkCircuit,
     };
 
     /// The number of scalars to place as an array in the `TestType` type
