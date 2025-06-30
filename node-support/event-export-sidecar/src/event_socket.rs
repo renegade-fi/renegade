@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 use aws_config::Region;
 use aws_sdk_sqs::Client as SqsClient;
 use event_manager::manager::extract_unix_socket_path;
-use eyre::{eyre, Error};
+use eyre::{Error, eyre};
 use job_types::event_manager::RelayerEvent;
 use tokio::net::{UnixListener, UnixStream};
 use tokio_stream::StreamExt;

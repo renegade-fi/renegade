@@ -12,6 +12,7 @@
 //! and withdrawal flow in a single transaction.
 
 use crate::{
+    SingleProverCircuit,
     zk_gadgets::{
         arithmetic::NoopGadget,
         comparators::GreaterThanEqGadget,
@@ -19,30 +20,29 @@ use crate::{
         select::{CondSelectGadget, CondSelectVectorGadget},
         wallet_operations::{AmountGadget, PriceGadget, WalletGadget},
     },
-    SingleProverCircuit,
 };
 use circuit_macros::circuit_type;
 use circuit_types::{
+    AMOUNT_BITS, Address, PlonkCircuit,
     balance::{Balance, BalanceVar},
     fees::FeeTake,
     fixed_point::{FixedPoint, FixedPointVar},
-    order::{Order, OrderVar},
     r#match::{ExternalMatchResult, ExternalMatchResultVar, OrderSettlementIndices},
+    order::{Order, OrderVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::{WalletShare, WalletShareStateCommitment},
-    Address, PlonkCircuit, AMOUNT_BITS,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
+use constants::{MAX_BALANCES, MAX_ORDERS, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
+    Variable,
     errors::CircuitError,
     proof_linking::{GroupLayout, LinkableCircuit},
     traits::Circuit,
-    Variable,
 };
 use serde::{Deserialize, Serialize};
 
-use super::{valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE_LINK0};
+use super::{VALID_COMMITMENTS_MATCH_SETTLE_LINK0, valid_match_settle::ValidMatchSettle};
 
 // ----------------------
 // | Circuit Definition |
@@ -452,9 +452,9 @@ where
 pub mod test_helpers {
     use circuit_types::{
         fixed_point::FixedPoint,
+        r#match::{ExternalMatchResult, MatchResult},
         native_helpers::compute_wallet_commitment_from_private,
         order::Order,
-        r#match::{ExternalMatchResult, MatchResult},
     };
     use constants::Scalar;
     use rand::thread_rng;
@@ -466,7 +466,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::{
-            test_helpers::{create_wallet_shares, random_address, MAX_BALANCES, MAX_ORDERS},
+            test_helpers::{MAX_BALANCES, MAX_ORDERS, create_wallet_shares, random_address},
             valid_match_settle::test_helpers::build_wallet_and_indices_from_order,
         },
     };
@@ -567,8 +567,8 @@ pub mod test_helpers {
     }
 
     /// Create a witness and statement wherein the internal order is a buy
-    pub fn create_witness_statement_buy_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    ) -> (
+    pub fn create_witness_statement_buy_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
+    -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
     )
@@ -587,8 +587,8 @@ pub mod test_helpers {
     }
 
     /// Create a witness and statement wherein the internal order is a sell
-    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    ) -> (
+    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
+    -> (
         ValidMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
     )
@@ -686,19 +686,19 @@ mod test {
             check_constraint_satisfaction,
             test_helpers::{MAX_BALANCES, MAX_ORDERS},
             valid_match_settle_atomic::{
+                ValidMatchSettleAtomic, ValidMatchSettleAtomicWithCommitments,
                 test_helpers::{
                     create_witness_statement, create_witness_statement_buy_side,
                     create_witness_statement_sell_side, create_witness_statement_with_commitments,
                 },
-                ValidMatchSettleAtomic, ValidMatchSettleAtomicWithCommitments,
             },
         },
     };
     use bigdecimal::ToPrimitive;
     use circuit_types::{
+        PRICE_BITS, PlonkCircuit,
         fixed_point::FixedPoint,
         traits::{BaseType, CircuitBaseType, SingleProverCircuit},
-        PlonkCircuit, PRICE_BITS,
     };
     use constants::Scalar;
     use itertools::Itertools;
@@ -708,12 +708,12 @@ mod test {
     use renegade_crypto::fields::biguint_to_scalar;
 
     use super::{
-        test_helpers::{
-            convert_to_with_commitments_statement, SizedValidMatchSettleAtomic,
-            SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWithCommitments,
-            SizedValidMatchSettleAtomicWitness,
-        },
         ValidMatchSettleAtomicStatementVar, ValidMatchSettleAtomicWitnessVar,
+        test_helpers::{
+            SizedValidMatchSettleAtomic, SizedValidMatchSettleAtomicStatement,
+            SizedValidMatchSettleAtomicWithCommitments, SizedValidMatchSettleAtomicWitness,
+            convert_to_with_commitments_statement,
+        },
     };
 
     // -----------

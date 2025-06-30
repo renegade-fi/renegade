@@ -4,13 +4,13 @@ use std::time::{Duration, Instant};
 
 use common::types::{
     gossip::WrappedPeerId,
-    tasks::{mocks::mock_queued_task, QueuedTaskState},
+    tasks::{QueuedTaskState, mocks::mock_queued_task},
     wallet_mocks::mock_empty_wallet,
 };
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use state::{
-    applicator::{test_helpers::mock_applicator, StateApplicator},
     StateTransition,
+    applicator::{StateApplicator, test_helpers::mock_applicator},
 };
 use uuid::Uuid;
 

@@ -3,12 +3,12 @@
 use common::types::gossip::{PeerInfo, WrappedPeerId};
 use gossip_api::{
     pubsub::{
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
         PubsubMessage,
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
     },
     request_response::{
-        heartbeat::{BootstrapRequest, PeerInfoResponse},
         GossipResponseType,
+        heartbeat::{BootstrapRequest, PeerInfoResponse},
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};
@@ -77,7 +77,9 @@ impl GossipProtocolExecutor {
         let now = get_current_time_millis();
         let time_since_last_heartbeat = now - info.last_heartbeat;
         if time_since_last_heartbeat < CLUSTER_HEARTBEAT_FAILURE_MS / 2 {
-            info!("rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago");
+            info!(
+                "rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago"
+            );
 
             self.send_expiry_rejection(peer_id, info.last_heartbeat).await?;
         } else {
@@ -106,7 +108,9 @@ impl GossipProtocolExecutor {
         let mut info = match maybe_info {
             Some(info) => info,
             None => {
-                warn!("received reject expiry request for {peer_id} from {sender}, but {peer_id} is not in the peer index");
+                warn!(
+                    "received reject expiry request for {peer_id} from {sender}, but {peer_id} is not in the peer index"
+                );
                 return Ok(());
             },
         };

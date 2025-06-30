@@ -38,8 +38,8 @@ use circuits::zk_circuits::{
     },
 };
 use common::types::proof_bundles::{
-    mocks::{dummy_link_hint, dummy_proof},
     ProofBundle,
+    mocks::{dummy_link_hint, dummy_proof},
 };
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use tokio::runtime::Handle;

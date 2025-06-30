@@ -18,10 +18,9 @@
 use proc_macro2::{Literal, TokenStream, TokenTree};
 use quote::quote;
 use syn::{
-    parse_quote,
+    Attribute, Expr, Field, FieldValue, ItemStruct, LitStr, Member, parse_quote,
     punctuated::Punctuated,
     token::{Colon, Comma},
-    Attribute, Expr, Field, FieldValue, ItemStruct, LitStr, Member,
 };
 
 use crate::circuit_type::{

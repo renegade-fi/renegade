@@ -4,7 +4,7 @@
 //! and setting up tests.
 
 use alloy::primitives::Address;
-use circuit_types::{fixed_point::FixedPoint, Amount};
+use circuit_types::{Amount, fixed_point::FixedPoint};
 use common::types::{hmac::HmacKey, price::TimestampedPrice, token::Token};
 use config::RelayerConfig;
 use constants::Scalar;

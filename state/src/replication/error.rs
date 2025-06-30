@@ -6,8 +6,8 @@ use std::{
 };
 
 use openraft::{
-    error::{NetworkError, RPCError, RaftError},
     ErrorSubject, ErrorVerb, LogId, RaftTypeConfig, StorageError as RaftStorageError,
+    error::{NetworkError, RPCError, RaftError},
 };
 
 use crate::storage::error::StorageError;

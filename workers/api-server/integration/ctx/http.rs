@@ -6,7 +6,7 @@ use external_api::auth::add_expiring_auth_to_headers;
 use eyre::Result;
 use hyper::{HeaderMap, Method};
 use reqwest::Response;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::ctx::IntegrationTestCtx;
 

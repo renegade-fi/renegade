@@ -5,13 +5,13 @@
 //! of unconditional writes only and inconsistent state is okay between cluster
 //! peers
 
-use circuit_types::{wallet::Nullifier, Amount};
+use circuit_types::{Amount, wallet::Nullifier};
 use common::types::{
+    MatchingPoolName,
     gossip::WrappedPeerId,
     network_order::NetworkOrder,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::{OrderIdentifier, Pair},
-    MatchingPoolName,
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
@@ -25,11 +25,11 @@ use tracing::instrument;
 use util::{res_some, telemetry::helpers::backfill_trace_field};
 
 use crate::{
+    StateInner, StateTransition,
     caching::order_cache::OrderBookFilter,
     error::StateError,
     notifications::ProposalWaiter,
     storage::{error::StorageError, tx::StateTxn},
-    StateInner, StateTransition,
 };
 
 /// The error message emitted when a caller attempts to add a local order
@@ -409,7 +409,7 @@ impl StateInner {
 #[cfg(test)]
 mod test {
     use common::types::{
-        network_order::{test_helpers::dummy_network_order, NetworkOrderState},
+        network_order::{NetworkOrderState, test_helpers::dummy_network_order},
         proof_bundles::mocks::dummy_validity_proof_bundle,
     };
 

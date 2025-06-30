@@ -10,29 +10,29 @@ use std::{str::FromStr, time::Duration};
 use common::{
     default_wrapper::DefaultOption,
     types::{
+        CancelChannel,
         exchange::{Exchange, PriceReporterState},
         price::Price,
         token::Token,
-        CancelChannel,
     },
 };
 use constants::in_bootstrap_mode;
 use external_api::websocket::WebsocketMessage;
 use futures::{
-    stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
+    stream::{SplitSink, SplitStream},
 };
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpStream,
     sync::{
-        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
         oneshot::Sender as TokioSender,
     },
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use tracing::{error, info, info_span, instrument, warn, Instrument};
+use tracing::{Instrument, error, info, info_span, instrument, warn};
 use tungstenite::Message;
 use url::Url;
 use util::{

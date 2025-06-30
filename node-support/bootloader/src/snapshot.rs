@@ -6,7 +6,7 @@ use tracing::info;
 use util::raw_err_str;
 
 use crate::{
-    config::ConfigContents, download_s3_file, in_bootstrap_mode, read_env_var, CONFIG_PATH,
+    CONFIG_PATH, config::ConfigContents, download_s3_file, in_bootstrap_mode, read_env_var,
 };
 
 /// The snapshot bucket environment variable

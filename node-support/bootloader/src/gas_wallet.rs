@@ -3,8 +3,8 @@
 use common::types::hmac::HmacKey;
 use external_api::auth::add_expiring_auth_to_headers;
 use reqwest::{
-    header::{HeaderMap, HeaderValue, CONTENT_TYPE},
     Client,
+    header::{CONTENT_TYPE, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};

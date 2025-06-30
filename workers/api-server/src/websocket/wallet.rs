@@ -1,12 +1,12 @@
 //! Handler definitions for wallet websocket topics
 use async_trait::async_trait;
-use external_api::bus_message::{wallet_topic, SystemBusMessage};
+use external_api::bus_message::{SystemBusMessage, wallet_topic};
 use state::State;
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
     auth::AuthType,
-    error::{not_found, ApiServerError},
+    error::{ApiServerError, not_found},
     http::parse_wallet_id_from_params,
     router::UrlParams,
 };

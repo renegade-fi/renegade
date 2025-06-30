@@ -16,11 +16,11 @@
 #![feature(generic_const_exprs)]
 
 use common::types::{
+    MatchingPoolName,
     gossip::WrappedPeerId,
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
-    wallet::{order_metadata::OrderMetadata, OrderIdentifier, Wallet},
-    MatchingPoolName,
+    wallet::{OrderIdentifier, Wallet, order_metadata::OrderMetadata},
 };
 use notifications::ProposalId;
 use replication::{NodeId, RaftNode};
@@ -218,7 +218,7 @@ pub mod test_helpers {
     use job_types::{
         event_manager::new_event_manager_queue,
         handshake_manager::new_handshake_manager_queue,
-        task_driver::{new_task_driver_queue, TaskDriverQueue},
+        task_driver::{TaskDriverQueue, new_task_driver_queue},
     };
     use libp2p::identity::Keypair;
     use system_bus::SystemBus;
@@ -226,16 +226,15 @@ pub mod test_helpers {
     use tempfile::tempdir;
 
     use crate::{
+        State, StateConfig, StateInner, StateTransition,
         caching::order_cache::OrderBookCache,
         notifications::OpenNotifications,
         replication::{
-            get_raft_id,
+            RaftNode, get_raft_id,
             raft::RaftClientConfig,
-            test_helpers::{mock_raft_config, MockRaft, MockRaftNode},
-            RaftNode,
+            test_helpers::{MockRaft, MockRaftNode, mock_raft_config},
         },
-        storage::db::{DbConfig, DB},
-        State, StateConfig, StateInner, StateTransition,
+        storage::db::{DB, DbConfig},
     };
 
     /// Sleep for the given number of ms

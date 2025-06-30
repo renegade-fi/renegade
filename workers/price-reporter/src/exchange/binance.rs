@@ -24,10 +24,11 @@ use crate::{
 };
 
 use super::{
+    InitializablePriceStream, PriceStreamType,
     connection::{
-        parse_json_field, parse_json_from_message, ws_connect, ws_ping, ExchangeConnection,
+        ExchangeConnection, parse_json_field, parse_json_from_message, ws_connect, ws_ping,
     },
-    get_base_exchange_ticker, get_quote_exchange_ticker, InitializablePriceStream, PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker,
 };
 
 // -------------

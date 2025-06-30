@@ -5,12 +5,12 @@ pub mod mocks;
 use std::{fmt::Debug, net::SocketAddr, sync::Arc, time::Duration};
 
 use ark_mpc::{
-    network::{MpcNetwork, QuicTwoPartyNet},
     ExecutorSizeHints, MpcFabric, PARTY0, PARTY1,
+    network::{MpcNetwork, QuicTwoPartyNet},
 };
 use constants::SystemCurveGroup;
 use dns_lookup::lookup_host;
-use futures::{executor::block_on, future::join_all, Future};
+use futures::{Future, executor::block_on, future::join_all};
 use tokio::runtime::Handle;
 
 use crate::mpc_network::mocks::MockNetwork;

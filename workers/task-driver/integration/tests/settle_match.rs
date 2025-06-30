@@ -1,35 +1,35 @@
 //! Integration tests for settling matches, both internal and cross-cluster
 
 use crate::{
+    IntegrationTestArgs,
     helpers::{
         await_immediate_task, await_wallet_task_queue_flush, lookup_wallet_and_check_result,
         setup_initial_wallet, setup_relayer_wallet,
     },
-    IntegrationTestArgs,
 };
 use circuit_types::{
+    Amount, SizedWallet,
     balance::Balance,
     fixed_point::FixedPoint,
-    order::OrderSide,
     r#match::{MatchResult, OrderSettlementIndices},
-    Amount, SizedWallet,
+    order::OrderSide,
 };
 use circuits::zk_circuits::valid_match_settle::{
     ValidMatchSettleStatement, ValidMatchSettleWitness,
 };
 use common::types::{
-    handshake::{mocks::mock_handshake_state, HandshakeState},
+    TimestampedPrice,
+    handshake::{HandshakeState, mocks::mock_handshake_state},
     proof_bundles::{
-        mocks::dummy_link_proof, MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle,
-        ValidMatchSettleBundle,
+        MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle,
+        mocks::dummy_link_proof,
     },
     tasks::{SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor},
     wallet::{Order, OrderBuilder, Wallet},
     wallet_mocks::mock_empty_wallet,
-    TimestampedPrice,
 };
 use constants::Scalar;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use rand::thread_rng;
 use state::State;

@@ -13,19 +13,19 @@ use tracing::{error, info, instrument};
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
 use crate::{
+    Proposal, StateTransition,
     notifications::ProposalId,
     replication::{error::ReplicationError, get_raft_id},
     storage::db::DB,
-    Proposal, StateTransition,
 };
 
 use super::{
+    Node, NodeId, Raft, RaftNode,
     log_store::LogStore,
     network::{
         P2PNetworkFactory, P2PNetworkFactoryWrapper, P2PRaftNetwork, RaftRequest, RaftResponse,
     },
     state_machine::StateMachine,
-    Node, NodeId, Raft, RaftNode,
 };
 
 /// The default cluster name

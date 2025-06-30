@@ -26,21 +26,21 @@ use mpc_plonk::{
     errors::PlonkError,
     multiprover::proof_system::{CollaborativeProof, MultiproverPlonkKzgSnark},
     proof_system::{
-        structs::{Proof, ProvingKey, VerifyingKey},
         PlonkKzgSnark, UniversalSNARK,
+        structs::{Proof, ProvingKey, VerifyingKey},
     },
     transcript::SolidityTranscript,
 };
 use mpc_relation::{
+    BoolVar, Variable,
     proof_linking::{CircuitLayout, GroupLayout, LinkableCircuit},
     traits::Circuit,
-    BoolVar, Variable,
 };
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{
-    biguint_to_scalar, jubjub_to_scalar, scalar_to_biguint, scalar_to_jubjub, scalar_to_u128,
-    scalar_to_u64,
+    biguint_to_scalar, jubjub_to_scalar, scalar_to_biguint, scalar_to_jubjub, scalar_to_u64,
+    scalar_to_u128,
 };
 use std::{
     collections::HashMap,
@@ -49,10 +49,10 @@ use std::{
 };
 
 use crate::{
-    errors::{MpcError, ProverError, VerifierError},
-    srs::SYSTEM_SRS,
     AuthenticatedBool, CollaborativePlonkProof, Fabric, MpcPlonkCircuit, MpcProofLinkingHint,
     PlonkCircuit, PlonkProof, ProofLinkingHint,
+    errors::{MpcError, ProverError, VerifierError},
+    srs::SYSTEM_SRS,
 };
 
 /// The error message emitted when too few scalars are given
@@ -754,8 +754,8 @@ impl<const N: usize, T: SecretShareVarType> SecretShareVarType for [T; N] {
 
 /// A helper to get the proving and verifying keys for a circuit, possibly read
 /// from cache
-pub fn setup_preprocessed_keys<C: SingleProverCircuit>(
-) -> (Arc<ProvingKey<SystemCurve>>, Arc<VerifyingKey<SystemCurve>>) {
+pub fn setup_preprocessed_keys<C: SingleProverCircuit>()
+-> (Arc<ProvingKey<SystemCurve>>, Arc<VerifyingKey<SystemCurve>>) {
     // Check the cache first for the keys
     let name = C::name();
     if let Some((pk, vk)) = CIRCUIT_KEY_CACHE.read().unwrap().get(&name).cloned() {
@@ -973,9 +973,9 @@ pub trait MultiProverCircuit {
     /// The single-prover circuit analog that this multiprover circuit is
     /// derived from, used for verification
     type BaseCircuit: SingleProverCircuit<
-        Witness = <Self::Witness as MultiproverCircuitBaseType>::BaseType,
-        Statement = <Self::Statement as MultiproverCircuitBaseType>::BaseType,
-    >;
+            Witness = <Self::Witness as MultiproverCircuitBaseType>::BaseType,
+            Statement = <Self::Statement as MultiproverCircuitBaseType>::BaseType,
+        >;
 
     /// The name of the circuit
     fn name() -> String {
@@ -1093,7 +1093,7 @@ mod test {
 
     use crate::PlonkCircuit;
 
-    use super::{CircuitBaseType, SingleProverCircuit, CIRCUIT_KEY_CACHE};
+    use super::{CIRCUIT_KEY_CACHE, CircuitBaseType, SingleProverCircuit};
 
     /// A dummy circuit that applies no constraints
     struct DummyCircuit;

@@ -3,20 +3,20 @@
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
+use circuit_types::PlonkCircuit;
 use circuit_types::elgamal::DecryptionKey;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::native_helpers::compute_wallet_share_commitment;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::wallet::Wallet;
-use circuit_types::PlonkCircuit;
-use circuits::zk_circuits::test_helpers::{create_wallet_shares_with_blinder_seed, PUBLIC_KEYS};
+use circuits::zk_circuits::test_helpers::{PUBLIC_KEYS, create_wallet_shares_with_blinder_seed};
 use circuits::zk_circuits::valid_wallet_create::{
     SizedValidWalletCreate, SizedValidWalletCreateStatement, SizedValidWalletCreateWitness,
     ValidWalletCreate, ValidWalletCreateStatement, ValidWalletCreateWitness,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
-use constants::{Scalar, MAX_BALANCES, MAX_ORDERS};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use constants::{MAX_BALANCES, MAX_ORDERS, Scalar};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
 use rand::thread_rng;
 

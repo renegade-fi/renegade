@@ -10,8 +10,8 @@ use alloy_sol_types::SolEvent;
 use async_trait::async_trait;
 use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::{
-    elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
-    SizedWalletShare,
+    SizedWalletShare, elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
+    wallet::Nullifier,
 };
 use common::types::{
     proof_bundles::{

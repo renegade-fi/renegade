@@ -7,8 +7,8 @@ use std::{
     sync::{OnceLock, RwLock},
 };
 
-use circuit_types::{elgamal::EncryptionKey, fixed_point::FixedPoint, Address};
-use eyre::{eyre, Result};
+use circuit_types::{Address, elgamal::EncryptionKey, fixed_point::FixedPoint};
+use eyre::{Result, eyre};
 
 use crate::concurrency::RwStatic;
 

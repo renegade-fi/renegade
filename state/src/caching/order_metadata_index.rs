@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 
-use circuit_types::{order::OrderSide, Amount};
+use circuit_types::{Amount, order::OrderSide};
 use common::types::wallet::{Order, OrderIdentifier, Pair};
 use tokio::sync::RwLock;
 
@@ -207,7 +207,7 @@ impl<T: Ord> SortedVec<T> {
 #[cfg(test)]
 mod sorted_vec_tests {
     use super::*;
-    use rand::{seq::SliceRandom, thread_rng, Rng};
+    use rand::{Rng, seq::SliceRandom, thread_rng};
 
     #[test]
     fn test_sorted_vec_empty() {

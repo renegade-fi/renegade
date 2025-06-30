@@ -3,13 +3,13 @@
 use common::types::gossip::{PeerInfo, WrappedPeerId};
 use gossip_api::{
     pubsub::{
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
         PubsubMessage,
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
     },
     request_response::{
+        GossipRequestType,
         heartbeat::{HeartbeatMessage, PeerInfoRequest},
         orderbook::OrderInfoRequest,
-        GossipRequestType,
     },
 };
 use job_types::network_manager::{NetworkManagerControlSignal, NetworkManagerJob};

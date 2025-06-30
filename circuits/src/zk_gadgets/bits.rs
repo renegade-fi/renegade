@@ -8,12 +8,12 @@ use std::iter;
 
 use ark_ff::One;
 use bitvec::{order::Lsb0, slice::BitSlice};
-use circuit_types::{traits::CircuitVarType, Fabric, MpcPlonkCircuit, PlonkCircuit};
+use circuit_types::{Fabric, MpcPlonkCircuit, PlonkCircuit, traits::CircuitVarType};
 use constants::{Scalar, ScalarField};
 use itertools::Itertools;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 
-use crate::{mpc_gadgets::bits::to_bits_le, SCALAR_BITS_MINUS_TWO};
+use crate::{SCALAR_BITS_MINUS_TWO, mpc_gadgets::bits::to_bits_le};
 
 /// Convert a scalar to its little endian bit representation where each bit
 /// is itself a `Scalar`
@@ -168,22 +168,22 @@ impl<const D: usize> MultiproverBitRangeGadget<D> {
 mod bits_test {
     use ark_mpc::PARTY0;
     use circuit_types::{
-        traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
         MpcPlonkCircuit, PlonkCircuit,
+        traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
     };
     use constants::Scalar;
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use renegade_crypto::fields::{bigint_to_scalar_bits, scalar_to_bigint};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
+        SCALAR_MAX_BITS,
         zk_gadgets::{
             bits::{BitRangeGadget, MultiproverBitRangeGadget, MultiproverToBitsGadget},
             comparators::NotEqualGadget,
         },
-        SCALAR_MAX_BITS,
     };
 
     use super::ToBitsGadget;
@@ -241,7 +241,7 @@ mod bits_test {
         const BIT_LENGTH: usize = 64;
         let mut rng = thread_rng();
         let value = rng.next_u64();
-        let big_value: u128 = rng.gen();
+        let big_value: u128 = rng.r#gen();
 
         // Create a constraint system
         let mut cs = PlonkCircuit::new_turbo_plonk();

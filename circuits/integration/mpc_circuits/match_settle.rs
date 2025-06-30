@@ -3,19 +3,19 @@
 use ark_mpc::PARTY0;
 use circuit_types::Amount;
 use circuit_types::{
+    Fabric, MpcPlonkCircuit,
     balance::Balance,
     fixed_point::FixedPoint,
-    order::OrderSide,
     r#match::OrderSettlementIndices,
+    order::OrderSide,
     traits::{BaseType, MpcBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType},
-    Fabric, MpcPlonkCircuit,
 };
 use circuits::zk_circuits::valid_match_settle::test_helpers::SizedValidMatchSettle;
 use circuits::{
     mpc_circuits::{r#match::compute_match, settle::settle_match},
     test_helpers::{random_indices, random_orders_and_match},
     zk_circuits::{
-        test_helpers::{SizedWallet, MAX_BALANCES, MAX_ORDERS},
+        test_helpers::{MAX_BALANCES, MAX_ORDERS, SizedWallet},
         valid_match_settle::{
             AuthenticatedValidMatchSettleStatement, AuthenticatedValidMatchSettleWitness,
             ValidMatchSettle,
@@ -25,13 +25,13 @@ use circuits::{
 use constants::Scalar;
 use eyre::Result;
 use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
-use rand::{thread_rng, RngCore};
+use rand::{RngCore, thread_rng};
 use renegade_crypto::fields::scalar_to_u128;
 use test_helpers::{assert_true_result, integration_test_async};
 use util::matching_engine::compute_max_amount;
 use util::on_chain::get_protocol_fee;
 
-use crate::{types::create_wallet_shares, IntegrationTestArgs};
+use crate::{IntegrationTestArgs, types::create_wallet_shares};
 
 // -----------
 // | Helpers |

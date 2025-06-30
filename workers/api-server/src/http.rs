@@ -16,13 +16,15 @@ use admin::{
 };
 use async_trait::async_trait;
 use common::types::{
+    MatchingPoolName,
     gossip::{ClusterId, WrappedPeerId},
     hmac::HmacKey,
     tasks::TaskIdentifier,
-    MatchingPoolName,
 };
 use external_api::{
+    EmptyRequestResponse,
     http::{
+        PingResponse,
         admin::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE,
             ADMIN_GET_ORDER_MATCHING_POOL_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
@@ -37,29 +39,27 @@ use external_api::{
         network::{GET_CLUSTER_INFO_ROUTE, GET_NETWORK_TOPOLOGY_ROUTE, GET_PEER_INFO_ROUTE},
         order_book::{
             GET_DEPTH_BY_MINT_ROUTE, GET_DEPTH_FOR_ALL_PAIRS_ROUTE, GET_EXTERNAL_MATCH_FEE_ROUTE,
-            GET_NETWORK_ORDERS_ROUTE, GET_NETWORK_ORDER_BY_ID_ROUTE,
+            GET_NETWORK_ORDER_BY_ID_ROUTE, GET_NETWORK_ORDERS_ROUTE,
         },
         price_report::{GET_SUPPORTED_TOKENS_ROUTE, GET_TOKEN_PRICES_ROUTE, PRICE_REPORT_ROUTE},
         task::{GET_TASK_QUEUE_PAUSED_ROUTE, GET_TASK_QUEUE_ROUTE, GET_TASK_STATUS_ROUTE},
         task_history::TASK_HISTORY_ROUTE,
         wallet::{
             BACK_OF_QUEUE_WALLET_ROUTE, CANCEL_ORDER_ROUTE, CREATE_WALLET_ROUTE,
-            DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE, GET_BALANCES_ROUTE,
-            GET_BALANCE_BY_MINT_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE,
-            ORDER_HISTORY_ROUTE, PAY_FEES_ROUTE, REDEEM_NOTE_ROUTE, REFRESH_WALLET_ROUTE,
-            UPDATE_ORDER_ROUTE, WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
+            DEPOSIT_BALANCE_ROUTE, FIND_WALLET_ROUTE, GET_BALANCE_BY_MINT_ROUTE,
+            GET_BALANCES_ROUTE, GET_ORDER_BY_ID_ROUTE, GET_WALLET_ROUTE, ORDER_HISTORY_ROUTE,
+            PAY_FEES_ROUTE, REDEEM_NOTE_ROUTE, REFRESH_WALLET_ROUTE, UPDATE_ORDER_ROUTE,
+            WALLET_ORDERS_ROUTE, WITHDRAW_BALANCE_ROUTE,
         },
-        PingResponse,
     },
-    EmptyRequestResponse,
 };
 use external_match::{
     AssembleExternalMatchHandler, AssembleMalleableExternalMatchHandler, ExternalMatchProcessor,
     RequestExternalMatchHandler, RequestExternalQuoteHandler,
 };
 use hyper::{
-    body::Incoming as IncomingBody, server::conn::http1::Builder as Http1Builder,
-    service::service_fn, Error as HyperError, HeaderMap, Method, Request,
+    Error as HyperError, HeaderMap, Method, Request, body::Incoming as IncomingBody,
+    server::conn::http1::Builder as Http1Builder, service::service_fn,
 };
 use hyper_util::rt::{TokioIo, TokioTimer};
 use num_bigint::BigUint;

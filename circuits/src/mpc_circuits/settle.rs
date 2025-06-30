@@ -1,11 +1,11 @@
 //! Settles a match into secret shared wallets
 
 use circuit_types::{
+    Fabric,
     fees::AuthenticatedFeeTake,
     fixed_point::AuthenticatedFixedPoint,
     r#match::{AuthenticatedMatchResult, OrderSettlementIndices},
     wallet::AuthenticatedWalletShare,
-    Fabric,
 };
 use constants::AuthenticatedScalar;
 use util::on_chain::get_protocol_fee;
@@ -118,15 +118,15 @@ mod test {
 
     use ark_mpc::{PARTY0, PARTY1};
     use circuit_types::{
+        SizedWalletShare,
         fees::FeeTake,
         fixed_point::FixedPoint,
-        order::OrderSide,
         r#match::{MatchResult, OrderSettlementIndices},
+        order::OrderSide,
         traits::{BaseType, MpcBaseType, MpcType},
-        SizedWalletShare,
     };
     use constants::Scalar;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use renegade_crypto::fields::scalar_to_biguint;
     use test_helpers::mpc_network::execute_mock_mpc;
     use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
@@ -171,8 +171,8 @@ mod test {
         let match_res = MatchResult {
             quote_mint, // Unused
             base_mint,  // Unused
-            quote_amount: rng.gen(),
-            base_amount: rng.gen(),
+            quote_amount: rng.r#gen(),
+            base_amount: rng.r#gen(),
             direction: rng.gen_bool(0.5),
             min_amount_order_index: false, // Unused
         };

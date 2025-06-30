@@ -1,7 +1,7 @@
 //! Types for task history storage
 
 use ark_mpc::PARTY1;
-use circuit_types::{r#match::MatchResult, Amount};
+use circuit_types::{Amount, r#match::MatchResult};
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
@@ -103,7 +103,7 @@ impl HistoricalTaskDescription {
 #[cfg(feature = "mocks")]
 pub mod historical_mocks {
 
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
 
     use crate::types::{
         tasks::{QueuedTaskState, TaskIdentifier, WalletUpdateType},

@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 
-use libp2p::{multiaddr::Protocol, Multiaddr};
+use libp2p::{Multiaddr, multiaddr::Protocol};
 
 /// Convert a libp2p multiaddr into a standard library socketaddr representation
 pub fn multiaddr_to_socketaddr(addr: &Multiaddr, port: u16) -> Option<SocketAddr> {

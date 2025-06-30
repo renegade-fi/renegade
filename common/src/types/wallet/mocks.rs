@@ -2,21 +2,21 @@
 
 use std::{
     iter,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
 };
 
 use circuit_types::{
+    SizedWalletShare,
     elgamal::DecryptionKey,
     fixed_point::FixedPoint,
     keychain::{PublicKeyChain, PublicSigningKey, SecretIdentificationKey, SecretSigningKey},
     order::OrderSide,
     traits::BaseType,
-    SizedWalletShare,
 };
-use constants::{Scalar, ADDRESS_BYTE_LENGTH, MERKLE_HEIGHT};
+use constants::{ADDRESS_BYTE_LENGTH, MERKLE_HEIGHT, Scalar};
 use k256::ecdsa::SigningKey as K256SigningKey;
 use num_bigint::BigUint;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{Rng, RngCore, thread_rng};
 use uuid::Uuid;
 
 use crate::{
@@ -25,9 +25,9 @@ use crate::{
 };
 
 use super::{
+    Wallet,
     keychain::{KeyChain, PrivateKeyChain},
     orders::{Order, OrderBuilder},
-    Wallet,
 };
 
 /// Create a mock empty wallet
@@ -80,8 +80,8 @@ pub fn mock_order() -> Order {
         .base_mint(rand_addr_biguint())
         .side(OrderSide::Buy)
         .amount(rng.next_u64().into())
-        .worst_case_price(FixedPoint::from_integer(rng.gen()))
-        .min_fill_size(rng.gen())
+        .worst_case_price(FixedPoint::from_integer(rng.r#gen()))
+        .min_fill_size(rng.r#gen())
         .build()
         .unwrap()
 }

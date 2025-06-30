@@ -3,7 +3,7 @@
 use circuit_types::Amount;
 use common::types::{
     price::Price,
-    wallet::{order_metadata::OrderMetadata, WalletIdentifier},
+    wallet::{WalletIdentifier, order_metadata::OrderMetadata},
 };
 use serde::{Deserialize, Serialize};
 

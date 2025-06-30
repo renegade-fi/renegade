@@ -1,16 +1,16 @@
 //! Helpers for interacting with contracts in tests
 use circuit_types::{
-    native_helpers::create_wallet_shares_from_private, traits::BaseType, SizedWalletShare,
+    SizedWalletShare, native_helpers::create_wallet_shares_from_private, traits::BaseType,
 };
 use common::types::{
     proof_bundles::mocks::dummy_valid_wallet_create_bundle,
-    wallet::{mocks::mock_empty_wallet, Wallet},
+    wallet::{Wallet, mocks::mock_empty_wallet},
 };
 use constants::Scalar;
 use darkpool_client::DarkpoolClient;
 use eyre::Result;
 use rand::thread_rng;
-use renegade_crypto::hash::{evaluate_hash_chain, PoseidonCSPRNG};
+use renegade_crypto::hash::{PoseidonCSPRNG, evaluate_hash_chain};
 
 // ---------------------
 // | Wallet Allocation |

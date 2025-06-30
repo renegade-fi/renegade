@@ -8,13 +8,13 @@ use rand::thread_rng;
 use renegade_crypto::{fields::biguint_to_scalar, hash::compute_poseidon_hash};
 use serde::{Deserialize, Serialize};
 
-use crate::{balance::Balance, elgamal::EncryptionKey, Address, Amount};
+use crate::{Address, Amount, balance::Balance, elgamal::EncryptionKey};
 
 #[cfg(feature = "proof-system-types")]
 use {
     crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
     circuit_macros::circuit_type,
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 /// The size of the note ciphertext when encrypted
@@ -40,7 +40,6 @@ pub struct Note {
 
 impl Note {
     /// Constructor
-
     pub fn new(mint: Address, amount: Amount, receiver: EncryptionKey) -> Self {
         // Sample a blinder
         let mut rng = thread_rng();

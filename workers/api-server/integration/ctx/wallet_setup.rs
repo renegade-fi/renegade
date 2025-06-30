@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use circuit_types::{
-    balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide, Amount,
+    Amount, balance::Balance, fixed_point::FixedPoint, max_amount, max_price, order::OrderSide,
 };
 use common::types::{
     proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},

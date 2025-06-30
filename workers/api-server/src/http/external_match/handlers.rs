@@ -24,8 +24,8 @@ use state::State;
 use util::{hex::bytes_to_hex_string, on_chain::get_external_match_fee};
 
 use crate::{
-    error::{bad_request, internal_error, ApiServerError},
-    http::external_match::{get_native_asset_address, ExternalMatchProcessor},
+    error::{ApiServerError, bad_request, internal_error},
+    http::external_match::{ExternalMatchProcessor, get_native_asset_address},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 

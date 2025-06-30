@@ -1,8 +1,8 @@
 //! Defines MPC gadgets for operating on fixed-point values
 
 use circuit_types::{
-    fixed_point::{AuthenticatedFixedPoint, DEFAULT_FP_PRECISION},
     Fabric,
+    fixed_point::{AuthenticatedFixedPoint, DEFAULT_FP_PRECISION},
 };
 use constants::AuthenticatedScalar;
 
@@ -22,7 +22,7 @@ impl FixedPointMpcGadget {
 mod test {
     use ark_mpc::PARTY0;
     use circuit_types::{fixed_point::FixedPoint, traits::MpcBaseType};
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{mpc_gadgets::fixed_point::FixedPointMpcGadget, open_unwrap};

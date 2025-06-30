@@ -6,6 +6,7 @@
 
 use async_trait::async_trait;
 use external_api::{
+    EmptyRequestResponse,
     http::{
         task::{
             ApiTaskStatus, GetTaskStatusResponse, TaskQueueListResponse, TaskQueuePausedResponse,
@@ -13,13 +14,12 @@ use external_api::{
         task_history::GetTaskHistoryResponse,
     },
     types::ApiHistoricalTask,
-    EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use state::State;
 
 use crate::{
-    error::{bad_request, not_found, ApiServerError},
+    error::{ApiServerError, bad_request, not_found},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 

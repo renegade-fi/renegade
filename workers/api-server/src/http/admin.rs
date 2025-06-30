@@ -7,18 +7,19 @@
 use std::iter;
 
 use async_trait::async_trait;
-use circuit_types::{fixed_point::FixedPoint, Amount};
+use circuit_types::{Amount, fixed_point::FixedPoint};
 use common::types::{
     chain::Chain,
     price::Price,
     tasks::UpdateWalletTaskDescriptor,
-    token::{get_all_tokens, Token},
-    wallet::{order_metadata::OrderMetadata, Order, WalletIdentifier},
+    token::{Token, get_all_tokens},
+    wallet::{Order, WalletIdentifier, order_metadata::OrderMetadata},
 };
 use config::setup_token_remaps;
 use constants::NATIVE_ASSET_ADDRESS;
 use darkpool_client::DarkpoolClient;
 use external_api::{
+    EmptyRequestResponse,
     http::{
         admin::{
             AdminGetOrderMatchingPoolResponse, AdminOrderMetadataResponse,
@@ -28,7 +29,6 @@ use external_api::{
         wallet::CreateOrderResponse,
     },
     types::AdminOrderMetadata,
-    EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use job_types::{
@@ -40,15 +40,15 @@ use tracing::info;
 use util::{matching_engine::compute_max_amount, on_chain::set_external_match_fee};
 
 use crate::{
-    error::{bad_request, internal_error, not_found, ApiServerError},
-    router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
+    error::{ApiServerError, bad_request, internal_error, not_found},
+    router::{ERR_WALLET_NOT_FOUND, QueryParams, TypedHandler, UrlParams},
 };
 
 use super::{
     parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
     parse_order_id_from_params, parse_wallet_id_from_params,
     wallet::{
-        append_task_and_await, find_wallet_for_update, maybe_rotate_root_key, ERR_ORDER_NOT_FOUND,
+        ERR_ORDER_NOT_FOUND, append_task_and_await, find_wallet_for_update, maybe_rotate_root_key,
     },
 };
 

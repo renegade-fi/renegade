@@ -4,22 +4,22 @@
 #![feature(generic_const_exprs)]
 
 use circuit_types::{
+    PlonkCircuit,
     traits::{CircuitBaseType, SingleProverCircuit},
     wallet::Wallet,
-    PlonkCircuit,
 };
 use circuits::{
     singleprover_prove, verify_singleprover_proof,
     zk_circuits::{
         test_helpers::{INITIAL_BALANCES, INITIAL_ORDERS, PUBLIC_KEYS},
         valid_commitments::{
-            test_helpers::create_witness_and_statement, SizedValidCommitments,
-            SizedValidCommitmentsWitness, ValidCommitments, ValidCommitmentsStatement,
+            SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitments,
+            ValidCommitmentsStatement, test_helpers::create_witness_and_statement,
         },
     },
 };
 use constants::{MAX_BALANCES, MAX_ORDERS};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use mpc_relation::proof_linking::LinkableCircuit;
 
 // -----------

@@ -8,25 +8,25 @@ pub mod multi_prover;
 pub mod single_prover;
 
 use circuit_types::{
+    Fabric, MpcPlonkCircuit, PlonkCircuit,
     balance::Balance,
     fees::FeeTake,
     fixed_point::FixedPoint,
-    order::Order,
     r#match::{MatchResult, OrderSettlementIndices},
+    order::Order,
     traits::{
         BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType, MultiProverCircuit,
         MultiproverCircuitBaseType, SingleProverCircuit,
     },
     wallet::{WalletShare, WalletShareStateCommitment},
-    Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
-use constants::{AuthenticatedScalar, Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
+use constants::{AuthenticatedScalar, MAX_BALANCES, MAX_ORDERS, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
+    Variable,
     errors::CircuitError,
     proof_linking::{GroupLayout, LinkableCircuit},
     traits::Circuit,
-    Variable,
 };
 
 use circuit_macros::circuit_type;
@@ -390,13 +390,13 @@ where
 pub mod test_helpers {
     use circuit_types::{
         balance::Balance,
+        r#match::{MatchResult, OrderSettlementIndices},
         native_helpers::compute_wallet_commitment_from_private,
         order::{Order, OrderSide},
-        r#match::{MatchResult, OrderSettlementIndices},
         wallet::Wallet,
     };
     use constants::Scalar;
-    use rand::{distributions::uniform::SampleRange, thread_rng, RngCore};
+    use rand::{RngCore, distributions::uniform::SampleRange, thread_rng};
     use util::{
         matching_engine::{apply_match_to_shares, compute_fee_obligation},
         on_chain::get_protocol_fee,
@@ -405,7 +405,7 @@ pub mod test_helpers {
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::test_helpers::{
-            create_wallet_shares, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS,
+            INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, create_wallet_shares,
         },
     };
 
@@ -610,13 +610,13 @@ pub mod test_helpers {
 mod tests {
     use ark_mpc::PARTY0;
     use circuit_types::{
+        AMOUNT_BITS,
         fixed_point::FixedPoint,
         traits::{MpcBaseType, SingleProverCircuit},
-        AMOUNT_BITS,
     };
 
     use constants::Scalar;
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use renegade_crypto::fields::scalar_to_u128;
     use test_helpers::mpc_network::execute_mock_mpc;
 
@@ -626,18 +626,18 @@ mod tests {
             check_constraint_satisfaction,
             test_helpers::{MAX_BALANCES, MAX_ORDERS},
             valid_match_settle::{
-                test_helpers::{dummy_witness_and_statement, SizedValidMatchSettle},
                 ValidMatchSettle, ValidMatchSettleWithCommitments,
+                test_helpers::{SizedValidMatchSettle, dummy_witness_and_statement},
             },
         },
     };
 
     use super::{
+        ValidMatchSettleStatement, ValidMatchSettleWithCommitmentsStatement,
+        ValidMatchSettleWitness,
         test_helpers::{
             convert_statement_to_commitments, dummy_witness_and_statement_with_commitments,
         },
-        ValidMatchSettleStatement, ValidMatchSettleWithCommitmentsStatement,
-        ValidMatchSettleWitness,
     };
 
     // -----------

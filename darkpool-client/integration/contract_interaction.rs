@@ -2,19 +2,19 @@
 
 use circuit_types::transfers::ExternalTransfer;
 use common::types::proof_bundles::{
+    MatchBundle,
     mocks::{
         dummy_link_proof, dummy_offline_fee_settlement_bundle, dummy_relayer_fee_settlement_bundle,
         dummy_valid_fee_redemption_bundle, dummy_valid_match_settle_bundle,
         dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle,
     },
-    MatchBundle,
 };
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{
-    helpers::{deploy_new_wallet, random_wallet_shares},
     IntegrationTestArgs,
+    helpers::{deploy_new_wallet, random_wallet_shares},
 };
 
 /// Tests submitting a new wallet and then recovering its shares from the

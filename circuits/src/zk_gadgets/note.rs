@@ -1,12 +1,12 @@
 //! Helpers for operations on notes
 
 use circuit_types::{
-    elgamal::{ElGamalCiphertextVar, EncryptionKeyVar},
-    note::{NoteVar, NOTE_CIPHERTEXT_SIZE},
-    traits::CircuitVarType,
     PlonkCircuit,
+    elgamal::{ElGamalCiphertextVar, EncryptionKeyVar},
+    note::{NOTE_CIPHERTEXT_SIZE, NoteVar},
+    traits::CircuitVarType,
 };
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::elgamal::ElGamalGadget;
 

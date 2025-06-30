@@ -6,13 +6,13 @@ use async_trait::async_trait;
 use common::types::hmac::HmacKey;
 use http_body_util::{BodyExt, Full};
 use hyper::{
+    HeaderMap, Method, Request, Response, StatusCode, Uri,
     body::{Bytes as BytesBody, Incoming as IncomingBody},
     header::CONTENT_TYPE,
-    HeaderMap, Method, Request, Response, StatusCode, Uri,
 };
 use itertools::Itertools;
 use matchit::{Params, Router as MatchRouter};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use state::State;
 use tracing::{debug, instrument, warn};
 
@@ -130,10 +130,10 @@ pub trait TypedHandler: Send + Sync {
 /// response into a body
 #[async_trait]
 impl<
-        Req: DeserializeOwned + for<'de> Deserialize<'de> + Send,
-        Resp: Serialize,
-        T: TypedHandler<Request = Req, Response = Resp>,
-    > Handler for T
+    Req: DeserializeOwned + for<'de> Deserialize<'de> + Send,
+    Resp: Serialize,
+    T: TypedHandler<Request = Req, Response = Resp>,
+> Handler for T
 {
     async fn handle(
         &self,

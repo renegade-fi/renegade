@@ -2,7 +2,7 @@
 
 use alloy::{
     primitives::keccak256,
-    signers::{local::PrivateKeySigner, Signature, SignerSync},
+    signers::{Signature, SignerSync, local::PrivateKeySigner},
 };
 use circuit_types::keychain::{
     PublicIdentificationKey, PublicKeyChain, PublicSigningKey, SecretIdentificationKey,

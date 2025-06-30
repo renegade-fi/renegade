@@ -67,7 +67,7 @@ mod tests {
 
     use crate::fields::{get_scalar_field_modulus, scalar_to_biguint};
 
-    use super::{decrypt_scalar, encrypt_scalar, DEFAULT_ELGAMAL_GENERATOR_BIGUINT};
+    use super::{DEFAULT_ELGAMAL_GENERATOR_BIGUINT, decrypt_scalar, encrypt_scalar};
 
     /// Generates a random keypair and encrypts a random scalar under this
     /// keypair decrypts the ciphertext and verifies that the decryption

@@ -4,22 +4,22 @@ use std::time::{Duration, Instant};
 
 use common::types::gossip::WrappedPeerId;
 use gossip_api::{
+    GossipDestination,
     request_response::{
         AuthenticatedGossipRequest, AuthenticatedGossipResponse, GossipRequest, GossipRequestType,
         GossipResponse, GossipResponseType,
     },
-    GossipDestination,
 };
 use job_types::{gossip_server::GossipServerJob, network_manager::NetworkResponseChannel};
-use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use libp2p::PeerId;
+use libp2p::request_response::{Message as RequestResponseMessage, ResponseChannel};
 use tracing::{error, instrument, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use util::{err_str, telemetry::propagation::set_parent_span_from_context};
 
 use crate::error::NetworkManagerError;
 
-use super::{behavior::BehaviorJob, NetworkManagerExecutor};
+use super::{NetworkManagerExecutor, behavior::BehaviorJob};
 
 /// The raft job execution latency at which we log a warning
 pub(super) const RAFT_JOB_LATENCY_WARNING_MS: Duration = Duration::from_millis(100);

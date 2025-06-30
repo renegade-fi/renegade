@@ -12,6 +12,7 @@
 //! VALID COMMITMENTS is proven once per order in the wallet
 
 use crate::{
+    SingleProverCircuit,
     zk_circuits::{
         VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
         VALID_REBLIND_COMMITMENTS_LINK,
@@ -20,25 +21,24 @@ use crate::{
         comparators::{EqGadget, EqVecGadget, EqZeroGadget, GreaterThanEqGadget},
         wallet_operations::{FeeGadget, OrderGadget, WalletGadget},
     },
-    SingleProverCircuit,
 };
 use circuit_macros::circuit_type;
 use circuit_types::{
+    FEE_BITS, PlonkCircuit,
     balance::{Balance, BalanceVar},
     fixed_point::FixedPoint,
-    order::{Order, OrderVar},
     r#match::OrderSettlementIndices,
+    order::{Order, OrderVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::{WalletShare, WalletVar},
-    PlonkCircuit, FEE_BITS,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
+use constants::{MAX_BALANCES, MAX_ORDERS, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
+    Variable,
     errors::CircuitError,
     proof_linking::{GroupLayout, LinkableCircuit},
     traits::Circuit,
-    Variable,
 };
 use serde::{Deserialize, Serialize};
 
@@ -436,13 +436,13 @@ where
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use circuit_types::{
+        Address,
         balance::Balance,
         native_helpers::create_wallet_shares_from_private,
         wallet::{Wallet, WalletShare},
-        Address,
     };
 
-    use crate::zk_circuits::test_helpers::{create_wallet_shares, MAX_BALANCES, MAX_ORDERS};
+    use crate::zk_circuits::test_helpers::{MAX_BALANCES, MAX_ORDERS, create_wallet_shares};
 
     use super::{OrderSettlementIndices, ValidCommitmentsStatement, ValidCommitmentsWitness};
 
@@ -562,27 +562,26 @@ pub mod test_helpers {
 #[allow(non_snake_case)]
 mod test {
     use circuit_types::{
+        Address,
         balance::{Balance, BalanceShare},
         fixed_point::{FixedPoint, FixedPointShare},
         order::{OrderShare, OrderSide},
         traits::{SecretShareType, SingleProverCircuit},
-        Address,
     };
     use constants::Scalar;
     use lazy_static::lazy_static;
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
 
     use crate::zk_circuits::{
-        check_constraint_satisfaction,
-        test_helpers::{SizedWallet, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+        VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
+        VALID_REBLIND_COMMITMENTS_LINK, check_constraint_satisfaction,
+        test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, SizedWallet},
         valid_commitments::{
-            test_helpers::{create_witness_and_statement, find_balance_or_augment},
             SizedValidCommitments,
+            test_helpers::{create_witness_and_statement, find_balance_or_augment},
         },
         valid_match_settle::SizedValidMatchSettle,
         valid_reblind::SizedValidReblind,
-        VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1,
-        VALID_REBLIND_COMMITMENTS_LINK,
     };
 
     use super::ValidCommitments;

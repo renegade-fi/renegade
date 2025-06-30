@@ -6,13 +6,12 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 #![feature(inherent_associated_types)]
 
 use circuit_types::{
+    CollaborativePlonkProof, Fabric, MpcProofLinkingHint, PlonkProof, ProofLinkingHint,
     errors::{ProverError, VerifierError},
     traits::{MpcType, MultiProverCircuit, SingleProverCircuit},
-    CollaborativePlonkProof, Fabric, MpcProofLinkingHint, PlonkProof, ProofLinkingHint,
 };
 use constants::Scalar;
 
@@ -175,18 +174,18 @@ pub mod test_helpers {
 
     use ark_mpc::error::MpcError;
     use circuit_types::{
+        AMOUNT_BITS, Amount,
         balance::Balance,
         fixed_point::FixedPoint,
-        order::{Order, OrderSide},
         r#match::{MatchResult, OrderSettlementIndices},
+        order::{Order, OrderSide},
         traits::BaseType,
         wallet::{Wallet, WalletShare},
-        Amount, AMOUNT_BITS,
     };
     use constants::{AuthenticatedScalar, Scalar};
-    use futures::{future::join_all, Future, FutureExt};
+    use futures::{Future, FutureExt, future::join_all};
     use itertools::Itertools;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use renegade_crypto::fields::scalar_to_biguint;
     use util::matching_engine::match_orders_with_max_min_amounts;
 
@@ -240,7 +239,7 @@ pub mod test_helpers {
     /// Generate a random amount valid in a wallet
     pub fn random_wallet_amount() -> Amount {
         let mut rng = thread_rng();
-        let amt_unreduced: Amount = rng.gen();
+        let amt_unreduced: Amount = rng.r#gen();
 
         let max_amount = 1u128 << AMOUNT_BITS;
         amt_unreduced % max_amount
@@ -252,8 +251,8 @@ pub mod test_helpers {
     }
 
     /// Get a dummy set of wallet shares
-    pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    ) -> WalletShare<MAX_BALANCES, MAX_ORDERS>
+    pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
+    -> WalletShare<MAX_BALANCES, MAX_ORDERS>
     where
         [(); MAX_BALANCES + MAX_ORDERS]: Sized,
     {
@@ -262,8 +261,8 @@ pub mod test_helpers {
     }
 
     /// Create a wallet with random zero'd balances
-    pub fn wallet_with_random_balances<const MAX_BALANCES: usize, const MAX_FEES: usize>(
-    ) -> Wallet<MAX_BALANCES, MAX_FEES>
+    pub fn wallet_with_random_balances<const MAX_BALANCES: usize, const MAX_FEES: usize>()
+    -> Wallet<MAX_BALANCES, MAX_FEES>
     where
         [(); MAX_BALANCES + MAX_FEES]: Sized,
     {

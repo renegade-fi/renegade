@@ -11,21 +11,21 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use alloy::rpc::types::TransactionReceipt;
 use ark_mpc::PARTY0;
 use async_trait::async_trait;
-use circuit_types::r#match::MatchResult;
 use circuit_types::SizedWalletShare;
+use circuit_types::r#match::MatchResult;
 use common::types::proof_bundles::MatchBundle;
 use common::types::tasks::SettleMatchTaskDescriptor;
 use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
 };
-use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::ProofManagerQueue;
 use serde::Serialize;
-use state::error::StateError;
 use state::State;
+use state::error::StateError;
 use tracing::instrument;
 
 use crate::task_state::StateWrapper;

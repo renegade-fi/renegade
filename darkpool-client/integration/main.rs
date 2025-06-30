@@ -21,14 +21,14 @@ use ::constants::Scalar;
 use alloy::signers::local::PrivateKeySigner;
 use circuit_types::SizedWalletShare;
 use clap::Parser;
-use darkpool_client::{client::DarkpoolClientConfig, constants::Chain, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, client::DarkpoolClientConfig, constants::Chain};
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
     integration_test_main,
     types::TestVerbosity,
 };
 use util::{
-    on_chain::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
+    on_chain::{DARKPOOL_PROXY_CONTRACT_KEY, parse_addr_from_deployments_file},
     telemetry::LevelFilter,
 };
 

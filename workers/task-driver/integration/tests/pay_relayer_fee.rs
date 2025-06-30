@@ -6,7 +6,7 @@ use common::types::{
     tasks::PayRelayerFeeTaskDescriptor, wallet::Wallet, wallet_mocks::mock_empty_wallet,
 };
 use constants::Scalar;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_biguint;
@@ -15,8 +15,8 @@ use test_helpers::{
 };
 
 use crate::{
-    helpers::{await_task, lookup_wallet_and_check_result, setup_initial_wallet},
     IntegrationTestArgs,
+    helpers::{await_task, lookup_wallet_and_check_result, setup_initial_wallet},
 };
 
 /// A dummy initial balance for the relayer to hold in their wallet

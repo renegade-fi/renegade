@@ -10,8 +10,8 @@ use alloy_primitives::{Address, Bytes, Selector};
 use alloy_sol_types::SolCall;
 use async_trait::async_trait;
 use circuit_types::{
-    elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
-    r#match::ExternalMatchResult, wallet::Nullifier, SizedWalletShare,
+    SizedWalletShare, elgamal::EncryptionKey, fixed_point::FixedPoint,
+    r#match::ExternalMatchResult, merkle::MerkleRoot, wallet::Nullifier,
 };
 use common::types::{
     proof_bundles::{
@@ -31,12 +31,12 @@ use helpers::{
     parse_shares_from_settle_offline_fee, parse_shares_from_update_wallet,
 };
 use renegade_solidity_abi::IDarkpool::{
-    createWalletCall, processAtomicMatchSettleCall, processMalleableAtomicMatchSettleCall,
-    processMatchSettleCall, redeemFeeCall, settleOfflineFeeCall, updateWalletCall,
     IDarkpoolInstance, MalleableMatchAtomicProofs, MatchAtomicLinkingProofs, MatchAtomicProofs,
     MatchLinkingProofs, MatchProofs, MerkleInsertion as AbiMerkleInsertion,
     MerkleOpeningNode as AbiMerkleOpeningNode, NullifierSpent as AbiNullifierSpent,
-    WalletUpdated as AbiWalletUpdated,
+    WalletUpdated as AbiWalletUpdated, createWalletCall, processAtomicMatchSettleCall,
+    processMalleableAtomicMatchSettleCall, processMatchSettleCall, redeemFeeCall,
+    settleOfflineFeeCall, updateWalletCall,
 };
 use tracing::error;
 

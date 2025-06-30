@@ -6,9 +6,9 @@
 // -----------
 
 use common::types::{gossip::WrappedPeerId, tasks::TaskIdentifier};
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 
-use crate::{storage::error::StorageError, TASK_ASSIGNMENT_TABLE};
+use crate::{TASK_ASSIGNMENT_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 

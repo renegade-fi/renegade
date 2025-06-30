@@ -10,25 +10,25 @@ use std::{
 };
 
 use openraft::{
-    storage::RaftStateMachine, EntryPayload, ErrorSubject, ErrorVerb, LogId, OptionalSend,
-    Snapshot, SnapshotMeta, StorageError as RaftStorageError, StoredMembership,
+    EntryPayload, ErrorSubject, ErrorVerb, LogId, OptionalSend, Snapshot, SnapshotMeta,
+    StorageError as RaftStorageError, StoredMembership, storage::RaftStateMachine,
 };
 use tokio::fs::File;
 use tracing::error;
 use util::{err_str, res_some};
 
 use crate::{
-    applicator::{error::StateApplicatorError, StateApplicator},
+    Proposal,
+    applicator::{StateApplicator, error::StateApplicatorError},
     error::StateError,
     notifications::OpenNotifications,
     replication::error::new_apply_error,
     storage::db::DB,
-    Proposal,
 };
 
 use super::{
-    error::{new_log_read_error, new_snapshot_error, ReplicationError},
     Entry, Node, NodeId, SnapshotData, TypeConfig,
+    error::{ReplicationError, new_log_read_error, new_snapshot_error},
 };
 
 /// The snapshot file name
@@ -318,9 +318,9 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
 #[cfg(test)]
 mod test {
     use common::types::wallet_mocks::mock_empty_wallet;
-    use openraft::{storage::RaftStateMachine, Entry, EntryPayload, LeaderId, LogId};
+    use openraft::{Entry, EntryPayload, LeaderId, LogId, storage::RaftStateMachine};
 
-    use crate::{replication::test_helpers::mock_state_machine, Proposal, StateTransition};
+    use crate::{Proposal, StateTransition, replication::test_helpers::mock_state_machine};
 
     /// Tests applying a log with a waiter on the state
     #[tokio::test]

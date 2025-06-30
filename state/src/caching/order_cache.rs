@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use circuit_types::{order::OrderSide, Amount};
+use circuit_types::{Amount, order::OrderSide};
 use common::types::wallet::{Order, OrderIdentifier, Pair};
 use tokio::sync::RwLock;
 use tracing::instrument;
@@ -13,7 +13,7 @@ use tracing::instrument;
 use crate::storage::{db::DB, error::StorageError};
 
 use super::{
-    matchable_amount::MatchableAmountMap, order_metadata_index::OrderMetadataIndex, RwLockHashSet,
+    RwLockHashSet, matchable_amount::MatchableAmountMap, order_metadata_index::OrderMetadataIndex,
 };
 
 /// A filter for querying the order book cache

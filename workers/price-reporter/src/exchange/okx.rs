@@ -8,7 +8,7 @@ use std::{
 use async_trait::async_trait;
 use common::types::{price::Price, token::Token};
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::error;
 use tungstenite::{Error as WsError, Message};
 use url::Url;
@@ -20,12 +20,12 @@ use crate::{
 };
 
 use super::{
+    Exchange, InitializablePriceStream, PriceStreamType,
     connection::{
-        parse_json_field, parse_json_field_array, parse_json_from_message, ws_connect,
-        ExchangeConnection,
+        ExchangeConnection, parse_json_field, parse_json_field_array, parse_json_from_message,
+        ws_connect,
     },
-    get_base_exchange_ticker, get_quote_exchange_ticker, Exchange, InitializablePriceStream,
-    PriceStreamType,
+    get_base_exchange_ticker, get_quote_exchange_ticker,
 };
 
 // -------------

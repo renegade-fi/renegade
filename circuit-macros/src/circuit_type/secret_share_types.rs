@@ -2,7 +2,7 @@
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
-use syn::{parse_quote, Attribute, ItemImpl, ItemStruct, Path};
+use syn::{Attribute, ItemImpl, ItemStruct, Path, parse_quote};
 
 use crate::circuit_type::{
     build_modified_struct_from_associated_types, ident_strip_suffix, ident_with_suffix, new_ident,
@@ -10,9 +10,10 @@ use crate::circuit_type::{
 };
 
 use super::{
-    build_base_type_impl, build_serde_methods, ident_with_generics, mpc_types::build_mpc_types,
+    FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME, build_base_type_impl,
+    build_serde_methods, ident_with_generics, mpc_types::build_mpc_types,
     multiprover_circuit_types::VAR_SUFFIX, singleprover_circuit_types::build_circuit_types,
-    str_to_path, FROM_SCALARS_METHOD_NAME, SCALAR_TYPE_IDENT, TO_SCALARS_METHOD_NAME,
+    str_to_path,
 };
 
 /// The trait name of the base type

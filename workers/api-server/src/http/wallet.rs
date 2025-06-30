@@ -2,8 +2,8 @@
 
 use async_trait::async_trait;
 use circuit_types::{
-    balance::Balance, native_helpers::create_wallet_shares_from_private, Amount,
-    SizedWallet as SizedCircuitWallet,
+    Amount, SizedWallet as SizedCircuitWallet, balance::Balance,
+    native_helpers::create_wallet_shares_from_private,
 };
 use common::types::{
     tasks::{
@@ -12,9 +12,10 @@ use common::types::{
     },
     token::Token,
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
-    wallet::{keychain::PrivateKeyChain, Order, Wallet, WalletIdentifier},
+    wallet::{Order, Wallet, WalletIdentifier, keychain::PrivateKeyChain},
 };
 use external_api::{
+    EmptyRequestResponse,
     http::wallet::{
         CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
         CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
@@ -25,7 +26,6 @@ use external_api::{
         WithdrawBalanceResponse,
     },
     types::ApiOrder,
-    EmptyRequestResponse,
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
@@ -42,8 +42,8 @@ use util::{
 
 use crate::{
     compliance::ComplianceServerClient,
-    error::{bad_request, internal_error, not_found, ApiServerError},
-    router::{QueryParams, TypedHandler, UrlParams, ERR_WALLET_NOT_FOUND},
+    error::{ApiServerError, bad_request, internal_error, not_found},
+    router::{ERR_WALLET_NOT_FOUND, QueryParams, TypedHandler, UrlParams},
 };
 
 use super::{

@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 
 use alloy::{
     primitives::keccak256,
-    signers::{local::PrivateKeySigner, SignerSync},
+    signers::{SignerSync, local::PrivateKeySigner},
 };
 use circuit_types::keychain::{PublicKeyChain, SecretIdentificationKey};
 use constants::Scalar;
@@ -17,8 +17,8 @@ use util::raw_err_str;
 use crate::types::hmac::HmacKey;
 
 use super::{
-    keychain::{KeyChain, PrivateKeyChain},
     WalletIdentifier,
+    keychain::{KeyChain, PrivateKeyChain},
 };
 
 /// The message used to derive the blinder stream seed

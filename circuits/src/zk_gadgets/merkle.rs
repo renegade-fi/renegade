@@ -4,7 +4,7 @@
 use ark_ff::One;
 use circuit_types::merkle::MerkleOpeningVar;
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar, Variable};
+use mpc_relation::{BoolVar, Variable, errors::CircuitError, traits::Circuit};
 
 use super::poseidon::PoseidonHashGadget;
 
@@ -125,11 +125,11 @@ pub(crate) mod merkle_test {
         crh::{CRHScheme, TwoToOneCRHScheme},
         merkle_tree::{Config, IdentityDigestConverter, MerkleTree},
     };
-    use circuit_types::{merkle::MerkleOpening, scalar, traits::CircuitBaseType, PlonkCircuit};
+    use circuit_types::{PlonkCircuit, merkle::MerkleOpening, scalar, traits::CircuitBaseType};
     use constants::{Scalar, ScalarField};
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
-    use rand::{distributions::uniform::SampleRange, thread_rng, Rng};
+    use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
     use renegade_crypto::hash::compute_poseidon_hash;
 
     use crate::{

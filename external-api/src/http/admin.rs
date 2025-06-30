@@ -4,7 +4,7 @@
 // | HTTP Routes |
 // ---------------
 
-use common::types::{wallet::OrderIdentifier, MatchingPoolName};
+use common::types::{MatchingPoolName, wallet::OrderIdentifier};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{AdminOrderMetadata, ApiOrder};

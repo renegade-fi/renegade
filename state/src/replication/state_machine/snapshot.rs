@@ -4,9 +4,9 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 use openraft::{
     ErrorSubject, ErrorVerb, LogId, RaftSnapshotBuilder, Snapshot, SnapshotMeta,
     StorageError as RaftStorageError, StoredMembership,
@@ -14,8 +14,8 @@ use openraft::{
 use tracing::error;
 use util::{err_str, get_current_time_millis};
 
-use crate::replication::error::{new_snapshot_error, ReplicationError};
-use crate::storage::db::{DbConfig, DB};
+use crate::replication::error::{ReplicationError, new_snapshot_error};
+use crate::storage::db::{DB, DbConfig};
 use crate::{
     ALL_TABLES, CLUSTER_MEMBERSHIP_TABLE, NODE_METADATA_TABLE, PEER_INFO_TABLE, RAFT_LOGS_TABLE,
     RAFT_METADATA_TABLE, RELAYER_FEES_TABLE,
@@ -334,8 +334,9 @@ mod tests {
     use libmdbx::Error as MdbxError;
 
     use crate::{
-        caching::order_cache::OrderBookFilter, replication::test_helpers::mock_state_machine,
-        storage::error::StorageError, test_helpers::mock_db, StateTransition, WALLETS_TABLE,
+        StateTransition, WALLETS_TABLE, caching::order_cache::OrderBookFilter,
+        replication::test_helpers::mock_state_machine, storage::error::StorageError,
+        test_helpers::mock_db,
     };
 
     use super::*;

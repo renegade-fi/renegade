@@ -2,11 +2,11 @@
 
 use circuit_types::wallet::Nullifier;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath, WalletIdentifier};
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use util::res_some;
 
 use crate::{
-    storage::error::StorageError, NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
+    NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE, storage::error::StorageError,
 };
 
 use super::StateTxn;
@@ -153,7 +153,7 @@ mod test {
     use itertools::Itertools;
 
     use crate::{
-        test_helpers::mock_db, NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE,
+        NULLIFIER_TO_WALLET_TABLE, ORDER_TO_WALLET_TABLE, WALLETS_TABLE, test_helpers::mock_db,
     };
 
     /// Tests adding a wallet then retrieving it

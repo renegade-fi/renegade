@@ -3,16 +3,16 @@
 use std::{cmp, iter};
 
 use ark_mpc::{
+    ResultValue,
     algebra::AuthenticatedScalarResult,
     gadgets::{bit_xor, bit_xor_batch, bit_xor_public_batch},
-    ResultValue,
 };
 use bitvec::{prelude::Lsb0, slice::BitSlice};
 use circuit_types::Fabric;
 use constants::{AuthenticatedScalar, Scalar, ScalarResult};
 use itertools::Itertools;
 
-use crate::{scalar_2_to_m, SCALAR_MAX_BITS};
+use crate::{SCALAR_MAX_BITS, scalar_2_to_m};
 
 /// We only sample a blinding factor in the range [0, 2^252] because not all
 /// values with the final bit (253rd) of the value make valid scalars. The
@@ -288,17 +288,18 @@ pub fn bit_lt_public(
 
 #[cfg(test)]
 mod tests {
-    use ark_mpc::{error::MpcError, PARTY0, PARTY1};
+    use ark_mpc::{PARTY0, PARTY1, error::MpcError};
     use constants::{AuthenticatedScalar, Scalar};
     use futures::future::join_all;
     use itertools::Itertools;
     use num_bigint::BigUint;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
+        SCALAR_BITS_MINUS_TWO,
         mpc_gadgets::bits::{bit_add, bit_add_public, bit_lt, bit_lt_public, to_bits_le},
-        scalar_2_to_m, SCALAR_BITS_MINUS_TWO,
+        scalar_2_to_m,
     };
 
     use super::{scalar_from_bits_le, scalar_to_bits_le};

@@ -3,15 +3,15 @@
 
 use std::sync::Arc;
 
-use ark_mpc::{network::QuicTwoPartyNet, MpcFabric, PARTY0, PARTY1};
+use ark_mpc::{MpcFabric, PARTY0, PARTY1, network::QuicTwoPartyNet};
 use circuit_types::{
-    balance::Balance,
-    fixed_point::FixedPoint,
-    order::Order,
-    r#match::{MatchResult, OrderSettlementIndices},
-    traits::{MpcBaseType, MpcType},
     CollaborativePlonkProof, Fabric, MpcPlonkLinkProof, MpcProofLinkingHint, PlonkProof,
     ProofLinkingHint, SizedWalletShare,
+    balance::Balance,
+    fixed_point::FixedPoint,
+    r#match::{MatchResult, OrderSettlementIndices},
+    order::Order,
+    traits::{MpcBaseType, MpcType},
 };
 use circuits::{
     mpc_circuits::{r#match::compute_match, settle::settle_match},
@@ -32,7 +32,7 @@ use common::types::{
     proof_bundles::{MatchBundle, OrderValidityProofBundle, SizedValidMatchSettleBundle},
 };
 use constants::SystemCurveGroup;
-use crossbeam::channel::{bounded, Receiver};
+use crossbeam::channel::{Receiver, bounded};
 use test_helpers::mpc_network::mocks::PartyIDBeaverSource;
 use tracing::info;
 use util::{matching_engine::compute_max_amount, on_chain::get_protocol_fee};

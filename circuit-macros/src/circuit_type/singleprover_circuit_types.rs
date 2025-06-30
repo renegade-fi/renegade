@@ -4,19 +4,18 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
 use syn::{
-    parse_quote,
+    Attribute, Expr, FieldValue, ItemImpl, ItemStruct, Member, Path, parse_quote,
     punctuated::Punctuated,
     token::{Colon, Comma},
-    Attribute, Expr, FieldValue, ItemImpl, ItemStruct, Member, Path,
 };
 
 use crate::circuit_type::{ident_with_suffix, new_ident};
 
 use super::{
-    build_modified_struct_from_associated_types, build_serialize_method, ident_with_generics,
-    params_from_generics,
+    BASE_TYPE_TRAIT_NAME, build_modified_struct_from_associated_types, build_serialize_method,
+    ident_with_generics, params_from_generics,
     proof_linking::{build_create_witness_method, requires_proof_linking},
-    str_to_path, BASE_TYPE_TRAIT_NAME,
+    str_to_path,
 };
 
 // -------------

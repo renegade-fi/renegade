@@ -3,8 +3,8 @@
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
-use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::PlonkCircuit;
+use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuits::zk_circuits::valid_match_settle::test_helpers::dummy_witness_and_statement;
 use circuits::zk_circuits::valid_match_settle::{
     SizedValidMatchSettle, SizedValidMatchSettleStatement, SizedValidMatchSettleWitness,
@@ -12,7 +12,7 @@ use circuits::zk_circuits::valid_match_settle::{
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{MAX_BALANCES, MAX_ORDERS};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mpc_relation::proof_linking::LinkableCircuit;
 
 // -----------
@@ -20,8 +20,8 @@ use mpc_relation::proof_linking::LinkableCircuit;
 // -----------
 
 /// Adds sizing parameters to the `dummy_witness_and_statement` helper
-pub fn create_sized_witness_statement(
-) -> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
+pub fn create_sized_witness_statement()
+-> (SizedValidMatchSettleWitness, SizedValidMatchSettleStatement) {
     dummy_witness_and_statement()
 }
 

@@ -5,21 +5,21 @@
 #![feature(generic_const_exprs)]
 
 use circuit_types::{
+    PlonkCircuit,
     order::Order,
     traits::{CircuitBaseType, SingleProverCircuit},
     transfers::ExternalTransfer,
     wallet::Wallet,
-    PlonkCircuit,
 };
 use circuits::{
     singleprover_prove, verify_singleprover_proof,
     zk_circuits::valid_wallet_update::{
-        test_helpers::construct_witness_statement, SizedValidWalletUpdate,
-        SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness, ValidWalletUpdate,
+        SizedValidWalletUpdate, SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
+        ValidWalletUpdate, test_helpers::construct_witness_statement,
     },
 };
 use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 // -----------
 // | Helpers |

@@ -11,7 +11,7 @@ use crate::{Address, Amount};
 use {
     crate::traits::{BaseType, CircuitBaseType, CircuitVarType},
     circuit_macros::circuit_type,
-    mpc_relation::{traits::Circuit, BoolVar, Variable},
+    mpc_relation::{BoolVar, Variable, traits::Circuit},
 };
 
 // ----------------------

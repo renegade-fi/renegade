@@ -6,13 +6,13 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{
+    Attribute, Expr, ExprCall, FnArg, ItemFn, Pat, Result, Signature, Visibility,
     parse::Parser,
     parse_quote,
     punctuated::Punctuated,
     token::{Comma, Paren},
-    Attribute, Expr, ExprCall, FnArg, ItemFn, Pat, Result, Signature, Visibility,
 };
 
 /// Argument given to enable tracing constraint generation latency

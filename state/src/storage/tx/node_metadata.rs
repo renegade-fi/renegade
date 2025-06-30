@@ -1,17 +1,17 @@
 //! Storage access methods for the local node's metadata
 
-use circuit_types::{fixed_point::FixedPoint, Address};
+use circuit_types::{Address, fixed_point::FixedPoint};
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     wallet::WalletIdentifier,
 };
 use config::RelayerFeeKey;
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use libp2p::core::Multiaddr;
 use libp2p::identity::Keypair;
 use util::err_str;
 
-use crate::{storage::error::StorageError, NODE_METADATA_TABLE};
+use crate::{NODE_METADATA_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 

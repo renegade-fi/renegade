@@ -10,12 +10,13 @@
 use std::collections::HashSet;
 
 use circuit_types::{
+    Amount,
     balance::Balance,
     fixed_point::FixedPoint,
     r#match::{BoundedMatchResult, ExternalMatchResult, MatchResult},
-    Amount,
 };
 use common::types::{
+    MatchingPoolName,
     price::TimestampedPriceFp,
     tasks::{
         SettleExternalMatchTaskDescriptor, SettleMalleableExternalMatchTaskDescriptor,
@@ -23,7 +24,6 @@ use common::types::{
     },
     token::Token,
     wallet::{Order, OrderIdentifier},
-    MatchingPoolName,
 };
 use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
@@ -35,8 +35,8 @@ use util::{matching_engine::compute_max_amount, telemetry::helpers::backfill_tra
 use crate::{
     error::HandshakeManagerError,
     manager::{
-        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
         HandshakeExecutor,
+        handshake::{ERR_NO_ORDER, ERR_NO_WALLET},
     },
 };
 

@@ -1,9 +1,9 @@
 //! Helpers for accessing information about matching pools in the database
 
-use common::types::{wallet::OrderIdentifier, MatchingPoolName};
-use libmdbx::{TransactionKind, RW};
+use common::types::{MatchingPoolName, wallet::OrderIdentifier};
+use libmdbx::{RW, TransactionKind};
 
-use crate::{storage::error::StorageError, POOL_TABLE};
+use crate::{POOL_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 

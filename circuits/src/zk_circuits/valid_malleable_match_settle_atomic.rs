@@ -10,22 +10,22 @@
 
 use circuit_macros::circuit_type;
 use circuit_types::{
+    AMOUNT_BITS, Address, FEE_BITS, PlonkCircuit,
     balance::{Balance, BalanceVar},
     fees::{FeeTakeRate, FeeTakeRateVar},
     fixed_point::{FixedPoint, FixedPointVar},
-    order::{Order, OrderVar},
     r#match::{BoundedMatchResult, BoundedMatchResultVar},
+    order::{Order, OrderVar},
     traits::{BaseType, CircuitBaseType, CircuitVarType, SingleProverCircuit},
     wallet::WalletShare,
-    Address, PlonkCircuit, AMOUNT_BITS, FEE_BITS,
 };
-use constants::{Scalar, ScalarField, MAX_BALANCES, MAX_ORDERS};
+use constants::{MAX_BALANCES, MAX_ORDERS, Scalar, ScalarField};
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
+    Variable,
     errors::CircuitError,
     proof_linking::{GroupLayout, LinkableCircuit},
     traits::Circuit,
-    Variable,
 };
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +37,7 @@ use crate::zk_gadgets::{
     wallet_operations::{AmountGadget, FeeGadget, PriceGadget},
 };
 
-use super::{valid_match_settle::ValidMatchSettle, VALID_COMMITMENTS_MATCH_SETTLE_LINK0};
+use super::{VALID_COMMITMENTS_MATCH_SETTLE_LINK0, valid_match_settle::ValidMatchSettle};
 
 /// The circuit implementation of `VALID MALLEABLE MATCH SETTLE ATOMIC`
 pub struct ValidMalleableMatchSettleAtomic<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
@@ -345,13 +345,13 @@ pub mod test_helpers {
     //! Helpers for testing the `VALID MALLEABLE MATCH SETTLE ATOMIC` circuit
 
     use circuit_types::{fixed_point::FixedPoint, r#match::MatchResult};
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use renegade_crypto::fields::scalar_to_u128;
 
     use crate::{
         test_helpers::random_orders_and_match,
         zk_circuits::{
-            test_helpers::{create_wallet_shares, random_address, MAX_BALANCES, MAX_ORDERS},
+            test_helpers::{MAX_BALANCES, MAX_ORDERS, create_wallet_shares, random_address},
             valid_match_settle::test_helpers::build_wallet_and_indices_from_order,
         },
     };
@@ -412,8 +412,8 @@ pub mod test_helpers {
     }
 
     /// Create a witness and statement wherein the internal order is a buy
-    pub fn create_witness_statement_buy_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    ) -> (
+    pub fn create_witness_statement_buy_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
+    -> (
         ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
     )
@@ -432,8 +432,8 @@ pub mod test_helpers {
     }
 
     /// Create a witness and statement wherein the internal order is a sell
-    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>(
-    ) -> (
+    pub fn create_witness_statement_sell_side<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
+    -> (
         ValidMalleableMatchSettleAtomicWitness<MAX_BALANCES, MAX_ORDERS>,
         ValidMalleableMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
     )
@@ -520,39 +520,38 @@ pub mod test_helpers {
 #[cfg(test)]
 mod tests {
     use circuit_types::{
+        PlonkCircuit,
         fixed_point::FixedPoint,
         max_price,
         traits::{BaseType, CircuitBaseType, SingleProverCircuit},
         wallet::WalletShare,
-        PlonkCircuit,
     };
     use constants::Scalar;
     use itertools::Itertools;
     use mpc_relation::{proof_linking::LinkableCircuit, traits::Circuit};
-    use rand::{thread_rng, Rng};
+    use rand::{Rng, thread_rng};
     use renegade_crypto::fields::scalar_to_u128;
 
     use crate::{
         test_helpers::max_amount,
         zk_circuits::{
             check_constraint_satisfaction,
-            test_helpers::{random_address, MAX_BALANCES, MAX_ORDERS},
+            test_helpers::{MAX_BALANCES, MAX_ORDERS, random_address},
             valid_malleable_match_settle_atomic::{
+                ValidMalleableMatchSettleAtomic,
                 test_helpers::{
                     create_witness_statement_buy_side, create_witness_statement_sell_side,
                 },
-                ValidMalleableMatchSettleAtomic,
             },
         },
     };
 
     use super::{
-        test_helpers::{
-            create_witness_statement, SizedValidMalleableMatchSettleAtomic,
-            SizedValidMalleableMatchSettleAtomicStatement,
-            SizedValidMalleableMatchSettleAtomicWitness,
-        },
         ValidMalleableMatchSettleAtomicStatementVar, ValidMalleableMatchSettleAtomicWitnessVar,
+        test_helpers::{
+            SizedValidMalleableMatchSettleAtomic, SizedValidMalleableMatchSettleAtomicStatement,
+            SizedValidMalleableMatchSettleAtomicWitness, create_witness_statement,
+        },
     };
 
     // -----------

@@ -19,15 +19,15 @@ use super::{
 #[cfg(feature = "proof-system-types")]
 use {
     crate::{
+        Fabric,
         traits::{
             BaseType, CircuitBaseType, CircuitVarType, MpcBaseType, MpcType,
             MultiproverCircuitBaseType, SecretShareBaseType, SecretShareType, SecretShareVarType,
         },
-        Fabric,
     },
     circuit_macros::circuit_type,
     constants::AuthenticatedScalar,
-    mpc_relation::{traits::Circuit, Variable},
+    mpc_relation::{Variable, traits::Circuit},
 };
 
 /// A commitment to the wallet's secret shares that is entered into the global

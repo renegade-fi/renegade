@@ -1,4 +1,5 @@
 [workspace]
+resolver = "3"
 members = [
 	"circuits",
 	"circuit-types",
@@ -81,30 +82,30 @@ darkpool-client = { path = "darkpool-client" }
 api-server = { path = "workers/api-server" }
 chain-events = { path = "workers/chain-events" }
 constants = { path = "constants", default-features = false }
-circuits = { path = "circuits" }
-circuit-macros = { path = "circuit-macros" }
-circuit-types = { path = "circuit-types" }
-common = { path = "common" }
-config = { path = "config" }
-event-manager = { path = "workers/event-manager" }
-external-api = { path = "external-api" }
-gossip-api = { path = "gossip-api" }
-gossip-server = { path = "workers/gossip-server" }
-handshake-manager = { path = "workers/handshake-manager" }
-job-types = { path = "workers/job-types" }
-metrics-sampler = { path = "metrics-sampler" }
-mock-node = { path = "mock-node" }
-network-manager = { path = "workers/network-manager" }
-price-reporter = { path = "workers/price-reporter" }
-proof-manager = { path = "workers/proof-manager" }
-renegade-crypto = { path = "renegade-crypto" }
-renegade-metrics = { path = "renegade-metrics" }
-state = { path = "state" }
-system-bus = { path = "system-bus" }
-system-clock = { path = "system-clock" }
-task-driver = { path = "workers/task-driver" }
-test-helpers = { path = "test-helpers" }
-util = { path = "util" }
+circuits = { path = "circuits", default-features = false }
+circuit-macros = { path = "circuit-macros", default-features = false }
+circuit-types = { path = "circuit-types", default-features = false }
+common = { path = "common", default-features = false }
+config = { path = "config", default-features = false }
+event-manager = { path = "workers/event-manager", default-features = false }
+external-api = { path = "external-api", default-features = false }
+gossip-api = { path = "gossip-api", default-features = false }
+gossip-server = { path = "workers/gossip-server", default-features = false }
+handshake-manager = { path = "workers/handshake-manager", default-features = false }
+job-types = { path = "workers/job-types", default-features = false }
+metrics-sampler = { path = "metrics-sampler", default-features = false }
+mock-node = { path = "mock-node", default-features = false }
+network-manager = { path = "workers/network-manager", default-features = false }
+price-reporter = { path = "workers/price-reporter", default-features = false }
+proof-manager = { path = "workers/proof-manager", default-features = false }
+renegade-crypto = { path = "renegade-crypto", default-features = false }
+renegade-metrics = { path = "renegade-metrics", default-features = false }
+state = { path = "state", default-features = false }
+system-bus = { path = "system-bus", default-features = false }
+system-clock = { path = "system-clock", default-features = false }
+task-driver = { path = "workers/task-driver", default-features = false }
+test-helpers = { path = "test-helpers", default-features = false }
+util = { path = "util", default-features = false }
 
 # === Misc === #
 async-trait = "0.1"
@@ -123,7 +124,3 @@ lazy_static = "1.4"
 # We patch `ahash` here since version mismatches w/ the contracts code have
 # led to verification errors in the past.
 ahash = { git = "https://github.com/tkaitchuck/aHash.git", tag = "v0.8.11" }
-# Patch the `parity-scale-codec-derive` crate to force an updated version that is
-# compatible with newer versions of the `parity-scale-codec` crate.
-# See: https://github.com/paritytech/parity-scale-codec/issues/702
-parity-scale-codec-derive = { git = "https://github.com/paritytech/parity-scale-codec.git", tag = "v3.6.12" }

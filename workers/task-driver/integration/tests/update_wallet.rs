@@ -1,14 +1,14 @@
 //! Integration tests for the `UpdateWallet` task
 
 use circuit_types::{
+    Amount,
     balance::Balance,
     fixed_point::FixedPoint,
     order::OrderSide,
     transfers::{ExternalTransfer, ExternalTransferDirection},
-    Amount,
 };
 use common::types::{
-    tasks::{mocks::gen_wallet_update_sig, UpdateWalletTaskDescriptor, WalletUpdateType},
+    tasks::{UpdateWalletTaskDescriptor, WalletUpdateType, mocks::gen_wallet_update_sig},
     transfer_auth::ExternalTransferWithAuth,
     wallet::{Order, OrderBuilder, OrderIdentifier, Wallet},
     wallet_mocks::{mock_empty_wallet, mock_order},
@@ -27,11 +27,11 @@ use util::hex::biguint_from_hex_string;
 use uuid::Uuid;
 
 use crate::{
+    IntegrationTestArgs,
     helpers::{
         authorize_transfer, await_task, biguint_from_address, lookup_wallet_and_check_result,
         setup_initial_wallet,
     },
-    IntegrationTestArgs,
 };
 
 lazy_static! {

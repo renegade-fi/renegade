@@ -8,19 +8,19 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use openraft::{
+    RaftNetwork, RaftNetworkFactory,
     error::{InstallSnapshotError, RPCError, RaftError, RemoteError},
     network::RPCOption,
     raft::{
         AppendEntriesRequest, AppendEntriesResponse, InstallSnapshotRequest,
         InstallSnapshotResponse, VoteRequest, VoteResponse,
     },
-    RaftNetwork, RaftNetworkFactory,
 };
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use util::{err_str, telemetry::helpers::backfill_trace_field};
 
-use crate::{ciborium_serialize, error::StateError, Proposal};
+use crate::{Proposal, ciborium_serialize, error::StateError};
 
 use super::{Node, NodeId, TypeConfig};
 

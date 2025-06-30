@@ -1,11 +1,11 @@
 //! Benchmarks the caching layer
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use circuit_types::{order::OrderSide, Amount};
-use common::types::wallet::{pair_from_mints, Pair};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use circuit_types::{Amount, order::OrderSide};
+use common::types::wallet::{Pair, pair_from_mints};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use num_bigint::BigUint;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use state::caching::matchable_amount::MatchableAmountMap;
 use tokio::runtime::Runtime;
 

@@ -226,9 +226,8 @@ pub fn cond_select_vec(
     let selector: AuthenticatedScalar = s.clone().into();
     let terms = AuthenticatedScalar::batch_mul(
         &a.iter().cloned().chain(b.iter().cloned()).collect::<Vec<_>>(),
-        &iter::repeat(selector.clone())
-            .take(n)
-            .chain(iter::repeat(Scalar::one() - &selector).take(n))
+        &std::iter::repeat_n(selector.clone(), n)
+            .chain(std::iter::repeat_n(Scalar::one() - &selector, n))
             .collect_vec(),
     );
 
@@ -250,16 +249,17 @@ mod test {
     use constants::Scalar;
     use itertools::Itertools;
     use num_bigint::RandBigInt;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use renegade_crypto::fields::biguint_to_scalar;
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::{
+        SCALAR_MAX_BITS,
         mpc_gadgets::comparators::{
             cond_select, cond_select_vec, eq, greater_than, greater_than_equal, less_than,
             less_than_equal, less_than_zero, min, ne,
         },
-        open_unwrap, open_unwrap_vec, SCALAR_MAX_BITS,
+        open_unwrap, open_unwrap_vec,
     };
 
     /// The maximum bitlength of an input allowed in tests

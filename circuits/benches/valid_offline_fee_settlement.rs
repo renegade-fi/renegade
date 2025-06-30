@@ -4,8 +4,8 @@
 #![allow(missing_docs)]
 #![feature(generic_const_exprs)]
 
-use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuit_types::PlonkCircuit;
+use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuits::test_helpers::wallet_with_random_balances;
 use circuits::zk_circuits::valid_offline_fee_settlement::test_helpers::create_witness_statement as create_witness_statement_helper;
 use circuits::zk_circuits::valid_offline_fee_settlement::{
@@ -14,7 +14,7 @@ use circuits::zk_circuits::valid_offline_fee_settlement::{
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 // -----------
 // | Helpers |
@@ -22,8 +22,8 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
 /// Create a sized witness and statement for the `VALID OFFLINE FEE SETTLEMENT`
 /// circuit
-pub fn create_witness_statement(
-) -> (SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness) {
+pub fn create_witness_statement()
+-> (SizedValidOfflineFeeSettlementStatement, SizedValidOfflineFeeSettlementWitness) {
     let sender_wallet = wallet_with_random_balances();
     create_witness_statement_helper(&sender_wallet)
 }

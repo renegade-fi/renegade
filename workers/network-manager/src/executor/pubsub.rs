@@ -4,11 +4,11 @@ use std::sync::atomic::Ordering;
 
 use common::types::gossip::WrappedPeerId;
 use gossip_api::{
-    pubsub::{
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
-        AuthenticatedPubsubMessage, PubsubMessage,
-    },
     GossipDestination,
+    pubsub::{
+        AuthenticatedPubsubMessage, PubsubMessage,
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
+    },
 };
 use job_types::{gossip_server::GossipServerJob, handshake_manager::HandshakeManagerJob};
 use libp2p::gossipsub::{Message as GossipsubMessage, Sha256Topic};
@@ -16,7 +16,7 @@ use util::err_str;
 
 use crate::error::NetworkManagerError;
 
-use super::{behavior::BehaviorJob, BufferedPubsubMessage, NetworkManagerExecutor};
+use super::{BufferedPubsubMessage, NetworkManagerExecutor, behavior::BehaviorJob};
 
 /// Error emitted when a sender is missing from a pubsub message
 const ERR_MISSING_SENDER: &str = "missing sender in pubsub message";

@@ -1,11 +1,11 @@
 //! State interface methods for order metadata
 
-use common::types::wallet::{order_metadata::OrderMetadata, OrderIdentifier, WalletIdentifier};
+use common::types::wallet::{OrderIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
 use util::res_some;
 
 use crate::{
-    error::StateError, notifications::ProposalWaiter, storage::error::StorageError, StateInner,
-    StateTransition,
+    StateInner, StateTransition, error::StateError, notifications::ProposalWaiter,
+    storage::error::StorageError,
 };
 
 /// The error message emitted when a wallet cannot be found for an order
@@ -67,7 +67,7 @@ pub mod test {
         price::TimestampedPrice, wallet::order_metadata::OrderState, wallet_mocks::mock_order,
     };
     use itertools::Itertools;
-    use rand::{seq::IteratorRandom, thread_rng, RngCore};
+    use rand::{RngCore, seq::IteratorRandom, thread_rng};
 
     use crate::{storage::db::DB, test_helpers::mock_state};
 

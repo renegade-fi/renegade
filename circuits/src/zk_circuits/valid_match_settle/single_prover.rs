@@ -2,16 +2,16 @@
 
 use ark_ff::{One, Zero};
 use circuit_types::{
+    AMOUNT_BITS, PlonkCircuit,
     balance::BalanceVar,
     fees::FeeTakeVar,
-    fixed_point::{FixedPointVar, DEFAULT_FP_PRECISION},
-    order::OrderVar,
+    fixed_point::{DEFAULT_FP_PRECISION, FixedPointVar},
     r#match::{MatchResultVar, OrderSettlementIndicesVar},
+    order::OrderVar,
     wallet::WalletShareVar,
-    PlonkCircuit, AMOUNT_BITS,
 };
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::{
     comparators::{EqGadget, GreaterThanEqGadget},

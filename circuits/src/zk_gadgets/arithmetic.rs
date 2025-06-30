@@ -2,18 +2,18 @@
 //! computations
 
 use ark_ff::One;
-use circuit_types::traits::{CircuitBaseType, CircuitVarType};
 use circuit_types::PlonkCircuit;
+use circuit_types::traits::{CircuitBaseType, CircuitVarType};
 use constants::ScalarField;
+use mpc_relation::Variable;
 use mpc_relation::errors::CircuitError;
 use mpc_relation::traits::Circuit;
-use mpc_relation::Variable;
 use renegade_crypto::fields::{biguint_to_scalar, scalar_to_biguint};
 
 use num_integer::Integer;
 
-use crate::zk_gadgets::bits::BitRangeGadget;
 use crate::SCALAR_BITS_MINUS_TWO;
+use crate::zk_gadgets::bits::BitRangeGadget;
 
 use super::comparators::LessThanGadget;
 
@@ -128,12 +128,12 @@ impl ExpGadget {
 
 #[cfg(test)]
 mod arithmetic_tests {
-    use circuit_types::{traits::CircuitBaseType, PlonkCircuit};
+    use circuit_types::{PlonkCircuit, traits::CircuitBaseType};
     use constants::Scalar;
     use mpc_relation::traits::Circuit;
     use num_bigint::BigUint;
     use num_integer::Integer;
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
     use renegade_crypto::fields::biguint_to_scalar;
 
     use super::{DivRemGadget, ExpGadget};

@@ -7,12 +7,12 @@ use common::types::{
     proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
     wallet::OrderIdentifier,
 };
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 
 use crate::{
-    applicator::order_book::{OrderPriority, CLUSTER_DEFAULT_PRIORITY, ORDER_DEFAULT_PRIORITY},
-    storage::error::StorageError,
     ORDERS_TABLE, PRIORITIES_TABLE,
+    applicator::order_book::{CLUSTER_DEFAULT_PRIORITY, ORDER_DEFAULT_PRIORITY, OrderPriority},
+    storage::error::StorageError,
 };
 
 use super::StateTxn;
@@ -291,7 +291,7 @@ mod test {
     use std::sync::Arc;
 
     use common::types::{
-        network_order::{test_helpers::dummy_network_order, NetworkOrderState},
+        network_order::{NetworkOrderState, test_helpers::dummy_network_order},
         proof_bundles::mocks::{
             dummy_valid_reblind_bundle, dummy_validity_proof_bundle, dummy_validity_witness_bundle,
         },
@@ -301,8 +301,8 @@ mod test {
     use rand::thread_rng;
 
     use crate::{
-        applicator::order_book::OrderPriority, test_helpers::mock_db, ORDERS_TABLE,
-        PRIORITIES_TABLE,
+        ORDERS_TABLE, PRIORITIES_TABLE, applicator::order_book::OrderPriority,
+        test_helpers::mock_db,
     };
 
     /// Tests adding an order to the order book

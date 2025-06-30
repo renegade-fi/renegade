@@ -11,8 +11,8 @@ use util::err_str;
 use crate::{
     ciborium_serialize,
     replication::{
-        error::{new_network_error, ReplicationError},
         Node, NodeId,
+        error::{ReplicationError, new_network_error},
     },
 };
 

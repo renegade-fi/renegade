@@ -6,7 +6,7 @@ use common::types::chain::Chain;
 use common::types::exchange::{PriceReport, PriceReporterState};
 use common::types::price::Price;
 use common::types::token::{
-    set_default_chain, write_token_remaps, Token, USDC_TICKER, USDT_TICKER, USD_TICKER,
+    Token, USD_TICKER, USDC_TICKER, USDT_TICKER, set_default_chain, write_token_remaps,
 };
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
@@ -134,7 +134,7 @@ mod test {
     use common::types::token::Token;
     use job_types::price_reporter::new_price_reporter_queue;
 
-    use crate::mock::{setup_mock_token_remap, MockPriceReporter};
+    use crate::mock::{MockPriceReporter, setup_mock_token_remap};
 
     /// Test the price reporter from the mock
     #[tokio::test]

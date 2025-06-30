@@ -3,7 +3,7 @@
 use std::{marker::PhantomData, time::Duration};
 
 use ark_ff::{BigInt, Fp};
-use constants::{Scalar, MERKLE_HEIGHT};
+use constants::{MERKLE_HEIGHT, Scalar};
 use lazy_static::lazy_static;
 use renegade_crypto::hash::compute_poseidon_hash;
 

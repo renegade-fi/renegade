@@ -3,16 +3,16 @@ use circuit_types::balance::Balance;
 use circuits::test_helpers::random_wallet_amount;
 use common::types::{tasks::PayOfflineFeeTaskDescriptor, wallet_mocks::mock_empty_wallet};
 use constants::Scalar;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_biguint;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{
+    IntegrationTestArgs,
     helpers::{
         await_task, lookup_wallet_and_check_result, setup_initial_wallet, setup_relayer_wallet,
     },
-    IntegrationTestArgs,
 };
 
 // -----------

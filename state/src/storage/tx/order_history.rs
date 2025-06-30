@@ -1,9 +1,9 @@
 //! Storage access methods for order metadata
 
-use common::types::wallet::{order_metadata::OrderMetadata, OrderIdentifier, WalletIdentifier};
-use libmdbx::{TransactionKind, RW};
+use common::types::wallet::{OrderIdentifier, WalletIdentifier, order_metadata::OrderMetadata};
+use libmdbx::{RW, TransactionKind};
 
-use crate::{storage::error::StorageError, ORDER_HISTORY_TABLE};
+use crate::{ORDER_HISTORY_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 
@@ -145,7 +145,7 @@ mod tests {
         wallet_mocks::mock_order,
     };
     use itertools::Itertools;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use uuid::Uuid;
 
     use crate::test_helpers::mock_db;
@@ -222,7 +222,7 @@ mod tests {
 
         // Update the order
         let mut updated_order = curr_order;
-        let amount = rng.gen();
+        let amount = rng.r#gen();
         let price = TimestampedPrice::new(100.2);
         updated_order.record_partial_fill(amount, price);
 

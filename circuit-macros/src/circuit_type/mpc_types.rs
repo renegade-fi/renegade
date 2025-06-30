@@ -2,7 +2,7 @@
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::ToTokens;
-use syn::{parse_quote, ImplItemMethod, ItemImpl, ItemStruct};
+use syn::{ImplItemMethod, ItemImpl, ItemStruct, parse_quote};
 
 use crate::circuit_type::{
     build_deserialize_method, build_serialize_method, ident_with_generics, ident_with_prefix,

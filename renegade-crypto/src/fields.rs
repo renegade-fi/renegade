@@ -134,7 +134,7 @@ pub fn jubjub_to_scalar(a: EmbeddedScalarField) -> Scalar {
 mod field_helper_test {
     use constants::Scalar;
     use num_bigint::BigInt;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
 
     use crate::fields::{bigint_to_scalar, bigint_to_scalar_bits, scalar_to_bigint};
 

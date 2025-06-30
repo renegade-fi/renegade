@@ -1,10 +1,10 @@
 //! Helper functions for darkpool client integration tests
 
-use circuit_types::{traits::BaseType, wallet::WalletShareStateCommitment, SizedWalletShare};
+use circuit_types::{SizedWalletShare, traits::BaseType, wallet::WalletShareStateCommitment};
 use common::types::proof_bundles::mocks::dummy_valid_wallet_create_bundle;
 use constants::Scalar;
-use darkpool_client::{traits::DarkpoolImpl, DarkpoolClient};
-use eyre::{eyre, Result};
+use darkpool_client::{DarkpoolClient, traits::DarkpoolImpl};
+use eyre::{Result, eyre};
 use rand::thread_rng;
 use std::iter;
 use tracing::warn;

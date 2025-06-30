@@ -6,16 +6,16 @@ use common::types::{
     tasks::PayOfflineFeeTaskDescriptor, wallet::Wallet, wallet_mocks::mock_empty_wallet,
 };
 use constants::Scalar;
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use rand::thread_rng;
 use renegade_crypto::fields::scalar_to_biguint;
 use test_helpers::{assert_eq_result, integration_test_async};
 
 use crate::{
+    IntegrationTestArgs,
     helpers::{
         await_task, await_wallet_task_queue_flush, setup_initial_wallet, setup_relayer_wallet,
     },
-    IntegrationTestArgs,
 };
 
 // -----------

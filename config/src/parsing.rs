@@ -1,7 +1,7 @@
 //! Parsing logic for the config
 
 pub use crate::token_remaps::setup_token_remaps;
-use crate::{cli::RelayerConfig, validation::validate_config, Cli, RelayerFeeKey};
+use crate::{Cli, RelayerFeeKey, cli::RelayerConfig, validation::validate_config};
 use alloy::signers::local::PrivateKeySigner;
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
@@ -12,16 +12,16 @@ use common::types::{
 };
 use constants::set_bootstrap_mode;
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
-use libp2p::{identity::Keypair, Multiaddr, PeerId};
+use libp2p::{Multiaddr, PeerId, identity::Keypair};
 use rand::thread_rng;
 use rand_core::OsRng;
 use serde::Deserialize;
 use std::{env, fs, str::FromStr};
-use toml::{value::Map, Value};
+use toml::{Value, value::Map};
 use url::Url;
 use util::{
     hex::{biguint_from_hex_string, jubjub_from_hex_string},
-    on_chain::{parse_addr_from_deployments_file, DARKPOOL_PROXY_CONTRACT_KEY},
+    on_chain::{DARKPOOL_PROXY_CONTRACT_KEY, parse_addr_from_deployments_file},
 };
 
 /// The CLI argument name for the config file

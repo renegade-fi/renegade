@@ -1,11 +1,11 @@
 //! Wallet helpers for orders in the wallet
 
 use circuit_types::{
-    biguint_from_hex_string, biguint_to_hex_addr,
+    Address, Amount, biguint_from_hex_string, biguint_to_hex_addr,
     fixed_point::FixedPoint,
     max_price,
     order::{Order as CircuitOrder, OrderSide},
-    validate_amount_bitlength, validate_price_bitlength, Address, Amount,
+    validate_amount_bitlength, validate_price_bitlength,
 };
 use constants::MAX_ORDERS;
 use itertools::Itertools;

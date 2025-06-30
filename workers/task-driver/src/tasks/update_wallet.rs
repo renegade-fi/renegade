@@ -9,31 +9,31 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
-use circuit_types::{transfers::ExternalTransferDirection, SizedWallet as CircuitWallet};
+use circuit_types::{SizedWallet as CircuitWallet, transfers::ExternalTransferDirection};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
+use common::types::MatchingPoolName;
 use common::types::tasks::WalletUpdateType;
 use common::types::wallet::{Order, OrderIdentifier};
-use common::types::MatchingPoolName;
 use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
-use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use itertools::Itertools;
 use job_types::event_manager::{
-    try_send_event, EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent,
-    OrderPlacementEvent, OrderUpdateEvent, RelayerEventType,
+    EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent,
+    OrderUpdateEvent, RelayerEventType, try_send_event,
 };
 use job_types::network_manager::NetworkManagerQueue;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use serde::Serialize;
+use state::State;
 use state::error::StateError;
 use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
-use state::State;
 use tracing::{info, instrument};
 use util::err_str;
 

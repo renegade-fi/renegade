@@ -12,12 +12,12 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::ToTokens;
 use syn::{
+    Attribute, Expr, Field, FieldValue, Fields, FieldsNamed, GenericParam, Generics, ItemFn,
+    ItemImpl, ItemStruct, Member, Path, Result, Stmt, Token, Type, TypePath,
     parse::Parser,
     parse_quote,
     punctuated::Punctuated,
     token::{Brace, Colon, Comma},
-    Attribute, Expr, Field, FieldValue, Fields, FieldsNamed, GenericParam, Generics, ItemFn,
-    ItemImpl, ItemStruct, Member, Path, Result, Stmt, Token, Type, TypePath,
 };
 
 use self::{

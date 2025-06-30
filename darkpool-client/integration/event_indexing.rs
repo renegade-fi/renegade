@@ -7,7 +7,7 @@ use darkpool_client::constants::EMPTY_LEAF_VALUE;
 use eyre::Result;
 use test_helpers::{assert_eq_result, integration_test_async};
 
-use crate::{helpers::setup_pre_allocated_state, IntegrationTestArgs};
+use crate::{IntegrationTestArgs, helpers::setup_pre_allocated_state};
 
 /// Tests finding a Merkle authentication path for a pre-allocated commitment
 async fn test_find_merkle_path(test_args: IntegrationTestArgs) -> Result<()> {

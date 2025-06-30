@@ -8,30 +8,30 @@
 use ark_ff::One;
 use circuit_macros::circuit_type;
 use circuit_types::{
+    PlonkCircuit,
     keychain::SecretIdentificationKey,
     merkle::{MerkleOpening, MerkleRoot},
     traits::{BaseType, CircuitBaseType, CircuitVarType},
     wallet::{Nullifier, WalletShare, WalletShareStateCommitment, WalletShareVar},
-    PlonkCircuit,
 };
-use constants::{Scalar, ScalarField};
 use constants::{MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT};
+use constants::{Scalar, ScalarField};
 use itertools::izip;
 use mpc_plonk::errors::PlonkError;
 use mpc_relation::{
+    Variable,
     errors::CircuitError,
     proof_linking::{GroupLayout, LinkableCircuit},
     traits::Circuit,
-    Variable,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    SingleProverCircuit,
     zk_circuits::valid_commitments::ValidCommitments,
     zk_gadgets::{
         comparators::EqGadget, poseidon::PoseidonHashGadget, wallet_operations::WalletGadget,
     },
-    SingleProverCircuit,
 };
 
 use super::VALID_REBLIND_COMMITMENTS_LINK;
@@ -291,7 +291,7 @@ pub mod test_helpers {
     };
 
     use crate::zk_circuits::test_helpers::{
-        create_multi_opening, create_wallet_shares, MAX_BALANCES, MAX_ORDERS, PRIVATE_KEYS,
+        MAX_BALANCES, MAX_ORDERS, PRIVATE_KEYS, create_multi_opening, create_wallet_shares,
     };
 
     use super::{ValidReblindStatement, ValidReblindWitness};
@@ -361,12 +361,12 @@ mod test {
         native_helpers::compute_wallet_private_share_commitment,
         traits::{BaseType, SecretShareType, SingleProverCircuit},
     };
-    use constants::{Scalar, MERKLE_HEIGHT};
-    use rand::{thread_rng, Rng};
+    use constants::{MERKLE_HEIGHT, Scalar};
+    use rand::{Rng, thread_rng};
 
     use crate::zk_circuits::{
         check_constraint_satisfaction,
-        test_helpers::{SizedWallet, SizedWalletShare, INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS},
+        test_helpers::{INITIAL_WALLET, MAX_BALANCES, MAX_ORDERS, SizedWallet, SizedWalletShare},
         valid_reblind::test_helpers::construct_witness_statement,
     };
 

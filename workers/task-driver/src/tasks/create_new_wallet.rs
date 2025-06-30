@@ -21,16 +21,16 @@ use circuits::zk_circuits::valid_wallet_create::{
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use constants::Scalar;
-use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
+use darkpool_client::errors::DarkpoolClientError;
 use job_types::event_manager::{
-    try_send_event, EventManagerQueue, RelayerEventType, WalletCreationEvent,
+    EventManagerQueue, RelayerEventType, WalletCreationEvent, try_send_event,
 };
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
 use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
-use state::error::StateError;
 use state::State;
+use state::error::StateError;
 use tracing::instrument;
 use util::err_str;
 

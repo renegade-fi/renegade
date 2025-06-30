@@ -7,7 +7,7 @@ use gossip_api::{
     request_response::{AuthenticatedGossipResponse, GossipRequest, GossipResponse},
 };
 use libp2p::request_response::ResponseChannel;
-use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
+use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 
 /// The queue sender type to send jobs to the gossip server
 pub type GossipServerQueue = TracedTokioSender<GossipServerJob>;

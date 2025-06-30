@@ -2,8 +2,8 @@
 //! contract to authorizing / authenticating ERC20 transfers
 
 use circuit_types::{
-    transfers::{ExternalTransfer, ExternalTransferDirection},
     Amount,
+    transfers::{ExternalTransfer, ExternalTransferDirection},
 };
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};

@@ -6,23 +6,23 @@ use common::types::{
     wallet::WalletIdentifier,
 };
 use external_api::{
-    bus_message::{task_history_topic, task_topic, SystemBusMessage},
+    bus_message::{SystemBusMessage, task_history_topic, task_topic},
     http::task::ApiTaskStatus,
     types::ApiHistoricalTask,
 };
 use job_types::{
-    event_manager::{try_send_event, RelayerEventType, TaskCompletionEvent},
+    event_manager::{RelayerEventType, TaskCompletionEvent, try_send_event},
     handshake_manager::HandshakeManagerJob,
     task_driver::TaskDriverJob,
 };
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use tracing::{error, info, instrument, warn};
 use util::err_str;
 
 use crate::storage::{error::StorageError, tx::StateTxn};
 
 use super::{
-    error::StateApplicatorError, return_type::ApplicatorReturnType, Result, StateApplicator,
+    Result, StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType,
 };
 
 /// The pending state description
@@ -438,19 +438,19 @@ impl StateApplicator {
 #[cfg(test)]
 mod test {
     use common::types::{
-        gossip::{mocks::mock_peer, WrappedPeerId},
-        tasks::{mocks::mock_queued_task, QueuedTaskState, TaskIdentifier, TaskQueueKey},
+        gossip::{WrappedPeerId, mocks::mock_peer},
+        tasks::{QueuedTaskState, TaskIdentifier, TaskQueueKey, mocks::mock_queued_task},
         wallet::WalletIdentifier,
         wallet_mocks::mock_empty_wallet,
     };
     use eyre::Result;
-    use job_types::task_driver::{new_task_driver_queue, TaskDriverJob, TaskDriverReceiver};
+    use job_types::task_driver::{TaskDriverJob, TaskDriverReceiver, new_task_driver_queue};
     use util::channels::TracedMessage;
 
     use crate::{
         applicator::{
-            error::StateApplicatorError, task_queue::PENDING_STATE,
-            test_helpers::mock_applicator_with_task_queue, StateApplicator,
+            StateApplicator, error::StateApplicatorError, task_queue::PENDING_STATE,
+            test_helpers::mock_applicator_with_task_queue,
         },
         storage::{
             db::DB,

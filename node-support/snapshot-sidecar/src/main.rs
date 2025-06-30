@@ -15,11 +15,11 @@ use std::{
 };
 
 use aws_config::Region;
-use aws_sdk_s3::{primitives::ByteStream, Client};
+use aws_sdk_s3::{Client, primitives::ByteStream};
 use clap::Parser;
-use config::{parsing::parse_config_from_file, RelayerConfig};
-use external_api::http::admin::{IsLeaderResponse, IS_LEADER_ROUTE};
-use notify::{event::RemoveKind, Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use config::{RelayerConfig, parsing::parse_config_from_file};
+use external_api::http::admin::{IS_LEADER_ROUTE, IsLeaderResponse};
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher, event::RemoveKind};
 use reqwest::Client as HttpClient;
 use tracing::{error, info};
 use util::{get_current_time_millis, raw_err_str};

@@ -1,7 +1,7 @@
 [package]
 name = "util"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["hex", "errors"]
@@ -35,8 +35,8 @@ tokio = { workspace = true }
 crossbeam = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { workspace = true, default-features = false }
-constants = { workspace = true, default-features = false }
+circuit-types = { workspace = true }
+constants = { workspace = true }
 renegade-crypto = { workspace = true }
 
 # === Misc === #

@@ -17,19 +17,19 @@ use alloy_primitives::Address;
 use circuit_types::{elgamal::DecryptionKey, fixed_point::FixedPoint};
 use clap::Parser;
 use crossbeam::channel::Sender as CrossbeamSender;
-use darkpool_client::{client::DarkpoolClientConfig, constants::Chain, DarkpoolClient};
+use darkpool_client::{DarkpoolClient, client::DarkpoolClientConfig, constants::Chain};
 use helpers::new_mock_task_driver;
 use job_types::{
-    event_manager::{new_event_manager_queue, EventManagerReceiver},
-    network_manager::{new_network_manager_queue, NetworkManagerReceiver},
-    proof_manager::{new_proof_manager_queue, ProofManagerJob},
-    task_driver::{new_task_driver_queue, TaskDriverQueue},
+    event_manager::{EventManagerReceiver, new_event_manager_queue},
+    network_manager::{NetworkManagerReceiver, new_network_manager_queue},
+    proof_manager::{ProofManagerJob, new_proof_manager_queue},
+    task_driver::{TaskDriverQueue, new_task_driver_queue},
 };
 use proof_manager::mock::MockProofManager;
 use rand::thread_rng;
 use state::{
-    test_helpers::{mock_relayer_config, mock_state_with_task_queue},
     State,
+    test_helpers::{mock_relayer_config, mock_state_with_task_queue},
 };
 use test_helpers::{
     arbitrum::{DEFAULT_DEVNET_HOSTPORT, DEFAULT_DEVNET_PKEY},
@@ -39,9 +39,9 @@ use test_helpers::{
 use util::{
     concurrency::runtime::block_current,
     on_chain::{
-        parse_addr_from_deployments_file, parse_erc20_addr_from_deployments_file,
         DARKPOOL_PROXY_CONTRACT_KEY, DUMMY_ERC20_0_TICKER, DUMMY_ERC20_1_TICKER,
-        PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY,
+        PERMIT2_CONTRACT_KEY, PROTOCOL_FEE, PROTOCOL_PUBKEY, parse_addr_from_deployments_file,
+        parse_erc20_addr_from_deployments_file,
     },
     telemetry::LevelFilter,
 };

@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use openraft::error::{RPCError, RaftError, Unreachable};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::oneshot::{
-    channel as oneshot_channel, Receiver as OneshotReceiver, Sender as OneshotSender,
+    Receiver as OneshotReceiver, Sender as OneshotSender, channel as oneshot_channel,
 };
 
 use crate::replication::{Node, NodeId};

@@ -4,7 +4,7 @@
 
 use std::{sync::Arc, thread::JoinHandle};
 
-use circuit_types::traits::{setup_preprocessed_keys, SingleProverCircuit};
+use circuit_types::traits::{SingleProverCircuit, setup_preprocessed_keys};
 use circuits::{
     singleprover_prove_with_hint,
     zk_circuits::{
@@ -43,7 +43,7 @@ use circuits::{
         },
     },
 };
-use common::types::{proof_bundles::ProofBundle, CancelChannel};
+use common::types::{CancelChannel, proof_bundles::ProofBundle};
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::ThreadPool;

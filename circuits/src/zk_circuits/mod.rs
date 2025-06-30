@@ -15,11 +15,11 @@ pub mod valid_wallet_create;
 pub mod valid_wallet_update;
 
 use circuit_types::{
+    Fabric, MpcPlonkCircuit, PlonkCircuit,
     traits::{
         BaseType, CircuitBaseType, MpcType, MultiProverCircuit, MultiproverCircuitBaseType,
         SingleProverCircuit,
     },
-    Fabric, MpcPlonkCircuit, PlonkCircuit,
 };
 use constants::Scalar;
 use itertools::Itertools;
@@ -87,21 +87,21 @@ pub mod test_helpers {
     use std::iter::from_fn;
 
     use circuit_types::{
+        Address,
         balance::Balance,
         elgamal::{DecryptionKey, EncryptionKey},
         fixed_point::FixedPoint,
-        keychain::{NonNativeScalar, PublicKeyChain, PublicSigningKey, NUM_KEYS},
+        keychain::{NUM_KEYS, NonNativeScalar, PublicKeyChain, PublicSigningKey},
         merkle::MerkleOpening,
         order::{Order, OrderSide},
         wallet::{Wallet, WalletShare},
-        Address,
     };
     use constants::Scalar;
     use itertools::Itertools;
     use lazy_static::lazy_static;
     use num_bigint::BigUint;
     use rand::thread_rng;
-    use renegade_crypto::hash::{compute_poseidon_hash, PoseidonCSPRNG};
+    use renegade_crypto::hash::{PoseidonCSPRNG, compute_poseidon_hash};
 
     use circuit_types::native_helpers::create_wallet_shares_with_randomness;
 

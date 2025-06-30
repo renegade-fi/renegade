@@ -6,18 +6,18 @@
 
 use common::{
     default_wrapper::DefaultWrapper,
-    types::{gossip::WrappedPeerId, CancelChannel},
+    types::{CancelChannel, gossip::WrappedPeerId},
 };
 use constants::in_bootstrap_mode;
 use darkpool_client::DarkpoolClient;
 use gossip_api::{
     pubsub::{
-        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
         PubsubMessage,
+        cluster::{ClusterManagementMessage, ClusterManagementMessageType},
     },
     request_response::{
-        heartbeat::BootstrapRequest, GossipRequest, GossipRequestType, GossipResponse,
-        GossipResponseType,
+        GossipRequest, GossipRequestType, GossipResponse, GossipResponseType,
+        heartbeat::BootstrapRequest,
     },
 };
 use job_types::{

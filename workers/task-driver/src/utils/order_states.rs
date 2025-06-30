@@ -3,7 +3,7 @@
 use circuit_types::r#match::MatchResult;
 use common::types::{
     price::TimestampedPrice,
-    wallet::{order_metadata::OrderState, OrderIdentifier},
+    wallet::{OrderIdentifier, order_metadata::OrderState},
 };
 use state::State;
 

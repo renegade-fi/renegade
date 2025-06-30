@@ -1,22 +1,22 @@
 //! Descriptor for the wallet update task
 
 use alloy::primitives::keccak256;
-use alloy::signers::utils::public_key_to_address;
 use alloy::signers::Signature;
-use circuit_types::{keychain::PublicSigningKey, Amount};
+use alloy::signers::utils::public_key_to_address;
+use circuit_types::{Amount, keychain::PublicSigningKey};
 use constants::Scalar;
 use k256::ecdsa::VerifyingKey as K256VerifyingKey;
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 
-use crate::types::wallet::{Order, OrderIdentifier};
 use crate::types::MatchingPoolName;
+use crate::types::wallet::{Order, OrderIdentifier};
 use crate::types::{
     transfer_auth::ExternalTransferWithAuth,
     wallet::{Wallet, WalletIdentifier},
 };
 
-use super::{TaskDescriptor, INVALID_WALLET_SHARES};
+use super::{INVALID_WALLET_SHARES, TaskDescriptor};
 
 /// The error message emitted for an invalid wallet update signature
 const ERR_INVALID_SIGNATURE: &str = "invalid signature";

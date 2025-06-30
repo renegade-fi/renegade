@@ -5,7 +5,7 @@ use circuit_types::Fabric;
 use constants::{AuthenticatedScalar, Scalar, ScalarResult};
 use num_bigint::BigUint;
 
-use crate::{scalar_2_to_m, SCALAR_MAX_BITS};
+use crate::{SCALAR_MAX_BITS, scalar_2_to_m};
 
 use super::bits::{bit_lt_public, scalar_from_bits_le, scalar_to_bits_le};
 
@@ -108,7 +108,7 @@ mod tests {
     use circuit_types::errors::MpcError;
     use constants::Scalar;
     use num_bigint::BigUint;
-    use rand::{thread_rng, Rng, RngCore};
+    use rand::{Rng, RngCore, thread_rng};
     use test_helpers::mpc_network::execute_mock_mpc;
 
     use crate::mpc_gadgets::modulo::{mod_2m, shift_right};
@@ -118,7 +118,7 @@ mod tests {
     async fn test_mod2m() {
         let mut rng = thread_rng();
         const M: usize = 32;
-        let value = Scalar::from(rng.gen::<u128>());
+        let value = Scalar::from(rng.r#gen::<u128>());
 
         let (res, _): (Result<bool, MpcError>, _) = execute_mock_mpc(move |fabric| async move {
             let shared_value = fabric.share_scalar(value, PARTY0);

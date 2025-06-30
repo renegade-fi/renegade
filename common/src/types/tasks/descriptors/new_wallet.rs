@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::wallet::Wallet;
 
-use super::{TaskDescriptor, INVALID_WALLET_SHARES};
+use super::{INVALID_WALLET_SHARES, TaskDescriptor};
 
 /// The task descriptor containing only the parameterization of the `NewWallet`
 /// task

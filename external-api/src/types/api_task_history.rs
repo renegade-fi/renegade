@@ -6,7 +6,7 @@
 
 use std::str::FromStr;
 
-use circuit_types::{order::OrderSide, r#match::MatchResult};
+use circuit_types::{r#match::MatchResult, order::OrderSide};
 use common::types::{
     tasks::{
         HistoricalTask, HistoricalTaskDescription, QueuedTask, TaskIdentifier, TaskQueueKey,

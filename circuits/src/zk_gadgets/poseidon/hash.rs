@@ -4,9 +4,9 @@
 use ark_ff::{One, Zero};
 use constants::ScalarField;
 use itertools::Itertools;
-use mpc_relation::{errors::CircuitError, traits::Circuit, Variable};
+use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use renegade_crypto::hash::{
-    CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, RATE, R_F, R_P,
+    CAPACITY, FULL_ROUND_CONSTANTS, PARTIAL_ROUND_CONSTANTS, R_F, R_P, RATE,
 };
 
 use super::gates::{FusedExternalSboxMDSGate, FusedInternalSboxMDSGate};

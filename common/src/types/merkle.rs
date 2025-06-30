@@ -1,8 +1,8 @@
 //! Defines types related to Merkle trees within the system
 
-use circuit_types::{merkle::MerkleOpening, SizedMerkleOpening};
-use constants::Scalar;
+use circuit_types::{SizedMerkleOpening, merkle::MerkleOpening};
 use constants::MERKLE_HEIGHT;
+use constants::Scalar;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use renegade_crypto::hash::compute_poseidon_hash;

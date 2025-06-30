@@ -13,13 +13,13 @@ use std::mem;
 use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::{
-    default_wrapper::{default_option, DefaultOption},
+    default_wrapper::{DefaultOption, default_option},
     types::price::Price,
-    worker::{new_worker_failure_channel, Worker},
+    worker::{Worker, new_worker_failure_channel},
 };
 use config::RelayerConfig;
 use darkpool_client::{
-    client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL, DarkpoolClient,
+    DarkpoolClient, client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL,
 };
 use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
@@ -28,38 +28,38 @@ use futures::Future;
 use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::{
-    event_manager::{new_event_manager_queue, EventManagerQueue, EventManagerReceiver},
+    event_manager::{EventManagerQueue, EventManagerReceiver, new_event_manager_queue},
     gossip_server::{
-        new_gossip_server_queue, GossipServerJob, GossipServerQueue, GossipServerReceiver,
+        GossipServerJob, GossipServerQueue, GossipServerReceiver, new_gossip_server_queue,
     },
     handshake_manager::{
-        new_handshake_manager_queue, HandshakeManagerJob, HandshakeManagerQueue,
-        HandshakeManagerReceiver,
+        HandshakeManagerJob, HandshakeManagerQueue, HandshakeManagerReceiver,
+        new_handshake_manager_queue,
     },
     network_manager::{
-        new_network_manager_queue, NetworkManagerJob, NetworkManagerQueue, NetworkManagerReceiver,
+        NetworkManagerJob, NetworkManagerQueue, NetworkManagerReceiver, new_network_manager_queue,
     },
     price_reporter::{
-        new_price_reporter_queue, PriceReporterJob, PriceReporterQueue, PriceReporterReceiver,
+        PriceReporterJob, PriceReporterQueue, PriceReporterReceiver, new_price_reporter_queue,
     },
     proof_manager::{
-        new_proof_manager_queue, ProofManagerJob, ProofManagerQueue, ProofManagerReceiver,
+        ProofManagerJob, ProofManagerQueue, ProofManagerReceiver, new_proof_manager_queue,
     },
-    task_driver::{new_task_driver_queue, TaskDriverJob, TaskDriverQueue, TaskDriverReceiver},
+    task_driver::{TaskDriverJob, TaskDriverQueue, TaskDriverReceiver, new_task_driver_queue},
 };
 use libp2p::Multiaddr;
 use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
     manager::PriceReporter,
-    mock::{setup_mock_token_remap, MockPriceReporter},
+    mock::{MockPriceReporter, setup_mock_token_remap},
     worker::{ExchangeConnectionsConfig, PriceReporterConfig},
 };
 use proof_manager::{
     mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
 };
-use reqwest::{header::HeaderMap, Client, Method, Response};
-use serde::{de::DeserializeOwned, Serialize};
-use state::{create_global_state, State};
+use reqwest::{Client, Method, Response, header::HeaderMap};
+use serde::{Serialize, de::DeserializeOwned};
+use state::{State, create_global_state};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
 use task_driver::worker::{TaskDriver, TaskDriverConfig};

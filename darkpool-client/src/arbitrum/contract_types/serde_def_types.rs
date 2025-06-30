@@ -3,12 +3,12 @@
 //! into complex structs.
 
 use alloy_primitives::{Address, FixedBytes, Uint};
-use ark_bn254::{g1::Config as G1Config, g2::Config as G2Config, Fq2Config, FqConfig, FrConfig};
+use ark_bn254::{Fq2Config, FqConfig, FrConfig, g1::Config as G1Config, g2::Config as G2Config};
 use ark_ec::short_weierstrass::Affine;
 use ark_ff::{BigInt, Fp, Fp2ConfigWrapper, FpConfig, MontBackend, QuadExtField};
 use core::marker::PhantomData;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DeserializeAs, SerializeAs};
+use serde_with::{DeserializeAs, SerializeAs, serde_as};
 
 use super::types::{G1Affine, G1BaseField, G2Affine, G2BaseField, ScalarField};
 

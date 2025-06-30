@@ -3,7 +3,7 @@
 use circuit_types::{balance::Balance, elgamal::DecryptionKey, note::Note};
 use common::types::{
     tasks::TaskIdentifier,
-    wallet::{order_metadata::OrderMetadata, WalletIdentifier},
+    wallet::{WalletIdentifier, order_metadata::OrderMetadata},
 };
 use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};

@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use circuit_types::{balance::Balance, Amount};
+use circuit_types::{Amount, balance::Balance};
 use constants::MAX_BALANCES;
 use itertools::Itertools;
 use num_bigint::BigUint;

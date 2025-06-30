@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use alloy::rpc::types::TransactionReceipt;
+use circuit_types::SizedWallet;
 use circuit_types::balance::Balance;
+use circuit_types::r#match::OrderSettlementIndices;
 use circuit_types::native_helpers::{
     compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
     wallet_from_blinded_shares,
 };
 use circuit_types::note::Note;
 use circuit_types::order::Order;
-use circuit_types::r#match::OrderSettlementIndices;
-use circuit_types::SizedWallet;
 use circuits::zk_circuits::proof_linking::link_sized_commitments_reblind;
 use circuits::zk_circuits::valid_commitments::{
     SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitness,
@@ -24,10 +24,10 @@ use common::types::proof_bundles::{
 };
 use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
-use darkpool_client::errors::DarkpoolClientError;
 use darkpool_client::DarkpoolClient;
-use gossip_api::pubsub::orderbook::{OrderBookManagementMessage, ORDER_BOOK_TOPIC};
+use darkpool_client::errors::DarkpoolClientError;
 use gossip_api::pubsub::PubsubMessage;
+use gossip_api::pubsub::orderbook::{ORDER_BOOK_TOPIC, OrderBookManagementMessage};
 use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerQueue};
 use num_bigint::BigUint;

@@ -4,22 +4,22 @@
 use std::time::SystemTime;
 
 use circuit_types::{
+    Amount,
     fees::FeeTake,
     r#match::{ExternalMatchResult, MatchResult},
     transfers::ExternalTransfer,
-    Amount,
 };
 use common::types::{
+    MatchingPoolName,
     chain::Chain,
     price::TimestampedPrice,
     tasks::{HistoricalTask, TaskQueueKey},
     wallet::{Order, OrderIdentifier, WalletIdentifier},
-    MatchingPoolName,
 };
 use renegade_metrics::labels::NUM_EVENT_SEND_FAILURES_METRIC;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::error::SendError;
-use util::channels::{new_traced_tokio_channel, TracedTokioReceiver, TracedTokioSender};
+use util::channels::{TracedTokioReceiver, TracedTokioSender, new_traced_tokio_channel};
 use uuid::Uuid;
 
 // ---------------

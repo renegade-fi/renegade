@@ -1,6 +1,6 @@
 //! Helpers for working with the integration node's state
 
-use common::types::{wallet::OrderIdentifier, MatchingPoolName};
+use common::types::{MatchingPoolName, wallet::OrderIdentifier};
 use eyre::Result;
 use state::State;
 

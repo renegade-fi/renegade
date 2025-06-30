@@ -2,7 +2,7 @@
 //! logic
 
 use common::types::{tasks::TaskIdentifier, wallet::WalletIdentifier};
-use state::{error::StateError, State};
+use state::{State, error::StateError};
 use tracing::{error, info};
 
 use crate::{

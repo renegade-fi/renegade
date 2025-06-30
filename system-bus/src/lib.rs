@@ -17,8 +17,8 @@ use std::{
     collections::HashMap,
     pin::Pin,
     sync::{
-        atomic::{AtomicU16, Ordering},
         Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
+        atomic::{AtomicU16, Ordering},
     },
     task::{Context, Poll, Waker},
 };
@@ -315,7 +315,7 @@ impl<M: Clone + Sync> Default for SystemBus<M> {
 
 #[cfg(test)]
 mod system_bus_tests {
-    use rand::{thread_rng, RngCore};
+    use rand::{RngCore, thread_rng};
 
     use super::SystemBus;
 

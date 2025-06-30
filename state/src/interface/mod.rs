@@ -28,21 +28,20 @@ use tracing::{error, info_span};
 use util::{err_str, raw_err_str};
 
 use crate::{
+    Proposal, StateTransition,
     applicator::{StateApplicator, StateApplicatorConfig},
     caching::order_cache::OrderBookCache,
     notifications::{OpenNotifications, ProposalWaiter},
     replication::{
-        get_raft_id,
-        network::{gossip::GossipNetwork, P2PNetworkFactory},
+        RaftNode, get_raft_id,
+        network::{P2PNetworkFactory, gossip::GossipNetwork},
         raft::{RaftClient, RaftClientConfig},
         state_machine::{StateMachine, StateMachineConfig},
-        RaftNode,
     },
     storage::{
-        db::{DbConfig, DB},
+        db::{DB, DbConfig},
         tx::StateTxn,
     },
-    Proposal, StateTransition,
 };
 
 use self::error::StateError;

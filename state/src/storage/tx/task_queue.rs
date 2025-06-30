@@ -10,11 +10,11 @@
 //!   metadata.
 
 use common::types::tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey};
-use libmdbx::{TransactionKind, RW};
+use libmdbx::{RW, TransactionKind};
 use serde::{Deserialize, Serialize};
 use util::res_some;
 
-use crate::{storage::error::StorageError, TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE};
+use crate::{TASK_QUEUE_TABLE, TASK_TO_KEY_TABLE, storage::error::StorageError};
 
 use super::StateTxn;
 

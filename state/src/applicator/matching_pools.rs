@@ -6,7 +6,7 @@ use crate::storage::tx::matching_pools::{
     MATCHING_POOL_DOES_NOT_EXIST_ERR, MATCHING_POOL_EXISTS_ERR,
 };
 
-use super::{error::StateApplicatorError, return_type::ApplicatorReturnType, StateApplicator};
+use super::{StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType};
 
 impl StateApplicator {
     /// Create a matching pool with the given name

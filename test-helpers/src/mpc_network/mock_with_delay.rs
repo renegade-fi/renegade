@@ -13,7 +13,7 @@ use ark_mpc::{
 };
 use async_trait::async_trait;
 use constants::SystemCurveGroup;
-use futures::{ready, FutureExt, Sink, Stream};
+use futures::{FutureExt, Sink, Stream, ready};
 
 use super::mocks::UnboundedDuplexStream;
 
@@ -133,8 +133,8 @@ mod tests {
     use std::time::Duration;
 
     use ark_mpc::{
-        network::{NetworkOutbound, NetworkPayload},
         PARTY0,
+        network::{NetworkOutbound, NetworkPayload},
     };
     use constants::Scalar;
     use futures::{SinkExt, StreamExt};

@@ -2,7 +2,7 @@
 
 use circuit_types::traits::CircuitVarType;
 use constants::ScalarField;
-use mpc_relation::{errors::CircuitError, traits::Circuit, BoolVar};
+use mpc_relation::{BoolVar, errors::CircuitError, traits::Circuit};
 
 /// Implements the control flow gate if selector { a } else { b }
 pub struct CondSelectGadget;
@@ -57,8 +57,8 @@ impl CondSelectVectorGadget {
 mod cond_select_test {
     use ark_mpc::PARTY0;
     use circuit_types::{
-        traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
         MpcPlonkCircuit, PlonkCircuit,
+        traits::{CircuitBaseType, MpcBaseType, MultiproverCircuitBaseType},
     };
     use constants::Scalar;
     use mpc_relation::traits::Circuit;

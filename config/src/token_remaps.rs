@@ -8,8 +8,8 @@ use common::types::{
     chain::Chain,
     exchange::Exchange,
     token::{
-        set_default_chain, write_exchange_support, write_token_decimals_map, write_token_remaps,
-        USD_TICKER,
+        USD_TICKER, set_default_chain, write_exchange_support, write_token_decimals_map,
+        write_token_remaps,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -169,11 +169,11 @@ mod test {
     use std::{collections::HashMap, fs::File};
 
     use common::types::{chain::Chain, exchange::Exchange, token::read_token_remaps};
-    use tempfile::{tempdir, TempDir};
+    use tempfile::{TempDir, tempdir};
 
     use crate::token_remaps::parse_remap_from_file;
 
-    use super::{setup_token_remaps, TokenInfo, TokenRemap};
+    use super::{TokenInfo, TokenRemap, setup_token_remaps};
 
     /// Get a temporary dir and remap file for testing
     ///
