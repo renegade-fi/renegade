@@ -28,7 +28,7 @@ fn wallet_id_to_nullifiers_key(wallet_id: &WalletIdentifier) -> String {
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the wallet associated with the given ID
     pub fn get_wallet(&self, wallet_id: &WalletIdentifier) -> Result<Option<Wallet>, StorageError> {
         self.inner().read(WALLETS_TABLE, wallet_id)
@@ -84,7 +84,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Write a wallet to the table
     pub fn write_wallet(&self, wallet: &Wallet) -> Result<(), StorageError> {
         let nullifier = wallet.get_wallet_nullifier();

@@ -66,7 +66,7 @@ impl NetworkManagerExecutor {
     /// Handle a behavior job
     #[instrument(name = "handle_behavior_job", skip_all)]
     pub(crate) async fn handle_behavior_job(
-        &mut self,
+        &self,
         job: BehaviorJob,
         swarm: &mut Swarm<ComposedNetworkBehavior>,
     ) -> Result<(), NetworkManagerError> {

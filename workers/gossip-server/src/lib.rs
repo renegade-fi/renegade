@@ -2,7 +2,6 @@
 //! application layer
 
 #![feature(let_chains)]
-#![feature(generic_const_exprs)]
 #![allow(incomplete_features)]
 
 pub mod errors;

@@ -7,7 +7,6 @@
 #![deny(clippy::needless_pass_by_ref_mut)]
 #![allow(incomplete_features)]
 #![deny(clippy::missing_docs_in_private_items)]
-#![feature(generic_const_exprs)]
 
 #[cfg(feature = "internal-types")]
 pub mod default_wrapper;

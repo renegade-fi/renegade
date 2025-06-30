@@ -163,7 +163,7 @@ impl Display for NetworkOrderState {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             NetworkOrderState::Received => f.write_str("Received"),
-            NetworkOrderState::Verified { .. } => f.write_str("Verified"),
+            NetworkOrderState::Verified => f.write_str("Verified"),
             NetworkOrderState::Matched { .. } => f.write_str("Matched"),
             NetworkOrderState::Cancelled => f.write_str("Cancelled"),
         }

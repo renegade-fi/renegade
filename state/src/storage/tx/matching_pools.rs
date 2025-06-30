@@ -38,7 +38,7 @@ pub fn matching_pool_key(order_id: &OrderIdentifier) -> String {
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get the name of the matching pool the given order is in, if it's been
     /// assigned to one. If not explicitly assigned, the order is considered to
     /// be in the global matching pool.
@@ -68,7 +68,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Create a matching pool with the given name
     pub fn create_matching_pool(&self, pool_name: &str) -> Result<(), StorageError> {
         // Check that the pool does not already exist

@@ -291,7 +291,7 @@ impl Task for UpdateWalletTask {
                 self.generate_proof().await?;
                 self.task_state = UpdateWalletTaskState::SubmittingTx;
             },
-            UpdateWalletTaskState::SubmittingTx { .. } => {
+            UpdateWalletTaskState::SubmittingTx => {
                 // Submit the proof and transaction info to the contract and await
                 // transaction finality
                 self.submit_tx().await?;

@@ -13,7 +13,6 @@
 #![allow(incomplete_features)]
 #![feature(let_chains)]
 #![feature(io_error_more)]
-#![feature(generic_const_exprs)]
 
 use common::types::{
     MatchingPoolName,

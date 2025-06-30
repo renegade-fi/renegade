@@ -77,6 +77,6 @@ criterion = { version = "0.5", features = ["async", "async_tokio"] }
 ctor = "0.1"
 eyre = { workspace = true }
 inventory = "0.3"
-test-helpers = { workspace = true, features = ["mpc-network"] }
+test-helpers = { workspace = true, features = ["mpc-network", "test-harness"] }
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
 mock-node = { workspace = true }

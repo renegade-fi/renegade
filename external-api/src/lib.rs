@@ -1,7 +1,6 @@
 //! The API module defines messaging interfaces between p2p nodes
 #![deny(missing_docs)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 use std::fmt;
 
@@ -57,7 +56,7 @@ impl<'de> Deserialize<'de> for EmptyRequestResponse {
 
 /// Visitor for deserializing an empty request/response
 struct EmptyRequestResponseVisitor;
-impl<'de> serde::de::Visitor<'de> for EmptyRequestResponseVisitor {
+impl serde::de::Visitor<'_> for EmptyRequestResponseVisitor {
     type Value = EmptyRequestResponse;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

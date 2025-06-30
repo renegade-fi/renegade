@@ -42,7 +42,7 @@ alloy-sol-types = { workspace = true }
 constants = { workspace = true }
 circuit-types = { workspace = true }
 circuits = { workspace = true }
-common = { workspace = true }
+common = { workspace = true, features = ["internal-types"] }
 renegade-crypto = { workspace = true }
 renegade-solidity-abi = { package = "abi", git = "https://github.com/renegade-fi/renegade-solidity-contracts", optional = true }
 util = { workspace = true, features = ["telemetry"] }

@@ -108,7 +108,7 @@ impl DB {
     #[allow(unsafe_code)]
     pub unsafe fn drop_table(&self, table_name: &str) -> Result<(), StorageError> {
         let tx = self.new_raw_write_tx()?;
-        tx.drop_table(table_name)?;
+        unsafe { tx.drop_table(table_name) }?;
 
         tx.commit()
     }

@@ -220,7 +220,7 @@ impl Token {
 
     /// Returns true if the Token is a stablecoin.
     pub fn is_stablecoin(&self) -> bool {
-        self.get_ticker().map_or(false, |ticker| STABLECOIN_TICKERS.contains(&ticker.as_str()))
+        self.get_ticker().is_some_and(|ticker| STABLECOIN_TICKERS.contains(&ticker.as_str()))
     }
 
     /// Returns the set of Exchanges that support this token.

@@ -1,14 +1,13 @@
 //! Defines wallet types useful throughout the workspace
 
-use std::{
-    iter,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+use std::iter;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use circuit_types::{balance::Balance, elgamal::EncryptionKey, fixed_point::FixedPoint};
+use circuit_types::{native_helpers::create_wallet_shares_with_randomness, traits::BaseType};
 use constants::Scalar;
 use derivative::Derivative;
 use itertools::Itertools;
@@ -26,9 +25,7 @@ use super::{
 
 #[cfg(feature = "proof-system-types")]
 use circuit_types::{
-    SizedWallet as SizedCircuitWallet, SizedWalletShare,
-    native_helpers::create_wallet_shares_with_randomness, order::Order as CircuitOrder,
-    traits::BaseType,
+    SizedWallet as SizedCircuitWallet, SizedWalletShare, order::Order as CircuitOrder,
 };
 
 /// A type alias for the wallet identifier type, currently a UUID

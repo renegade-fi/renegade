@@ -9,7 +9,6 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
 
 mod contract_interaction;
 mod event_indexing;

@@ -54,13 +54,13 @@ impl<T: Hash + Eq + PartialEq> TimeWindowBuffer<T> {
     /// Whether the given key is in its time window still
     pub async fn in_window(&self, key: &T) -> bool {
         let this = self.read_windows().await;
-        this.get(key).map_or(false, |expiry_time| *expiry_time > Instant::now())
+        this.get(key).is_some_and(|expiry_time| *expiry_time > Instant::now())
     }
 
     /// Check whether the window for a key has expired
     pub async fn is_expired(&self, key: &T) -> bool {
         let this = self.read_windows().await;
-        this.get(key).map_or(false, |expiry_time| *expiry_time < Instant::now())
+        this.get(key).is_some_and(|expiry_time| *expiry_time < Instant::now())
     }
 
     /// Adds a key to the buffer

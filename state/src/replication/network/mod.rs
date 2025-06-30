@@ -108,15 +108,15 @@ impl RaftResponse {
 // | Networking Implementation |
 // -----------------------------
 
-/// In the following code, we wrap each of the `openraft` networking traits in
-/// our own traits and containers for two reasons:
-/// 1. Using our own traits allows us to define default implementations on our
-///    containers, meaning that our networking impls must only implement a
-///    thinner trait, e.g. `P2PRaftNetwork`.
-/// 2. Using our own containers lets us dynamically dispatch networking calls.
-///    This prevents a network impl generic from coloring our trait interfaces
-///    and containing interfaces. In this end this lets the `State` object be
-///    defined non-generically, which is desired
+// In the following code, we wrap each of the `openraft` networking traits in
+// our own traits and containers for two reasons:
+// 1. Using our own traits allows us to define default implementations on our
+//    containers, meaning that our networking impls must only implement a
+//    thinner trait, e.g. `P2PRaftNetwork`.
+// 2. Using our own containers lets us dynamically dispatch networking calls.
+//    This prevents a network impl generic from coloring our trait interfaces
+//    and containing interfaces. In this end this lets the `State` object be
+//    defined non-generically, which is desired
 
 // --- Networking --- //
 

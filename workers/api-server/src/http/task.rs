@@ -39,9 +39,9 @@ const ERR_TASK_NOT_FOUND: &str = "task not found";
 /// Error message emitted when historical state is disabled
 const ERR_HISTORICAL_STATE_DISABLED: &str = "historical state is disabled";
 
-/// -----------------------
-/// | Task Route Handlers |
-/// -----------------------
+// -----------------------
+// | Task Route Handlers |
+// -----------------------
 
 /// Handler for the GET /task/:id route
 pub struct GetTaskStatusHandler {

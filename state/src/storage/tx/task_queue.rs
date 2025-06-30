@@ -275,7 +275,7 @@ impl TaskQueue {
 
 // --- Getters --- //
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Check whether a task queue is empty
     pub fn is_queue_empty(&self, key: &TaskQueueKey) -> Result<bool, StorageError> {
         let queue = self.get_task_queue(key)?;
@@ -387,7 +387,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 
 // --- Setters --- //
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Add a serial task to the queue
     ///
     /// Unlike the preemptive tasks, normal serial tasks are only indexed into a

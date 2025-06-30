@@ -216,7 +216,7 @@ impl Task for NewWalletTask {
                 self.generate_proof().await?;
                 self.task_state = NewWalletTaskState::SubmittingTx;
             },
-            NewWalletTaskState::SubmittingTx { .. } => {
+            NewWalletTaskState::SubmittingTx => {
                 // Submit the wallet on-chain
                 self.submit_wallet_tx().await?;
                 self.task_state = NewWalletTaskState::FindingMerkleOpening;

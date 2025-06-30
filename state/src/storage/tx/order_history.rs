@@ -21,7 +21,7 @@ fn order_history_key(wallet_id: &WalletIdentifier) -> String {
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     /// Get metadata for a given order
     #[allow(clippy::needless_pass_by_value)]
     pub fn get_order_metadata(
@@ -64,7 +64,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     /// Append an order to the order history
     pub fn push_order_history(
         &self,

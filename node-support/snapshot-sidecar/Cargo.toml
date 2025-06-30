@@ -14,7 +14,7 @@ tokio = { workspace = true, features = ["full"] }
 
 # === Workspace Dependencies === #
 config = { workspace = true }
-external-api = { workspace = true }
+external-api = { workspace = true, features = ["admin-api"] }
 util = { workspace = true }
 
 # === Misc Deps === #

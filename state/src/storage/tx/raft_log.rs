@@ -51,7 +51,7 @@ pub type LogValueType = Entry;
 // | Getters |
 // -----------
 
-impl<'db, T: TransactionKind> StateTxn<'db, T> {
+impl<T: TransactionKind> StateTxn<'_, T> {
     // --- Logs Metadata --- //
 
     /// Get the ID of the last purged log
@@ -120,7 +120,7 @@ impl<'db, T: TransactionKind> StateTxn<'db, T> {
 // | Setters |
 // -----------
 
-impl<'db> StateTxn<'db, RW> {
+impl StateTxn<'_, RW> {
     // --- Log Metadata --- //
 
     /// Set the ID of the last purged log
