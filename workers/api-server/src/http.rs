@@ -523,7 +523,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_NETWORK_TOPOLOGY_ROUTE.to_string(),
-            GetNetworkTopologyHandler::new(state.clone()),
+            GetNetworkTopologyHandler::new(config.chain, state.clone()),
         );
 
         // The "/network/clusters/:id" route

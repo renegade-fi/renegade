@@ -3,10 +3,11 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use common::types::chain::Chain;
 use external_api::{
     EmptyRequestResponse,
     http::network::{GetClusterInfoResponse, GetNetworkTopologyResponse, GetPeerInfoResponse},
-    types::{Cluster, Peer},
+    types::{Cluster, Network, Peer},
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
@@ -33,14 +34,16 @@ const ERR_PEER_NOT_FOUND: &str = "could not find peer in index";
 /// Handler for the GET "/network" route
 #[derive(Clone)]
 pub struct GetNetworkTopologyHandler {
+    /// The chain to report topology on
+    chain: Chain,
     /// A copy of the relayer-global state
     state: State,
 }
 
 impl GetNetworkTopologyHandler {
     /// Constructor
-    pub fn new(state: State) -> Self {
-        Self { state }
+    pub fn new(chain: Chain, state: State) -> Self {
+        Self { chain, state }
     }
 }
 
@@ -80,7 +83,8 @@ impl TypedHandler for GetNetworkTopologyHandler {
         }
 
         // Reformat into response
-        Ok(GetNetworkTopologyResponse { local_cluster_id, network: peers_by_cluster.into() })
+        let network = Network::from_cluster_peer_map(self.chain, peers_by_cluster);
+        Ok(GetNetworkTopologyResponse { local_cluster_id, network })
     }
 }
 
