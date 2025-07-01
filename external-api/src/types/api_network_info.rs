@@ -1,5 +1,5 @@
 //! API types for network info requests
-use common::types::gossip::PeerInfo as IndexedPeerInfo;
+use common::types::{chain::Chain, gossip::PeerInfo as IndexedPeerInfo};
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -13,19 +13,16 @@ pub struct Network {
     pub clusters: Vec<Cluster>,
 }
 
-/// Cast from a map of cluster ID to peer list to the `Cluster` API type
-impl From<HashMap<String, Vec<Peer>>> for Network {
-    fn from(cluster_membership: HashMap<String, Vec<Peer>>) -> Self {
-        let mut clusters = Vec::with_capacity(cluster_membership.len());
-        for (cluster_id, peers) in cluster_membership.into_iter() {
-            clusters.push(Cluster { id: cluster_id, peers });
+impl Network {
+    /// Create a network from a map of cluster ID to peer IDs
+    pub fn from_cluster_peer_map(chain: Chain, clusters: HashMap<String, Vec<Peer>>) -> Self {
+        let mut network_clusters = Vec::with_capacity(clusters.len());
+        for (cluster_id, peers) in clusters.into_iter() {
+            network_clusters.push(Cluster { id: cluster_id, peers });
         }
 
-        Self {
-            // TODO: Make this not a constant
-            id: "goerli".to_string(),
-            clusters,
-        }
+        let id = chain.to_string();
+        Self { id, clusters: network_clusters }
     }
 }
 
