@@ -88,11 +88,11 @@ impl TaskQueue {
     /// Check whether the task queue is in a valid state
     pub fn check_invariants(&self) -> Result<(), StorageError> {
         if self.concurrent_tasks.len() > MAX_CONCURRENT_TASKS {
-            return Err(StorageError::other(ERR_MAX_CONCURRENCY));
+            return Err(StorageError::invalid_write(ERR_MAX_CONCURRENCY));
         }
 
         if !self.check_preemption_state() {
-            return Err(StorageError::other(ERR_INVALID_PREEMPTION_STATE));
+            return Err(StorageError::invalid_write(ERR_INVALID_PREEMPTION_STATE));
         }
 
         Ok(())
