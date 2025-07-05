@@ -73,7 +73,7 @@ impl StateTxn<'_, RW> {
     pub fn create_matching_pool(&self, pool_name: &str) -> Result<(), StorageError> {
         // Check that the pool does not already exist
         if self.matching_pool_exists(pool_name)? {
-            return Err(StorageError::Other(MATCHING_POOL_EXISTS_ERR.to_string()));
+            return Err(StorageError::reject(MATCHING_POOL_EXISTS_ERR));
         }
 
         let all_pools_key = all_matching_pools_key();
