@@ -75,7 +75,7 @@ impl StateTxn<'_, RW> {
 
         // Check for a duplicate
         if orders.iter().any(|o| o.id == metadata.id) {
-            return Err(StorageError::Other(ERR_DUPLICATE_ORDER.to_string()));
+            return Err(StorageError::reject(ERR_DUPLICATE_ORDER));
         }
 
         // Push to the front of the list
@@ -92,7 +92,7 @@ impl StateTxn<'_, RW> {
         let mut orders = self.get_order_history(wallet_id)?;
         let index = orders.iter().position(|o| o.id == metadata.id);
         if index.is_none() {
-            return Err(StorageError::Other(ERR_ORDER_NOT_FOUND.to_string()));
+            return Err(StorageError::reject(ERR_ORDER_NOT_FOUND));
         }
 
         orders[index.unwrap()] = metadata;
@@ -108,7 +108,7 @@ impl StateTxn<'_, RW> {
         let mut orders = self.get_order_history(wallet_id)?;
         let index = orders.iter().position(|o| &o.id == order_id);
         if index.is_none() {
-            return Err(StorageError::Other(ERR_ORDER_NOT_FOUND.to_string()));
+            return Err(StorageError::reject(ERR_ORDER_NOT_FOUND));
         }
 
         orders.remove(index.unwrap());

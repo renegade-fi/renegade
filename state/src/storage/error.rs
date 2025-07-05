@@ -17,9 +17,6 @@ pub enum StorageError {
     /// An invalid key was used to access the database
     #[error("invalid key: {0}")]
     InvalidKey(String),
-    /// An invalid storage write was attempted
-    #[error("invalid write: {0}")]
-    InvalidWrite(String),
     /// An entry was not found in the database
     #[error("entry not found: {0}")]
     NotFound(String),
@@ -35,9 +32,12 @@ pub enum StorageError {
     /// relayer is not configured to record historical state.
     #[error("table disabled: {0}")]
     TableDisabled(String),
-    /// An uncategorized error
+    /// An un-categorized error
     #[error("other error: {0}")]
     Other(String),
+    /// The storage layer rejects the operation for validation reasons
+    #[error("Write rejected: {0}")]
+    Rejected(String),
     /// Error serializing a value for storage
     #[error("error serializing value: {0}")]
     Serialization(String),
@@ -50,10 +50,10 @@ pub enum StorageError {
 }
 
 impl StorageError {
-    /// Create a new `InvalidWrite` error
+    /// Create a new `Rejected` error
     #[allow(clippy::needless_pass_by_value)]
-    pub fn invalid_write<T: ToString>(msg: T) -> Self {
-        Self::InvalidWrite(msg.to_string())
+    pub fn reject<T: ToString>(msg: T) -> Self {
+        Self::Rejected(msg.to_string())
     }
 
     /// Create a new `NotFound` error
