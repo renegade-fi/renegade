@@ -19,7 +19,7 @@ use libmdbx::{RW, TransactionKind};
 use tracing::{error, info, instrument, warn};
 use util::err_str;
 
-use crate::storage::{error::StorageError, tx::StateTxn};
+use crate::storage::tx::StateTxn;
 
 use super::{
     Result, StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType,
@@ -340,12 +340,7 @@ impl StateApplicator {
         let mut task = match tx.pop_task(task_id) {
             Ok(Some(t)) => t,
             Ok(None) => return Ok(None),
-            Err(StorageError::InvalidWrite(msg)) => {
-                return Err(StateApplicatorError::reject(msg));
-            },
-            Err(e) => {
-                return Err(StateApplicatorError::Storage(e));
-            },
+            Err(e) => return Err(StateApplicatorError::from(e)),
         };
 
         // Add the task to history and remove its node assignment
@@ -421,17 +416,13 @@ impl StateApplicator {
         is_serial: bool,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
-        let res = if is_serial {
+        if is_serial {
             tx.preempt_queue_with_serial(keys, task)
         } else {
             tx.preempt_queue_with_concurrent(keys, task)
-        };
+        }?;
 
-        match res {
-            Ok(_) => Ok(()),
-            Err(StorageError::InvalidWrite(msg)) => Err(StateApplicatorError::reject(msg)),
-            Err(e) => Err(StateApplicatorError::Storage(e)),
-        }
+        Ok(())
     }
 }
 

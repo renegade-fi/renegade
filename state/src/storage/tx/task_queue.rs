@@ -88,11 +88,11 @@ impl TaskQueue {
     /// Check whether the task queue is in a valid state
     pub fn check_invariants(&self) -> Result<(), StorageError> {
         if self.concurrent_tasks.len() > MAX_CONCURRENT_TASKS {
-            return Err(StorageError::invalid_write(ERR_MAX_CONCURRENCY));
+            return Err(StorageError::reject(ERR_MAX_CONCURRENCY));
         }
 
         if !self.check_preemption_state() {
-            return Err(StorageError::invalid_write(ERR_INVALID_PREEMPTION_STATE));
+            return Err(StorageError::reject(ERR_INVALID_PREEMPTION_STATE));
         }
 
         Ok(())
@@ -414,7 +414,7 @@ impl StateTxn<'_, RW> {
         for queue_key in queues.iter() {
             // 1. Check that the queue can be preempted
             if !self.is_serial_preemption_safe(queue_key)? {
-                return Err(StorageError::invalid_write(ERR_TASK_NOT_PREEMPTED));
+                return Err(StorageError::reject(ERR_TASK_NOT_PREEMPTED));
             }
 
             // 2. Move the existing task back to the queued state
@@ -425,7 +425,7 @@ impl StateTxn<'_, RW> {
 
             // 3. Preempt the queue
             if !queue.preempt_with_serial_task(task.id) {
-                return Err(StorageError::invalid_write(ERR_TASK_NOT_PREEMPTED));
+                return Err(StorageError::reject(ERR_TASK_NOT_PREEMPTED));
             };
 
             self.write_task_queue(queue_key, &queue)?;
@@ -444,7 +444,7 @@ impl StateTxn<'_, RW> {
         for queue_key in queues.iter() {
             let mut queue = self.get_task_queue(queue_key)?;
             if !queue.preempt_with_concurrent_task(task.id) {
-                return Err(StorageError::invalid_write(ERR_TASK_NOT_PREEMPTED));
+                return Err(StorageError::reject(ERR_TASK_NOT_PREEMPTED));
             }
 
             self.write_task_queue(queue_key, &queue)?;
@@ -460,7 +460,7 @@ impl StateTxn<'_, RW> {
         for key in queue_keys.iter() {
             let mut queue = self.get_task_queue(key)?;
             if !queue.pop_task(id) {
-                return Err(StorageError::invalid_write(ERR_TASK_NOT_POPPED));
+                return Err(StorageError::reject(ERR_TASK_NOT_POPPED));
             }
 
             self.write_task_queue(key, &queue)?;
