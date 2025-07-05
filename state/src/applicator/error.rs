@@ -48,6 +48,9 @@ impl Error for StateApplicatorError {}
 
 impl From<StorageError> for StateApplicatorError {
     fn from(value: StorageError) -> Self {
-        Self::Storage(value)
+        match value {
+            StorageError::Rejected(msg) => Self::reject(msg),
+            _ => Self::Storage(value),
+        }
     }
 }
