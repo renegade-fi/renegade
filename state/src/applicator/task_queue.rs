@@ -90,7 +90,7 @@ impl StateApplicator {
 
         // Pop the task from the queue, remove its assignment, and add it to history
         let (task, executor) = self
-            .pop_and_record_task(&keys[0], &task_id, success, &tx)?
+            .pop_and_record_task(&keys, &task_id, success, &tx)?
             .ok_or_else(|| StateApplicatorError::TaskQueueEmpty(keys[0]))?;
 
         // Process the update to each queue
@@ -326,12 +326,13 @@ impl StateApplicator {
         Ok(())
     }
 
-    /// Pop the top task on the queue and add it to the historical state    
+    /// Pop the top task from all queues which contain it and add it to the
+    /// historical state
     ///
     /// Returns the task and the executor to which it was assigned
     fn pop_and_record_task(
         &self,
-        key: &TaskQueueKey,
+        keys: &[TaskQueueKey],
         task_id: &TaskIdentifier,
         success: bool,
         tx: &StateTxn<'_, RW>,
@@ -352,31 +353,34 @@ impl StateApplicator {
             return Ok(None);
         };
 
-        self.maybe_append_historical_task(*key, task.clone(), executor, tx)?;
+        self.maybe_append_historical_task(keys, &task, executor, tx)?;
         Ok(Some((task, executor)))
     }
 
-    /// Append a task to the task history if it should be stored
+    /// Append a task to the task history of all queues which contained it, if
+    /// it should be stored
     fn maybe_append_historical_task(
         &self,
-        key: TaskQueueKey,
-        task: QueuedTask,
+        keys: &[TaskQueueKey],
+        task: &QueuedTask,
         executor: WrappedPeerId,
         tx: &StateTxn<'_, RW>,
     ) -> Result<()> {
-        if let Some(t) = HistoricalTask::from_queued_task(key, task) {
-            if tx.get_historical_state_enabled()? {
-                tx.append_task_to_history(&key, t.clone())?;
-            }
+        for key in keys {
+            if let Some(t) = HistoricalTask::from_queued_task(*key, task.clone()) {
+                if tx.get_historical_state_enabled()? {
+                    tx.append_task_to_history(key, t.clone())?;
+                }
 
-            // Emit a task completion event to the event manager
-            // _only if the local peer is the executor_,
-            // to avoid duplicate events across the cluster
-            let my_peer_id = tx.get_peer_id()?;
-            if my_peer_id == executor {
-                let event = RelayerEventType::TaskCompletion(TaskCompletionEvent::new(key, t));
-                if let Err(e) = try_send_event(event, &self.config.event_queue) {
-                    error!("error sending task completion event: {e}");
+                // Emit a task completion event to the event manager
+                // _only if the local peer is the executor_,
+                // to avoid duplicate events across the cluster
+                let my_peer_id = tx.get_peer_id()?;
+                if my_peer_id == executor {
+                    let event = RelayerEventType::TaskCompletion(TaskCompletionEvent::new(*key, t));
+                    if let Err(e) = try_send_event(event, &self.config.event_queue) {
+                        error!("error sending task completion event: {e}");
+                    }
                 }
             }
         }
@@ -396,7 +400,8 @@ impl StateApplicator {
             let executor = tx
                 .get_task_assignment(&task.id)?
                 .ok_or_else(|| StateApplicatorError::MissingEntry(ERR_UNASSIGNED_TASK))?;
-            self.maybe_append_historical_task(key, task.clone(), executor, tx)?;
+
+            self.maybe_append_historical_task(&[key], &task, executor, tx)?;
             self.publish_task_updates(key, &task);
 
             if let Some(peer_id) = tx.get_task_assignment(&task.id)? {
