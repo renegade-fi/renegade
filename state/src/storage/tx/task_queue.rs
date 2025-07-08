@@ -27,7 +27,9 @@ const ERR_INVALID_PREEMPTION_STATE: &str = "invalid preemption state for task qu
 /// The error message emitted when a task cannot be popped from the queue
 const ERR_TASK_NOT_POPPED: &str = "task not popped from queue";
 /// The error message emitted when a task cannot be preempted
-const ERR_TASK_NOT_PREEMPTED: &str = "queue not preempted";
+const ERR_CANNOT_SERIALLY_PREEMPT: &str = "serial preemption not allowed";
+/// The error message emitted when a task cannot be preempted concurrently
+const ERR_CANNOT_CONCURRENTLY_PREEMPT: &str = "concurrent preemption not allowed";
 
 /// The maximum number of tasks that can be concurrently running for a queue
 const MAX_CONCURRENT_TASKS: usize = 20;
@@ -414,7 +416,7 @@ impl StateTxn<'_, RW> {
         for queue_key in queues.iter() {
             // 1. Check that the queue can be preempted
             if !self.is_serial_preemption_safe(queue_key)? {
-                return Err(StorageError::reject(ERR_TASK_NOT_PREEMPTED));
+                return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
             }
 
             // 2. Move the existing task back to the queued state
@@ -425,7 +427,7 @@ impl StateTxn<'_, RW> {
 
             // 3. Preempt the queue
             if !queue.preempt_with_serial_task(task.id) {
-                return Err(StorageError::reject(ERR_TASK_NOT_PREEMPTED));
+                return Err(StorageError::reject(ERR_CANNOT_SERIALLY_PREEMPT));
             };
 
             self.write_task_queue(queue_key, &queue)?;
@@ -444,7 +446,7 @@ impl StateTxn<'_, RW> {
         for queue_key in queues.iter() {
             let mut queue = self.get_task_queue(queue_key)?;
             if !queue.preempt_with_concurrent_task(task.id) {
-                return Err(StorageError::reject(ERR_TASK_NOT_PREEMPTED));
+                return Err(StorageError::reject(ERR_CANNOT_CONCURRENTLY_PREEMPT));
             }
 
             self.write_task_queue(queue_key, &queue)?;

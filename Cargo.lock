@@ -9192,6 +9192,7 @@ dependencies = [
 name = "system-clock"
 version = "0.1.0"
 dependencies = [
+ "thiserror 2.0.12",
  "tokio",
  "tokio-cron-scheduler",
  "tracing",

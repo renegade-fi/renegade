@@ -15,4 +15,5 @@ tokio-cron-scheduler = "0.10"
 util = { workspace = true }
 
 # === Misc Dependencies === #
+thiserror = "2.0"
 tracing = { workspace = true }
