@@ -29,7 +29,7 @@ use constants::Scalar;
 use external_api::bus_message::SystemBusMessage;
 use job_types::handshake_manager::ExternalMatchingEngineOptions;
 use renegade_crypto::fields::scalar_to_u128;
-use tracing::{error, info, instrument};
+use tracing::{info, instrument, warn};
 use util::{matching_engine::compute_max_amount, telemetry::helpers::backfill_trace_field};
 
 use crate::{
@@ -228,10 +228,7 @@ impl HandshakeExecutor {
         match settle_res {
             Ok(()) => Ok(()),
             Err(e) => {
-                error!(
-                    "external match settlement failed on internal order {}: {e}",
-                    other_order_id,
-                );
+                warn!("external match settlement failed on internal order {other_order_id}: {e}");
                 Err(e)
             },
         }
@@ -285,7 +282,25 @@ impl HandshakeExecutor {
             direction: match_res.direction,
         };
 
-        // Create a task to settle the match
+        let settle_res =
+            self.try_settle_bounded_match(order_id, bounded_res, response_topic, options).await;
+        match settle_res {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                warn!("bounded match settlement failed on internal order {order_id}: {e}");
+                Err(e)
+            },
+        }
+    }
+
+    /// Try settling a malleable match
+    async fn try_settle_bounded_match(
+        &self,
+        order_id: OrderIdentifier,
+        bounded_res: BoundedMatchResult,
+        response_topic: String,
+        options: &ExternalMatchingEngineOptions,
+    ) -> Result<(), HandshakeManagerError> {
         let wallet_id = self.get_wallet_id_for_order(&order_id).await?;
         let task = SettleMalleableExternalMatchTaskDescriptor::new(
             options.bundle_duration,

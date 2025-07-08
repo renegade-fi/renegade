@@ -12,7 +12,7 @@
 #![allow(incomplete_features)]
 #![feature(inherent_associated_types)]
 
-use std::{future::Future, time::Duration};
+use std::{fmt::Display, future::Future, time::Duration};
 
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::error;
@@ -21,6 +21,12 @@ use util::err_str;
 /// The error type returned by the clock
 #[derive(Debug, Clone)]
 pub struct SystemClockError(pub String);
+
+impl Display for SystemClockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "clock error: {}", self.0)
+    }
+}
 
 /// The system clock allows workers to schedule periodic notifications delivered
 /// to a callback of choice

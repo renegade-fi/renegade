@@ -1,7 +1,6 @@
 //! Error types and conversions for the replication interface
 use std::{
-    error::Error,
-    fmt::{Debug, Display},
+    fmt::Debug,
     io::{Error as IoError, ErrorKind as IoErrorKind},
 };
 
@@ -55,38 +54,30 @@ pub fn new_network_error(err: ReplicationError) -> RPCError<NodeId, Node, RaftEr
 }
 
 /// The error type emitted by the replication interface
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ReplicationError {
-    /// An error deserializing a raft response
+    /// An error deserializing a raft request/response
+    #[error("error deserializing raft request/response: {0}")]
     Deserialize(String),
     /// An error proposing a state transition
+    #[error("error proposing state transition: {0}")]
     Proposal(String),
     /// A generic raft error
+    #[error("raft error: {0}")]
     Raft(String),
     /// An error setting up a raft
+    #[error("error setting up raft: {0}")]
     RaftSetup(String),
     /// An error tearing down a raft
+    #[error("error tearing down raft: {0}")]
     RaftTeardown(String),
     /// An error occurred while snapshotting
+    #[error("error snapshotting: {0}")]
     Snapshot(String),
     /// An error in storage
+    #[error("storage error: {0}")]
     Storage(StorageError),
 }
-
-impl Display for ReplicationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReplicationError::Deserialize(e) => write!(f, "Deserialization error: {e}"),
-            ReplicationError::Proposal(e) => write!(f, "Proposal error: {e}"),
-            ReplicationError::Raft(e) => write!(f, "Raft error: {e}"),
-            ReplicationError::RaftSetup(e) => write!(f, "Raft setup error: {e}"),
-            ReplicationError::RaftTeardown(e) => write!(f, "Raft teardown error: {e}"),
-            ReplicationError::Snapshot(e) => write!(f, "Snapshot error: {e}"),
-            ReplicationError::Storage(e) => write!(f, "Storage error: {e}"),
-        }
-    }
-}
-impl Error for ReplicationError {}
 
 impl From<StorageError> for ReplicationError {
     fn from(value: StorageError) -> Self {

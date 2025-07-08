@@ -1,33 +1,30 @@
 //! Error types emitted by the state applicator
 
-use std::{error::Error, fmt::Display};
-
-use common::types::{tasks::TaskQueueKey, wallet::WalletIdentifier};
+use common::types::tasks::TaskQueueKey;
 
 use crate::storage::error::StorageError;
 
 /// The error type emitted by the storage applicator
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StateApplicatorError {
     /// An error enqueueing a task
+    #[error("error enqueuing task: {0}")]
     EnqueueTask(String),
     /// Missing keys in the database necessary for a tx
+    #[error("missing database entry: {0}")]
     MissingEntry(&'static str),
     /// An error indicating a state transition has been rejected
     ///
     /// This error will be sent directly to the listeners on a proposal and not
     /// forwarded to the raft core
+    #[error("state transition rejected: {0}")]
     Rejected(String),
     /// An error interacting with storage
+    #[error("storage error: {0}")]
     Storage(StorageError),
     /// A task queue is empty when it should not be
+    #[error("queue {0} is empty, but should not be")]
     TaskQueueEmpty(TaskQueueKey),
-    /// An error parsing a message separately from proto errors
-    Parse(String),
-    /// An error trying to preempt a committed task
-    Preemption,
-    /// An error updating a task state when a queue is paused
-    QueuePaused(WalletIdentifier),
 }
 
 impl StateApplicatorError {
@@ -37,14 +34,6 @@ impl StateApplicatorError {
         Self::Rejected(msg.to_string())
     }
 }
-
-impl Display for StateApplicatorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-impl Error for StateApplicatorError {}
 
 impl From<StorageError> for StateApplicatorError {
     fn from(value: StorageError) -> Self {
