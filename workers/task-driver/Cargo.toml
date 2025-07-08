@@ -51,6 +51,7 @@ renegade-metrics = { workspace = true }
 itertools = "0.11"
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
 metrics = { workspace = true }

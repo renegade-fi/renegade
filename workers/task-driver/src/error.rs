@@ -1,33 +1,28 @@
 //! Error types for the task driver
 
-use std::error::Error;
-use std::fmt::Display;
-
 use state::error::StateError;
 
 use crate::traits::TaskError;
 
 /// The error type emitted by the task driver
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum TaskDriverError {
     /// A task failed to execute
+    #[error("task failed to execute")]
     TaskFailed,
     /// The job channel for the task driver is closed
+    #[error("job queue closed")]
     JobQueueClosed,
     /// A task was preempted while running
+    #[error("task was preempted while running")]
     Preempted,
     /// An error querying global state
+    #[error("state error: {0}")]
     State(String),
     /// An error running a task
+    #[error("task error: {0}")]
     TaskError(String),
 }
-
-impl Display for TaskDriverError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-impl Error for TaskDriverError {}
 
 impl From<StateError> for TaskDriverError {
     fn from(e: StateError) -> Self {

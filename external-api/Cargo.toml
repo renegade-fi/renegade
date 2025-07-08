@@ -29,7 +29,7 @@ num-bigint = { workspace = true }
 
 # === Auth Dependencies === #
 http = { workspace = true, optional = true }
-thiserror = { version = "1.0.61", optional = true }
+thiserror = { workspace = true, optional = true }
 
 # === Workspace Dependencies === #
 circuit-types = { workspace = true }
