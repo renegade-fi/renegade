@@ -12,6 +12,7 @@ use common::types::{
     wallet::{OrderIdentifier, WalletIdentifier, order_metadata::OrderState},
 };
 use constants::EXTERNAL_MATCH_RELAYER_FEE;
+use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
 use renegade_metrics;
 use util::{
     matching_engine::compute_fee_obligation_with_protocol_fee, on_chain::get_external_match_fee,
@@ -21,22 +22,19 @@ use util::{
 const ERR_NO_ORDER_METADATA: &str = "order metadata not found";
 
 /// Bundle of data shared across post-settlement helpers
-pub(crate) struct PostSettlementCtx<'a> {
+pub(crate) struct PostSettlementCtx {
     /// Wallet containing the internal order
     pub wallet_id: WalletIdentifier,
     /// The full external match result
-    pub external_match_result: &'a ExternalMatchResult,
+    pub external_match_result: ExternalMatchResult,
     /// Execution price (quote/base)
     pub price: TimestampedPrice,
 }
 
-impl<'a> PostSettlementCtx<'a> {
+impl PostSettlementCtx {
     /// Build a context from the external match
-    pub fn new(
-        wallet_id: WalletIdentifier,
-        external_match_result: &'a ExternalMatchResult,
-    ) -> Self {
-        let price = execution_price(external_match_result);
+    pub fn new(wallet_id: WalletIdentifier, external_match_result: ExternalMatchResult) -> Self {
+        let price = execution_price(&external_match_result);
         Self { wallet_id, external_match_result, price }
     }
 }
@@ -47,7 +45,7 @@ impl<'a> PostSettlementCtx<'a> {
 
 impl OnChainEventListenerExecutor {
     /// Record volume metrics for the match
-    pub(crate) fn record_metrics(&self, ctx: &PostSettlementCtx<'_>) {
+    pub(crate) fn record_metrics(&self, ctx: &PostSettlementCtx) {
         let match_result = ctx.external_match_result.to_match_result();
         renegade_metrics::record_match_volume(
             &match_result,
@@ -60,7 +58,7 @@ impl OnChainEventListenerExecutor {
     pub(crate) async fn record_order_fill(
         &self,
         order_id: OrderIdentifier,
-        ctx: &PostSettlementCtx<'_>,
+        ctx: &PostSettlementCtx,
     ) -> Result<(), OnChainEventListenerError> {
         let match_result = ctx.external_match_result.to_match_result();
         // Get the order metadata
@@ -84,11 +82,9 @@ impl OnChainEventListenerExecutor {
     pub(crate) fn emit_event(
         &self,
         order_id: OrderIdentifier,
-        ctx: &PostSettlementCtx<'_>,
+        ctx: &PostSettlementCtx,
     ) -> Result<(), OnChainEventListenerError> {
-        use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
-
-        let fee_take = internal_fee_take(ctx.external_match_result);
+        let fee_take = internal_fee_take(&ctx.external_match_result);
         let event = RelayerEventType::ExternalFill(ExternalFillEvent::new(
             ctx.wallet_id,
             order_id,

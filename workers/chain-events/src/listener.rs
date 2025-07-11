@@ -2,6 +2,8 @@
 
 use std::{thread::JoinHandle, time::Duration};
 
+use super::error::OnChainEventListenerError;
+use crate::post_settlement::PostSettlementCtx;
 use alloy::{
     primitives::TxHash,
     providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
@@ -25,12 +27,6 @@ use rand::{Rng, thread_rng};
 use state::State;
 use tracing::{error, info};
 use util::concurrency::runtime::sleep_forever_async;
-// no longer need fee computation helpers here
-
-// Post-settlement helpers
-use crate::post_settlement::PostSettlementCtx;
-
-use super::error::OnChainEventListenerError;
 
 /// The minimum delay in seconds for wallet refresh
 const MIN_NULLIFIER_REFRESH_DELAY_S: u64 = 20; // 20 seconds
@@ -347,7 +343,7 @@ impl OnChainEventListenerExecutor {
         let external_match = !matches.is_empty();
 
         for external_match_result in matches {
-            let ctx = PostSettlementCtx::new(wallet_id, &external_match_result);
+            let ctx = PostSettlementCtx::new(wallet_id, external_match_result.clone());
             // Record metrics for the match
             self.record_metrics(&ctx);
 
