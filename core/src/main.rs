@@ -183,7 +183,7 @@ async fn main() -> Result<(), CoordinatorError> {
         darkpool_client.clone(),
         network_sender.clone(),
         proof_generation_worker_sender.clone(),
-        event_manager_sender,
+        event_manager_sender.clone(),
         system_bus.clone(),
         global_state.clone(),
     );
@@ -324,6 +324,7 @@ async fn main() -> Result<(), CoordinatorError> {
         global_state: global_state.clone(),
         handshake_manager_job_queue: handshake_worker_sender.clone(),
         cancel_channel: chain_listener_cancel_receiver,
+        event_queue: event_manager_sender.clone(),
     })
     .await
     .expect("failed to build on-chain event listener");
