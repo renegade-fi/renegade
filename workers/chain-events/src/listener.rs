@@ -8,18 +8,29 @@ use alloy::{
     rpc::types::Filter,
     sol_types::SolEvent,
 };
-use circuit_types::wallet::Nullifier;
-use common::types::{CancelChannel, wallet::WalletIdentifier};
-use constants::in_bootstrap_mode;
+use circuit_types::{
+    fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult, wallet::Nullifier,
+};
+use common::types::{
+    CancelChannel,
+    price::TimestampedPrice,
+    wallet::{OrderIdentifier, WalletIdentifier},
+};
+use constants::{EXTERNAL_MATCH_RELAYER_FEE, in_bootstrap_mode};
 use darkpool_client::{
     DarkpoolClient, DarkpoolImplementation, conversion::u256_to_scalar, traits::DarkpoolImpl,
 };
 use futures_util::StreamExt;
+use job_types::event_manager::{
+    EventManagerQueue, ExternalFillEvent, RelayerEventType, try_send_event,
+};
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use rand::{Rng, thread_rng};
 use state::State;
 use tracing::{error, info};
 use util::concurrency::runtime::sleep_forever_async;
+use util::matching_engine::compute_fee_obligation_with_protocol_fee;
+use util::on_chain::get_external_match_fee;
 
 use super::error::OnChainEventListenerError;
 
@@ -54,6 +65,8 @@ pub struct OnChainEventListenerConfig {
     pub handshake_manager_job_queue: HandshakeManagerQueue,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
+    /// A sender to the event manager's queue
+    pub event_queue: EventManagerQueue,
 }
 
 impl OnChainEventListenerConfig {
@@ -336,10 +349,6 @@ impl OnChainEventListenerExecutor {
         let external_match = !matches.is_empty();
 
         // Record metrics for each match
-        // TODO: Record a fill on the internal order. We don't do this for now to keep
-        // things simple, but when internal volumes increase we should start
-        // recording order fills. One way to do this is to lookup the wallet by
-        // nullifier and record a fill on the order with matching mint
         for external_match_result in matches {
             let match_result = external_match_result.to_match_result();
             renegade_metrics::record_match_volume(
@@ -347,8 +356,79 @@ impl OnChainEventListenerExecutor {
                 true, // is_external_match
                 &[wallet_id],
             );
+            // Emit relayer event for the fill
+            self.emit_external_fill(wallet_id, external_match_result.clone()).await?;
         }
 
         Ok(external_match)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Emit an `ExternalFillEvent` to the event manager
+    async fn emit_external_fill(
+        &self,
+        wallet_id: WalletIdentifier,
+        ext_match: ExternalMatchResult,
+    ) -> Result<(), OnChainEventListenerError> {
+        let order_id = self.find_internal_order(wallet_id, &ext_match).await?;
+        let exec_price = self.execution_price(&ext_match);
+        let fee_take = self.internal_fee_take(&ext_match);
+
+        let event = RelayerEventType::ExternalFill(ExternalFillEvent::new(
+            wallet_id, order_id, exec_price, ext_match, fee_take,
+        ));
+        try_send_event(event, &self.config.event_queue)
+            .map_err(|e| OnChainEventListenerError::SendMessage(e.to_string()))
+    }
+
+    /// Find the internal order in the given wallet that matches the external
+    /// match result
+    ///
+    /// This will return the first order that matches the external match result
+    async fn find_internal_order(
+        &self,
+        wallet_id: WalletIdentifier,
+        ext_match: &ExternalMatchResult,
+    ) -> Result<OrderIdentifier, OnChainEventListenerError> {
+        let wallet = self
+            .state()
+            .get_wallet(&wallet_id)
+            .await?
+            .ok_or_else(|| OnChainEventListenerError::state("wallet not found"))?;
+        let desired_side = ext_match.internal_party_side();
+        for (id, order) in wallet.get_nonzero_orders().into_iter() {
+            if order.base_mint == ext_match.base_mint
+                && order.quote_mint == ext_match.quote_mint
+                && order.side == desired_side
+            {
+                return Ok(id);
+            }
+        }
+        Err(OnChainEventListenerError::state("matching order not found"))
+    }
+
+    /// Compute the execution price (quote/base) and return as
+    /// `TimestampedPrice`
+    fn execution_price(&self, ext_match: &ExternalMatchResult) -> TimestampedPrice {
+        let base_amt_f64 = ext_match.base_amount as f64;
+        let quote_amt_f64 = ext_match.quote_amount as f64;
+        let price = quote_amt_f64 / base_amt_f64;
+        TimestampedPrice::new(price)
+    }
+
+    /// Compute the internal party's fee take for the external match
+    fn internal_fee_take(&self, ext_match: &ExternalMatchResult) -> FeeTake {
+        let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
+        let protocol_fee = get_external_match_fee(&ext_match.base_mint);
+        let side = ext_match.internal_party_side();
+        compute_fee_obligation_with_protocol_fee(
+            relayer_fee,
+            protocol_fee,
+            side,
+            &ext_match.to_match_result(),
+        )
     }
 }

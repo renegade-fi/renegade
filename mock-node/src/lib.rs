@@ -519,6 +519,7 @@ impl MockNodeController {
             global_state,
             handshake_manager_job_queue,
             cancel_channel,
+            event_queue: self.event_queue.0.clone(),
         };
 
         let mut listener = run_fut(OnChainEventListener::new(conf))
