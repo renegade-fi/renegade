@@ -244,9 +244,11 @@ impl StateInner {
 
     /// Filter a set of matchable orders candidates
     ///
-    /// Provides two checks:
+    /// Provides four checks:
     /// - Filters out orders with non-empty task queues
     /// - Filters out orders in incorrect matching pools
+    /// - Filters out orders
+    /// - Filters out orders which are missing validity proofs
     async fn filter_matchable_orders(
         &self,
         orders: Vec<OrderIdentifier>,
@@ -263,9 +265,23 @@ impl StateInner {
                 }
 
                 // Check if the task queue for the order is free
-                if Self::is_serial_queue_free(&id, tx)? {
-                    res.push(id);
+                if !Self::is_serial_queue_free(&id, tx)? {
+                    continue;
                 }
+
+                // Check that the order exists in the orders table
+                let order = tx.get_order_info(&id)?;
+                if order.is_none() {
+                    continue;
+                }
+
+                // Check that the order has validity proofs
+                let order = order.unwrap();
+                if order.validity_proofs.is_none() {
+                    continue;
+                }
+
+                res.push(id);
             }
             Ok(res)
         })
