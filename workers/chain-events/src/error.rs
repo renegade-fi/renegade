@@ -28,6 +28,12 @@ impl OnChainEventListenerError {
     pub fn darkpool<T: ToString>(e: T) -> Self {
         OnChainEventListenerError::Darkpool(e.to_string())
     }
+
+    /// Create a new state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(msg: T) -> Self {
+        OnChainEventListenerError::State(msg.to_string())
+    }
 }
 
 impl Display for OnChainEventListenerError {
