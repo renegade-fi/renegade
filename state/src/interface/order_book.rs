@@ -15,6 +15,7 @@ use common::types::{
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
+use futures::future::join_all;
 use libmdbx::TransactionKind;
 use rand::{
     distributions::{Distribution, WeightedIndex},
@@ -369,11 +370,17 @@ impl StateInner {
 
     /// Nullify all orders on the given nullifier
     pub async fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StateError> {
-        self.with_write_tx(move |tx| {
-            tx.nullify_orders(nullifier)?;
-            Ok(())
-        })
-        .await
+        let order_ids: Vec<OrderIdentifier> = self
+            .with_write_tx(move |tx| {
+                let order_ids = tx.nullify_orders(nullifier)?;
+                Ok(order_ids)
+            })
+            .await?;
+
+        // Remove the orders from the order cache
+        join_all(order_ids.into_iter().map(|id| self.order_cache.remove_order(id))).await;
+
+        Ok(())
     }
 }
 
