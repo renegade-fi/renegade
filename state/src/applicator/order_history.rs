@@ -3,7 +3,7 @@
 use crate::storage::tx::StateTxn;
 
 use super::{StateApplicator, error::StateApplicatorError, return_type::ApplicatorReturnType};
-use common::types::wallet::order_metadata::OrderMetadata;
+use common::types::wallet::{WalletIdentifier, order_metadata::OrderMetadata};
 use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use libmdbx::RW;
 
@@ -16,8 +16,21 @@ impl StateApplicator {
         &self,
         meta: OrderMetadata,
     ) -> Result<ApplicatorReturnType, StateApplicatorError> {
-        // Update the state
         let tx = self.db().new_write_tx()?;
+        let history_enabled = tx.get_historical_state_enabled()?;
+
+        // If historical state recording is disabled, publish the update
+        // immediately and return without performing any writes.
+        if !history_enabled {
+            let wallet = tx
+                .get_wallet_id_for_order(&meta.id)?
+                .ok_or(StateApplicatorError::MissingEntry(ERR_MISSING_WALLET))?;
+            self.publish_order_metadata_update(&wallet, meta);
+
+            return Ok(ApplicatorReturnType::None);
+        }
+
+        // Update the state
         self.update_order_metadata_with_tx(meta, &tx)?;
         tx.commit()?;
 
@@ -63,10 +76,15 @@ impl StateApplicator {
         }
 
         // Write to system bus
-        let topic = wallet_order_history_topic(&wallet);
-        self.system_bus().publish(topic, SystemBusMessage::OrderMetadataUpdated { order: meta });
+        self.publish_order_metadata_update(&wallet, meta);
 
         Ok(())
+    }
+
+    /// Publish an `OrderMetadataUpdated` message to the wallet's topic
+    fn publish_order_metadata_update(&self, wallet: &WalletIdentifier, meta: OrderMetadata) {
+        let topic = wallet_order_history_topic(wallet);
+        self.system_bus().publish(topic, SystemBusMessage::OrderMetadataUpdated { order: meta });
     }
 }
 
