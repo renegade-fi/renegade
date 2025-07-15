@@ -53,7 +53,11 @@ pub enum RefreshWalletTaskState {
 
 impl TaskState for RefreshWalletTaskState {
     fn commit_point() -> Self {
-        RefreshWalletTaskState::CreatingValidityProofs
+        // We use `FindingWallet` as the commit point.
+        // Otherwise, if this task were to be preempted during `FindingWallet`,
+        // it's possible that we'd leave freshly-indexed orders without validity proofs
+        // in the state.
+        RefreshWalletTaskState::FindingWallet
     }
 
     fn completed(&self) -> bool {

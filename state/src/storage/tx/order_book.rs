@@ -225,16 +225,22 @@ impl StateTxn<'_, RW> {
         Ok(())
     }
 
-    /// Nullify the orders indexed by the given nullifier
-    pub fn nullify_orders(&self, nullifier: Nullifier) -> Result<(), StorageError> {
+    /// Nullify the orders indexed by the given nullifier.
+    /// Returns the IDs of the deleted orders.
+    pub fn nullify_orders(
+        &self,
+        nullifier: Nullifier,
+    ) -> Result<Vec<OrderIdentifier>, StorageError> {
         // Delete all orders
         let orders = self.get_orders_by_nullifier(nullifier)?;
-        for order_id in orders {
-            self.delete_order(&order_id)?;
+        for order_id in &orders {
+            self.delete_order(order_id)?;
         }
 
         // Delete the index for the nullifier
-        self.inner().delete(ORDERS_TABLE, &nullifier_key(nullifier)).map(|_| ())
+        self.inner().delete(ORDERS_TABLE, &nullifier_key(nullifier))?;
+
+        Ok(orders)
     }
 
     /// Update the nullifier sets after a (potential) nullifier change
