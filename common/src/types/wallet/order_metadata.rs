@@ -1,5 +1,7 @@
 //! Order metadata for a wallet's orders
 
+use std::iter;
+
 use circuit_types::Amount;
 use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
