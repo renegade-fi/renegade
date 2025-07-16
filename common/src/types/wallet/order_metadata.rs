@@ -94,8 +94,7 @@ impl OrderMetadata {
         let aggregate_fill = PartialOrderFill::new(rolled_amount, representative_price);
 
         // Rebuild the fills vector: [aggregate, newest...]
-        self.fills = vec![aggregate_fill];
-        self.fills.extend(newest);
+        self.fills = iter::once(aggregate_fill).chain(newest).collect();
     }
 }
 
