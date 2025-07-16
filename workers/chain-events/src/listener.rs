@@ -2,26 +2,31 @@
 
 use std::{thread::JoinHandle, time::Duration};
 
+use super::error::OnChainEventListenerError;
+use crate::post_settlement::PostSettlementCtx;
 use alloy::{
     primitives::TxHash,
     providers::{DynProvider, Provider, ProviderBuilder, WsConnect},
     rpc::types::Filter,
     sol_types::SolEvent,
 };
+use circuit_types::r#match::ExternalMatchResult;
 use circuit_types::wallet::Nullifier;
-use common::types::{CancelChannel, wallet::WalletIdentifier};
+use common::types::{
+    CancelChannel,
+    wallet::{OrderIdentifier, WalletIdentifier},
+};
 use constants::in_bootstrap_mode;
 use darkpool_client::{
     DarkpoolClient, DarkpoolImplementation, conversion::u256_to_scalar, traits::DarkpoolImpl,
 };
 use futures_util::StreamExt;
+use job_types::event_manager::EventManagerQueue;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use rand::{Rng, thread_rng};
 use state::State;
 use tracing::{error, info};
 use util::concurrency::runtime::sleep_forever_async;
-
-use super::error::OnChainEventListenerError;
 
 /// The minimum delay in seconds for wallet refresh
 const MIN_NULLIFIER_REFRESH_DELAY_S: u64 = 20; // 20 seconds
@@ -54,6 +59,8 @@ pub struct OnChainEventListenerConfig {
     pub handshake_manager_job_queue: HandshakeManagerQueue,
     /// The channel on which the coordinator may send a cancel signal
     pub cancel_channel: CancelChannel,
+    /// A sender to the event manager's queue
+    pub event_queue: EventManagerQueue,
 }
 
 impl OnChainEventListenerConfig {
@@ -93,7 +100,7 @@ pub struct OnChainEventListener {
 #[derive(Clone)]
 pub struct OnChainEventListenerExecutor {
     /// A copy of the config that the executor maintains
-    config: OnChainEventListenerConfig,
+    pub(crate) config: OnChainEventListenerConfig,
 }
 
 impl OnChainEventListenerExecutor {
@@ -108,7 +115,7 @@ impl OnChainEventListenerExecutor {
     }
 
     /// Shorthand for fetching a reference to the global state
-    fn state(&self) -> &State {
+    pub(crate) fn state(&self) -> &State {
         &self.config.global_state
     }
 
@@ -335,20 +342,51 @@ impl OnChainEventListenerExecutor {
         let matches = self.darkpool_client().find_external_matches_in_tx(tx).await?;
         let external_match = !matches.is_empty();
 
-        // Record metrics for each match
-        // TODO: Record a fill on the internal order. We don't do this for now to keep
-        // things simple, but when internal volumes increase we should start
-        // recording order fills. One way to do this is to lookup the wallet by
-        // nullifier and record a fill on the order with matching mint
         for external_match_result in matches {
-            let match_result = external_match_result.to_match_result();
-            renegade_metrics::record_match_volume(
-                &match_result,
-                true, // is_external_match
-                &[wallet_id],
-            );
+            let ctx = PostSettlementCtx::new(wallet_id, external_match_result.clone());
+            // Record metrics for the match
+            self.record_metrics(&ctx);
+
+            // Update the wallet state
+            let order_id = self.find_internal_order(wallet_id, &external_match_result).await?;
+            self.record_order_fill(order_id, &ctx).await?;
+
+            // Emit the external fill event to the event manager
+            self.emit_event(order_id, &ctx)?;
         }
 
         Ok(external_match)
+    }
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Find the internal order in the given wallet that matches the external
+    /// match result
+    ///
+    /// This will return the first order that matches the external match result.
+    /// While it is possible for multiple orders to match the same external
+    /// match, this is not expected to happen in practice.
+    async fn find_internal_order(
+        &self,
+        wallet_id: WalletIdentifier,
+        ext_match: &ExternalMatchResult,
+    ) -> Result<OrderIdentifier, OnChainEventListenerError> {
+        let wallet = self
+            .state()
+            .get_wallet(&wallet_id)
+            .await?
+            .ok_or_else(|| OnChainEventListenerError::state("wallet not found"))?;
+        let desired_side = ext_match.internal_party_side();
+        for (id, order) in wallet.get_nonzero_orders().into_iter() {
+            if order.base_mint == ext_match.base_mint
+                && order.quote_mint == ext_match.quote_mint
+                && order.side == desired_side
+            {
+                return Ok(id);
+            }
+        }
+        Err(OnChainEventListenerError::state("matching order not found"))
     }
 }
