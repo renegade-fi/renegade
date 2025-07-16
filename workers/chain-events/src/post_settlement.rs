@@ -74,6 +74,14 @@ impl OnChainEventListenerExecutor {
             metadata.state = OrderState::Filled;
         }
 
+        // Roll up older fills when historical state recording is disabled to
+        // bound storage growth. We only do this for external matches handled
+        // by this executor.
+        let history_enabled = self.state().historical_state_enabled().await?;
+        if !history_enabled {
+            metadata.roll_up_fills();
+        }
+
         self.state().update_order_metadata(metadata).await?;
         Ok(())
     }
