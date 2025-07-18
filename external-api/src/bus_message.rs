@@ -14,7 +14,7 @@ use common::types::{
         OrderIdentifier, Wallet as StateWallet, WalletIdentifier, order_metadata::OrderMetadata,
     },
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -66,7 +66,7 @@ pub fn gen_atomic_match_response_topic() -> String {
 }
 
 /// A message type for generic system bus messages, broadcast to all modules
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SystemBusMessage {
     // -- Handshake -- //
@@ -196,7 +196,7 @@ pub enum SystemBusMessage {
 
 /// A wrapper around a SystemBusMessage containing the topic, used for
 /// serializing websocket messages to clients
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SystemBusMessageWithTopic {
     /// The topic of this message
     pub topic: String,
