@@ -328,7 +328,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: us
 
             // --- Amount Updates --- //
 
-            // Mask the transfer amount according to whether the the transfer applies to
+            // Mask the transfer amount according to whether the transfer applies to
             // this balance
             let external_transfer_term = cs.mul(transfer_applies.into(), external_transfer_term)?;
 
