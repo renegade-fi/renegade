@@ -9,6 +9,7 @@ use external_api::http::external_match::{
 use eyre::Result;
 use hyper::StatusCode;
 use reqwest::{Method, Response, header::HeaderMap};
+use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 
 use crate::ctx::IntegrationTestCtx;
 
@@ -37,7 +38,8 @@ impl IntegrationTestCtx {
         order: &ExternalOrder,
         pool: MatchingPoolName,
     ) -> Result<ExternalQuoteResponse> {
-        let resp = self.send_external_quote_req_in_pool(order, pool).await?;
+        let relayer_fee_rate = 0.0;
+        let resp = self.send_external_quote_req_in_pool(order, pool, relayer_fee_rate).await?;
         let status = resp.status();
         if status == StatusCode::OK {
             let resp_body: ExternalQuoteResponse = resp.json().await?;
@@ -48,10 +50,40 @@ impl IntegrationTestCtx {
         }
     }
 
+    /// Request an external quote with the given relayer fee rate
+    pub async fn request_external_quote_with_relayer_fee(
+        &self,
+        order: &ExternalOrder,
+        relayer_fee_rate: f64,
+    ) -> Result<ExternalQuoteResponse> {
+        let pool = GLOBAL_MATCHING_POOL.to_string();
+        let resp = self.send_external_quote_req_in_pool(order, pool, relayer_fee_rate).await?;
+        let status = resp.status();
+        if status == StatusCode::OK {
+            let resp_body: ExternalQuoteResponse = resp.json().await?;
+            Ok(resp_body)
+        } else {
+            let txt = resp.text().await?;
+            eyre::bail!(
+                "failed to request external quote with relayer fee rate: (status = {status}) {txt}"
+            );
+        }
+    }
+
     /// Request to assemble a quote into a match bundle
     pub async fn request_assemble_quote(
         &self,
         quote: &SignedExternalQuote,
+    ) -> Result<ExternalMatchResponse> {
+        self.request_assemble_quote_with_relayer_fee(quote, 0.0 /* relayer_fee_rate */).await
+    }
+
+    /// Request to assemble a quote into a match bundle with the given relayer
+    /// fee rate
+    pub async fn request_assemble_quote_with_relayer_fee(
+        &self,
+        quote: &SignedExternalQuote,
+        relayer_fee_rate: f64,
     ) -> Result<ExternalMatchResponse> {
         let path = ASSEMBLE_EXTERNAL_MATCH_ROUTE;
         let req = AssembleExternalMatchRequest {
@@ -60,7 +92,7 @@ impl IntegrationTestCtx {
             allow_shared: false,
             receiver_address: None,
             updated_order: None,
-            relayer_fee_rate: 0.0,
+            relayer_fee_rate,
             matching_pool: None,
         };
 
@@ -93,10 +125,11 @@ impl IntegrationTestCtx {
         &self,
         order: &ExternalOrder,
         pool: MatchingPoolName,
+        relayer_fee_rate: f64,
     ) -> Result<Response> {
         let req = ExternalQuoteRequest {
             external_order: order.clone(),
-            relayer_fee_rate: 0.0,
+            relayer_fee_rate,
             matching_pool: Some(pool.clone()),
         };
 

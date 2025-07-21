@@ -10,7 +10,7 @@
 
 use alloy::primitives::Address;
 use async_trait::async_trait;
-use circuit_types::{fees::FeeTake, r#match::ExternalMatchResult};
+use circuit_types::{fees::FeeTake, fixed_point::FixedPoint, r#match::ExternalMatchResult};
 use common::types::{hmac::HmacKey, price::TimestampedPrice};
 use constants::Scalar;
 use external_api::http::external_match::{
@@ -29,12 +29,19 @@ use crate::{
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
+/// The minimum allowed relayer fee rate
+const MIN_RELAYER_FEE_RATE: f64 = 0.0;
+/// The maximum allowed relayer fee rate
+const MAX_RELAYER_FEE_RATE: f64 = 0.01; // 1%
+
 // ------------------
 // | Error Messages |
 // ------------------
 
 /// The error message returned when atomic matches are disabled
 const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
+/// The error message returned when the relayer fee rate is invalid
+const ERR_INVALID_RELAYER_FEE_RATE: &str = "relayer fee rate must be between 0 and 1%";
 
 // -----------
 // | Helpers |
@@ -43,6 +50,15 @@ const ERR_ATOMIC_MATCHES_DISABLED: &str = "atomic matches are disabled";
 /// Parse a receiver address from an optional string
 fn parse_receiver_address(receiver: Option<String>) -> Result<Option<Address>, ApiServerError> {
     receiver.map(|r| r.parse::<Address>()).transpose().map_err(bad_request)
+}
+
+/// Validate the relayer fee rate
+fn validate_relayer_fee_rate(relayer_fee_rate: f64) -> Result<(), ApiServerError> {
+    let valid_fee = (MIN_RELAYER_FEE_RATE..=MAX_RELAYER_FEE_RATE).contains(&relayer_fee_rate);
+    if !valid_fee {
+        return Err(bad_request(ERR_INVALID_RELAYER_FEE_RATE));
+    }
+    Ok(())
 }
 
 // ------------------
@@ -66,13 +82,14 @@ impl RequestExternalQuoteHandler {
     }
 
     /// Sign an external quote
-    fn sign_external_quote(
+    fn build_signed_quote(
         &self,
         order: ExternalOrder,
+        relayer_fee: FixedPoint,
         match_res: &ExternalMatchResult,
     ) -> Result<SignedExternalQuote, ApiServerError> {
         // Estimate the fees for the match
-        let fees = self.estimate_fee_take(match_res);
+        let fees = self.estimate_fee_take(relayer_fee, match_res);
         let quote = ApiExternalQuote::new(order, match_res, fees);
         let quote_bytes = serde_json::to_vec(&quote).map_err(internal_error)?;
         let signature = self.admin_key.compute_mac(&quote_bytes);
@@ -82,13 +99,21 @@ impl RequestExternalQuoteHandler {
     }
 
     /// Estimate the fee take for a given match
-    fn estimate_fee_take(&self, match_res: &ExternalMatchResult) -> FeeTake {
+    fn estimate_fee_take(
+        &self,
+        relayer_fee_rate: FixedPoint,
+        match_res: &ExternalMatchResult,
+    ) -> FeeTake {
         let protocol_fee = get_external_match_fee(&match_res.base_mint);
         let (_, receive_amount) = match_res.external_party_receive();
         let receive_amount_scalar = Scalar::from(receive_amount);
         let protocol_fee = (protocol_fee * receive_amount_scalar).floor();
+        let relayer_fee = (relayer_fee_rate * receive_amount_scalar).floor();
 
-        FeeTake { relayer_fee: 0, protocol_fee: scalar_to_u128(&protocol_fee) }
+        FeeTake {
+            relayer_fee: scalar_to_u128(&relayer_fee),
+            protocol_fee: scalar_to_u128(&protocol_fee),
+        }
     }
 }
 
@@ -110,17 +135,22 @@ impl TypedHandler for RequestExternalQuoteHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
+        // Validate the relayer fee rate
+        validate_relayer_fee_rate(req.relayer_fee_rate)?;
+        let relayer_fee_rate = FixedPoint::from_f64_round_down(req.relayer_fee_rate);
+
+        // Request a quote
         let order = req.external_order;
         order.validate().map_err(bad_request)?;
         let mut match_res = self
             .processor
-            .request_external_quote(order.clone(), req.relayer_fee_rate, req.matching_pool)
+            .request_external_quote(order.clone(), relayer_fee_rate, req.matching_pool)
             .await?;
 
         if order.trades_native_asset() {
             match_res.base_mint = get_native_asset_address();
         }
-        let signed_quote = self.sign_external_quote(order, &match_res)?;
+        let signed_quote = self.build_signed_quote(order, relayer_fee_rate, &match_res)?;
         Ok(ExternalQuoteResponse { signed_quote })
     }
 }
@@ -158,6 +188,10 @@ impl TypedHandler for AssembleExternalMatchHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
+        // Validate the relayer fee rate
+        validate_relayer_fee_rate(req.relayer_fee_rate)?;
+        let relayer_fee_rate = FixedPoint::from_f64_round_down(req.relayer_fee_rate);
+
         // Validate the order update if one is present
         let old_order = req.signed_quote.quote.order.clone();
         let order = if let Some(updated_order) = req.updated_order {
@@ -178,7 +212,7 @@ impl TypedHandler for AssembleExternalMatchHandler {
                 req.allow_shared,
                 receiver,
                 price,
-                req.relayer_fee_rate,
+                relayer_fee_rate,
                 req.matching_pool,
                 order,
             )
@@ -212,6 +246,10 @@ impl TypedHandler for AssembleMalleableExternalMatchHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
+        // Validate the relayer fee rate
+        validate_relayer_fee_rate(req.relayer_fee_rate)?;
+        let relayer_fee_rate = FixedPoint::from_f64_round_down(req.relayer_fee_rate);
+
         // Validate the order update if one is present
         let old_order = req.signed_quote.quote.order.clone();
         let order = if let Some(updated_order) = req.updated_order {
@@ -232,7 +270,7 @@ impl TypedHandler for AssembleMalleableExternalMatchHandler {
                 req.allow_shared,
                 receiver,
                 price,
-                req.relayer_fee_rate,
+                relayer_fee_rate,
                 req.matching_pool,
                 order,
             )
@@ -275,6 +313,10 @@ impl TypedHandler for RequestExternalMatchHandler {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
 
+        // Validate the relayer fee rate
+        validate_relayer_fee_rate(req.relayer_fee_rate)?;
+        let relayer_fee_rate = FixedPoint::from_f64_round_down(req.relayer_fee_rate);
+
         // Validate the order then request a match bundle
         let order = req.external_order;
         order.validate().map_err(bad_request)?;
@@ -285,7 +327,7 @@ impl TypedHandler for RequestExternalMatchHandler {
             .request_match_bundle(
                 req.do_gas_estimation,
                 receiver,
-                req.relayer_fee_rate,
+                relayer_fee_rate,
                 req.matching_pool,
                 order,
             )
