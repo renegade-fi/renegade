@@ -59,10 +59,8 @@ pub const MERKLE_HEIGHT: usize = 32;
 /// The number of historical roots the contract stores as being valid
 pub const MERKLE_ROOT_HISTORY_LENGTH: usize = 30;
 
-/// The external match fee charged by the relayer
-///
-/// TODO: This is currently zero, remove this and add per-asset fees
-pub const EXTERNAL_MATCH_RELAYER_FEE: f64 = 0.;
+/// The default fee take rate for the relayer in the match
+pub const DEFAULT_EXTERNAL_MATCH_RELAYER_FEE: f64 = 0.0;
 
 // ------------------------------------
 // | System Specific Type Definitions |

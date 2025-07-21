@@ -249,6 +249,7 @@ impl HandshakeExecutor {
             internal_order_id,
             wallet_id,
             ts_price,
+            options.relayer_fee_rate,
             match_res,
             response_topic,
         );
@@ -306,6 +307,7 @@ impl HandshakeExecutor {
             options.bundle_duration,
             order_id,
             wallet_id,
+            options.relayer_fee_rate,
             bounded_res,
             response_topic,
         );

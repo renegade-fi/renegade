@@ -17,7 +17,7 @@ use common::types::{
     token::Token,
     wallet::Order,
 };
-use constants::{EXTERNAL_MATCH_RELAYER_FEE, NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
+use constants::{NATIVE_ASSET_ADDRESS, NATIVE_ASSET_WRAPPER_TICKER};
 use darkpool_client::DarkpoolClient;
 use external_api::{
     bus_message::SystemBusMessage,
@@ -338,8 +338,7 @@ impl ExternalMatchProcessor {
         let (base, quote) = self.setup_order_tokens(&mut o)?;
         let price = self.get_external_match_price(base, quote).await?;
 
-        // TODO: Currently we set the relayer fee to zero, remove this
-        let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
+        let relayer_fee = options.relayer_fee_rate;
         let order = o.to_internal_order(price, relayer_fee);
 
         // Enforce an exact quote amount if specified
