@@ -27,7 +27,6 @@ use common::types::proof_bundles::{
 };
 use common::types::tasks::SettleMalleableExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
-use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::bus_message::SystemBusMessage;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
@@ -191,6 +190,10 @@ impl From<DarkpoolClientError> for SettleMalleableExternalMatchTaskError {
 pub struct SettleMalleableExternalMatchTask {
     /// The ID of the wallet that the local node matched an order from
     internal_wallet_id: WalletIdentifier,
+    /// The fee take rate for the relayer in the match
+    ///
+    /// This only applies to the external party at the time of writing
+    relayer_fee_rate: FixedPoint,
     /// The match result from the external matching engine
     match_res: BoundedMatchResult,
     /// The duration for which the external match bundle is valid
@@ -230,6 +233,7 @@ impl Task for SettleMalleableExternalMatchTask {
             bundle_duration,
             internal_order_id,
             internal_wallet_id,
+            relayer_fee_rate,
             match_res,
             atomic_match_bundle_topic,
         } = descriptor;
@@ -238,6 +242,7 @@ impl Task for SettleMalleableExternalMatchTask {
 
         Ok(Self {
             internal_wallet_id,
+            relayer_fee_rate,
             match_res,
             bundle_duration,
             internal_order_validity_bundle,
@@ -391,8 +396,7 @@ impl SettleMalleableExternalMatchTask {
         let internal_party_public_shares = commitments_witness.augmented_public_shares.clone();
         let internal_party_relayer_fee = commitments_witness.relayer_fee;
 
-        let external_party_relayer_fee =
-            FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
+        let external_party_relayer_fee = self.relayer_fee_rate;
         let protocol_fee = get_external_match_fee(&match_res.base_mint);
         let internal_fee_rates = FeeTakeRate::new(internal_party_relayer_fee, protocol_fee);
         let external_fee_rates = FeeTakeRate::new(external_party_relayer_fee, protocol_fee);

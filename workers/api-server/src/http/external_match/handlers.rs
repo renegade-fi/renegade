@@ -112,8 +112,10 @@ impl TypedHandler for RequestExternalQuoteHandler {
 
         let order = req.external_order;
         order.validate().map_err(bad_request)?;
-        let mut match_res =
-            self.processor.request_external_quote(order.clone(), req.matching_pool).await?;
+        let mut match_res = self
+            .processor
+            .request_external_quote(order.clone(), req.relayer_fee_rate, req.matching_pool)
+            .await?;
 
         if order.trades_native_asset() {
             match_res.base_mint = get_native_asset_address();
@@ -176,6 +178,7 @@ impl TypedHandler for AssembleExternalMatchHandler {
                 req.allow_shared,
                 receiver,
                 price,
+                req.relayer_fee_rate,
                 req.matching_pool,
                 order,
             )
@@ -229,6 +232,7 @@ impl TypedHandler for AssembleMalleableExternalMatchHandler {
                 req.allow_shared,
                 receiver,
                 price,
+                req.relayer_fee_rate,
                 req.matching_pool,
                 order,
             )
@@ -278,7 +282,13 @@ impl TypedHandler for RequestExternalMatchHandler {
         let receiver = parse_receiver_address(req.receiver_address)?;
         let match_bundle = self
             .processor
-            .request_match_bundle(req.do_gas_estimation, receiver, req.matching_pool, order)
+            .request_match_bundle(
+                req.do_gas_estimation,
+                receiver,
+                req.relayer_fee_rate,
+                req.matching_pool,
+                order,
+            )
             .await?;
         Ok(ExternalMatchResponse { match_bundle })
     }

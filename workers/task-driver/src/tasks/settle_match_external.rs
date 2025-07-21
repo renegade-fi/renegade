@@ -22,7 +22,6 @@ use common::types::proof_bundles::{
 };
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
-use constants::EXTERNAL_MATCH_RELAYER_FEE;
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::bus_message::SystemBusMessage;
 use job_types::proof_manager::{ProofJob, ProofManagerQueue};
@@ -185,6 +184,10 @@ pub struct SettleMatchExternalTask {
     internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
     execution_price: TimestampedPriceFp,
+    /// The fee take rate for the relayer in the match
+    ///
+    /// This only applies to the external party at the time of writing
+    relayer_fee_rate: FixedPoint,
     /// The match result from the external matching engine
     match_res: MatchResult,
     /// The duration for which the external match bundle is valid
@@ -225,6 +228,7 @@ impl Task for SettleMatchExternalTask {
             internal_order_id,
             internal_wallet_id,
             execution_price,
+            relayer_fee_rate,
             match_res,
             atomic_match_bundle_topic,
         } = descriptor;
@@ -234,6 +238,7 @@ impl Task for SettleMatchExternalTask {
         Ok(Self {
             internal_wallet_id,
             execution_price,
+            relayer_fee_rate,
             match_res,
             bundle_duration,
             internal_order_validity_bundle,
@@ -406,8 +411,7 @@ impl SettleMatchExternalTask {
 
         // Compute the fees due by the external party in the match
         let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
-        let external_party_relayer_fee =
-            FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
+        let external_party_relayer_fee = self.relayer_fee_rate;
         let external_party_fees = compute_fee_obligation_with_protocol_fee(
             external_party_relayer_fee,
             protocol_fee,

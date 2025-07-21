@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use ark_mpc::network::QuicTwoPartyNet;
-use circuit_types::{Amount, wallet::Nullifier};
+use circuit_types::{Amount, fixed_point::FixedPoint, wallet::Nullifier};
 use common::types::{
     MatchingPoolName,
     gossip::WrappedPeerId,
@@ -177,6 +177,10 @@ pub struct ExternalMatchingEngineOptions {
     /// The duration for which a match bundle is valid; i.e. for which the task
     /// driver should lock the matched wallet's queue
     pub bundle_duration: Duration,
+    /// The fee take rate for the relayer in the match
+    ///
+    /// This only applies to the external party
+    pub relayer_fee_rate: FixedPoint,
     /// The price to use for the external match. If `None`, the price will
     /// be sampled by the engine
     ///
@@ -227,6 +231,12 @@ impl ExternalMatchingEngineOptions {
     /// Set the bundle duration
     pub fn with_bundle_duration(mut self, duration: Duration) -> Self {
         self.bundle_duration = duration;
+        self
+    }
+
+    /// Set the relayer fee rate
+    pub fn with_relayer_fee_rate(mut self, rate: FixedPoint) -> Self {
+        self.relayer_fee_rate = rate;
         self
     }
 

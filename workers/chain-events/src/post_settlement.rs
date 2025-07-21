@@ -11,7 +11,7 @@ use common::types::{
     price::TimestampedPrice,
     wallet::{OrderIdentifier, WalletIdentifier, order_metadata::OrderState},
 };
-use constants::EXTERNAL_MATCH_RELAYER_FEE;
+use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use job_types::event_manager::{ExternalFillEvent, RelayerEventType, try_send_event};
 use renegade_metrics;
 use util::{
@@ -119,7 +119,7 @@ fn execution_price(external_match_result: &ExternalMatchResult) -> TimestampedPr
 
 /// Compute internal party fee take
 fn internal_fee_take(external_match_result: &ExternalMatchResult) -> FeeTake {
-    let relayer_fee = FixedPoint::from_f64_round_down(EXTERNAL_MATCH_RELAYER_FEE);
+    let relayer_fee = FixedPoint::from_f64_round_down(DEFAULT_EXTERNAL_MATCH_RELAYER_FEE);
     let protocol_fee = get_external_match_fee(&external_match_result.base_mint);
     let side = external_match_result.internal_party_side();
     compute_fee_obligation_with_protocol_fee(

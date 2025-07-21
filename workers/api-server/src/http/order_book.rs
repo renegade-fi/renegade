@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use common::types::{token::Token, wallet::pair_from_mints};
-use constants::EXTERNAL_MATCH_RELAYER_FEE;
+use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     EmptyRequestResponse,
     http::order_book::{
@@ -127,7 +127,7 @@ impl TypedHandler for GetExternalMatchFeesHandler {
         query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let asset = parse_mint_from_params(&query_params)?;
-        let relayer_fee = EXTERNAL_MATCH_RELAYER_FEE;
+        let relayer_fee = DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
         let protocol_fee = get_external_match_fee(&asset).to_f64();
         Ok(GetExternalMatchFeeResponse {
             protocol_fee: protocol_fee.to_string(),

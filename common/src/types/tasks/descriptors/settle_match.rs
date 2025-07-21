@@ -2,7 +2,10 @@
 
 use std::time::Duration;
 
-use circuit_types::r#match::{BoundedMatchResult, MatchResult};
+use circuit_types::{
+    fixed_point::FixedPoint,
+    r#match::{BoundedMatchResult, MatchResult},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
@@ -81,7 +84,6 @@ impl From<SettleMatchInternalTaskDescriptor> for TaskDescriptor {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleExternalMatchTaskDescriptor {
     /// The duration for which the external match bundle is valid
-    #[serde(default)]
     pub bundle_duration: Duration,
     /// The ID of the order that the local node matched
     pub internal_order_id: OrderIdentifier,
@@ -89,6 +91,9 @@ pub struct SettleExternalMatchTaskDescriptor {
     pub internal_wallet_id: WalletIdentifier,
     /// The price at which the match was executed
     pub execution_price: TimestampedPriceFp,
+    /// The fee take rate for the relayer in the match
+    #[serde(default)]
+    pub relayer_fee_rate: FixedPoint,
     /// The match result from the external matching engine
     pub match_res: MatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
@@ -102,6 +107,7 @@ impl SettleExternalMatchTaskDescriptor {
         internal_order_id: OrderIdentifier,
         internal_wallet_id: WalletIdentifier,
         execution_price: TimestampedPriceFp,
+        relayer_fee_rate: FixedPoint,
         match_res: MatchResult,
         atomic_match_bundle_topic: String,
     ) -> Self {
@@ -111,6 +117,7 @@ impl SettleExternalMatchTaskDescriptor {
             internal_wallet_id,
             atomic_match_bundle_topic,
             execution_price,
+            relayer_fee_rate,
             match_res,
         }
     }
@@ -132,6 +139,9 @@ pub struct SettleMalleableExternalMatchTaskDescriptor {
     pub internal_order_id: OrderIdentifier,
     /// The ID of the wallet that the local node matched an order from
     pub internal_wallet_id: WalletIdentifier,
+    /// The fee take rate for the relayer in the match
+    #[serde(default)]
+    pub relayer_fee_rate: FixedPoint,
     /// The match result from the external matching engine
     pub match_res: BoundedMatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
@@ -144,6 +154,7 @@ impl SettleMalleableExternalMatchTaskDescriptor {
         bundle_duration: Duration,
         internal_order_id: OrderIdentifier,
         internal_wallet_id: WalletIdentifier,
+        relayer_fee_rate: FixedPoint,
         match_res: BoundedMatchResult,
         atomic_match_bundle_topic: String,
     ) -> Self {
@@ -152,6 +163,7 @@ impl SettleMalleableExternalMatchTaskDescriptor {
             internal_order_id,
             internal_wallet_id,
             atomic_match_bundle_topic,
+            relayer_fee_rate,
             match_res,
         }
     }

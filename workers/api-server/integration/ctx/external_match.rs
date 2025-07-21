@@ -60,6 +60,7 @@ impl IntegrationTestCtx {
             allow_shared: false,
             receiver_address: None,
             updated_order: None,
+            relayer_fee_rate: 0.0,
             matching_pool: None,
         };
 
@@ -76,7 +77,11 @@ impl IntegrationTestCtx {
 
     /// Send an external match request
     pub async fn send_external_quote_req(&self, order: &ExternalOrder) -> Result<Response> {
-        let req = ExternalQuoteRequest { external_order: order.clone(), matching_pool: None };
+        let req = ExternalQuoteRequest {
+            external_order: order.clone(),
+            relayer_fee_rate: 0.0,
+            matching_pool: None,
+        };
 
         // Add admin auth then send the request
         let path = REQUEST_EXTERNAL_QUOTE_ROUTE;
@@ -91,6 +96,7 @@ impl IntegrationTestCtx {
     ) -> Result<Response> {
         let req = ExternalQuoteRequest {
             external_order: order.clone(),
+            relayer_fee_rate: 0.0,
             matching_pool: Some(pool.clone()),
         };
 
