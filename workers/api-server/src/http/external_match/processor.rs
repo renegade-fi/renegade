@@ -152,9 +152,13 @@ impl ExternalMatchProcessor {
     pub(crate) async fn request_external_quote(
         &self,
         external_order: ExternalOrder,
+        relayer_fee_rate: f64,
         matching_pool: Option<MatchingPoolName>,
     ) -> Result<ExternalMatchResult, ApiServerError> {
-        let opt = ExternalMatchingEngineOptions::only_quote().with_matching_pool(matching_pool);
+        let relayer_fee = FixedPoint::from_f64_round_down(relayer_fee_rate);
+        let opt = ExternalMatchingEngineOptions::only_quote()
+            .with_matching_pool(matching_pool)
+            .with_relayer_fee_rate(relayer_fee);
         let resp = self.request_handshake_manager(external_order, opt).await?;
 
         match resp {
@@ -165,20 +169,24 @@ impl ExternalMatchProcessor {
     }
 
     /// Assemble an external match quote into a settlement bundle
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn assemble_external_match(
         &self,
         gas_estimation: bool,
         allow_shared: bool,
         receiver: Option<Address>,
         price: TimestampedPrice,
+        relayer_fee_rate: f64,
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        let relayer_fee = FixedPoint::from_f64_round_down(relayer_fee_rate);
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_allow_shared(allow_shared)
             .with_price(price)
-            .with_matching_pool(matching_pool);
+            .with_matching_pool(matching_pool)
+            .with_relayer_fee_rate(relayer_fee);
         let resp = self.request_handshake_manager(order.clone(), opt).await?;
 
         match resp {
@@ -198,21 +206,25 @@ impl ExternalMatchProcessor {
     }
 
     /// Assemble a malleable external match quote into a settlement bundle
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn assemble_malleable_external_match(
         &self,
         gas_estimation: bool,
         allow_shared: bool,
         receiver: Option<Address>,
         price: TimestampedPrice,
+        relayer_fee_rate: f64,
         matching_pool: Option<MatchingPoolName>,
         order: ExternalOrder,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
+        let relayer_fee = FixedPoint::from_f64_round_down(relayer_fee_rate);
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
             .with_allow_shared(allow_shared)
             .with_bounded_match(true)
             .with_price(price)
-            .with_matching_pool(matching_pool);
+            .with_matching_pool(matching_pool)
+            .with_relayer_fee_rate(relayer_fee);
         let resp = self.request_handshake_manager(order.clone(), opt).await?;
 
         match resp {
@@ -236,13 +248,16 @@ impl ExternalMatchProcessor {
         &self,
         gas_estimation: bool,
         receiver: Option<Address>,
+        relayer_fee_rate: f64,
         matching_pool: Option<MatchingPoolName>,
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
+        let relayer_fee = FixedPoint::from_f64_round_down(relayer_fee_rate);
         let opt = ExternalMatchingEngineOptions::new()
             .with_allow_shared(true)
             .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
-            .with_matching_pool(matching_pool);
+            .with_matching_pool(matching_pool)
+            .with_relayer_fee_rate(relayer_fee);
         let resp = self.request_handshake_manager(external_order.clone(), opt).await?;
 
         match resp {

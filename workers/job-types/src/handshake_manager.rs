@@ -234,6 +234,12 @@ impl ExternalMatchingEngineOptions {
         self
     }
 
+    /// Set the relayer fee rate
+    pub fn with_relayer_fee_rate(mut self, rate: FixedPoint) -> Self {
+        self.relayer_fee_rate = rate;
+        self
+    }
+
     /// Set the price
     pub fn with_price(mut self, price: TimestampedPrice) -> Self {
         self.price = Some(price);

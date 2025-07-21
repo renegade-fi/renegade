@@ -98,6 +98,9 @@ pub struct ExternalMatchRequest {
     pub do_gas_estimation: bool,
     /// The matching pool to request a quote from
     pub matching_pool: Option<MatchingPoolName>,
+    /// The fee take rate for the relayer in the match
+    #[serde(default)]
+    pub relayer_fee_rate: f64,
     /// The receiver address of the match, if not the message sender
     pub receiver_address: Option<String>,
     /// The external order
@@ -123,6 +126,9 @@ pub struct MalleableExternalMatchResponse {
 pub struct ExternalQuoteRequest {
     /// The matching pool to request a quote from
     pub matching_pool: Option<MatchingPoolName>,
+    /// The fee take rate for the relayer in the match
+    #[serde(default)]
+    pub relayer_fee_rate: f64,
     /// The external order
     pub external_order: ExternalOrder,
 }
@@ -149,6 +155,9 @@ pub struct AssembleExternalMatchRequest {
     pub allow_shared: bool,
     /// The matching pool to request a quote from
     pub matching_pool: Option<MatchingPoolName>,
+    /// The fee take rate for the relayer in the match
+    #[serde(default)]
+    pub relayer_fee_rate: f64,
     /// The receiver address of the match, if not the message sender
     #[serde(default)]
     pub receiver_address: Option<String>,
