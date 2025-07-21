@@ -68,7 +68,8 @@ async fn test_external_match__matching_pool(mut ctx: IntegrationTestCtx) -> Resu
 
     // 2. Attempt to match against the global pool, no quote should be found
     let pool = GLOBAL_MATCHING_POOL.to_string();
-    let resp = ctx.send_external_quote_req_in_pool(&external_order, pool).await?;
+    let relayer_fee_rate = 0.0;
+    let resp = ctx.send_external_quote_req_in_pool(&external_order, pool, relayer_fee_rate).await?;
     assert_eq_result!(resp.status(), StatusCode::NO_CONTENT)?;
 
     // 3. Attempt to match against the testing pool, a quote should be found
