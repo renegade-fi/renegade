@@ -159,14 +159,21 @@ impl Token {
 
     /// Given an ERC-20 ticker, returns a new Token.
     pub fn from_ticker(ticker: &str) -> Self {
+        match Self::maybe_from_ticker(ticker) {
+            Some(token) => token,
+            None => panic!(
+                "Ticker {ticker} is not supported; specify unnamed token by ERC-20 address using from_addr instead."
+            ),
+        }
+    }
+
+    /// Given an ERC-20 ticker, returns a new Token if the ticker is supported,
+    /// otherwise returns None
+    pub fn maybe_from_ticker(ticker: &str) -> Option<Self> {
         let chain = default_chain();
         let remaps = read_token_remaps();
-        let token_map = remaps.get(&chain).expect("Chain has not been setup");
-        let addr = token_map
-            .get_by_right(ticker)
-            .expect("Ticker is not supported; specify unnamed token by ERC-20 address using from_addr instead.");
-
-        Self::new(addr, chain)
+        let token_map = remaps.get(&chain)?;
+        token_map.get_by_right(ticker).map(|addr| Self::new(addr, chain))
     }
 
     /// Given an ERC-20 ticker, returns a new Token on a specific chain.
