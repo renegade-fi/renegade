@@ -24,7 +24,7 @@ use job_types::{
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
-use tracing::{error, info_span};
+use tracing::{error, info_span, instrument};
 use util::{err_str, raw_err_str};
 
 use crate::{
@@ -324,6 +324,7 @@ impl StateInner {
     /// This allows us to give an async client interface that will not
     /// excessively block async callers. MDBX operations may occasionally block
     /// for a long time, so we want to avoid blocking async worker threads
+    #[instrument(name = "with_read_tx", skip_all)]
     pub async fn with_read_tx<F, T>(&self, f: F) -> Result<T, StateError>
     where
         T: Send + 'static,

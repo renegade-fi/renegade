@@ -100,6 +100,7 @@ impl HandshakeExecutor {
     }
 
     /// Fetch the execution price for an order
+    #[instrument(name = "get_execution_price", skip_all)]
     pub(crate) async fn get_execution_price(
         &self,
         base: &Token,

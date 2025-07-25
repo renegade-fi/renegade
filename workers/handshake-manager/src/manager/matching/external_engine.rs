@@ -102,6 +102,7 @@ impl HandshakeExecutor {
     }
 
     /// Execute an external match
+    #[instrument(name = "run_external_matching_engine_inner", skip_all)]
     async fn run_external_matching_engine_inner(
         &self,
         order: Order,
@@ -359,6 +360,7 @@ impl HandshakeExecutor {
     ///
     /// The price returned is the price at which the match should execute in
     /// order to fulfill the quote amount constraints
+    #[instrument(name = "setup_exact_quote_amount", skip_all)]
     fn setup_exact_quote_amount(
         &self,
         original_price: TimestampedPriceFp,
@@ -417,6 +419,7 @@ impl HandshakeExecutor {
     /// We cannot know the external party's balance here so we mock it for the
     /// matching engine. We assume the external order is fully capitalized and
     /// so we mock a full balance
+    #[instrument(name = "mock_balance_for_external_order", skip_all)]
     fn mock_balance_for_external_order(&self, order: &Order, price: FixedPoint) -> Balance {
         let base_amount = Scalar::from(order.amount);
         let quote_amount_fp = price * base_amount + Scalar::one();

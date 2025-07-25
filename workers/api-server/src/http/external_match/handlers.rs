@@ -21,6 +21,7 @@ use external_api::http::external_match::{
 use hyper::HeaderMap;
 use renegade_crypto::fields::scalar_to_u128;
 use state::State;
+use tracing::instrument;
 use util::{hex::bytes_to_hex_string, on_chain::get_external_match_fee};
 
 use crate::{
@@ -53,6 +54,7 @@ fn parse_receiver_address(receiver: Option<String>) -> Result<Option<Address>, A
 }
 
 /// Validate the relayer fee rate
+#[instrument(name = "validate_relayer_fee_rate", skip_all)]
 fn validate_relayer_fee_rate(relayer_fee_rate: f64) -> Result<(), ApiServerError> {
     let valid_fee = (MIN_RELAYER_FEE_RATE..=MAX_RELAYER_FEE_RATE).contains(&relayer_fee_rate);
     if !valid_fee {

@@ -33,6 +33,7 @@ use job_types::{
 };
 use num_bigint::BigUint;
 use system_bus::SystemBus;
+use tracing::instrument;
 use util::{
     get_current_time_millis,
     hex::{biguint_from_hex_string, bytes_from_hex_string},
@@ -339,6 +340,7 @@ impl ExternalMatchProcessor {
     }
 
     /// Get an internal order from an external order given a price
+    #[instrument(name = "external_order_to_internal_order_with_options", skip_all)]
     async fn external_order_to_internal_order_with_options(
         &self,
         mut o: ExternalOrder,
@@ -570,6 +572,7 @@ impl ExternalMatchProcessor {
 
     /// Check the USDC denominated value of an external order and assert that it
     /// is greater than the configured minimum size
+    #[instrument(name = "check_external_order_size", skip_all)]
     async fn check_external_order_size(&self, o: &Order) -> Result<(), ApiServerError> {
         let usdc_value =
             get_usdc_denominated_value(&o.base_mint, o.amount, &self.price_queue).await?;
