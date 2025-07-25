@@ -5,6 +5,13 @@ edition = "2024"
 
 [features]
 default = ["hex", "errors"]
+bench = [
+    "default",
+    "matching-engine",
+    "renegade-crypto/default",
+    "circuit-types/default",
+    "constants/default",
+]
 blockchain = ["hex", "concurrency"]
 concurrency = []
 errors = []
@@ -70,7 +77,7 @@ metrics-tracing-context = "0.15"
 [[bench]]
 name = "matching_engine"
 harness = false
-required-features = ["matching-engine"]
+required-features = ["bench"]
 
 [dev-dependencies]
 lazy_static = { workspace = true }

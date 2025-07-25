@@ -7,6 +7,7 @@ use common::types::{
     token::Token,
     wallet::{Order, OrderIdentifier},
 };
+use tracing::instrument;
 use util::{err_str, matching_engine::match_orders_with_min_base_amount};
 
 use crate::manager::handshake::ERR_NO_PRICE_DATA;
@@ -32,6 +33,7 @@ impl HandshakeExecutor {
     }
 
     /// Try a match with a minimum quote amount specified
+    #[instrument(name = "find_match_with_min_quote_amount", skip_all)]
     pub async fn find_match_with_min_quote_amount<'a, I>(
         &self,
         order: &Order,
@@ -63,6 +65,7 @@ impl HandshakeExecutor {
     }
 
     /// Try to match two orders, return the `MatchResult` if a match is found
+    #[instrument(name = "try_match", skip_all)]
     fn try_match(
         &self,
         o1: &Order,

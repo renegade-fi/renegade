@@ -182,6 +182,7 @@ impl HandshakeExecutor {
     }
 
     /// Handle a match against an order
+    #[instrument(name = "handle_match", skip_all)]
     async fn handle_match(
         &self,
         order_id: OrderIdentifier,

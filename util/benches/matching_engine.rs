@@ -56,9 +56,9 @@ fn random_balance(mint: &num_bigint::BigUint) -> Balance {
     }
 }
 
-// ----------------
-// | Benchmarks  |
-// ----------------
+// --------------
+// | Benchmarks |
+// --------------
 
 /// Benchmark the order matching function
 fn bench_match_orders(c: &mut Criterion) {
