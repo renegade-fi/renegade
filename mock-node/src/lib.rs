@@ -104,6 +104,8 @@ pub struct MockNodeController {
     clock: SystemClock,
     /// The global state (if initialized)
     state: Option<State>,
+    /// HTTP client for API requests
+    http_client: Client,
 
     // --- Worker Queues --- //
     /// The network manager's queue
@@ -150,6 +152,7 @@ impl MockNodeController {
             proof_queue: (proof_gen_sender, default_option(proof_gen_recv)),
             event_queue: (event_sender, default_option(event_recv)),
             task_queue: (task_sender, default_option(task_recv)),
+            http_client: Client::new(),
         }
     }
 
@@ -217,7 +220,7 @@ impl MockNodeController {
         headers: HeaderMap,
         body: B,
     ) -> Result<Response> {
-        let client = Client::new();
+        let client = &self.http_client;
         let url = format!("http://localhost:{}{}", self.config.http_port, route);
 
         match method {
@@ -418,6 +421,7 @@ impl MockNodeController {
         let job_sender = self.gossip_queue.0.clone();
         let job_receiver = self.gossip_queue.1.take().unwrap();
         let network_sender = self.network_queue.0.clone();
+        let cancel_channel = mock_cancel();
 
         let conf = GossipServerConfig {
             local_peer_id,
@@ -429,7 +433,7 @@ impl MockNodeController {
             job_sender,
             job_receiver: default_option(job_receiver),
             network_sender,
-            cancel_channel: mock_cancel(),
+            cancel_channel,
         };
         let mut server = run_fut(GossipServer::new(conf)).expect("Failed to create gossip server");
         server.start().expect("Failed to start gossip server");
@@ -573,7 +577,6 @@ impl MockNodeController {
     pub fn with_proof_generation(mut self) -> Self {
         let job_queue = self.proof_queue.1.take().unwrap();
         let cancel_channel = mock_cancel();
-
         let conf = ProofManagerConfig { job_queue, cancel_channel };
 
         let mut manager = run_fut(ProofManager::new(conf)).expect("Failed to create proof manager");
