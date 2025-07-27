@@ -42,15 +42,15 @@ use util::{
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
-    manager::CONN_RETRY_DELAY_MS,
+    manager::price_state::SharedPriceStreamStates,
     worker::PriceReporterConfig,
 };
 
-use super::SharedPriceStreamStates;
+/// The number of milliseconds to wait in between retrying connections
+const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
 
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
-
 /// A type alias for the read end of the websocket connection
 type WsReadStream = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 

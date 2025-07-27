@@ -16,10 +16,14 @@ use url::Url;
 
 use crate::manager::external_executor::ExternalPriceReporterExecutor;
 
-use super::{errors::PriceReporterError, manager::PriceReporter};
+use super::errors::PriceReporterError;
 
 /// The number of threads backing the price reporter manager
 const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
+
+// ----------
+// | Config |
+// ----------
 
 /// The config passed from the coordinator to the PriceReporter
 #[derive(Clone, Debug)]
@@ -87,6 +91,20 @@ impl PriceReporterConfig {
 
         !disabled && configured
     }
+}
+
+// ------------------
+// | Price Reporter |
+// ------------------
+
+/// The PriceReporter worker is a wrapper around the
+/// PriceReporterExecutor, handling and dispatching jobs to the executor
+/// for spin-up and shut-down of individual PriceReporters.
+pub struct PriceReporter {
+    /// The config for the PriceReporter
+    pub(super) config: PriceReporterConfig,
+    /// The single thread that joins all individual PriceReporter threads
+    pub(super) manager_executor_handle: Option<JoinHandle<PriceReporterError>>,
 }
 
 #[async_trait]
