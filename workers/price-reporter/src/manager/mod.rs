@@ -24,7 +24,6 @@ use util::{
 use crate::{errors::PriceReporterError, worker::PriceReporterConfig};
 
 pub mod external_executor;
-pub mod native_executor;
 
 // -------------
 // | Constants |

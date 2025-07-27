@@ -16,10 +16,7 @@ use url::Url;
 
 use crate::manager::external_executor::ExternalPriceReporterExecutor;
 
-use super::{
-    errors::PriceReporterError,
-    manager::{PriceReporter, native_executor::PriceReporterExecutor},
-};
+use super::{errors::PriceReporterError, manager::PriceReporter};
 
 /// The number of threads backing the price reporter manager
 const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
@@ -128,22 +125,12 @@ impl Worker for PriceReporter {
             .build()
             .unwrap();
 
-        let manager_executor_handle = if self.config.price_reporter_url.is_some() {
-            let manager_executor =
-                ExternalPriceReporterExecutor::new(job_receiver, config, cancel_channel);
-
-            thread::Builder::new()
-                .name("price-reporter-manager-executor".to_string())
-                .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())
-                .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))
-        } else {
-            let manager_executor = PriceReporterExecutor::new(job_receiver, config, cancel_channel);
-
-            thread::Builder::new()
-                .name("price-reporter-manager-executor".to_string())
-                .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())
-                .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))
-        }?;
+        let manager_executor =
+            ExternalPriceReporterExecutor::new(job_receiver, config, cancel_channel);
+        let manager_executor_handle = thread::Builder::new()
+            .name("price-reporter-manager-executor".to_string())
+            .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())
+            .map_err(|err| PriceReporterError::ManagerSetup(err.to_string()))?;
 
         self.manager_executor_handle = Some(manager_executor_handle);
         Ok(())

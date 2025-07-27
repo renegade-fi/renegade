@@ -1,12 +1,6 @@
 //! The exchanges module defines individual ExchangeConnection logic, including
 //! all parsing logic for price messages from both centralized and decentralized
 //! exchanges.
-mod binance;
-mod coinbase;
-pub(crate) mod connection;
-mod kraken;
-mod okx;
-mod uni_v3;
 
 use std::{
     pin::Pin,
@@ -16,62 +10,10 @@ use std::{
 
 use atomic_float::AtomicF64;
 use common::types::{exchange::Exchange, price::Price, token::Token};
-pub use connection::ExchangeConnection;
 
 use futures_util::Stream;
 
-use self::{
-    binance::BinanceConnection, coinbase::CoinbaseConnection, kraken::KrakenConnection,
-    okx::OkxConnection, uni_v3::UniswapV3Connection,
-};
-
-use super::{errors::ExchangeConnectionError, worker::ExchangeConnectionsConfig};
-
-/// Construct a new websocket connection for the given exchange
-pub async fn connect_exchange(
-    base_token: &Token,
-    quote_token: &Token,
-    config: &ExchangeConnectionsConfig,
-    exchange: Exchange,
-) -> Result<Box<dyn ExchangeConnection>, ExchangeConnectionError> {
-    let base_token = base_token.clone();
-    let quote_token = quote_token.clone();
-
-    Ok(match exchange {
-        Exchange::Binance => {
-            Box::new(BinanceConnection::connect(base_token, quote_token, config).await?)
-        },
-        Exchange::Coinbase => {
-            Box::new(CoinbaseConnection::connect(base_token, quote_token, config).await?)
-        },
-        Exchange::Kraken => {
-            Box::new(KrakenConnection::connect(base_token, quote_token, config).await?)
-        },
-        Exchange::Okx => Box::new(OkxConnection::connect(base_token, quote_token, config).await?),
-        Exchange::UniswapV3 => {
-            Box::new(UniswapV3Connection::connect(base_token, quote_token, config).await?)
-        },
-        Exchange::Renegade => {
-            todo!("implement renegade connection")
-        },
-    })
-}
-
-/// Check if the given exchange supports the given pair
-pub async fn supports_pair(
-    exchange: &Exchange,
-    base_token: &Token,
-    quote_token: &Token,
-) -> Result<bool, ExchangeConnectionError> {
-    Ok(match exchange {
-        Exchange::Binance => BinanceConnection::supports_pair(base_token, quote_token).await?,
-        Exchange::Coinbase => CoinbaseConnection::supports_pair(base_token, quote_token).await?,
-        Exchange::Kraken => KrakenConnection::supports_pair(base_token, quote_token).await?,
-        Exchange::Okx => OkxConnection::supports_pair(base_token, quote_token).await?,
-        Exchange::UniswapV3 => UniswapV3Connection::supports_pair(base_token, quote_token).await?,
-        Exchange::Renegade => BinanceConnection::supports_pair(base_token, quote_token).await?,
-    })
-}
+use super::errors::ExchangeConnectionError;
 
 /// Get the exchange ticker for the base token in the given pair
 pub fn get_base_exchange_ticker(
