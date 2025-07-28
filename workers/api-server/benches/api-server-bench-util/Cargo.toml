@@ -1,0 +1,24 @@
+[package]
+name = "api-server-bench-util"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# === Renegade Dependencies === #
+circuit-types = { workspace = true }
+config = { workspace = true }
+common = { workspace = true }
+darkpool-client = { workspace = true }
+external-api = { workspace = true }
+mock-node = { workspace = true }
+state = { workspace = true }
+util = { workspace = true }
+
+# === Misc Dependencies === #
+alloy = { workspace = true }
+eyre = { workspace = true }
+num-bigint = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

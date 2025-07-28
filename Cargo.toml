@@ -21,6 +21,7 @@ members = [
 	"test-helpers",
 	"util",
 	"workers/api-server",
+	"workers/api-server/benches/api-server-bench-util",
 	"workers/chain-events",
 	"workers/event-manager",
 	"workers/gossip-server",

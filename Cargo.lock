@@ -822,6 +822,7 @@ name = "api-server"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "api-server-bench-util",
  "async-trait",
  "base64 0.21.7",
  "circuit-types",
@@ -871,6 +872,27 @@ dependencies = [
  "tungstenite 0.18.0",
  "util",
  "uuid",
+]
+
+[[package]]
+name = "api-server-bench-util"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "circuit-types",
+ "common",
+ "config",
+ "darkpool-client",
+ "external-api",
+ "eyre",
+ "mock-node",
+ "num-bigint",
+ "reqwest 0.12.20",
+ "serde",
+ "serde_json",
+ "state",
+ "tokio",
+ "util",
 ]
 
 [[package]]

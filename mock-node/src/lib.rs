@@ -49,7 +49,7 @@ use job_types::{
 use libp2p::Multiaddr;
 use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
-    mock::{MockPriceReporter, setup_mock_token_remap},
+    mock::MockPriceReporter,
     worker::{ExchangeConnectionsConfig, PriceReporter, PriceReporterConfig},
 };
 use proof_manager::{
@@ -502,8 +502,6 @@ impl MockNodeController {
         let reporter = MockPriceReporter::new(price, job_queue);
         reporter.run();
 
-        // Setup a mock token map
-        setup_mock_token_remap();
         self
     }
 
