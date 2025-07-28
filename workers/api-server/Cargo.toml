@@ -14,6 +14,11 @@ name = "quote_endpoint"
 harness = false
 required_features = ["test_helpers"]
 
+[[bench]]
+name = "book_depth"
+harness = false
+required_features = ["test_helpers"]
+
 [features]
 test_helpers = ["darkpool-client/arbitrum"]
 
@@ -74,6 +79,9 @@ uuid = "1.1.2"
 ecdsa = "0.16"
 rand = { workspace = true }
 util = { workspace = true }
+
+# === Bench Utils === #
+api-server-bench-util = { path = "benches/api-server-bench-util" }
 
 # === Integration Test Dependencies === #
 clap = { version = "4.0", features = ["derive"] }
