@@ -4,7 +4,7 @@ use std::{
 };
 
 use api_server_bench_util::{
-    base_mint, quote_mint, send_admin_req, setup_internal_order, setup_mock_node,
+    base_mint, quote_mint, send_admin_post_req, setup_internal_order, setup_mock_node,
 };
 use circuit_types::{Amount, order::OrderSide};
 use common::types::hmac::HmacKey;
@@ -13,7 +13,6 @@ use external_api::http::external_match::{
     ExternalOrder, ExternalQuoteRequest, ExternalQuoteResponse, REQUEST_EXTERNAL_QUOTE_ROUTE,
 };
 use eyre::Result;
-use hyper::Method;
 use mock_node::MockNodeController;
 use tokio::runtime::Runtime;
 
@@ -67,8 +66,7 @@ async fn request_quote(admin_key: &HmacKey, mock_node: &MockNodeController) -> R
         relayer_fee_rate: 0.,
     };
 
-    let resp: ExternalQuoteResponse =
-        send_admin_req(mock_node, path, Method::POST, body, admin_key).await?;
+    let resp: ExternalQuoteResponse = send_admin_post_req(mock_node, path, body, admin_key).await?;
     black_box(resp);
     Ok(())
 }

@@ -3,7 +3,9 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy::primitives::Address;
-use circuit_types::{balance::Balance, fixed_point::FixedPoint, max_amount, order::OrderSide};
+use circuit_types::{
+    Amount, balance::Balance, fixed_point::FixedPoint, max_amount, order::OrderSide,
+};
 use common::types::{
     chain::Chain,
     hmac::HmacKey,
@@ -25,6 +27,12 @@ use util::on_chain::PROTOCOL_FEE;
 
 /// The duration of the request auth token
 const REQUEST_AUTH_DURATION: Duration = Duration::from_secs(10);
+/// The amount to allocate into a balance
+const BALANCE_AMOUNT: Amount = 1_000_000_000_000_000_000; // 10^18
+/// The ticker for the base token
+const BASE_TICKER: &str = "WETH";
+/// The ticker for the quote token
+const QUOTE_TICKER: &str = "USDC";
 
 // ---------------------
 // | Orderbook Helpers |
@@ -32,20 +40,34 @@ const REQUEST_AUTH_DURATION: Duration = Duration::from_secs(10);
 
 /// Get the base mint for the benchmarks
 pub fn base_mint() -> BigUint {
-    Token::from_ticker("WETH").get_addr_biguint()
+    Token::from_ticker(BASE_TICKER).get_addr_biguint()
+}
+
+/// Get the base token for the benchmarks
+pub fn base_token() -> Token {
+    Token::from_ticker(BASE_TICKER)
 }
 
 /// Get the quote mint for the benchmarks
 pub fn quote_mint() -> BigUint {
-    Token::from_ticker("USDC").get_addr_biguint()
+    Token::from_ticker(QUOTE_TICKER).get_addr_biguint()
+}
+
+/// Setup a wallet with a balance and order on the default base token
+pub async fn setup_internal_order(side: OrderSide, mock_node: &MockNodeController) -> Result<()> {
+    setup_internal_order_on_token(base_token(), side, mock_node).await
 }
 
 /// Setup a wallet with a balance and an order on the given side of the book
-pub async fn setup_internal_order(side: OrderSide, mock_node: &MockNodeController) -> Result<()> {
+pub async fn setup_internal_order_on_token(
+    base: Token,
+    side: OrderSide,
+    mock_node: &MockNodeController,
+) -> Result<()> {
     // Setup an internal party wallet
     let oid = OrderIdentifier::new_v4();
-    let order = internal_party_order(side);
-    let bal = internal_party_balance(side);
+    let order = internal_party_order(&base, side);
+    let bal = internal_party_balance(&base, side);
     let mut wallet = mock_empty_wallet();
     wallet.add_balance(bal).unwrap();
     wallet.add_order(oid, order.clone()).unwrap();
@@ -60,10 +82,10 @@ pub async fn setup_internal_order(side: OrderSide, mock_node: &MockNodeControlle
 }
 
 /// The internal party's order
-fn internal_party_order(side: OrderSide) -> Order {
+fn internal_party_order(base: &Token, side: OrderSide) -> Order {
     Order {
         quote_mint: quote_mint(),
-        base_mint: base_mint(),
+        base_mint: base.get_addr_biguint(),
         side,
         amount: max_amount(),
         worst_case_price: FixedPoint::zero(),
@@ -73,13 +95,13 @@ fn internal_party_order(side: OrderSide) -> Order {
 }
 
 /// The internal party's balance
-fn internal_party_balance(side: OrderSide) -> Balance {
+fn internal_party_balance(base: &Token, side: OrderSide) -> Balance {
     let mint = match side {
         OrderSide::Buy => quote_mint(),
-        OrderSide::Sell => base_mint(),
+        OrderSide::Sell => base.get_addr_biguint(),
     };
 
-    Balance::new_from_mint_and_amount(mint, max_amount())
+    Balance::new_from_mint_and_amount(mint, BALANCE_AMOUNT)
 }
 
 /// Add a validity proof bundle to the state for the given order
@@ -101,11 +123,29 @@ async fn add_validity_proof_bundle(
 // | HTTP Helpers |
 // ----------------
 
-/// Send an admin API request and deserialize the response into the given type
-pub async fn send_admin_req<Req: Serialize, Res: DeserializeOwned>(
+/// Send an admin GET request and deserialize the response into the given type
+pub async fn send_admin_get_req<Res: DeserializeOwned>(
     mock_node: &MockNodeController,
     path: &str,
-    method: Method,
+    admin_key: &HmacKey,
+) -> Result<Res> {
+    let mut headers = HeaderMap::new();
+    add_expiring_auth_to_headers(
+        path,
+        &mut headers,
+        &[], // body
+        admin_key,
+        REQUEST_AUTH_DURATION,
+    );
+
+    let resp: Res = mock_node.send_api_req(path, Method::GET, headers, ()).await?;
+    Ok(resp)
+}
+
+/// Send an admin API request and deserialize the response into the given type
+pub async fn send_admin_post_req<Req: Serialize, Res: DeserializeOwned>(
+    mock_node: &MockNodeController,
+    path: &str,
     body: Req,
     admin_key: &HmacKey,
 ) -> Result<Res> {
@@ -113,7 +153,7 @@ pub async fn send_admin_req<Req: Serialize, Res: DeserializeOwned>(
     let body_bytes = serde_json::to_vec(&body)?;
     add_expiring_auth_to_headers(path, &mut headers, &body_bytes, admin_key, REQUEST_AUTH_DURATION);
 
-    let resp: Res = mock_node.send_api_req(path, method, headers, body).await?;
+    let resp: Res = mock_node.send_api_req(path, Method::POST, headers, body).await?;
     Ok(resp)
 }
 
