@@ -1,7 +1,10 @@
 //! Groups routes and handlers for order book API operations
 
 use async_trait::async_trait;
-use common::types::{token::Token, wallet::pair_from_mints};
+use common::types::{
+    token::{Token, get_all_base_tokens},
+    wallet::pair_from_mints,
+};
 use constants::DEFAULT_EXTERNAL_MATCH_RELAYER_FEE;
 use external_api::{
     EmptyRequestResponse,
@@ -20,7 +23,6 @@ use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{ApiServerError, internal_error, not_found},
-    http::price_report::{FILTERED_TOKENS_PRICES, get_all_tokens_filtered},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -256,7 +258,7 @@ impl TypedHandler for GetDepthForAllPairsHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Get all tokens for which we support price data
         // Practically, this is all non-stablecoin tokens
-        let supported_tokens = get_all_tokens_filtered(&FILTERED_TOKENS_PRICES);
+        let supported_tokens = get_all_base_tokens();
         let quote_token = Token::usdc();
 
         let mut pairs = Vec::new();

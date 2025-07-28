@@ -42,7 +42,7 @@ use util::{
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
-    manager::price_state::SharedPriceStreamStates,
+    manager::{price_state::SharedPriceStreamStates, utils::get_all_stream_tuples},
     worker::PriceReporterConfig,
 };
 
@@ -88,7 +88,7 @@ impl ExternalPriceReporterExecutor {
         cancel_channel: CancelChannel,
     ) -> Self {
         Self {
-            price_stream_states: SharedPriceStreamStates::default(),
+            price_stream_states: SharedPriceStreamStates::new(&config),
             config,
             job_receiver: DefaultOption::new(Some(job_receiver)),
             cancel_channel: DefaultOption::new(Some(cancel_channel)),
@@ -108,6 +108,8 @@ impl ExternalPriceReporterExecutor {
         // Spawn WS handler loop, which forwards reads/writes over channels
         let (msg_out_tx, mut msg_in_rx) = self.spawn_ws_handler_loop();
 
+        // Begin streaming prices for all the pairs which are supported by the config
+        self.initialize_price_streams(&msg_out_tx)?;
         loop {
             tokio::select! {
                 // Process price update from external price reporter
@@ -124,9 +126,8 @@ impl ExternalPriceReporterExecutor {
 
                     tokio::spawn({
                         let self_clone = self.clone();
-                        let msg_out_tx = msg_out_tx.clone();
                         async move {
-                            if let Err(e) = self_clone.handle_job(job, msg_out_tx).await {
+                            if let Err(e) = self_clone.handle_job(job).await {
                                 error!("Error in ExternalPriceReporter execution loop: {e}");
                             }
                         }.instrument(info_span!("handle_job"))
@@ -140,6 +141,19 @@ impl ExternalPriceReporterExecutor {
                 }
             }
         }
+    }
+
+    /// Initialize price streams
+    fn initialize_price_streams(
+        &self,
+        msg_out_tx: &UnboundedSender<WebsocketMessage>,
+    ) -> Result<(), PriceReporterError> {
+        // Subscribe to all the streams
+        let all_stream_tuples = get_all_stream_tuples(&self.config);
+        for (exchange, base, quote) in all_stream_tuples {
+            subscribe_to_price_stream(exchange, &base, &quote, msg_out_tx)?;
+        }
+        Ok(())
     }
 
     /// Spawns the task responsible for handling the websocket connection
@@ -195,47 +209,16 @@ impl ExternalPriceReporterExecutor {
     }
 
     /// Handles a job for the PriceReporter worker.
-    #[instrument(name = "handle_price_reporter_job", skip(self, job, msg_out_tx))]
+    #[instrument(name = "handle_price_reporter_job", skip(self, job))]
     pub(super) async fn handle_job(
         &self,
         job: TracedMessage<PriceReporterJob>,
-        msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
         match job.consume() {
-            PriceReporterJob::StreamPrice { base_token, quote_token } => {
-                self.stream_price(base_token, quote_token, msg_out_tx).await
-            },
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.peek_price(base_token, quote_token, channel, msg_out_tx).await
+                self.peek_price(base_token, quote_token, channel).await
             },
         }
-    }
-
-    /// Handler for the StreamPrice job
-    async fn stream_price(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        msg_out_tx: UnboundedSender<WebsocketMessage>,
-    ) -> Result<(), PriceReporterError> {
-        let req_streams = self
-            .price_stream_states
-            .missing_streams_for_pair(base_token, quote_token, &self.config)
-            .await;
-
-        for (exchange, base, quote) in req_streams {
-            subscribe_to_price_stream(
-                &self.price_stream_states,
-                exchange,
-                base,
-                quote,
-                msg_out_tx.clone(),
-            )
-            .await
-            .map_err(PriceReporterError::ExchangeConnection)?;
-        }
-
-        Ok(())
     }
 
     /// Handler for the PeekPrice job
@@ -244,18 +227,7 @@ impl ExternalPriceReporterExecutor {
         base_token: Token,
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
-        msg_out_tx: UnboundedSender<WebsocketMessage>,
     ) -> Result<(), PriceReporterError> {
-        // Spawn a task to stream the price. If all of the required streams are already
-        // initialized, this will be a no-op.
-        tokio::spawn({
-            let self_clone = self.clone();
-            let base_token = base_token.clone();
-            let quote_token = quote_token.clone();
-            let msg_out_tx = msg_out_tx.clone();
-            async move { self_clone.stream_price(base_token, quote_token, msg_out_tx).await }
-        });
-
         let state = self.price_stream_states.get_state(base_token, quote_token, &self.config).await;
         channel.send(state).unwrap();
 
@@ -380,27 +352,16 @@ fn try_handle_price_message(
 }
 
 /// Subscribes to a price stream for the given exchange and token pair
-async fn subscribe_to_price_stream(
-    subscription_states: &SharedPriceStreamStates,
+fn subscribe_to_price_stream(
     exchange: Exchange,
-    base_token: Token,
-    quote_token: Token,
-    msg_out_tx: UnboundedSender<WebsocketMessage>,
+    base_token: &Token,
+    quote_token: &Token,
+    msg_out_tx: &UnboundedSender<WebsocketMessage>,
 ) -> Result<(), ExchangeConnectionError> {
-    if subscription_states
-        .state_is_initialized(exchange, base_token.clone(), quote_token.clone())
-        .await
-    {
-        return Ok(());
-    }
-
     // Send subscription messages to WS connection
-    let topic = format_topic(&exchange, &base_token, &quote_token);
+    let topic = format_topic(&exchange, base_token, quote_token);
     let message = WebsocketMessage::Subscribe { topic };
     msg_out_tx.send(message).map_err(err_str!(ExchangeConnectionError::SendError))?;
-
-    // Insert the new subscription state
-    subscription_states.initialize_state(exchange, base_token, quote_token).await;
 
     Ok(())
 }
@@ -445,14 +406,7 @@ async fn resubscribe_to_prior_streams(
 
     // Re-send subscription jobs for all the pairs
     for (exchange, base_token, quote_token) in streams {
-        subscribe_to_price_stream(
-            subscription_states,
-            exchange,
-            base_token,
-            quote_token,
-            msg_out_tx.clone(),
-        )
-        .await?;
+        subscribe_to_price_stream(exchange, &base_token, &quote_token, &msg_out_tx)?;
     }
 
     Ok(())

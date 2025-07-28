@@ -1,3 +1,5 @@
+//! Benchmark the book depth endpoint
+#![allow(missing_docs)]
 use std::{
     process,
     time::{Duration, Instant},

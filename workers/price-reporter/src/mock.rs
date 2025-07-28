@@ -11,7 +11,7 @@ use common::types::token::{
 use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::oneshot::Sender as OneshotSender;
-use tracing::{debug, error};
+use tracing::error;
 use util::channels::TracedMessage;
 use util::get_current_time_millis;
 
@@ -95,10 +95,6 @@ impl MockPriceReporter {
     /// Handle a job
     fn handle_job(&self, job: TracedMessage<PriceReporterJob>) -> Result<(), PriceReporterError> {
         match job.consume() {
-            PriceReporterJob::StreamPrice { .. } => {
-                debug!("mock price reporter got `StartPriceReporter` job");
-                Ok(())
-            },
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
                 self.handle_peek_price(base_token, quote_token, channel)
             },

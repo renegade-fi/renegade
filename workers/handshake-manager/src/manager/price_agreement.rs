@@ -9,9 +9,9 @@ use common::types::{
     wallet::OrderIdentifier,
 };
 use gossip_api::request_response::handshake::PriceVector;
-use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
+use job_types::price_reporter::PriceReporterJob;
 use tokio::sync::oneshot::{self, Receiver};
-use tracing::{error, instrument, warn};
+use tracing::{error, warn};
 use util::err_str;
 
 use super::{HandshakeExecutor, HandshakeManagerError};
@@ -22,32 +22,6 @@ const MAX_PRICE_DEVIATION: f64 = 0.01;
 /// Error message emitted when price data could not be found for a given token
 /// pair
 const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
-
-/// Initializes price streams for the default token pairs in the
-/// `price-reporter`
-///
-/// This will cause the price reporter to connect to exchanges and begin
-/// streaming, ahead of when we need prices
-#[allow(clippy::needless_pass_by_value)]
-#[instrument(skip_all, err)]
-pub fn init_price_streams(
-    price_reporter_job_queue: PriceReporterQueue,
-) -> Result<(), HandshakeManagerError> {
-    let quote = Token::usdc();
-
-    for base in get_all_tokens().iter() {
-        if base == &quote {
-            // Skip the USDC-USDC pair
-            continue;
-        }
-
-        price_reporter_job_queue
-            .stream_price(base.clone(), quote.clone())
-            .map_err(err_str!(HandshakeManagerError::PriceReporter))?;
-    }
-
-    Ok(())
-}
 
 impl HandshakeExecutor {
     /// Fetch a price vector from the price reporter

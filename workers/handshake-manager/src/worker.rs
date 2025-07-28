@@ -19,8 +19,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::info;
 
 use crate::manager::{
-    HANDSHAKE_EXECUTOR_N_THREADS, HandshakeExecutor, init_price_streams,
-    scheduler::HandshakeScheduler,
+    HANDSHAKE_EXECUTOR_N_THREADS, HandshakeExecutor, scheduler::HandshakeScheduler,
 };
 
 use super::{error::HandshakeManagerError, manager::HandshakeManager};
@@ -100,9 +99,6 @@ impl Worker for HandshakeManager {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         info!("Starting executor loop for handshake protocol executor...");
-
-        // Instruct the price reporter to being streaming prices for the default pairs
-        init_price_streams(self.config.price_reporter_job_queue.clone())?;
 
         // Spawn both the executor and the scheduler in a thread
         let executor = self.executor.take().unwrap();

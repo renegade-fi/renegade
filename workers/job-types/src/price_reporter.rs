@@ -59,40 +59,11 @@ impl PriceReporterQueue {
         self.send(job)?;
         recv.await.map_err(|e| format!("failed to receive price report: {e}"))
     }
-
-    /// Stream a price for the given token pair
-    pub fn stream_price(&self, base_token: Token, quote_token: Token) -> Result<(), String> {
-        let job = PriceReporterJob::StreamPrice { base_token, quote_token };
-        self.send(job)
-    }
 }
 
 /// All possible jobs that the PriceReporter accepts.
 #[derive(Debug)]
 pub enum PriceReporterJob {
-    /// Stream prices for the given token pair.
-    ///
-    /// If using the external executor, this will send a subscription request
-    /// for the pair across all exchanges.
-    ///
-    /// If using the native executor, this will create and start a new
-    /// PriceReporter for the pair.
-    ///
-    /// If the PriceReporter does not yet exist, spawn it and begin publication
-    /// to the global system bus. If the PriceReporter already exists and id
-    /// is None, this is a no-op.
-    ///
-    /// If the PriceReporter already exists and id is Some, register this ID as
-    /// a listener. This prevents tear-down of the PriceReporter, even if
-    /// subscribers on the system bus stop listening. Cleanup is done via
-    /// DropListenerID, and callees are responsible for dropping all
-    /// listener IDs.
-    StreamPrice {
-        /// The base Token
-        base_token: Token,
-        /// The quote Token
-        quote_token: Token,
-    },
     /// Peek at the price report
     PeekPrice {
         /// The base Token

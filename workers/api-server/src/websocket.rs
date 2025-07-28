@@ -136,10 +136,7 @@ impl WebsocketServer {
         router
             .insert(
                 PRICE_REPORT_ROUTE,
-                Box::new(PriceReporterHandler::new(
-                    config.price_reporter_work_queue.clone(),
-                    config.system_bus.clone(),
-                )),
+                Box::new(PriceReporterHandler::new(config.system_bus.clone())),
             )
             .unwrap();
 
