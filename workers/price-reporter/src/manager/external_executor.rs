@@ -31,7 +31,7 @@ use tokio::{
         oneshot::Sender as TokioSender,
     },
 };
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tracing::{Instrument, error, info, info_span, instrument, warn};
 use tungstenite::Message;
 use url::Url;
@@ -42,21 +42,20 @@ use util::{
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
-    exchange::connection::ws_connect,
-    manager::CONN_RETRY_DELAY_MS,
+    manager::price_state::SharedPriceStreamStates,
     worker::PriceReporterConfig,
 };
 
-use super::SharedPriceStreamStates;
+/// The number of milliseconds to wait in between retrying connections
+const CONN_RETRY_DELAY_MS: u64 = 2_000; // 2 seconds
 
 /// A type alias for the write end of the websocket connection
 type WsWriteStream = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
-
 /// A type alias for the read end of the websocket connection
 type WsReadStream = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 /// A message that is sent by the price reporter to the client indicating
-/// a price udpate for the given topic
+/// a price update for the given topic
 ///
 /// Ported over from https://github.com/renegade-fi/renegade-price-reporter/blob/main/src/utils.rs
 #[derive(Serialize, Deserialize)]
@@ -262,6 +261,32 @@ impl ExternalPriceReporterExecutor {
 
         Ok(())
     }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Build a websocket connection to the given endpoint
+async fn ws_connect(
+    url: Url,
+) -> Result<
+    (
+        SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+        SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    ),
+    ExchangeConnectionError,
+> {
+    let ws_conn = match connect_async(url.clone()).await {
+        Ok((conn, _resp)) => conn,
+        Err(e) => {
+            error!("Cannot connect to the remote URL: {}", url);
+            return Err(ExchangeConnectionError::HandshakeFailure(e.to_string()));
+        },
+    };
+
+    let (ws_sink, ws_stream) = ws_conn.split();
+    Ok((ws_sink, ws_stream))
 }
 
 /// The main loop for the websocket handler, responsible for forwarding

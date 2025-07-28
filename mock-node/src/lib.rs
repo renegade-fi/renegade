@@ -49,9 +49,8 @@ use job_types::{
 use libp2p::Multiaddr;
 use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
-    manager::PriceReporter,
     mock::{MockPriceReporter, setup_mock_token_remap},
-    worker::{ExchangeConnectionsConfig, PriceReporterConfig},
+    worker::{ExchangeConnectionsConfig, PriceReporter, PriceReporterConfig},
 };
 use proof_manager::{
     mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
