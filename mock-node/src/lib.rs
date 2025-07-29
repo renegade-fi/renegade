@@ -172,7 +172,7 @@ impl MockNodeController {
             exchange_conn_config: ExchangeConnectionsConfig {
                 coinbase_key_name: relayer_config.coinbase_key_name.clone(),
                 coinbase_key_secret: relayer_config.coinbase_key_secret.clone(),
-                eth_websocket_addr: relayer_config.eth_websocket_addr.clone(),
+                eth_websocket_addr: None, // Disables UniswapV3 exchange
             },
             price_reporter_url: relayer_config.price_reporter_url.clone(),
             disabled: false,
@@ -224,7 +224,9 @@ impl MockNodeController {
         if resp.status().is_success() {
             resp.json().await.map_err(|e| eyre::eyre!(e))
         } else {
-            Err(eyre::eyre!("Request failed with status: {}", resp.status()))
+            let status = resp.status();
+            let txt = resp.text().await.unwrap();
+            Err(eyre::eyre!("Request failed with status: {status}, body: {txt}"))
         }
     }
 

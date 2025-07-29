@@ -1,16 +1,21 @@
 //! A mock price reporter used for testing
 
 use common::types::chain::Chain;
+use common::types::exchange::Exchange;
 use common::types::price::Price;
 use common::types::token::{
-    USD_TICKER, USDC_TICKER, USDT_TICKER, set_default_chain, write_token_remaps,
+    Token, USD_TICKER, USDC_TICKER, USDT_TICKER, default_exchange_stable, set_default_chain,
+    write_token_remaps,
 };
+use itertools::Itertools;
 use price_state::PriceStreamStates;
 use util::get_current_time_millis;
 
 use crate::manager::utils::get_all_stream_tuples;
 use crate::worker::PriceReporterConfig;
 
+/// The conversion price to use for all quote conversion mocks
+const CONVERSION_PRICE: Price = 1.0;
 /// Ticker names to use in setting up the mock token remap
 const MOCK_TICKER_NAMES: &[&str] = &[
     USDC_TICKER,
@@ -75,7 +80,8 @@ impl MockPriceReporter {
     /// Get the price streams
     pub fn build_price_streams(config: &PriceReporterConfig) -> PriceStreamStates {
         let all_streams = get_all_stream_tuples(config);
-        let disabled_exchanges = vec![];
+        let disabled_exchanges =
+            Exchange::all().into_iter().filter(|e| !config.exchange_configured(*e)).collect_vec();
         PriceStreamStates::new(all_streams, disabled_exchanges)
     }
 
@@ -87,6 +93,22 @@ impl MockPriceReporter {
             let price = self.price;
             let ts = get_current_time_millis();
             self.price_streams.new_price(exchange, base, quote, price, ts).unwrap();
+        }
+
+        // Set conversion streams for all exchanges
+        let usd = Token::from_ticker(USD_TICKER);
+        let usdc = Token::usdc();
+        let ts = get_current_time_millis();
+        for exchange in Exchange::all().into_iter().filter(|e| self.config.exchange_configured(*e))
+        {
+            let default_stable = default_exchange_stable(&exchange);
+            if default_stable == usd || default_stable == usdc {
+                continue;
+            }
+
+            self.price_streams
+                .new_price(exchange, usdc.clone(), default_stable, CONVERSION_PRICE, ts)
+                .unwrap();
         }
     }
 }

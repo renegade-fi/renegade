@@ -77,6 +77,7 @@ pub struct PriceStreamStates(Arc<PriceStreamStatesInner>);
 #[derive(Clone, Debug)]
 pub struct PriceStreamStatesInner {
     /// The mapping between (exchange, base, quote) and the most recent
+    /// state of a price stream
     states: Arc<HashMap<StreamTuple, AtomicPriceStreamState>>,
     /// The set of disabled exchanges
     disabled_exchanges: HashSet<Exchange>,
