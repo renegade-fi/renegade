@@ -297,7 +297,7 @@ async fn main() -> Result<(), CoordinatorError> {
         min_fill_size: args.min_fill_size,
         state: global_state.clone(),
         network_channel: network_sender.clone(),
-        price_reporter_job_queue: price_reporter_worker_sender.clone(),
+        price_streams: price_streams.clone(),
         job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
         task_queue: task_sender.clone(),

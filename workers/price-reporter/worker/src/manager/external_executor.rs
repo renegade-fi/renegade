@@ -119,7 +119,7 @@ impl ExternalPriceReporterExecutor {
             tokio::select! {
                 // Process price update from external price reporter
                 Some(price_message) = msg_in_rx.recv() => {
-                    self.handle_price_update(price_message).await.map_err(PriceReporterError::ExchangeConnection)?;
+                    self.handle_price_update(price_message).map_err(PriceReporterError::ExchangeConnection)?;
                 }
 
                 // Dequeue the next job from elsewhere in the local node
@@ -185,7 +185,7 @@ impl ExternalPriceReporterExecutor {
     }
 
     /// Handles a price update from the external price reporter
-    async fn handle_price_update(
+    fn handle_price_update(
         &self,
         price_message: PriceMessage,
     ) -> Result<(), ExchangeConnectionError> {
@@ -209,7 +209,7 @@ impl ExternalPriceReporterExecutor {
         let topic = price_report_topic(&base_token, &quote_token);
         let bus = &self.config.system_bus;
         if bus.has_listeners(&topic) {
-            let report = self.price_stream_states.get_state(base_token, quote_token).await;
+            let report = self.price_stream_states.get_state(&base_token, &quote_token);
             if let Some(report) = report.into_nominal() {
                 bus.publish(topic, SystemBusMessage::PriceReport(report));
             }
@@ -226,19 +226,19 @@ impl ExternalPriceReporterExecutor {
     ) -> Result<(), PriceReporterError> {
         match job.consume() {
             PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.peek_price(base_token, quote_token, channel).await
+                self.peek_price(base_token, quote_token, channel)
             },
         }
     }
 
     /// Handler for the PeekPrice job
-    async fn peek_price(
+    fn peek_price(
         &self,
         base_token: Token,
         quote_token: Token,
         channel: TokioSender<PriceReporterState>,
     ) -> Result<(), PriceReporterError> {
-        let state = self.price_stream_states.get_state(base_token, quote_token).await;
+        let state = self.price_stream_states.get_state(&base_token, &quote_token);
         channel.send(state).unwrap();
 
         Ok(())

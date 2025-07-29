@@ -69,8 +69,8 @@ pub fn eligible_for_stable_quote_conversion(
 /// Computes the state of the price reporter for the given token pair,
 /// checking against the provided exchange prices.
 pub fn compute_price_reporter_state(
-    base_token: Token,
-    quote_token: Token,
+    base_token: &Token,
+    quote_token: &Token,
     price: f64,
     local_timestamp: u64,
     exchange_prices: &[(Exchange, (Price, u64))],
@@ -79,6 +79,8 @@ pub fn compute_price_reporter_state(
         return PriceReporterState::NotEnoughDataReported(0);
     }
 
+    let base_token = base_token.clone();
+    let quote_token = quote_token.clone();
     let price_report = PriceReport { base_token, quote_token, price, local_timestamp };
 
     // Check that the most recent timestamp is not too old

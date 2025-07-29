@@ -4224,6 +4224,7 @@ dependencies = [
  "mpc-plonk",
  "num-traits",
  "portpicker",
+ "price-state",
  "proof-manager",
  "rand 0.8.5",
  "renegade-crypto",

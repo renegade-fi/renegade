@@ -5,13 +5,11 @@ use std::collections::HashMap;
 use common::types::{
     exchange::PriceReporterState,
     price::TimestampedPrice,
-    token::{Token, get_all_tokens},
+    token::{Token, get_all_base_tokens},
     wallet::OrderIdentifier,
 };
 use gossip_api::request_response::handshake::PriceVector;
-use job_types::price_reporter::PriceReporterJob;
-use tokio::sync::oneshot::{self, Receiver};
-use tracing::{error, warn};
+use tracing::warn;
 use util::err_str;
 
 use super::{HandshakeExecutor, HandshakeManagerError};
@@ -26,51 +24,23 @@ const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 impl HandshakeExecutor {
     /// Fetch a price vector from the price reporter
     pub(super) async fn fetch_price_vector(&self) -> Result<PriceVector, HandshakeManagerError> {
-        // Enqueue jobs in the price manager to snapshot the midpoint for each pair.
-        // We do this in a separate scope to avoid holding the read lock on the token
-        // remap across an await point.
-        let channels = {
-            let token_maps = get_all_tokens();
-            let quote = Token::usdc();
-
-            let mut channels = Vec::with_capacity(token_maps.len());
-            for base in token_maps.iter() {
-                let receiver = self.request_price(base.clone(), quote.clone())?;
-                channels.push(receiver);
-            }
-            channels
-        };
-
-        // Wait for the price reporter to respond with the midpoint prices for each pair
+        // Get the price state for each base token
+        let quote = Token::usdc();
         let mut midpoint_prices = Vec::new();
-        for response_channel in channels.into_iter() {
-            let res = response_channel.await;
-            if res.is_err() {
-                error!("Error fetching price vector: {res:?}");
-                continue;
-            }
-            let midpoint_state = res.unwrap();
+        for base in get_all_base_tokens() {
+            let state = self.price_streams.get_state(&base, &quote);
 
-            match midpoint_state {
-                PriceReporterState::Nominal(report) => {
-                    let price: TimestampedPrice = (&report).into();
-                    let corrected_price = price
-                        .get_decimal_corrected_price(&report.base_token, &report.quote_token)
-                        .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
-                    midpoint_prices.push((report.base_token, report.quote_token, corrected_price));
-                },
-
+            match state {
                 // TODO: We may want to re-evaluate whether we want to accept price reports
-                // with large deviation. This largely happens because of Uniswap, and we could
-                // implement a more complex deviation calculation that ignores DEXs
-                PriceReporterState::TooMuchDeviation(report, _) => {
+                // with large deviation when MPC matches are live
+                PriceReporterState::Nominal(report)
+                | PriceReporterState::TooMuchDeviation(report, _) => {
                     let price: TimestampedPrice = (&report).into();
                     let corrected_price = price
                         .get_decimal_corrected_price(&report.base_token, &report.quote_token)
                         .map_err(err_str!(HandshakeManagerError::NoPriceData))?;
                     midpoint_prices.push((report.base_token, report.quote_token, corrected_price));
                 },
-
                 err_state => {
                     warn!("Price report invalid during price agreement: {err_state:?}");
                 },
@@ -78,20 +48,6 @@ impl HandshakeExecutor {
         }
 
         Ok(PriceVector(midpoint_prices))
-    }
-
-    /// Requests a price from the price reporter, returning a channel upon which
-    /// the price will be received
-    pub(super) fn request_price(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-    ) -> Result<Receiver<PriceReporterState>, HandshakeManagerError> {
-        let (sender, receiver) = oneshot::channel();
-        self.price_reporter_job_queue
-            .send(PriceReporterJob::PeekPrice { base_token, quote_token, channel: sender })
-            .map_err(err_str!(HandshakeManagerError::PriceReporter))?;
-        Ok(receiver)
     }
 
     /// Validate a price vector against an order we intend to match

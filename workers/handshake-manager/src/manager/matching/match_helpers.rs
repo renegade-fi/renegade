@@ -2,14 +2,12 @@
 
 use circuit_types::{Amount, balance::Balance, fixed_point::FixedPoint, r#match::MatchResult};
 use common::types::{
-    exchange::PriceReporterState,
     price::{TimestampedPrice, TimestampedPriceFp},
     token::Token,
     wallet::{Order, OrderIdentifier},
 };
 use util::{err_str, matching_engine::match_orders_with_min_base_amount};
 
-use crate::manager::handshake::ERR_NO_PRICE_DATA;
 use crate::{error::HandshakeManagerError, manager::HandshakeExecutor};
 
 /// A successful match between two orders
@@ -102,19 +100,11 @@ impl HandshakeExecutor {
         base: &Token,
         quote: &Token,
     ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
-        let base_addr = base.get_addr().to_string();
-        let quote_addr = quote.get_addr().to_string();
-        let price_recv = self.request_price(base.clone(), quote.clone())?;
-        let price: TimestampedPrice =
-            match price_recv.await.map_err(err_str!(HandshakeManagerError::PriceReporter))? {
-                PriceReporterState::Nominal(ref report) => report.into(),
-                err_state => {
-                    return Err(HandshakeManagerError::NoPriceData(format!(
-                        "{ERR_NO_PRICE_DATA}: {} / {} {err_state:?}",
-                        base_addr, quote_addr,
-                    )));
-                },
-            };
+        let state = self.price_streams.get_state(base, quote);
+        let state = &state.into_nominal().ok_or_else(|| {
+            HandshakeManagerError::price_reporter(format!("No price data for {base} / {quote}"))
+        })?;
+        let price: TimestampedPrice = state.into();
 
         // Correct the price for decimals
         let corrected_price = price
