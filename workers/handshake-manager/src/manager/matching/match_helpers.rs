@@ -91,11 +91,11 @@ impl HandshakeExecutor {
         order: &OrderIdentifier,
     ) -> Result<TimestampedPriceFp, HandshakeManagerError> {
         let (base, quote) = self.token_pair_for_order(order).await?;
-        self.get_execution_price(&base, &quote).await
+        self.get_execution_price(&base, &quote)
     }
 
     /// Fetch the execution price for an order
-    pub(crate) async fn get_execution_price(
+    pub(crate) fn get_execution_price(
         &self,
         base: &Token,
         quote: &Token,

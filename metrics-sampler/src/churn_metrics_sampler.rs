@@ -71,7 +71,7 @@ impl CancellationMetricsSampler {
     }
 
     /// Get the price for the pair that the given order trades
-    async fn get_price_for_order(&self, order: &OrderMetadata) -> Option<Price> {
+    fn get_price_for_order(&self, order: &OrderMetadata) -> Option<Price> {
         let base = Token::from_addr_biguint(&order.data.base_mint);
         self.price_streams.peek_price(&base).ok()
     }
@@ -91,7 +91,7 @@ impl CancellationMetricsSampler {
     }
 
     /// Record the cancellation metrics for the given orders
-    async fn record_cancellation_metrics(
+    fn record_cancellation_metrics(
         &self,
         cancelled_orders: &[OrderMetadata],
     ) -> Result<(), String> {
@@ -102,7 +102,7 @@ impl CancellationMetricsSampler {
             let (base_ticker, quote_ticker) =
                 Self::get_pair_tickers(&order.data.base_mint, &order.data.quote_mint);
 
-            self.record_cancelled_value(order, base_ticker.clone(), quote_ticker.clone()).await;
+            self.record_cancelled_value(order, base_ticker.clone(), quote_ticker.clone());
             Self::record_fill_percent(order, base_ticker.clone(), quote_ticker.clone());
         }
 
@@ -110,13 +110,13 @@ impl CancellationMetricsSampler {
     }
 
     /// Record the remaining value of a cancelled order, if a price is available
-    async fn record_cancelled_value(
+    fn record_cancelled_value(
         &self,
         order: &OrderMetadata,
         base_ticker: String,
         quote_ticker: String,
     ) {
-        let price = match self.get_price_for_order(order).await {
+        let price = match self.get_price_for_order(order) {
             Some(price) => price,
             None => return,
         };
@@ -164,7 +164,7 @@ impl AsyncMetricSampler for CancellationMetricsSampler {
         }
 
         let cancelled_orders = self.get_cancelled_orders().await?;
-        self.record_cancellation_metrics(&cancelled_orders).await?;
+        self.record_cancellation_metrics(&cancelled_orders)?;
 
         Ok(())
     }

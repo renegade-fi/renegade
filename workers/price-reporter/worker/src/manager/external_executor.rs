@@ -102,7 +102,7 @@ impl ExternalPriceReporterExecutor {
             tokio::select! {
                 // Process price update from external price reporter
                 Some(price_message) = msg_in_rx.recv() => {
-                    self.handle_price_update(price_message).map_err(PriceReporterError::ExchangeConnection)?;
+                    self.handle_price_update(&price_message).map_err(PriceReporterError::ExchangeConnection)?;
                 }
                 // Await cancellation by the coordinator
                 _ = cancel_channel.changed() => {
@@ -152,7 +152,7 @@ impl ExternalPriceReporterExecutor {
     /// Handles a price update from the external price reporter
     fn handle_price_update(
         &self,
-        price_message: PriceMessage,
+        price_message: &PriceMessage,
     ) -> Result<(), ExchangeConnectionError> {
         let price = price_message.price;
 
@@ -260,12 +260,9 @@ async fn ws_handler_loop(
         // As such, we will have to re-subscribe to all the price streams that
         // were previously subscribed to on the re-established connection, so we
         // enqueue the re-subscription jobs here
-        (ws_write, ws_read) = connect_and_resubscribe(
-            price_reporter_url.clone(),
-            msg_out_tx.clone(),
-            &subscription_states,
-        )
-        .await?;
+        (ws_write, ws_read) =
+            connect_and_resubscribe(price_reporter_url.clone(), &msg_out_tx, &subscription_states)
+                .await?;
     }
 }
 
@@ -319,12 +316,11 @@ fn subscribe_to_price_stream(
 /// the pairs that were previously subscribed to
 async fn connect_and_resubscribe(
     price_reporter_url: Url,
-    msg_out_tx: UnboundedSender<WebsocketMessage>,
+    msg_out_tx: &UnboundedSender<WebsocketMessage>,
     subscription_states: &PriceStreamStates,
 ) -> Result<(WsWriteStream, WsReadStream), PriceReporterError> {
     let (ws_write, ws_read) = connect_with_retries(price_reporter_url).await;
     resubscribe_to_prior_streams(msg_out_tx, subscription_states)
-        .await
         .map_err(PriceReporterError::ExchangeConnection)?;
     Ok((ws_write, ws_read))
 }
@@ -346,8 +342,8 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
 /// Re-send subscription requests to the external price reporter for all the
 /// pairs currently indexed in the subscription states, clearing the mapping in
 /// the process.
-async fn resubscribe_to_prior_streams(
-    msg_out_tx: UnboundedSender<WebsocketMessage>,
+fn resubscribe_to_prior_streams(
+    msg_out_tx: &UnboundedSender<WebsocketMessage>,
     subscription_states: &PriceStreamStates,
 ) -> Result<(), ExchangeConnectionError> {
     // Get the currently subscribed pairs and clear the mapping
@@ -355,7 +351,7 @@ async fn resubscribe_to_prior_streams(
 
     // Re-send subscription jobs for all the pairs
     for (exchange, base_token, quote_token) in streams {
-        subscribe_to_price_stream(exchange, &base_token, &quote_token, &msg_out_tx)?;
+        subscribe_to_price_stream(exchange, &base_token, &quote_token, msg_out_tx)?;
     }
 
     Ok(())

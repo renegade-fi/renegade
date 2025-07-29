@@ -5882,6 +5882,7 @@ dependencies = [
  "libp2p",
  "network-manager",
  "price-reporter",
+ "price-state",
  "proof-manager",
  "reqwest",
  "serde",

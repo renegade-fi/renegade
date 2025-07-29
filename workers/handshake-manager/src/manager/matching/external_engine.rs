@@ -76,7 +76,7 @@ impl HandshakeExecutor {
             None => {
                 let base = Token::from_addr_biguint(&order.base_mint);
                 let quote = Token::from_addr_biguint(&order.quote_mint);
-                self.get_execution_price(&base, &quote).await?
+                self.get_execution_price(&base, &quote)?
             },
         };
 

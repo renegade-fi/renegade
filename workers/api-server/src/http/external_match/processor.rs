@@ -337,7 +337,7 @@ impl ExternalMatchProcessor {
     }
 
     /// Get an internal order from an external order given a price
-    async fn external_order_to_internal_order_with_options(
+    fn external_order_to_internal_order_with_options(
         &self,
         mut o: ExternalOrder,
         mut options: ExternalMatchingEngineOptions,
@@ -345,7 +345,7 @@ impl ExternalMatchProcessor {
         // Validate the pair
         self.check_supported_pair(&o)?;
         let (base, quote) = self.setup_order_tokens(&mut o)?;
-        let price = self.get_external_match_price(base, quote).await?;
+        let price = self.get_external_match_price(&base, &quote)?;
 
         let relayer_fee = options.relayer_fee_rate;
         let order = o.to_internal_order(price, relayer_fee);
@@ -362,7 +362,7 @@ impl ExternalMatchProcessor {
         options = options.with_min_quote_amount(min_fill_quote);
 
         // Check that the order size is at least the min fill size
-        self.check_external_order_size(&order).await?;
+        self.check_external_order_size(&order)?;
         Ok((order, options))
     }
 
@@ -464,8 +464,7 @@ impl ExternalMatchProcessor {
         options: ExternalMatchingEngineOptions,
     ) -> Result<SystemBusMessage, ApiServerError> {
         let (order, options) =
-            self.external_order_to_internal_order_with_options(order, options).await?;
-        self.check_external_order_size(&order).await?;
+            self.external_order_to_internal_order_with_options(order, options)?;
 
         let (job, response_topic) = HandshakeManagerJob::new_external_match_job(order, options);
         self.handshake_queue
@@ -553,21 +552,20 @@ impl ExternalMatchProcessor {
     /// Get the external match compatible price for a given token pair
     ///
     /// Handles decimal correction for the pair
-    async fn get_external_match_price(
+    fn get_external_match_price(
         &self,
-        base: Token,
-        quote: Token,
+        base: &Token,
+        quote: &Token,
     ) -> Result<FixedPoint, ApiServerError> {
-        let ts_price = self.price_streams.peek_timestamped_price(&base)?;
-        let price = ts_price.get_decimal_corrected_price(&base, &quote).map_err(internal_error)?;
+        let ts_price = self.price_streams.peek_timestamped_price(base)?;
+        let price = ts_price.get_decimal_corrected_price(base, quote).map_err(internal_error)?;
         Ok(price.as_fixed_point())
     }
 
     /// Check the USDC denominated value of an external order and assert that it
     /// is greater than the configured minimum size
-    async fn check_external_order_size(&self, o: &Order) -> Result<(), ApiServerError> {
-        let usdc_value =
-            get_usdc_denominated_value(&o.base_mint, o.amount, &self.price_streams).await?;
+    fn check_external_order_size(&self, o: &Order) -> Result<(), ApiServerError> {
+        let usdc_value = get_usdc_denominated_value(&o.base_mint, o.amount, &self.price_streams)?;
 
         // If we cannot fetch a price, do not block the order
         let min_size = self.min_order_size;

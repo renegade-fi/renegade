@@ -113,7 +113,7 @@ pub(crate) fn maybe_rotate_root_key(
 ///
 /// Note that this function may have precision issues for large balances, it is
 /// intended as a simple implementation at the expense of some precision
-pub(crate) async fn get_usdc_denominated_value(
+pub(crate) fn get_usdc_denominated_value(
     mint: &BigUint,
     amount: Amount,
     price_streams: &PriceStreamStates,
@@ -787,7 +787,7 @@ impl TypedHandler for DepositBalanceHandler {
         // Check that the deposit amount is above the minimum allowed
         let deposit_amount = req.amount.to_u128().unwrap();
         let maybe_deposit_value =
-            get_usdc_denominated_value(&req.mint, deposit_amount, &self.price_streams).await?;
+            get_usdc_denominated_value(&req.mint, deposit_amount, &self.price_streams)?;
 
         // If we are unable to fetch a price, do not block the deposit
         if let Some(deposit_value) = maybe_deposit_value {
@@ -895,7 +895,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Check that the withdrawal amount is above the minimum allowed or withdraws
         // the entire balance if it is not
         let maybe_withdrawal_value =
-            get_usdc_denominated_value(&mint, withdrawal_amount, &self.price_streams).await?;
+            get_usdc_denominated_value(&mint, withdrawal_amount, &self.price_streams)?;
 
         // If we are unable to fetch a price, do not block the withdrawal
         let new_balance = new_wallet.get_balance(&mint).unwrap();

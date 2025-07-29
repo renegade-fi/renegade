@@ -23,7 +23,7 @@ const ERR_NO_PRICE_STREAM: &str = "price report not available for token pair";
 
 impl HandshakeExecutor {
     /// Fetch a price vector from the price reporter
-    pub(super) async fn fetch_price_vector(&self) -> Result<PriceVector, HandshakeManagerError> {
+    pub(super) fn fetch_price_vector(&self) -> Result<PriceVector, HandshakeManagerError> {
         // Get the price state for each base token
         let quote = Token::usdc();
         let mut midpoint_prices = Vec::new();
@@ -74,7 +74,7 @@ impl HandshakeExecutor {
         // Validate that the maximum deviation between the proposed prices and the
         // locally observed prices is within the acceptable range
         let my_prices: HashMap<(Token, Token), TimestampedPrice> =
-            self.fetch_price_vector().await?.into();
+            self.fetch_price_vector()?.into();
         let peer_prices: HashMap<(Token, Token), TimestampedPrice> = proposed_prices.clone().into();
         if !my_prices.contains_key(&(base.clone(), quote.clone())) {
             return Err(HandshakeManagerError::NoPriceData(format!(
