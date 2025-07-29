@@ -76,7 +76,7 @@ pub const USD_TICKER: &str = "USD";
 
 /// The set of tickers of stablecoins for which price conversion may
 /// be invoked if they are the quote
-pub const STABLECOIN_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER];
+pub const STABLECOIN_TICKERS: &[&str] = &[USDC_TICKER, USDT_TICKER, USD_TICKER];
 
 /// Maps a chain to a mapping from the token address to the ticker of the token
 pub static TOKEN_REMAPS_BY_CHAIN: RwStatic<TokenRemapsByChain> =
@@ -316,6 +316,11 @@ pub fn get_all_tokens() -> Vec<Token> {
         tokens.extend(bimap.left_values().map(|addr| Token::from_addr_on_chain(addr, *chain)));
     }
     tokens
+}
+
+/// Get all base tokens in the remap
+pub fn get_all_base_tokens() -> Vec<Token> {
+    get_all_tokens().into_iter().filter(|t| !t.is_stablecoin()).collect()
 }
 
 /// Returns a read lock quard to the per-chain decimals map

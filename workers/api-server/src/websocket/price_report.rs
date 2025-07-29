@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use common::types::token::Token;
 use external_api::bus_message::{SystemBusMessage, price_report_topic};
-use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use system_bus::{SystemBus, TopicReader};
 
 use crate::{
@@ -20,8 +19,8 @@ use super::handler::WebsocketTopicHandler;
 
 /// The error emitted when a route is missing parameters
 const ERR_MISSING_PARAMS: &str = "route missing parameters";
-/// The error message given when communication with the price reporter fails
-const ERR_SENDING_MESSAGE: &str = "error sending message to price reporter";
+/// The error message given when a pair is invalid
+const ERR_INVALID_PAIR: &str = "invalid pair";
 
 // ----------------
 // | URL Captures |
@@ -55,19 +54,14 @@ fn parse_quote_mint_from_url_params(params: &UrlParams) -> Result<String, ApiSer
 /// The handler that manages a subscription to a price report
 #[derive(Clone)]
 pub struct PriceReporterHandler {
-    /// A sender to the price reporter's work queue
-    price_reporter_work_queue: PriceReporterQueue,
     /// A reference to the relayer-global system bus    
     system_bus: SystemBus<SystemBusMessage>,
 }
 
 impl PriceReporterHandler {
     /// Constructor
-    pub fn new(
-        price_reporter_work_queue: PriceReporterQueue,
-        system_bus: SystemBus<SystemBusMessage>,
-    ) -> Self {
-        Self { price_reporter_work_queue, system_bus }
+    pub fn new(system_bus: SystemBus<SystemBusMessage>) -> Self {
+        Self { system_bus }
     }
 }
 
@@ -85,14 +79,10 @@ impl WebsocketTopicHandler for PriceReporterHandler {
         // Parse the base mint and quote mint from the route
         let base = Token::from_addr(&parse_base_mint_from_url_params(route_params)?);
         let quote = Token::from_addr(&parse_quote_mint_from_url_params(route_params)?);
-
-        // Start a price reporting stream in the manager
-        self.price_reporter_work_queue
-            .send(PriceReporterJob::StreamPrice {
-                base_token: base.clone(),
-                quote_token: quote.clone(),
-            })
-            .map_err(|_| ApiServerError::WebsocketServerFailure(ERR_SENDING_MESSAGE.to_string()))?;
+        let valid = base.is_named() && quote == Token::usdc();
+        if !valid {
+            return Err(bad_request(ERR_INVALID_PAIR.to_string()));
+        }
 
         Ok(self.system_bus.subscribe(price_report_topic(&base, &quote)))
     }

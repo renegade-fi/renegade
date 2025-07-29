@@ -1,3 +1,5 @@
+//! Benchmark the quote endpoint
+#![allow(missing_docs)]
 use std::{
     process,
     time::{Duration, Instant},

@@ -1,7 +1,9 @@
 //! Groups price reporting API handlers and types
 
+use std::iter;
+
 use async_trait::async_trait;
-use common::types::token::{Token, USD_TICKER, USDC_TICKER, USDT_TICKER, get_all_tokens};
+use common::types::token::{Token, get_all_base_tokens};
 use external_api::{
     EmptyRequestResponse,
     http::price_report::{
@@ -20,11 +22,6 @@ use crate::{
     router::{QueryParams, TypedHandler, UrlParams},
     worker::ApiServerConfig,
 };
-
-/// Tokens filtered from the supported token endpoint
-const FILTERED_TOKENS: [&str; 2] = [USD_TICKER, USDT_TICKER];
-/// Tokens filtered from the token prices endpoint
-pub(crate) const FILTERED_TOKENS_PRICES: [&str; 3] = [USD_TICKER, USDT_TICKER, USDC_TICKER];
 
 // ------------------
 // | Route Handlers |
@@ -84,10 +81,12 @@ impl TypedHandler for GetSupportedTokensHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let tokens = get_all_tokens_filtered(&FILTERED_TOKENS)
+        let tokens = get_all_base_tokens()
             .into_iter()
+            .chain(iter::once(Token::usdc()))
             .map(|token| ApiToken::new(token.get_addr(), token.get_ticker().unwrap()))
             .collect_vec();
+
         Ok(GetSupportedTokensResponse { tokens })
     }
 }
@@ -122,7 +121,7 @@ impl TypedHandler for TokenPricesHandler {
         // Fetch all prices concurrently
         let usdc = Token::usdc();
         let mut price_futures = Vec::new();
-        for base_token in get_all_tokens_filtered(&FILTERED_TOKENS_PRICES) {
+        for base_token in get_all_base_tokens() {
             let job = self
                 .price_reporter_work_queue
                 .peek_price_usdc(base_token.clone())
@@ -137,16 +136,4 @@ impl TypedHandler for TokenPricesHandler {
             .collect_vec();
         Ok(GetTokenPricesResponse { token_prices })
     }
-}
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Get all tokens from the token map filtering out given tokens
-pub(crate) fn get_all_tokens_filtered(filtered_tokens: &[&str]) -> Vec<Token> {
-    get_all_tokens()
-        .into_iter()
-        .filter(|t| !filtered_tokens.contains(&t.get_ticker().unwrap().as_str()))
-        .collect_vec()
 }

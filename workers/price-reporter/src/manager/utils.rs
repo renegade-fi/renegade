@@ -1,9 +1,11 @@
 //! Utilities for the PriceReporter manager
 
+use std::collections::HashSet;
+
 use common::types::{
     exchange::{Exchange, PriceReport, PriceReporterState},
     price::Price,
-    token::{Token, default_exchange_stable},
+    token::{Token, USD_TICKER, default_exchange_stable, get_all_base_tokens},
 };
 use itertools::Itertools;
 use statrs::statistics::{Data, Median};
@@ -23,6 +25,33 @@ const MAX_DEVIATION: f64 = 0.01;
 /// we have enough reports. This only applies to Named tokens, as Unnamed tokens
 /// simply use UniswapV3.
 const MIN_CONNECTIONS: usize = 1;
+
+/// Get the set of tokens to stream prices for
+///
+/// For now this is just all the base tokens in the token mapping
+pub(crate) fn get_tokens_to_stream() -> Vec<Token> {
+    get_all_base_tokens()
+}
+
+/// Get all the (exchange, base, quote) tuples that are required to stream
+/// prices for all the pairs in the token mapping
+pub fn get_all_stream_tuples(config: &PriceReporterConfig) -> Vec<(Exchange, Token, Token)> {
+    let usdc = Token::usdc();
+    let all_pairs = get_tokens_to_stream();
+
+    // Collect all the (exchange, base, quote) tuples that are required to
+    // stream prices for all the pairs, some may duplicate for quote conversion
+    // (USDT/USDC) so we use a set to deduplicate
+    let mut all_stream_tuples = HashSet::new();
+    for base in all_pairs {
+        let streams = required_streams_for_pair(&base, &usdc, config);
+        for (exchange, base, quote) in streams {
+            all_stream_tuples.insert((exchange, base, quote));
+        }
+    }
+
+    all_stream_tuples.into_iter().collect_vec()
+}
 
 /// Returns the set of exchanges that support both tokens in the pair.
 ///
@@ -122,6 +151,7 @@ pub fn required_streams_for_pair(
 ) -> Vec<(Exchange, Token, Token)> {
     let mut streams = Vec::new();
     let exchanges = get_supported_exchanges(requested_base, requested_quote, config);
+
     for exchange in exchanges {
         let pairs =
             if eligible_for_stable_quote_conversion(requested_base, requested_quote, &exchange) {
@@ -147,5 +177,16 @@ pub fn eligible_for_stable_quote_conversion(
     quote: &Token,
     exchange: &Exchange,
 ) -> bool {
-    !base.is_stablecoin() && quote.is_stablecoin() && quote != &default_exchange_stable(exchange)
+    if base.is_stablecoin() || !quote.is_stablecoin() {
+        return false;
+    }
+
+    // We assume a 1:1 USD:USDC for Coinbase markets
+    let default_stable = default_exchange_stable(exchange);
+    let usd = Token::from_ticker(USD_TICKER);
+    if default_stable == usd {
+        return false;
+    }
+
+    quote != &default_exchange_stable(exchange)
 }

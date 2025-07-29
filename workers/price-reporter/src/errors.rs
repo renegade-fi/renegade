@@ -64,6 +64,12 @@ pub enum PriceReporterError {
     ReSubscription(String),
 }
 
+impl From<ExchangeConnectionError> for PriceReporterError {
+    fn from(err: ExchangeConnectionError) -> Self {
+        PriceReporterError::ExchangeConnection(err)
+    }
+}
+
 impl Error for PriceReporterError {}
 impl Display for PriceReporterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

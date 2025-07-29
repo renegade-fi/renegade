@@ -52,8 +52,6 @@ use util::{
 };
 use uuid::Uuid;
 
-pub(super) use price_agreement::init_price_streams;
-
 use self::{
     handshake::{ERR_NO_PROOF, ERR_NO_WALLET},
     scheduler::HandshakeScheduler,
