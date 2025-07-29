@@ -9,8 +9,8 @@
 #![allow(async_fn_in_trait)]
 
 use churn_metrics_sampler::CancellationMetricsSampler;
-use job_types::price_reporter::PriceReporterQueue;
 use onboarding_metrics_sampler::OnboardingMetricsSampler;
+use price_state::PriceStreamStates;
 use raft_metrics_sampler::RaftMetricsSampler;
 use sampler::{AsyncMetricSampler, MetricSampler};
 use state::State;
@@ -26,15 +26,12 @@ pub mod sampler;
 pub async fn setup_metrics_samplers(
     state: State,
     system_clock: &SystemClock,
-    price_reporter_job_queue: PriceReporterQueue,
+    price_streams: PriceStreamStates,
 ) -> Result<(), SystemClockError> {
     RaftMetricsSampler::new(state.clone()).register(system_clock).await?;
     if state.historical_state_enabled().await.map_err(err_str!(SystemClockError))? {
         OnboardingMetricsSampler::new(state.clone()).register(system_clock).await?;
-
-        CancellationMetricsSampler::new(state, price_reporter_job_queue)
-            .register(system_clock)
-            .await?;
+        CancellationMetricsSampler::new(state, price_streams).register(system_clock).await?;
     }
 
     Ok(())

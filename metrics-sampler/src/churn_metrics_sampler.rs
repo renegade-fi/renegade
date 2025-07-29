@@ -3,12 +3,12 @@
 use std::time::Duration;
 
 use common::types::{
-    exchange::PriceReporterState, network_order::NetworkOrderState, price::Price, token::Token,
+    network_order::NetworkOrderState, price::Price, token::Token,
     wallet::order_metadata::OrderMetadata,
 };
 use futures::future::join_all;
-use job_types::price_reporter::{PriceReporterJob, PriceReporterQueue};
 use num_bigint::BigUint;
+use price_state::PriceStreamStates;
 use state::State;
 use util::hex::biguint_to_hex_addr;
 
@@ -38,14 +38,14 @@ const QUOTE_TICKER_METRIC_TAG: &str = "quote_ticker";
 pub struct CancellationMetricsSampler {
     /// A handle to the global state
     state: State,
-    /// A handle to the price reporter's job queue
-    price_reporter_job_queue: PriceReporterQueue,
+    /// A handle to the price streams
+    price_streams: PriceStreamStates,
 }
 
 impl CancellationMetricsSampler {
     /// Create a new `CancellationMetricsSampler`
-    pub fn new(state: State, price_reporter_job_queue: PriceReporterQueue) -> Self {
-        Self { state, price_reporter_job_queue }
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
+        Self { state, price_streams }
     }
 
     // -------------------
@@ -71,20 +71,9 @@ impl CancellationMetricsSampler {
     }
 
     /// Get the price for the pair that the given order trades
-    async fn get_price_for_order(&self, order: &OrderMetadata) -> Result<Option<Price>, String> {
+    async fn get_price_for_order(&self, order: &OrderMetadata) -> Option<Price> {
         let base = Token::from_addr_biguint(&order.data.base_mint);
-        let quote = Token::from_addr_biguint(&order.data.quote_mint);
-
-        let (job, recv) = PriceReporterJob::peek_price(base.clone(), quote.clone());
-        self.price_reporter_job_queue.send(job).map_err(|e| e.to_string())?;
-        let state = recv.await.map_err(|e| e.to_string())?;
-
-        let maybe_price = match state {
-            PriceReporterState::Nominal(report) => Some(report.price),
-            _ => None,
-        };
-
-        Ok(maybe_price)
+        self.price_streams.peek_price(&base)
     }
 
     /// Get the tickers for the given pair of tokens
@@ -113,8 +102,7 @@ impl CancellationMetricsSampler {
             let (base_ticker, quote_ticker) =
                 Self::get_pair_tickers(&order.data.base_mint, &order.data.quote_mint);
 
-            self.record_cancelled_value(order, base_ticker.clone(), quote_ticker.clone()).await?;
-
+            self.record_cancelled_value(order, base_ticker.clone(), quote_ticker.clone()).await;
             Self::record_fill_percent(order, base_ticker.clone(), quote_ticker.clone());
         }
 
@@ -127,24 +115,24 @@ impl CancellationMetricsSampler {
         order: &OrderMetadata,
         base_ticker: String,
         quote_ticker: String,
-    ) -> Result<(), String> {
-        if let Some(price) = self.get_price_for_order(order).await? {
-            let base = Token::from_addr_biguint(&order.data.base_mint);
+    ) {
+        let price = match self.get_price_for_order(order).await {
+            Some(price) => price,
+            None => return,
+        };
 
-            let remaining_amount = order.data.amount - order.total_filled();
-            let remaining_amount_float = base.convert_to_decimal(remaining_amount);
-            let cancelled_value = remaining_amount_float * price;
+        let base = Token::from_addr_biguint(&order.data.base_mint);
+        let remaining_amount = order.data.amount - order.total_filled();
+        let remaining_amount_float = base.convert_to_decimal(remaining_amount);
+        let cancelled_value = remaining_amount_float * price;
 
-            metrics::gauge!(
-                CANCELLED_ORDER_VALUE_METRIC,
-                ORDER_ID_METRIC_TAG => order.id.to_string(),
-                BASE_TICKER_METRIC_TAG => base_ticker,
-                QUOTE_TICKER_METRIC_TAG => quote_ticker,
-            )
-            .set(cancelled_value);
-        }
-
-        Ok(())
+        metrics::gauge!(
+            CANCELLED_ORDER_VALUE_METRIC,
+            ORDER_ID_METRIC_TAG => order.id.to_string(),
+            BASE_TICKER_METRIC_TAG => base_ticker,
+            QUOTE_TICKER_METRIC_TAG => quote_ticker,
+        )
+        .set(cancelled_value);
     }
 
     /// Record the fill percent of a cancelled order

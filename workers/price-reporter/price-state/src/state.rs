@@ -113,6 +113,19 @@ impl PriceStreamStates {
 
     // --- Getters --- //
 
+    /// Peek at the Renegade price for the given base token
+    ///
+    /// Uses the canonical quote (USDC) and assumes the exchange the caller
+    /// wishes to fetch a price from is `Exchange::Renegade`. This is a
+    /// virtual exchange which selects the canonical price stream on a per-pair
+    /// basis.
+    pub fn peek_price(&self, base: &Token) -> Option<Price> {
+        let quote = Token::usdc();
+        let tuple = (Exchange::Renegade, base.clone(), quote);
+        let (price, _) = self.states().get(&tuple)?.read_price();
+        Some(price)
+    }
+
     /// Get the state of the price reporter for the given token pair
     pub async fn get_state(&self, base_token: Token, quote_token: Token) -> PriceReporterState {
         // We don't currently support unnamed pairs

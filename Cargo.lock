@@ -5772,6 +5772,7 @@ dependencies = [
  "job-types",
  "metrics",
  "num-bigint",
+ "price-state",
  "state",
  "system-clock",
  "util",
