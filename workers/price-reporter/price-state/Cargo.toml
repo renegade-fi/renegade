@@ -1,0 +1,14 @@
+[package]
+name = "price-state"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# === Renegade Dependencies === #
+common = { workspace = true }
+util = { workspace = true }
+
+# === Misc Dependencies === #
+atomic_float = "1.1"
+itertools = { workspace = true }
+statrs = "0.16"

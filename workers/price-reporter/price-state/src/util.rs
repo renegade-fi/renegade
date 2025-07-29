@@ -1,18 +1,13 @@
-//! Utilities for the PriceReporter manager
-
-use std::collections::HashSet;
+//! Utility functions for the price state module
 
 use common::types::{
     exchange::{Exchange, PriceReport, PriceReporterState},
     price::Price,
-    token::{Token, default_exchange_stable, get_all_base_tokens},
+    token::{Token, USD_TICKER, default_exchange_stable},
 };
 use itertools::Itertools;
-use price_state::util::eligible_for_stable_quote_conversion;
 use statrs::statistics::{Data, Median};
 use util::get_current_time_millis;
-
-use crate::worker::PriceReporterConfig;
 
 /// If a pair has not reported an update within
 /// MAX_REPORT_AGE_MS (in milliseconds), we pause matches until we receive a
@@ -27,50 +22,9 @@ const MAX_DEVIATION: f64 = 0.01;
 /// simply use UniswapV3.
 const MIN_CONNECTIONS: usize = 1;
 
-/// Get the set of tokens to stream prices for
-///
-/// For now this is just all the base tokens in the token mapping
-pub(crate) fn get_tokens_to_stream() -> Vec<Token> {
-    get_all_base_tokens()
-}
-
-/// Get all the (exchange, base, quote) tuples that are required to stream
-/// prices for all the pairs in the token mapping
-pub fn get_all_stream_tuples(config: &PriceReporterConfig) -> Vec<(Exchange, Token, Token)> {
-    let usdc = Token::usdc();
-    let all_pairs = get_tokens_to_stream();
-
-    // Collect all the (exchange, base, quote) tuples that are required to
-    // stream prices for all the pairs, some may duplicate for quote conversion
-    // (USDT/USDC) so we use a set to deduplicate
-    let mut all_stream_tuples = HashSet::new();
-    for base in all_pairs {
-        let streams = required_streams_for_pair(&base, &usdc, config);
-        for (exchange, base, quote) in streams {
-            all_stream_tuples.insert((exchange, base, quote));
-        }
-    }
-
-    all_stream_tuples.into_iter().collect_vec()
-}
-
-/// Returns the set of exchanges that support both tokens in the pair.
-///
-/// Note: This does not mean that each exchange has a market for the pair,
-/// just that it separately lists both tokens.
-pub fn get_supported_exchanges(
-    base_token: &Token,
-    quote_token: &Token,
-    config: &PriceReporterConfig,
-) -> Vec<Exchange> {
-    // Get the exchanges that list both tokens, and filter out the ones that
-    // are not configured
-    let listing_exchanges = get_listing_exchanges(base_token, quote_token);
-    listing_exchanges
-        .into_iter()
-        .filter(|exchange| config.exchange_configured(*exchange))
-        .collect_vec()
-}
+// --------------------
+// | Exchange Support |
+// --------------------
 
 /// Returns the list of exchanges that list both the base and quote tokens.
 ///
@@ -86,6 +40,31 @@ pub fn get_listing_exchanges(base_token: &Token, quote_token: &Token) -> Vec<Exc
         .copied()
         .collect_vec()
 }
+
+/// Returns whether or not the given pair on the given exchange may have its
+/// price converted through the default stable quote asset for the exchange.
+pub fn eligible_for_stable_quote_conversion(
+    base: &Token,
+    quote: &Token,
+    exchange: &Exchange,
+) -> bool {
+    if base.is_stablecoin() || !quote.is_stablecoin() {
+        return false;
+    }
+
+    // We assume a 1:1 USD:USDC for Coinbase markets
+    let default_stable = default_exchange_stable(exchange);
+    let usd = Token::from_ticker(USD_TICKER);
+    if default_stable == usd {
+        return false;
+    }
+
+    quote != &default_exchange_stable(exchange)
+}
+
+// ---------------------
+// | State Computation |
+// ---------------------
 
 /// Computes the state of the price reporter for the given token pair,
 /// checking against the provided exchange prices.
@@ -140,33 +119,4 @@ pub fn compute_price_reporter_state(
 fn ts_too_stale(ts: u64) -> (bool, u64) {
     let time_diff = get_current_time_millis() - ts;
     (time_diff > MAX_REPORT_AGE_MS, time_diff)
-}
-
-/// Returns the (exchange, base, quote) tuples for which price streams are
-/// required to accurately compute the price for the (requested_base,
-/// requested_quote) pair
-pub fn required_streams_for_pair(
-    requested_base: &Token,
-    requested_quote: &Token,
-    config: &PriceReporterConfig,
-) -> Vec<(Exchange, Token, Token)> {
-    let mut streams = Vec::new();
-    let exchanges = get_supported_exchanges(requested_base, requested_quote, config);
-
-    for exchange in exchanges {
-        let pairs =
-            if eligible_for_stable_quote_conversion(requested_base, requested_quote, &exchange) {
-                let default_stable = default_exchange_stable(&exchange);
-                vec![
-                    (exchange, requested_base.clone(), default_stable.clone()),
-                    (exchange, requested_quote.clone(), default_stable),
-                ]
-            } else {
-                vec![(exchange, requested_base.clone(), requested_quote.clone())]
-            };
-
-        streams.extend(pairs);
-    }
-
-    streams
 }

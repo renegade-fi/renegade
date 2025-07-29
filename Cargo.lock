@@ -7246,6 +7246,7 @@ dependencies = [
  "job-types",
  "jsonwebtoken",
  "lazy_static",
+ "price-state",
  "reqwest 0.12.20",
  "serde",
  "serde_json",
@@ -7260,6 +7261,17 @@ dependencies = [
  "url",
  "util",
  "web3",
+]
+
+[[package]]
+name = "price-state"
+version = "0.1.0"
+dependencies = [
+ "atomic_float 1.1.0",
+ "common",
+ "itertools 0.10.5",
+ "statrs",
+ "util",
 ]
 
 [[package]]

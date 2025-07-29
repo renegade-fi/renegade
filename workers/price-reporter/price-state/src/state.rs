@@ -1,8 +1,11 @@
 //! Concurrency primitives for the PriceReporter manager's shared streams
 
 use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicU64, Ordering},
+    collections::{HashMap, HashSet},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use atomic_float::AtomicF64;
@@ -11,16 +14,18 @@ use common::types::{
     price::Price,
     token::{Token, default_exchange_stable, is_pair_named},
 };
-use external_api::bus_message::{SystemBusMessage, price_report_topic};
-use price_state::util::eligible_for_stable_quote_conversion;
-use util::concurrency::{AsyncShared, new_async_shared};
+use itertools::Itertools;
 
 use crate::{
-    manager::utils::{
-        compute_price_reporter_state, get_all_stream_tuples, get_supported_exchanges,
+    StreamTuple,
+    util::{
+        compute_price_reporter_state, eligible_for_stable_quote_conversion, get_listing_exchanges,
     },
-    worker::PriceReporterConfig,
 };
+
+// ---------------------------
+// | Individual Stream State |
+// ---------------------------
 
 /// The state of a price stream for a given (exchange, base, quote).
 /// Uses atomic primitives to allow for hardware synchronized update streaming
@@ -33,6 +38,11 @@ pub struct AtomicPriceStreamState {
 }
 
 impl AtomicPriceStreamState {
+    /// Read the price and timestamp
+    pub fn read_price(&self) -> (Price, u64) {
+        (self.price.load(Ordering::Relaxed), self.last_received.load(Ordering::Relaxed))
+    }
+
     /// Update the state of the price stream
     pub fn new_price(&self, price: Price, timestamp: u64) {
         // These operations are not transactionally related, so there is a chance
@@ -43,73 +53,68 @@ impl AtomicPriceStreamState {
         self.last_received.store(timestamp, Ordering::Relaxed);
     }
 
-    /// Read the price and timestamp
-    pub fn read_price(&self) -> (Price, u64) {
-        (self.price.load(Ordering::Relaxed), self.last_received.load(Ordering::Relaxed))
+    /// Clear the state of the price stream
+    pub fn clear(&self) {
+        self.price.store(0.0, Ordering::Relaxed);
+        self.last_received.store(0, Ordering::Relaxed);
     }
 }
+
+// -----------------------
+// | Price Stream States |
+// -----------------------
+
+/// A set of price stream states
+///
+/// Wraps the inner type in an `Arc` to facilitate efficient clones throughout
+/// the relayer by individual workers
+#[derive(Clone, Debug)]
+pub struct PriceStreamStates(Arc<PriceStreamStatesInner>);
 
 /// A shareable mapping between (exchange, base, quote) and the most recent
 /// state of the associated price stream
 #[derive(Clone, Debug)]
-pub struct SharedPriceStreamStates(
-    AsyncShared<HashMap<(Exchange, Token, Token), AtomicPriceStreamState>>,
-);
+pub struct PriceStreamStatesInner {
+    /// The mapping between (exchange, base, quote) and the most recent
+    states: Arc<HashMap<StreamTuple, AtomicPriceStreamState>>,
+    /// The set of disabled exchanges
+    disabled_exchanges: HashSet<Exchange>,
+}
 
-impl SharedPriceStreamStates {
+impl PriceStreamStates {
     /// Create a new shared price stream state map
     ///
     /// This inserts a default state for each (exchange, base, quote) pair
     /// which is supported by the given config
-    pub fn new(cfg: &PriceReporterConfig) -> Self {
-        let all_stream_tuples = get_all_stream_tuples(cfg);
-        let states = all_stream_tuples
+    pub fn new(streams: Vec<StreamTuple>, disabled_exchanges: Vec<Exchange>) -> Self {
+        let states = streams
             .into_iter()
             .map(|(exchange, base, quote)| {
                 ((exchange, base, quote), AtomicPriceStreamState::default())
             })
             .collect();
 
-        Self(new_async_shared(states))
+        let inner = PriceStreamStatesInner {
+            states: Arc::new(states),
+            disabled_exchanges: disabled_exchanges.into_iter().collect(),
+        };
+        Self(Arc::new(inner))
     }
 
-    /// Clear all price states, returning the keys that were cleared
-    pub async fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
-        let mut price_stream_states = self.0.write().await;
-
-        let keys = price_stream_states.keys().cloned().collect();
-        price_stream_states.clear();
-
-        keys
+    /// Get a reference to the inner states
+    fn states(&self) -> &HashMap<StreamTuple, AtomicPriceStreamState> {
+        &self.0.states
     }
 
-    /// Update the price state for the given (exchange, base, quote)
-    pub async fn new_price(
-        &self,
-        exchange: Exchange,
-        base: Token,
-        quote: Token,
-        price: Price,
-        timestamp: u64,
-    ) -> Result<(), String> {
-        let price_stream_states = self.0.read().await;
-
-        let price_state = price_stream_states
-            .get(&(exchange, base.clone(), quote.clone()))
-            .ok_or(format!("Price stream state not found for ({exchange}, {base}, {quote})",))?;
-
-        price_state.new_price(price, timestamp);
-
-        Ok(())
+    /// Returns whether a given exchange is disabled
+    fn is_exchange_disabled(&self, exchange: &Exchange) -> bool {
+        self.0.disabled_exchanges.contains(exchange)
     }
+
+    // --- Getters --- //
 
     /// Get the state of the price reporter for the given token pair
-    pub async fn get_state(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        config: &PriceReporterConfig,
-    ) -> PriceReporterState {
+    pub async fn get_state(&self, base_token: Token, quote_token: Token) -> PriceReporterState {
         // We don't currently support unnamed pairs
         if !is_pair_named(&base_token, &quote_token) {
             return PriceReporterState::UnsupportedPair(base_token, quote_token);
@@ -124,7 +129,7 @@ impl SharedPriceStreamStates {
 
         // Fetch the most recent prices from all other exchanges
         let mut exchange_prices = Vec::new();
-        let supported_exchanges = get_supported_exchanges(&base_token, &quote_token, config);
+        let supported_exchanges = self.get_supported_exchanges(&base_token, &quote_token);
         for exchange in supported_exchanges {
             if let Some((price, ts)) =
                 self.get_latest_price(exchange, &base_token, &quote_token).await
@@ -137,21 +142,40 @@ impl SharedPriceStreamStates {
         compute_price_reporter_state(base_token, quote_token, price, ts, &exchange_prices)
     }
 
-    /// Compute a price report for the given token pair and publish it to the
-    /// system bus
-    pub async fn publish_price_report(
+    // --- Setters --- //
+
+    /// Clear all price states, returning the keys that were cleared
+    pub async fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
+        // Iterate over the elements, clear the values and clone the keys
+        self.states()
+            .iter()
+            .map(|(k, v)| {
+                v.clear();
+                k.clone()
+            })
+            .collect()
+    }
+
+    /// Update the price state for the given (exchange, base, quote)
+    pub async fn new_price(
         &self,
+        exchange: Exchange,
         base: Token,
         quote: Token,
-        config: &PriceReporterConfig,
-    ) {
-        let topic_name = price_report_topic(&base, &quote);
-        if config.system_bus.has_listeners(&topic_name) {
-            if let PriceReporterState::Nominal(report) = self.get_state(base, quote, config).await {
-                config.system_bus.publish(topic_name, SystemBusMessage::PriceReport(report));
-            }
-        }
+        price: Price,
+        timestamp: u64,
+    ) -> Result<(), String> {
+        let stream_tuple = (exchange, base.clone(), quote.clone());
+        let price_state = self
+            .states()
+            .get(&stream_tuple)
+            .ok_or(format!("Price stream state not found for ({exchange}, {base}, {quote})",))?;
+        price_state.new_price(price, timestamp);
+
+        Ok(())
     }
+
+    // --- Helpers --- //
 
     /// Get the latest price for the given exchange and token pair.
     ///
@@ -166,12 +190,23 @@ impl SharedPriceStreamStates {
         if eligible_for_stable_quote_conversion(base_token, quote_token, &exchange) {
             self.convert_through_default_stable(base_token, quote_token, exchange).await
         } else {
-            self.0
-                .read()
-                .await
-                .get(&(exchange, base_token.clone(), quote_token.clone()))
-                .map(|state| state.read_price())
+            let stream_tuple = (exchange, base_token.clone(), quote_token.clone());
+            self.states().get(&stream_tuple).map(|state| state.read_price())
         }
+    }
+
+    /// Returns the set of exchanges that support both tokens in the pair.
+    ///
+    /// Note: This does not mean that each exchange has a market for the pair,
+    /// just that it separately lists both tokens.
+    fn get_supported_exchanges(&self, base_token: &Token, quote_token: &Token) -> Vec<Exchange> {
+        // Get the exchanges that list both tokens, and filter out the ones that
+        // are not configured
+        let listing_exchanges = get_listing_exchanges(base_token, quote_token);
+        listing_exchanges
+            .into_iter()
+            .filter(|exchange| !self.is_exchange_disabled(exchange))
+            .collect_vec()
     }
 
     /// Converts the price for the given pair through the default stable quote
@@ -182,17 +217,15 @@ impl SharedPriceStreamStates {
         quote_token: &Token,
         exchange: Exchange,
     ) -> Option<(Price, u64)> {
-        let states = self.0.read().await;
-
         let default_stable = default_exchange_stable(&exchange);
 
         // Get the base / default stable price
-        let (base_price, base_ts) =
-            states.get(&(exchange, base_token.clone(), default_stable.clone()))?.read_price();
+        let default_tuple = (exchange, base_token.clone(), default_stable.clone());
+        let (base_price, base_ts) = self.states().get(&default_tuple)?.read_price();
 
         // Get the quote / default stable price
-        let (quote_price, quote_ts) =
-            states.get(&(exchange, quote_token.clone(), default_stable.clone()))?.read_price();
+        let conversion_tuple = (exchange, quote_token.clone(), default_stable.clone());
+        let (quote_price, quote_ts) = self.states().get(&conversion_tuple)?.read_price();
 
         // The converted price = (base / default stable) / (quote / default stable)
         let price = base_price / quote_price;
