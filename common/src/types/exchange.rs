@@ -22,6 +22,20 @@ pub enum Exchange {
     Renegade,
 }
 
+impl Exchange {
+    /// Get all exchanges
+    pub fn all() -> Vec<Exchange> {
+        vec![
+            Exchange::Binance,
+            Exchange::Coinbase,
+            Exchange::Kraken,
+            Exchange::Okx,
+            Exchange::UniswapV3,
+            Exchange::Renegade,
+        ]
+    }
+}
+
 impl Display for Exchange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let fmt_str = match self {
@@ -96,6 +110,14 @@ impl PriceReporterState {
         match self {
             PriceReporterState::Nominal(report) => Ok(TimestampedPrice::new(report.price)),
             _ => Err(format!("{self:?}")),
+        }
+    }
+
+    /// Get the nominal price report, if it exists
+    pub fn into_nominal(self) -> Option<PriceReport> {
+        match self {
+            PriceReporterState::Nominal(report) => Some(report),
+            _ => None,
         }
     }
 }

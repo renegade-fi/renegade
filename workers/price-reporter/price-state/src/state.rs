@@ -121,19 +121,17 @@ impl PriceStreamStates {
         }
 
         // Fetch the most recent price from the canonical exchange
-        let (price, ts) =
-            match self.get_latest_price(Exchange::Renegade, &base_token, &quote_token).await {
-                None => return PriceReporterState::NotEnoughDataReported(0),
-                Some((price, ts)) => (price, ts),
-            };
+        let maybe_price = self.get_latest_price(Exchange::Renegade, &base_token, &quote_token);
+        let (price, ts) = match maybe_price {
+            None => return PriceReporterState::NotEnoughDataReported(0),
+            Some((price, ts)) => (price, ts),
+        };
 
         // Fetch the most recent prices from all other exchanges
         let mut exchange_prices = Vec::new();
         let supported_exchanges = self.get_supported_exchanges(&base_token, &quote_token);
         for exchange in supported_exchanges {
-            if let Some((price, ts)) =
-                self.get_latest_price(exchange, &base_token, &quote_token).await
-            {
+            if let Some((price, ts)) = self.get_latest_price(exchange, &base_token, &quote_token) {
                 exchange_prices.push((exchange, (price, ts)));
             }
         }
@@ -145,7 +143,7 @@ impl PriceStreamStates {
     // --- Setters --- //
 
     /// Clear all price states, returning the keys that were cleared
-    pub async fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
+    pub fn clear_states(&self) -> Vec<(Exchange, Token, Token)> {
         // Iterate over the elements, clear the values and clone the keys
         self.states()
             .iter()
@@ -157,7 +155,7 @@ impl PriceStreamStates {
     }
 
     /// Update the price state for the given (exchange, base, quote)
-    pub async fn new_price(
+    pub fn new_price(
         &self,
         exchange: Exchange,
         base: Token,
@@ -181,14 +179,14 @@ impl PriceStreamStates {
     ///
     /// If the pair is eligible, we convert the price through the default stable
     /// quote for the exchange.
-    async fn get_latest_price(
+    fn get_latest_price(
         &self,
         exchange: Exchange,
         base_token: &Token,
         quote_token: &Token,
     ) -> Option<(Price, u64)> {
         if eligible_for_stable_quote_conversion(base_token, quote_token, &exchange) {
-            self.convert_through_default_stable(base_token, quote_token, exchange).await
+            self.convert_through_default_stable(base_token, quote_token, exchange)
         } else {
             let stream_tuple = (exchange, base_token.clone(), quote_token.clone());
             self.states().get(&stream_tuple).map(|state| state.read_price())
@@ -211,7 +209,7 @@ impl PriceStreamStates {
 
     /// Converts the price for the given pair through the default stable quote
     /// asset for the exchange
-    async fn convert_through_default_stable(
+    fn convert_through_default_stable(
         &self,
         base_token: &Token,
         quote_token: &Token,

@@ -9,12 +9,15 @@ use common::{
 };
 use external_api::bus_message::SystemBusMessage;
 use job_types::price_reporter::PriceReporterReceiver;
+use price_state::PriceStreamStates;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
 use tokio::runtime::Builder as TokioBuilder;
 use url::Url;
 
-use crate::manager::external_executor::ExternalPriceReporterExecutor;
+use crate::manager::{
+    external_executor::ExternalPriceReporterExecutor, utils::get_all_stream_tuples,
+};
 
 use super::errors::PriceReporterError;
 
@@ -69,6 +72,15 @@ impl ExchangeConnectionsConfig {
 }
 
 impl PriceReporterConfig {
+    /// Build the price stream states for the given config
+    pub fn build_price_stream_states(&self) -> PriceStreamStates {
+        let streams = get_all_stream_tuples(self);
+        let disabled_exchanges =
+            Exchange::all().into_iter().filter(|e| !self.exchange_configured(*e)).collect();
+
+        PriceStreamStates::new(streams, disabled_exchanges)
+    }
+
     /// Returns true if the necessary configuration information is present
     /// for a given exchange
     ///
@@ -101,10 +113,26 @@ impl PriceReporterConfig {
 /// PriceReporterExecutor, handling and dispatching jobs to the executor
 /// for spin-up and shut-down of individual PriceReporters.
 pub struct PriceReporter {
+    /// The latest states of the all price streams
+    price_stream_states: PriceStreamStates,
     /// The config for the PriceReporter
     pub(super) config: PriceReporterConfig,
     /// The single thread that joins all individual PriceReporter threads
     pub(super) manager_executor_handle: Option<JoinHandle<PriceReporterError>>,
+}
+
+impl PriceReporter {
+    /// Creates a new PriceReporter
+    pub fn new_with_streams(config: PriceReporterConfig) -> (Self, PriceStreamStates) {
+        let price_stream_states = config.build_price_stream_states();
+        let this = Self {
+            config,
+            manager_executor_handle: None,
+            price_stream_states: price_stream_states.clone(),
+        };
+
+        (this, price_stream_states)
+    }
 }
 
 #[async_trait]
@@ -112,8 +140,8 @@ impl Worker for PriceReporter {
     type WorkerConfig = PriceReporterConfig;
     type Error = PriceReporterError;
 
-    async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        Ok(Self { config, manager_executor_handle: None })
+    async fn new(_config: Self::WorkerConfig) -> Result<Self, Self::Error> {
+        unimplemented!("Use `new_with_streams` instead");
     }
 
     fn is_recoverable(&self) -> bool {
@@ -143,8 +171,9 @@ impl Worker for PriceReporter {
             .build()
             .unwrap();
 
+        let streams = self.price_stream_states.clone();
         let manager_executor =
-            ExternalPriceReporterExecutor::new(job_receiver, config, cancel_channel);
+            ExternalPriceReporterExecutor::new(job_receiver, config, cancel_channel, streams);
         let manager_executor_handle = thread::Builder::new()
             .name("price-reporter-manager-executor".to_string())
             .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())
