@@ -11,13 +11,14 @@ use std::{
 use atomic_float::AtomicF64;
 use common::types::{
     exchange::{Exchange, PriceReporterState},
-    price::Price,
+    price::{Price, TimestampedPrice},
     token::{Token, default_exchange_stable, is_pair_named},
 };
 use itertools::Itertools;
 
 use crate::{
     StreamTuple,
+    error::PriceStateError,
     util::{
         compute_price_reporter_state, eligible_for_stable_quote_conversion, get_listing_exchanges,
     },
@@ -119,11 +120,27 @@ impl PriceStreamStates {
     /// wishes to fetch a price from is `Exchange::Renegade`. This is a
     /// virtual exchange which selects the canonical price stream on a per-pair
     /// basis.
-    pub fn peek_price(&self, base: &Token) -> Option<Price> {
+    pub fn peek_price(&self, base: &Token) -> Result<Price, PriceStateError> {
+        self.peek_timestamped_price(base).map(|ts_price| ts_price.price)
+    }
+
+    /// Peek a timestamped price for the given token pair
+    ///
+    /// Returns the price and timestamp of the most recent price for the given
+    /// pair.
+    pub fn peek_timestamped_price(
+        &self,
+        base: &Token,
+    ) -> Result<TimestampedPrice, PriceStateError> {
         let quote = Token::usdc();
-        let tuple = (Exchange::Renegade, base.clone(), quote);
-        let (price, _) = self.states().get(&tuple)?.read_price();
-        Some(price)
+        let tuple = (Exchange::Renegade, base.clone(), quote.clone());
+        let atomic_price = self
+            .states()
+            .get(&tuple)
+            .ok_or_else(|| PriceStateError::pair_not_configured(base.clone(), quote.clone()))?;
+
+        let (price, timestamp) = atomic_price.read_price();
+        Ok(TimestampedPrice { price, timestamp })
     }
 
     /// Get the state of the price reporter for the given token pair

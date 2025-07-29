@@ -854,6 +854,7 @@ dependencies = [
  "mock-node",
  "num-bigint",
  "num-traits",
+ "price-state",
  "rand 0.8.5",
  "ratelimit_meter",
  "renegade-crypto",
@@ -7023,6 +7024,7 @@ dependencies = [
  "common",
  "itertools 0.10.5",
  "statrs",
+ "thiserror 2.0.12",
  "util",
 ]
 

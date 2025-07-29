@@ -255,7 +255,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::POST,
             PRICE_REPORT_ROUTE.to_string(),
-            PriceReportHandler::new(config.clone()),
+            PriceReportHandler::new(config.price_streams.clone()),
         );
 
         // The "/ping" route
@@ -384,7 +384,7 @@ impl HttpServer {
                 config.compliance_service_url.clone(),
                 state.clone(),
                 wallet_rate_limiter.clone(),
-                config.price_reporter_work_queue.clone(),
+                config.price_streams.clone(),
             ),
         );
 
@@ -396,7 +396,7 @@ impl HttpServer {
                 config.min_transfer_amount,
                 state.clone(),
                 wallet_rate_limiter.clone(),
-                config.price_reporter_work_queue.clone(),
+                config.price_streams.clone(),
             ),
         );
 
@@ -432,7 +432,7 @@ impl HttpServer {
             handshake_queue,
             config.darkpool_client.clone(),
             config.system_bus.clone(),
-            config.price_reporter_work_queue.clone(),
+            config.price_streams.clone(),
         );
 
         // The "/external-match/quote" route
@@ -490,7 +490,7 @@ impl HttpServer {
         router.add_unauthenticated_route(
             &Method::GET,
             GET_TOKEN_PRICES_ROUTE.to_string(),
-            TokenPricesHandler::new(config.price_reporter_work_queue.clone()),
+            TokenPricesHandler::new(config.price_streams.clone()),
         );
 
         // The "/order_book/external-match-fee" route
@@ -504,17 +504,14 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_BY_MINT_ROUTE.to_string(),
-            GetDepthByMintHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
+            GetDepthByMintHandler::new(state.clone(), config.price_streams.clone()),
         );
 
         // The "/order_book/depth" route
         router.add_admin_authenticated_route(
             &Method::GET,
             GET_DEPTH_FOR_ALL_PAIRS_ROUTE.to_string(),
-            GetDepthForAllPairsHandler::new(
-                state.clone(),
-                config.price_reporter_work_queue.clone(),
-            ),
+            GetDepthForAllPairsHandler::new(state.clone(), config.price_streams.clone()),
         );
 
         // --- Network Routes --- //
@@ -567,7 +564,7 @@ impl HttpServer {
         router.add_admin_authenticated_route(
             &Method::GET,
             ADMIN_ORDER_METADATA_ROUTE.to_string(),
-            AdminOrderMetadataHandler::new(state.clone(), config.price_reporter_work_queue.clone()),
+            AdminOrderMetadataHandler::new(state.clone(), config.price_streams.clone()),
         );
 
         // The "/admin/wallet/:id/matchable-order-ids" route

@@ -5,6 +5,7 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::auth::AuthError;
 use hyper::{Response, StatusCode};
+use price_state::error::PriceStateError;
 use state::error::StateError;
 
 use super::router::{ResponseBody, build_500_response, build_response_from_status_code};
@@ -60,6 +61,12 @@ impl From<StateError> for ApiServerError {
 impl From<DarkpoolClientError> for ApiServerError {
     fn from(value: DarkpoolClientError) -> Self {
         internal_error(value)
+    }
+}
+
+impl From<PriceStateError> for ApiServerError {
+    fn from(value: PriceStateError) -> Self {
+        bad_request(value)
     }
 }
 

@@ -61,6 +61,7 @@ renegade-crypto = { workspace = true }
 external-api = { workspace = true, features = ["auth"] }
 gossip-api = { workspace = true }
 job-types = { workspace = true }
+price-state = { workspace = true }
 state = { workspace = true }
 system-bus = { workspace = true }
 task-driver = { workspace = true }

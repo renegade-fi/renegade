@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use common::types::{
+    price::TimestampedPrice,
     token::{Token, get_all_base_tokens},
     wallet::pair_from_mints,
 };
@@ -16,13 +17,13 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
-use job_types::price_reporter::PriceReporterQueue;
 use num_traits::ToPrimitive;
+use price_state::PriceStreamStates;
 use state::State;
 use util::on_chain::get_external_match_fee;
 
 use crate::{
-    error::{ApiServerError, internal_error, not_found},
+    error::{ApiServerError, not_found},
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -147,28 +148,28 @@ impl TypedHandler for GetExternalMatchFeesHandler {
 struct DepthCalculator {
     /// A handle to the relayer state
     state: State,
-    /// The price reporter work queue
-    price_reporter_work_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    price_streams: PriceStreamStates,
 }
 
 impl DepthCalculator {
     /// Constructor
-    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
-        Self { state, price_reporter_work_queue }
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
+        Self { state, price_streams }
+    }
+
+    /// Get the price for a given token
+    fn get_price(&self, token: &Token) -> Result<TimestampedPrice, ApiServerError> {
+        let ts_price = self.price_streams.peek_timestamped_price(token)?;
+        Ok(ts_price)
     }
 
     /// Get the price and depth information for a single token
     async fn get_price_and_depth(&self, token: Token) -> Result<PriceAndDepth, ApiServerError> {
         let quote_token = Token::usdc();
 
-        // Get the price
-        let ts_price = self
-            .price_reporter_work_queue
-            .peek_price_usdc(token.clone())
-            .await
-            .map_err(internal_error)?;
-
         // Get the matchable amount
+        let ts_price = self.get_price(&token)?;
         let pair = pair_from_mints(token.get_addr_biguint(), quote_token.get_addr_biguint());
         let (buy_liquidity_quote, sell_liquidity) = self.state.get_liquidity_for_pair(&pair).await;
 
@@ -204,8 +205,8 @@ pub struct GetDepthByMintHandler {
 
 impl GetDepthByMintHandler {
     /// Constructor
-    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
-        let depth_calculator = DepthCalculator::new(state, price_reporter_work_queue);
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
+        let depth_calculator = DepthCalculator::new(state, price_streams);
         Self { depth_calculator }
     }
 }
@@ -238,8 +239,8 @@ pub struct GetDepthForAllPairsHandler {
 
 impl GetDepthForAllPairsHandler {
     /// Constructor
-    pub fn new(state: State, price_reporter_work_queue: PriceReporterQueue) -> Self {
-        let depth_calculator = DepthCalculator::new(state, price_reporter_work_queue);
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
+        let depth_calculator = DepthCalculator::new(state, price_streams);
         Self { depth_calculator }
     }
 }

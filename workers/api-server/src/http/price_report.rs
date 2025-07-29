@@ -12,15 +12,13 @@ use external_api::{
     },
     types::ApiToken,
 };
-use futures::{FutureExt, future::join_all};
 use hyper::HeaderMap;
 use itertools::Itertools;
-use job_types::price_reporter::PriceReporterQueue;
+use price_state::PriceStreamStates;
 
 use crate::{
-    error::{ApiServerError, internal_error},
+    error::ApiServerError,
     router::{QueryParams, TypedHandler, UrlParams},
-    worker::ApiServerConfig,
 };
 
 // ------------------
@@ -31,14 +29,14 @@ use crate::{
 /// pair
 #[derive(Clone)]
 pub(crate) struct PriceReportHandler {
-    /// The config for the API server
-    config: ApiServerConfig,
+    /// The price streams from the price reporter
+    price_streams: PriceStreamStates,
 }
 
 impl PriceReportHandler {
     /// Create a new handler for "/v0/price_report"
-    pub fn new(config: ApiServerConfig) -> Self {
-        Self { config }
+    pub fn new(price_streams: PriceStreamStates) -> Self {
+        Self { price_streams }
     }
 }
 
@@ -54,13 +52,7 @@ impl TypedHandler for PriceReportHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let price_report = self
-            .config
-            .price_reporter_work_queue
-            .peek_price_report(req.base_token.clone(), req.quote_token.clone())
-            .await
-            .map_err(internal_error)?;
-
+        let price_report = self.price_streams.get_state(&req.base_token, &req.quote_token);
         Ok(GetPriceReportResponse { price_report })
     }
 }
@@ -95,14 +87,14 @@ impl TypedHandler for GetSupportedTokensHandler {
 /// pairs
 #[derive(Clone)]
 pub(crate) struct TokenPricesHandler {
-    /// The price reporter work queue
-    price_reporter_work_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    price_streams: PriceStreamStates,
 }
 
 impl TokenPricesHandler {
     /// Create a new handler for "/v0/token-prices"
-    pub fn new(price_reporter_work_queue: PriceReporterQueue) -> Self {
-        Self { price_reporter_work_queue }
+    pub fn new(price_streams: PriceStreamStates) -> Self {
+        Self { price_streams }
     }
 }
 
@@ -118,22 +110,14 @@ impl TypedHandler for TokenPricesHandler {
         _params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        // Fetch all prices concurrently
         let usdc = Token::usdc();
-        let mut price_futures = Vec::new();
-        for base_token in get_all_base_tokens() {
-            let job = self
-                .price_reporter_work_queue
-                .peek_price_usdc(base_token.clone())
-                .map(|p| Ok(TokenPrice { base_token, quote_token: usdc.clone(), price: p?.price }));
-            price_futures.push(job);
-        }
+        let mut token_prices = Vec::new();
 
-        let token_prices = join_all(price_futures)
-            .await
-            .into_iter()
-            .filter_map(|r: Result<TokenPrice, String>| r.ok())
-            .collect_vec();
+        // Fetch a price for each configured base token
+        for base_token in get_all_base_tokens() {
+            let price = self.price_streams.peek_price(&base_token)?;
+            token_prices.push(TokenPrice { base_token, quote_token: usdc.clone(), price });
+        }
         Ok(GetTokenPricesResponse { token_prices })
     }
 }

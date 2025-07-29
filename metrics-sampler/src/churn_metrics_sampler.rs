@@ -73,7 +73,7 @@ impl CancellationMetricsSampler {
     /// Get the price for the pair that the given order trades
     async fn get_price_for_order(&self, order: &OrderMetadata) -> Option<Price> {
         let base = Token::from_addr_biguint(&order.data.base_mint);
-        self.price_streams.peek_price(&base)
+        self.price_streams.peek_price(&base).ok()
     }
 
     /// Get the tickers for the given pair of tokens

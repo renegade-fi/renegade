@@ -106,7 +106,7 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
-    let (price_reporter_worker_sender, price_reporter_worker_receiver) = new_price_reporter_queue();
+    let (_, price_reporter_worker_receiver) = new_price_reporter_queue();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();
@@ -342,7 +342,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender: network_sender.clone(),
         state: global_state.clone(),
         system_bus,
-        price_reporter_work_queue: price_reporter_worker_sender,
+        price_streams: price_streams.clone(),
         proof_generation_work_queue: proof_generation_worker_sender,
         handshake_manager_work_queue: handshake_worker_sender,
         cancel_channel: api_cancel_receiver,

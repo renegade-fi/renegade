@@ -10,8 +10,9 @@ use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use job_types::{
     handshake_manager::HandshakeManagerQueue, network_manager::NetworkManagerQueue,
-    price_reporter::PriceReporterQueue, proof_manager::ProofManagerQueue,
+    proof_manager::ProofManagerQueue,
 };
+use price_state::PriceStreamStates;
 use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
@@ -66,8 +67,8 @@ pub struct ApiServerConfig {
     pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue
     pub network_sender: NetworkManagerQueue,
-    /// The worker job queue for the PriceReporter
-    pub price_reporter_work_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    pub price_streams: PriceStreamStates,
     /// The worker job queue for the ProofGenerationManager
     pub proof_generation_work_queue: ProofManagerQueue,
     /// The worker job queue for the HandshakeManager
