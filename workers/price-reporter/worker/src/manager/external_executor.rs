@@ -9,12 +9,7 @@ use std::{str::FromStr, time::Duration};
 
 use common::{
     default_wrapper::DefaultOption,
-    types::{
-        CancelChannel,
-        exchange::{Exchange, PriceReporterState},
-        price::Price,
-        token::Token,
-    },
+    types::{CancelChannel, exchange::Exchange, price::Price, token::Token},
 };
 use constants::in_bootstrap_mode;
 use external_api::{
@@ -25,24 +20,17 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use price_state::PriceStreamStates;
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpStream,
-    sync::{
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-        oneshot::Sender as TokioSender,
-    },
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tracing::{Instrument, error, info, info_span, instrument, warn};
+use tracing::{error, info, warn};
 use tungstenite::Message;
 use url::Url;
-use util::{
-    channels::TracedMessage, concurrency::runtime::sleep_forever_async, err_str,
-    get_current_time_millis,
-};
+use util::{concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -78,8 +66,6 @@ pub struct ExternalPriceReporterExecutor {
     price_stream_states: PriceStreamStates,
     /// The manager config
     config: PriceReporterConfig,
-    /// The channel along which jobs are passed to the price reporter
-    job_receiver: DefaultOption<PriceReporterReceiver>,
     /// The channel on which the coordinator may cancel execution
     cancel_channel: DefaultOption<CancelChannel>,
 }
@@ -87,7 +73,6 @@ pub struct ExternalPriceReporterExecutor {
 impl ExternalPriceReporterExecutor {
     /// Creates the executor for the PriceReporter worker.
     pub(crate) fn new(
-        job_receiver: PriceReporterReceiver,
         config: PriceReporterConfig,
         cancel_channel: CancelChannel,
         price_stream_states: PriceStreamStates,
@@ -95,7 +80,6 @@ impl ExternalPriceReporterExecutor {
         Self {
             price_stream_states,
             config,
-            job_receiver: DefaultOption::new(Some(job_receiver)),
             cancel_channel: DefaultOption::new(Some(cancel_channel)),
         }
     }
@@ -107,7 +91,6 @@ impl ExternalPriceReporterExecutor {
             sleep_forever_async().await;
         }
 
-        let mut job_receiver = self.job_receiver.take().unwrap();
         let mut cancel_channel = self.cancel_channel.take().unwrap();
 
         // Spawn WS handler loop, which forwards reads/writes over channels
@@ -121,24 +104,6 @@ impl ExternalPriceReporterExecutor {
                 Some(price_message) = msg_in_rx.recv() => {
                     self.handle_price_update(price_message).map_err(PriceReporterError::ExchangeConnection)?;
                 }
-
-                // Dequeue the next job from elsewhere in the local node
-                Some(job) = job_receiver.recv() => {
-                    if self.config.disabled {
-                        warn!("ExternalPriceReporter received job while disabled, ignoring...");
-                        continue;
-                    }
-
-                    tokio::spawn({
-                        let self_clone = self.clone();
-                        async move {
-                            if let Err(e) = self_clone.handle_job(job).await {
-                                error!("Error in ExternalPriceReporter execution loop: {e}");
-                            }
-                        }.instrument(info_span!("handle_job"))
-                    });
-                },
-
                 // Await cancellation by the coordinator
                 _ = cancel_channel.changed() => {
                     info!("ExternalPriceReporter cancelled, shutting down...");
@@ -214,32 +179,6 @@ impl ExternalPriceReporterExecutor {
                 bus.publish(topic, SystemBusMessage::PriceReport(report));
             }
         }
-
-        Ok(())
-    }
-
-    /// Handles a job for the PriceReporter worker.
-    #[instrument(name = "handle_price_reporter_job", skip(self, job))]
-    pub(super) async fn handle_job(
-        &self,
-        job: TracedMessage<PriceReporterJob>,
-    ) -> Result<(), PriceReporterError> {
-        match job.consume() {
-            PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.peek_price(base_token, quote_token, channel)
-            },
-        }
-    }
-
-    /// Handler for the PeekPrice job
-    fn peek_price(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<PriceReporterState>,
-    ) -> Result<(), PriceReporterError> {
-        let state = self.price_stream_states.get_state(&base_token, &quote_token);
-        channel.send(state).unwrap();
 
         Ok(())
     }

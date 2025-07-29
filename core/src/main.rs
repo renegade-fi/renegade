@@ -26,7 +26,6 @@ use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::handshake_manager::new_handshake_manager_queue;
 use job_types::network_manager::new_network_manager_queue;
-use job_types::price_reporter::new_price_reporter_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
 use job_types::{event_manager::new_event_manager_queue, gossip_server::new_gossip_server_queue};
@@ -106,7 +105,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
-    let (_, price_reporter_worker_receiver) = new_price_reporter_queue();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();
@@ -172,7 +170,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let (mut price_reporter_manager, price_streams) =
         PriceReporter::new_with_streams(PriceReporterConfig {
             system_bus: system_bus.clone(),
-            job_receiver: Some(price_reporter_worker_receiver).into(),
             cancel_channel: price_reporter_cancel_receiver,
             exchange_conn_config: ExchangeConnectionsConfig {
                 coinbase_key_name: args.coinbase_key_name,
