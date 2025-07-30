@@ -12,3 +12,4 @@ util = { workspace = true }
 atomic_float = "1.1"
 itertools = { workspace = true }
 statrs = "0.16"
+thiserror = { workspace = true }

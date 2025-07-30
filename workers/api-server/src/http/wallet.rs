@@ -29,9 +29,9 @@ use external_api::{
 };
 use hyper::HeaderMap;
 use itertools::Itertools;
-use job_types::price_reporter::PriceReporterQueue;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
+use price_state::PriceStreamStates;
 use renegade_crypto::fields::biguint_to_scalar;
 use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
@@ -60,10 +60,6 @@ const DEFAULT_ORDER_HISTORY_LEN: usize = 100;
 /// The name of the query parameter specifying the length of the order history
 /// to return
 const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
-
-/// The error message emitted when a price cannot be fetched
-pub(crate) const ERR_FAILED_TO_FETCH_PRICE: &str =
-    "price too stale for matching, try again shortly";
 
 /// Find the wallet in global state and apply any tasks to its state
 pub(crate) async fn find_wallet_for_update(
@@ -117,10 +113,10 @@ pub(crate) fn maybe_rotate_root_key(
 ///
 /// Note that this function may have precision issues for large balances, it is
 /// intended as a simple implementation at the expense of some precision
-pub(crate) async fn get_usdc_denominated_value(
+pub(crate) fn get_usdc_denominated_value(
     mint: &BigUint,
     amount: Amount,
-    price_reporter_queue: &PriceReporterQueue,
+    price_streams: &PriceStreamStates,
 ) -> Result<Option<f64>, ApiServerError> {
     let base_token = Token::from_addr_biguint(mint);
     let quote_token = Token::from_ticker("USDC");
@@ -131,14 +127,9 @@ pub(crate) async fn get_usdc_denominated_value(
         return Ok(Some(amount_with_decimals));
     }
 
-    // Peek at the price report from the price reporter
-    let ts_price = price_reporter_queue
-        .peek_price(base_token, quote_token)
-        .await
-        .map_err(|_| internal_error(ERR_FAILED_TO_FETCH_PRICE))?;
-    let price = ts_price.price;
-
-    // Compute the usdc denominated value
+    // Peek at the price report from the price reporter and compute the USDC
+    // denominated value
+    let price = price_streams.peek_price(&base_token)?;
     let value = amount_with_decimals * price;
     Ok(Some(value))
 }
@@ -757,8 +748,8 @@ pub struct DepositBalanceHandler {
     state: State,
     /// The per-wallet task rate limiter
     rate_limiter: WalletTaskRateLimiter,
-    /// The price reporter's job queue
-    price_reporter_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    price_streams: PriceStreamStates,
 }
 
 impl DepositBalanceHandler {
@@ -768,10 +759,10 @@ impl DepositBalanceHandler {
         compliance_url: Option<String>,
         state: State,
         rate_limiter: WalletTaskRateLimiter,
-        price_reporter_queue: PriceReporterQueue,
+        price_streams: PriceStreamStates,
     ) -> Self {
         let compliance_client = ComplianceServerClient::new(compliance_url);
-        Self { min_deposit_amount, compliance_client, state, rate_limiter, price_reporter_queue }
+        Self { min_deposit_amount, compliance_client, state, rate_limiter, price_streams }
     }
 }
 
@@ -796,8 +787,7 @@ impl TypedHandler for DepositBalanceHandler {
         // Check that the deposit amount is above the minimum allowed
         let deposit_amount = req.amount.to_u128().unwrap();
         let maybe_deposit_value =
-            get_usdc_denominated_value(&req.mint, deposit_amount, &self.price_reporter_queue)
-                .await?;
+            get_usdc_denominated_value(&req.mint, deposit_amount, &self.price_streams)?;
 
         // If we are unable to fetch a price, do not block the deposit
         if let Some(deposit_value) = maybe_deposit_value {
@@ -855,8 +845,8 @@ pub struct WithdrawBalanceHandler {
     state: State,
     /// The per-wallet task rate limiter
     rate_limiter: WalletTaskRateLimiter,
-    /// The price reporter's job queue
-    price_reporter_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    price_streams: PriceStreamStates,
 }
 
 impl WithdrawBalanceHandler {
@@ -865,9 +855,9 @@ impl WithdrawBalanceHandler {
         min_withdrawal_amount: f64,
         state: State,
         rate_limiter: WalletTaskRateLimiter,
-        price_reporter_queue: PriceReporterQueue,
+        price_streams: PriceStreamStates,
     ) -> Self {
-        Self { min_withdrawal_amount, state, rate_limiter, price_reporter_queue }
+        Self { min_withdrawal_amount, state, rate_limiter, price_streams }
     }
 }
 
@@ -905,8 +895,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Check that the withdrawal amount is above the minimum allowed or withdraws
         // the entire balance if it is not
         let maybe_withdrawal_value =
-            get_usdc_denominated_value(&mint, withdrawal_amount, &self.price_reporter_queue)
-                .await?;
+            get_usdc_denominated_value(&mint, withdrawal_amount, &self.price_streams)?;
 
         // If we are unable to fetch a price, do not block the withdrawal
         let new_balance = new_wallet.get_balance(&mint).unwrap();

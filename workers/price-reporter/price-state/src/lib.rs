@@ -5,6 +5,7 @@
 #![allow(incomplete_features)]
 #![feature(let_chains)]
 
+pub mod error;
 mod state;
 pub mod util;
 pub use state::*;

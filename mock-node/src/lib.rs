@@ -38,9 +38,6 @@ use job_types::{
     network_manager::{
         NetworkManagerJob, NetworkManagerQueue, NetworkManagerReceiver, new_network_manager_queue,
     },
-    price_reporter::{
-        PriceReporterJob, PriceReporterQueue, PriceReporterReceiver, new_price_reporter_queue,
-    },
     proof_manager::{
         ProofManagerJob, ProofManagerQueue, ProofManagerReceiver, new_proof_manager_queue,
     },
@@ -50,8 +47,9 @@ use libp2p::Multiaddr;
 use network_manager::worker::{NetworkManager, NetworkManagerConfig};
 use price_reporter::{
     mock::MockPriceReporter,
-    worker::{ExchangeConnectionsConfig, PriceReporter, PriceReporterConfig},
+    worker::{ExchangeConnectionsConfig, PriceReporterConfig},
 };
+use price_state::PriceStreamStates;
 use proof_manager::{
     mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
 };
@@ -97,6 +95,8 @@ pub struct MockNodeController {
     // --- Shared Handles --- //
     /// The darkpool client
     darkpool_client: Option<DarkpoolClient>,
+    /// The price streams
+    price_streams: PriceStreamStates,
     /// The system bus
     bus: SystemBus<SystemBusMessage>,
     /// The system clock
@@ -113,8 +113,6 @@ pub struct MockNodeController {
     gossip_queue: (GossipServerQueue, DefaultOption<GossipServerReceiver>),
     /// The handshake manager's queue
     handshake_queue: (HandshakeManagerQueue, DefaultOption<HandshakeManagerReceiver>),
-    /// The price reporter's queue
-    price_queue: (PriceReporterQueue, DefaultOption<PriceReporterReceiver>),
     /// The proof generation queue
     proof_queue: (ProofManagerQueue, DefaultOption<ProofManagerReceiver>),
     /// The event manager queue
@@ -132,22 +130,25 @@ impl MockNodeController {
         let (network_sender, network_recv) = new_network_manager_queue();
         let (gossip_sender, gossip_recv) = new_gossip_server_queue();
         let (handshake_send, handshake_recv) = new_handshake_manager_queue();
-        let (price_sender, price_recv) = new_price_reporter_queue();
         let (proof_gen_sender, proof_gen_recv) = new_proof_manager_queue();
         let (event_sender, event_recv) = new_event_manager_queue();
         let (task_sender, task_recv) = new_task_driver_queue();
+
+        // Setup the price streams
+        let cfg = Self::get_price_reporter_config(&config);
+        let price_streams = MockPriceReporter::build_price_streams(&cfg);
 
         Self {
             config,
             local_addr: Multiaddr::empty(),
             darkpool_client: None,
+            price_streams,
             bus,
             clock,
             state: None,
             network_queue: (network_sender, default_option(network_recv)),
             gossip_queue: (gossip_sender, default_option(gossip_recv)),
             handshake_queue: (handshake_send, default_option(handshake_recv)),
-            price_queue: (price_sender, default_option(price_recv)),
             proof_queue: (proof_gen_sender, default_option(proof_gen_recv)),
             event_queue: (event_sender, default_option(event_recv)),
             task_queue: (task_sender, default_option(task_recv)),
@@ -162,6 +163,22 @@ impl MockNodeController {
     fn clone_cluster_key(&self) -> Keypair {
         let key_bytes = self.config.cluster_keypair.to_bytes();
         Keypair::from_bytes(&key_bytes).expect("Failed to clone cluster keypair")
+    }
+
+    /// Setup a mock price reporter and return the stream states
+    fn get_price_reporter_config(relayer_config: &RelayerConfig) -> PriceReporterConfig {
+        PriceReporterConfig {
+            system_bus: SystemBus::new(),
+            exchange_conn_config: ExchangeConnectionsConfig {
+                coinbase_key_name: relayer_config.coinbase_key_name.clone(),
+                coinbase_key_secret: relayer_config.coinbase_key_secret.clone(),
+                eth_websocket_addr: None, // Disables UniswapV3 exchange
+            },
+            price_reporter_url: relayer_config.price_reporter_url.clone(),
+            disabled: false,
+            disabled_exchanges: vec![],
+            cancel_channel: mock_cancel(),
+        }
     }
 
     // -----------
@@ -207,7 +224,9 @@ impl MockNodeController {
         if resp.status().is_success() {
             resp.json().await.map_err(|e| eyre::eyre!(e))
         } else {
-            Err(eyre::eyre!("Request failed with status: {}", resp.status()))
+            let status = resp.status();
+            let txt = resp.text().await.unwrap();
+            Err(eyre::eyre!("Request failed with status: {status}, body: {txt}"))
         }
     }
 
@@ -255,11 +274,6 @@ impl MockNodeController {
     /// Send a job to the handshake manager
     pub fn send_handshake_job(&self, job: HandshakeManagerJob) -> Result<()> {
         self.handshake_queue.0.send(job).map_err(|e| eyre::eyre!(e))
-    }
-
-    /// Send a job to the price reporter
-    pub fn send_price_reporter_job(&self, job: PriceReporterJob) -> Result<()> {
-        self.price_queue.0.send(job).map_err(|e| eyre::eyre!(e))
     }
 
     /// Send a job to the proof manager
@@ -444,7 +458,7 @@ impl MockNodeController {
     pub fn with_handshake_manager(mut self) -> Self {
         let state = self.state.clone().expect("State not initialized");
         let network_channel = self.network_queue.0.clone();
-        let price_reporter_job_queue = self.price_queue.0.clone();
+        let price_streams = self.price_streams.clone();
         let job_sender = self.handshake_queue.0.clone();
         let job_receiver = self.handshake_queue.1.take().unwrap();
         let cancel_channel = mock_cancel();
@@ -455,7 +469,7 @@ impl MockNodeController {
             min_fill_size: self.config.min_fill_size,
             state,
             network_channel,
-            price_reporter_job_queue,
+            price_streams,
             job_sender,
             job_receiver: Some(job_receiver),
             task_queue,
@@ -469,37 +483,11 @@ impl MockNodeController {
         self
     }
 
-    /// Add a price reporter to the mock node
-    pub fn with_price_reporter(mut self) -> Self {
-        let config = &self.config;
-        let job_receiver = self.price_queue.1.take().unwrap();
-        let cancel_channel = mock_cancel();
-        let system_bus = self.bus.clone();
-
-        let conf = PriceReporterConfig {
-            exchange_conn_config: ExchangeConnectionsConfig {
-                coinbase_key_name: config.coinbase_key_name.clone(),
-                coinbase_key_secret: config.coinbase_key_secret.clone(),
-                eth_websocket_addr: config.eth_websocket_addr.clone(),
-            },
-            price_reporter_url: config.price_reporter_url.clone(),
-            disabled: config.disable_price_reporter,
-            disabled_exchanges: config.disabled_exchanges.clone(),
-            job_receiver: default_option(job_receiver),
-            system_bus,
-            cancel_channel,
-        };
-        let mut reporter =
-            run_fut(PriceReporter::new(conf)).expect("Failed to create price reporter");
-        reporter.start().expect("Failed to start price reporter");
-
-        self
-    }
-
     /// Add a mock price reporter to the mock node
-    pub fn with_mock_price_reporter(mut self, price: Price) -> Self {
-        let job_queue = self.price_queue.1.take().unwrap();
-        let reporter = MockPriceReporter::new(price, job_queue);
+    pub fn with_mock_price_reporter(self, price: Price) -> Self {
+        let streams = self.price_streams.clone();
+        let config = Self::get_price_reporter_config(&self.config);
+        let reporter = MockPriceReporter::new(price, streams, config);
         reporter.run();
 
         self
@@ -538,7 +526,7 @@ impl MockNodeController {
         let network_sender = self.network_queue.0.clone();
         let state = self.state.clone().expect("State not initialized");
         let system_bus = self.bus.clone();
-        let price_reporter_work_queue = self.price_queue.0.clone();
+        let price_streams = self.price_streams.clone();
         let proof_generation_work_queue = self.proof_queue.0.clone();
         let handshake_manager_work_queue = self.handshake_queue.0.clone();
         let cancel_channel = mock_cancel();
@@ -556,7 +544,7 @@ impl MockNodeController {
             network_sender,
             state,
             system_bus,
-            price_reporter_work_queue,
+            price_streams,
             proof_generation_work_queue,
             handshake_manager_work_queue,
             cancel_channel,

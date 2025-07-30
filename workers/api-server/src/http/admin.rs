@@ -31,10 +31,8 @@ use external_api::{
     types::AdminOrderMetadata,
 };
 use hyper::HeaderMap;
-use job_types::{
-    handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue},
-    price_reporter::PriceReporterQueue,
-};
+use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
+use price_state::PriceStreamStates;
 use state::State;
 use tracing::info;
 use util::{matching_engine::compute_max_amount, on_chain::set_external_match_fee};
@@ -68,8 +66,6 @@ const ERR_NO_MATCHING_POOL: &str = "matching pool does not exist";
 const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 /// The balance for an order does not exist in its wallet
 const ERR_BALANCE_NOT_FOUND: &str = "balance not found in wallet";
-/// Error message emitted when price data cannot be found for a token pair
-const ERR_NO_PRICE_DATA: &str = "no price data found for token pair";
 
 // -----------------------
 // | Raft Route Handlers |
@@ -184,14 +180,14 @@ impl TypedHandler for AdminOpenOrdersHandler {
 pub struct AdminOrderMetadataHandler {
     /// A handle to the relayer state
     state: State,
-    /// A handle to the price reporter's job queue
-    price_reporter_job_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    price_streams: PriceStreamStates,
 }
 
 impl AdminOrderMetadataHandler {
     /// Constructor
-    pub fn new(state: State, price_reporter_job_queue: PriceReporterQueue) -> Self {
-        Self { state, price_reporter_job_queue }
+    pub fn new(state: State, price_streams: PriceStreamStates) -> Self {
+        Self { state, price_streams }
     }
 }
 
@@ -233,7 +229,7 @@ impl TypedHandler for AdminOrderMetadataHandler {
                 &order_metadata,
                 &wallet_id,
                 &self.state,
-                &self.price_reporter_job_queue,
+                &self.price_streams,
             )
             .await?;
 
@@ -599,7 +595,7 @@ async fn get_fillable_amount_and_price(
     meta: &OrderMetadata,
     wallet_id: &WalletIdentifier,
     state: &State,
-    price_reporter_job_queue: &PriceReporterQueue,
+    price_streams: &PriceStreamStates,
 ) -> Result<(Amount, Price), ApiServerError> {
     let wallet = state.get_wallet(wallet_id).await?.ok_or(not_found(ERR_WALLET_NOT_FOUND))?;
 
@@ -614,16 +610,8 @@ async fn get_fillable_amount_and_price(
     // the base token to calculate how capitalized the order is
     let base_token = Token::from_addr_biguint(&order.base_mint);
     let quote_token = Token::from_addr_biguint(&order.quote_mint);
-    let base_addr = base_token.get_addr().to_string();
-    let quote_addr = quote_token.get_addr().to_string();
 
-    let ts_price = price_reporter_job_queue
-        .peek_price(base_token.clone(), quote_token.clone())
-        .await
-        .map_err(|e| {
-            internal_error(format!("{ERR_NO_PRICE_DATA}: {base_addr} / {quote_addr} {e}"))
-        })?;
-
+    let ts_price = price_streams.peek_timestamped_price(&base_token)?;
     let original_price = ts_price.price;
     let corrected_price =
         ts_price.get_decimal_corrected_price(&base_token, &quote_token).map_err(internal_error)?;

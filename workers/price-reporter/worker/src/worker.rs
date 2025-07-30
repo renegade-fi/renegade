@@ -3,12 +3,10 @@
 
 use async_trait::async_trait;
 use common::{
-    default_wrapper::DefaultOption,
     types::{CancelChannel, exchange::Exchange},
     worker::Worker,
 };
 use external_api::bus_message::SystemBusMessage;
-use job_types::price_reporter::PriceReporterReceiver;
 use price_state::PriceStreamStates;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
@@ -33,8 +31,6 @@ const PRICE_REPORTER_MANAGER_NUM_THREADS: usize = 2;
 pub struct PriceReporterConfig {
     /// The global system bus
     pub system_bus: SystemBus<SystemBusMessage>,
-    /// The receiver for jobs from other workers
-    pub job_receiver: DefaultOption<PriceReporterReceiver>,
     /// Exchange connection config options
     pub exchange_conn_config: ExchangeConnectionsConfig,
     /// The URL of an external price reporter service
@@ -160,7 +156,6 @@ impl Worker for PriceReporter {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Start the loop that dispatches incoming jobs to the executor
-        let job_receiver = self.config.job_receiver.take().unwrap();
         let cancel_channel = self.config.cancel_channel.clone();
         let config = self.config.clone();
 
@@ -172,8 +167,7 @@ impl Worker for PriceReporter {
             .unwrap();
 
         let streams = self.price_stream_states.clone();
-        let manager_executor =
-            ExternalPriceReporterExecutor::new(job_receiver, config, cancel_channel, streams);
+        let manager_executor = ExternalPriceReporterExecutor::new(config, cancel_channel, streams);
         let manager_executor_handle = thread::Builder::new()
             .name("price-reporter-manager-executor".to_string())
             .spawn(move || runtime.block_on(manager_executor.execution_loop()).err().unwrap())

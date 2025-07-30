@@ -1,22 +1,21 @@
 //! A mock price reporter used for testing
 
-use std::thread;
-
 use common::types::chain::Chain;
-use common::types::exchange::{PriceReport, PriceReporterState};
+use common::types::exchange::Exchange;
 use common::types::price::Price;
 use common::types::token::{
-    Token, USD_TICKER, USDC_TICKER, USDT_TICKER, set_default_chain, write_token_remaps,
+    Token, USD_TICKER, USDC_TICKER, USDT_TICKER, default_exchange_stable, set_default_chain,
+    write_token_remaps,
 };
-use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
-use tokio::runtime::Runtime as TokioRuntime;
-use tokio::sync::oneshot::Sender as OneshotSender;
-use tracing::error;
-use util::channels::TracedMessage;
+use itertools::Itertools;
+use price_state::PriceStreamStates;
 use util::get_current_time_millis;
 
-use crate::errors::PriceReporterError;
+use crate::manager::utils::get_all_stream_tuples;
+use crate::worker::PriceReporterConfig;
 
+/// The conversion price to use for all quote conversion mocks
+const CONVERSION_PRICE: Price = 1.0;
 /// Ticker names to use in setting up the mock token remap
 const MOCK_TICKER_NAMES: &[&str] = &[
     USDC_TICKER,
@@ -63,92 +62,53 @@ pub struct MockPriceReporter {
     /// The price to report for all pairs
     price: Price,
     /// The queue on which to accept jobs
-    job_queue: PriceReporterReceiver,
+    price_streams: PriceStreamStates,
+    /// The config for the price reporter
+    config: PriceReporterConfig,
 }
 
 impl MockPriceReporter {
     /// Create a new mock price reporter
-    pub fn new(price: Price, job_queue: PriceReporterReceiver) -> Self {
-        Self { price, job_queue }
+    pub fn new(
+        price: Price,
+        price_streams: PriceStreamStates,
+        config: PriceReporterConfig,
+    ) -> Self {
+        Self { price, price_streams, config }
+    }
+
+    /// Get the price streams
+    pub fn build_price_streams(config: &PriceReporterConfig) -> PriceStreamStates {
+        let all_streams = get_all_stream_tuples(config);
+        let disabled_exchanges =
+            Exchange::all().into_iter().filter(|e| !config.exchange_configured(*e)).collect_vec();
+        PriceStreamStates::new(all_streams, disabled_exchanges)
     }
 
     /// Start the mock price reporter
     pub fn run(self) {
-        thread::spawn(move || {
-            let rt = TokioRuntime::new().unwrap();
-            rt.block_on(self.execution_loop());
-        });
-    }
+        // Place a dummy value for each price stream
+        let all_streams = get_all_stream_tuples(&self.config);
+        for (exchange, base, quote) in all_streams {
+            let price = self.price;
+            let ts = get_current_time_millis();
+            self.price_streams.new_price(exchange, base, quote, price, ts).unwrap();
+        }
 
-    /// The execution loop of the mock price reporter
-    async fn execution_loop(mut self) {
-        loop {
-            let job = self.job_queue.recv().await;
-            if let Some(job) = job {
-                if let Err(e) = self.handle_job(job) {
-                    error!("error in mock price reporter: {e:?}");
-                }
+        // Set conversion streams for all exchanges
+        let usd = Token::from_ticker(USD_TICKER);
+        let usdc = Token::usdc();
+        let ts = get_current_time_millis();
+        for exchange in Exchange::all().into_iter().filter(|e| self.config.exchange_configured(*e))
+        {
+            let default_stable = default_exchange_stable(&exchange);
+            if default_stable == usd || default_stable == usdc {
+                continue;
             }
+
+            self.price_streams
+                .new_price(exchange, usdc.clone(), default_stable, CONVERSION_PRICE, ts)
+                .unwrap();
         }
-    }
-
-    /// Handle a job
-    fn handle_job(&self, job: TracedMessage<PriceReporterJob>) -> Result<(), PriceReporterError> {
-        match job.consume() {
-            PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.handle_peek_price(base_token, quote_token, channel)
-            },
-        }
-    }
-
-    /// Handle a peek price job
-    fn handle_peek_price(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        channel: OneshotSender<PriceReporterState>,
-    ) -> Result<(), PriceReporterError> {
-        // Construct a state and send it back on the queue
-        let timestamp = get_current_time_millis();
-        let state = PriceReporterState::Nominal(PriceReport {
-            base_token,
-            quote_token,
-            price: self.price,
-            local_timestamp: timestamp,
-        });
-
-        if let Err(e) = channel.send(state) {
-            error!("error sending price report: {e:?}");
-        }
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use common::types::token::Token;
-    use job_types::price_reporter::new_price_reporter_queue;
-
-    use crate::mock::{MockPriceReporter, setup_mock_token_remap};
-
-    /// Test the price reporter from the mock
-    #[tokio::test]
-    async fn test_peek_price() {
-        const PRICE: f64 = 100.9;
-        setup_mock_token_remap();
-
-        // Start a price reporter
-        let (price_sender, price_recv) = new_price_reporter_queue();
-
-        let reporter = MockPriceReporter::new(PRICE, price_recv);
-        reporter.run();
-
-        // Request a price
-        let base = Token::from_ticker("WETH");
-        let quote = Token::from_ticker("USDC");
-        let resp = price_sender.peek_price(base, quote).await.unwrap();
-
-        assert_eq!(resp.price, PRICE);
     }
 }

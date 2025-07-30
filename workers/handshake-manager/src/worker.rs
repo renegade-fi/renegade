@@ -10,9 +10,9 @@ use external_api::bus_message::SystemBusMessage;
 use job_types::{
     handshake_manager::{HandshakeManagerQueue, HandshakeManagerReceiver},
     network_manager::NetworkManagerQueue,
-    price_reporter::PriceReporterQueue,
     task_driver::TaskDriverQueue,
 };
+use price_state::PriceStreamStates;
 use state::State;
 use system_bus::SystemBus;
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -36,8 +36,8 @@ pub struct HandshakeManagerConfig {
     pub state: State,
     /// The channel on which to send outbound network requests
     pub network_channel: NetworkManagerQueue,
-    /// The price reporter's job queue
-    pub price_reporter_job_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    pub price_streams: PriceStreamStates,
     /// A sender on the handshake manager's job queue, used by the timer
     /// thread to enqueue outbound handshakes
     pub job_sender: HandshakeManagerQueue,
@@ -69,7 +69,7 @@ impl Worker for HandshakeManager {
             config.min_fill_size,
             config.job_receiver.take().unwrap(),
             config.network_channel.clone(),
-            config.price_reporter_job_queue.clone(),
+            config.price_streams.clone(),
             config.state.clone(),
             config.task_queue.clone(),
             config.system_bus.clone(),

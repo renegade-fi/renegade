@@ -45,16 +45,22 @@ pub enum HandshakeManagerError {
 }
 
 impl HandshakeManagerError {
-    /// Create a new error from a state error
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn state<T: ToString>(e: T) -> Self {
-        HandshakeManagerError::State(e.to_string())
-    }
-
     /// Create a new error from an invalid request
     #[allow(clippy::needless_pass_by_value)]
     pub fn invalid_request<T: ToString>(e: T) -> Self {
         HandshakeManagerError::InvalidRequest(e.to_string())
+    }
+
+    /// Create a new error from a price reporter error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn price_reporter<T: ToString>(e: T) -> Self {
+        HandshakeManagerError::PriceReporter(e.to_string())
+    }
+
+    /// Create a new error from a state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state<T: ToString>(e: T) -> Self {
+        HandshakeManagerError::State(e.to_string())
     }
 }
 

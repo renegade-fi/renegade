@@ -35,10 +35,10 @@ use gossip_api::{
 use job_types::{
     handshake_manager::{HandshakeManagerJob, HandshakeManagerReceiver},
     network_manager::{NetworkManagerJob, NetworkManagerQueue},
-    price_reporter::PriceReporterQueue,
     task_driver::TaskDriverQueue,
 };
 use libp2p::request_response::ResponseChannel;
+use price_state::PriceStreamStates;
 use rand::{seq::SliceRandom, thread_rng};
 use renegade_metrics::helpers::record_match_volume;
 use state::State;
@@ -108,8 +108,8 @@ pub struct HandshakeExecutor {
     /// The channel on which the handshake executor may forward requests to the
     /// network
     pub(crate) network_channel: NetworkManagerQueue,
-    /// The pricer reporter's work queue, used for fetching price reports
-    pub(crate) price_reporter_job_queue: PriceReporterQueue,
+    /// The price streams from the price reporter
+    pub(crate) price_streams: PriceStreamStates,
     /// The global relayer state
     pub(crate) state: State,
     /// The queue used to send tasks to the task driver
@@ -128,7 +128,7 @@ impl HandshakeExecutor {
         min_fill_size: Amount,
         job_channel: HandshakeManagerReceiver,
         network_channel: NetworkManagerQueue,
-        price_reporter_job_queue: PriceReporterQueue,
+        price_streams: PriceStreamStates,
         state: State,
         task_queue: TaskDriverQueue,
         system_bus: SystemBus<SystemBusMessage>,
@@ -144,7 +144,7 @@ impl HandshakeExecutor {
             handshake_state_index,
             job_channel: DefaultWrapper::new(Some(job_channel)),
             network_channel,
-            price_reporter_job_queue,
+            price_streams,
             state,
             task_queue,
             system_bus,

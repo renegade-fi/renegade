@@ -24,6 +24,7 @@ handshake-manager = { workspace = true }
 job-types = { workspace = true }
 network-manager = { workspace = true }
 price-reporter = { workspace = true, features = ["mocks"] }
+price-state = { workspace = true }
 proof-manager = { workspace = true, features = ["mocks"] }
 state = { workspace = true, features = ["mocks"] }
 system-bus = { workspace = true }

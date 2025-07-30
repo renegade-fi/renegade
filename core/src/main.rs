@@ -26,7 +26,6 @@ use gossip_server::{server::GossipServer, worker::GossipServerConfig};
 use handshake_manager::{manager::HandshakeManager, worker::HandshakeManagerConfig};
 use job_types::handshake_manager::new_handshake_manager_queue;
 use job_types::network_manager::new_network_manager_queue;
-use job_types::price_reporter::new_price_reporter_queue;
 use job_types::proof_manager::new_proof_manager_queue;
 use job_types::task_driver::new_task_driver_queue;
 use job_types::{event_manager::new_event_manager_queue, gossip_server::new_gossip_server_queue};
@@ -106,7 +105,6 @@ async fn main() -> Result<(), CoordinatorError> {
     let (network_sender, network_receiver) = new_network_manager_queue();
     let (gossip_worker_sender, gossip_worker_receiver) = new_gossip_server_queue();
     let (handshake_worker_sender, handshake_worker_receiver) = new_handshake_manager_queue();
-    let (price_reporter_worker_sender, price_reporter_worker_receiver) = new_price_reporter_queue();
     let (proof_generation_worker_sender, proof_generation_worker_receiver) =
         new_proof_manager_queue();
     let (task_sender, task_receiver) = new_task_driver_queue();
@@ -123,14 +121,6 @@ async fn main() -> Result<(), CoordinatorError> {
         system_bus.clone(),
         &system_clock,
         state_failure_send,
-    )
-    .await?;
-
-    // Register metrics samplers
-    setup_metrics_samplers(
-        global_state.clone(),
-        &system_clock,
-        price_reporter_worker_sender.clone(),
     )
     .await?;
 
@@ -174,6 +164,29 @@ async fn main() -> Result<(), CoordinatorError> {
     // ----------------
 
     // --- Node Setup Phase --- //
+
+    // Start the price reporter manager
+    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = new_cancel_channel();
+    let (mut price_reporter_manager, price_streams) =
+        PriceReporter::new_with_streams(PriceReporterConfig {
+            system_bus: system_bus.clone(),
+            cancel_channel: price_reporter_cancel_receiver,
+            exchange_conn_config: ExchangeConnectionsConfig {
+                coinbase_key_name: args.coinbase_key_name,
+                coinbase_key_secret: args.coinbase_key_secret,
+                eth_websocket_addr: args.eth_websocket_addr.clone(),
+            },
+            price_reporter_url: args.price_reporter_url,
+            disabled: args.disable_price_reporter,
+            disabled_exchanges: args.disabled_exchanges,
+        });
+    price_reporter_manager.start().expect("failed to start price reporter manager");
+    let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
+        new_worker_failure_channel();
+    watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
+
+    // Register metrics samplers
+    setup_metrics_samplers(global_state.clone(), &system_clock, price_streams.clone()).await?;
 
     // Build a task driver that may be used to spawn long-lived asynchronous tasks
     // that are common among workers
@@ -275,34 +288,13 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // --- Workers Setup Phase --- //
 
-    // Start the price reporter manager
-    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = new_cancel_channel();
-    let (mut price_reporter_manager, price_streams) =
-        PriceReporter::new_with_streams(PriceReporterConfig {
-            system_bus: system_bus.clone(),
-            job_receiver: Some(price_reporter_worker_receiver).into(),
-            cancel_channel: price_reporter_cancel_receiver,
-            exchange_conn_config: ExchangeConnectionsConfig {
-                coinbase_key_name: args.coinbase_key_name,
-                coinbase_key_secret: args.coinbase_key_secret,
-                eth_websocket_addr: args.eth_websocket_addr.clone(),
-            },
-            price_reporter_url: args.price_reporter_url,
-            disabled: args.disable_price_reporter,
-            disabled_exchanges: args.disabled_exchanges,
-        });
-    price_reporter_manager.start().expect("failed to start price reporter manager");
-    let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
-        new_worker_failure_channel();
-    watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
-
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = new_cancel_channel();
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
         min_fill_size: args.min_fill_size,
         state: global_state.clone(),
         network_channel: network_sender.clone(),
-        price_reporter_job_queue: price_reporter_worker_sender.clone(),
+        price_streams: price_streams.clone(),
         job_receiver: Some(handshake_worker_receiver),
         job_sender: handshake_worker_sender.clone(),
         task_queue: task_sender.clone(),
@@ -347,7 +339,7 @@ async fn main() -> Result<(), CoordinatorError> {
         network_sender: network_sender.clone(),
         state: global_state.clone(),
         system_bus,
-        price_reporter_work_queue: price_reporter_worker_sender,
+        price_streams: price_streams.clone(),
         proof_generation_work_queue: proof_generation_worker_sender,
         handshake_manager_work_queue: handshake_worker_sender,
         cancel_channel: api_cancel_receiver,

@@ -11,13 +11,14 @@ use std::{
 use atomic_float::AtomicF64;
 use common::types::{
     exchange::{Exchange, PriceReporterState},
-    price::Price,
+    price::{Price, TimestampedPrice},
     token::{Token, default_exchange_stable, is_pair_named},
 };
 use itertools::Itertools;
 
 use crate::{
     StreamTuple,
+    error::PriceStateError,
     util::{
         compute_price_reporter_state, eligible_for_stable_quote_conversion, get_listing_exchanges,
     },
@@ -76,6 +77,7 @@ pub struct PriceStreamStates(Arc<PriceStreamStatesInner>);
 #[derive(Clone, Debug)]
 pub struct PriceStreamStatesInner {
     /// The mapping between (exchange, base, quote) and the most recent
+    /// state of a price stream
     states: Arc<HashMap<StreamTuple, AtomicPriceStreamState>>,
     /// The set of disabled exchanges
     disabled_exchanges: HashSet<Exchange>,
@@ -113,15 +115,44 @@ impl PriceStreamStates {
 
     // --- Getters --- //
 
+    /// Peek at the Renegade price for the given base token
+    ///
+    /// Uses the canonical quote (USDC) and assumes the exchange the caller
+    /// wishes to fetch a price from is `Exchange::Renegade`. This is a
+    /// virtual exchange which selects the canonical price stream on a per-pair
+    /// basis.
+    pub fn peek_price(&self, base: &Token) -> Result<Price, PriceStateError> {
+        self.peek_timestamped_price(base).map(|ts_price| ts_price.price)
+    }
+
+    /// Peek a timestamped price for the given token pair
+    ///
+    /// Returns the price and timestamp of the most recent price for the given
+    /// pair.
+    pub fn peek_timestamped_price(
+        &self,
+        base: &Token,
+    ) -> Result<TimestampedPrice, PriceStateError> {
+        let quote = Token::usdc();
+        let tuple = (Exchange::Renegade, base.clone(), quote.clone());
+        let atomic_price = self
+            .states()
+            .get(&tuple)
+            .ok_or_else(|| PriceStateError::pair_not_configured(base.clone(), quote.clone()))?;
+
+        let (price, timestamp) = atomic_price.read_price();
+        Ok(TimestampedPrice { price, timestamp })
+    }
+
     /// Get the state of the price reporter for the given token pair
-    pub async fn get_state(&self, base_token: Token, quote_token: Token) -> PriceReporterState {
+    pub fn get_state(&self, base_token: &Token, quote_token: &Token) -> PriceReporterState {
         // We don't currently support unnamed pairs
-        if !is_pair_named(&base_token, &quote_token) {
-            return PriceReporterState::UnsupportedPair(base_token, quote_token);
+        if !is_pair_named(base_token, quote_token) {
+            return PriceReporterState::UnsupportedPair(base_token.clone(), quote_token.clone());
         }
 
         // Fetch the most recent price from the canonical exchange
-        let maybe_price = self.get_latest_price(Exchange::Renegade, &base_token, &quote_token);
+        let maybe_price = self.get_latest_price(Exchange::Renegade, base_token, quote_token);
         let (price, ts) = match maybe_price {
             None => return PriceReporterState::NotEnoughDataReported(0),
             Some((price, ts)) => (price, ts),
@@ -129,9 +160,9 @@ impl PriceStreamStates {
 
         // Fetch the most recent prices from all other exchanges
         let mut exchange_prices = Vec::new();
-        let supported_exchanges = self.get_supported_exchanges(&base_token, &quote_token);
+        let supported_exchanges = self.get_supported_exchanges(base_token, quote_token);
         for exchange in supported_exchanges {
-            if let Some((price, ts)) = self.get_latest_price(exchange, &base_token, &quote_token) {
+            if let Some((price, ts)) = self.get_latest_price(exchange, base_token, quote_token) {
                 exchange_prices.push((exchange, (price, ts)));
             }
         }
@@ -163,11 +194,11 @@ impl PriceStreamStates {
         price: Price,
         timestamp: u64,
     ) -> Result<(), String> {
-        let stream_tuple = (exchange, base.clone(), quote.clone());
+        let stream_tuple = (exchange, base, quote);
         let price_state = self
             .states()
             .get(&stream_tuple)
-            .ok_or(format!("Price stream state not found for ({exchange}, {base}, {quote})",))?;
+            .ok_or(format!("Price stream state not found for {stream_tuple:?}"))?;
         price_state.new_price(price, timestamp);
 
         Ok(())

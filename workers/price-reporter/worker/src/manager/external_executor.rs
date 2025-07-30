@@ -9,12 +9,7 @@ use std::{str::FromStr, time::Duration};
 
 use common::{
     default_wrapper::DefaultOption,
-    types::{
-        CancelChannel,
-        exchange::{Exchange, PriceReporterState},
-        price::Price,
-        token::Token,
-    },
+    types::{CancelChannel, exchange::Exchange, price::Price, token::Token},
 };
 use constants::in_bootstrap_mode;
 use external_api::{
@@ -25,24 +20,17 @@ use futures::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
-use job_types::price_reporter::{PriceReporterJob, PriceReporterReceiver};
 use price_state::PriceStreamStates;
 use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpStream,
-    sync::{
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-        oneshot::Sender as TokioSender,
-    },
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
 };
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
-use tracing::{Instrument, error, info, info_span, instrument, warn};
+use tracing::{error, info, warn};
 use tungstenite::Message;
 use url::Url;
-use util::{
-    channels::TracedMessage, concurrency::runtime::sleep_forever_async, err_str,
-    get_current_time_millis,
-};
+use util::{concurrency::runtime::sleep_forever_async, err_str, get_current_time_millis};
 
 use crate::{
     errors::{ExchangeConnectionError, PriceReporterError},
@@ -78,8 +66,6 @@ pub struct ExternalPriceReporterExecutor {
     price_stream_states: PriceStreamStates,
     /// The manager config
     config: PriceReporterConfig,
-    /// The channel along which jobs are passed to the price reporter
-    job_receiver: DefaultOption<PriceReporterReceiver>,
     /// The channel on which the coordinator may cancel execution
     cancel_channel: DefaultOption<CancelChannel>,
 }
@@ -87,7 +73,6 @@ pub struct ExternalPriceReporterExecutor {
 impl ExternalPriceReporterExecutor {
     /// Creates the executor for the PriceReporter worker.
     pub(crate) fn new(
-        job_receiver: PriceReporterReceiver,
         config: PriceReporterConfig,
         cancel_channel: CancelChannel,
         price_stream_states: PriceStreamStates,
@@ -95,7 +80,6 @@ impl ExternalPriceReporterExecutor {
         Self {
             price_stream_states,
             config,
-            job_receiver: DefaultOption::new(Some(job_receiver)),
             cancel_channel: DefaultOption::new(Some(cancel_channel)),
         }
     }
@@ -107,7 +91,6 @@ impl ExternalPriceReporterExecutor {
             sleep_forever_async().await;
         }
 
-        let mut job_receiver = self.job_receiver.take().unwrap();
         let mut cancel_channel = self.cancel_channel.take().unwrap();
 
         // Spawn WS handler loop, which forwards reads/writes over channels
@@ -119,26 +102,8 @@ impl ExternalPriceReporterExecutor {
             tokio::select! {
                 // Process price update from external price reporter
                 Some(price_message) = msg_in_rx.recv() => {
-                    self.handle_price_update(price_message).await.map_err(PriceReporterError::ExchangeConnection)?;
+                    self.handle_price_update(&price_message).map_err(PriceReporterError::ExchangeConnection)?;
                 }
-
-                // Dequeue the next job from elsewhere in the local node
-                Some(job) = job_receiver.recv() => {
-                    if self.config.disabled {
-                        warn!("ExternalPriceReporter received job while disabled, ignoring...");
-                        continue;
-                    }
-
-                    tokio::spawn({
-                        let self_clone = self.clone();
-                        async move {
-                            if let Err(e) = self_clone.handle_job(job).await {
-                                error!("Error in ExternalPriceReporter execution loop: {e}");
-                            }
-                        }.instrument(info_span!("handle_job"))
-                    });
-                },
-
                 // Await cancellation by the coordinator
                 _ = cancel_channel.changed() => {
                     info!("ExternalPriceReporter cancelled, shutting down...");
@@ -185,9 +150,9 @@ impl ExternalPriceReporterExecutor {
     }
 
     /// Handles a price update from the external price reporter
-    async fn handle_price_update(
+    fn handle_price_update(
         &self,
-        price_message: PriceMessage,
+        price_message: &PriceMessage,
     ) -> Result<(), ExchangeConnectionError> {
         let price = price_message.price;
 
@@ -209,37 +174,11 @@ impl ExternalPriceReporterExecutor {
         let topic = price_report_topic(&base_token, &quote_token);
         let bus = &self.config.system_bus;
         if bus.has_listeners(&topic) {
-            let report = self.price_stream_states.get_state(base_token, quote_token).await;
+            let report = self.price_stream_states.get_state(&base_token, &quote_token);
             if let Some(report) = report.into_nominal() {
                 bus.publish(topic, SystemBusMessage::PriceReport(report));
             }
         }
-
-        Ok(())
-    }
-
-    /// Handles a job for the PriceReporter worker.
-    #[instrument(name = "handle_price_reporter_job", skip(self, job))]
-    pub(super) async fn handle_job(
-        &self,
-        job: TracedMessage<PriceReporterJob>,
-    ) -> Result<(), PriceReporterError> {
-        match job.consume() {
-            PriceReporterJob::PeekPrice { base_token, quote_token, channel } => {
-                self.peek_price(base_token, quote_token, channel).await
-            },
-        }
-    }
-
-    /// Handler for the PeekPrice job
-    async fn peek_price(
-        &self,
-        base_token: Token,
-        quote_token: Token,
-        channel: TokioSender<PriceReporterState>,
-    ) -> Result<(), PriceReporterError> {
-        let state = self.price_stream_states.get_state(base_token, quote_token).await;
-        channel.send(state).unwrap();
 
         Ok(())
     }
@@ -321,12 +260,9 @@ async fn ws_handler_loop(
         // As such, we will have to re-subscribe to all the price streams that
         // were previously subscribed to on the re-established connection, so we
         // enqueue the re-subscription jobs here
-        (ws_write, ws_read) = connect_and_resubscribe(
-            price_reporter_url.clone(),
-            msg_out_tx.clone(),
-            &subscription_states,
-        )
-        .await?;
+        (ws_write, ws_read) =
+            connect_and_resubscribe(price_reporter_url.clone(), &msg_out_tx, &subscription_states)
+                .await?;
     }
 }
 
@@ -380,12 +316,11 @@ fn subscribe_to_price_stream(
 /// the pairs that were previously subscribed to
 async fn connect_and_resubscribe(
     price_reporter_url: Url,
-    msg_out_tx: UnboundedSender<WebsocketMessage>,
+    msg_out_tx: &UnboundedSender<WebsocketMessage>,
     subscription_states: &PriceStreamStates,
 ) -> Result<(WsWriteStream, WsReadStream), PriceReporterError> {
     let (ws_write, ws_read) = connect_with_retries(price_reporter_url).await;
     resubscribe_to_prior_streams(msg_out_tx, subscription_states)
-        .await
         .map_err(PriceReporterError::ExchangeConnection)?;
     Ok((ws_write, ws_read))
 }
@@ -407,8 +342,8 @@ async fn connect_with_retries(price_reporter_url: Url) -> (WsWriteStream, WsRead
 /// Re-send subscription requests to the external price reporter for all the
 /// pairs currently indexed in the subscription states, clearing the mapping in
 /// the process.
-async fn resubscribe_to_prior_streams(
-    msg_out_tx: UnboundedSender<WebsocketMessage>,
+fn resubscribe_to_prior_streams(
+    msg_out_tx: &UnboundedSender<WebsocketMessage>,
     subscription_states: &PriceStreamStates,
 ) -> Result<(), ExchangeConnectionError> {
     // Get the currently subscribed pairs and clear the mapping
@@ -416,7 +351,7 @@ async fn resubscribe_to_prior_streams(
 
     // Re-send subscription jobs for all the pairs
     for (exchange, base_token, quote_token) in streams {
-        subscribe_to_price_stream(exchange, &base_token, &quote_token, &msg_out_tx)?;
+        subscribe_to_price_stream(exchange, &base_token, &quote_token, msg_out_tx)?;
     }
 
     Ok(())

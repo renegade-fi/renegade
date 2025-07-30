@@ -54,7 +54,7 @@ impl HandshakeExecutor {
 
             // Send a handshake message to the given peer_id
             let request_id = Uuid::new_v4();
-            let price_vector = self.fetch_price_vector().await?;
+            let price_vector = self.fetch_price_vector()?;
             let message = HandshakeMessage {
                 request_id,
                 message_type: HandshakeMessageType::Propose(ProposeMatchCandidate {
