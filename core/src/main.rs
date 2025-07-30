@@ -275,6 +275,27 @@ async fn main() -> Result<(), CoordinatorError> {
 
     // --- Workers Setup Phase --- //
 
+    // Start the price reporter manager
+    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = new_cancel_channel();
+    let (mut price_reporter_manager, price_streams) =
+        PriceReporter::new_with_streams(PriceReporterConfig {
+            system_bus: system_bus.clone(),
+            job_receiver: Some(price_reporter_worker_receiver).into(),
+            cancel_channel: price_reporter_cancel_receiver,
+            exchange_conn_config: ExchangeConnectionsConfig {
+                coinbase_key_name: args.coinbase_key_name,
+                coinbase_key_secret: args.coinbase_key_secret,
+                eth_websocket_addr: args.eth_websocket_addr.clone(),
+            },
+            price_reporter_url: args.price_reporter_url,
+            disabled: args.disable_price_reporter,
+            disabled_exchanges: args.disabled_exchanges,
+        });
+    price_reporter_manager.start().expect("failed to start price reporter manager");
+    let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
+        new_worker_failure_channel();
+    watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
+
     // Start the handshake manager
     let (handshake_cancel_sender, handshake_cancel_receiver) = new_cancel_channel();
     let mut handshake_manager = HandshakeManager::new(HandshakeManagerConfig {
@@ -293,28 +314,6 @@ async fn main() -> Result<(), CoordinatorError> {
     handshake_manager.start().expect("failed to start handshake manager");
     let (handshake_failure_sender, mut handshake_failure_receiver) = new_worker_failure_channel();
     watch_worker::<HandshakeManager>(&mut handshake_manager, &handshake_failure_sender);
-
-    // Start the price reporter manager
-    let (price_reporter_cancel_sender, price_reporter_cancel_receiver) = new_cancel_channel();
-    let mut price_reporter_manager = PriceReporter::new(PriceReporterConfig {
-        system_bus: system_bus.clone(),
-        job_receiver: Some(price_reporter_worker_receiver).into(),
-        cancel_channel: price_reporter_cancel_receiver,
-        exchange_conn_config: ExchangeConnectionsConfig {
-            coinbase_key_name: args.coinbase_key_name,
-            coinbase_key_secret: args.coinbase_key_secret,
-            eth_websocket_addr: args.eth_websocket_addr.clone(),
-        },
-        price_reporter_url: args.price_reporter_url,
-        disabled: args.disable_price_reporter,
-        disabled_exchanges: args.disabled_exchanges,
-    })
-    .await
-    .expect("failed to build price reporter manager");
-    price_reporter_manager.start().expect("failed to start price reporter manager");
-    let (price_reporter_failure_sender, mut price_reporter_failure_receiver) =
-        new_worker_failure_channel();
-    watch_worker::<PriceReporter>(&mut price_reporter_manager, &price_reporter_failure_sender);
 
     // Start the on-chain event listener
     let (chain_listener_cancel_sender, chain_listener_cancel_receiver) = new_cancel_channel();
