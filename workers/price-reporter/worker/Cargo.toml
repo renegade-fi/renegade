@@ -28,6 +28,7 @@ common = { workspace = true }
 constants = { workspace = true }
 external-api = { workspace = true }
 job-types = { workspace = true }
+price-state = { workspace = true }
 system-bus = { workspace = true }
 util = { workspace = true }
 

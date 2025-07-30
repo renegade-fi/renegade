@@ -5,9 +5,10 @@ use std::collections::HashSet;
 use common::types::{
     exchange::{Exchange, PriceReport, PriceReporterState},
     price::Price,
-    token::{Token, USD_TICKER, default_exchange_stable, get_all_base_tokens},
+    token::{Token, default_exchange_stable, get_all_base_tokens},
 };
 use itertools::Itertools;
+use price_state::util::eligible_for_stable_quote_conversion;
 use statrs::statistics::{Data, Median};
 use util::get_current_time_millis;
 
@@ -168,25 +169,4 @@ pub fn required_streams_for_pair(
     }
 
     streams
-}
-
-/// Returns whether or not the given pair on the given exchange may have its
-/// price converted through the default stable quote asset for the exchange.
-pub fn eligible_for_stable_quote_conversion(
-    base: &Token,
-    quote: &Token,
-    exchange: &Exchange,
-) -> bool {
-    if base.is_stablecoin() || !quote.is_stablecoin() {
-        return false;
-    }
-
-    // We assume a 1:1 USD:USDC for Coinbase markets
-    let default_stable = default_exchange_stable(exchange);
-    let usd = Token::from_ticker(USD_TICKER);
-    if default_stable == usd {
-        return false;
-    }
-
-    quote != &default_exchange_stable(exchange)
 }

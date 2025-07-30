@@ -28,7 +28,8 @@ members = [
 	"workers/handshake-manager",
 	"workers/job-types",
 	"workers/network-manager",
-	"workers/price-reporter",
+	"workers/price-reporter/worker",
+	"workers/price-reporter/price-state",
 	"workers/proof-manager",
 	"workers/task-driver",
 	"renegade-metrics",
@@ -97,7 +98,8 @@ job-types = { path = "workers/job-types", default-features = false }
 metrics-sampler = { path = "metrics-sampler", default-features = false }
 mock-node = { path = "mock-node", default-features = false }
 network-manager = { path = "workers/network-manager", default-features = false }
-price-reporter = { path = "workers/price-reporter", default-features = false }
+price-reporter = { path = "workers/price-reporter/worker", default-features = false }
+price-state = { path = "workers/price-reporter/price-state", default-features = false }
 proof-manager = { path = "workers/proof-manager", default-features = false }
 renegade-crypto = { path = "renegade-crypto", default-features = false }
 renegade-metrics = { path = "renegade-metrics", default-features = false }
