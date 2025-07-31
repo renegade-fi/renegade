@@ -1,0 +1,52 @@
+
+################
+### Relayer ###
+################
+
+[services.arbitrum-sepolia-relayer]
+[services.arbitrum-sepolia-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-arbitrum-sepolia"
+cargo_features = "default,arbitrum"
+
+[services.arbitrum-sepolia-relayer.deploy]
+environment = "arbitrum-sepolia"
+resource = "relayer"
+cluster_name_override = "arbitrum-sepolia-relayer"
+service_name_override = "arbitrum-sepolia-relayer-service"
+
+[services.arbitrum-one-relayer]
+[services.arbitrum-one-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-arbitrum-one"
+cargo_features = "default,arbitrum"
+
+[services.arbitrum-one-relayer.deploy]
+environment = "arbitrum-one"
+resource = "relayer"
+cluster_name_override = "arbitrum-one-relayer"
+service_name_override = "arbitrum-one-relayer-service"
+
+[services.base-sepolia-relayer]
+[services.base-sepolia-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-base-sepolia"
+cargo_features = "default,base"
+
+[services.base-sepolia-relayer.deploy]
+environment = "base-sepolia"
+resource = "relayer"
+cluster_name_override = "base-sepolia-relayer"
+service_name_override = "base-sepolia-relayer-service"
+
+[services.base-mainnet-relayer]
+[services.base-mainnet-relayer.build]
+dockerfile = "docker/release/Dockerfile"
+ecr_repo = "relayer-base-mainnet"
+cargo_features = "default,base"
+
+[services.base-mainnet-relayer.deploy]
+environment = "base-mainnet"
+resource = "relayer"
+cluster_name_override = "base-mainnet-relayer"
+service_name_override = "base-mainnet-relayer-service"
