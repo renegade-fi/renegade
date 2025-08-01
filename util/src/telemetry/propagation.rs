@@ -58,5 +58,10 @@ pub fn set_parent_span_from_context(headers: &TraceContext) {
         extract_trace_context(headers)
     };
 
+    set_parent_span(context);
+}
+
+/// Set the parent span from an `opentelemetry::Context`
+pub fn set_parent_span(context: Context) {
     tracing::Span::current().set_parent(context);
 }

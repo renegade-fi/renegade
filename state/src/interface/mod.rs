@@ -24,8 +24,9 @@ use job_types::{
 use libmdbx::{RO, RW};
 use system_bus::SystemBus;
 use system_clock::SystemClock;
-use tracing::{error, info_span};
-use util::{err_str, raw_err_str};
+use tracing::{Span, error, info_span, instrument};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
+use util::{err_str, raw_err_str, telemetry::propagation::set_parent_span};
 
 use crate::{
     Proposal, StateTransition,
@@ -324,15 +325,18 @@ impl StateInner {
     /// This allows us to give an async client interface that will not
     /// excessively block async callers. MDBX operations may occasionally block
     /// for a long time, so we want to avoid blocking async worker threads
+    #[instrument(skip_all)]
     pub async fn with_read_tx<F, T>(&self, f: F) -> Result<T, StateError>
     where
         T: Send + 'static,
         F: FnOnce(&StateTxn<'_, RO>) -> Result<T, StateError> + Send + 'static,
     {
         let db = self.db.clone();
+        let parent_context = Span::current().context();
         tokio::task::spawn_blocking(move || {
             // Create a new read tx
             let _thread_span_guard = info_span!("db_read_thread").entered();
+            set_parent_span(parent_context);
             let tx = db.new_read_tx()?;
 
             // Execute the operation
@@ -358,9 +362,11 @@ impl StateInner {
         F: FnOnce(&StateTxn<'_, RW>) -> Result<T, StateError> + Send + 'static,
     {
         let db = self.db.clone();
+        let parent_context = Span::current().context();
         tokio::task::spawn_blocking(move || {
             // Create a new write tx
             let _thread_span_guard = info_span!("db_write_thread").entered();
+            set_parent_span(parent_context);
             let tx = db.new_write_tx()?;
 
             // Execute the operation
