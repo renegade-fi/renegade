@@ -20,6 +20,7 @@ use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     hmac::HmacKey,
     tasks::TaskIdentifier,
+    token::Token,
 };
 use external_api::{
     EmptyRequestResponse,
@@ -126,6 +127,8 @@ const ERR_PEER_ID_PARSE: &str = "could not parse peer id";
 const ERR_TASK_ID_PARSE: &str = "could not parse task id";
 /// Error message displayed when parsing a matching pool name from URL fails
 const ERR_MATCHING_POOL_PARSE: &str = "could not parse matching pool name";
+/// Error message displayed when an invalid token is parsed from a URL param
+const ERR_INVALID_TOKEN_PARSE: &str = "invalid token";
 
 // ----------------
 // | URL Captures |
@@ -156,6 +159,17 @@ pub(super) fn parse_mint_from_params(params: &UrlParams) -> Result<BigUint, ApiS
     }
 
     params.get(MINT_URL_PARAM).unwrap().parse().map_err(|_| bad_request(ERR_MINT_PARSE))
+}
+
+/// A helper to parse a token (":mint") from a URL param
+pub(super) fn parse_token_from_params(params: &UrlParams) -> Result<Token, ApiServerError> {
+    let mint_str = params.get(MINT_URL_PARAM).ok_or_else(|| not_found(ERR_MINT_PARSE))?;
+    let token = Token::from_addr(mint_str);
+    if !token.is_named() {
+        return Err(bad_request(ERR_INVALID_TOKEN_PARSE));
+    }
+
+    Ok(token)
 }
 
 /// A helper to parse out a wallet ID from a URL param
@@ -253,7 +267,7 @@ impl HttpServer {
 
         // The "/price_report" route
         router.add_unauthenticated_route(
-            &Method::POST,
+            &Method::GET,
             PRICE_REPORT_ROUTE.to_string(),
             PriceReportHandler::new(config.price_streams.clone()),
         );
