@@ -230,6 +230,16 @@ impl Token {
         self.get_ticker().is_some_and(|ticker| STABLECOIN_TICKERS.contains(&ticker.as_str()))
     }
 
+    /// Returns true if the Token is tradable on Renegade
+    ///
+    /// Only USDC and USD are not tradable on Renegade
+    pub fn is_tradable(&self) -> bool {
+        let usdc = Token::usdc();
+        let usd = Token::from_ticker(USD_TICKER);
+
+        !(self == &usdc || self == &usd)
+    }
+
     /// Returns the set of Exchanges that support this token.
     pub fn supported_exchanges(&self) -> HashSet<Exchange> {
         if !self.is_named() {
@@ -320,7 +330,7 @@ pub fn get_all_tokens() -> Vec<Token> {
 
 /// Get all base tokens in the remap
 pub fn get_all_base_tokens() -> Vec<Token> {
-    get_all_tokens().into_iter().filter(|t| !t.is_stablecoin()).collect()
+    get_all_tokens().into_iter().filter(|t| t.is_tradable()).collect()
 }
 
 /// Returns a read lock quard to the per-chain decimals map

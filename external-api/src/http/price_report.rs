@@ -13,20 +13,11 @@ use crate::{
 // ---------------
 
 /// Price report route
-pub const PRICE_REPORT_ROUTE: &str = "/v0/price_report";
+pub const PRICE_REPORT_ROUTE: &str = "/v0/price_report/:mint";
 /// Returns the supported token list
 pub const GET_SUPPORTED_TOKENS_ROUTE: &str = "/v0/supported-tokens";
 /// Returns the prices for all supported pairs
 pub const GET_TOKEN_PRICES_ROUTE: &str = "/v0/token-prices";
-
-/// A request to get the relayer's price report for a pair
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetPriceReportRequest {
-    /// The base token
-    pub base_token: Token,
-    /// The quote token
-    pub quote_token: Token,
-}
 
 /// A response containing the relayer's price report for a pair
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -7,8 +7,7 @@ use common::types::token::{Token, get_all_base_tokens};
 use external_api::{
     EmptyRequestResponse,
     http::price_report::{
-        GetPriceReportRequest, GetPriceReportResponse, GetSupportedTokensResponse,
-        GetTokenPricesResponse, TokenPrice,
+        GetPriceReportResponse, GetSupportedTokensResponse, GetTokenPricesResponse, TokenPrice,
     },
     types::ApiToken,
 };
@@ -18,6 +17,7 @@ use price_state::PriceStreamStates;
 
 use crate::{
     error::ApiServerError,
+    http::parse_token_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
 
@@ -42,17 +42,19 @@ impl PriceReportHandler {
 
 #[async_trait]
 impl TypedHandler for PriceReportHandler {
-    type Request = GetPriceReportRequest;
+    type Request = EmptyRequestResponse;
     type Response = GetPriceReportResponse;
 
     async fn handle_typed(
         &self,
         _headers: HeaderMap,
-        req: Self::Request,
-        _params: UrlParams,
+        _req: Self::Request,
+        params: UrlParams,
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        let price_report = self.price_streams.get_state(&req.base_token, &req.quote_token);
+        let base = parse_token_from_params(&params)?;
+        let quote = Token::usdc();
+        let price_report = self.price_streams.get_state(&base, &quote);
         Ok(GetPriceReportResponse { price_report })
     }
 }
