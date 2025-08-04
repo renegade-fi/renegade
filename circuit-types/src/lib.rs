@@ -276,6 +276,41 @@ where
     deserialized_vec.try_into().map_err(|_| SerdeErr::custom("incorrect size of serialized array"))
 }
 
+/// A helper for serializing an `EmbeddedScalarField` value
+#[cfg(feature = "proof-system-types")]
+pub mod ser_embedded_scalar_field {
+    use ark_mpc::algebra::n_bytes_field;
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+    use constants::EmbeddedScalarField;
+    use serde::{
+        Deserialize, Deserializer, Serializer, de::Error as DeError, ser::Error as SerError,
+    };
+
+    /// Serialize an `EmbeddedScalarField` to a byte array
+    pub fn serialize<S>(value: &EmbeddedScalarField, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let n_bytes = n_bytes_field::<EmbeddedScalarField>();
+        let mut bytes = Vec::with_capacity(n_bytes);
+        value.serialize_uncompressed(&mut bytes).map_err(SerError::custom)?;
+
+        serializer.serialize_bytes(&bytes)
+    }
+
+    /// Deserialize an `EmbeddedScalarField` from a byte array
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<EmbeddedScalarField, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        let value = EmbeddedScalarField::deserialize_uncompressed(bytes.as_slice())
+            .map_err(DeError::custom)?;
+
+        Ok(value)
+    }
+}
+
 /// Groups helpers that operate on native types; which correspond to circuitry
 /// defined in this library
 #[cfg(feature = "proof-system-types")]

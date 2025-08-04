@@ -105,7 +105,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 
 /// The witness for the VALID WALLET CREATE statement
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidWalletCreateWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The private secret shares of the new wallet
     pub private_wallet_share: WalletShare<MAX_BALANCES, MAX_ORDERS>,

@@ -47,7 +47,7 @@ pub type SizedValidMatchSettleWithCommitments =
 ///
 /// This statement is only proven within the context of an MPC, so it only
 /// implements the Multiprover circuit trait
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchSettle<const MAX_BALANCES: usize, const MAX_ORDERS: usize>;
 
 impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
@@ -144,7 +144,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize>
 /// The full witness, recovered by opening the witness commitment, but never
 /// realized in the plaintext by either party
 #[circuit_type(serde, singleprover_circuit, mpc, multiprover_circuit)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidMatchSettleWitness<const MAX_BALANCES: usize, const MAX_ORDERS: usize> {
     /// The first party's order
     #[link_groups = "valid_commitments_match_settle0"]

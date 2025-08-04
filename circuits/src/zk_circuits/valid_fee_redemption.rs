@@ -213,7 +213,7 @@ impl<const MAX_BALANCES: usize, const MAX_ORDERS: usize, const MERKLE_HEIGHT: us
 
 /// The witness type for the `VALID FEE REDEMPTION` circuit
 #[circuit_type(serde, singleprover_circuit)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidFeeRedemptionWitness<
     const MAX_BALANCES: usize,
     const MAX_ORDERS: usize,
