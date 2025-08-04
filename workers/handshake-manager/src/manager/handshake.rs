@@ -58,7 +58,7 @@ impl HandshakeExecutor {
             let message = HandshakeMessage {
                 request_id,
                 message_type: HandshakeMessageType::Propose(ProposeMatchCandidate {
-                    peer_id: self.state.get_peer_id().await?,
+                    peer_id: self.state.get_peer_id()?,
                     peer_order: peer_order_id,
                     sender_order: local_order_id,
                     price_vector: price_vector.clone(),
@@ -128,9 +128,12 @@ impl HandshakeExecutor {
         // Only accept the proposed order pair if the peer's order has already been
         // verified by the local node
         if let Some(reason) = self.check_match_proposal(&req).await? {
-            return self
-                .reject_match_proposal(request_id, req.peer_order, req.sender_order, reason)
-                .await;
+            return self.reject_match_proposal(
+                request_id,
+                req.peer_order,
+                req.sender_order,
+                reason,
+            );
         }
 
         let ProposeMatchCandidate { peer_id, peer_order: my_order, sender_order, price_vector } =
@@ -170,7 +173,7 @@ impl HandshakeExecutor {
         // Send a pubsub message indicating intent to match on the given order pair
         // Cluster peers will then avoid scheduling this match until the match either
         // completes, or the cache entry's invisibility window times out
-        let cluster_id = self.state.get_cluster_id().await?;
+        let cluster_id = self.state.get_cluster_id()?;
         let topic = cluster_id.get_management_topic();
         let msg = PubsubMessage::Cluster(ClusterManagementMessage {
             cluster_id,
@@ -184,7 +187,7 @@ impl HandshakeExecutor {
         Ok(HandshakeMessage {
             request_id,
             message_type: HandshakeMessageType::Accept(AcceptMatchCandidate {
-                peer_id: self.state.get_peer_id().await?,
+                peer_id: self.state.get_peer_id()?,
                 port: local_port,
                 order1: my_order,
                 order2: sender_order,
@@ -265,7 +268,7 @@ impl HandshakeExecutor {
     }
 
     /// Reject a proposed match candidate for the specified reason
-    async fn reject_match_proposal(
+    fn reject_match_proposal(
         &self,
         request_id: Uuid,
         peer_order: OrderIdentifier,
@@ -275,7 +278,7 @@ impl HandshakeExecutor {
         let message = HandshakeMessage {
             request_id,
             message_type: HandshakeMessageType::Reject(RejectMatchCandidate {
-                peer_id: self.state.get_peer_id().await?,
+                peer_id: self.state.get_peer_id()?,
                 peer_order,
                 sender_order: local_order,
                 reason,

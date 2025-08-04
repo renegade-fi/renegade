@@ -27,7 +27,7 @@ impl IntegrationTestCtx {
     /// Setup the state of the mock node
     pub async fn setup_state(&mut self) -> Result<()> {
         let state = self.state();
-        let this_peer = state.get_peer_id().await?;
+        let this_peer = state.get_peer_id()?;
         state.initialize_raft(vec![this_peer] /* this_peer */).await?;
         Ok(())
     }

@@ -130,7 +130,7 @@ impl TypedHandler for RequestExternalQuoteHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Check that atomic matches are enabled
-        let enabled = self.state.get_atomic_matches_enabled().await?;
+        let enabled = self.state.get_atomic_matches_enabled()?;
         if !enabled {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
@@ -183,7 +183,7 @@ impl TypedHandler for AssembleExternalMatchHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Check that atomic matches are enabled
-        let enabled = self.state.get_atomic_matches_enabled().await?;
+        let enabled = self.state.get_atomic_matches_enabled()?;
         if !enabled {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }
@@ -308,7 +308,7 @@ impl TypedHandler for RequestExternalMatchHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Check that atomic matches are enabled
-        let enabled = self.state.get_atomic_matches_enabled().await?;
+        let enabled = self.state.get_atomic_matches_enabled()?;
         if !enabled {
             return Err(bad_request(ERR_ATOMIC_MATCHES_DISABLED));
         }

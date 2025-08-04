@@ -147,7 +147,7 @@ impl StateInner {
         backfill_trace_field("task_id", tid.to_string());
 
         // Propose the task to the task queue
-        let executor = self.get_peer_id().await?;
+        let executor = self.get_peer_id()?;
         let proposal = StateTransition::AppendTask { task, executor };
         let waiter = self.send_proposal(proposal).await?;
         Ok((tid, waiter))
@@ -203,7 +203,7 @@ impl StateInner {
         backfill_trace_field("task_id", tid.to_string());
 
         // Propose the task to the task queue, with the local peer as the executor
-        let executor = self.get_peer_id().await?;
+        let executor = self.get_peer_id()?;
         let transition = StateTransition::EnqueuePreemptiveTask { keys, task, executor, serial };
         let waiter = self.send_proposal(transition).await?;
         Ok((tid, waiter))
@@ -214,7 +214,7 @@ impl StateInner {
         &self,
         failed_peer: &WrappedPeerId,
     ) -> Result<ProposalWaiter, StateError> {
-        let local_peer = self.get_peer_id().await?;
+        let local_peer = self.get_peer_id()?;
         let proposal = StateTransition::ReassignTasks { from: *failed_peer, to: local_peer };
         self.send_proposal(proposal).await
     }

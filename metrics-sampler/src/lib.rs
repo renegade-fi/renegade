@@ -29,7 +29,7 @@ pub async fn setup_metrics_samplers(
     price_streams: PriceStreamStates,
 ) -> Result<(), SystemClockError> {
     RaftMetricsSampler::new(state.clone()).register(system_clock).await?;
-    if state.historical_state_enabled().await.map_err(err_str!(SystemClockError))? {
+    if state.historical_state_enabled().map_err(err_str!(SystemClockError))? {
         OnboardingMetricsSampler::new(state.clone()).register(system_clock).await?;
         CancellationMetricsSampler::new(state, price_streams).register(system_clock).await?;
     }

@@ -60,7 +60,7 @@ impl TypedHandler for GetNetworkTopologyHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch all peer info
-        let local_cluster_id = self.state.get_cluster_id().await?.to_string();
+        let local_cluster_id = self.state.get_cluster_id()?.to_string();
         let peers = self.state.get_peer_info_map().await?;
 
         // Gather by cluster

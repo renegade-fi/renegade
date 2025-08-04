@@ -427,7 +427,7 @@ impl MockNodeController {
     pub fn with_gossip_server(mut self) -> Self {
         let config = &self.config;
         let state = self.state.clone().expect("State not initialized");
-        let local_peer_id = run_fut(state.get_peer_id()).expect("Failed to get peer id");
+        let local_peer_id = state.get_peer_id().expect("Failed to get peer id");
         let darkpool_client =
             self.darkpool_client.clone().expect("Darkpool client not initialized");
 

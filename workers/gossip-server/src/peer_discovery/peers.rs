@@ -81,7 +81,7 @@ impl GossipProtocolExecutor {
                 "rejecting expiry of {peer_id} from {sender}, last heartbeat was {time_since_last_heartbeat}ms ago"
             );
 
-            self.send_expiry_rejection(peer_id, info.last_heartbeat).await?;
+            self.send_expiry_rejection(peer_id, info.last_heartbeat)?;
         } else {
             // If we do not reject the expiry, begin expiring on the local node
             info!("received expiry request, marking {peer_id} as expiry candidate");
@@ -190,12 +190,12 @@ impl GossipProtocolExecutor {
     }
 
     /// Send a rejection for a proposed expiry
-    pub(crate) async fn send_expiry_rejection(
+    pub(crate) fn send_expiry_rejection(
         &self,
         peer_id: WrappedPeerId,
         last_heartbeat: u64,
     ) -> Result<(), GossipError> {
-        let cluster_id = self.state.get_cluster_id().await?;
+        let cluster_id = self.state.get_cluster_id()?;
         let topic = cluster_id.get_management_topic();
         let message_type = ClusterManagementMessageType::RejectExpiry { peer_id, last_heartbeat };
 

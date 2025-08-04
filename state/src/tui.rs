@@ -316,8 +316,8 @@ impl StateTuiApp {
     /// Create a metadata pane
     fn create_metadata_pane(&self) -> List {
         // Fetch the relevant state
-        let peer_id = block_current(self.global_state.get_peer_id()).unwrap();
-        let cluster_id = block_current(self.global_state.get_cluster_id()).unwrap();
+        let peer_id = self.global_state.get_peer_id().unwrap();
+        let cluster_id = self.global_state.get_cluster_id().unwrap();
         let local_addr = block_current(self.global_state.get_peer_info(&peer_id))
             .unwrap()
             .unwrap_or_default()
@@ -380,7 +380,7 @@ impl StateTuiApp {
     /// Create a cluster metadata pane    
     fn create_cluster_metadata_pane(&self) -> List {
         // Read the relevant state
-        let cluster_id = block_current(self.global_state.get_cluster_id()).unwrap();
+        let cluster_id = self.global_state.get_cluster_id().unwrap();
         let cluster_peers =
             block_current(self.global_state.get_cluster_peers(&cluster_id)).unwrap();
 
@@ -404,7 +404,7 @@ impl StateTuiApp {
     /// Create a peer index pane    
     fn create_peer_index_pane(&self) -> Table {
         // Read the necessary state
-        let local_peer_id = block_current(self.global_state.get_peer_id()).unwrap();
+        let local_peer_id = self.global_state.get_peer_id().unwrap();
         let peer_info = block_current(self.global_state.get_peer_info_map()).unwrap();
 
         // Sort the keys so that the table does not re-arrange every frame

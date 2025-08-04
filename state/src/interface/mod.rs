@@ -295,7 +295,7 @@ impl StateInner {
         let name = "raft-membership-sync-loop".to_string();
         let client = self.raft.clone();
         let db = self.db.clone();
-        let my_cluster = self.get_cluster_id().await?;
+        let my_cluster = self.get_cluster_id()?;
 
         clock
             .add_async_timer(name, duration, move || {
@@ -351,6 +351,28 @@ impl StateInner {
         .map_err(err_str!(StateError::Runtime))?
     }
 
+    /// Run the given callback with a read tx scoped in on the current thread
+    ///
+    /// This will block the current thread until the operation completes. For
+    /// async callers, this method should only be used for short duration
+    /// operations.
+    ///
+    /// Alice Ryhl [explains](https://ryhl.io/blog/async-what-is-blocking) that this should be
+    /// no more than 10-100us
+    #[instrument(skip_all)]
+    pub fn with_blocking_read_tx<F, T>(&self, f: F) -> Result<T, StateError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&StateTxn<'_, RO>) -> Result<T, StateError> + Send + 'static,
+    {
+        let db = self.db.clone();
+        let tx = db.new_read_tx()?;
+        let res = f(&tx)?;
+        tx.commit()?;
+
+        Ok(res)
+    }
+
     /// Run the given callback with a write tx scoped in on a blocking thread
     ///
     /// This allows us to give an async client interface that will not
@@ -379,6 +401,28 @@ impl StateInner {
         })
         .await
         .map_err(err_str!(StateError::Runtime))?
+    }
+
+    /// Run the given callback with a write tx scoped in on the current thread
+    ///
+    /// This will block the current thread until the operation completes. For
+    /// async callers, this method should only be used for short duration
+    /// operations.
+    ///
+    /// Alice Ryhl [explains](https://ryhl.io/blog/async-what-is-blocking) that this should be
+    /// no more than 10-100us
+    #[instrument(skip_all)]
+    pub fn with_blocking_write_tx<F, T>(&self, f: F) -> Result<T, StateError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&StateTxn<'_, RW>) -> Result<T, StateError> + Send + 'static,
+    {
+        let db = self.db.clone();
+        let tx = db.new_write_tx()?;
+        let res = f(&tx)?;
+        tx.commit()?;
+
+        Ok(res)
     }
 
     /// Send a proposal to the raft node

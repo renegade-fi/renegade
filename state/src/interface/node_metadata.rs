@@ -18,73 +18,72 @@ impl StateInner {
     // -----------
 
     /// Get the peer ID of the local node
-    pub async fn get_peer_id(&self) -> Result<WrappedPeerId, StateError> {
-        self.with_read_tx(|tx| tx.get_peer_id().map_err(StateError::Db)).await
+    pub fn get_peer_id(&self) -> Result<WrappedPeerId, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_peer_id().map_err(StateError::Db))
     }
 
     /// Get the cluster ID of the local node
-    pub async fn get_cluster_id(&self) -> Result<ClusterId, StateError> {
-        self.with_read_tx(|tx| tx.get_cluster_id().map_err(StateError::Db)).await
+    pub fn get_cluster_id(&self) -> Result<ClusterId, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_cluster_id().map_err(StateError::Db))
     }
 
     /// Get the libp2p keypair of the local node
-    pub async fn get_node_keypair(&self) -> Result<Keypair, StateError> {
-        self.with_read_tx(|tx| tx.get_node_keypair().map_err(StateError::Db)).await
+    pub fn get_node_keypair(&self) -> Result<Keypair, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_node_keypair().map_err(StateError::Db))
     }
 
     /// Get the wallet ID that the local relayer owns
-    pub async fn get_relayer_wallet_id(&self) -> Result<Option<WalletIdentifier>, StateError> {
-        self.with_read_tx(|tx| tx.get_local_node_wallet().map_err(StateError::Db)).await
+    pub fn get_relayer_wallet_id(&self) -> Result<Option<WalletIdentifier>, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_local_node_wallet().map_err(StateError::Db))
     }
 
     /// Get the wallet owned by the local relayer
-    pub async fn get_local_relayer_wallet(&self) -> Result<Option<Wallet>, StateError> {
-        self.with_read_tx(|tx| {
+    pub fn get_local_relayer_wallet(&self) -> Result<Option<Wallet>, StateError> {
+        self.with_blocking_read_tx(|tx| {
             let wallet_id = res_some!(tx.get_local_node_wallet()?);
             let wallet = res_some!(tx.get_wallet(&wallet_id)?);
             Ok(Some(wallet))
         })
-        .await
     }
 
     /// Get the decryption key used to settle managed match fees
-    pub async fn get_fee_key(&self) -> Result<RelayerFeeKey, StateError> {
-        self.with_read_tx(|tx| tx.get_fee_key().map_err(StateError::Db)).await
+    pub fn get_fee_key(&self) -> Result<RelayerFeeKey, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_fee_key().map_err(StateError::Db))
     }
 
     /// Get the local relayer's match take rate
-    pub async fn get_relayer_take_rate(&self) -> Result<FixedPoint, StateError> {
-        self.with_read_tx(|tx| tx.get_relayer_take_rate().map_err(StateError::Db)).await
+    pub fn get_relayer_take_rate(&self) -> Result<FixedPoint, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_relayer_take_rate().map_err(StateError::Db))
     }
 
     /// Whether atomic matches are supported
-    pub async fn get_atomic_matches_enabled(&self) -> Result<bool, StateError> {
-        let maybe_addr = self.get_external_fee_addr().await?;
+    pub fn get_atomic_matches_enabled(&self) -> Result<bool, StateError> {
+        let maybe_addr = self.get_external_fee_addr()?;
         Ok(maybe_addr.is_some())
     }
 
     /// Get the local relayer's external fee address
-    pub async fn get_external_fee_addr(&self) -> Result<Option<Address>, StateError> {
-        self.with_read_tx(|tx| tx.get_external_fee_addr().map_err(StateError::Db)).await
+    pub fn get_external_fee_addr(&self) -> Result<Option<Address>, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_external_fee_addr().map_err(StateError::Db))
     }
 
     /// Get the relayer fee for a given wallet
-    pub async fn get_relayer_fee_for_wallet(
+    pub fn get_relayer_fee_for_wallet(
         &self,
         wallet_id: &WalletIdentifier,
     ) -> Result<FixedPoint, StateError> {
         let wid = *wallet_id;
-        self.with_read_tx(move |tx| tx.get_relayer_fee(&wid).map_err(StateError::Db)).await
+        self.with_blocking_read_tx(move |tx| tx.get_relayer_fee(&wid).map_err(StateError::Db))
     }
 
     /// Get the local relayer's auto-redeem fees flag
-    pub async fn get_auto_redeem_fees(&self) -> Result<bool, StateError> {
-        self.with_read_tx(|tx| tx.get_auto_redeem_fees().map_err(StateError::Db)).await
+    pub fn get_auto_redeem_fees(&self) -> Result<bool, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_auto_redeem_fees().map_err(StateError::Db))
     }
 
     /// Get the local relayer's historical state enabled flag
-    pub async fn historical_state_enabled(&self) -> Result<bool, StateError> {
-        self.with_read_tx(|tx| tx.get_historical_state_enabled().map_err(StateError::Db)).await
+    pub fn historical_state_enabled(&self) -> Result<bool, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_historical_state_enabled().map_err(StateError::Db))
     }
 
     // -----------
@@ -190,13 +189,13 @@ mod test {
         let state = mock_state_with_config(&config).await;
 
         // Check the metadata fields
-        let peer_id = state.get_peer_id().await.unwrap();
+        let peer_id = state.get_peer_id().unwrap();
         assert_eq!(peer_id.0, config.p2p_key.public().to_peer_id());
 
-        let cluster_id = state.get_cluster_id().await.unwrap();
+        let cluster_id = state.get_cluster_id().unwrap();
         assert_eq!(cluster_id, config.cluster_id);
 
-        let keypair = state.get_node_keypair().await.unwrap();
+        let keypair = state.get_node_keypair().unwrap();
         // Compare bytes
         assert_eq!(
             keypair.to_protobuf_encoding().unwrap(),
