@@ -78,8 +78,8 @@ impl HeartbeatTimer {
         let rt = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("failed to build tokio runtime");
-        let local_peer_id = rt.block_on(global_state.get_peer_id())?;
-        let cluster_id = rt.block_on(global_state.get_cluster_id())?;
+        let local_peer_id = global_state.get_peer_id()?;
+        let cluster_id = global_state.get_cluster_id()?;
 
         loop {
             // Get all peers in the local peer's cluster

@@ -265,8 +265,8 @@ impl TypedHandler for CreateWalletHandler {
         }
 
         // Overwrite the managing cluster and the match fee with the configured values
-        let relayer_key = self.state.get_fee_key().await?.public_key();
-        let relayer_take_rate = self.state.get_relayer_fee_for_wallet(&wallet_id).await?;
+        let relayer_key = self.state.get_fee_key()?.public_key();
+        let relayer_take_rate = self.state.get_relayer_fee_for_wallet(&wallet_id)?;
         req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
         req.wallet.match_fee = relayer_take_rate;
 
@@ -1062,7 +1062,7 @@ impl TypedHandler for GetOrderHistoryHandler {
         params: UrlParams,
         mut query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        if !self.state.historical_state_enabled().await? {
+        if !self.state.historical_state_enabled()? {
             return Err(bad_request(ERR_HISTORICAL_STATE_DISABLED));
         }
 

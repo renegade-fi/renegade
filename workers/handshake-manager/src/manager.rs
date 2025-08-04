@@ -416,7 +416,7 @@ impl HandshakeExecutor {
 
         // Update the state of the handshake in the completed state
         self.handshake_state_index.completed(&request_id).await;
-        self.publish_completion_messages(state.local_order_id, state.peer_order_id).await?;
+        self.publish_completion_messages(state.local_order_id, state.peer_order_id)?;
 
         // Record the volume of the match
         record_match_volume(
@@ -429,7 +429,7 @@ impl HandshakeExecutor {
 
     /// Publish a cache sync message to the cluster and a local event indicating
     /// that a handshake has completed
-    async fn publish_completion_messages(
+    fn publish_completion_messages(
         &self,
         local_order_id: OrderIdentifier,
         peer_order_id: OrderIdentifier,
@@ -437,7 +437,7 @@ impl HandshakeExecutor {
         // Send a message to cluster peers indicating that the local peer has completed
         // a match. Cluster peers should cache the matched order pair as
         // completed and not initiate matches on this pair going forward
-        let cluster_id = self.state.get_cluster_id().await.unwrap();
+        let cluster_id = self.state.get_cluster_id().unwrap();
         let topic = cluster_id.get_management_topic();
         let message = PubsubMessage::Cluster(ClusterManagementMessage {
             cluster_id,

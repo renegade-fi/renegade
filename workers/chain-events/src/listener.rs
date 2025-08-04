@@ -293,8 +293,8 @@ impl OnChainEventListenerExecutor {
     ) -> Result<bool, OnChainEventListenerError> {
         // Fetch cluster state
         let state = self.state();
-        let my_id = state.get_peer_id().await?;
-        let cluster_id = state.get_cluster_id().await?;
+        let my_id = state.get_peer_id()?;
+        let cluster_id = state.get_cluster_id()?;
         let mut peers = state.get_cluster_peers(&cluster_id).await?;
         peers.sort();
 

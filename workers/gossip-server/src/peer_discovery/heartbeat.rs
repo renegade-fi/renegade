@@ -84,7 +84,7 @@ impl GossipProtocolExecutor {
         if self.expiry_buffer.is_expiry_candidate(peer).await {
             self.expiry_buffer.remove_expiry_candidate(*peer).await;
             if let Some(peer_info) = self.state.get_peer_info(peer).await? {
-                self.send_expiry_rejection(*peer, peer_info.last_heartbeat).await?;
+                self.send_expiry_rejection(*peer, peer_info.last_heartbeat)?;
             }
         }
 
@@ -166,12 +166,12 @@ impl GossipProtocolExecutor {
         };
 
         // Check whether the expiry window has elapsed
-        if !self.should_expire_peer(&peer_info).await? {
+        if !self.should_expire_peer(&peer_info)? {
             return Ok(());
         }
 
         // If the node is outside the cluster expire it immediately
-        let cluster_id = self.state.get_cluster_id().await?;
+        let cluster_id = self.state.get_cluster_id()?;
         let same_cluster = peer_info.get_cluster_id() == cluster_id;
         if !same_cluster {
             return self.expire_peer(peer_id).await;
@@ -192,9 +192,9 @@ impl GossipProtocolExecutor {
     }
 
     /// Check whether the expiry window for a peer has elapsed
-    async fn should_expire_peer(&self, peer_info: &PeerInfo) -> Result<bool, GossipError> {
+    fn should_expire_peer(&self, peer_info: &PeerInfo) -> Result<bool, GossipError> {
         // Expire cluster peers sooner than non-cluster peers
-        let cluster_id = self.state.get_cluster_id().await?;
+        let cluster_id = self.state.get_cluster_id()?;
         let same_cluster = peer_info.get_cluster_id() == cluster_id;
 
         let now = get_current_time_millis();

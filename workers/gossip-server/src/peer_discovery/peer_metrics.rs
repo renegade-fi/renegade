@@ -6,7 +6,7 @@ use tracing::error;
 
 /// Get the number of local and remote peers the cluster is connected to
 async fn get_num_peers(state: &State) -> Result<(usize, usize), StateError> {
-    let cluster_id = state.get_cluster_id().await?;
+    let cluster_id = state.get_cluster_id()?;
     let num_local_peers = state.get_cluster_peers(&cluster_id).await?.len();
     let num_remote_peers = state.get_non_cluster_peers(&cluster_id).await?.len();
 

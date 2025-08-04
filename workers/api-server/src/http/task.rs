@@ -176,7 +176,7 @@ impl TypedHandler for GetTaskHistoryHandler {
         params: UrlParams,
         mut query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
-        if !self.state.historical_state_enabled().await? {
+        if !self.state.historical_state_enabled()? {
             return Err(bad_request(ERR_HISTORICAL_STATE_DISABLED));
         }
 

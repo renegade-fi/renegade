@@ -337,7 +337,7 @@ impl NodeStartupTask {
     /// Initialize a new raft cluster
     async fn initialize_raft(&mut self) -> Result<(), NodeStartupTaskError> {
         // Get the list of other peers in the cluster
-        let my_cluster = self.state.get_cluster_id().await?;
+        let my_cluster = self.state.get_cluster_id()?;
         let peers = self.state.get_cluster_peers(&my_cluster).await?;
 
         info!("initializing raft with {} peers", peers.len());
@@ -350,7 +350,7 @@ impl NodeStartupTask {
         let leader = self.state.get_leader().unwrap();
         info!("leader elected: {}", leader);
 
-        let my_peer_id = self.state.get_peer_id().await?;
+        let my_peer_id = self.state.get_peer_id()?;
         if leader != my_peer_id {
             info!("elected leader is a cluster peer");
             self.task_state = NodeStartupTaskState::JoinRaft;

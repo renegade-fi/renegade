@@ -60,7 +60,7 @@ impl GossipProtocolExecutor {
 
             // Skip local orders, their state is added on wallet update through raft
             // consensus
-            let is_local = order.cluster == self.state.get_cluster_id().await?;
+            let is_local = order.cluster == self.state.get_cluster_id()?;
             if is_local {
                 debug!("skipping local order {order_id}");
                 continue;
@@ -122,7 +122,7 @@ impl GossipProtocolExecutor {
         cluster: ClusterId,
     ) -> Result<(), GossipError> {
         // Skip local orders, their state is added on wallet update through raft
-        let is_local = cluster == self.state.get_cluster_id().await?;
+        let is_local = cluster == self.state.get_cluster_id()?;
         if is_local {
             return Ok(());
         }
@@ -144,7 +144,7 @@ impl GossipProtocolExecutor {
         proof_bundle: OrderValidityProofBundle,
     ) -> Result<(), GossipError> {
         // Skip local orders, their state is added on wallet update through raft
-        let is_local = cluster == self.state.get_cluster_id().await?;
+        let is_local = cluster == self.state.get_cluster_id()?;
         if is_local {
             return Ok(());
         }

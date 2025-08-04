@@ -341,7 +341,7 @@ async fn link_and_store_proofs(
     // Gossip the updated proofs to the network
     let message = PubsubMessage::Orderbook(OrderBookManagementMessage::OrderProofUpdated {
         order_id: *order_id,
-        cluster: state.get_cluster_id().await?,
+        cluster: state.get_cluster_id()?,
         proof_bundle,
     });
 
@@ -351,12 +351,10 @@ async fn link_and_store_proofs(
 
 /// Enqueue a job to redeem a relayer fee into the relayer's wallet
 pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
-    let relayer_wallet_id = state
-        .get_relayer_wallet_id()
-        .await?
-        .ok_or_else(|| ERR_RELAYER_WALLET_MISSING.to_string())?;
+    let relayer_wallet_id =
+        state.get_relayer_wallet_id()?.ok_or_else(|| ERR_RELAYER_WALLET_MISSING.to_string())?;
     let decryption_key =
-        state.get_fee_key().await?.secret_key().ok_or_else(|| ERR_FEE_KEY_MISSING.to_string())?;
+        state.get_fee_key()?.secret_key().ok_or_else(|| ERR_FEE_KEY_MISSING.to_string())?;
     let descriptor = RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key);
 
     state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())

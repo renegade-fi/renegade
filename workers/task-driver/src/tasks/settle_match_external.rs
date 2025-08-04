@@ -218,7 +218,7 @@ impl Task for SettleMatchExternalTask {
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         // Check that atomic matches are enabled
-        let enabled = ctx.state.get_atomic_matches_enabled().await?;
+        let enabled = ctx.state.get_atomic_matches_enabled()?;
         if !enabled {
             return Err(SettleMatchExternalTaskError::state(ERR_ATOMIC_MATCHES_DISABLED));
         }
@@ -312,7 +312,7 @@ impl SettleMatchExternalTask {
 
     /// Prove the atomic match settlement
     async fn prove_atomic_match_settle(&mut self) -> Result<(), SettleMatchExternalTaskError> {
-        let (statement, witness) = self.get_witness_statement().await?;
+        let (statement, witness) = self.get_witness_statement()?;
 
         // Enqueue a job with the proof generation module
         let job = ProofJob::ValidMatchSettleAtomic { witness, statement };
@@ -375,7 +375,7 @@ impl SettleMatchExternalTask {
     }
 
     /// Get the witness and statement for the atomic match settle proof
-    async fn get_witness_statement(
+    fn get_witness_statement(
         &self,
     ) -> Result<
         (SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness),
@@ -410,7 +410,7 @@ impl SettleMatchExternalTask {
         );
 
         // Compute the fees due by the external party in the match
-        let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
+        let relayer_fee_address = self.state.get_external_fee_addr()?.unwrap();
         let external_party_relayer_fee = self.relayer_fee_rate;
         let external_party_fees = compute_fee_obligation_with_protocol_fee(
             external_party_relayer_fee,

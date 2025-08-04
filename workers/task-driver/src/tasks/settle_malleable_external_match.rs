@@ -224,7 +224,7 @@ impl Task for SettleMalleableExternalMatchTask {
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self> {
         // Check that atomic matches are enabled
-        let enabled = ctx.state.get_atomic_matches_enabled().await?;
+        let enabled = ctx.state.get_atomic_matches_enabled()?;
         if !enabled {
             return Err(SettleMalleableExternalMatchTaskError::state(ERR_ATOMIC_MATCHES_DISABLED));
         }
@@ -316,7 +316,7 @@ impl SettleMalleableExternalMatchTask {
 
     /// Prove the atomic match settlement
     async fn prove_atomic_match_settle(&mut self) -> Result<()> {
-        let (statement, witness) = self.get_witness_statement().await?;
+        let (statement, witness) = self.get_witness_statement()?;
 
         // Enqueue a job with the proof generation module
         let job = ProofJob::ValidMalleableMatchSettleAtomic { witness, statement };
@@ -379,7 +379,7 @@ impl SettleMalleableExternalMatchTask {
 
     /// Get the witness and statement for the atomic match settle proof
     /// `VALID ATOMIC MATCH SETTLE` for an exact match
-    async fn get_witness_statement(
+    fn get_witness_statement(
         &self,
     ) -> Result<(
         SizedValidMalleableMatchSettleAtomicStatement,
@@ -387,7 +387,7 @@ impl SettleMalleableExternalMatchTask {
     )> {
         let match_res = &self.match_res;
         let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
-        let relayer_fee_address = self.state.get_external_fee_addr().await?.unwrap();
+        let relayer_fee_address = self.state.get_external_fee_addr()?.unwrap();
 
         // Copy values from the witnesses and statements of the order validity proofs
         let internal_party_order = commitments_witness.order.clone();

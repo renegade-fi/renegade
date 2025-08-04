@@ -151,8 +151,8 @@ impl Worker for NetworkManager {
     type Error = NetworkManagerError;
 
     async fn new(config: Self::WorkerConfig) -> Result<Self, Self::Error> {
-        let local_peer_id = config.global_state.get_peer_id().await?;
-        let local_keypair = config.global_state.get_node_keypair().await?;
+        let local_peer_id = config.global_state.get_peer_id()?;
+        let local_keypair = config.global_state.get_node_keypair()?;
 
         // If the local node is given a known dialable addr for itself at startup,
         // construct the local addr directly, otherwise set it to the canonical

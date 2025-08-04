@@ -182,7 +182,7 @@ impl Task for PayRelayerFeeTask {
         let state = &ctx.state;
         // Check that the fee decryption key is set, if not we cannot decrypt relayer
         // fees directly
-        let key = state.get_fee_key().await?;
+        let key = state.get_fee_key()?;
         if key.secret_key().is_none() {
             return Err(PayRelayerFeeTaskError::State(ERR_FEE_KEY_MISSING.to_string()));
         }
@@ -192,8 +192,7 @@ impl Task for PayRelayerFeeTask {
             .await?
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
         let recipient_wallet = state
-            .get_local_relayer_wallet()
-            .await?
+            .get_local_relayer_wallet()?
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_WALLET_MISSING.to_string()))?;
 
         let (new_sender_wallet, new_recipient_wallet) =
@@ -275,7 +274,7 @@ impl Task for PayRelayerFeeTask {
 impl PayRelayerFeeTask {
     /// Generate a proof of `VALID RELAYER FEE SETTLEMENT` for the balance
     async fn generate_proof(&mut self) -> Result<(), PayRelayerFeeTaskError> {
-        let (witness, statement) = self.get_witness_statement().await?;
+        let (witness, statement) = self.get_witness_statement()?;
         let job = ProofJob::ValidRelayerFeeSettlement { witness, statement };
 
         let proof_recv = enqueue_proof_job(job, &self.proof_queue)
@@ -345,7 +344,7 @@ impl PayRelayerFeeTask {
 
     /// Create a witness and statement for a proof of `VALID RELAYER FEE
     /// SETTLEMENT`
-    async fn get_witness_statement(
+    fn get_witness_statement(
         &self,
     ) -> Result<
         (SizedValidRelayerFeeSettlementWitness, SizedValidRelayerFeeSettlementStatement),
@@ -375,7 +374,7 @@ impl PayRelayerFeeTask {
             .ok_or_else(|| PayRelayerFeeTaskError::State(ERR_NO_MERKLE_PROOF.to_string()))?;
 
         let recipient_decryption_key =
-            self.state.get_fee_key().await?.secret_key().expect("decryption key missing");
+            self.state.get_fee_key()?.secret_key().expect("decryption key missing");
         let sender_balance_index = sender_wallet.get_balance_index(&self.mint).unwrap();
         let recipient_balance_index = new_recipient_wallet.get_balance_index(&self.mint).unwrap();
 
