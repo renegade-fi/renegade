@@ -41,10 +41,29 @@ pub struct Cli {
     /// An auth config file to read from
     #[clap(long, value_parser)]
     pub config_file: Option<String>,
+
+    // ---------------------
+    // | External Services |
+    // ---------------------
+
+    /// The address of the compliance service to use for wallet screening. If not configured, wallet screening is disabled
+    /// 
+    /// The API of the compliance service must match that defined here:
+    ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api 
+    #[clap(long, value_parser)]
+    pub compliance_service_url: Option<String>,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
     #[clap(long, value_parser, conflicts_with_all = &["coinbase_key_name", "coinbase_key_secret"])]
     pub price_reporter_url: Option<String>,
+    /// The URL (host:port) of the external prover service to use for Plonk and link proofs
+    /// 
+    /// If not configured, the relayer will generate all proofs itself.
+    #[clap(long, value_parser, env = "PROVER_SERVICE_URL", requires = "prover_service_password")]
+    pub prover_service_url: Option<String>,
+    /// The password for the prover service
+    #[clap(long, value_parser, env = "PROVER_SERVICE_PASSWORD", requires = "prover_service_url")]
+    pub prover_service_password: Option<String>,
 
     // -----------------------------
     // | Application Level Configs |
@@ -68,6 +87,10 @@ pub struct Cli {
     /// If not set, atomic matches are not supported
     #[clap(long, value_parser, env = "EXTERNAL_FEE_ADDR")]
     pub external_fee_addr: Option<String>,
+    /// The URL to export relayer events to.
+    /// If omitted, the event manager is disabled.
+    #[clap(long, value_parser)]
+    pub event_export_url: Option<String>,
     /// The path to the file containing relayer fee whitelist info
     #[clap(long, value_parser)]
     pub relayer_fee_whitelist: Option<String>,
@@ -93,16 +116,6 @@ pub struct Cli {
     /// See https://github.com/renegade-fi/token-mappings for more information on the format of this file
     #[clap(long, value_parser)]
     pub token_remap_file: Option<String>,
-    /// The address of the compliance service to use for wallet screening. If not configured, wallet screening is disabled
-    /// 
-    /// The API of the compliance service must match that defined here:
-    ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api 
-    #[clap(long, value_parser)]
-    pub compliance_service_url: Option<String>,
-    /// The URL to export relayer events to.
-    /// If ommitted, the event manager is disabled.
-    #[clap(long, value_parser)]
-    pub event_export_url: Option<String>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -283,13 +296,33 @@ pub struct RelayerConfig {
     pub external_fee_addr: Option<Address>,
     /// When set, the relayer will automatically redeem new fees into its wallet
     pub auto_redeem_fees: bool,
-    /// The price reporter from which to stream prices.
-    /// If unset, the relayer will connect to exchanges directly.
-    pub price_reporter_url: Option<Url>,
     /// The relayer fee whitelist
     ///
     /// Specifies a mapping of wallet IDs to fees for the relayer
     pub relayer_fee_whitelist: Vec<RelayerFeeWhitelistEntry>,
+
+    // ---------------------
+    // | External Services |
+    // ---------------------
+    /// The address of the compliance service to use for wallet screening. If
+    /// not configured, wallet screening is disabled
+    ///
+    /// The API of the compliance service must match that defined here:
+    ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api
+    pub compliance_service_url: Option<Url>,
+    /// The URL to export relayer events to.
+    /// If omitted, the event manager is disabled.
+    pub event_export_url: Option<Url>,
+    /// The price reporter from which to stream prices.
+    /// If unset, the relayer will connect to exchanges directly.
+    pub price_reporter_url: Option<Url>,
+    /// The URL (host:port) of the external prover service to use for Plonk and
+    /// link proofs
+    ///
+    /// If not configured, the relayer will generate all proofs itself.
+    pub prover_service_url: Option<Url>,
+    /// The password for the prover service
+    pub prover_service_password: Option<String>,
 
     // -----------------------
     // | Environment Configs |
@@ -298,15 +331,6 @@ pub struct RelayerConfig {
     pub chain_id: Chain,
     /// The address of the contract in the target network
     pub contract_address: String,
-    /// The address of the compliance service to use for wallet screening. If
-    /// not configured, wallet screening is disabled
-    ///
-    /// The API of the compliance service must match that defined here:
-    ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api
-    pub compliance_service_url: Option<String>,
-    /// The URL to export relayer events to.
-    /// If omitted, the event manager is disabled.
-    pub event_export_url: Option<Url>,
 
     // ----------------------------
     // | Networking Configuration |
@@ -471,10 +495,12 @@ impl Clone for RelayerConfig {
             external_fee_addr: self.external_fee_addr.clone(),
             auto_redeem_fees: self.auto_redeem_fees,
             relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),
+            compliance_service_url: self.compliance_service_url.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
+            prover_service_url: self.prover_service_url.clone(),
+            prover_service_password: self.prover_service_password.clone(),
             chain_id: self.chain_id,
             contract_address: self.contract_address.clone(),
-            compliance_service_url: self.compliance_service_url.clone(),
             bootstrap_mode: self.bootstrap_mode,
             bootstrap_servers: self.bootstrap_servers.clone(),
             p2p_port: self.p2p_port,

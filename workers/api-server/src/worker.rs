@@ -13,6 +13,7 @@ use job_types::{
     proof_manager::ProofManagerQueue,
 };
 use price_state::PriceStreamStates;
+use reqwest::Url;
 use state::State;
 use std::thread::{self, JoinHandle};
 use system_bus::SystemBus;
@@ -62,7 +63,7 @@ pub struct ApiServerConfig {
     /// The URL of the compliance service to use for wallet screening
     ///
     /// Compliance screening is disabled if this is not set
-    pub compliance_service_url: Option<String>,
+    pub compliance_service_url: Option<Url>,
     /// A handle on the darkpool RPC client
     pub darkpool_client: DarkpoolClient,
     /// A sender to the network manager's work queue

@@ -18,7 +18,6 @@ use rand_core::OsRng;
 use serde::Deserialize;
 use std::{env, fs, str::FromStr};
 use toml::{Value, value::Map};
-use url::Url;
 use util::{
     hex::{biguint_from_hex_string, jubjub_from_hex_string},
     on_chain::{DARKPOOL_PROXY_CONTRACT_KEY, parse_addr_from_deployments_file},
@@ -95,14 +94,17 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         parsed_bootstrap_addrs.push((WrappedPeerId(peer_id), parsed_addr));
     }
 
-    // Parse the event export URL, if there is one
-    let event_export_url: Option<Url> =
+    // --- Parse Service URLs --- //
+    let compliance_service_url = cli_args
+        .compliance_service_url
+        .map(|url| url.parse().expect("Invalid compliance service URL"));
+    let event_export_url =
         cli_args.event_export_url.map(|url| url.parse().expect("Invalid event export URL"));
+    let price_reporter_url =
+        cli_args.price_reporter_url.map(|url| url.parse().expect("Invalid price reporter URL"));
 
-    // Parse the price reporter URL, if there is one
-    let price_reporter_url = cli_args
-        .price_reporter_url
-        .map(|url| Url::parse(&url).expect("Invalid price reporter URL"));
+    let prover_service_url =
+        cli_args.prover_service_url.map(|url| url.parse().expect("Invalid prover service URL"));
 
     // Parse the relayer fee whitelist, if there is one
     let relayer_fee_whitelist = parse_relayer_whitelist_file(cli_args.relayer_fee_whitelist)?;
@@ -116,7 +118,9 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
         price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
-        compliance_service_url: cli_args.compliance_service_url,
+        compliance_service_url,
+        prover_service_url,
+        prover_service_password: cli_args.prover_service_password,
         bootstrap_mode: cli_args.bootstrap_mode,
         bootstrap_servers: parsed_bootstrap_addrs,
         p2p_port: cli_args.p2p_port,

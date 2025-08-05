@@ -33,6 +33,7 @@ use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use price_state::PriceStreamStates;
 use renegade_crypto::fields::biguint_to_scalar;
+use reqwest::Url;
 use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
 use util::{
@@ -756,7 +757,7 @@ impl DepositBalanceHandler {
     /// Constructor
     pub fn new(
         min_deposit_amount: f64,
-        compliance_url: Option<String>,
+        compliance_url: Option<Url>,
         state: State,
         rate_limiter: WalletTaskRateLimiter,
         price_streams: PriceStreamStates,

@@ -333,7 +333,7 @@ async fn main() -> Result<(), CoordinatorError> {
         min_transfer_amount: args.min_transfer_amount,
         min_order_size,
         chain: args.chain_id,
-        compliance_service_url: args.compliance_service_url,
+        compliance_service_url: args.compliance_service_url.clone(),
         wallet_task_rate_limit: args.wallet_task_rate_limit,
         darkpool_client: darkpool_client.clone(),
         network_sender: network_sender.clone(),
