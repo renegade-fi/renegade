@@ -32,7 +32,7 @@ use job_types::{event_manager::new_event_manager_queue, gossip_server::new_gossi
 use network_manager::{worker::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::PriceReporterConfig;
 use price_reporter::worker::{ExchangeConnectionsConfig, PriceReporter};
-use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
+use proof_manager::worker::{ProofManager, ProofManagerConfig};
 use state::{create_global_state, tui::StateTuiApp};
 use system_bus::SystemBus;
 

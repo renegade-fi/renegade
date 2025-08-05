@@ -51,7 +51,8 @@ use price_reporter::{
 };
 use price_state::PriceStreamStates;
 use proof_manager::{
-    mock::MockProofManager, proof_manager::ProofManager, worker::ProofManagerConfig,
+    mock::MockProofManager,
+    worker::{ProofManager, ProofManagerConfig},
 };
 use reqwest::{Client, Method, Response, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
@@ -562,7 +563,12 @@ impl MockNodeController {
     pub fn with_proof_generation(mut self) -> Self {
         let job_queue = self.proof_queue.1.take().unwrap();
         let cancel_channel = mock_cancel();
-        let conf = ProofManagerConfig { job_queue, cancel_channel };
+        let conf = ProofManagerConfig {
+            prover_service_url: None,
+            prover_service_password: None,
+            job_queue,
+            cancel_channel,
+        };
 
         let mut manager = run_fut(ProofManager::new(conf)).expect("Failed to create proof manager");
         manager.start().expect("Failed to start proof manager");
