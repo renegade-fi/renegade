@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use common::{types::CancelChannel, worker::Worker};
 use job_types::proof_manager::ProofManagerReceiver;
 use rayon::ThreadPoolBuilder;
+use reqwest::Url;
 
 use super::{error::ProofManagerError, proof_manager::ProofManager};
 
@@ -23,6 +24,12 @@ const WORKER_STACK_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 /// The configuration of the manager, used to hold work queues and tunables
 #[derive(Clone, Debug)]
 pub struct ProofManagerConfig {
+    /// The URL of the prover service to use
+    ///
+    /// If not configured, the relayer will generate all proofs itself
+    pub prover_service_url: Option<Url>,
+    /// The password for the prover service
+    pub prover_service_password: Option<String>,
     /// The job queue on which the manager may receive proof generation jobs
     pub job_queue: ProofManagerReceiver,
     /// The cancel channel that the coordinator uses to signal to the proof

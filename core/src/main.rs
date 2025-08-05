@@ -211,6 +211,8 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the proof generation module
     let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = new_cancel_channel();
     let mut proof_manager = ProofManager::new(ProofManagerConfig {
+        prover_service_url: args.prover_service_url.clone(),
+        prover_service_password: args.prover_service_password.clone(),
         job_queue: proof_generation_worker_receiver,
         cancel_channel: proof_manager_cancel_receiver,
     })
