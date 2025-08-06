@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use alloy::rpc::types::TransactionReceipt;
-use circuit_types::SizedWallet;
 use circuit_types::balance::Balance;
 use circuit_types::r#match::OrderSettlementIndices;
 use circuit_types::native_helpers::{
@@ -12,7 +11,7 @@ use circuit_types::native_helpers::{
 };
 use circuit_types::note::Note;
 use circuit_types::order::Order;
-use circuits::zk_circuits::proof_linking::link_sized_commitments_reblind;
+use circuit_types::{PlonkLinkProof, ProofLinkingHint, SizedWallet};
 use circuits::zk_circuits::valid_commitments::{
     SizedValidCommitmentsWitness, ValidCommitmentsStatement, ValidCommitmentsWitness,
 };
@@ -20,8 +19,7 @@ use circuits::zk_circuits::valid_reblind::{
     SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitness,
 };
 use common::types::proof_bundles::{
-    OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle, ValidCommitmentsBundle,
-    ValidReblindBundle,
+    OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
 use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
@@ -36,6 +34,8 @@ use state::State;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver as TokioReceiver;
 use tracing::instrument;
+
+use crate::tasks::ERR_AWAITING_PROOF;
 
 use super::{
     ERR_BALANCE_NOT_FOUND, ERR_ENQUEUING_JOB, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
@@ -279,16 +279,14 @@ pub(crate) async fn update_wallet_validity_proofs(
     }
 
     // Await the proof of `VALID REBLIND`
-    let reblind_proof: ProofBundle =
+    let reblind_bundle: ProofBundle =
         reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?;
-    let reblind_bundle = ValidReblindBundle::from(reblind_proof);
 
     // Await proofs of `VALID COMMITMENTS` for each order, store them in the state
     for (order_id, commitments_witness, receiver) in commitments_instances.into_iter() {
         // Await a proof
-        let commitment_proof: ProofBundle =
+        let commitments_bundle: ProofBundle =
             receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?;
-        let commitments_bundle = ValidCommitmentsBundle::from(commitment_proof);
 
         link_and_store_proofs(
             &order_id,
@@ -298,6 +296,7 @@ pub(crate) async fn update_wallet_validity_proofs(
             reblind_bundle.clone(),
             &state,
             &network_sender,
+            &proof_manager_work_queue,
         )
         .await?;
     }
@@ -310,32 +309,34 @@ pub(crate) async fn update_wallet_validity_proofs(
 /// The proof is gossipped to the network so that peers may verify the validity
 /// bundle and schedule matches on the proven order
 #[instrument(skip_all)]
+#[allow(clippy::too_many_arguments)]
 async fn link_and_store_proofs(
     order_id: &OrderIdentifier,
     commitments_witness: &SizedValidCommitmentsWitness,
     reblind_witness: &SizedValidReblindWitness,
-    commitments_bundle: ValidCommitmentsBundle,
-    reblind_bundle: ValidReblindBundle,
+    commitments_bundle: ProofBundle,
+    reblind_bundle: ProofBundle,
     state: &State,
     network_sender: &NetworkManagerQueue,
+    proof_queue: &ProofManagerQueue,
 ) -> Result<(), String> {
     // Prove the link between the reblind and commitments proofs
-    let reblind_link_hint = &reblind_bundle.link_hint;
-    let comms_link_hint = &commitments_bundle.link_hint;
-    let linking_proof = link_sized_commitments_reblind(reblind_link_hint, comms_link_hint)
-        .map_err(|e| e.to_string())?;
+    let (reblind_proof, reblind_hint) = reblind_bundle.to_valid_reblind();
+    let (commitments_proof, commitments_hint) = commitments_bundle.to_valid_commitments();
+    let linking_proof =
+        link_reblind_commitments(&commitments_hint, &reblind_hint, proof_queue).await?;
 
     // Record the bundle in the global state
     let proof_bundle = OrderValidityProofBundle {
-        reblind_proof: reblind_bundle,
-        commitment_proof: commitments_bundle.clone(),
+        reblind_proof,
+        commitment_proof: commitments_proof,
         linking_proof,
     };
 
     let witness_bundle = OrderValidityWitnessBundle {
         reblind_witness: Arc::new(reblind_witness.clone()),
         commitment_witness: Arc::new(commitments_witness.clone()),
-        commitment_linking_hint: Arc::new(comms_link_hint.clone()),
+        commitment_linking_hint: Arc::new(commitments_hint.clone()),
     };
 
     let waiter = state
@@ -352,6 +353,26 @@ async fn link_and_store_proofs(
 
     let job = NetworkManagerJob::pubsub(ORDER_BOOK_TOPIC.to_string(), message);
     network_sender.send(job).map_err(|e| e.to_string())
+}
+
+/// Request the proof manager to link the reblind and commitments proofs
+pub(crate) async fn link_reblind_commitments(
+    commitments_hint: &ProofLinkingHint,
+    reblind_hint: &ProofLinkingHint,
+    proof_queue: &ProofManagerQueue,
+) -> Result<PlonkLinkProof, String> {
+    // Enqueue a job to link the proofs
+    let job = ProofJob::ValidCommitmentsReblindLink {
+        commitments_hint: commitments_hint.clone(),
+        reblind_hint: reblind_hint.clone(),
+    };
+    let proof_recv =
+        enqueue_proof_job(job, proof_queue).map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
+
+    // Await a response from the proof manager
+    let bundle = proof_recv.await.map_err(|_| ERR_AWAITING_PROOF.to_string())?;
+    let link_proof = bundle.to_reblind_commitment_link();
+    Ok(link_proof)
 }
 
 /// Enqueue a job to redeem a relayer fee into the relayer's wallet

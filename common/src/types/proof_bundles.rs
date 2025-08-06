@@ -76,8 +76,6 @@ pub struct GenericValidReblindBundle<
     pub statement: ValidReblindStatement,
     /// The proof itself
     pub proof: PlonkProof,
-    /// The proof's link hint
-    pub link_hint: ProofLinkingHint,
 }
 
 /// A type alias that specifies default generics for `GenericValidReblindBundle`
@@ -93,8 +91,6 @@ pub struct GenericValidCommitmentsBundle<const MAX_BALANCES: usize, const MAX_OR
     pub statement: ValidCommitmentsStatement,
     /// The proof itself
     pub proof: PlonkProof,
-    /// The proof's link hint
-    pub link_hint: ProofLinkingHint,
 }
 
 /// A type alias that specifies the default generics for
@@ -217,18 +213,16 @@ pub type SizedFeeRedemptionBundle = GenericFeeRedemptionBundle<MAX_BALANCES, MAX
 /// A type alias that heap-allocates a `FeeRedemptionBundle`
 pub type FeeRedemptionBundle = Arc<SizedFeeRedemptionBundle>;
 
-impl ProofBundle {}
-
 /// The bundle type returned by the proof generation module
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
 pub enum ProofBundle {
     /// A statement and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
-    /// A statement and proof of `VALID REBLIND`
-    ValidReblind(ValidReblindBundle),
-    /// A statement and proof of `VALID COMMITMENTS`
-    ValidCommitments(ValidCommitmentsBundle),
+    /// A statement, proof, and link hint for `VALID REBLIND`
+    ValidReblind(ValidReblindBundle, ProofLinkingHint),
+    /// A statement, proof, and link hint for `VALID COMMITMENTS`
+    ValidCommitments(ValidCommitmentsBundle, ProofLinkingHint),
     /// A proof link between a proof of `VALID COMMITMENTS` and a proof of
     /// `VALID REBLIND`
     ValidCommitmentsReblindLink(PlonkLinkProof),
@@ -279,11 +273,8 @@ impl ProofBundle {
         proof: PlonkProof,
         link_hint: ProofLinkingHint,
     ) -> Self {
-        ProofBundle::ValidReblind(Arc::new(GenericValidReblindBundle {
-            statement,
-            proof,
-            link_hint,
-        }))
+        let bundle = Arc::new(GenericValidReblindBundle { statement, proof });
+        ProofBundle::ValidReblind(bundle, link_hint)
     }
 
     /// Create a new proof bundle from a `VALID COMMITMENTS` proof
@@ -292,11 +283,8 @@ impl ProofBundle {
         proof: PlonkProof,
         link_hint: ProofLinkingHint,
     ) -> Self {
-        ProofBundle::ValidCommitments(Arc::new(GenericValidCommitmentsBundle {
-            statement,
-            proof,
-            link_hint,
-        }))
+        let bundle = Arc::new(GenericValidCommitmentsBundle { statement, proof });
+        ProofBundle::ValidCommitments(bundle, link_hint)
     }
 
     /// Create a new proof bundle from a `VALID COMMITMENTS` <-> `VALID REBLIND`
@@ -377,6 +365,24 @@ impl ProofBundle {
 
     // --- Conversion --- //
 
+    /// Returns a proof of `VALID REBLIND` with a link hint
+    pub fn to_valid_reblind(self) -> (ValidReblindBundle, ProofLinkingHint) {
+        if let ProofBundle::ValidReblind(b, l) = self {
+            (b, l)
+        } else {
+            panic!("Proof bundle is not of type ValidReblind: {:?}", self);
+        }
+    }
+
+    /// Returns a proof of `VALID COMMITMENTS` with a link hint
+    pub fn to_valid_commitments(self) -> (ValidCommitmentsBundle, ProofLinkingHint) {
+        if let ProofBundle::ValidCommitments(b, l) = self {
+            (b, l)
+        } else {
+            panic!("Proof bundle is not of type ValidCommitments: {:?}", self);
+        }
+    }
+
     /// Get the proof link for a `VALID COMMITMENTS` and `VALID REBLIND` proof
     /// link
     pub fn to_reblind_commitment_link(self) -> PlonkLinkProof {
@@ -401,7 +407,7 @@ impl From<ProofBundle> for ValidWalletCreateBundle {
 
 impl From<ProofBundle> for ValidReblindBundle {
     fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidReblind(b) = bundle {
+        if let ProofBundle::ValidReblind(b, _) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidReblind: {:?}", bundle);
@@ -411,7 +417,7 @@ impl From<ProofBundle> for ValidReblindBundle {
 
 impl From<ProofBundle> for ValidCommitmentsBundle {
     fn from(bundle: ProofBundle) -> Self {
-        if let ProofBundle::ValidCommitments(b) = bundle {
+        if let ProofBundle::ValidCommitments(b, _) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidCommitments: {:?}", bundle)
@@ -672,17 +678,13 @@ pub mod mocks {
     /// Create a dummy proof bundle for `VALID REBLIND`
     pub fn dummy_valid_reblind_bundle() -> SizedValidReblindBundle {
         let statement = ValidReblindStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        SizedValidReblindBundle { statement, proof: dummy_proof(), link_hint: dummy_link_hint() }
+        SizedValidReblindBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy proof bundle for `VALID COMMITMENTS`
     pub fn dummy_valid_commitments_bundle() -> SizedValidCommitmentsBundle {
         let statement = ValidCommitmentsStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        SizedValidCommitmentsBundle {
-            statement,
-            proof: dummy_proof(),
-            link_hint: dummy_link_hint(),
-        }
+        SizedValidCommitmentsBundle { statement, proof: dummy_proof() }
     }
 
     /// Create a dummy proof bundle for `VALID RELAYER FEE SETTLEMENT`
