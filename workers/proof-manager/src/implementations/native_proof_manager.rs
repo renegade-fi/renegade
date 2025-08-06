@@ -161,9 +161,9 @@ impl NativeProofManager {
                 self.prove_valid_commitments(witness, statement)
             },
 
-            ProofJob::ValidCommitmentsReblindLink { commitments_hint, reblind_hint } => {
+            ProofJob::ValidCommitmentsReblindLink { reblind_hint, commitments_hint } => {
                 // Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
-                self.link_commitments_reblind(commitments_hint, reblind_hint)
+                self.link_commitments_reblind(reblind_hint, commitments_hint)
             },
 
             ProofJob::ValidWalletUpdate { witness, statement } => {
@@ -294,10 +294,10 @@ impl NativeProofManager {
     #[instrument(skip_all, err)]
     fn link_commitments_reblind(
         &self,
-        commitments_hint: ProofLinkingHint,
         reblind_hint: ProofLinkingHint,
+        commitments_hint: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
-        let link_proof = link_sized_commitments_reblind(&commitments_hint, &reblind_hint)?;
+        let link_proof = link_sized_commitments_reblind(&reblind_hint, &commitments_hint)?;
         let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof);
         Ok(bundle)
     }
@@ -317,8 +317,8 @@ impl NativeProofManager {
 
         // Link the individual proofs of `VALID COMMITMENTS` into the proof of
         // `VALID MATCH SETTLE`
-        let thread1 = || self.link_commitments_match_settle(PARTY0, &commitment_link1, &link_hint);
-        let thread0 = || self.link_commitments_match_settle(PARTY1, &commitment_link0, &link_hint);
+        let thread0 = || self.link_commitments_match_settle(PARTY0, &commitment_link0, &link_hint);
+        let thread1 = || self.link_commitments_match_settle(PARTY1, &commitment_link1, &link_hint);
         let (link_res0, link_res1) = self.thread_pool.join(thread0, thread1);
         let link0 = link_res0?;
         let link1 = link_res1?;
