@@ -20,7 +20,8 @@ use circuits::zk_circuits::valid_reblind::{
     SizedValidReblindWitness, ValidReblindStatement, ValidReblindWitness,
 };
 use common::types::proof_bundles::{
-    OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
+    OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle, ValidCommitmentsBundle,
+    ValidReblindBundle,
 };
 use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
@@ -280,19 +281,21 @@ pub(crate) async fn update_wallet_validity_proofs(
     // Await the proof of `VALID REBLIND`
     let reblind_proof: ProofBundle =
         reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?;
+    let reblind_bundle = ValidReblindBundle::from(reblind_proof);
 
     // Await proofs of `VALID COMMITMENTS` for each order, store them in the state
     for (order_id, commitments_witness, receiver) in commitments_instances.into_iter() {
         // Await a proof
         let commitment_proof: ProofBundle =
             receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?;
+        let commitments_bundle = ValidCommitmentsBundle::from(commitment_proof);
 
         link_and_store_proofs(
             &order_id,
             &commitments_witness,
             &reblind_witness,
-            &commitment_proof,
-            &reblind_proof,
+            commitments_bundle,
+            reblind_bundle.clone(),
             &state,
             &network_sender,
         )
@@ -311,8 +314,8 @@ async fn link_and_store_proofs(
     order_id: &OrderIdentifier,
     commitments_witness: &SizedValidCommitmentsWitness,
     reblind_witness: &SizedValidReblindWitness,
-    commitments_bundle: &ProofBundle,
-    reblind_bundle: &ProofBundle,
+    commitments_bundle: ValidCommitmentsBundle,
+    reblind_bundle: ValidReblindBundle,
     state: &State,
     network_sender: &NetworkManagerQueue,
 ) -> Result<(), String> {
@@ -323,9 +326,11 @@ async fn link_and_store_proofs(
         .map_err(|e| e.to_string())?;
 
     // Record the bundle in the global state
-    let reblind_proof = reblind_bundle.proof.clone().into();
-    let commitment_proof = commitments_bundle.proof.clone().into();
-    let proof_bundle = OrderValidityProofBundle { reblind_proof, commitment_proof, linking_proof };
+    let proof_bundle = OrderValidityProofBundle {
+        reblind_proof: reblind_bundle,
+        commitment_proof: commitments_bundle.clone(),
+        linking_proof,
+    };
 
     let witness_bundle = OrderValidityWitnessBundle {
         reblind_witness: Arc::new(reblind_witness.clone()),

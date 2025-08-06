@@ -269,7 +269,7 @@ impl NewWalletTask {
         // Await the proof
         let bundle =
             proof_recv.await.map_err(|e| NewWalletTaskError::ProofGeneration(e.to_string()))?;
-        self.proof_bundle = Some(bundle.proof.into());
+        self.proof_bundle = Some(bundle.into());
         Ok(())
     }
 

@@ -140,8 +140,7 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_wallet_create(statement, proof, link_hint))
+        Ok(ProofBundle::new_valid_wallet_create(statement, proof))
     }
 
     /// Generate a dummy proof of `VALID WALLET UPDATE`
@@ -155,8 +154,7 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
+        Ok(ProofBundle::new_valid_wallet_update(statement, proof))
     }
 
     /// Generate a dummy proof of `VALID REBLIND`
@@ -192,8 +190,7 @@ impl MockProofManager {
     /// Create a dummy link proof of `VALID COMMITMENTS` <-> `VALID REBLIND`
     fn valid_commitments_reblind_link() -> Result<ProofBundle, ProofManagerError> {
         let link_proof = dummy_link_proof();
-        let link_hint = dummy_link_hint();
-        let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof, link_hint);
+        let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof);
         Ok(bundle)
     }
 
@@ -208,16 +205,9 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
         let link_proof0 = dummy_link_proof();
         let link_proof1 = dummy_link_proof();
-        Ok(ProofBundle::new_valid_match_settle(
-            statement,
-            proof,
-            link_proof0,
-            link_proof1,
-            link_hint,
-        ))
+        Ok(ProofBundle::new_valid_match_settle(statement, proof, link_proof0, link_proof1))
     }
 
     /// Create a dummy proof of `VALID MATCH SETTLE ATOMIC`
@@ -231,9 +221,8 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
         let link_proof = dummy_link_proof();
-        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_proof, link_hint))
+        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_proof))
     }
 
     /// Create a dummy proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
@@ -247,11 +236,8 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
         let link_proof = dummy_link_proof();
-        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(
-            statement, proof, link_proof, link_hint,
-        ))
+        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_proof))
     }
 
     /// Generate a dummy proof of `VALID RELAYER FEE SETTLEMENT`
@@ -265,8 +251,7 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof, link_hint))
+        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof))
     }
 
     /// Generate a dummy proof of `VALID OFFLINE FEE SETTLEMENT`
@@ -280,8 +265,7 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof, link_hint))
+        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof))
     }
 
     /// Generate a dummy proof of `VALID FEE REDEMPTION`
@@ -295,8 +279,7 @@ impl MockProofManager {
         }
 
         let proof = dummy_proof();
-        let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_fee_redemption(statement, proof, link_hint))
+        Ok(ProofBundle::new_valid_fee_redemption(statement, proof))
     }
 
     /// Check constraint satisfaction for a witness and statement

@@ -358,7 +358,7 @@ impl UpdateWalletTask {
         let bundle =
             proof_recv.await.map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
 
-        self.proof_bundle = Some(bundle.proof.into());
+        self.proof_bundle = Some(bundle.into());
         Ok(())
     }
 

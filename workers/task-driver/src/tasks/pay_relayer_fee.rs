@@ -282,7 +282,7 @@ impl PayRelayerFeeTask {
 
         // Await the proof
         let bundle = proof_recv.await.map_err(err_str!(PayRelayerFeeTaskError::ProofGeneration))?;
-        self.proof = Some(bundle.proof.into());
+        self.proof = Some(bundle.into());
         Ok(())
     }
 
