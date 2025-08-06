@@ -18,8 +18,9 @@ rayon = { version = "1.5.3" }
 tokio = { workspace = true }
 
 # === External Service Client === #
+http-auth-basic = "0.3"
 reqwest = { version = "0.12.10", features = ["json"] }
-prover-service-api = { git = "https://github.com/renegade-fi/relayer-extensions" }
+serde_json = { workspace = true }
 
 # === Workspace Dependencies === #
 circuits = { workspace = true }
@@ -33,3 +34,4 @@ util = { workspace = true }
 # === Misc Dependencies === #
 serde = { workspace = true }
 tracing = { workspace = true }
+thiserror = { workspace = true }

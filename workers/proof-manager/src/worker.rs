@@ -8,7 +8,9 @@ use common::{default_wrapper::DefaultOption, types::CancelChannel, worker::Worke
 use job_types::proof_manager::ProofManagerReceiver;
 use reqwest::Url;
 
-use crate::implementations::native_proof_manager::NativeProofManager;
+use crate::implementations::{
+    external_proof_manager::ExternalProofManager, native_proof_manager::NativeProofManager,
+};
 
 use super::error::ProofManagerError;
 
@@ -115,6 +117,12 @@ impl ProofManager {
     fn start_external_proof_manager(
         &self,
     ) -> Result<JoinHandle<ProofManagerError>, ProofManagerError> {
-        unimplemented!("external proof manager not implemented")
+        let manager = ExternalProofManager::new(self.config.clone())?;
+        let handle = Builder::new()
+            .name(MAIN_THREAD_NAME.to_string())
+            .spawn(move || manager.run().err().unwrap())
+            .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
+
+        Ok(handle)
     }
 }
