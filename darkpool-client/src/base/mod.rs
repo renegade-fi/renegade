@@ -15,10 +15,10 @@ use circuit_types::{
 };
 use common::types::{
     proof_bundles::{
-        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, MatchBundle,
-        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
-        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
+        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, SizedFeeRedemptionBundle,
+        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle, ValidMatchSettleAtomicBundle,
+        ValidMatchSettleBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -214,18 +214,18 @@ impl DarkpoolImpl for BaseDarkpool {
         &self,
         party0_validity: &OrderValidityProofBundle,
         party1_validity: &OrderValidityProofBundle,
-        match_bundle: &MatchBundle,
+        match_bundle: ValidMatchSettleBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let party0_payload = party0_validity.to_contract_type()?;
         let party1_payload = party1_validity.to_contract_type()?;
-        let statement = match_bundle.match_proof.statement.to_contract_type()?;
+        let statement = match_bundle.statement.to_contract_type()?;
 
         // Build the match proof bundle
         let commitments0 = party0_validity.commitment_proof.proof.to_contract_type()?;
         let reblind0 = party0_validity.reblind_proof.proof.to_contract_type()?;
         let commitments1 = party1_validity.commitment_proof.proof.to_contract_type()?;
         let reblind1 = party1_validity.reblind_proof.proof.to_contract_type()?;
-        let match_proof = match_bundle.match_proof.proof.to_contract_type()?;
+        let match_proof = match_bundle.proof.to_contract_type()?;
         let proofs = MatchProofs {
             validCommitments0: commitments0,
             validReblind0: reblind0,
@@ -300,15 +300,15 @@ impl DarkpoolImpl for BaseDarkpool {
         &self,
         receiver_address: Option<Address>,
         validity_proofs: &OrderValidityProofBundle,
-        match_atomic_bundle: &AtomicMatchSettleBundle,
+        match_atomic_bundle: ValidMatchSettleAtomicBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
         let internal_party_payload = validity_proofs.to_contract_type()?;
-        let statement = match_atomic_bundle.atomic_match_proof.statement.to_contract_type()?;
+        let statement = match_atomic_bundle.statement.to_contract_type()?;
 
         // Build the match proofs bundle
         let commitments_proof = validity_proofs.commitment_proof.proof.to_contract_type()?;
         let reblind_proof = validity_proofs.reblind_proof.proof.to_contract_type()?;
-        let match_proof = match_atomic_bundle.atomic_match_proof.proof.to_contract_type()?;
+        let match_proof = match_atomic_bundle.proof.to_contract_type()?;
         let match_proofs = MatchAtomicProofs {
             validCommitments: commitments_proof,
             validReblind: reblind_proof,

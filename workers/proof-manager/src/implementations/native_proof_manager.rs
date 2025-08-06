@@ -10,7 +10,9 @@ use circuit_types::{
 use circuits::{
     singleprover_prove_with_hint,
     zk_circuits::{
-        proof_linking::link_sized_commitments_match_settle,
+        proof_linking::{
+            link_sized_commitments_atomic_match_settle, link_sized_commitments_match_settle,
+        },
         valid_commitments::{
             SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
         },
@@ -172,9 +174,9 @@ impl NativeProofManager {
                 self.prove_valid_match_mpc(witness, statement, commitment_link0, commitment_link1)
             },
 
-            ProofJob::ValidMatchSettleAtomic { witness, statement } => {
+            ProofJob::ValidMatchSettleAtomic { witness, statement, commitments_link } => {
                 // Prove `VALID MATCH SETTLE ATOMIC`
-                self.prove_valid_match_settle_atomic(witness, statement)
+                self.prove_valid_match_settle_atomic(witness, statement, commitments_link)
             },
 
             ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
@@ -241,9 +243,7 @@ impl NativeProofManager {
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID WALLET CREATE`
         let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidWalletCreate>(witness, statement.clone())
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
+            singleprover_prove_with_hint::<SizedValidWalletCreate>(witness, statement.clone())?;
         Ok(ProofBundle::new_valid_wallet_create(statement, proof, link_hint))
     }
 
@@ -256,9 +256,7 @@ impl NativeProofManager {
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID REBLIND`
         let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidReblind>(witness, statement.clone())
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
+            singleprover_prove_with_hint::<SizedValidReblind>(witness, statement.clone())?;
         Ok(ProofBundle::new_valid_reblind(statement, proof, link_hint))
     }
 
@@ -271,9 +269,7 @@ impl NativeProofManager {
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID COMMITMENTS`
         let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidCommitments>(witness, statement)
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
+            singleprover_prove_with_hint::<SizedValidCommitments>(witness, statement)?;
         Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
     }
 
@@ -286,9 +282,7 @@ impl NativeProofManager {
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID WALLET UPDATE`
         let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidWalletUpdate>(witness, statement.clone())
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
+            singleprover_prove_with_hint::<SizedValidWalletUpdate>(witness, statement.clone())?;
         Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
     }
 
@@ -303,8 +297,7 @@ impl NativeProofManager {
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID MATCH SETTLE`
         let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidMatchSettle>(witness, statement.clone())
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+            singleprover_prove_with_hint::<SizedValidMatchSettle>(witness, statement.clone())?;
 
         // Link the individual proofs of `VALID COMMITMENTS` into the proof of
         // `VALID MATCH SETTLE`
@@ -324,8 +317,12 @@ impl NativeProofManager {
         commitment_link_hint: &ProofLinkingHint,
         match_settle_link_hint: &ProofLinkingHint,
     ) -> Result<PlonkLinkProof, ProofManagerError> {
-        link_sized_commitments_match_settle(party_id, commitment_link_hint, match_settle_link_hint)
-            .map_err(ProofManagerError::prover)
+        let link_proof = link_sized_commitments_match_settle(
+            party_id,
+            commitment_link_hint,
+            match_settle_link_hint,
+        )?;
+        Ok(link_proof)
     }
 
     /// Create a proof of `VALID MATCH SETTLE ATOMIC`
@@ -334,13 +331,17 @@ impl NativeProofManager {
         &self,
         witness: SizedValidMatchSettleAtomicWitness,
         statement: SizedValidMatchSettleAtomicStatement,
+        commitments_link: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID MATCH SETTLE ATOMIC`
-        let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidMatchSettleAtomic>(witness, statement.clone())
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let (proof, link_hint) = singleprover_prove_with_hint::<SizedValidMatchSettleAtomic>(
+            witness,
+            statement.clone(),
+        )?;
 
-        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_hint))
+        // Prove the `VALID COMMITMENTS` <-> `VALID MATCH SETTLE ATOMIC` link
+        let link_proof = link_sized_commitments_atomic_match_settle(&commitments_link, &link_hint)?;
+        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_proof, link_hint))
     }
 
     /// Create a proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
@@ -351,12 +352,9 @@ impl NativeProofManager {
         statement: SizedValidMalleableMatchSettleAtomicStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID MALLEABLE MATCH SETTLE ATOMIC`
-        let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidMalleableMatchSettleAtomic>(
-                witness,
-                statement.clone(),
-            )
-            .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        let (proof, link_hint) = singleprover_prove_with_hint::<
+            SizedValidMalleableMatchSettleAtomic,
+        >(witness, statement.clone())?;
 
         Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_hint))
     }
@@ -372,8 +370,7 @@ impl NativeProofManager {
         let (proof, link_hint) = singleprover_prove_with_hint::<SizedValidRelayerFeeSettlement>(
             witness,
             statement.clone(),
-        )
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+        )?;
 
         Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof, link_hint))
     }
@@ -404,8 +401,7 @@ impl NativeProofManager {
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID FEE REDEMPTION`
         let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidFeeRedemption>(witness, statement.clone())
-                .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
+            singleprover_prove_with_hint::<SizedValidFeeRedemption>(witness, statement.clone())?;
 
         Ok(ProofBundle::new_valid_fee_redemption(statement, proof, link_hint))
     }

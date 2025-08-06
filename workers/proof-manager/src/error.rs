@@ -1,6 +1,7 @@
 //! Defines error types emitted during the course of the proof generation
 //! module's execution
 
+use circuit_types::errors::ProverError;
 use thiserror::Error;
 
 /// The abstract error type the proof manager emits
@@ -52,5 +53,11 @@ impl ProofManagerError {
 impl From<reqwest::Error> for ProofManagerError {
     fn from(err: reqwest::Error) -> Self {
         Self::http(err)
+    }
+}
+
+impl From<ProverError> for ProofManagerError {
+    fn from(err: ProverError) -> Self {
+        Self::prover(err)
     }
 }
