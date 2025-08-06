@@ -52,6 +52,10 @@ pub struct Cli {
     ///     https://github.com/renegade-fi/relayer-extensions/tree/master/compliance/compliance-api 
     #[clap(long, value_parser)]
     pub compliance_service_url: Option<String>,
+    /// The URL to export relayer events to.
+    /// If omitted, the event manager is disabled.
+    #[clap(long, value_parser)]
+    pub event_export_url: Option<String>,
     /// The price reporter from which to stream prices.
     /// If unset, the relayer will connect to exchanges directly.
     #[clap(long, value_parser, conflicts_with_all = &["coinbase_key_name", "coinbase_key_secret"])]
@@ -87,10 +91,6 @@ pub struct Cli {
     /// If not set, atomic matches are not supported
     #[clap(long, value_parser, env = "EXTERNAL_FEE_ADDR")]
     pub external_fee_addr: Option<String>,
-    /// The URL to export relayer events to.
-    /// If omitted, the event manager is disabled.
-    #[clap(long, value_parser)]
-    pub event_export_url: Option<String>,
     /// The path to the file containing relayer fee whitelist info
     #[clap(long, value_parser)]
     pub relayer_fee_whitelist: Option<String>,

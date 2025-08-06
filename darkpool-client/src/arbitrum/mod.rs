@@ -42,12 +42,11 @@ use common::types::{
     proof_bundles::{
         AtomicMatchSettleBundle, GenericFeeRedemptionBundle,
         GenericMalleableMatchSettleAtomicBundle, GenericMatchSettleAtomicBundle,
-        GenericMatchSettleBundle, GenericOfflineFeeSettlementBundle,
-        GenericRelayerFeeSettlementBundle, GenericValidWalletCreateBundle,
-        GenericValidWalletUpdateBundle, MalleableAtomicMatchSettleBundle, MatchBundle,
-        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
-        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
+        GenericOfflineFeeSettlementBundle, GenericRelayerFeeSettlementBundle,
+        GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
+        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, SizedFeeRedemptionBundle,
+        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle, ValidMatchSettleBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -253,22 +252,16 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         &self,
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
-        match_bundle: &MatchBundle,
+        match_bundle: ValidMatchSettleBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
         // Destructure proof bundles
-
-        let GenericMatchSettleBundle {
-            statement: valid_match_settle_statement,
-            proof: valid_match_settle_proof,
-        } = match_bundle.copy_match_proof();
+        let valid_match_settle_statement = match_bundle.statement.clone();
+        let valid_match_settle_proof = match_bundle.proof.clone();
 
         let party_0_valid_commitments_statement = party0_validity_proofs.commitment_proof.statement;
-
         let party_0_valid_reblind_statement =
             party0_validity_proofs.reblind_proof.statement.clone();
-
         let party_1_valid_commitments_statement = party1_validity_proofs.commitment_proof.statement;
-
         let party_1_valid_reblind_statement =
             party1_validity_proofs.reblind_proof.statement.clone();
 
@@ -300,7 +293,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         let match_link_proofs = build_match_linking_proofs(
             party0_validity_proofs,
             party1_validity_proofs,
-            match_bundle,
+            &match_bundle,
         )
         .map_err(DarkpoolClientError::Conversion)?;
 

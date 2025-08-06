@@ -2,10 +2,15 @@
 
 use std::sync::Arc;
 
-use circuit_types::traits::{SingleProverCircuit, setup_preprocessed_keys};
+use ark_mpc::{PARTY0, PARTY1, network::PartyId};
+use circuit_types::{
+    PlonkLinkProof, ProofLinkingHint,
+    traits::{SingleProverCircuit, setup_preprocessed_keys},
+};
 use circuits::{
     singleprover_prove_with_hint,
     zk_circuits::{
+        proof_linking::link_sized_commitments_match_settle,
         valid_commitments::{
             SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
         },
@@ -41,7 +46,10 @@ use circuits::{
         },
     },
 };
-use common::types::{CancelChannel, proof_bundles::ProofBundle};
+use common::{
+    default_wrapper::{DefaultOption, default_option},
+    types::{CancelChannel, proof_bundles::ProofBundle},
+};
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -59,13 +67,14 @@ const WORKER_STACK_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 const ERR_SENDING_RESPONSE: &str = "error sending proof response, channel closed";
 
 /// A native prover, generates all proofs locally
+#[derive(Clone)]
 pub struct NativeProofManager {
     /// The job queue on which to receive proof generation jobs
-    job_queue: ProofManagerReceiver,
+    job_queue: DefaultOption<ProofManagerReceiver>,
     /// The threadpool of workers generating proofs for the system
     thread_pool: Arc<ThreadPool>,
     /// The channel on which a coordinator may cancel execution
-    cancel_channel: CancelChannel,
+    cancel_channel: DefaultOption<CancelChannel>,
 }
 
 impl NativeProofManager {
@@ -79,14 +88,14 @@ impl NativeProofManager {
             .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
 
         Ok(Self {
-            job_queue: config.job_queue,
+            job_queue: default_option(config.job_queue),
             thread_pool: Arc::new(thread_pool),
-            cancel_channel: config.cancel_channel,
+            cancel_channel: default_option(config.cancel_channel),
         })
     }
 
     /// Run the proof manager's execution loop
-    pub fn run(self) -> Result<(), ProofManagerError> {
+    pub fn run(mut self) -> Result<(), ProofManagerError> {
         // If the relayer is in bootstrap mode, sleep forever
         if in_bootstrap_mode() {
             sleep_forever_blocking();
@@ -97,10 +106,12 @@ impl NativeProofManager {
             Self::preprocess_circuits().unwrap();
         });
 
+        // Take the job queue and cancel channel for the coordinator loop
+        let job_queue = self.job_queue.take().expect("job queue not set");
+        let cancel_channel = self.cancel_channel.take().expect("cancel channel not set");
         loop {
             // Check the cancel channel before blocking on a job
-            if self
-                .cancel_channel
+            if cancel_channel
                 .has_changed()
                 .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
             {
@@ -109,14 +120,15 @@ impl NativeProofManager {
             }
 
             // Dequeue the next job and hand it to the thread pool
-            let job = self
-                .job_queue
+            let job = job_queue
                 .recv()
                 .map_err(|err| ProofManagerError::JobQueueClosed(err.to_string()))?;
 
+            // Clone the thread pool for the worker thread
+            let self_clone = self.clone();
             self.thread_pool.spawn_fifo(move || {
                 let _span = info_span!("handle_proof_job").entered();
-                if let Err(e) = Self::handle_proof_job(job) {
+                if let Err(e) = self_clone.handle_proof_job(job) {
                     error!("Error handling proof manager job: {}", e)
                 }
             });
@@ -124,57 +136,65 @@ impl NativeProofManager {
     }
 
     /// The main job handler, run by a thread in the pool
-    #[instrument(name = "handle_proof_job", skip(job))]
-    fn handle_proof_job(job: TracedMessage<ProofManagerJob>) -> Result<(), ProofManagerError> {
+    #[instrument(name = "handle_proof_job", skip_all)]
+    fn handle_proof_job(
+        &self,
+        job: TracedMessage<ProofManagerJob>,
+    ) -> Result<(), ProofManagerError> {
         let ProofManagerJob { type_, response_channel } = job.consume();
         let proof_bundle = match type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 // Prove `VALID WALLET CREATE`
-                Self::prove_valid_wallet_create(witness, statement)
+                self.prove_valid_wallet_create(witness, statement)
             },
 
             ProofJob::ValidReblind { witness, statement } => {
                 // Prove `VALID REBLIND`
-                Self::prove_valid_reblind(witness, statement)
+                self.prove_valid_reblind(witness, statement)
             },
 
             ProofJob::ValidCommitments { witness, statement } => {
                 // Prove `VALID COMMITMENTS`
-                Self::prove_valid_commitments(witness, statement)
+                self.prove_valid_commitments(witness, statement)
             },
 
             ProofJob::ValidWalletUpdate { witness, statement } => {
-                Self::prove_valid_wallet_update(witness, statement)
+                self.prove_valid_wallet_update(witness, statement)
             },
 
-            ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
+            ProofJob::ValidMatchSettleSingleprover {
+                witness,
+                statement,
+                commitment_link0,
+                commitment_link1,
+            } => {
                 // Prove `VALID MATCH MPC`
-                Self::prove_valid_match_mpc(witness, statement)
+                self.prove_valid_match_mpc(witness, statement, commitment_link0, commitment_link1)
             },
 
             ProofJob::ValidMatchSettleAtomic { witness, statement } => {
                 // Prove `VALID MATCH SETTLE ATOMIC`
-                Self::prove_valid_match_settle_atomic(witness, statement)
+                self.prove_valid_match_settle_atomic(witness, statement)
             },
 
             ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
                 // Prove `VALID MALLEABLE MATCH SETTLE ATOMIC`
-                Self::prove_valid_malleable_match_settle_atomic(witness, statement)
+                self.prove_valid_malleable_match_settle_atomic(witness, statement)
             },
 
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
                 // Prove `VALID RELAYER FEE SETTLEMENT`
-                Self::prove_valid_relayer_fee_settlement(witness, statement)
+                self.prove_valid_relayer_fee_settlement(witness, statement)
             },
 
             ProofJob::ValidOfflineFeeSettlement { witness, statement } => {
                 // Prove `VALID OFFLINE FEE SETTLEMENT`
-                Self::prove_valid_offline_fee_settlement(witness, statement)
+                self.prove_valid_offline_fee_settlement(witness, statement)
             },
 
             ProofJob::ValidFeeRedemption { witness, statement } => {
                 // Prove `VALID FEE REDEMPTION`
-                Self::prove_valid_fee_redemption(witness, statement)
+                self.prove_valid_fee_redemption(witness, statement)
             },
         }?;
 
@@ -215,6 +235,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID WALLET CREATE`
     #[instrument(skip_all, err)]
     fn prove_valid_wallet_create(
+        &self,
         witness: SizedValidWalletCreateWitness,
         statement: SizedValidWalletCreateStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -229,6 +250,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID REBLIND`
     #[instrument(skip_all, err)]
     fn prove_valid_reblind(
+        &self,
         witness: SizedValidReblindWitness,
         statement: ValidReblindStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -243,6 +265,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID COMMITMENTS`
     #[instrument(skip_all, err)]
     fn prove_valid_commitments(
+        &self,
         witness: SizedValidCommitmentsWitness,
         statement: ValidCommitmentsStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -257,6 +280,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID WALLET UPDATE`
     #[instrument(skip_all, err)]
     fn prove_valid_wallet_update(
+        &self,
         witness: SizedValidWalletUpdateWitness,
         statement: SizedValidWalletUpdateStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -271,20 +295,43 @@ impl NativeProofManager {
     /// Create a proof of `VALID MATCH SETTLE`
     #[instrument(skip_all, err)]
     fn prove_valid_match_mpc(
+        &self,
         witness: SizedValidMatchSettleWitness,
         statement: SizedValidMatchSettleStatement,
+        commitment_link0: ProofLinkingHint,
+        commitment_link1: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID MATCH SETTLE`
         let (proof, link_hint) =
             singleprover_prove_with_hint::<SizedValidMatchSettle>(witness, statement.clone())
                 .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
 
-        Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
+        // Link the individual proofs of `VALID COMMITMENTS` into the proof of
+        // `VALID MATCH SETTLE`
+        let thread1 = || self.link_commitments_match_settle(PARTY0, &commitment_link1, &link_hint);
+        let thread0 = || self.link_commitments_match_settle(PARTY1, &commitment_link0, &link_hint);
+        let (link_res0, link_res1) = self.thread_pool.join(thread0, thread1);
+        let link0 = link_res0?;
+        let link1 = link_res1?;
+        Ok(ProofBundle::new_valid_match_settle(statement, proof, link0, link1, link_hint))
+    }
+
+    /// Generate a link proof for a party's proof of `VALID COMMITMENTS` and a
+    /// proof of `VALID MATCH SETTLE`
+    fn link_commitments_match_settle(
+        &self,
+        party_id: PartyId,
+        commitment_link_hint: &ProofLinkingHint,
+        match_settle_link_hint: &ProofLinkingHint,
+    ) -> Result<PlonkLinkProof, ProofManagerError> {
+        link_sized_commitments_match_settle(party_id, commitment_link_hint, match_settle_link_hint)
+            .map_err(ProofManagerError::prover)
     }
 
     /// Create a proof of `VALID MATCH SETTLE ATOMIC`
     #[instrument(skip_all, err)]
     fn prove_valid_match_settle_atomic(
+        &self,
         witness: SizedValidMatchSettleAtomicWitness,
         statement: SizedValidMatchSettleAtomicStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -299,6 +346,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
     #[instrument(skip_all, err)]
     fn prove_valid_malleable_match_settle_atomic(
+        &self,
         witness: SizedValidMalleableMatchSettleAtomicWitness,
         statement: SizedValidMalleableMatchSettleAtomicStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -316,6 +364,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID RELAYER FEE SETTLEMENT`
     #[instrument(skip_all, err)]
     fn prove_valid_relayer_fee_settlement(
+        &self,
         witness: SizedValidRelayerFeeSettlementWitness,
         statement: SizedValidRelayerFeeSettlementStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -332,6 +381,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID OFFLINE FEE SETTLEMENT`
     #[instrument(skip_all, err)]
     fn prove_valid_offline_fee_settlement(
+        &self,
         witness: SizedValidOfflineFeeSettlementWitness,
         statement: SizedValidOfflineFeeSettlementStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
@@ -348,6 +398,7 @@ impl NativeProofManager {
     /// Create a proof of `VALID FEE REDEMPTION`
     #[instrument(skip_all, err)]
     fn prove_valid_fee_redemption(
+        &self,
         witness: SizedValidFeeRedemptionWitness,
         statement: SizedValidFeeRedemptionStatement,
     ) -> Result<ProofBundle, ProofManagerError> {

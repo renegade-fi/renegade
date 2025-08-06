@@ -29,7 +29,9 @@ use circuits::{
 };
 use common::types::{
     handshake::HandshakeState,
-    proof_bundles::{MatchBundle, OrderValidityProofBundle, SizedValidMatchSettleBundle},
+    proof_bundles::{
+        OrderValidityProofBundle, SizedValidMatchSettleBundle, ValidMatchSettleBundle,
+    },
 };
 use constants::SystemCurveGroup;
 use crossbeam::channel::{Receiver, bounded};
@@ -65,7 +67,7 @@ impl HandshakeExecutor {
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
-    ) -> Result<(MatchBundle, MatchResult), HandshakeManagerError> {
+    ) -> Result<(ValidMatchSettleBundle, MatchResult), HandshakeManagerError> {
         // Fetch the handshake state from the state index
         let handshake_state =
             self.handshake_state_index.get_state(&request_id).await.ok_or_else(|| {
@@ -107,7 +109,7 @@ impl HandshakeExecutor {
         party1_validity_bundle: OrderValidityProofBundle,
         mpc_net: QuicTwoPartyNet<SystemCurveGroup>,
         cancel_channel: Receiver<()>,
-    ) -> Result<(MatchBundle, MatchResult), HandshakeManagerError> {
+    ) -> Result<(ValidMatchSettleBundle, MatchResult), HandshakeManagerError> {
         info!("Matching order...");
 
         // Build a fabric
@@ -336,7 +338,7 @@ impl HandshakeExecutor {
         link_proof1: &MpcPlonkLinkProof,
         commitments_proof0: &PlonkProof,
         commitments_proof1: &PlonkProof,
-    ) -> Result<MatchBundle, HandshakeManagerError> {
+    ) -> Result<ValidMatchSettleBundle, HandshakeManagerError> {
         // Open the proofs before awaiting them, letting the fabric schedule all
         // openings in parallel
         let proof = shared_proof.open_authenticated();
@@ -379,10 +381,11 @@ impl HandshakeExecutor {
         .map_err(|e| HandshakeManagerError::Multiprover(e.to_string()))?;
 
         // Structure the openings into a match bundle
-        Ok(MatchBundle {
-            match_proof: Arc::new(SizedValidMatchSettleBundle { proof, statement }),
+        Ok(Arc::new(SizedValidMatchSettleBundle {
+            proof,
+            statement,
             commitments_link0: link_proof0,
             commitments_link1: link_proof1,
-        })
+        }))
     }
 }

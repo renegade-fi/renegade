@@ -30,7 +30,7 @@ use circuits::zk_circuits::{
     valid_wallet_update::SizedValidWalletUpdateStatement,
 };
 use common::types::{
-    proof_bundles::{MatchBundle, OrderValidityProofBundle},
+    proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
     transfer_auth::TransferAuth,
 };
 use constants::{Scalar, ScalarField};
@@ -411,7 +411,7 @@ pub fn build_match_proofs(
 pub fn build_match_linking_proofs(
     party0_validity_proofs: &OrderValidityProofBundle,
     party1_validity_proofs: &OrderValidityProofBundle,
-    match_bundle: &MatchBundle,
+    match_bundle: &ValidMatchSettleBundle,
 ) -> Result<ContractMatchLinkingProofs, ConversionError> {
     Ok(ContractMatchLinkingProofs {
         valid_reblind_commitments_0: to_contract_link_proof(&party0_validity_proofs.linking_proof)?,

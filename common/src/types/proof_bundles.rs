@@ -107,6 +107,12 @@ pub struct GenericMatchSettleBundle<const MAX_BALANCES: usize, const MAX_ORDERS:
     pub statement: ValidMatchSettleStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
+    /// A proof linking proof of the first party's proof of `VALID COMMITMENTS`
+    /// to the proof of `VALID MATCH SETTLE`
+    pub commitments_link0: PlonkLinkProof,
+    /// A proof linking proof of the second party's proof of `VALID COMMITMENTS`
+    /// to the proof of `VALID MATCH SETTLE`
+    pub commitments_link1: PlonkLinkProof,
 }
 
 /// A type alias that specifies the default generics for
@@ -275,12 +281,16 @@ impl ProofBundle {
     pub fn new_valid_match_settle(
         statement: SizedValidMatchSettleStatement,
         proof: PlonkProof,
+        party0_link: PlonkLinkProof,
+        party1_link: PlonkLinkProof,
         link_hint: ProofLinkingHint,
     ) -> Self {
         ProofBundle {
             proof: R1CSProofBundle::ValidMatchSettle(Arc::new(GenericMatchSettleBundle {
                 statement,
                 proof,
+                commitments_link0: party0_link,
+                commitments_link1: party1_link,
             })),
             link_hint,
         }
@@ -616,54 +626,6 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
     }
 }
 
-/// Wraps a proof of `VALID MATCH SETTLE` with two linking proofs to the `VALID
-/// COMMITMENTS` proofs of the matched parties
-#[derive(Clone, Debug)]
-pub struct MatchBundle {
-    /// The proof of `VALID MATCH SETTLE` for the matched orders
-    pub match_proof: ValidMatchSettleBundle,
-    /// The linking proof of the match proof to the commitment proof of the
-    /// first party
-    pub commitments_link0: PlonkLinkProof,
-    /// The linking proof of the match proof to the commitment proof of the
-    /// second party
-    pub commitments_link1: PlonkLinkProof,
-}
-
-impl MatchBundle {
-    /// Clone the match proof out from behind the `Arc`
-    pub fn copy_match_proof(&self) -> SizedValidMatchSettleBundle {
-        SizedValidMatchSettleBundle::clone(&self.match_proof)
-    }
-}
-
-impl Serialize for MatchBundle {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Clone the match proof out from behind the `Arc`
-        let match_proof = SizedValidMatchSettleBundle::clone(&self.match_proof);
-        (match_proof, self.commitments_link0.clone(), self.commitments_link1.clone())
-            .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for MatchBundle {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Deserialize the match proof
-        let (match_proof, commitments_link0, commitments_link1) =
-            <(SizedValidMatchSettleBundle, PlonkLinkProof, PlonkLinkProof)>::deserialize(
-                deserializer,
-            )?;
-
-        Ok(MatchBundle { match_proof: Arc::new(match_proof), commitments_link0, commitments_link1 })
-    }
-}
-
 /// A bundle of proofs for the atomic match settlement proof
 #[derive(Clone, Debug)]
 pub struct AtomicMatchSettleBundle {
@@ -850,7 +812,12 @@ pub mod mocks {
     /// Create a dummy proof bundle for `VALID MATCH SETTLE`
     pub fn dummy_valid_match_settle_bundle() -> SizedValidMatchSettleBundle {
         let statement = ValidMatchSettleStatement::from_scalars(&mut iter::repeat(Scalar::one()));
-        SizedValidMatchSettleBundle { statement, proof: dummy_proof() }
+        SizedValidMatchSettleBundle {
+            statement,
+            proof: dummy_proof(),
+            commitments_link0: dummy_link_proof(),
+            commitments_link1: dummy_link_proof(),
+        }
     }
 
     /// Create a dummy R1CS proof

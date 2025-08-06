@@ -6,12 +6,12 @@ use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
 };
+use common::types::proof_bundles::ValidMatchSettleBundle;
 use common::types::{
     proof_bundles::{
-        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, MatchBundle,
-        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
-        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
+        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
+        SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -142,14 +142,14 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
     /// Awaits until the transaction is confirmed on-chain
     #[instrument(skip_all, err, fields(
         tx_hash,
-        party0_blinder = %match_bundle.match_proof.statement.party0_modified_shares.blinder,
-        party1_blinder = %match_bundle.match_proof.statement.party1_modified_shares.blinder
+        party0_blinder = %match_bundle.statement.party0_modified_shares.blinder,
+        party1_blinder = %match_bundle.statement.party1_modified_shares.blinder
     ))]
     pub async fn process_match_settle(
         &self,
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
-        match_bundle: &MatchBundle,
+        match_bundle: ValidMatchSettleBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError> {
         let receipt = self
             .darkpool
