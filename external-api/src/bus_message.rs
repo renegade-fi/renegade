@@ -6,7 +6,7 @@ use common::types::{
     gossip::{PeerInfo, WrappedPeerId},
     network_order::NetworkOrder,
     proof_bundles::{
-        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
+        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, ValidMatchSettleAtomicBundle,
     },
     tasks::TaskIdentifier,
     token::Token,
@@ -167,7 +167,7 @@ pub enum SystemBusMessage {
     /// to its client
     AtomicMatchFound {
         /// The match bundle
-        match_bundle: AtomicMatchSettleBundle,
+        match_bundle: ValidMatchSettleAtomicBundle,
         /// The validity proofs for the internal party
         validity_proofs: OrderValidityProofBundle,
     },

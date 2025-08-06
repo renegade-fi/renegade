@@ -12,7 +12,7 @@ use common::types::{
     hmac::HmacKey,
     price::TimestampedPrice,
     proof_bundles::{
-        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
+        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, ValidMatchSettleAtomicBundle,
     },
     token::Token,
     wallet::Order,
@@ -476,12 +476,12 @@ impl ExternalMatchProcessor {
         do_gas_estimation: bool,
         receiver: Option<Address>,
         order: &ExternalOrder,
-        mut match_bundle: AtomicMatchSettleBundle,
+        mut match_bundle: ValidMatchSettleAtomicBundle,
         validity_proofs: OrderValidityProofBundle,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         // If the order trades the native asset, replace WETH with ETH
         let is_native = order.trades_native_asset();
-        let bundle = Arc::make_mut(&mut match_bundle.atomic_match_proof);
+        let bundle = Arc::make_mut(&mut match_bundle);
         if is_native {
             bundle.statement.match_result.base_mint = get_native_asset_address();
         }
@@ -489,13 +489,13 @@ impl ExternalMatchProcessor {
         // Build a settlement transaction for the match
         let mut settlement_tx = self
             .darkpool_client
-            .gen_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
+            .gen_atomic_match_settle_calldata(receiver, &validity_proofs, match_bundle.clone())
             .map_err(internal_error)?;
 
         // If the order _sells_ the native asset, the value of the transaction should
         // match the base amount sold by the external party
         if is_native && order.side.is_sell() {
-            let base_amount = match_bundle.atomic_match_proof.statement.match_result.base_amount;
+            let base_amount = match_bundle.statement.match_result.base_amount;
             settlement_tx.value.replace(U256::from(base_amount));
         }
 

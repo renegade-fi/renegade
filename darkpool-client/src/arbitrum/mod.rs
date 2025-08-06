@@ -40,13 +40,13 @@ use circuit_types::{
 };
 use common::types::{
     proof_bundles::{
-        AtomicMatchSettleBundle, GenericFeeRedemptionBundle,
-        GenericMalleableMatchSettleAtomicBundle, GenericMatchSettleAtomicBundle,
+        GenericFeeRedemptionBundle, GenericMalleableMatchSettleAtomicBundle,
         GenericOfflineFeeSettlementBundle, GenericRelayerFeeSettlementBundle,
         GenericValidWalletCreateBundle, GenericValidWalletUpdateBundle,
         MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, SizedFeeRedemptionBundle,
         SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
-        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle, ValidMatchSettleBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle, ValidMatchSettleAtomicBundle,
+        ValidMatchSettleBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -395,13 +395,12 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         &self,
         receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
-        match_atomic_bundle: &AtomicMatchSettleBundle,
+        match_atomic_bundle: ValidMatchSettleAtomicBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
         // Destructure proof bundles
-        let GenericMatchSettleAtomicBundle {
-            statement: valid_match_settle_atomic_statement,
-            proof: valid_match_settle_atomic_proof,
-        } = match_atomic_bundle.copy_atomic_match_proof();
+        let valid_match_settle_atomic_statement = &match_atomic_bundle.statement;
+        let valid_match_settle_atomic_proof = &match_atomic_bundle.proof;
+        let commitments_link = &match_atomic_bundle.commitments_link;
 
         let internal_party_valid_commitments_statement =
             internal_party_validity_proofs.commitment_proof.statement;
@@ -419,11 +418,10 @@ impl DarkpoolImpl for ArbitrumDarkpool {
 
         let match_proofs = build_atomic_match_proofs(
             internal_party_validity_proofs,
-            &valid_match_settle_atomic_proof,
+            valid_match_settle_atomic_proof,
         )
         .map_err(DarkpoolClientError::Conversion)?;
 
-        let commitments_link = &match_atomic_bundle.commitments_link;
         let match_link_proofs =
             build_atomic_match_linking_proofs(internal_party_validity_proofs, commitments_link)
                 .map_err(DarkpoolClientError::Conversion)?;
@@ -433,7 +431,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             serialize_calldata(&internal_party_match_payload)?;
 
         let contract_valid_match_settle_atomic_statement =
-            to_contract_valid_match_settle_atomic_statement(&valid_match_settle_atomic_statement)?;
+            to_contract_valid_match_settle_atomic_statement(valid_match_settle_atomic_statement)?;
         let valid_match_settle_atomic_statement_calldata =
             serialize_calldata(&contract_valid_match_settle_atomic_statement)?;
 

@@ -11,14 +11,12 @@ use crate::utils::validity_proofs::enqueue_proof_job;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
-use circuits::zk_circuits::proof_linking::link_sized_commitments_atomic_match_settle;
 use circuits::zk_circuits::valid_match_settle_atomic::{
     SizedValidMatchSettleAtomicStatement, SizedValidMatchSettleAtomicWitness,
 };
 use common::types::price::TimestampedPriceFp;
 use common::types::proof_bundles::{
-    AtomicMatchSettleBundle, OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
-    ValidMatchSettleAtomicBundle,
+    OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleAtomicBundle,
 };
 use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
@@ -197,7 +195,7 @@ pub struct SettleMatchExternalTask {
     /// The validity witness for an internal order
     internal_order_validity_witness: OrderValidityWitnessBundle,
     /// The atomic match settle bundle
-    atomic_match_bundle: Option<AtomicMatchSettleBundle>,
+    atomic_match_bundle: Option<ValidMatchSettleAtomicBundle>,
     /// The system bus topic on which to send the atomic match settle bundle
     atomic_match_bundle_topic: String,
     /// A copy of the relayer-global state
@@ -315,19 +313,20 @@ impl SettleMatchExternalTask {
         let (statement, witness) = self.get_witness_statement()?;
 
         // Enqueue a job with the proof generation module
-        let job = ProofJob::ValidMatchSettleAtomic { witness, statement };
+        let commitments_link = self.internal_order_validity_witness.copy_commitment_linking_hint();
+        let job = ProofJob::ValidMatchSettleAtomic { witness, statement, commitments_link };
         let proof_recv = enqueue_proof_job(job, &self.proof_queue)
             .map_err(SettleMatchExternalTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
-        let proof = proof_recv
+        let bundle = proof_recv
             .await
             .map_err(|_| SettleMatchExternalTaskError::enqueuing_job(ERR_AWAITING_PROOF))?;
 
         // Create proof-links between the atomic match settle proof and the internal
         // party's proof of `VALID COMMITMENTS`
-        let atomic_match_bundle = self.create_link_proofs(proof)?;
-        self.atomic_match_bundle = Some(atomic_match_bundle);
+        let proof_bundle = ValidMatchSettleAtomicBundle::from(bundle.proof);
+        self.atomic_match_bundle = Some(proof_bundle);
         Ok(())
     }
 
@@ -438,23 +437,5 @@ impl SettleMatchExternalTask {
         };
 
         Ok((statement, witness))
-    }
-
-    /// Create link proofs between the proof of `VALID MATCH SETTLE ATOMIC` and
-    /// the internal party's proof of `VALID COMMITMENTS`
-    #[instrument(skip_all)]
-    fn create_link_proofs(
-        &self,
-        atomic_match_proof: ProofBundle,
-    ) -> Result<AtomicMatchSettleBundle, SettleMatchExternalTaskError> {
-        let atomic_match_hint = &atomic_match_proof.link_hint;
-        let atomic_match_proof: ValidMatchSettleAtomicBundle = atomic_match_proof.proof.into();
-
-        let commitments_hint = &self.internal_order_validity_witness.commitment_linking_hint;
-        let link_proof =
-            link_sized_commitments_atomic_match_settle(commitments_hint, atomic_match_hint)
-                .map_err(SettleMatchExternalTaskError::proof_linking)?;
-
-        Ok(AtomicMatchSettleBundle { atomic_match_proof, commitments_link: link_proof })
     }
 }

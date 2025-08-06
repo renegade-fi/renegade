@@ -127,9 +127,9 @@ impl ExternalProofManager {
                     )
                     .await
             },
-            ProofJob::ValidMatchSettleAtomic { witness, statement } => {
+            ProofJob::ValidMatchSettleAtomic { witness, statement, commitments_link } => {
                 // Prove `VALID MATCH SETTLE ATOMIC`
-                client.prove_valid_match_settle_atomic(witness, statement).await
+                client.prove_valid_match_settle_atomic(witness, statement, commitments_link).await
             },
             ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
                 // Prove `VALID MALLEABLE MATCH SETTLE ATOMIC`

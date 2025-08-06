@@ -29,9 +29,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::ProofManagerError,
     implementations::external_proof_manager::api_types::{
-        ProofAndHintResponse, ProofResponse, ValidCommitmentsRequest, ValidFeeRedemptionRequest,
-        ValidMatchSettleRequest, ValidMatchSettleResponse, ValidOfflineFeeSettlementRequest,
-        ValidReblindRequest, ValidWalletCreateRequest, ValidWalletUpdateRequest,
+        ProofAndHintResponse, ProofAndLinkResponse, ProofResponse, ValidCommitmentsRequest,
+        ValidFeeRedemptionRequest, ValidMatchSettleAtomicRequest, ValidMatchSettleRequest,
+        ValidMatchSettleResponse, ValidOfflineFeeSettlementRequest, ValidReblindRequest,
+        ValidWalletCreateRequest, ValidWalletUpdateRequest,
     },
     worker::ProofManagerConfig,
 };
@@ -206,8 +207,27 @@ impl ProofServiceClient {
         &self,
         witness: SizedValidMatchSettleAtomicWitness,
         statement: SizedValidMatchSettleAtomicStatement,
+        commitments_link: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
-        todo!()
+        // Request the prover service
+        let req = ValidMatchSettleAtomicRequest {
+            statement: statement.clone(),
+            witness,
+            valid_commitments_hint: commitments_link,
+        };
+        let res = self
+            .send_request::<_, ProofAndLinkResponse>(VALID_MATCH_SETTLE_ATOMIC_PATH, req)
+            .await?;
+
+        // Build the proof bundle
+        let link_hint = default_link_hint();
+        let bundle = ProofBundle::new_valid_match_settle_atomic(
+            statement,
+            res.plonk_proof,
+            res.link_proof,
+            link_hint,
+        );
+        Ok(bundle)
     }
 
     /// Request a `VALID MALLEABLE MATCH SETTLE ATOMIC` proof from the prover

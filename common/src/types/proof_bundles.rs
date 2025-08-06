@@ -129,6 +129,9 @@ pub struct GenericMatchSettleAtomicBundle<const MAX_BALANCES: usize, const MAX_O
     pub statement: ValidMatchSettleAtomicStatement<MAX_BALANCES, MAX_ORDERS>,
     /// The proof itself
     pub proof: PlonkProof,
+    /// The linking proof between the internal party's proof of `VALID
+    /// COMMITMENTS` and the proof of `VALID MATCH SETTLE ATOMIC`
+    pub commitments_link: PlonkLinkProof,
 }
 
 /// A type alias that specifies the default generics for
@@ -300,11 +303,12 @@ impl ProofBundle {
     pub fn new_valid_match_settle_atomic(
         statement: SizedValidMatchSettleAtomicStatement,
         proof: PlonkProof,
+        commitments_link: PlonkLinkProof,
         link_hint: ProofLinkingHint,
     ) -> Self {
         ProofBundle {
             proof: R1CSProofBundle::ValidMatchSettleAtomic(Arc::new(
-                GenericMatchSettleAtomicBundle { statement, proof },
+                GenericMatchSettleAtomicBundle { statement, proof, commitments_link },
             )),
             link_hint,
         }
@@ -622,47 +626,6 @@ impl<'de> Deserialize<'de> for OrderValidityWitnessBundle {
             reblind_witness: Arc::new(reblind_witness),
             commitment_witness: Arc::new(commitment_witness),
             commitment_linking_hint: Arc::new(linking_hint),
-        })
-    }
-}
-
-/// A bundle of proofs for the atomic match settlement proof
-#[derive(Clone, Debug)]
-pub struct AtomicMatchSettleBundle {
-    /// The proof of `VALID MATCH SETTLE ATOMIC` for the matched orders
-    pub atomic_match_proof: ValidMatchSettleAtomicBundle,
-    /// The linking proof of the atomic match proof to the commitment proof of
-    /// the internal party
-    pub commitments_link: PlonkLinkProof,
-}
-
-impl AtomicMatchSettleBundle {
-    /// Clone the atomic match proof out from behind the `Arc`
-    pub fn copy_atomic_match_proof(&self) -> SizedValidMatchSettleAtomicBundle {
-        SizedValidMatchSettleAtomicBundle::clone(&self.atomic_match_proof)
-    }
-}
-
-impl Serialize for AtomicMatchSettleBundle {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        (self.copy_atomic_match_proof(), self.commitments_link.clone()).serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for AtomicMatchSettleBundle {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let (atomic_match_proof, commitments_link) =
-            <(SizedValidMatchSettleAtomicBundle, PlonkLinkProof)>::deserialize(deserializer)?;
-
-        Ok(AtomicMatchSettleBundle {
-            atomic_match_proof: Arc::new(atomic_match_proof),
-            commitments_link,
         })
     }
 }
