@@ -13,12 +13,12 @@ use circuit_types::{
     SizedWalletShare, elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot,
     wallet::Nullifier,
 };
+use common::types::proof_bundles::ValidMatchSettleBundle;
 use common::types::{
     proof_bundles::{
-        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, MatchBundle,
-        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
-        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
-        SizedValidWalletUpdateBundle,
+        AtomicMatchSettleBundle, MalleableAtomicMatchSettleBundle, OrderValidityProofBundle,
+        SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
+        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -107,7 +107,7 @@ pub trait DarkpoolImpl: Clone {
         &self,
         party0_validity_proofs: &OrderValidityProofBundle,
         party1_validity_proofs: &OrderValidityProofBundle,
-        match_bundle: &MatchBundle,
+        match_bundle: ValidMatchSettleBundle,
     ) -> Result<TransactionReceipt, DarkpoolClientError>;
 
     /// Settle an fee online; i.e. wherein the receiving part directly receives

@@ -109,7 +109,7 @@ fn simulate_settle_match(
     wallet.reblind_wallet();
     let new_private = wallet.private_shares.clone();
 
-    let statement = &desc.match_bundle.match_proof.statement;
+    let statement = &desc.match_bundle.statement;
     let new_public = if is_party0 {
         &statement.party0_modified_shares
     } else {

@@ -39,7 +39,7 @@ use circuits::zk_circuits::{
 };
 use common::types::proof_bundles::{
     ProofBundle,
-    mocks::{dummy_link_hint, dummy_proof},
+    mocks::{dummy_link_hint, dummy_link_proof, dummy_proof},
 };
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use tokio::runtime::Handle;
@@ -104,7 +104,7 @@ impl MockProofManager {
             ProofJob::ValidCommitments { witness, statement } => {
                 Self::valid_commitments(witness, statement, skip_constraints)
             },
-            ProofJob::ValidMatchSettleSingleprover { witness, statement } => {
+            ProofJob::ValidMatchSettleSingleprover { witness, statement, .. } => {
                 Self::valid_match_settle(witness, statement, skip_constraints)
             },
             ProofJob::ValidMatchSettleAtomic { witness, statement } => {
@@ -200,7 +200,15 @@ impl MockProofManager {
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_match_settle(statement, proof, link_hint))
+        let link_proof0 = dummy_link_proof();
+        let link_proof1 = dummy_link_proof();
+        Ok(ProofBundle::new_valid_match_settle(
+            statement,
+            proof,
+            link_proof0,
+            link_proof1,
+            link_hint,
+        ))
     }
 
     /// Create a dummy proof of `VALID MATCH SETTLE ATOMIC`

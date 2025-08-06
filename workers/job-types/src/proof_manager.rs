@@ -4,6 +4,7 @@
 //! See the whitepaper https://renegade.fi/whitepaper.pdf for a formal specification
 //! of the types defined here
 
+use circuit_types::ProofLinkingHint;
 use circuits::zk_circuits::{
     valid_commitments::{SizedValidCommitmentsWitness, ValidCommitmentsStatement},
     valid_fee_redemption::{SizedValidFeeRedemptionStatement, SizedValidFeeRedemptionWitness},
@@ -103,6 +104,12 @@ pub enum ProofJob {
         /// The statement (public variables) to use in the proof of `VALID
         /// MATCH SETTLE`
         statement: SizedValidMatchSettleStatement,
+        /// The proof link hint for the first party's proof of `VALID
+        /// COMMITMENTS`
+        commitment_link0: ProofLinkingHint,
+        /// The proof link hint for the second party's proof of `VALID
+        /// COMMITMENTS`
+        commitment_link1: ProofLinkingHint,
     },
     /// A request to create a proof of `VALID MATCH SETTLE ATOMIC` describing an
     /// atomic match settlement between an internal and an external order

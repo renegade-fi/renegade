@@ -13,7 +13,7 @@ use common::{
         CancelChannel,
         gossip::WrappedPeerId,
         handshake::{ConnectionRole, HandshakeState},
-        proof_bundles::{MatchBundle, OrderValidityProofBundle},
+        proof_bundles::{OrderValidityProofBundle, ValidMatchSettleBundle},
         tasks::{SettleMatchTaskDescriptor, TaskDescriptor},
         token::Token,
         wallet::OrderIdentifier,
@@ -469,7 +469,7 @@ impl HandshakeExecutor {
         party1_proof: OrderValidityProofBundle,
         handshake_state: HandshakeState,
         match_result: MatchResult,
-        match_bundle: MatchBundle,
+        match_bundle: ValidMatchSettleBundle,
     ) -> Result<(), HandshakeManagerError> {
         // Enqueue a task to settle the match
         let wallet_id = self

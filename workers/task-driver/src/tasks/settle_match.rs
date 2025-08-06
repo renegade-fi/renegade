@@ -13,7 +13,7 @@ use ark_mpc::PARTY0;
 use async_trait::async_trait;
 use circuit_types::SizedWalletShare;
 use circuit_types::r#match::MatchResult;
-use common::types::proof_bundles::MatchBundle;
+use common::types::proof_bundles::ValidMatchSettleBundle;
 use common::types::tasks::SettleMatchTaskDescriptor;
 use common::types::wallet::Wallet;
 use common::types::{
@@ -162,7 +162,7 @@ pub struct SettleMatchTask {
     /// The match result from the matching engine
     pub match_res: MatchResult,
     /// The proof that comes from the collaborative match-settle process
-    pub match_bundle: MatchBundle,
+    pub match_bundle: ValidMatchSettleBundle,
     /// The validity proofs submitted by the first party
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
@@ -279,7 +279,7 @@ impl SettleMatchTask {
             .process_match_settle(
                 &self.party0_validity_proof,
                 &self.party1_validity_proof,
-                &self.match_bundle,
+                self.match_bundle.clone(),
             )
             .await;
 
@@ -382,7 +382,7 @@ impl SettleMatchTask {
             validity_witness.reblind_witness.reblinded_wallet_private_shares.clone();
 
         // Fetch public shares from the match settle proof's statement
-        let match_settle_statement = &self.match_bundle.match_proof.statement;
+        let match_settle_statement = &self.match_bundle.statement;
         let public_shares = if self.handshake_state.role.get_party_id() == PARTY0 {
             match_settle_statement.party0_modified_shares.clone()
         } else {

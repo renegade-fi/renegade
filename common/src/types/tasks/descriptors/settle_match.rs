@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::{
     handshake::HandshakeState,
     price::TimestampedPriceFp,
-    proof_bundles::{MatchBundle, OrderValidityProofBundle, OrderValidityWitnessBundle},
+    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle, ValidMatchSettleBundle},
     wallet::{OrderIdentifier, WalletIdentifier},
 };
 
@@ -187,7 +187,7 @@ pub struct SettleMatchTaskDescriptor {
     /// The match result from the matching engine
     pub match_res: MatchResult,
     /// The proof that comes from the collaborative match-settle process
-    pub match_bundle: MatchBundle,
+    pub match_bundle: ValidMatchSettleBundle,
     /// The validity proofs submitted by the first party
     pub party0_validity_proof: OrderValidityProofBundle,
     /// The validity proofs submitted by the second party
@@ -200,7 +200,7 @@ impl SettleMatchTaskDescriptor {
         wallet_id: WalletIdentifier,
         handshake_state: HandshakeState,
         match_res: MatchResult,
-        match_bundle: MatchBundle,
+        match_bundle: ValidMatchSettleBundle,
         party0_validity_proof: OrderValidityProofBundle,
         party1_validity_proof: OrderValidityProofBundle,
     ) -> Result<Self, String> {
