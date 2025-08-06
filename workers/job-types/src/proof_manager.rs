@@ -132,6 +132,9 @@ pub enum ProofJob {
         /// The statement (public variables) to use in the proof of `VALID
         /// MALLEABLE MATCH SETTLE ATOMIC`
         statement: SizedValidMalleableMatchSettleAtomicStatement,
+        /// The proof link hint for the internal party's proof of `VALID
+        /// COMMITMENTS`
+        commitments_link: ProofLinkingHint,
     },
     /// A request to create a proof of `VALID RELAYER FEE SETTLEMENT` in a
     /// single prover context

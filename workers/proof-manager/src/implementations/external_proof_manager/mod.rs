@@ -131,9 +131,11 @@ impl ExternalProofManager {
                 // Prove `VALID MATCH SETTLE ATOMIC`
                 client.prove_valid_match_settle_atomic(witness, statement, commitments_link).await
             },
-            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
+            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement, commitments_link } => {
                 // Prove `VALID MALLEABLE MATCH SETTLE ATOMIC`
-                client.prove_valid_malleable_match_settle_atomic(witness, statement).await
+                client
+                    .prove_valid_malleable_match_settle_atomic(witness, statement, commitments_link)
+                    .await
             },
             ProofJob::ValidFeeRedemption { witness, statement } => {
                 // Prove `VALID FEE REDEMPTION`

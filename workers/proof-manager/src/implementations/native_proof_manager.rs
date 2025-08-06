@@ -179,9 +179,9 @@ impl NativeProofManager {
                 self.prove_valid_match_settle_atomic(witness, statement, commitments_link)
             },
 
-            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
+            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement, commitments_link } => {
                 // Prove `VALID MALLEABLE MATCH SETTLE ATOMIC`
-                self.prove_valid_malleable_match_settle_atomic(witness, statement)
+                self.prove_valid_malleable_match_settle_atomic(witness, statement, commitments_link)
             },
 
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
@@ -350,13 +350,18 @@ impl NativeProofManager {
         &self,
         witness: SizedValidMalleableMatchSettleAtomicWitness,
         statement: SizedValidMalleableMatchSettleAtomicStatement,
+        commitments_link: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID MALLEABLE MATCH SETTLE ATOMIC`
         let (proof, link_hint) = singleprover_prove_with_hint::<
             SizedValidMalleableMatchSettleAtomic,
         >(witness, statement.clone())?;
 
-        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_hint))
+        // Prove the `VALID COMMITMENTS` <-> `VALID MALLEABLE MATCH SETTLE ATOMIC` link
+        let link_proof = link_sized_commitments_atomic_match_settle(&commitments_link, &link_hint)?;
+        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(
+            statement, proof, link_proof, link_hint,
+        ))
     }
 
     /// Create a proof of `VALID RELAYER FEE SETTLEMENT`

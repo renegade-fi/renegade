@@ -110,7 +110,7 @@ impl MockProofManager {
             ProofJob::ValidMatchSettleAtomic { witness, statement, .. } => {
                 Self::valid_match_settle_atomic(witness, statement, skip_constraints)
             },
-            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement } => {
+            ProofJob::ValidMalleableMatchSettleAtomic { witness, statement, .. } => {
                 Self::valid_malleable_match_settle_atomic(witness, statement, skip_constraints)
             },
             ProofJob::ValidRelayerFeeSettlement { witness, statement } => {
@@ -239,7 +239,10 @@ impl MockProofManager {
 
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
-        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_hint))
+        let link_proof = dummy_link_proof();
+        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(
+            statement, proof, link_proof, link_hint,
+        ))
     }
 
     /// Generate a dummy proof of `VALID RELAYER FEE SETTLEMENT`

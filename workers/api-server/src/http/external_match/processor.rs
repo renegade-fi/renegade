@@ -12,7 +12,8 @@ use common::types::{
     hmac::HmacKey,
     price::TimestampedPrice,
     proof_bundles::{
-        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, ValidMatchSettleAtomicBundle,
+        OrderValidityProofBundle, ValidMalleableMatchSettleAtomicBundle,
+        ValidMatchSettleAtomicBundle,
     },
     token::Token,
     wallet::Order,
@@ -515,12 +516,12 @@ impl ExternalMatchProcessor {
         do_gas_estimation: bool,
         receiver: Option<Address>,
         order: &ExternalOrder,
-        mut match_bundle: MalleableAtomicMatchSettleBundle,
+        mut match_bundle: ValidMalleableMatchSettleAtomicBundle,
         validity_proofs: OrderValidityProofBundle,
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
         // If the order trades the native asset, replace WETH with ETH
         let is_native = order.trades_native_asset();
-        let bundle = Arc::make_mut(&mut match_bundle.atomic_match_proof);
+        let bundle = Arc::make_mut(&mut match_bundle);
         if is_native {
             bundle.statement.bounded_match_result.base_mint = get_native_asset_address();
         }
@@ -528,7 +529,11 @@ impl ExternalMatchProcessor {
         // Build a settlement transaction for the match
         let mut settlement_tx = self
             .darkpool_client
-            .gen_malleable_atomic_match_settle_calldata(receiver, &validity_proofs, &match_bundle)
+            .gen_malleable_atomic_match_settle_calldata(
+                receiver,
+                &validity_proofs,
+                match_bundle.clone(),
+            )
             .map_err(internal_error)?;
 
         // Estimate gas for the settlement tx if requested
