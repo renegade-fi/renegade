@@ -87,6 +87,13 @@ pub enum ProofJob {
         /// COMMITMENTS`
         statement: ValidCommitmentsStatement,
     },
+    /// Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
+    ValidCommitmentsReblindLink {
+        /// The proof link hint for the proof of `VALID COMMITMENTS`
+        commitments_hint: ProofLinkingHint,
+        /// The proof link hint for the proof of `VALID REBLIND`
+        reblind_hint: ProofLinkingHint,
+    },
     /// a request to create a proof of `VALID WALLET UPDATE` specifying a user
     /// generated change to the underlying wallet. This nullifies the old
     /// wallet and becomes a new entry in the commitment tree

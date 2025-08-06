@@ -1,5 +1,6 @@
 //! An implementation of the proof manager which uses an external prover service
 
+use circuit_types::ProofLinkingHint;
 use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
@@ -111,6 +112,10 @@ impl ExternalProofManager {
                 // Prove `VALID REBLIND`
                 client.prove_valid_reblind(witness, statement).await
             },
+            ProofJob::ValidCommitmentsReblindLink { commitments_hint, reblind_hint } => {
+                // Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
+                client.prove_valid_commitments_reblind_link(commitments_hint, reblind_hint).await
+            },
             ProofJob::ValidMatchSettleSingleprover {
                 witness,
                 statement,
@@ -151,5 +156,19 @@ impl ExternalProofManager {
         // Ignore send errors
         let _err = job.response_channel.send(bundle);
         Ok(())
+    }
+}
+
+// -----------
+// | Helpers |
+// -----------
+
+/// Create a default proof linking hint
+///
+/// Used for circuits whose linking hints are unused and so omitted from the API
+pub fn default_link_hint() -> ProofLinkingHint {
+    ProofLinkingHint {
+        linking_wire_poly: Default::default(),
+        linking_wire_comm: Default::default(),
     }
 }

@@ -12,6 +12,7 @@ use circuits::{
     zk_circuits::{
         proof_linking::{
             link_sized_commitments_atomic_match_settle, link_sized_commitments_match_settle,
+            link_sized_commitments_reblind,
         },
         valid_commitments::{
             SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
@@ -58,7 +59,10 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use tracing::{error, info, info_span, instrument};
 use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking, err_str};
 
-use crate::{error::ProofManagerError, worker::ProofManagerConfig};
+use crate::{
+    error::ProofManagerError, implementations::external_proof_manager::default_link_hint,
+    worker::ProofManagerConfig,
+};
 
 /// The name prefix for worker threads
 const WORKER_THREAD_PREFIX: &str = "proof-generation-worker";
@@ -160,6 +164,11 @@ impl NativeProofManager {
                 self.prove_valid_commitments(witness, statement)
             },
 
+            ProofJob::ValidCommitmentsReblindLink { commitments_hint, reblind_hint } => {
+                // Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
+                self.link_commitments_reblind(commitments_hint, reblind_hint)
+            },
+
             ProofJob::ValidWalletUpdate { witness, statement } => {
                 self.prove_valid_wallet_update(witness, statement)
             },
@@ -247,6 +256,19 @@ impl NativeProofManager {
         Ok(ProofBundle::new_valid_wallet_create(statement, proof, link_hint))
     }
 
+    /// Create a proof of `VALID WALLET UPDATE`
+    #[instrument(skip_all, err)]
+    fn prove_valid_wallet_update(
+        &self,
+        witness: SizedValidWalletUpdateWitness,
+        statement: SizedValidWalletUpdateStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID WALLET UPDATE`
+        let (proof, link_hint) =
+            singleprover_prove_with_hint::<SizedValidWalletUpdate>(witness, statement.clone())?;
+        Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
+    }
+
     /// Create a proof of `VALID REBLIND`
     #[instrument(skip_all, err)]
     fn prove_valid_reblind(
@@ -273,17 +295,17 @@ impl NativeProofManager {
         Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
     }
 
-    /// Create a proof of `VALID WALLET UPDATE`
+    /// Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
     #[instrument(skip_all, err)]
-    fn prove_valid_wallet_update(
+    fn link_commitments_reblind(
         &self,
-        witness: SizedValidWalletUpdateWitness,
-        statement: SizedValidWalletUpdateStatement,
+        commitments_hint: ProofLinkingHint,
+        reblind_hint: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
-        // Prove the statement `VALID WALLET UPDATE`
-        let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidWalletUpdate>(witness, statement.clone())?;
-        Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
+        let link_proof = link_sized_commitments_reblind(&commitments_hint, &reblind_hint)?;
+        let link_hint = default_link_hint();
+        let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof, link_hint);
+        Ok(bundle)
     }
 
     /// Create a proof of `VALID MATCH SETTLE`

@@ -283,6 +283,15 @@ impl ProofBundle {
         }
     }
 
+    /// Create a new proof bundle from a `VALID COMMITMENTS` <-> `VALID REBLIND`
+    /// proof link
+    pub fn new_valid_commitments_reblind_link(
+        link: PlonkLinkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        ProofBundle { proof: R1CSProofBundle::ValidCommitmentsReblindLink(link), link_hint }
+    }
+
     /// Create a new proof bundle from a `VALID MATCH SETTLE` proof
     pub fn new_valid_match_settle(
         statement: SizedValidMatchSettleStatement,
@@ -387,6 +396,9 @@ pub enum R1CSProofBundle {
     ValidReblind(ValidReblindBundle),
     /// A statement and proof of `VALID COMMITMENTS`
     ValidCommitments(ValidCommitmentsBundle),
+    /// A proof link between a proof of `VALID COMMITMENTS` and a proof of
+    /// `VALID REBLIND`
+    ValidCommitmentsReblindLink(PlonkLinkProof),
     /// A statement and proof of `VALID WALLET UPDATE`
     ValidWalletUpdate(ValidWalletUpdateBundle),
     /// A statement and proof of `VALID MATCH SETTLE`
@@ -401,6 +413,18 @@ pub enum R1CSProofBundle {
     ValidOfflineFeeSettlement(OfflineFeeSettlementBundle),
     /// A statement and proof of `VALID FEE REDEMPTION`
     ValidFeeRedemption(FeeRedemptionBundle),
+}
+
+impl R1CSProofBundle {
+    /// Get the proof link for a `VALID COMMITMENTS` and `VALID REBLIND` proof
+    /// link
+    pub fn to_reblind_commitment_link(self) -> PlonkLinkProof {
+        if let R1CSProofBundle::ValidCommitmentsReblindLink(link) = self {
+            link
+        } else {
+            panic!("Proof bundle is not of type ValidCommitmentsReblindLink: {self:?}");
+        }
+    }
 }
 
 /// Unsafe cast implementations, will panic if type is incorrect

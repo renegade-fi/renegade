@@ -104,6 +104,7 @@ impl MockProofManager {
             ProofJob::ValidCommitments { witness, statement } => {
                 Self::valid_commitments(witness, statement, skip_constraints)
             },
+            ProofJob::ValidCommitmentsReblindLink { .. } => Self::valid_commitments_reblind_link(),
             ProofJob::ValidMatchSettleSingleprover { witness, statement, .. } => {
                 Self::valid_match_settle(witness, statement, skip_constraints)
             },
@@ -186,6 +187,14 @@ impl MockProofManager {
         let proof = dummy_proof();
         let link_hint = dummy_link_hint();
         Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
+    }
+
+    /// Create a dummy link proof of `VALID COMMITMENTS` <-> `VALID REBLIND`
+    fn valid_commitments_reblind_link() -> Result<ProofBundle, ProofManagerError> {
+        let link_proof = dummy_link_proof();
+        let link_hint = dummy_link_hint();
+        let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof, link_hint);
+        Ok(bundle)
     }
 
     /// Create a dummy proof of `VALID MATCH SETTLE`

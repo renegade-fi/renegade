@@ -28,12 +28,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     error::ProofManagerError,
-    implementations::external_proof_manager::api_types::{
-        ProofAndHintResponse, ProofAndLinkResponse, ProofResponse, ValidCommitmentsRequest,
-        ValidFeeRedemptionRequest, ValidMalleableMatchSettleAtomicRequest,
-        ValidMatchSettleAtomicRequest, ValidMatchSettleRequest, ValidMatchSettleResponse,
-        ValidOfflineFeeSettlementRequest, ValidReblindRequest, ValidWalletCreateRequest,
-        ValidWalletUpdateRequest,
+    implementations::external_proof_manager::{
+        api_types::{
+            LinkCommitmentsReblindRequest, ProofAndHintResponse, ProofAndLinkResponse,
+            ProofLinkResponse, ProofResponse, ValidCommitmentsRequest, ValidFeeRedemptionRequest,
+            ValidMalleableMatchSettleAtomicRequest, ValidMatchSettleAtomicRequest,
+            ValidMatchSettleRequest, ValidMatchSettleResponse, ValidOfflineFeeSettlementRequest,
+            ValidReblindRequest, ValidWalletCreateRequest, ValidWalletUpdateRequest,
+        },
+        default_link_hint,
     },
     worker::ProofManagerConfig,
 };
@@ -175,6 +178,27 @@ impl ProofServiceClient {
         Ok(bundle)
     }
 
+    /// Request a `VALID COMMITMENTS` <-> `VALID REBLIND` proof link from the
+    /// prover service
+    pub(crate) async fn prove_valid_commitments_reblind_link(
+        &self,
+        commitments_hint: ProofLinkingHint,
+        reblind_hint: ProofLinkingHint,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Request the prover service
+        let req = LinkCommitmentsReblindRequest {
+            valid_commitments_hint: commitments_hint,
+            valid_reblind_hint: reblind_hint,
+        };
+        let res =
+            self.send_request::<_, ProofLinkResponse>(LINK_COMMITMENTS_REBLIND_PATH, req).await?;
+
+        // Build the proof bundle
+        let link_hint = default_link_hint();
+        let bundle = ProofBundle::new_valid_commitments_reblind_link(res.link_proof, link_hint);
+        Ok(bundle)
+    }
+
     /// Request a `VALID MATCH SETTLE` proof from the prover service
     pub(crate) async fn prove_valid_match_settle(
         &self,
@@ -287,19 +311,5 @@ impl ProofServiceClient {
         let link_hint = default_link_hint();
         let bundle = ProofBundle::new_valid_offline_fee_settlement(statement, res.proof, link_hint);
         Ok(bundle)
-    }
-}
-
-// -----------
-// | Helpers |
-// -----------
-
-/// Create a default proof linking hint
-///
-/// Used for circuits whose linking hints are unused and so omitted from the API
-fn default_link_hint() -> ProofLinkingHint {
-    ProofLinkingHint {
-        linking_wire_poly: Default::default(),
-        linking_wire_comm: Default::default(),
     }
 }
