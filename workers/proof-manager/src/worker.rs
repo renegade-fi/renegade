@@ -1,33 +1,59 @@
 //! Defines the main threading model of the proof generation module as a worker
 //! that can be scheduled by the coordinator thread
 
-use std::{
-    sync::Arc,
-    thread::{Builder, JoinHandle},
-};
+use std::thread::{Builder, JoinHandle};
 
 use async_trait::async_trait;
-use common::{types::CancelChannel, worker::Worker};
+use common::{default_wrapper::DefaultOption, types::CancelChannel, worker::Worker};
 use job_types::proof_manager::ProofManagerReceiver;
-use rayon::ThreadPoolBuilder;
+use reqwest::Url;
 
-use super::{error::ProofManagerError, proof_manager::ProofManager};
+use crate::implementations::native_proof_manager::NativeProofManager;
+
+use super::error::ProofManagerError;
 
 /// The name of the main worker thread
 const MAIN_THREAD_NAME: &str = "proof-generation-main";
-/// The name prefix for worker threads
-const WORKER_THREAD_PREFIX: &str = "proof-generation-worker";
-/// The stack size for worker threads
-const WORKER_STACK_SIZE: usize = 10 * 1024 * 1024; // 10 MB
+
+// ----------
+// | Config |
+// ----------
 
 /// The configuration of the manager, used to hold work queues and tunables
 #[derive(Clone, Debug)]
 pub struct ProofManagerConfig {
+    /// The URL of the prover service to use
+    ///
+    /// If not configured, the relayer will generate all proofs itself
+    pub prover_service_url: Option<Url>,
+    /// The password for the prover service
+    pub prover_service_password: Option<String>,
     /// The job queue on which the manager may receive proof generation jobs
     pub job_queue: ProofManagerReceiver,
     /// The cancel channel that the coordinator uses to signal to the proof
     /// generation module that it should shut down
     pub cancel_channel: CancelChannel,
+}
+
+impl ProofManagerConfig {
+    /// Whether to use the external prover service
+    pub fn use_external_prover(&self) -> bool {
+        self.prover_service_url.is_some()
+    }
+}
+
+// -----------------
+// | Proof Manager |
+// -----------------
+
+/// The proof manager provides a messaging interface and implementation for
+/// proving statements related to system state transitions
+#[derive(Debug, Clone)]
+pub struct ProofManager {
+    /// The config of the proof manager
+    pub(crate) config: ProofManagerConfig,
+    /// The handle of the main driver thread in the proof generation module
+    join_handle: DefaultOption<JoinHandle<ProofManagerError>>,
 }
 
 #[async_trait]
@@ -39,19 +65,7 @@ impl Worker for ProofManager {
     where
         Self: Sized,
     {
-        // Build a thread pool for the worker
-        let proof_generation_thread_pool = ThreadPoolBuilder::new()
-            .thread_name(|i| format!("{}-{}", WORKER_THREAD_PREFIX, i))
-            .stack_size(WORKER_STACK_SIZE)
-            .build()
-            .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
-
-        Ok(Self {
-            job_queue: Some(config.job_queue),
-            join_handle: None,
-            thread_pool: Arc::new(proof_generation_thread_pool),
-            cancel_channel: config.cancel_channel,
-        })
+        Ok(Self { config, join_handle: DefaultOption::default() })
     }
 
     fn name(&self) -> String {
@@ -64,17 +78,13 @@ impl Worker for ProofManager {
 
     fn start(&mut self) -> Result<(), Self::Error> {
         // Take ownership of the thread pool and job queue
-        let job_queue = self.job_queue.take().unwrap();
-        let thread_pool = self.thread_pool.clone();
-        let cancel_channel = self.cancel_channel.clone();
-        let handle = Builder::new()
-            .name(MAIN_THREAD_NAME.to_string())
-            .spawn(move || {
-                Self::execution_loop(job_queue, thread_pool, cancel_channel).err().unwrap()
-            })
-            .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
+        let handle = if self.config.use_external_prover() {
+            self.start_external_proof_manager()?
+        } else {
+            self.start_native_proof_manager()?
+        };
 
-        self.join_handle = Some(handle);
+        self.join_handle.replace(handle);
         Ok(())
     }
 
@@ -84,5 +94,27 @@ impl Worker for ProofManager {
 
     fn join(&mut self) -> Vec<JoinHandle<Self::Error>> {
         vec![self.join_handle.take().unwrap()]
+    }
+}
+
+impl ProofManager {
+    /// Start a native proof manager
+    fn start_native_proof_manager(
+        &self,
+    ) -> Result<JoinHandle<ProofManagerError>, ProofManagerError> {
+        let manager = NativeProofManager::new(self.config.clone())?;
+        let handle = Builder::new()
+            .name(MAIN_THREAD_NAME.to_string())
+            .spawn(move || manager.run().err().unwrap())
+            .map_err(|err| ProofManagerError::Setup(err.to_string()))?;
+
+        Ok(handle)
+    }
+
+    /// Start an external proof manager
+    fn start_external_proof_manager(
+        &self,
+    ) -> Result<JoinHandle<ProofManagerError>, ProofManagerError> {
+        unimplemented!("external proof manager not implemented")
     }
 }

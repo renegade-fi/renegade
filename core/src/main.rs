@@ -32,7 +32,7 @@ use job_types::{event_manager::new_event_manager_queue, gossip_server::new_gossi
 use network_manager::{worker::NetworkManager, worker::NetworkManagerConfig};
 use price_reporter::worker::PriceReporterConfig;
 use price_reporter::worker::{ExchangeConnectionsConfig, PriceReporter};
-use proof_manager::{proof_manager::ProofManager, worker::ProofManagerConfig};
+use proof_manager::worker::{ProofManager, ProofManagerConfig};
 use state::{create_global_state, tui::StateTuiApp};
 use system_bus::SystemBus;
 
@@ -211,6 +211,8 @@ async fn main() -> Result<(), CoordinatorError> {
     // Start the proof generation module
     let (proof_manager_cancel_sender, proof_manager_cancel_receiver) = new_cancel_channel();
     let mut proof_manager = ProofManager::new(ProofManagerConfig {
+        prover_service_url: args.prover_service_url.clone(),
+        prover_service_password: args.prover_service_password.clone(),
         job_queue: proof_generation_worker_receiver,
         cancel_channel: proof_manager_cancel_receiver,
     })
@@ -333,7 +335,7 @@ async fn main() -> Result<(), CoordinatorError> {
         min_transfer_amount: args.min_transfer_amount,
         min_order_size,
         chain: args.chain_id,
-        compliance_service_url: args.compliance_service_url,
+        compliance_service_url: args.compliance_service_url.clone(),
         wallet_task_rate_limit: args.wallet_task_rate_limit,
         darkpool_client: darkpool_client.clone(),
         network_sender: network_sender.clone(),

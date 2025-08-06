@@ -17,6 +17,9 @@ crossbeam = { workspace = true }
 rayon = { version = "1.5.3" }
 tokio = { workspace = true }
 
+# === External Service Client === #
+reqwest = { version = "0.12.10", features = ["json"] }
+prover-service-api = { git = "https://github.com/renegade-fi/relayer-extensions" }
 
 # === Workspace Dependencies === #
 circuits = { workspace = true }

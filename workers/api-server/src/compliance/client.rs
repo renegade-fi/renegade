@@ -1,6 +1,7 @@
 //! A client for interacting with a Renegade compliance service
 
 use renegade_compliance_api::{ComplianceCheckResponse, ComplianceStatus, WALLET_SCREEN_PATH};
+use reqwest::Url;
 use util::err_str;
 
 use crate::error::ApiServerError;
@@ -12,12 +13,12 @@ pub struct ComplianceServerClient {
     ///
     /// The client is disabled and always returns `true` for compliance checks
     /// if this is not set
-    url: Option<String>,
+    url: Option<Url>,
 }
 
 impl ComplianceServerClient {
     /// Create a new client
-    pub fn new(url: Option<String>) -> Self {
+    pub fn new(url: Option<Url>) -> Self {
         Self { url }
     }
 

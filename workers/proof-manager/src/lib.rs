@@ -9,7 +9,7 @@
 #![allow(incomplete_features)]
 
 pub mod error;
+pub mod implementations;
 #[cfg(feature = "mocks")]
 pub mod mock;
-pub mod proof_manager;
 pub mod worker;
