@@ -15,10 +15,10 @@ use circuit_types::{
 };
 use common::types::{
     proof_bundles::{
-        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, SizedFeeRedemptionBundle,
-        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
-        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle, ValidMatchSettleAtomicBundle,
-        ValidMatchSettleBundle,
+        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
+        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
+        SizedValidWalletUpdateBundle, ValidMalleableMatchSettleAtomicBundle,
+        ValidMatchSettleAtomicBundle, ValidMatchSettleBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -342,15 +342,15 @@ impl DarkpoolImpl for BaseDarkpool {
         &self,
         receiver_address: Option<Address>,
         validity_proofs: &OrderValidityProofBundle,
-        match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
+        match_atomic_bundle: ValidMalleableMatchSettleAtomicBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
         let internal_party_payload = validity_proofs.to_contract_type()?;
-        let statement = match_atomic_bundle.atomic_match_proof.statement.to_contract_type()?;
+        let statement = match_atomic_bundle.statement.to_contract_type()?;
 
         // Build the match proofs bundle
         let commitments_proof = validity_proofs.commitment_proof.proof.to_contract_type()?;
         let reblind_proof = validity_proofs.reblind_proof.proof.to_contract_type()?;
-        let match_proof = match_atomic_bundle.atomic_match_proof.proof.to_contract_type()?;
+        let match_proof = match_atomic_bundle.proof.to_contract_type()?;
         let match_proofs = MalleableMatchAtomicProofs {
             validCommitments: commitments_proof,
             validReblind: reblind_proof,
@@ -365,7 +365,7 @@ impl DarkpoolImpl for BaseDarkpool {
         };
 
         // Compute the quote and base amounts, defaulting to the max tradable amounts
-        let match_res = &match_atomic_bundle.atomic_match_proof.statement.bounded_match_result;
+        let match_res = &match_atomic_bundle.statement.bounded_match_result;
         let price = match_res.price;
         let base_amount = match_res.max_base_amount;
         let base_amount_calldata = amount_to_u256(base_amount)?;

@@ -6,12 +6,14 @@ use alloy::{primitives::Address, rpc::types::TransactionReceipt};
 use circuit_types::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, merkle::MerkleRoot, wallet::Nullifier,
 };
-use common::types::proof_bundles::{ValidMatchSettleAtomicBundle, ValidMatchSettleBundle};
+use common::types::proof_bundles::{
+    ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle, ValidMatchSettleBundle,
+};
 use common::types::{
     proof_bundles::{
-        MalleableAtomicMatchSettleBundle, OrderValidityProofBundle, SizedFeeRedemptionBundle,
-        SizedOfflineFeeSettlementBundle, SizedRelayerFeeSettlementBundle,
-        SizedValidWalletCreateBundle, SizedValidWalletUpdateBundle,
+        OrderValidityProofBundle, SizedFeeRedemptionBundle, SizedOfflineFeeSettlementBundle,
+        SizedRelayerFeeSettlementBundle, SizedValidWalletCreateBundle,
+        SizedValidWalletUpdateBundle,
     },
     transfer_auth::TransferAuth,
 };
@@ -185,7 +187,7 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         &self,
         receiver_address: Option<Address>,
         internal_party_validity_proofs: &OrderValidityProofBundle,
-        match_atomic_bundle: &MalleableAtomicMatchSettleBundle,
+        match_atomic_bundle: ValidMalleableMatchSettleAtomicBundle,
     ) -> Result<TransactionRequest, DarkpoolClientError> {
         self.darkpool.gen_malleable_atomic_match_settle_calldata(
             receiver_address,

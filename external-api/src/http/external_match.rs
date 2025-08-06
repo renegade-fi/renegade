@@ -33,7 +33,7 @@ use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 #[cfg(feature = "full-api")]
 use common::types::{
-    proof_bundles::{MalleableAtomicMatchSettleBundle, ValidMatchSettleAtomicBundle},
+    proof_bundles::{ValidMalleableMatchSettleAtomicBundle, ValidMatchSettleAtomicBundle},
     wallet::Order,
 };
 
@@ -453,10 +453,10 @@ impl MalleableAtomicMatchApiBundle {
     /// settlement transaction
     #[cfg(feature = "full-api")]
     pub fn new(
-        match_bundle: &MalleableAtomicMatchSettleBundle,
+        match_bundle: &ValidMalleableMatchSettleAtomicBundle,
         mut settlement_tx: TransactionRequest,
     ) -> Self {
-        let statement = &match_bundle.atomic_match_proof.statement;
+        let statement = &match_bundle.statement;
         let match_result = statement.bounded_match_result.clone();
         let fee_rates = statement.external_fee_rates;
 
