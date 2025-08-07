@@ -31,7 +31,8 @@ impl ComplianceServerClient {
 
         // Send a request to the compliance service
         let base_url = self.url.clone().unwrap();
-        let url = format!("{base_url}{WALLET_SCREEN_PATH}/{wallet_address}");
+        let path = format!("{WALLET_SCREEN_PATH}/{wallet_address}");
+        let url = base_url.join(&path).map_err(err_str!(ApiServerError::ComplianceService))?;
         let resp = client
             .get(url)
             .header("Content-Type", "application/json")
