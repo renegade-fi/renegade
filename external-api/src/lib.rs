@@ -30,6 +30,11 @@ pub const RENEGADE_SIG_EXPIRATION_HEADER_NAME: &str = "x-renegade-auth-expiratio
 // | Serialization Helpers |
 // -------------------------
 
+/// Serde helper that defaults a boolean to `true`
+pub(crate) fn default_true() -> bool {
+    true
+}
+
 /// An empty request/response type
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmptyRequestResponse {}
