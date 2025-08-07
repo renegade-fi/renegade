@@ -330,7 +330,7 @@ impl SettleMalleableExternalMatchTask {
 
         // Create proof-links between the atomic match settle proof and the internal
         // party's proof of `VALID COMMITMENTS`
-        let atomic_match_bundle = ValidMalleableMatchSettleAtomicBundle::from(bundle.proof);
+        let atomic_match_bundle = ValidMalleableMatchSettleAtomicBundle::from(bundle);
         self.atomic_match_bundle = Some(atomic_match_bundle);
         Ok(())
     }

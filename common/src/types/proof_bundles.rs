@@ -213,180 +213,19 @@ pub type SizedFeeRedemptionBundle = GenericFeeRedemptionBundle<MAX_BALANCES, MAX
 /// A type alias that heap-allocates a `FeeRedemptionBundle`
 pub type FeeRedemptionBundle = Arc<SizedFeeRedemptionBundle>;
 
-/// The proof bundle returned by the proof generation module
-#[derive(Clone, Debug)]
-pub struct ProofBundle {
-    /// The underlying r1cs satisfaction proof
-    pub proof: R1CSProofBundle,
-    /// The proof linking hint returned by the proof
-    pub link_hint: ProofLinkingHint,
-}
-
-impl ProofBundle {
-    /// Create a new proof bundle from a `VALID WALLET CREATE` proof
-    pub fn new_valid_wallet_create(
-        statement: SizedValidWalletCreateStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidWalletCreate(Arc::new(GenericValidWalletCreateBundle {
-                statement,
-                proof,
-            })),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID WALLET UPDATE` proof
-    pub fn new_valid_wallet_update(
-        statement: SizedValidWalletUpdateStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidWalletUpdate(Arc::new(GenericValidWalletUpdateBundle {
-                statement,
-                proof,
-            })),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID REBLIND` proof
-    pub fn new_valid_reblind(
-        statement: ValidReblindStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidReblind(Arc::new(GenericValidReblindBundle {
-                statement,
-                proof,
-            })),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID COMMITMENTS` proof
-    pub fn new_valid_commitments(
-        statement: ValidCommitmentsStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidCommitments(Arc::new(GenericValidCommitmentsBundle {
-                statement,
-                proof,
-            })),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID MATCH SETTLE` proof
-    pub fn new_valid_match_settle(
-        statement: SizedValidMatchSettleStatement,
-        proof: PlonkProof,
-        party0_link: PlonkLinkProof,
-        party1_link: PlonkLinkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidMatchSettle(Arc::new(GenericMatchSettleBundle {
-                statement,
-                proof,
-                commitments_link0: party0_link,
-                commitments_link1: party1_link,
-            })),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID MATCH SETTLE ATOMIC` proof
-    pub fn new_valid_match_settle_atomic(
-        statement: SizedValidMatchSettleAtomicStatement,
-        proof: PlonkProof,
-        commitments_link: PlonkLinkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidMatchSettleAtomic(Arc::new(
-                GenericMatchSettleAtomicBundle { statement, proof, commitments_link },
-            )),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID MALLEABLE MATCH SETTLE ATOMIC`
-    /// proof
-    pub fn new_valid_malleable_match_settle_atomic(
-        statement: SizedValidMalleableMatchSettleAtomicStatement,
-        proof: PlonkProof,
-        commitments_link: PlonkLinkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidMalleableMatchSettleAtomic(Arc::new(
-                GenericMalleableMatchSettleAtomicBundle { statement, proof, commitments_link },
-            )),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID RELAYER FEE SETTLEMENT` proof
-    pub fn new_valid_relayer_fee_settlement(
-        statement: SizedValidRelayerFeeSettlementStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidRelayerFeeSettlement(Arc::new(
-                GenericRelayerFeeSettlementBundle { statement, proof },
-            )),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID OFFLINE FEE SETTLEMENT` proof
-    pub fn new_valid_offline_fee_settlement(
-        statement: SizedValidOfflineFeeSettlementStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidOfflineFeeSettlement(Arc::new(
-                GenericOfflineFeeSettlementBundle { statement, proof },
-            )),
-            link_hint,
-        }
-    }
-
-    /// Create a new proof bundle from a `VALID FEE REDEMPTION` proof
-    pub fn new_valid_fee_redemption(
-        statement: SizedValidFeeRedemptionStatement,
-        proof: PlonkProof,
-        link_hint: ProofLinkingHint,
-    ) -> Self {
-        ProofBundle {
-            proof: R1CSProofBundle::ValidFeeRedemption(Arc::new(GenericFeeRedemptionBundle {
-                statement,
-                proof,
-            })),
-            link_hint,
-        }
-    }
-}
-
 /// The bundle type returned by the proof generation module
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant, clippy::enum_variant_names)]
-pub enum R1CSProofBundle {
+pub enum ProofBundle {
     /// A statement and proof of `VALID WALLET CREATE`
     ValidWalletCreate(ValidWalletCreateBundle),
-    /// A statement and proof of `VALID REBLIND`
-    ValidReblind(ValidReblindBundle),
-    /// A statement and proof of `VALID COMMITMENTS`
-    ValidCommitments(ValidCommitmentsBundle),
+    /// A statement, proof, and link hint for `VALID REBLIND`
+    ValidReblind(ValidReblindBundle, ProofLinkingHint),
+    /// A statement, proof, and link hint for `VALID COMMITMENTS`
+    ValidCommitments(ValidCommitmentsBundle, ProofLinkingHint),
+    /// A proof link between a proof of `VALID COMMITMENTS` and a proof of
+    /// `VALID REBLIND`
+    ValidCommitmentsReblindLink(PlonkLinkProof),
     /// A statement and proof of `VALID WALLET UPDATE`
     ValidWalletUpdate(ValidWalletUpdateBundle),
     /// A statement and proof of `VALID MATCH SETTLE`
@@ -403,10 +242,162 @@ pub enum R1CSProofBundle {
     ValidFeeRedemption(FeeRedemptionBundle),
 }
 
+impl ProofBundle {
+    // --- Constructors --- //
+
+    /// Create a new proof bundle from a `VALID WALLET CREATE` proof
+    pub fn new_valid_wallet_create(
+        statement: SizedValidWalletCreateStatement,
+        proof: PlonkProof,
+    ) -> Self {
+        ProofBundle::ValidWalletCreate(Arc::new(GenericValidWalletCreateBundle {
+            statement,
+            proof,
+        }))
+    }
+
+    /// Create a new proof bundle from a `VALID WALLET UPDATE` proof
+    pub fn new_valid_wallet_update(
+        statement: SizedValidWalletUpdateStatement,
+        proof: PlonkProof,
+    ) -> Self {
+        ProofBundle::ValidWalletUpdate(Arc::new(GenericValidWalletUpdateBundle {
+            statement,
+            proof,
+        }))
+    }
+
+    /// Create a new proof bundle from a `VALID REBLIND` proof
+    pub fn new_valid_reblind(
+        statement: ValidReblindStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        let bundle = Arc::new(GenericValidReblindBundle { statement, proof });
+        ProofBundle::ValidReblind(bundle, link_hint)
+    }
+
+    /// Create a new proof bundle from a `VALID COMMITMENTS` proof
+    pub fn new_valid_commitments(
+        statement: ValidCommitmentsStatement,
+        proof: PlonkProof,
+        link_hint: ProofLinkingHint,
+    ) -> Self {
+        let bundle = Arc::new(GenericValidCommitmentsBundle { statement, proof });
+        ProofBundle::ValidCommitments(bundle, link_hint)
+    }
+
+    /// Create a new proof bundle from a `VALID COMMITMENTS` <-> `VALID REBLIND`
+    /// proof link
+    pub fn new_valid_commitments_reblind_link(link: PlonkLinkProof) -> Self {
+        ProofBundle::ValidCommitmentsReblindLink(link)
+    }
+
+    /// Create a new proof bundle from a `VALID MATCH SETTLE` proof
+    pub fn new_valid_match_settle(
+        statement: SizedValidMatchSettleStatement,
+        proof: PlonkProof,
+        party0_link: PlonkLinkProof,
+        party1_link: PlonkLinkProof,
+    ) -> Self {
+        ProofBundle::ValidMatchSettle(Arc::new(GenericMatchSettleBundle {
+            statement,
+            proof,
+            commitments_link0: party0_link,
+            commitments_link1: party1_link,
+        }))
+    }
+
+    /// Create a new proof bundle from a `VALID MATCH SETTLE ATOMIC` proof
+    pub fn new_valid_match_settle_atomic(
+        statement: SizedValidMatchSettleAtomicStatement,
+        proof: PlonkProof,
+        commitments_link: PlonkLinkProof,
+    ) -> Self {
+        ProofBundle::ValidMatchSettleAtomic(Arc::new(GenericMatchSettleAtomicBundle {
+            statement,
+            proof,
+            commitments_link,
+        }))
+    }
+
+    /// Create a new proof bundle from a `VALID MALLEABLE MATCH SETTLE ATOMIC`
+    /// proof
+    pub fn new_valid_malleable_match_settle_atomic(
+        statement: SizedValidMalleableMatchSettleAtomicStatement,
+        proof: PlonkProof,
+        commitments_link: PlonkLinkProof,
+    ) -> Self {
+        ProofBundle::ValidMalleableMatchSettleAtomic(Arc::new(
+            GenericMalleableMatchSettleAtomicBundle { statement, proof, commitments_link },
+        ))
+    }
+
+    /// Create a new proof bundle from a `VALID RELAYER FEE SETTLEMENT` proof
+    pub fn new_valid_relayer_fee_settlement(
+        statement: SizedValidRelayerFeeSettlementStatement,
+        proof: PlonkProof,
+    ) -> Self {
+        ProofBundle::ValidRelayerFeeSettlement(Arc::new(GenericRelayerFeeSettlementBundle {
+            statement,
+            proof,
+        }))
+    }
+
+    /// Create a new proof bundle from a `VALID OFFLINE FEE SETTLEMENT` proof
+    pub fn new_valid_offline_fee_settlement(
+        statement: SizedValidOfflineFeeSettlementStatement,
+        proof: PlonkProof,
+    ) -> Self {
+        ProofBundle::ValidOfflineFeeSettlement(Arc::new(GenericOfflineFeeSettlementBundle {
+            statement,
+            proof,
+        }))
+    }
+
+    /// Create a new proof bundle from a `VALID FEE REDEMPTION` proof
+    pub fn new_valid_fee_redemption(
+        statement: SizedValidFeeRedemptionStatement,
+        proof: PlonkProof,
+    ) -> Self {
+        ProofBundle::ValidFeeRedemption(Arc::new(GenericFeeRedemptionBundle { statement, proof }))
+    }
+
+    // --- Conversion --- //
+
+    /// Returns a proof of `VALID REBLIND` with a link hint
+    pub fn to_valid_reblind(self) -> (ValidReblindBundle, ProofLinkingHint) {
+        if let ProofBundle::ValidReblind(b, l) = self {
+            (b, l)
+        } else {
+            panic!("Proof bundle is not of type ValidReblind: {:?}", self);
+        }
+    }
+
+    /// Returns a proof of `VALID COMMITMENTS` with a link hint
+    pub fn to_valid_commitments(self) -> (ValidCommitmentsBundle, ProofLinkingHint) {
+        if let ProofBundle::ValidCommitments(b, l) = self {
+            (b, l)
+        } else {
+            panic!("Proof bundle is not of type ValidCommitments: {:?}", self);
+        }
+    }
+
+    /// Get the proof link for a `VALID COMMITMENTS` and `VALID REBLIND` proof
+    /// link
+    pub fn to_reblind_commitment_link(self) -> PlonkLinkProof {
+        if let ProofBundle::ValidCommitmentsReblindLink(link) = self {
+            link
+        } else {
+            panic!("Proof bundle is not of type ValidCommitmentsReblindLink: {self:?}");
+        }
+    }
+}
+
 /// Unsafe cast implementations, will panic if type is incorrect
-impl From<R1CSProofBundle> for ValidWalletCreateBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidWalletCreate(b) = bundle {
+impl From<ProofBundle> for ValidWalletCreateBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidWalletCreate(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidWalletCreate: {:?}", bundle)
@@ -414,9 +405,9 @@ impl From<R1CSProofBundle> for ValidWalletCreateBundle {
     }
 }
 
-impl From<R1CSProofBundle> for ValidReblindBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidReblind(b) = bundle {
+impl From<ProofBundle> for ValidReblindBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidReblind(b, _) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidReblind: {:?}", bundle);
@@ -424,9 +415,9 @@ impl From<R1CSProofBundle> for ValidReblindBundle {
     }
 }
 
-impl From<R1CSProofBundle> for ValidCommitmentsBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidCommitments(b) = bundle {
+impl From<ProofBundle> for ValidCommitmentsBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidCommitments(b, _) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidCommitments: {:?}", bundle)
@@ -434,9 +425,9 @@ impl From<R1CSProofBundle> for ValidCommitmentsBundle {
     }
 }
 
-impl From<R1CSProofBundle> for ValidWalletUpdateBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidWalletUpdate(b) = bundle {
+impl From<ProofBundle> for ValidWalletUpdateBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidWalletUpdate(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidWalletUpdate: {:?}", bundle);
@@ -444,9 +435,9 @@ impl From<R1CSProofBundle> for ValidWalletUpdateBundle {
     }
 }
 
-impl From<R1CSProofBundle> for ValidMatchSettleBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidMatchSettle(b) = bundle {
+impl From<ProofBundle> for ValidMatchSettleBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidMatchSettle(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMatchMpc: {:?}", bundle)
@@ -454,9 +445,9 @@ impl From<R1CSProofBundle> for ValidMatchSettleBundle {
     }
 }
 
-impl From<R1CSProofBundle> for ValidMatchSettleAtomicBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidMatchSettleAtomic(b) = bundle {
+impl From<ProofBundle> for ValidMatchSettleAtomicBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidMatchSettleAtomic(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMatchSettleAtomic: {:?}", bundle);
@@ -464,9 +455,9 @@ impl From<R1CSProofBundle> for ValidMatchSettleAtomicBundle {
     }
 }
 
-impl From<R1CSProofBundle> for ValidMalleableMatchSettleAtomicBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidMalleableMatchSettleAtomic(b) = bundle {
+impl From<ProofBundle> for ValidMalleableMatchSettleAtomicBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidMalleableMatchSettleAtomic(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidMalleableMatchSettleAtomic: {:?}", bundle);
@@ -474,9 +465,9 @@ impl From<R1CSProofBundle> for ValidMalleableMatchSettleAtomicBundle {
     }
 }
 
-impl From<R1CSProofBundle> for RelayerFeeSettlementBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidRelayerFeeSettlement(b) = bundle {
+impl From<ProofBundle> for RelayerFeeSettlementBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidRelayerFeeSettlement(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidRelayerFeeSettlement: {:?}", bundle);
@@ -484,9 +475,9 @@ impl From<R1CSProofBundle> for RelayerFeeSettlementBundle {
     }
 }
 
-impl From<R1CSProofBundle> for OfflineFeeSettlementBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidOfflineFeeSettlement(b) = bundle {
+impl From<ProofBundle> for OfflineFeeSettlementBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidOfflineFeeSettlement(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidOfflineFeeSettlement: {:?}", bundle);
@@ -494,9 +485,9 @@ impl From<R1CSProofBundle> for OfflineFeeSettlementBundle {
     }
 }
 
-impl From<R1CSProofBundle> for FeeRedemptionBundle {
-    fn from(bundle: R1CSProofBundle) -> Self {
-        if let R1CSProofBundle::ValidFeeRedemption(b) = bundle {
+impl From<ProofBundle> for FeeRedemptionBundle {
+    fn from(bundle: ProofBundle) -> Self {
+        if let ProofBundle::ValidFeeRedemption(b) = bundle {
             b
         } else {
             panic!("Proof bundle is not of type ValidFeeRedemption: {:?}", bundle);

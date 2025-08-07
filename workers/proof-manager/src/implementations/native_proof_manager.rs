@@ -8,10 +8,11 @@ use circuit_types::{
     traits::{SingleProverCircuit, setup_preprocessed_keys},
 };
 use circuits::{
-    singleprover_prove_with_hint,
+    singleprover_prove, singleprover_prove_with_hint,
     zk_circuits::{
         proof_linking::{
             link_sized_commitments_atomic_match_settle, link_sized_commitments_match_settle,
+            link_sized_commitments_reblind,
         },
         valid_commitments::{
             SizedValidCommitments, SizedValidCommitmentsWitness, ValidCommitmentsStatement,
@@ -160,6 +161,11 @@ impl NativeProofManager {
                 self.prove_valid_commitments(witness, statement)
             },
 
+            ProofJob::ValidCommitmentsReblindLink { reblind_hint, commitments_hint } => {
+                // Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
+                self.link_commitments_reblind(reblind_hint, commitments_hint)
+            },
+
             ProofJob::ValidWalletUpdate { witness, statement } => {
                 self.prove_valid_wallet_update(witness, statement)
             },
@@ -242,9 +248,20 @@ impl NativeProofManager {
         statement: SizedValidWalletCreateStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID WALLET CREATE`
-        let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidWalletCreate>(witness, statement.clone())?;
-        Ok(ProofBundle::new_valid_wallet_create(statement, proof, link_hint))
+        let proof = singleprover_prove::<SizedValidWalletCreate>(witness, statement.clone())?;
+        Ok(ProofBundle::new_valid_wallet_create(statement, proof))
+    }
+
+    /// Create a proof of `VALID WALLET UPDATE`
+    #[instrument(skip_all, err)]
+    fn prove_valid_wallet_update(
+        &self,
+        witness: SizedValidWalletUpdateWitness,
+        statement: SizedValidWalletUpdateStatement,
+    ) -> Result<ProofBundle, ProofManagerError> {
+        // Prove the statement `VALID WALLET UPDATE`
+        let proof = singleprover_prove::<SizedValidWalletUpdate>(witness, statement.clone())?;
+        Ok(ProofBundle::new_valid_wallet_update(statement, proof))
     }
 
     /// Create a proof of `VALID REBLIND`
@@ -273,17 +290,16 @@ impl NativeProofManager {
         Ok(ProofBundle::new_valid_commitments(statement, proof, link_hint))
     }
 
-    /// Create a proof of `VALID WALLET UPDATE`
+    /// Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
     #[instrument(skip_all, err)]
-    fn prove_valid_wallet_update(
+    fn link_commitments_reblind(
         &self,
-        witness: SizedValidWalletUpdateWitness,
-        statement: SizedValidWalletUpdateStatement,
+        reblind_hint: ProofLinkingHint,
+        commitments_hint: ProofLinkingHint,
     ) -> Result<ProofBundle, ProofManagerError> {
-        // Prove the statement `VALID WALLET UPDATE`
-        let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidWalletUpdate>(witness, statement.clone())?;
-        Ok(ProofBundle::new_valid_wallet_update(statement, proof, link_hint))
+        let link_proof = link_sized_commitments_reblind(&reblind_hint, &commitments_hint)?;
+        let bundle = ProofBundle::new_valid_commitments_reblind_link(link_proof);
+        Ok(bundle)
     }
 
     /// Create a proof of `VALID MATCH SETTLE`
@@ -301,12 +317,12 @@ impl NativeProofManager {
 
         // Link the individual proofs of `VALID COMMITMENTS` into the proof of
         // `VALID MATCH SETTLE`
-        let thread1 = || self.link_commitments_match_settle(PARTY0, &commitment_link1, &link_hint);
-        let thread0 = || self.link_commitments_match_settle(PARTY1, &commitment_link0, &link_hint);
+        let thread0 = || self.link_commitments_match_settle(PARTY0, &commitment_link0, &link_hint);
+        let thread1 = || self.link_commitments_match_settle(PARTY1, &commitment_link1, &link_hint);
         let (link_res0, link_res1) = self.thread_pool.join(thread0, thread1);
         let link0 = link_res0?;
         let link1 = link_res1?;
-        Ok(ProofBundle::new_valid_match_settle(statement, proof, link0, link1, link_hint))
+        Ok(ProofBundle::new_valid_match_settle(statement, proof, link0, link1))
     }
 
     /// Generate a link proof for a party's proof of `VALID COMMITMENTS` and a
@@ -341,7 +357,7 @@ impl NativeProofManager {
 
         // Prove the `VALID COMMITMENTS` <-> `VALID MATCH SETTLE ATOMIC` link
         let link_proof = link_sized_commitments_atomic_match_settle(&commitments_link, &link_hint)?;
-        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_proof, link_hint))
+        Ok(ProofBundle::new_valid_match_settle_atomic(statement, proof, link_proof))
     }
 
     /// Create a proof of `VALID MALLEABLE MATCH SETTLE ATOMIC`
@@ -359,9 +375,7 @@ impl NativeProofManager {
 
         // Prove the `VALID COMMITMENTS` <-> `VALID MALLEABLE MATCH SETTLE ATOMIC` link
         let link_proof = link_sized_commitments_atomic_match_settle(&commitments_link, &link_hint)?;
-        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(
-            statement, proof, link_proof, link_hint,
-        ))
+        Ok(ProofBundle::new_valid_malleable_match_settle_atomic(statement, proof, link_proof))
     }
 
     /// Create a proof of `VALID RELAYER FEE SETTLEMENT`
@@ -372,12 +386,9 @@ impl NativeProofManager {
         statement: SizedValidRelayerFeeSettlementStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID RELAYER FEE SETTLEMENT`
-        let (proof, link_hint) = singleprover_prove_with_hint::<SizedValidRelayerFeeSettlement>(
-            witness,
-            statement.clone(),
-        )?;
-
-        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof, link_hint))
+        let proof =
+            singleprover_prove::<SizedValidRelayerFeeSettlement>(witness, statement.clone())?;
+        Ok(ProofBundle::new_valid_relayer_fee_settlement(statement, proof))
     }
 
     /// Create a proof of `VALID OFFLINE FEE SETTLEMENT`
@@ -388,13 +399,9 @@ impl NativeProofManager {
         statement: SizedValidOfflineFeeSettlementStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID OFFLINE FEE SETTLEMENT`
-        let (proof, link_hint) = singleprover_prove_with_hint::<SizedValidOfflineFeeSettlement>(
-            witness,
-            statement.clone(),
-        )
-        .map_err(|err| ProofManagerError::Prover(err.to_string()))?;
-
-        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof, link_hint))
+        let proof =
+            singleprover_prove::<SizedValidOfflineFeeSettlement>(witness, statement.clone())?;
+        Ok(ProofBundle::new_valid_offline_fee_settlement(statement, proof))
     }
 
     /// Create a proof of `VALID FEE REDEMPTION`
@@ -405,9 +412,7 @@ impl NativeProofManager {
         statement: SizedValidFeeRedemptionStatement,
     ) -> Result<ProofBundle, ProofManagerError> {
         // Prove the statement `VALID FEE REDEMPTION`
-        let (proof, link_hint) =
-            singleprover_prove_with_hint::<SizedValidFeeRedemption>(witness, statement.clone())?;
-
-        Ok(ProofBundle::new_valid_fee_redemption(statement, proof, link_hint))
+        let proof = singleprover_prove::<SizedValidFeeRedemption>(witness, statement.clone())?;
+        Ok(ProofBundle::new_valid_fee_redemption(statement, proof))
     }
 }

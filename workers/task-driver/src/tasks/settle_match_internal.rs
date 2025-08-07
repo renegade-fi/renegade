@@ -328,7 +328,7 @@ impl SettleMatchInternalTask {
         let bundle = proof_recv.await.map_err(|_| {
             SettleMatchInternalTaskError::EnqueuingJob(ERR_AWAITING_PROOF.to_string())
         })?;
-        self.match_bundle = Some(bundle.proof.into());
+        self.match_bundle = Some(bundle.into());
         Ok(())
     }
 

@@ -270,7 +270,7 @@ impl RedeemFeeTask {
 
         // Await the proof
         let bundle = proof.await.map_err(err_str!(RedeemFeeError::ProofGeneration))?;
-        self.proof = Some(bundle.proof.into());
+        self.proof = Some(bundle.into());
 
         Ok(())
     }

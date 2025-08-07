@@ -111,6 +111,10 @@ impl ExternalProofManager {
                 // Prove `VALID REBLIND`
                 client.prove_valid_reblind(witness, statement).await
             },
+            ProofJob::ValidCommitmentsReblindLink { commitments_hint, reblind_hint } => {
+                // Link a proof of `VALID COMMITMENTS` with a proof of `VALID REBLIND`
+                client.prove_valid_commitments_reblind_link(commitments_hint, reblind_hint).await
+            },
             ProofJob::ValidMatchSettleSingleprover {
                 witness,
                 statement,

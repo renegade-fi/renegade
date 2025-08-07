@@ -274,7 +274,7 @@ impl PayOfflineFeeTask {
 
         // Await the proof
         let bundle = proof_recv.await.map_err(err_str!(PayOfflineFeeTaskError::ProofGeneration))?;
-        self.proof = Some(bundle.proof.into());
+        self.proof = Some(bundle.into());
         Ok(())
     }
 

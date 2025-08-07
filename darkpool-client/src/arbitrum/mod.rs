@@ -486,7 +486,7 @@ impl DarkpoolImpl for ArbitrumDarkpool {
             serialize_calldata(&internal_party_match_payload)?;
         let contract_valid_match_settle_atomic_statement =
             to_contract_valid_malleable_match_settle_atomic_statement(
-                &valid_match_settle_atomic_statement,
+                valid_match_settle_atomic_statement,
             )?;
         let valid_match_settle_atomic_statement_calldata =
             serialize_calldata(&contract_valid_match_settle_atomic_statement)?;
