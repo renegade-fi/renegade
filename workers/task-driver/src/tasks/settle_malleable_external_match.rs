@@ -196,6 +196,11 @@ pub struct SettleMalleableExternalMatchTask {
     match_res: BoundedMatchResult,
     /// The duration for which the external match bundle is valid
     bundle_duration: Duration,
+    /// Whether the resulting bundle is shared across requests
+    ///
+    /// Exclusive (shared = false) bundles lock the task queue and gain
+    /// exclusive access to the bundle for the `bundle_duration`
+    shared: bool,
     /// The validity proofs for the internal order
     internal_order_validity_bundle: OrderValidityProofBundle,
     /// The validity witness for an internal order
@@ -234,6 +239,7 @@ impl Task for SettleMalleableExternalMatchTask {
             relayer_fee_rate,
             match_res,
             atomic_match_bundle_topic,
+            shared,
         } = descriptor;
         let (internal_order_validity_bundle, internal_order_validity_witness) =
             Self::fetch_internal_order_validity_bundle(internal_order_id, &ctx.state).await?;
@@ -243,6 +249,7 @@ impl Task for SettleMalleableExternalMatchTask {
             relayer_fee_rate,
             match_res,
             bundle_duration,
+            shared,
             internal_order_validity_bundle,
             internal_order_validity_witness,
             atomic_match_bundle: None,
@@ -300,6 +307,12 @@ impl Task for SettleMalleableExternalMatchTask {
 
     fn state(&self) -> Self::State {
         self.task_state.clone()
+    }
+
+    /// Shared bundles will always have a much higher rate limit than exclusive
+    /// For this reason, we bypass the task queue to prevent raft contention
+    fn bypass_task_queue(&self) -> bool {
+        self.shared
     }
 }
 
