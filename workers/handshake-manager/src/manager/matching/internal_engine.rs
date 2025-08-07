@@ -157,7 +157,7 @@ impl HandshakeExecutor {
         .unwrap()
         .into();
 
-        self.enqueue_serial_task_await_completion(task).await
+        self.forward_queued_task(task).await
     }
 
     // -----------

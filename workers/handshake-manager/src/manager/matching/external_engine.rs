@@ -252,6 +252,7 @@ impl HandshakeExecutor {
             options.relayer_fee_rate,
             match_res,
             response_topic,
+            options.allow_shared,
         );
         self.enqueue_settlement_task(task, options).await
     }
@@ -310,6 +311,7 @@ impl HandshakeExecutor {
             options.relayer_fee_rate,
             bounded_res,
             response_topic,
+            options.allow_shared,
         );
         self.enqueue_settlement_task(task, options).await
     }
@@ -397,9 +399,9 @@ impl HandshakeExecutor {
     ) -> Result<(), HandshakeManagerError> {
         let descriptor = descriptor.into();
         if options.allow_shared {
-            self.enqueue_concurrent_task_await_completion(descriptor).await
+            self.forward_bypassing_task(descriptor).await
         } else {
-            self.enqueue_serial_task_await_completion(descriptor).await
+            self.forward_queued_task(descriptor).await
         }
     }
 

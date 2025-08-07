@@ -92,16 +92,22 @@ pub struct SettleExternalMatchTaskDescriptor {
     /// The price at which the match was executed
     pub execution_price: TimestampedPriceFp,
     /// The fee take rate for the relayer in the match
-    #[serde(default)]
     pub relayer_fee_rate: FixedPoint,
     /// The match result from the external matching engine
     pub match_res: MatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
     pub atomic_match_bundle_topic: String,
+    /// Whether the resulting bundle is shared across requests
+    ///
+    /// Exclusive (shared = false) bundles lock the task queue and gain
+    /// exclusive access to the bundle for the `bundle_duration`
+    #[serde(default)]
+    pub shared: bool,
 }
 
 impl SettleExternalMatchTaskDescriptor {
     /// Constructor
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         bundle_duration: Duration,
         internal_order_id: OrderIdentifier,
@@ -110,6 +116,7 @@ impl SettleExternalMatchTaskDescriptor {
         relayer_fee_rate: FixedPoint,
         match_res: MatchResult,
         atomic_match_bundle_topic: String,
+        shared: bool,
     ) -> Self {
         SettleExternalMatchTaskDescriptor {
             bundle_duration,
@@ -119,6 +126,7 @@ impl SettleExternalMatchTaskDescriptor {
             execution_price,
             relayer_fee_rate,
             match_res,
+            shared,
         }
     }
 }
@@ -133,19 +141,23 @@ impl From<SettleExternalMatchTaskDescriptor> for TaskDescriptor {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SettleMalleableExternalMatchTaskDescriptor {
     /// The duration for which the external match bundle is valid
-    #[serde(default)]
     pub bundle_duration: Duration,
     /// The ID of the order that the local node matched
     pub internal_order_id: OrderIdentifier,
     /// The ID of the wallet that the local node matched an order from
     pub internal_wallet_id: WalletIdentifier,
     /// The fee take rate for the relayer in the match
-    #[serde(default)]
     pub relayer_fee_rate: FixedPoint,
     /// The match result from the external matching engine
     pub match_res: BoundedMatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
     pub atomic_match_bundle_topic: String,
+    /// Whether the resulting bundle is shared across requests
+    ///
+    /// Exclusive (shared = false) bundles lock the task queue and gain
+    /// exclusive access to the bundle for the `bundle_duration`
+    #[serde(default)]
+    pub shared: bool,
 }
 
 impl SettleMalleableExternalMatchTaskDescriptor {
@@ -157,6 +169,7 @@ impl SettleMalleableExternalMatchTaskDescriptor {
         relayer_fee_rate: FixedPoint,
         match_res: BoundedMatchResult,
         atomic_match_bundle_topic: String,
+        shared: bool,
     ) -> Self {
         SettleMalleableExternalMatchTaskDescriptor {
             bundle_duration,
@@ -165,6 +178,7 @@ impl SettleMalleableExternalMatchTaskDescriptor {
             atomic_match_bundle_topic,
             relayer_fee_rate,
             match_res,
+            shared,
         }
     }
 }
