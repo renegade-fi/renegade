@@ -25,6 +25,7 @@ use reqwest::{
     header::{AUTHORIZATION, HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
+use util::telemetry::propagation::add_trace_context_to_headers;
 
 use crate::{
     error::ProofManagerError,
@@ -111,6 +112,9 @@ impl ProofServiceClient {
         let header = cred.as_http_header();
         let auth_header = HeaderValue::from_str(&header).map_err(ProofManagerError::http)?;
         headers.insert(AUTHORIZATION, auth_header);
+
+        // Inject tracing propagation headers from the current span
+        add_trace_context_to_headers(&mut headers);
 
         // Build the URL and send the request
         let full_path = format!("{}{path}", self.url);

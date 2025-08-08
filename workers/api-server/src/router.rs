@@ -15,6 +15,7 @@ use matchit::{Params, Router as MatchRouter};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use state::State;
 use tracing::{debug, instrument, warn};
+use util::telemetry::propagation::set_parent_span_from_headers;
 
 use crate::{
     auth::{AuthMiddleware, AuthType},
@@ -328,6 +329,8 @@ impl Router {
 
         // Collect the headers and body
         let headers = req.headers().to_owned();
+        // Setup tracing parent span from propagated headers, if any
+        set_parent_span_from_headers(&headers);
         let body = req.into_body().collect().await.map_err(bad_request)?;
         let body_bytes = body.to_bytes();
 

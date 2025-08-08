@@ -1,10 +1,15 @@
 //! Helpers for propagating tracing information across processes
 use std::collections::HashMap;
 
+use http::{
+    HeaderMap,
+    header::{HeaderName, HeaderValue},
+};
 use opentelemetry::{
     Context, global,
     propagation::{Extractor, Injector},
 };
+use std::str::FromStr;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Represents the context of a trace
@@ -64,4 +69,31 @@ pub fn set_parent_span_from_context(headers: &TraceContext) {
 /// Set the parent span from an `opentelemetry::Context`
 pub fn set_parent_span(context: Context) {
     tracing::Span::current().set_parent(context);
+}
+
+/// Add propagation headers derived from the current span context into a
+/// mutable `http::HeaderMap` using the globally configured propagator.
+pub fn add_trace_context_to_headers(headers: &mut HeaderMap) {
+    for (key, value) in trace_context() {
+        let maybe_name = HeaderName::from_str(&key);
+        let maybe_val = HeaderValue::from_str(&value);
+        if let (Ok(name), Ok(val)) = (maybe_name, maybe_val) {
+            headers.insert(name, val);
+        }
+    }
+}
+
+/// Extract a parent span from an `http::HeaderMap` (e.g., from an HTTP
+/// request), using the globally configured propagator, and set it as the
+/// current span's parent.
+pub fn set_parent_span_from_headers(headers: &HeaderMap) {
+    // Copy incoming header values into a string-typed TraceContext for extraction
+    let mut trace_ctx = TraceContext::new();
+    for (k, v) in headers.iter() {
+        if let Ok(val) = v.to_str() {
+            trace_ctx.insert(k.as_str().to_owned(), val.to_owned());
+        }
+    }
+
+    set_parent_span_from_context(&trace_ctx);
 }
