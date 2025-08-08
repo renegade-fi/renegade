@@ -4,7 +4,7 @@ use common::types::CancelChannel;
 use constants::in_bootstrap_mode;
 use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerReceiver};
 use tracing::{error, info, instrument};
-use util::concurrency::runtime::sleep_forever_blocking;
+use util::{channels::TracedMessage, concurrency::runtime::sleep_forever_blocking};
 
 use crate::{
     error::ProofManagerError,
@@ -75,8 +75,7 @@ impl ExternalProofManager {
             let job = self
                 .job_queue
                 .recv()
-                .map_err(|err| ProofManagerError::RecvError(err.to_string()))?
-                .consume();
+                .map_err(|err| ProofManagerError::RecvError(err.to_string()))?;
 
             // Handle the job
             let client = self.client.clone();
@@ -92,8 +91,9 @@ impl ExternalProofManager {
     #[instrument(name = "handle_proof_job", skip_all)]
     async fn handle_proof_job(
         client: ProofServiceClient,
-        job: ProofManagerJob,
+        traced_job: TracedMessage<ProofManagerJob>,
     ) -> Result<(), ProofManagerError> {
+        let job = traced_job.consume();
         let bundle = match job.type_ {
             ProofJob::ValidWalletCreate { witness, statement } => {
                 // Prove `VALID WALLET CREATE`

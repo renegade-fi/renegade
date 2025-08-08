@@ -60,6 +60,7 @@ opentelemetry = { version = "0.21", default-features = false, features = [
 ] }
 opentelemetry-semantic-conventions = "0.13"
 opentelemetry-datadog = "0.9"
+http = "1"
 
 # === Metrics === #
 metrics = { workspace = true }
