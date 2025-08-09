@@ -180,7 +180,7 @@ impl DepthCalculator {
         let base_decimals = token.get_decimals().unwrap();
         let buy_liquidity_base_decimal = buy_usd / ts_price.price;
         let buy_liquidity_base = buy_liquidity_base_decimal * 10f64.powi(base_decimals as i32);
-        let buy_liquidity_base: u128 = buy_liquidity_base.to_u128().unwrap();
+        let buy_liquidity_base: u128 = buy_liquidity_base.to_u128().unwrap_or(0);
 
         let buy = DepthSide { total_quantity: buy_liquidity_base, total_quantity_usd: buy_usd };
         let sell = DepthSide { total_quantity: sell_liquidity, total_quantity_usd: sell_usd };
