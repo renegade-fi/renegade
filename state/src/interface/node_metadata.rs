@@ -67,15 +67,6 @@ impl StateInner {
         self.with_blocking_read_tx(|tx| tx.get_external_fee_addr().map_err(StateError::Db))
     }
 
-    /// Get the relayer fee for a given wallet
-    pub fn get_relayer_fee_for_wallet(
-        &self,
-        wallet_id: &WalletIdentifier,
-    ) -> Result<FixedPoint, StateError> {
-        let wid = *wallet_id;
-        self.with_blocking_read_tx(move |tx| tx.get_relayer_fee(&wid).map_err(StateError::Db))
-    }
-
     /// Get the local relayer's auto-redeem fees flag
     pub fn get_auto_redeem_fees(&self) -> Result<bool, StateError> {
         self.with_blocking_read_tx(|tx| tx.get_auto_redeem_fees().map_err(StateError::Db))
@@ -137,7 +128,6 @@ impl StateInner {
         let fee_key = config.fee_key;
         let match_take_rate = config.match_take_rate;
         let external_fee_addr = config.external_fee_addr.clone();
-        let relayer_fee_whitelist = config.relayer_fee_whitelist.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
 
         let need_relayer_wallet = config.needs_relayer_wallet();
@@ -163,12 +153,6 @@ impl StateInner {
             tx.set_auto_redeem_fees(auto_redeem_fees)?;
             if need_relayer_wallet {
                 tx.set_local_node_wallet(relayer_wallet_id)?;
-            }
-
-            // Setup the relayer fee whitelist
-            for entry in relayer_fee_whitelist {
-                let fee = FixedPoint::from_f64_round_down(entry.fee);
-                tx.set_relayer_fee(&entry.wallet_id, fee)?;
             }
 
             Ok(())

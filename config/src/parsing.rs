@@ -8,14 +8,12 @@ use clap::Parser;
 use common::types::{
     gossip::{ClusterId, WrappedPeerId},
     hmac::HmacKey,
-    wallet::WalletIdentifier,
 };
 use constants::set_bootstrap_mode;
 use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
 use libp2p::{Multiaddr, PeerId, identity::Keypair};
 use rand::thread_rng;
 use rand_core::OsRng;
-use serde::Deserialize;
 use std::{env, fs, str::FromStr};
 use toml::{Value, value::Map};
 use util::{
@@ -106,15 +104,11 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let prover_service_url =
         cli_args.prover_service_url.map(|url| url.parse().expect("Invalid prover service URL"));
 
-    // Parse the relayer fee whitelist, if there is one
-    let relayer_fee_whitelist = parse_relayer_whitelist_file(cli_args.relayer_fee_whitelist)?;
-
     let mut config = RelayerConfig {
         min_fill_size: cli_args.min_fill_size,
         match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
         external_fee_addr,
         auto_redeem_fees: cli_args.auto_redeem_fees,
-        relayer_fee_whitelist,
         price_reporter_url,
         chain_id: cli_args.chain_id,
         contract_address: cli_args.contract_address,
@@ -225,32 +219,6 @@ pub fn parse_fee_key(
         let key = DecryptionKey::random(&mut rng);
         Ok(RelayerFeeKey::new_secret(key))
     }
-}
-
-// ---------------------------------
-// | Relayer Fee Whitelist Parsing |
-// ---------------------------------
-
-/// A struct representing the JSON structure of a relayer whitelist file
-#[derive(Clone, Debug, Deserialize)]
-pub struct RelayerFeeWhitelistEntry {
-    /// The wallet ID to set the fee for
-    pub wallet_id: WalletIdentifier,
-    /// The fee to set for the relayer
-    pub fee: f64,
-}
-
-/// Parse a relayer whitelist file
-fn parse_relayer_whitelist_file(
-    file_path: Option<String>,
-) -> Result<Vec<RelayerFeeWhitelistEntry>, String> {
-    let file = match file_path {
-        Some(path) => fs::read_to_string(path).map_err(|e| e.to_string())?,
-        None => return Ok(vec![]),
-    };
-
-    // Parse the file as json
-    serde_json::from_str(&file).map_err(|e| e.to_string())
 }
 
 // -----------------------

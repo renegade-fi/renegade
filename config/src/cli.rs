@@ -24,7 +24,7 @@ use std::{
 use url::Url;
 use util::telemetry::configure_telemetry;
 
-use crate::parsing::{RelayerFeeWhitelistEntry, parse_config_from_args};
+use crate::parsing::parse_config_from_args;
 
 // -------
 // | CLI |
@@ -76,11 +76,10 @@ pub struct Cli {
     /// The minimum amount of the quote asset that the relayer should settle matches on
     #[clap(long, value_parser, default_value = "0")]
     pub min_fill_size: Amount,
-    /// The take rate of this relayer on a managed match, i.e. the amount of the received asset 
-    /// that the relayer takes as a fee
+    /// The maximum amount that a relayer will charge as a fee for a match
     /// 
-    /// Defaults to 8 basis points
-    #[clap(long, value_parser, default_value = "0.0002")]
+    /// Defaults to 10 basis points
+    #[clap(long, value_parser, default_value = "0.001")]
     pub match_take_rate: f64,
     /// The address at which to collect externally paid fees
     /// 
@@ -91,9 +90,6 @@ pub struct Cli {
     /// If not set, atomic matches are not supported
     #[clap(long, value_parser, env = "EXTERNAL_FEE_ADDR")]
     pub external_fee_addr: Option<String>,
-    /// The path to the file containing relayer fee whitelist info
-    #[clap(long, value_parser)]
-    pub relayer_fee_whitelist: Option<String>,
     /// When set, the relayer will automatically redeem new fees into its wallet
     #[clap(long, value_parser, default_value = "false")]
     pub auto_redeem_fees: bool,
@@ -289,17 +285,12 @@ pub struct RelayerConfig {
     /// The minimum amount of the quote asset that the relayer should settle
     /// matches on
     pub min_fill_size: Amount,
-    /// The take rate of this relayer on a managed match, i.e. the amount of the
-    /// received asset that the relayer takes as a fee
+    /// The maximum amount that a relayer will charge as a fee for a match
     pub match_take_rate: FixedPoint,
     /// The address at which to collect externally paid fees
     pub external_fee_addr: Option<Address>,
     /// When set, the relayer will automatically redeem new fees into its wallet
     pub auto_redeem_fees: bool,
-    /// The relayer fee whitelist
-    ///
-    /// Specifies a mapping of wallet IDs to fees for the relayer
-    pub relayer_fee_whitelist: Vec<RelayerFeeWhitelistEntry>,
 
     // ---------------------
     // | External Services |
@@ -494,7 +485,6 @@ impl Clone for RelayerConfig {
             match_take_rate: self.match_take_rate,
             external_fee_addr: self.external_fee_addr.clone(),
             auto_redeem_fees: self.auto_redeem_fees,
-            relayer_fee_whitelist: self.relayer_fee_whitelist.clone(),
             compliance_service_url: self.compliance_service_url.clone(),
             price_reporter_url: self.price_reporter_url.clone(),
             prover_service_url: self.prover_service_url.clone(),
