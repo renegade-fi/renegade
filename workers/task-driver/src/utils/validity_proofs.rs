@@ -1,9 +1,11 @@
 //! Utils for updating wallet validity proofs
 
+use std::cmp;
 use std::sync::Arc;
 
 use alloy::rpc::types::TransactionReceipt;
 use circuit_types::balance::Balance;
+use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::OrderSettlementIndices;
 use circuit_types::native_helpers::{
     compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
@@ -22,6 +24,7 @@ use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
 use common::types::tasks::RedeemFeeTaskDescriptor;
+use common::types::token::Token;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
 use darkpool_client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
@@ -46,6 +49,12 @@ use super::{
 const ERR_FEE_KEY_MISSING: &str = "fee decryption key is missing";
 /// The error message emitted by the task when the relayer wallet is missing
 const ERR_RELAYER_WALLET_MISSING: &str = "relayer wallet is missing";
+
+/// The default ticker to use when no ticker is found for an order
+///
+/// This is used as a dummy value to ensure that the relayer fee fetched from
+/// state is the default fee
+const DEFAULT_FEE_TICKER: &str = "DEFAULT";
 
 /// Enqueue a job with the proof manager
 ///
@@ -131,6 +140,7 @@ pub(crate) fn construct_order_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
     proof_manager_work_queue: &ProofManagerQueue,
+    state: &State,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Build an augmented wallet
     let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
@@ -142,6 +152,7 @@ pub(crate) fn construct_order_commitment_proof(
     // respective sides of the match
     let (indices, balance_send, balance_receive) =
         find_balances_and_indices(&order, &mut augmented_wallet)?;
+    let relayer_fee = get_relayer_fee_for_order(&order, augmented_wallet.max_match_fee, state)?;
 
     // Create new augmented public secret shares
     let reblinded_private_blinder = valid_reblind_witness.reblinded_wallet_private_shares.blinder;
@@ -161,7 +172,7 @@ pub(crate) fn construct_order_commitment_proof(
         augmented_public_shares,
         order,
         balance_send,
-        relayer_fee: augmented_wallet.max_match_fee,
+        relayer_fee,
         balance_receive,
     };
 
@@ -242,6 +253,20 @@ fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
     wallet.orders.iter().enumerate().find(|(_ind, o)| (*o).eq(order)).map(|(ind, _o)| ind)
 }
 
+/// Get the relayer fee for a given order
+fn get_relayer_fee_for_order(
+    order: &Order,
+    max_match_fee: FixedPoint,
+    state: &State,
+) -> Result<FixedPoint, String> {
+    let ticker = Token::from_addr_biguint(&order.base_mint)
+        .get_ticker()
+        .unwrap_or_else(|| DEFAULT_FEE_TICKER.to_string());
+    let asset_fee = state.get_relayer_fee(&ticker)?;
+    let fee = cmp::min(asset_fee, max_match_fee);
+    Ok(fee)
+}
+
 /// Find a wallet on-chain, and update its validity proofs. That is, a proof of
 /// `VALID REBLIND` for the wallet, and one proof of `VALID COMMITMENTS` for
 /// each order in the wallet
@@ -274,6 +299,7 @@ pub(crate) async fn update_wallet_validity_proofs(
             order.clone().into(),
             &reblind_witness,
             &proof_manager_work_queue,
+            &state,
         )?;
         commitments_instances.push((*id, commitments_witness, response_channel));
     }
