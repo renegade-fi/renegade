@@ -21,6 +21,9 @@ const REMAP_BASE_URL: &str = "https://raw.githubusercontent.com/renegade-fi/toke
 /// The zero address, used for the dummy "USD" token
 const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 
+/// Default set of exchanges that support USD-quoted prices
+const DEFAULT_USD_EXCHANGES: &[Exchange] = &[Exchange::Coinbase, Exchange::Kraken, Exchange::Okx];
+
 // --------------------
 // | Serialized Types |
 // --------------------
@@ -99,12 +102,9 @@ impl TokenRemap {
 
         // Insert exchange support for the dummy USD token
         let usd_ticker = USD_TICKER.to_string();
-        exchange_support_map.insert(
-            usd_ticker.clone(),
-            [(Exchange::Coinbase, usd_ticker.clone()), (Exchange::Kraken, usd_ticker)]
-                .into_iter()
-                .collect(),
-        );
+        let usd_support: HashMap<Exchange, String> =
+            DEFAULT_USD_EXCHANGES.iter().copied().map(|ex| (ex, usd_ticker.clone())).collect();
+        exchange_support_map.insert(usd_ticker, usd_support);
     }
 
     /// Get the canonical exchange map from the token remap
