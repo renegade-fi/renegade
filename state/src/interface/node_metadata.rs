@@ -133,6 +133,7 @@ impl StateInner {
         let p2p_key = config.p2p_key.clone();
         let fee_key = config.fee_key;
         let max_match_fee = config.max_match_fee;
+        let default_relayer_fee = config.default_match_fee;
         let per_asset_fees = config.per_asset_fees.clone();
         let external_fee_addr = config.external_fee_addr.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
@@ -153,6 +154,7 @@ impl StateInner {
             tx.set_node_keypair(&p2p_key)?;
             tx.set_fee_key(&fee_key)?;
             tx.set_max_relayer_fee(&max_match_fee)?;
+            tx.set_default_relayer_fee(&default_relayer_fee)?;
             for (ticker, fee) in per_asset_fees.into_iter() {
                 tx.set_asset_relayer_fee(&ticker, fee)?;
             }

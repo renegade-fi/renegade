@@ -2,7 +2,10 @@
 //! arithmetic between fixed-point and native Scalars
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
-use std::ops::{Add, Mul, Neg, Sub};
+use std::{
+    cmp::Ordering,
+    ops::{Add, Mul, Neg, Sub},
+};
 
 use ark_ff::{BigInteger, Field, PrimeField};
 use bigdecimal::{BigDecimal, FromPrimitive, Num};
@@ -352,6 +355,18 @@ impl Sub<FixedPoint> for Scalar {
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: FixedPoint) -> Self::Output {
         self + rhs.neg()
+    }
+}
+
+impl PartialOrd for FixedPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FixedPoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.repr.cmp(&other.repr)
     }
 }
 
