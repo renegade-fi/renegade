@@ -10,11 +10,10 @@ use clap::Parser;
 use common::types::{
     chain::Chain,
     exchange::Exchange,
-    gossip::{ClusterId, WrappedPeerId},
+    gossip::{ClusterAsymmetricKeypair, ClusterId, WrappedPeerId},
     hmac::HmacKey,
     token::Token,
 };
-use ed25519_dalek::Keypair as DalekKeypair;
 use libp2p::{Multiaddr, identity::Keypair};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -274,7 +273,7 @@ pub struct Cli {
 // ----------
 
 /// Defines the system config for the relayer
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RelayerConfig {
     // -----------------------------
     // | Application Level Configs |
@@ -343,7 +342,7 @@ pub struct RelayerConfig {
     /// Bootstrap servers that the peer should connect to
     pub bootstrap_servers: Vec<(WrappedPeerId, Multiaddr)>,
     /// The cluster keypair
-    pub cluster_keypair: DalekKeypair,
+    pub cluster_keypair: ClusterAsymmetricKeypair,
     /// The cluster symmetric keypair
     pub cluster_symmetric_key: HmacKey,
     /// The admin key used to authenticate requests to the relayer's API
@@ -470,61 +469,6 @@ impl Default for RelayerConfig {
         // Parse a dummy set of command line args and convert this to a config
         let cli = Cli::parse_from(Vec::<String>::new());
         parse_config_from_args(cli).expect("default config does not parse")
-    }
-}
-
-/// A custom clone implementation specifically for the cluster keypair which
-/// does not implement clone
-impl Clone for RelayerConfig {
-    fn clone(&self) -> Self {
-        Self {
-            min_fill_size: self.min_fill_size,
-            match_take_rate: self.match_take_rate,
-            external_fee_addr: self.external_fee_addr.clone(),
-            auto_redeem_fees: self.auto_redeem_fees,
-            compliance_service_url: self.compliance_service_url.clone(),
-            price_reporter_url: self.price_reporter_url.clone(),
-            prover_service_url: self.prover_service_url.clone(),
-            prover_service_password: self.prover_service_password.clone(),
-            chain_id: self.chain_id,
-            contract_address: self.contract_address.clone(),
-            bootstrap_mode: self.bootstrap_mode,
-            bootstrap_servers: self.bootstrap_servers.clone(),
-            p2p_port: self.p2p_port,
-            http_port: self.http_port,
-            websocket_port: self.websocket_port,
-            p2p_key: self.p2p_key.clone(),
-            db_path: self.db_path.clone(),
-            raft_snapshot_path: self.raft_snapshot_path.clone(),
-            record_historical_state: self.record_historical_state,
-            event_export_url: self.event_export_url.clone(),
-            wallet_task_rate_limit: self.wallet_task_rate_limit,
-            min_transfer_amount: self.min_transfer_amount,
-            max_merkle_staleness: self.max_merkle_staleness,
-            allow_local: self.allow_local,
-            bind_addr: self.bind_addr,
-            public_ip: self.public_ip,
-            gossip_warmup: self.gossip_warmup,
-            disable_price_reporter: self.disable_price_reporter,
-            disabled_exchanges: self.disabled_exchanges.clone(),
-            cluster_keypair: DalekKeypair::from_bytes(&self.cluster_keypair.to_bytes()).unwrap(),
-            cluster_symmetric_key: self.cluster_symmetric_key,
-            admin_api_key: self.admin_api_key,
-            cluster_id: self.cluster_id.clone(),
-            coinbase_key_name: self.coinbase_key_name.clone(),
-            coinbase_key_secret: self.coinbase_key_secret.clone(),
-            rpc_url: self.rpc_url.clone(),
-            private_key: self.private_key.clone(),
-            fee_key: self.fee_key,
-            eth_websocket_addr: self.eth_websocket_addr.clone(),
-            debug: self.debug,
-            otlp_enabled: self.otlp_enabled,
-            otlp_collector_url: self.otlp_collector_url.clone(),
-            datadog_enabled: self.datadog_enabled,
-            metrics_enabled: self.metrics_enabled,
-            statsd_host: self.statsd_host.clone(),
-            statsd_port: self.statsd_port,
-        }
     }
 }
 

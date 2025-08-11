@@ -1,27 +1,21 @@
 //! Parsing utils
 
 use circuit_types::elgamal::DecryptionKey;
-use common::types::hmac::HmacKey;
-use ed25519_dalek::{Keypair as DalekKeypair, PublicKey, SecretKey};
+use common::types::{gossip::ClusterAsymmetricKeypair, hmac::HmacKey};
 use rand::thread_rng;
-use rand_core::OsRng;
 use util::hex::jubjub_from_hex_string;
 
 use crate::{Cli, RelayerFeeKey};
 
 /// Parse the cluster's symmetric and asymmetric keys from the CLI
-pub(crate) fn parse_cluster_keys(cli: &Cli) -> Result<(HmacKey, DalekKeypair), String> {
+pub(crate) fn parse_cluster_keys(cli: &Cli) -> Result<(HmacKey, ClusterAsymmetricKeypair), String> {
     // Parse the cluster keypair from CLI args
     // dalek library expects a packed byte array of [PRIVATE_KEY||PUBLIC_KEY]
     let keypair = if let Some(key_str) = cli.cluster_private_key.clone() {
-        let pkey_bytes: Vec<u8> = base64::decode(key_str.clone()).unwrap();
-
-        let private_key = SecretKey::from_bytes(&pkey_bytes).unwrap();
-        let public_key = PublicKey::from(&private_key);
-        DalekKeypair { secret: private_key, public: public_key }
+        ClusterAsymmetricKeypair::from_base64(&key_str)
+            .map_err(|_| "Invalid cluster keypair".to_string())?
     } else {
-        let mut rng = OsRng {};
-        DalekKeypair::generate(&mut rng)
+        ClusterAsymmetricKeypair::random()
     };
 
     // Parse the symmetric key from its string or generate

@@ -35,7 +35,6 @@ util = { workspace = true }
 
 # === Misc Dependencies === #
 alloy = { workspace = true }
-ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 eyre = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

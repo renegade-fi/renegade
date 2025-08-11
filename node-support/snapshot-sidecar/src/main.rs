@@ -17,7 +17,7 @@ use std::{
 use aws_config::Region;
 use aws_sdk_s3::{Client, primitives::ByteStream};
 use clap::Parser;
-use config::{RelayerConfig, parsing::parse_config_from_file};
+use config::{RelayerConfig, parsing::config_file::parse_config_from_file};
 use external_api::http::admin::{IS_LEADER_ROUTE, IsLeaderResponse};
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher, event::RemoveKind};
 use reqwest::Client as HttpClient;

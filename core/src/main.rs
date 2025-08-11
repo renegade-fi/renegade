@@ -231,7 +231,7 @@ async fn main() -> Result<(), CoordinatorError> {
         known_public_addr: args.public_ip,
         allow_local: args.allow_local,
         cluster_id: args.cluster_id.clone(),
-        cluster_keypair: default_option(args.cluster_keypair),
+        cluster_keypair: args.cluster_keypair,
         cluster_symmetric_key: args.cluster_symmetric_key,
         send_channel: default_option(network_receiver),
         gossip_work_queue: gossip_worker_sender.clone(),

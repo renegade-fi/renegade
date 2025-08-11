@@ -11,7 +11,7 @@
 mod event_socket;
 
 use clap::Parser;
-use config::parsing::parse_config_from_file;
+use config::parsing::config_file::parse_config_from_file;
 use event_socket::EventSocket;
 use eyre::Error;
 use tracing::{info, warn};

@@ -47,7 +47,6 @@ pub fn parse_command_line_args() -> Result<RelayerConfig, String> {
     let cli = Cli::parse_from(full_args);
     // Setup the token remap
     setup_token_remaps(cli.token_remap_file.clone(), cli.chain_id)?;
-
     // Set the bootstrap mode
     set_bootstrap_mode(cli.bootstrap_mode);
 
