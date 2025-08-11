@@ -6,10 +6,9 @@ use std::thread::{Builder, JoinHandle};
 use async_trait::async_trait;
 use common::default_wrapper::DefaultOption;
 use common::types::CancelChannel;
-use common::types::gossip::{ClusterId, PeerInfo, WrappedPeerId};
+use common::types::gossip::{ClusterAsymmetricKeypair, ClusterId, PeerInfo, WrappedPeerId};
 use common::types::hmac::HmacKey;
 use common::worker::Worker;
-use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
 use futures::executor::block_on;
 use gossip_api::pubsub::orderbook::ORDER_BOOK_TOPIC;
@@ -55,7 +54,7 @@ pub struct NetworkManagerConfig {
     /// take ownership of the keypair
     pub cluster_symmetric_key: HmacKey,
     /// The asymmetric key of the cluster
-    pub cluster_keypair: DefaultOption<Keypair>,
+    pub cluster_keypair: ClusterAsymmetricKeypair,
     /// The known public addr that the local node is listening behind, if one
     /// exists
     pub known_public_addr: Option<SocketAddr>,
@@ -112,7 +111,7 @@ impl NetworkManager {
                 self.local_peer_id,
                 self.cluster_id.clone(),
                 self.local_addr.clone(),
-                self.config.cluster_keypair.as_ref().unwrap(),
+                &self.config.cluster_keypair,
             ))
             .await?;
 
@@ -177,7 +176,7 @@ impl Worker for NetworkManager {
             local_peer_id,
             config.cluster_id.clone(),
             local_addr.clone(),
-            config.cluster_keypair.as_ref().unwrap(),
+            &config.cluster_keypair,
         );
         config.global_state.set_local_peer_info(info).await?;
 

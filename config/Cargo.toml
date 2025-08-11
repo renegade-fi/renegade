@@ -28,7 +28,7 @@ colored = "2.0"
 clap = { version = "4.4", features = ["derive", "env"] }
 ed25519-dalek = { version = "1.0.1", features = ["serde"] }
 json = "0.12"
-rand_core = "0.5"
+rand_core = { workspace = true }
 rand = "0.8"
 reqwest = { workspace = true, features = ["blocking", "json"] }
 serde = { workspace = true }

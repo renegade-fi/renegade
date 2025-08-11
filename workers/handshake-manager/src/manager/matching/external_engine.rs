@@ -165,7 +165,7 @@ impl HandshakeExecutor {
     }
 
     /// Get the match candidates for an external order
-    #[instrument(name = "get_external_match_candidates", skip_all, fields(num_candidates))]
+    #[instrument(name = "get_external_match_candidates", skip(self, order), fields(num_candidates))]
     async fn get_external_match_candidates(
         &self,
         order: &Order,

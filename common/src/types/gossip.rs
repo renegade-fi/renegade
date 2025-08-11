@@ -2,15 +2,17 @@
 
 //! Groups the types used to represent the gossip network primitives
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as b64_standard};
 use derivative::Derivative;
 use ed25519_dalek::{
-    Digest, Keypair, PublicKey, SECRET_KEY_LENGTH, Sha512, Signature, SignatureError,
+    Digest, Keypair, PublicKey, SECRET_KEY_LENGTH, SecretKey, Sha512, Signature, SignatureError,
 };
 use libp2p::{Multiaddr, PeerId};
 use libp2p_identity::{
     ParseError as PeerIdParseError, ed25519::Keypair as LibP2PKeypair,
     ed25519::SecretKey as LibP2PSecretKey,
 };
+use rand_core::OsRng;
 use serde::{
     Deserialize, Serialize,
     de::{Error as SerdeErr, Visitor},
@@ -20,7 +22,11 @@ use std::{
     ops::Deref,
     str::FromStr,
 };
-use util::{get_current_time_millis, networking::is_dialable_multiaddr};
+use util::{get_current_time_millis, networking::is_dialable_multiaddr, raw_err_str};
+
+// -------------
+// | Peer Info |
+// -------------
 
 /// The topic prefix for the cluster management pubsub topic
 ///
@@ -235,6 +241,11 @@ impl<'de> Visitor<'de> for PeerIDVisitor {
         Err(SerdeErr::custom("deserializing byte array to PeerID"))
     }
 }
+
+// ----------------
+// | Cluster Info |
+// ----------------
+
 /// A type alias for the cluster identifier
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterId(String);
@@ -272,6 +283,52 @@ impl FromStr for ClusterId {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self(s.to_string()))
+    }
+}
+
+/// A wrapped cluster keypair which allows us to implement traits on the type
+#[derive(Debug)]
+pub struct ClusterAsymmetricKeypair(pub Keypair);
+impl ClusterAsymmetricKeypair {
+    /// Construct a new ClusterAsymmetricKeypair
+    pub fn new(keypair: Keypair) -> Self {
+        Self(keypair)
+    }
+
+    /// Get a cluster key from a base64 encoded string representing the secret
+    /// key
+    pub fn from_base64(s: &str) -> Result<Self, String> {
+        // Decode the base64 string and pad it to the correct length
+        let decoded =
+            b64_standard.decode(s).map_err(raw_err_str!("error decoding cluster key: {}"))?;
+
+        // Decompress the bytes into an Ed25519 keypair
+        let secret = SecretKey::from_bytes(&decoded)
+            .map_err(raw_err_str!("error decompressing cluster key: {}"))?;
+        let public = PublicKey::from(&secret);
+        let keypair = Keypair { secret, public };
+        Ok(Self(keypair))
+    }
+
+    /// Generate a random cluster keypair
+    pub fn random() -> Self {
+        let mut rng = OsRng {};
+        Self(Keypair::generate(&mut rng))
+    }
+}
+
+impl Clone for ClusterAsymmetricKeypair {
+    fn clone(&self) -> Self {
+        let cloned = Keypair::from_bytes(&self.0.to_bytes()).unwrap();
+        Self(cloned)
+    }
+}
+
+impl Deref for ClusterAsymmetricKeypair {
+    type Target = Keypair;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

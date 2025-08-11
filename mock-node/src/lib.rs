@@ -20,7 +20,6 @@ use config::RelayerConfig;
 use darkpool_client::{
     DarkpoolClient, client::DarkpoolClientConfig, constants::BLOCK_POLLING_INTERVAL,
 };
-use ed25519_dalek::Keypair;
 use external_api::bus_message::SystemBusMessage;
 use eyre::Result;
 use futures::Future;
@@ -155,15 +154,6 @@ impl MockNodeController {
             task_queue: (task_sender, default_option(task_recv)),
             http_client: Client::new(),
         }
-    }
-
-    /// A helper to clone the cluster keypair out of the config for workers
-    ///
-    /// The keypair type doesn't have a `Clone` method for safety so this
-    /// workaround is necessary
-    fn clone_cluster_key(&self) -> Keypair {
-        let key_bytes = self.config.cluster_keypair.to_bytes();
-        Keypair::from_bytes(&key_bytes).expect("Failed to clone cluster keypair")
     }
 
     /// Setup a mock price reporter and return the stream states
@@ -406,7 +396,7 @@ impl MockNodeController {
             known_public_addr: config.public_ip,
             allow_local: config.allow_local,
             cluster_id: config.cluster_id.clone(),
-            cluster_keypair: default_option(self.clone_cluster_key()),
+            cluster_keypair: self.config.cluster_keypair.clone(),
             cluster_symmetric_key: self.config.cluster_symmetric_key,
             send_channel: default_option(network_recv),
             gossip_work_queue: gossip_sender,

@@ -1,7 +1,7 @@
 //! Helpers for downloading the latest relayer snapshot
 
 use aws_sdk_s3::Client as S3Client;
-use config::parsing::parse_config_from_file;
+use config::parsing::config_file::parse_config_from_file;
 use tracing::info;
 use util::raw_err_str;
 
