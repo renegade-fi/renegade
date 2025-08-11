@@ -56,6 +56,12 @@ impl StateInner {
         self.with_blocking_read_tx(|tx| tx.get_max_relayer_fee().map_err(StateError::Db))
     }
 
+    /// Get the relayer fee for a given asset
+    pub fn get_relayer_fee(&self, ticker: &str) -> Result<FixedPoint, StateError> {
+        let ticker = ticker.to_string(); // Take ownership
+        self.with_blocking_read_tx(move |tx| tx.get_relayer_fee(&ticker).map_err(StateError::Db))
+    }
+
     /// Whether atomic matches are supported
     pub fn get_atomic_matches_enabled(&self) -> Result<bool, StateError> {
         let maybe_addr = self.get_external_fee_addr()?;
@@ -127,6 +133,7 @@ impl StateInner {
         let p2p_key = config.p2p_key.clone();
         let fee_key = config.fee_key;
         let max_match_fee = config.max_match_fee;
+        let per_asset_fees = config.per_asset_fees.clone();
         let external_fee_addr = config.external_fee_addr.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
 
@@ -146,6 +153,10 @@ impl StateInner {
             tx.set_node_keypair(&p2p_key)?;
             tx.set_fee_key(&fee_key)?;
             tx.set_max_relayer_fee(&max_match_fee)?;
+            for (ticker, fee) in per_asset_fees.into_iter() {
+                tx.set_asset_relayer_fee(&ticker, fee)?;
+            }
+
             tx.set_historical_state_enabled(historical_state_enabled)?;
             if let Some(addr) = external_fee_addr {
                 tx.set_external_fee_addr(&addr)?;
