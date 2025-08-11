@@ -32,8 +32,8 @@ const LOCAL_WALLET_ID_KEY: &str = "local-wallet-id";
 /// The key for the local relayer's fee decryption key in the node metadata
 /// table
 const LOCAL_RELAYER_FEE_KEY: &str = "local-relayer-fee-key";
-/// The key for the local relayer's match take rate in the node metadata table
-const RELAYER_TAKE_RATE_KEY: &str = "relayer-take-rate";
+/// The key for the local relayer's maximum match fee in the node metadata table
+const MAX_RELAYER_FEE_KEY: &str = "max-relayer-fee";
 /// The key for the local relayer's external fee address in the node metadata
 /// table
 const EXTERNAL_FEE_ADDR_KEY: &str = "external-fee-addr";
@@ -105,11 +105,11 @@ impl<T: TransactionKind> StateTxn<'_, T> {
             .ok_or_else(|| err_not_found(LOCAL_RELAYER_FEE_KEY))
     }
 
-    /// Get the local relayer's match take rate
-    pub fn get_relayer_take_rate(&self) -> Result<FixedPoint, StorageError> {
+    /// Get the local relayer's maximum match fee
+    pub fn get_max_relayer_fee(&self) -> Result<FixedPoint, StorageError> {
         self.inner()
-            .read(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string())?
-            .ok_or_else(|| err_not_found(RELAYER_TAKE_RATE_KEY))
+            .read(NODE_METADATA_TABLE, &MAX_RELAYER_FEE_KEY.to_string())?
+            .ok_or_else(|| err_not_found(MAX_RELAYER_FEE_KEY))
     }
 
     /// Get the local relayer's external fee address
@@ -168,9 +168,9 @@ impl StateTxn<'_, RW> {
         self.inner().write(NODE_METADATA_TABLE, &LOCAL_RELAYER_FEE_KEY.to_string(), fee_key)
     }
 
-    /// Set the local relayer's match take rate
-    pub fn set_relayer_take_rate(&self, take_rate: &FixedPoint) -> Result<(), StorageError> {
-        self.inner().write(NODE_METADATA_TABLE, &RELAYER_TAKE_RATE_KEY.to_string(), take_rate)
+    /// Set the local relayer's maximum match fee
+    pub fn set_max_relayer_fee(&self, max_relayer_fee: &FixedPoint) -> Result<(), StorageError> {
+        self.inner().write(NODE_METADATA_TABLE, &MAX_RELAYER_FEE_KEY.to_string(), max_relayer_fee)
     }
 
     /// Set the local relayer's external fee address

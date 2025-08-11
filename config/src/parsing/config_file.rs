@@ -53,43 +53,71 @@ fn read_config_file(path: &str) -> Result<Vec<String>, String> {
     for (toml_key, value) in config_kv_pairs.iter() {
         // Format the TOML key into --key
         let cli_arg = format!("--{}", toml_key);
-
-        // Parse the values for this TOML entry into a CLI-style vector of strings
-        let values: Vec<String> = match value {
-            // Just the flag, i.e. --flag, if the value is true.
-            // Otherwise, omit the flag
-            Value::Boolean(val) => {
-                if *val {
-                    vec![cli_arg]
-                } else {
-                    vec![]
-                }
-            },
-            // Parse all values into multiple repetitions, i.e. --key val1 --key val2 ...
-            Value::Array(arr) => {
-                let mut res: Vec<String> = Vec::new();
-                for val in arr.iter() {
-                    res.push(cli_arg.clone());
-                    res.push(toml_value_to_string(val)?);
-                }
-
-                res
-            },
-            // All other type may simply be parsed as --key val
-            _ => {
-                vec![
-                    cli_arg.clone(),
-                    toml_value_to_string(value).map_err(|_| {
-                        format!("error parsing config value: {:?} = {:?}", cli_arg, value)
-                    })?,
-                ]
-            },
-        };
-
-        config_file_args.extend(values);
+        let cli_values = parse_toml_value(cli_arg, value)?;
+        config_file_args.extend(cli_values);
     }
 
     Ok(config_file_args)
+}
+
+// ----------------
+// | TOML Parsing |
+// ----------------
+
+/// Parse a toml value into a list of strings to append to the CLI args
+fn parse_toml_value(cli_arg: String, val: &Value) -> Result<Vec<String>, String> {
+    // Parse the values for this TOML entry into a CLI-style vector of strings
+    let values: Vec<String> = match val {
+        Value::Boolean(b) => toml_boolean_to_args(cli_arg, *b),
+        Value::Array(arr) => toml_array_to_args(&cli_arg, arr)?,
+        Value::Table(table) => toml_table_to_args(cli_arg, table)?,
+        x => toml_value_to_args(cli_arg, x)?,
+    };
+
+    Ok(values)
+}
+
+/// Parse a toml boolean into a string that is CLI compatible
+///
+/// This will be "--key" if the boolean is true, otherwise it will be empty
+fn toml_boolean_to_args(cli_arg: String, b: bool) -> Vec<String> {
+    if b { vec![cli_arg] } else { vec![] }
+}
+
+/// Parse a toml array into a string that is CLI compatible
+///
+/// This will be "--arg val1 --arg val2 --arg val3"
+///
+/// We assume that the array has no nested arrays
+fn toml_array_to_args(cli_arg: &str, arr: &[Value]) -> Result<Vec<String>, String> {
+    let mut res: Vec<String> = Vec::new();
+    for val in arr.iter() {
+        res.push(cli_arg.to_string());
+        res.push(toml_value_to_string(val)?);
+    }
+
+    Ok(res)
+}
+
+/// Parse a toml table into a string that is CLI compatible
+///
+/// This will be "--arg key1=value1,key2=value2,..."
+///
+/// We assume that the table has no nested tables
+fn toml_table_to_args(cli_arg: String, table: &Map<String, Value>) -> Result<Vec<String>, String> {
+    let mut res = String::new();
+    for (key, value) in table.iter() {
+        let value_str = toml_value_to_string(value)?;
+        res.push_str(&format!("{key}={value_str},"));
+    }
+
+    Ok(vec![cli_arg, res])
+}
+
+/// Parse a toml value into a string that is CLI compatible
+fn toml_value_to_args(cli_arg: String, val: &Value) -> Result<Vec<String>, String> {
+    let value_str = toml_value_to_string(val)?;
+    Ok(vec![cli_arg, value_str])
 }
 
 /// Helper method to convert a toml value to a string

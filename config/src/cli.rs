@@ -17,13 +17,14 @@ use common::types::{
 use libp2p::{Multiaddr, identity::Keypair};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     net::{IpAddr, SocketAddr},
     path::Path,
 };
 use url::Url;
 use util::telemetry::configure_telemetry;
 
-use crate::parsing::parse_config_from_args;
+use crate::parsing::{parse_config_from_args, utils::parse_cli_map};
 
 // -------
 // | CLI |
@@ -79,7 +80,18 @@ pub struct Cli {
     /// 
     /// Defaults to 10 basis points
     #[clap(long, value_parser, default_value = "0.001")]
-    pub match_take_rate: f64,
+    pub max_match_fee: f64,
+    /// The default match fee that the relayer will charge
+    /// 
+    /// This is the fee that will be charged if no per-asset fee is set for a
+    /// ticker. Defaults to 2 basis points
+    #[clap(long, value_parser, default_value = "0.0002")]
+    pub default_match_fee: f64,
+    /// The per-asset match fee that the relayer will charge
+    /// 
+    /// Mapping from ticker to fee rate
+    #[clap(long, value_parser, value_parser = parse_cli_map::<f64>, default_value = "")]
+    pub per_asset_fees: HashMap<String, f64>,
     /// The address at which to collect externally paid fees
     /// 
     /// External fees are generated when an atomic match is settled. An atomic match is one between an 
@@ -282,7 +294,14 @@ pub struct RelayerConfig {
     /// matches on
     pub min_fill_size: Amount,
     /// The maximum amount that a relayer will charge as a fee for a match
-    pub match_take_rate: FixedPoint,
+    pub max_match_fee: FixedPoint,
+    /// The default match fee that the relayer will charge
+    ///
+    /// This is the fee that will be charged if no per-asset fee is set for a
+    /// ticker
+    pub default_match_fee: FixedPoint,
+    /// The per-asset match fee that the relayer will charge
+    pub per_asset_fees: HashMap<String, FixedPoint>,
     /// The address at which to collect externally paid fees
     pub external_fee_addr: Option<Address>,
     /// When set, the relayer will automatically redeem new fees into its wallet
