@@ -51,9 +51,9 @@ impl StateInner {
         self.with_blocking_read_tx(|tx| tx.get_fee_key().map_err(StateError::Db))
     }
 
-    /// Get the local relayer's match take rate
-    pub fn get_relayer_take_rate(&self) -> Result<FixedPoint, StateError> {
-        self.with_blocking_read_tx(|tx| tx.get_relayer_take_rate().map_err(StateError::Db))
+    /// Get the local relayer's maximum match fee
+    pub fn get_max_relayer_fee(&self) -> Result<FixedPoint, StateError> {
+        self.with_blocking_read_tx(|tx| tx.get_max_relayer_fee().map_err(StateError::Db))
     }
 
     /// Whether atomic matches are supported
@@ -126,7 +126,7 @@ impl StateInner {
         let cluster_id = config.cluster_id.clone();
         let p2p_key = config.p2p_key.clone();
         let fee_key = config.fee_key;
-        let match_take_rate = config.match_take_rate;
+        let max_match_fee = config.max_match_fee;
         let external_fee_addr = config.external_fee_addr.clone();
         let auto_redeem_fees = config.auto_redeem_fees;
 
@@ -145,7 +145,7 @@ impl StateInner {
             tx.set_cluster_id(&cluster_id)?;
             tx.set_node_keypair(&p2p_key)?;
             tx.set_fee_key(&fee_key)?;
-            tx.set_relayer_take_rate(&match_take_rate)?;
+            tx.set_max_relayer_fee(&max_match_fee)?;
             tx.set_historical_state_enabled(historical_state_enabled)?;
             if let Some(addr) = external_fee_addr {
                 tx.set_external_fee_addr(&addr)?;

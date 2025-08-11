@@ -37,7 +37,7 @@ fn validate_cluster_keypair(keypair: &DalekKeypair) -> Result<(), SignatureError
     // Sign and verify with keypair
     let sig = keypair.sign_prehashed(hash_digest, None /* context */).unwrap();
 
-    // Rehash, hashes are not clonable
+    // Rehash, hashes are not clone-able
     let mut second_hash: Sha512 = Sha512::new();
     second_hash.update(DUMMY_MESSAGE);
     keypair.verify_prehashed(second_hash, None /* context */, &sig)

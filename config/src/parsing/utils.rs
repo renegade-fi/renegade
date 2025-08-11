@@ -1,5 +1,7 @@
 //! Parsing utils
 
+use std::{collections::HashMap, str::FromStr};
+
 use circuit_types::elgamal::DecryptionKey;
 use common::types::{gossip::ClusterAsymmetricKeypair, hmac::HmacKey};
 use rand::thread_rng;
@@ -60,4 +62,27 @@ pub(crate) fn parse_fee_key(
         let key = DecryptionKey::random(&mut rng);
         Ok(RelayerFeeKey::new_secret(key))
     }
+}
+
+/// Parse a string keyed map into a hashmap
+///
+/// This will be "key1=value1,key2=value2,..."
+pub(crate) fn parse_cli_map<T: FromStr>(s: &str) -> Result<HashMap<String, T>, String> {
+    // Trim whitespace and any trailing comma
+    let s = s.trim().trim_end_matches(',');
+    if s.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    // Split the string into pairs
+    let mut map = HashMap::new();
+    for pair in s.split(',') {
+        // Split the pair into key and value
+        let (key, value) = pair.split_once('=').ok_or("Invalid map format")?;
+        // Parse the value
+        let parsed_value = T::from_str(value).map_err(|_| "Invalid map value")?;
+        map.insert(key.to_string(), parsed_value);
+    }
+
+    Ok(map)
 }

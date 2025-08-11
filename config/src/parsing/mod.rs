@@ -102,9 +102,20 @@ pub(crate) fn parse_config_from_args(cli_args: Cli) -> Result<RelayerConfig, Str
     let prover_service_url =
         cli_args.prover_service_url.map(|url| url.parse().expect("Invalid prover service URL"));
 
+    // Fee conversion
+    let max_match_fee = FixedPoint::from_f64_round_down(cli_args.max_match_fee);
+    let default_match_fee = FixedPoint::from_f64_round_down(cli_args.default_match_fee);
+    let per_asset_fees = cli_args
+        .per_asset_fees
+        .into_iter()
+        .map(|(k, v)| (k, FixedPoint::from_f64_round_down(v)))
+        .collect();
+
     let config = RelayerConfig {
         min_fill_size: cli_args.min_fill_size,
-        match_take_rate: FixedPoint::from_f64_round_down(cli_args.match_take_rate),
+        max_match_fee,
+        default_match_fee,
+        per_asset_fees,
         external_fee_addr,
         auto_redeem_fees: cli_args.auto_redeem_fees,
         price_reporter_url,

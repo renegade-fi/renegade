@@ -267,7 +267,7 @@ impl TypedHandler for CreateWalletHandler {
 
         // Overwrite the managing cluster and the match fee with the configured values
         let relayer_key = self.state.get_fee_key()?.public_key();
-        let relayer_take_rate = self.state.get_relayer_take_rate()?;
+        let relayer_take_rate = self.state.get_max_relayer_fee()?;
         req.wallet.managing_cluster = jubjub_to_hex_string(&relayer_key);
         req.wallet.match_fee = relayer_take_rate;
 
