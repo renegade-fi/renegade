@@ -4,8 +4,8 @@ use common::types::{exchange::PriceReporterState, price::Price, token::Token};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    deserialize_price_from_string, deserialize_token_from_hex_string, serialize_price_as_string,
-    serialize_token_as_hex_string, types::ApiToken,
+    deserialize_token_from_hex_string, f64_string_serde, serialize_token_as_hex_string,
+    types::ApiToken,
 };
 
 // ---------------
@@ -56,9 +56,6 @@ pub struct TokenPrice {
     )]
     pub quote_token: Token,
     /// The price data for this token
-    #[serde(
-        serialize_with = "serialize_price_as_string",
-        deserialize_with = "deserialize_price_from_string"
-    )]
+    #[serde(with = "f64_string_serde")]
     pub price: Price,
 }
