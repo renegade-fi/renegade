@@ -20,10 +20,9 @@ use state::State;
 
 use crate::{
     error::{ApiServerError, bad_request, not_found},
+    param_parsing::{parse_task_id_from_params, parse_wallet_id_from_params},
     router::{QueryParams, TypedHandler, UrlParams},
 };
-
-use super::{parse_task_id_from_params, parse_wallet_id_from_params};
 
 // -------------
 // | Constants |

@@ -15,10 +15,9 @@ use state::State;
 
 use crate::{
     error::{ApiServerError, not_found},
+    param_parsing::{parse_cluster_id_from_params, parse_peer_id_from_params},
     router::{QueryParams, TypedHandler, UrlParams},
 };
-
-use super::{parse_cluster_id_from_params, parse_peer_id_from_params};
 
 // ------------------
 // | Error Messages |

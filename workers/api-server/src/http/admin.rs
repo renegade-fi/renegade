@@ -39,15 +39,15 @@ use util::{matching_engine::compute_max_amount, on_chain::set_external_match_fee
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, not_found},
+    param_parsing::{
+        parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
+        parse_order_id_from_params, parse_wallet_id_from_params,
+    },
     router::{ERR_WALLET_NOT_FOUND, QueryParams, TypedHandler, UrlParams},
 };
 
-use super::{
-    parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
-    parse_order_id_from_params, parse_wallet_id_from_params,
-    wallet::{
-        ERR_ORDER_NOT_FOUND, append_task_and_await, find_wallet_for_update, maybe_rotate_root_key,
-    },
+use super::wallet::{
+    ERR_ORDER_NOT_FOUND, append_task_and_await, find_wallet_for_update, maybe_rotate_root_key,
 };
 
 // -------------

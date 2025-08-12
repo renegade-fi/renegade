@@ -33,7 +33,7 @@ use self::{
 };
 
 use super::{
-    error::ApiServerError, http::parse_wallet_id_from_params, router::UrlParams,
+    error::ApiServerError, param_parsing::parse_wallet_id_from_params, router::UrlParams,
     worker::ApiServerConfig,
 };
 

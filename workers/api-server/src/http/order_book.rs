@@ -11,7 +11,8 @@ use external_api::{
     EmptyRequestResponse,
     http::order_book::{
         GetDepthByMintResponse, GetDepthForAllPairsResponse, GetExternalMatchFeeResponse,
-        GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, PriceAndDepth,
+        GetNetworkOrderByIdResponse, GetNetworkOrdersResponse, GetRelayerFeesResponse,
+        PriceAndDepth, TokenAndFee,
     },
     types::DepthSide,
 };
@@ -24,10 +25,11 @@ use util::on_chain::get_external_match_fee;
 
 use crate::{
     error::{ApiServerError, not_found},
+    param_parsing::{
+        parse_mint_from_params, parse_order_id_from_params, parse_tickers_from_query_params,
+    },
     router::{QueryParams, TypedHandler, UrlParams},
 };
-
-use super::{parse_mint_from_params, parse_order_id_from_params};
 
 // ------------------
 // | Error Messages |
@@ -39,6 +41,44 @@ const ERR_ORDER_NOT_FOUND: &str = "order not found in network order book";
 // ----------------------
 // | Order Book Routers |
 // ----------------------
+
+/// Handler for the GET /order_book/relayer-fees route
+#[derive(Clone)]
+pub struct GetRelayerFeesHandler {
+    /// A handle to the relayer state
+    state: State,
+}
+
+impl GetRelayerFeesHandler {
+    /// Constructor
+    pub fn new(state: State) -> Self {
+        Self { state }
+    }
+}
+
+#[async_trait]
+impl TypedHandler for GetRelayerFeesHandler {
+    type Request = EmptyRequestResponse;
+    type Response = GetRelayerFeesResponse;
+
+    async fn handle_typed(
+        &self,
+        _headers: HeaderMap,
+        _req: Self::Request,
+        _params: UrlParams,
+        query_params: QueryParams,
+    ) -> Result<Self::Response, ApiServerError> {
+        let tickers = parse_tickers_from_query_params(&query_params)?;
+        let mut fees = Vec::with_capacity(tickers.len());
+        for ticker in tickers.into_iter() {
+            let fee = self.state.get_relayer_fee(&ticker)?;
+            let asset_fee = TokenAndFee { ticker, fee: fee.to_f64() };
+            fees.push(asset_fee);
+        }
+
+        Ok(GetRelayerFeesResponse { fees })
+    }
+}
 
 /// Handler for the GET /order_book/orders route
 #[derive(Clone)]
