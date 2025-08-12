@@ -10,7 +10,7 @@ mod task;
 mod wallet;
 
 use admin::{
-    AdminGetOrderMatchingPoolHandler, AdminRefreshExternalMatchFeesHandler,
+    AdminGetOrderMatchingPoolHandler, AdminRefreshMatchFeesHandler,
     AdminRefreshTokenMappingHandler, AdminTriggerSnapshotHandler,
     AdminWalletMatchableOrderIdsHandler, IsLeaderHandler,
 };
@@ -24,7 +24,7 @@ use external_api::{
             ADMIN_ASSIGN_ORDER_ROUTE, ADMIN_CREATE_ORDER_IN_MATCHING_POOL_ROUTE,
             ADMIN_GET_ORDER_MATCHING_POOL_ROUTE, ADMIN_MATCHING_POOL_CREATE_ROUTE,
             ADMIN_MATCHING_POOL_DESTROY_ROUTE, ADMIN_OPEN_ORDERS_ROUTE, ADMIN_ORDER_METADATA_ROUTE,
-            ADMIN_REFRESH_EXTERNAL_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
+            ADMIN_REFRESH_MATCH_FEES_ROUTE, ADMIN_REFRESH_TOKEN_MAPPING_ROUTE,
             ADMIN_TRIGGER_SNAPSHOT_ROUTE, ADMIN_WALLET_MATCHABLE_ORDER_IDS_ROUTE, IS_LEADER_ROUTE,
         },
         external_match::{
@@ -502,11 +502,11 @@ impl HttpServer {
             AdminRefreshTokenMappingHandler::new(config.chain),
         );
 
-        // The "/admin/refresh-external-match-fees" route
+        // The "/admin/refresh-match-fees" route
         router.add_admin_authenticated_route(
             &Method::POST,
-            ADMIN_REFRESH_EXTERNAL_MATCH_FEES_ROUTE.to_string(),
-            AdminRefreshExternalMatchFeesHandler::new(config.darkpool_client.clone()),
+            ADMIN_REFRESH_MATCH_FEES_ROUTE.to_string(),
+            AdminRefreshMatchFeesHandler::new(config.darkpool_client.clone()),
         );
 
         router

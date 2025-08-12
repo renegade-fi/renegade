@@ -32,7 +32,7 @@ use state::{State, error::StateError};
 use tracing::{error, info, instrument};
 use util::{
     err_str,
-    on_chain::{PROTOCOL_FEE, PROTOCOL_PUBKEY, set_external_match_fee},
+    on_chain::{PROTOCOL_PUBKEY, set_external_match_fee, set_protocol_fee},
 };
 
 use crate::{
@@ -307,7 +307,7 @@ impl NodeStartupTask {
         self.setup_external_match_fees().await?;
 
         // Set the values in their constant refs
-        PROTOCOL_FEE.set(protocol_fee).expect("protocol fee already set");
+        set_protocol_fee(protocol_fee);
         PROTOCOL_PUBKEY.set(protocol_key).expect("protocol pubkey already set");
         Ok(())
     }

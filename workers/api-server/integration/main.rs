@@ -14,7 +14,7 @@ use reqwest::Method;
 use test_helpers::{
     assert_true_result, integration_test_async, integration_test_main, types::TestVerbosity,
 };
-use util::{on_chain::PROTOCOL_FEE, telemetry::LevelFilter};
+use util::{on_chain::set_protocol_fee, telemetry::LevelFilter};
 
 use crate::ctx::IntegrationTestCtx;
 
@@ -77,7 +77,8 @@ impl From<CliArgs> for IntegrationTestCtx {
 /// Setup the test harness
 fn setup_tests(ctx: &IntegrationTestCtx) {
     // Set the global protocol fee
-    PROTOCOL_FEE.set(FixedPoint::from_f64_round_down(0.0001)).expect("failed to set protocol fee");
+    let fee = FixedPoint::from_f64_round_down(0.0001);
+    set_protocol_fee(fee);
     // Setup the state
     block_on(ctx.clone().setup_state()).expect("failed to setup state");
 }

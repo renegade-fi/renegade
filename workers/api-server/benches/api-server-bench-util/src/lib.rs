@@ -23,7 +23,7 @@ use num_bigint::BigUint;
 use reqwest::{Method, header::HeaderMap};
 use serde::{Serialize, de::DeserializeOwned};
 use state::test_helpers::tmp_db_path;
-use util::on_chain::PROTOCOL_FEE;
+use util::on_chain::set_protocol_fee;
 
 /// The duration of the request auth token
 const REQUEST_AUTH_DURATION: Duration = Duration::from_secs(10);
@@ -174,7 +174,8 @@ pub async fn setup_mock_node() -> Result<(MockNodeController, RelayerConfig)> {
 /// Setup a mock node for the benchmarks
 fn setup_node_controller() -> (RelayerConfig, MockNodeController) {
     // Set the protocol fee and token remaps
-    PROTOCOL_FEE.set(FixedPoint::from_f64_round_down(0.0001)).expect("failed to set protocol fee");
+    let fee = FixedPoint::from_f64_round_down(0.0001);
+    set_protocol_fee(fee);
     setup_token_remaps(None /* remap_file */, Chain::ArbitrumSepolia).unwrap();
 
     // Build the mock node

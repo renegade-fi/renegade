@@ -29,7 +29,7 @@ pub const DUMMY_ERC20_1_TICKER: &str = "DUMMY2";
 #[cfg(feature = "mocks")]
 pub const PERMIT2_CONTRACT_KEY: &str = "permit2_contract";
 /// The protocol fee that the contract charges on a match
-pub static PROTOCOL_FEE: OnceLock<FixedPoint> = OnceLock::new();
+static PROTOCOL_FEE: RwStatic<FixedPoint> = RwStatic::new(|| RwLock::new(FixedPoint::zero()));
 /// The protocol fee overrides for an external match
 ///
 /// Maps a mint to the fee override if one exists
@@ -67,18 +67,20 @@ pub fn parse_erc20_addr_from_deployments_file(file_path: &str, ticker: &str) -> 
 ///
 /// Panics if the protocol fee has not been set
 pub fn get_protocol_fee() -> FixedPoint {
-    let fee = PROTOCOL_FEE.get();
-
-    // If the mocks feature is enabled we unwrap to a default
     #[cfg(feature = "mocks")]
     {
-        *fee.unwrap_or(&FixedPoint::from_f64_round_down(0.0006)) // 6 bps
+        FixedPoint::from_f64_round_down(0.0006) // 6 bps
     }
 
     #[cfg(not(feature = "mocks"))]
     {
-        *fee.expect("Protocol fee not set")
+        *PROTOCOL_FEE.read().expect("fee lock poisoned")
     }
+}
+
+/// Set the protocol fee
+pub fn set_protocol_fee(fee: FixedPoint) {
+    *PROTOCOL_FEE.write().expect("fee lock poisoned") = fee;
 }
 
 /// Get the external match fee override for the given mint
