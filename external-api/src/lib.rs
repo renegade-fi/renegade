@@ -5,7 +5,7 @@
 use std::fmt;
 
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
-use common::types::{price::Price, token::Token};
+use common::types::token::Token;
 use num_bigint::BigUint;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -216,21 +216,26 @@ where
     Ok(Token::from_addr(&addr))
 }
 
-/// Serialize a `Price` as a string
-pub(crate) fn serialize_price_as_string<S>(price: &Price, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&price.to_string())
-}
+/// A module for serializing and deserializing `f64` as a string
+pub(crate) mod f64_string_serde {
+    use super::*;
 
-/// Deserialize a `Price` from a string
-pub(crate) fn deserialize_price_from_string<'de, D>(deserializer: D) -> Result<Price, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let price_str = String::deserialize(deserializer)?;
-    price_str.parse::<f64>().map_err(D::Error::custom)
+    /// Serialize a `f64` as a string
+    pub(crate) fn serialize<S>(val: &f64, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&val.to_string())
+    }
+
+    /// Deserialize a `f64` from a string
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<f64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let f64_str = String::deserialize(deserializer)?;
+        f64_str.parse::<f64>().map_err(D::Error::custom)
+    }
 }
 
 // ---------

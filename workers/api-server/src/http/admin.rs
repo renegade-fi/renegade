@@ -35,19 +35,22 @@ use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
 use price_state::PriceStreamStates;
 use state::State;
 use tracing::info;
-use util::{matching_engine::compute_max_amount, on_chain::set_external_match_fee};
+use util::{
+    matching_engine::compute_max_amount,
+    on_chain::{set_external_match_fee, set_protocol_fee},
+};
 
 use crate::{
     error::{ApiServerError, bad_request, internal_error, not_found},
+    param_parsing::{
+        parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
+        parse_order_id_from_params, parse_wallet_id_from_params,
+    },
     router::{ERR_WALLET_NOT_FOUND, QueryParams, TypedHandler, UrlParams},
 };
 
-use super::{
-    parse_matching_pool_from_query_params, parse_matching_pool_from_url_params,
-    parse_order_id_from_params, parse_wallet_id_from_params,
-    wallet::{
-        ERR_ORDER_NOT_FOUND, append_task_and_await, find_wallet_for_update, maybe_rotate_root_key,
-    },
+use super::wallet::{
+    ERR_ORDER_NOT_FOUND, append_task_and_await, find_wallet_for_update, maybe_rotate_root_key,
 };
 
 // -------------
@@ -537,13 +540,13 @@ impl TypedHandler for AdminRefreshTokenMappingHandler {
     }
 }
 
-/// Handler for the POST /v0/admin/refresh-external-match-fees route
-pub struct AdminRefreshExternalMatchFeesHandler {
+/// Handler for the POST /v0/admin/refresh-match-fees route
+pub struct AdminRefreshMatchFeesHandler {
     /// A handle to the relayer state
     darkpool_client: DarkpoolClient,
 }
 
-impl AdminRefreshExternalMatchFeesHandler {
+impl AdminRefreshMatchFeesHandler {
     /// Constructor
     pub fn new(darkpool_client: DarkpoolClient) -> Self {
         Self { darkpool_client }
@@ -551,7 +554,7 @@ impl AdminRefreshExternalMatchFeesHandler {
 }
 
 #[async_trait]
-impl TypedHandler for AdminRefreshExternalMatchFeesHandler {
+impl TypedHandler for AdminRefreshMatchFeesHandler {
     type Request = EmptyRequestResponse;
     type Response = EmptyRequestResponse;
 
@@ -564,6 +567,11 @@ impl TypedHandler for AdminRefreshExternalMatchFeesHandler {
     ) -> Result<Self::Response, ApiServerError> {
         info!("Refreshing external match fees from contract");
 
+        // Set the global protocol fee
+        let fee = self.darkpool_client.get_protocol_fee().await?;
+        set_protocol_fee(fee);
+
+        // Set the per-token external match fees
         let tokens: Vec<Token> = get_all_tokens()
             .into_iter()
             .chain(iter::once(Token::from_addr(NATIVE_ASSET_ADDRESS)))

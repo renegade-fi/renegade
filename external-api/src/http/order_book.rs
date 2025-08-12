@@ -3,12 +3,17 @@
 use common::types::price::Price;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{ApiNetworkOrder, DepthSide};
+use crate::{
+    f64_string_serde,
+    types::{ApiNetworkOrder, DepthSide},
+};
 
 // ---------------
 // | HTTP Routes |
 // ---------------
 
+/// Return the fees for the given assets
+pub const GET_RELAYER_FEES_ROUTE: &str = "/v0/order_book/relayer-fees";
 /// Returns all known network orders
 pub const GET_NETWORK_ORDERS_ROUTE: &str = "/v0/order_book/orders";
 /// Returns the network order information of the specified order
@@ -20,9 +25,16 @@ pub const GET_DEPTH_BY_MINT_ROUTE: &str = "/v0/order_book/depth/:mint";
 /// Route to get the liquidity depth for all supported pairs
 pub const GET_DEPTH_FOR_ALL_PAIRS_ROUTE: &str = "/v0/order_book/depth";
 
-// -------------
-// | API Types |
-// -------------
+// --------------------------
+// | Request Response Types |
+// --------------------------
+
+/// The response type to a request to fetch the fees for a given set of assets
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetRelayerFeesResponse {
+    /// The fees for the given assets
+    pub fees: Vec<TokenAndFee>,
+}
 
 /// The response type to fetch all the known orders in the network
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -69,6 +81,22 @@ pub struct GetDepthByMintResponse {
 pub struct GetDepthForAllPairsResponse {
     /// The liquidity depth for all supported pairs
     pub pairs: Vec<PriceAndDepth>,
+}
+
+// -------------
+// | API Types |
+// -------------
+
+/// A token and its fee
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TokenAndFee {
+    /// The token ticker
+    pub ticker: String,
+    /// The fee on the given asset
+    ///
+    /// A string-serialized floating point value
+    #[serde(with = "f64_string_serde")]
+    pub fee: f64,
 }
 
 /// The liquidity depth for a given pair

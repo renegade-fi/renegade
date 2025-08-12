@@ -22,7 +22,7 @@ use crate::{
     error::bad_request,
 };
 
-use super::{error::ApiServerError, http::parse_wallet_id_from_params};
+use super::{error::ApiServerError, param_parsing::parse_wallet_id_from_params};
 
 /// A type alias for URL generic params maps, i.e. /path/to/resource/:id
 pub(super) type UrlParams = HashMap<String, String>;

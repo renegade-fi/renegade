@@ -17,7 +17,7 @@ use price_state::PriceStreamStates;
 
 use crate::{
     error::ApiServerError,
-    http::parse_token_from_params,
+    param_parsing::parse_token_from_params,
     router::{QueryParams, TypedHandler, UrlParams},
 };
 

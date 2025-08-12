@@ -7,7 +7,7 @@ use system_bus::{SystemBus, TopicReader};
 use crate::{
     auth::AuthType,
     error::{ApiServerError, not_found},
-    http::parse_wallet_id_from_params,
+    param_parsing::parse_wallet_id_from_params,
     router::UrlParams,
 };
 
