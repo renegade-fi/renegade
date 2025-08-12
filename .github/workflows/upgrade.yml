@@ -14,7 +14,7 @@ jobs:
     outputs:
       image: ${{ steps.login-ecr.outputs.registry }}/relayer-${{ github.ref_name }}:${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
