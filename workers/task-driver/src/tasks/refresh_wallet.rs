@@ -25,7 +25,7 @@ use tracing::{info, instrument};
 
 use crate::{
     task_state::StateWrapper,
-    traits::{Task, TaskContext, TaskError, TaskState},
+    traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
         find_wallet::{find_latest_wallet_tx, gen_private_shares},
         validity_proofs::{find_merkle_path, update_wallet_validity_proofs},
@@ -210,6 +210,8 @@ impl Task for RefreshWalletTask {
         self.task_state.clone()
     }
 }
+
+impl Descriptor for RefreshWalletTaskDescriptor {}
 
 // -----------------------
 // | Task Implementation |

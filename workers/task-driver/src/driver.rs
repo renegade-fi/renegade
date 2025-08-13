@@ -29,7 +29,7 @@ use crate::{
         settle_match_internal::SettleMatchInternalTask, update_merkle_proof::UpdateMerkleProofTask,
         update_wallet::UpdateWalletTask,
     },
-    traits::{Task, TaskContext},
+    traits::{Descriptor as _, Task, TaskContext},
     worker::TaskDriverConfig,
 };
 
@@ -292,15 +292,17 @@ impl TaskExecutor {
         let args = self.runtime_config;
 
         // Create and run the task
+        let bypasses_queue = descriptor.bypass_task_queue();
         let task_res = RunnableTask::<T>::from_descriptor(id, descriptor, ctx).await;
 
-        // If we fail to create the task, pop it from the queue so it isn't stuck there
-        // in a pending state. For immediate tasks, this is handled by queue
-        // resumption.
+        // If we fail to create the task, pop it from the queue (if necessary) so it
+        // isn't stuck there in a pending state
         if let Err(e) = task_res {
             error!("error creating task: {e:?}");
-            let waiter = self.state().pop_task(id, false /* success */).await?;
-            waiter.await?;
+            if !bypasses_queue {
+                let waiter = self.state().pop_task(id, false /* success */).await?;
+                waiter.await?;
+            }
 
             return Err(e);
         }

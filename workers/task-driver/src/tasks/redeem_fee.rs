@@ -25,7 +25,7 @@ use util::err_str;
 use crate::{
     task_state::StateWrapper,
     tasks::ERR_NO_MERKLE_PROOF,
-    traits::{Task, TaskContext, TaskError, TaskState},
+    traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::validity_proofs::{enqueue_proof_job, find_merkle_path_with_tx},
 };
 
@@ -246,6 +246,8 @@ impl Task for RedeemFeeTask {
         TASK_NAME.to_string()
     }
 }
+
+impl Descriptor for RedeemFeeTaskDescriptor {}
 
 // -----------------------
 // | Task Implementation |

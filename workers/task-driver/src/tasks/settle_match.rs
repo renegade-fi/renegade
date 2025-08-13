@@ -29,7 +29,7 @@ use state::error::StateError;
 use tracing::instrument;
 
 use crate::task_state::StateWrapper;
-use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::validity_proofs::{
     find_merkle_path, find_merkle_path_with_tx, update_wallet_validity_proofs,
@@ -94,6 +94,8 @@ impl Display for SettleMatchTaskState {
         }
     }
 }
+
+impl Descriptor for SettleMatchTaskDescriptor {}
 
 // --------------
 // | Task Error |
