@@ -24,14 +24,11 @@ use common::types::{
     wallet::Wallet,
 };
 use constants::Scalar;
-use darkpool_client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
-use job_types::event_manager::{EventManagerQueue, FillEvent, RelayerEventType, try_send_event};
-use job_types::network_manager::NetworkManagerQueue;
-use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use job_types::event_manager::{FillEvent, RelayerEventType, try_send_event};
+use job_types::proof_manager::ProofJob;
 use renegade_metrics::helpers::record_match_volume;
 use serde::Serialize;
-use state::State;
 use state::error::StateError;
 use tokio::task::JoinHandle as TokioJoinHandle;
 use tracing::{Instrument, instrument};
@@ -181,18 +178,10 @@ pub struct SettleMatchInternalTask {
     match_bundle: Option<ValidMatchSettleBundle>,
     /// The transaction receipt of the match settlement
     tx: Option<TransactionReceipt>,
-    /// The darkpool client to use for submitting transactions
-    darkpool_client: DarkpoolClient,
-    /// A sender to the network manager's work queue
-    network_sender: NetworkManagerQueue,
-    /// A copy of the relayer-global state
-    state: State,
-    /// The work queue to add proof management jobs to
-    proof_queue: ProofManagerQueue,
     /// The state of the task
     task_state: SettleMatchInternalTaskState,
-    /// A sender to the event manager
-    event_queue: EventManagerQueue,
+    /// The context of the task
+    ctx: TaskContext,
 }
 
 #[async_trait]
@@ -228,12 +217,8 @@ impl Task for SettleMatchInternalTask {
             match_result,
             match_bundle: None, // Assuming default initialization
             tx: None,
-            darkpool_client: ctx.darkpool_client,
-            network_sender: ctx.network_queue,
-            state: ctx.state,
-            proof_queue: ctx.proof_queue,
             task_state: SettleMatchInternalTaskState::Pending, // Assuming default initialization
-            event_queue: ctx.event_queue,
+            ctx,
         })
     }
 
@@ -323,7 +308,7 @@ impl SettleMatchInternalTask {
             commitment_link0: party0_commitment_link,
             commitment_link1: party1_commitment_link,
         };
-        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
+        let proof_recv = enqueue_proof_job(job, &self.ctx)
             .map_err(SettleMatchInternalTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
@@ -337,15 +322,17 @@ impl SettleMatchInternalTask {
     /// Submit the match transaction
     async fn submit_match(&mut self) -> Result<(), SettleMatchInternalTaskError> {
         // Transition both orders to the `SettlingMatch` state
-        transition_order_settling(self.order_id1, &self.state)
+        let state = &self.ctx.state;
+        transition_order_settling(self.order_id1, state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
-        transition_order_settling(self.order_id2, &self.state)
+        transition_order_settling(self.order_id2, state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
 
         // Submit a `match` transaction
         let tx = self
+            .ctx
             .darkpool_client
             .process_match_settle(
                 &self.order1_proof,
@@ -359,18 +346,20 @@ impl SettleMatchInternalTask {
 
     /// Update the wallet state and Merkle openings
     async fn update_state(&self) -> Result<(), SettleMatchInternalTaskError> {
+        let state = &self.ctx.state;
+
         // Nullify orders on the newly matched values
         let nullifier1 = self.order1_proof.reblind_proof.statement.original_shares_nullifier;
         let nullifier2 = self.order2_proof.reblind_proof.statement.original_shares_nullifier;
-        self.state.nullify_orders(nullifier1).await?;
-        self.state.nullify_orders(nullifier2).await?;
+        state.nullify_orders(nullifier1).await?;
+        state.nullify_orders(nullifier2).await?;
 
         // Transition the orders to the `Filled` state if necessary
         let price: TimestampedPrice = self.execution_price.into();
-        record_order_fill(self.order_id1, &self.match_result, price, &self.state)
+        record_order_fill(self.order_id1, &self.match_result, price, state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
-        record_order_fill(self.order_id2, &self.match_result, price, &self.state)
+        record_order_fill(self.order_id2, &self.match_result, price, state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
 
@@ -393,8 +382,8 @@ impl SettleMatchInternalTask {
         self.find_opening(&mut wallet2)?;
 
         // Re-index the updated wallets in the global state
-        let waiter1 = self.state.update_wallet(wallet1).await?;
-        let waiter2 = self.state.update_wallet(wallet2).await?;
+        let waiter1 = state.update_wallet(wallet1).await?;
+        let waiter2 = state.update_wallet(wallet2).await?;
         waiter1.await?;
         waiter2.await?;
 
@@ -411,18 +400,8 @@ impl SettleMatchInternalTask {
         // not want to wait for the first wallet's proofs to finish before
         // starting the second wallet's proofs when the proof generation module
         // is capable of handling many at once
-        let t1 = Self::spawn_update_proofs_task(
-            wallet1,
-            self.proof_queue.clone(),
-            self.state.clone(),
-            self.network_sender.clone(),
-        );
-        let t2 = Self::spawn_update_proofs_task(
-            wallet2,
-            self.proof_queue.clone(),
-            self.state.clone(),
-            self.network_sender.clone(),
-        );
+        let t1 = Self::spawn_update_proofs_task(wallet1, self.ctx.clone());
+        let t2 = Self::spawn_update_proofs_task(wallet2, self.ctx.clone());
 
         // Await both threads and handle errors
         let (res1, res2) = tokio::join!(t1, t2);
@@ -443,7 +422,7 @@ impl SettleMatchInternalTask {
         &self,
         wallet_id: &WalletIdentifier,
     ) -> Result<Wallet, SettleMatchInternalTaskError> {
-        self.state.get_wallet(wallet_id).await?.ok_or_else(|| {
+        self.ctx.state.get_wallet(wallet_id).await?.ok_or_else(|| {
             SettleMatchInternalTaskError::MissingState(ERR_WALLET_NOT_FOUND.to_string())
         })
     }
@@ -532,7 +511,7 @@ impl SettleMatchInternalTask {
     /// Find and update the merkle opening for the wallet
     fn find_opening(&self, wallet: &mut Wallet) -> Result<(), SettleMatchInternalTaskError> {
         let tx = self.tx.as_ref().unwrap();
-        let opening = find_merkle_path_with_tx(wallet, &self.darkpool_client, tx)?;
+        let opening = find_merkle_path_with_tx(wallet, tx, &self.ctx)?;
         wallet.merkle_proof = Some(opening);
         Ok(())
     }
@@ -541,15 +520,10 @@ impl SettleMatchInternalTask {
     /// Returns a `JoinHandle` to the spawned task
     fn spawn_update_proofs_task(
         wallet: Wallet,
-        proof_queue: ProofManagerQueue,
-        state: State,
-        network_sender: NetworkManagerQueue,
+        ctx: TaskContext,
     ) -> TokioJoinHandle<Result<(), String>> {
         tokio::spawn(
-            async move {
-                update_wallet_validity_proofs(&wallet, proof_queue, state, network_sender).await
-            }
-            .in_current_span(),
+            async move { update_wallet_validity_proofs(&wallet, &ctx).await }.in_current_span(),
         )
     }
 
@@ -583,9 +557,9 @@ impl SettleMatchInternalTask {
             fee_take1,
         ));
 
-        try_send_event(fill_event0, &self.event_queue)
+        try_send_event(fill_event0, &self.ctx.event_queue)
             .map_err(err_str!(SettleMatchInternalTaskError::SendEvent))?;
-        try_send_event(fill_event1, &self.event_queue)
+        try_send_event(fill_event1, &self.ctx.event_queue)
             .map_err(err_str!(SettleMatchInternalTaskError::SendEvent))
     }
 }

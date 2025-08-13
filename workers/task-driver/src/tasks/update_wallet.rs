@@ -20,18 +20,15 @@ use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
-use darkpool_client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
 use itertools::Itertools;
 use job_types::event_manager::{
-    EventManagerQueue, ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent,
-    OrderUpdateEvent, RelayerEventType, try_send_event,
+    ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent, OrderUpdateEvent,
+    RelayerEventType, try_send_event,
 };
-use job_types::network_manager::NetworkManagerQueue;
-use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use job_types::proof_manager::ProofJob;
 use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use serde::Serialize;
-use state::State;
 use state::error::StateError;
 use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use tracing::{info, instrument};
@@ -203,23 +200,15 @@ pub struct UpdateWalletTask {
     pub proof_bundle: Option<ValidWalletUpdateBundle>,
     /// The transaction receipt of the wallet update transaction
     pub tx: Option<TransactionReceipt>,
-    /// The darkpool client to use for submitting transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A sender to the network manager's work queue
-    pub network_sender: NetworkManagerQueue,
-    /// A copy of the relayer-global state
-    pub state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task
     pub task_state: UpdateWalletTaskState,
-    /// The event manager queue
-    pub event_queue: EventManagerQueue,
     /// The pending event to emit after the task is complete.
     /// We construct this event before emitting it, as we may need to
     /// access state that is deleted by the end of the task to do so
     /// (e.g., in the case of an order cancellation).
     pub completion_event: Option<RelayerEventType>,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -254,13 +243,9 @@ impl Task for UpdateWalletTask {
             wallet_update_signature: descriptor.wallet_update_signature,
             proof_bundle: None,
             tx: None,
-            darkpool_client: ctx.darkpool_client,
-            network_sender: ctx.network_queue,
-            state: ctx.state,
-            proof_manager_work_queue: ctx.proof_queue,
             task_state: UpdateWalletTaskState::Pending,
-            event_queue: ctx.event_queue,
             completion_event: None,
+            ctx,
         };
 
         // Prepare the completion event
@@ -353,8 +338,8 @@ impl UpdateWalletTask {
 
         // Dispatch a job to the proof manager, and await the job's result
         let job = ProofJob::ValidWalletUpdate { witness, statement };
-        let proof_recv = enqueue_proof_job(job, &self.proof_manager_work_queue)
-            .map_err(UpdateWalletTaskError::ProofGeneration)?;
+        let proof_recv =
+            enqueue_proof_job(job, &self.ctx).map_err(UpdateWalletTaskError::ProofGeneration)?;
 
         // Await the proof
         let bundle =
@@ -370,7 +355,7 @@ impl UpdateWalletTask {
         let proof = self.proof_bundle.clone().unwrap();
         let transfer_auth = self.transfer.as_ref().map(|t| t.transfer_auth.clone());
         let sig = self.wallet_update_signature.clone();
-        let tx = self.darkpool_client.update_wallet(&proof, sig, transfer_auth).await?;
+        let tx = self.ctx.darkpool_client.update_wallet(&proof, sig, transfer_auth).await?;
         self.tx = Some(tx);
 
         Ok(())
@@ -382,12 +367,12 @@ impl UpdateWalletTask {
         // Attach the opening to the new wallet, and index the wallet in the global
         // state
         let tx = self.tx.as_ref().unwrap();
-        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, &self.darkpool_client, tx)?;
+        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, tx, &self.ctx)?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // After the state is finalized on-chain, re-index the wallet in the global
         // state
-        let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
+        let waiter = self.ctx.state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
 
         // If we're placing a new order into a matching pool, assign it as
@@ -398,7 +383,7 @@ impl UpdateWalletTask {
             ..
         } = self.update_type
         {
-            self.state.assign_order_to_matching_pool(id, matching_pool_name.clone()).await?;
+            self.ctx.state.assign_order_to_matching_pool(id, matching_pool_name.clone()).await?;
         }
 
         Ok(())
@@ -408,14 +393,9 @@ impl UpdateWalletTask {
     /// REBLIND` for the wallet and `VALID COMMITMENTS` for all orders in
     /// the wallet
     async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
-        update_wallet_validity_proofs(
-            &self.new_wallet,
-            self.proof_manager_work_queue.clone(),
-            self.state.clone(),
-            self.network_sender.clone(),
-        )
-        .await
-        .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
+        update_wallet_validity_proofs(&self.new_wallet, &self.ctx)
+            .await
+            .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
     }
 
     /// Update the wallet directly in the global state
@@ -429,7 +409,7 @@ impl UpdateWalletTask {
         new_wallet.blinder = self.old_wallet.blinder;
         new_wallet.merkle_proof = self.old_wallet.merkle_proof.clone();
 
-        let waiter = self.state.update_wallet(new_wallet).await?;
+        let waiter = self.ctx.state.update_wallet(new_wallet).await?;
         waiter.await?;
         Ok(())
     }
@@ -529,7 +509,7 @@ impl UpdateWalletTask {
 
     /// Emit the completion event to the event manager
     fn emit_event(&mut self) -> Result<(), UpdateWalletTaskError> {
-        try_send_event(self.completion_event.take().unwrap(), &self.event_queue)
+        try_send_event(self.completion_event.take().unwrap(), &self.ctx.event_queue)
             .map_err(err_str!(UpdateWalletTaskError::SendEvent))
     }
 
@@ -614,6 +594,7 @@ impl UpdateWalletTask {
         let amount_remaining = order.amount;
 
         let amount_filled = self
+            .ctx
             .state
             .get_order_metadata(&order_id)
             .await?

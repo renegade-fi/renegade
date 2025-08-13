@@ -13,10 +13,9 @@ use common::types::{
     wallet::{Wallet, WalletIdentifier, keychain::PrivateKeyChain},
 };
 use constants::Scalar;
-use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
-use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
+use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
-use state::{State, error::StateError};
+use state::error::StateError;
 use tracing::instrument;
 
 use crate::{
@@ -147,16 +146,10 @@ pub struct LookupWalletTask {
     pub keychain: PrivateKeyChain,
     /// The wallet recovered from contract state
     pub wallet: Option<Wallet>,
-    /// A darkpool client for the task to submit transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A sender to the network manager's work queue
-    pub network_sender: NetworkManagerQueue,
-    /// A copy of the relayer-global state
-    pub global_state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task's execution
     pub task_state: LookupWalletTaskState,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -171,12 +164,9 @@ impl Task for LookupWalletTask {
             blinder_seed: descriptor.blinder_seed,
             secret_share_seed: descriptor.secret_share_seed,
             keychain: descriptor.secret_keys,
-            darkpool_client: ctx.darkpool_client,
-            network_sender: ctx.network_queue,
-            global_state: ctx.state,
-            proof_manager_work_queue: ctx.proof_queue,
             wallet: None,
             task_state: LookupWalletTaskState::Pending,
+            ctx,
         })
     }
 
@@ -241,10 +231,10 @@ impl LookupWalletTask {
         );
 
         // Find the authentication path for the wallet
-        let authentication_path = find_merkle_path(&wallet, &self.darkpool_client).await?;
+        let authentication_path = find_merkle_path(&wallet, &self.ctx).await?;
         wallet.merkle_proof = Some(authentication_path);
 
-        let waiter = self.global_state.update_wallet(wallet.clone()).await?;
+        let waiter = self.ctx.state.update_wallet(wallet.clone()).await?;
         waiter.await?;
         self.wallet = Some(wallet);
 
@@ -259,14 +249,9 @@ impl LookupWalletTask {
             .clone()
             .expect("wallet should be present when CreateValidityProofs state is reached");
 
-        update_wallet_validity_proofs(
-            &wallet,
-            self.proof_manager_work_queue.clone(),
-            self.global_state.clone(),
-            self.network_sender.clone(),
-        )
-        .await
-        .map_err(LookupWalletTaskError::ProofGeneration)
+        update_wallet_validity_proofs(&wallet, &self.ctx)
+            .await
+            .map_err(LookupWalletTaskError::ProofGeneration)
     }
 
     // -----------
@@ -282,14 +267,14 @@ impl LookupWalletTask {
     ) -> Result<(SizedWalletShare, SizedWalletShare), LookupWalletTaskError> {
         // Find the latest index of the wallet in its share stream
         let (blinder_index, curr_blinder, curr_blinder_private_share) =
-            find_latest_wallet_tx(self.blinder_seed, &self.darkpool_client)
+            find_latest_wallet_tx(self.blinder_seed, &self.ctx.darkpool_client)
                 .await
                 .map_err(LookupWalletTaskError::not_found)?;
 
         // Fetch the secret shares from the tx
         let blinder_public_share = curr_blinder - curr_blinder_private_share;
         let blinded_public_shares =
-            self.darkpool_client.fetch_public_shares_for_blinder(blinder_public_share).await?;
+            self.ctx.darkpool_client.fetch_public_shares_for_blinder(blinder_public_share).await?;
 
         // Sample the private shares for the wallet
         let private_shares =

@@ -26,12 +26,11 @@ use common::types::proof_bundles::{
 use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::token::Token;
 use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
-use darkpool_client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
 use gossip_api::pubsub::PubsubMessage;
 use gossip_api::pubsub::orderbook::{ORDER_BOOK_TOPIC, OrderBookManagementMessage};
-use job_types::network_manager::{NetworkManagerJob, NetworkManagerQueue};
-use job_types::proof_manager::{ProofJob, ProofManagerJob, ProofManagerQueue};
+use job_types::network_manager::NetworkManagerJob;
+use job_types::proof_manager::{ProofJob, ProofManagerJob};
 use num_bigint::BigUint;
 use state::State;
 use tokio::sync::oneshot;
@@ -39,6 +38,7 @@ use tokio::sync::oneshot::Receiver as TokioReceiver;
 use tracing::instrument;
 
 use crate::tasks::ERR_AWAITING_PROOF;
+use crate::traits::TaskContext;
 
 use super::{
     ERR_BALANCE_NOT_FOUND, ERR_ENQUEUING_JOB, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
@@ -61,10 +61,10 @@ const DEFAULT_FEE_TICKER: &str = "DEFAULT";
 /// Returns a channel on which the proof manager will send the response
 pub(crate) fn enqueue_proof_job(
     job: ProofJob,
-    work_queue: &ProofManagerQueue,
+    ctx: &TaskContext,
 ) -> Result<TokioReceiver<ProofBundle>, String> {
     let (response_sender, response_receiver) = oneshot::channel();
-    work_queue
+    ctx.proof_queue
         .send(ProofManagerJob { type_: job, response_channel: response_sender })
         .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
 
@@ -74,28 +74,28 @@ pub(crate) fn enqueue_proof_job(
 /// Find the merkle authentication path of a wallet
 pub(crate) async fn find_merkle_path(
     wallet: &Wallet,
-    darkpool_client: &DarkpoolClient,
+    ctx: &TaskContext,
 ) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
     // The contract indexes the wallet by its commitment to the public and private
     // secret shares, find this in the Merkle tree
-    darkpool_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
+    ctx.darkpool_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
 }
 
 /// Find the merkle authentication path of a wallet given an updating
 /// transaction
 pub(crate) fn find_merkle_path_with_tx(
     wallet: &Wallet,
-    darkpool_client: &DarkpoolClient,
     tx: &TransactionReceipt,
+    ctx: &TaskContext,
 ) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
     let commitment = wallet.get_wallet_share_commitment();
-    darkpool_client.find_merkle_authentication_path_with_tx(commitment, tx)
+    ctx.darkpool_client.find_merkle_authentication_path_with_tx(commitment, tx)
 }
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
 pub(crate) fn construct_wallet_reblind_proof(
     wallet: &Wallet,
-    prover_queue: &ProofManagerQueue,
+    ctx: &TaskContext,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
     // If the wallet doesn't have an authentication path return an error
     let authentication_path =
@@ -128,7 +128,7 @@ pub(crate) fn construct_wallet_reblind_proof(
 
     // Forward a job to the proof manager
     let job = ProofJob::ValidReblind { witness: witness.clone(), statement };
-    let recv = enqueue_proof_job(job, prover_queue)?;
+    let recv = enqueue_proof_job(job, ctx)?;
 
     Ok((witness, recv))
 }
@@ -139,8 +139,7 @@ pub(crate) fn construct_wallet_reblind_proof(
 pub(crate) fn construct_order_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
-    proof_manager_work_queue: &ProofManagerQueue,
-    state: &State,
+    ctx: &TaskContext,
 ) -> Result<(SizedValidCommitmentsWitness, TokioReceiver<ProofBundle>), String> {
     // Build an augmented wallet
     let mut augmented_wallet: SizedWallet = wallet_from_blinded_shares(
@@ -152,7 +151,7 @@ pub(crate) fn construct_order_commitment_proof(
     // respective sides of the match
     let (indices, balance_send, balance_receive) =
         find_balances_and_indices(&order, &mut augmented_wallet)?;
-    let relayer_fee = get_relayer_fee_for_order(&order, augmented_wallet.max_match_fee, state)?;
+    let relayer_fee = get_relayer_fee_for_order(&order, augmented_wallet.max_match_fee, ctx)?;
 
     // Create new augmented public secret shares
     let reblinded_private_blinder = valid_reblind_witness.reblinded_wallet_private_shares.blinder;
@@ -178,7 +177,7 @@ pub(crate) fn construct_order_commitment_proof(
 
     // Dispatch a job to the proof manager to prove `VALID COMMITMENTS`
     let job = ProofJob::ValidCommitments { witness: witness.clone(), statement };
-    let recv = enqueue_proof_job(job, proof_manager_work_queue)?;
+    let recv = enqueue_proof_job(job, ctx)?;
 
     Ok((witness, recv))
 }
@@ -257,12 +256,12 @@ fn find_order(order: &Order, wallet: &SizedWallet) -> Option<usize> {
 fn get_relayer_fee_for_order(
     order: &Order,
     max_match_fee: FixedPoint,
-    state: &State,
+    ctx: &TaskContext,
 ) -> Result<FixedPoint, String> {
     let ticker = Token::from_addr_biguint(&order.base_mint)
         .get_ticker()
         .unwrap_or_else(|| DEFAULT_FEE_TICKER.to_string());
-    let asset_fee = state.get_relayer_fee(&ticker)?;
+    let asset_fee = ctx.state.get_relayer_fee(&ticker)?;
     let fee = cmp::min(asset_fee, max_match_fee);
     Ok(fee)
 }
@@ -272,12 +271,10 @@ fn get_relayer_fee_for_order(
 /// each order in the wallet
 pub(crate) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
-    proof_manager_work_queue: ProofManagerQueue,
-    state: State,
-    network_sender: NetworkManagerQueue,
+    ctx: &TaskContext,
 ) -> Result<(), String> {
     // If there are other tasks in the queue behind the current task, skip proving
-    let queue_length = state.serial_tasks_queue_len(&wallet.wallet_id).await?;
+    let queue_length = ctx.state.serial_tasks_queue_len(&wallet.wallet_id).await?;
     if queue_length > 1 {
         return Ok(());
     }
@@ -288,19 +285,14 @@ pub(crate) async fn update_wallet_validity_proofs(
     }
 
     // Dispatch a proof of `VALID REBLIND` for the wallet
-    let (reblind_witness, reblind_response_channel) =
-        construct_wallet_reblind_proof(wallet, &proof_manager_work_queue)?;
+    let (reblind_witness, reblind_response_channel) = construct_wallet_reblind_proof(wallet, ctx)?;
 
     // For each order, construct a proof of `VALID COMMITMENTS`
     let mut commitments_instances = Vec::new();
     for (id, order) in matchable_orders.iter() {
         // Start a proof of `VALID COMMITMENTS`
-        let (commitments_witness, response_channel) = construct_order_commitment_proof(
-            order.clone().into(),
-            &reblind_witness,
-            &proof_manager_work_queue,
-            &state,
-        )?;
+        let (commitments_witness, response_channel) =
+            construct_order_commitment_proof(order.clone().into(), &reblind_witness, ctx)?;
         commitments_instances.push((*id, commitments_witness, response_channel));
     }
 
@@ -320,9 +312,7 @@ pub(crate) async fn update_wallet_validity_proofs(
             &reblind_witness,
             commitments_bundle,
             reblind_bundle.clone(),
-            &state,
-            &network_sender,
-            &proof_manager_work_queue,
+            ctx,
         )
         .await?;
     }
@@ -335,22 +325,18 @@ pub(crate) async fn update_wallet_validity_proofs(
 /// The proof is gossipped to the network so that peers may verify the validity
 /// bundle and schedule matches on the proven order
 #[instrument(skip_all)]
-#[allow(clippy::too_many_arguments)]
 async fn link_and_store_proofs(
     order_id: &OrderIdentifier,
     commitments_witness: &SizedValidCommitmentsWitness,
     reblind_witness: &SizedValidReblindWitness,
     commitments_bundle: ProofBundle,
     reblind_bundle: ProofBundle,
-    state: &State,
-    network_sender: &NetworkManagerQueue,
-    proof_queue: &ProofManagerQueue,
+    ctx: &TaskContext,
 ) -> Result<(), String> {
     // Prove the link between the reblind and commitments proofs
     let (reblind_proof, reblind_hint) = reblind_bundle.to_valid_reblind();
     let (commitments_proof, commitments_hint) = commitments_bundle.to_valid_commitments();
-    let linking_proof =
-        link_reblind_commitments(&commitments_hint, &reblind_hint, proof_queue).await?;
+    let linking_proof = link_reblind_commitments(&commitments_hint, &reblind_hint, ctx).await?;
 
     // Record the bundle in the global state
     let proof_bundle = OrderValidityProofBundle {
@@ -365,7 +351,8 @@ async fn link_and_store_proofs(
         commitment_linking_hint: Arc::new(commitments_hint.clone()),
     };
 
-    let waiter = state
+    let waiter = ctx
+        .state
         .add_local_order_validity_bundle(*order_id, proof_bundle.clone(), witness_bundle)
         .await?;
     waiter.await?;
@@ -373,27 +360,26 @@ async fn link_and_store_proofs(
     // Gossip the updated proofs to the network
     let message = PubsubMessage::Orderbook(OrderBookManagementMessage::OrderProofUpdated {
         order_id: *order_id,
-        cluster: state.get_cluster_id()?,
+        cluster: ctx.state.get_cluster_id()?,
         proof_bundle,
     });
 
     let job = NetworkManagerJob::pubsub(ORDER_BOOK_TOPIC.to_string(), message);
-    network_sender.send(job).map_err(|e| e.to_string())
+    ctx.network_queue.send(job).map_err(|e| e.to_string())
 }
 
 /// Request the proof manager to link the reblind and commitments proofs
 pub(crate) async fn link_reblind_commitments(
     commitments_hint: &ProofLinkingHint,
     reblind_hint: &ProofLinkingHint,
-    proof_queue: &ProofManagerQueue,
+    ctx: &TaskContext,
 ) -> Result<PlonkLinkProof, String> {
     // Enqueue a job to link the proofs
     let job = ProofJob::ValidCommitmentsReblindLink {
         commitments_hint: commitments_hint.clone(),
         reblind_hint: reblind_hint.clone(),
     };
-    let proof_recv =
-        enqueue_proof_job(job, proof_queue).map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
+    let proof_recv = enqueue_proof_job(job, ctx)?;
 
     // Await a response from the proof manager
     let bundle = proof_recv.await.map_err(|_| ERR_AWAITING_PROOF.to_string())?;

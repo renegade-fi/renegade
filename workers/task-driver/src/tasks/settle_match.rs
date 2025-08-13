@@ -19,12 +19,8 @@ use common::types::wallet::Wallet;
 use common::types::{
     handshake::HandshakeState, proof_bundles::OrderValidityProofBundle, wallet::WalletIdentifier,
 };
-use darkpool_client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
-use job_types::network_manager::NetworkManagerQueue;
-use job_types::proof_manager::ProofManagerQueue;
 use serde::Serialize;
-use state::State;
 use state::error::StateError;
 use tracing::instrument;
 
@@ -171,16 +167,10 @@ pub struct SettleMatchTask {
     pub party1_validity_proof: OrderValidityProofBundle,
     /// The transaction receipt of the match settlement transaction
     pub tx: Option<TransactionReceipt>,
-    /// The darkpool client to use for submitting transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A sender to the network manager's work queue
-    pub network_sender: NetworkManagerQueue,
-    /// A copy of the relayer-global state
-    pub global_state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_queue: ProofManagerQueue,
     /// The state of the task
     pub task_state: SettleMatchTaskState,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -189,7 +179,7 @@ impl Task for SettleMatchTask {
     type Error = SettleMatchTaskError;
     type Descriptor = SettleMatchTaskDescriptor;
 
-    async fn new(descriptor: Self::Descriptor, context: TaskContext) -> Result<Self, Self::Error> {
+    async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         let SettleMatchTaskDescriptor {
             wallet_id,
             handshake_state,
@@ -207,11 +197,8 @@ impl Task for SettleMatchTask {
             party0_validity_proof,
             party1_validity_proof,
             tx: None,
-            darkpool_client: context.darkpool_client,
-            network_sender: context.network_queue,
-            global_state: context.state,
-            proof_queue: context.proof_queue,
             task_state: SettleMatchTaskState::Pending,
+            ctx,
         })
     }
 
@@ -272,11 +259,12 @@ impl SettleMatchTask {
     /// Submit the match transaction to the contract
     async fn submit_match(&mut self) -> Result<(), SettleMatchTaskError> {
         // Place the local order in the `SubmittingMatch` state
-        transition_order_settling(self.handshake_state.local_order_id, &self.global_state)
+        transition_order_settling(self.handshake_state.local_order_id, &self.ctx.state)
             .await
             .map_err(SettleMatchTaskError::State)?;
 
         let tx_submit_res = self
+            .ctx
             .darkpool_client
             .process_match_settle(
                 &self.party0_validity_proof,
@@ -310,7 +298,7 @@ impl SettleMatchTask {
             id,
             &self.match_res,
             self.handshake_state.execution_price,
-            &self.global_state,
+            &self.ctx.state,
         )
         .await
         .map_err(SettleMatchTaskError::State)?;
@@ -322,38 +310,29 @@ impl SettleMatchTask {
         // Cancel all orders on both nullifiers, await new validity proofs
         let party0_reblind_statement = &self.party0_validity_proof.reblind_proof.statement;
         let party1_reblind_statement = &self.party1_validity_proof.reblind_proof.statement;
-        self.global_state
-            .nullify_orders(party0_reblind_statement.original_shares_nullifier)
-            .await?;
-        self.global_state
-            .nullify_orders(party1_reblind_statement.original_shares_nullifier)
-            .await?;
+        self.ctx.state.nullify_orders(party0_reblind_statement.original_shares_nullifier).await?;
+        self.ctx.state.nullify_orders(party1_reblind_statement.original_shares_nullifier).await?;
 
         // Find the wallet's new Merkle opening
         let opening = if let Some(tx) = self.tx.as_ref() {
-            find_merkle_path_with_tx(&wallet, &self.darkpool_client, tx)?
+            find_merkle_path_with_tx(&wallet, tx, &self.ctx)?
         } else {
-            find_merkle_path(&wallet, &self.darkpool_client).await?
+            find_merkle_path(&wallet, &self.ctx).await?
         };
         wallet.merkle_proof = Some(opening);
 
         // Index the updated wallet in global state
-        let waiter = self.global_state.update_wallet(wallet).await?;
+        let waiter = self.ctx.state.update_wallet(wallet).await?;
         waiter.await?;
         Ok(())
     }
 
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
-        let wallet = self.global_state.get_wallet(&self.wallet_id).await?.unwrap();
-        update_wallet_validity_proofs(
-            &wallet,
-            self.proof_queue.clone(),
-            self.global_state.clone(),
-            self.network_sender.clone(),
-        )
-        .await
-        .map_err(SettleMatchTaskError::UpdatingValidityProofs)
+        let wallet = self.ctx.state.get_wallet(&self.wallet_id).await?.unwrap();
+        update_wallet_validity_proofs(&wallet, &self.ctx)
+            .await
+            .map_err(SettleMatchTaskError::UpdatingValidityProofs)
     }
 
     // -----------
@@ -362,7 +341,8 @@ impl SettleMatchTask {
 
     /// Get the wallet that this settlement task is operating on
     async fn get_wallet(&self) -> Result<Wallet, SettleMatchTaskError> {
-        self.global_state
+        self.ctx
+            .state
             .get_wallet(&self.wallet_id)
             .await?
             .ok_or_else(|| SettleMatchTaskError::State(ERR_WALLET_NOT_FOUND.to_string()))
@@ -376,7 +356,7 @@ impl SettleMatchTask {
         // Fetch private shares from the validity proof's witness
         let order_id = self.handshake_state.local_order_id;
         let validity_witness =
-            self.global_state.get_validity_proof_witness(&order_id).await?.ok_or_else(|| {
+            self.ctx.state.get_validity_proof_witness(&order_id).await?.ok_or_else(|| {
                 SettleMatchTaskError::Missing(ERR_VALIDITY_WITNESS_NOT_FOUND.to_string())
             })?;
 

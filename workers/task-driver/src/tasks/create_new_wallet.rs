@@ -21,15 +21,11 @@ use circuits::zk_circuits::valid_wallet_create::{
 use common::types::tasks::NewWalletTaskDescriptor;
 use common::types::{proof_bundles::ValidWalletCreateBundle, wallet::Wallet};
 use constants::Scalar;
-use darkpool_client::DarkpoolClient;
 use darkpool_client::errors::DarkpoolClientError;
-use job_types::event_manager::{
-    EventManagerQueue, RelayerEventType, WalletCreationEvent, try_send_event,
-};
-use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use job_types::event_manager::{RelayerEventType, WalletCreationEvent, try_send_event};
+use job_types::proof_manager::ProofJob;
 use renegade_metrics::labels::NUM_NEW_WALLETS_METRIC;
 use serde::Serialize;
-use state::State;
 use state::error::StateError;
 use tracing::instrument;
 use util::err_str;
@@ -167,16 +163,10 @@ pub struct NewWalletTask {
     pub proof_bundle: Option<ValidWalletCreateBundle>,
     /// The transaction receipt of the wallet creation
     pub tx: Option<TransactionReceipt>,
-    /// A darkpool client for the task to submit transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A copy of the relayer-global state
-    pub global_state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task's execution
     pub task_state: NewWalletTaskState,
-    /// The event manager queue
-    pub event_queue: EventManagerQueue,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 // -----------------------
@@ -195,11 +185,8 @@ impl Task for NewWalletTask {
             blinder_seed: descriptor.blinder_seed,
             proof_bundle: None, // Initialize as None since it's not part of the descriptor
             tx: None,
-            darkpool_client: ctx.darkpool_client,
-            global_state: ctx.state,
-            proof_manager_work_queue: ctx.proof_queue,
-            task_state: NewWalletTaskState::Pending, // Initialize to the initial state
-            event_queue: ctx.event_queue,
+            task_state: NewWalletTaskState::Pending,
+            ctx,
         })
     }
 
@@ -265,8 +252,8 @@ impl NewWalletTask {
 
         // Enqueue a job with the proof manager to prove `VALID NEW WALLET`
         let job = ProofJob::ValidWalletCreate { statement, witness };
-        let proof_recv = enqueue_proof_job(job, &self.proof_manager_work_queue)
-            .map_err(NewWalletTaskError::SendMessage)?;
+        let proof_recv =
+            enqueue_proof_job(job, &self.ctx).map_err(NewWalletTaskError::SendMessage)?;
 
         // Await the proof
         let bundle =
@@ -278,7 +265,7 @@ impl NewWalletTask {
     /// Submit the newly created wallet on-chain with proof of validity
     async fn submit_wallet_tx(&mut self) -> Result<(), NewWalletTaskError> {
         let proof = self.proof_bundle.clone().unwrap();
-        let tx = self.darkpool_client.new_wallet(&proof).await?;
+        let tx = self.ctx.darkpool_client.new_wallet(&proof).await?;
         self.tx = Some(tx);
         Ok(())
     }
@@ -289,12 +276,12 @@ impl NewWalletTask {
     async fn find_merkle_path(&self) -> Result<(), NewWalletTaskError> {
         // Find the authentication path of the wallet's private shares
         let tx = self.tx.as_ref().unwrap();
-        let wallet_auth_path = find_merkle_path_with_tx(&self.wallet, &self.darkpool_client, tx)?;
+        let wallet_auth_path = find_merkle_path_with_tx(&self.wallet, tx, &self.ctx)?;
 
         // Index the wallet in the global state
         let mut wallet = self.wallet.clone();
         wallet.merkle_proof = Some(wallet_auth_path);
-        let waiter = self.global_state.new_wallet(wallet).await?;
+        let waiter = self.ctx.state.new_wallet(wallet).await?;
         waiter.await?;
         Ok(())
     }
@@ -331,6 +318,7 @@ impl NewWalletTask {
             self.wallet.key_chain.symmetric_key().to_base64_string(),
         ));
 
-        try_send_event(event, &self.event_queue).map_err(err_str!(NewWalletTaskError::SendMessage))
+        try_send_event(event, &self.ctx.event_queue)
+            .map_err(err_str!(NewWalletTaskError::SendMessage))
     }
 }

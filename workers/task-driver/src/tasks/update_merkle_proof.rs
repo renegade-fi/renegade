@@ -9,10 +9,9 @@ use std::{
 
 use async_trait::async_trait;
 use common::types::{tasks::UpdateMerkleProofTaskDescriptor, wallet::Wallet};
-use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
-use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
+use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
-use state::{State, error::StateError};
+use state::error::StateError;
 use tracing::instrument;
 
 use crate::{
@@ -135,16 +134,10 @@ impl Descriptor for UpdateMerkleProofTaskDescriptor {}
 pub struct UpdateMerkleProofTask {
     /// The wallet to update
     pub wallet: Wallet,
-    /// The darkpool client to use for submitting transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A copy of the relayer-global state
-    pub global_state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_queue: ProofManagerQueue,
-    /// A sender to the network manager's work queue
-    pub network_sender: NetworkManagerQueue,
     /// The state of the task
     pub task_state: UpdateMerkleProofTaskState,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -154,14 +147,7 @@ impl Task for UpdateMerkleProofTask {
     type Descriptor = UpdateMerkleProofTaskDescriptor;
 
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
-        Ok(Self {
-            wallet: descriptor.wallet,
-            darkpool_client: ctx.darkpool_client,
-            global_state: ctx.state,
-            proof_queue: ctx.proof_queue,
-            network_sender: ctx.network_queue,
-            task_state: UpdateMerkleProofTaskState::Pending,
-        })
+        Ok(Self { wallet: descriptor.wallet, task_state: UpdateMerkleProofTaskState::Pending, ctx })
     }
 
     #[allow(clippy::blocks_in_conditions)]
@@ -214,25 +200,20 @@ impl UpdateMerkleProofTask {
     pub async fn find_opening(&mut self) -> Result<(), UpdateMerkleProofTaskError> {
         let wallet_commitment = self.wallet.get_wallet_share_commitment();
         let new_opening =
-            self.darkpool_client.find_merkle_authentication_path(wallet_commitment).await?;
+            self.ctx.darkpool_client.find_merkle_authentication_path(wallet_commitment).await?;
         self.wallet.merkle_proof = Some(new_opening);
         self.wallet.merkle_staleness.store(0, Ordering::Relaxed);
 
         // Update the global state
-        let waiter = self.global_state.update_wallet(self.wallet.clone()).await?;
+        let waiter = self.ctx.state.update_wallet(self.wallet.clone()).await?;
         waiter.await?;
         Ok(())
     }
 
     /// Update the validity proofs for all orders in the wallet
     pub async fn update_validity_proofs(&self) -> Result<(), UpdateMerkleProofTaskError> {
-        update_wallet_validity_proofs(
-            &self.wallet,
-            self.proof_queue.clone(),
-            self.global_state.clone(),
-            self.network_sender.clone(),
-        )
-        .await
-        .map_err(|e| UpdateMerkleProofTaskError::UpdatingValidityProofs(e.to_string()))
+        update_wallet_validity_proofs(&self.wallet, &self.ctx)
+            .await
+            .map_err(|e| UpdateMerkleProofTaskError::UpdatingValidityProofs(e.to_string()))
     }
 }

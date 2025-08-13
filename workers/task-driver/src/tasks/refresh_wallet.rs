@@ -17,10 +17,9 @@ use common::types::{
     wallet::{Wallet, WalletIdentifier},
 };
 use constants::Scalar;
-use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
-use job_types::{network_manager::NetworkManagerQueue, proof_manager::ProofManagerQueue};
+use darkpool_client::errors::DarkpoolClientError;
 use serde::Serialize;
-use state::{State, error::StateError};
+use state::error::StateError;
 use tracing::{info, instrument};
 
 use crate::{
@@ -138,16 +137,10 @@ impl From<DarkpoolClientError> for RefreshWalletTaskError {
 pub struct RefreshWalletTask {
     /// The ID to provision for the wallet
     pub wallet_id: WalletIdentifier,
-    /// A darkpool client for the task to submit transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A sender to the network manager's work queue
-    pub network_sender: NetworkManagerQueue,
-    /// A copy of the relayer-global state
-    pub state: State,
-    /// The work queue to add proof management jobs to
-    pub proof_manager_work_queue: ProofManagerQueue,
     /// The state of the task's execution
     pub task_state: RefreshWalletTaskState,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -159,11 +152,8 @@ impl Task for RefreshWalletTask {
     async fn new(descriptor: Self::Descriptor, ctx: TaskContext) -> Result<Self, Self::Error> {
         Ok(Self {
             wallet_id: descriptor.wallet_id,
-            darkpool_client: ctx.darkpool_client,
-            network_sender: ctx.network_queue,
-            state: ctx.state,
-            proof_manager_work_queue: ctx.proof_queue,
             task_state: RefreshWalletTaskState::Pending,
+            ctx,
         })
     }
 
@@ -244,14 +234,14 @@ impl RefreshWalletTask {
         );
 
         // Update the merkle proof for the wallet, then write to state
-        let merkle_proof = find_merkle_path(&wallet, &self.darkpool_client).await?;
+        let merkle_proof = find_merkle_path(&wallet, &self.ctx).await?;
         wallet.merkle_proof = Some(merkle_proof);
 
         // Match up order IDs from the existing wallet with those in the refreshed
         // wallet to keep them consistent across refreshes
         matchup_order_ids(&curr_wallet, &mut wallet)?;
 
-        let waiter = self.state.update_wallet(wallet.clone()).await?;
+        let waiter = self.ctx.state.update_wallet(wallet.clone()).await?;
         waiter.await?;
         Ok(false)
     }
@@ -259,14 +249,9 @@ impl RefreshWalletTask {
     /// Update validity proofs for the wallet
     async fn update_validity_proofs(&self) -> Result<(), RefreshWalletTaskError> {
         let wallet = self.get_wallet().await?;
-        update_wallet_validity_proofs(
-            &wallet,
-            self.proof_manager_work_queue.clone(),
-            self.state.clone(),
-            self.network_sender.clone(),
-        )
-        .await
-        .map_err(RefreshWalletTaskError::ProofGeneration)
+        update_wallet_validity_proofs(&wallet, &self.ctx)
+            .await
+            .map_err(RefreshWalletTaskError::ProofGeneration)
     }
 
     // -----------
@@ -275,7 +260,8 @@ impl RefreshWalletTask {
 
     /// Get the wallet from the state
     async fn get_wallet(&self) -> Result<Wallet, RefreshWalletTaskError> {
-        self.state
+        self.ctx
+            .state
             .get_wallet(&self.wallet_id)
             .await?
             .ok_or_else(|| RefreshWalletTaskError::NotFound(ERR_WALLET_NOT_FOUND.to_string()))
@@ -292,7 +278,7 @@ impl RefreshWalletTask {
 
         // Fetch public shares from on-chain
         let blinded_public_shares =
-            self.darkpool_client.fetch_public_shares_for_blinder(public_blinder).await?;
+            self.ctx.darkpool_client.fetch_public_shares_for_blinder(public_blinder).await?;
         Ok((blinded_public_shares, private_share))
     }
 
@@ -301,7 +287,7 @@ impl RefreshWalletTask {
         &self,
         public_blinder: Scalar,
     ) -> Result<bool, RefreshWalletTaskError> {
-        let is_used = self.darkpool_client.is_public_blinder_used(public_blinder).await?;
+        let is_used = self.ctx.darkpool_client.is_public_blinder_used(public_blinder).await?;
         Ok(is_used)
     }
 
@@ -315,7 +301,7 @@ impl RefreshWalletTask {
         // Otherwise lookup the wallet
         let blinder_seed = wallet.private_blinder_share();
         let (idx, blinder, private_blinder_share) =
-            find_latest_wallet_tx(blinder_seed, &self.darkpool_client)
+            find_latest_wallet_tx(blinder_seed, &self.ctx.darkpool_client)
                 .await
                 .map_err(|e| RefreshWalletTaskError::NotFound(e.to_string()))?;
 
@@ -334,7 +320,7 @@ impl RefreshWalletTask {
         let matchable_orders = wallet.get_matchable_orders();
 
         for (order_id, _) in matchable_orders {
-            if self.state.get_validity_proofs(&order_id).await?.is_none() {
+            if self.ctx.state.get_validity_proofs(&order_id).await?.is_none() {
                 return Ok(true);
             }
         }

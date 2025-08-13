@@ -22,11 +22,10 @@ use common::types::tasks::SettleExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::bus_message::SystemBusMessage;
-use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use job_types::proof_manager::ProofJob;
 use serde::Serialize;
 use state::State;
 use state::error::StateError;
-use system_bus::SystemBus;
 use tracing::instrument;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation_with_protocol_fee};
 use util::on_chain::get_external_match_fee;
@@ -203,14 +202,10 @@ pub struct SettleMatchExternalTask {
     atomic_match_bundle: Option<ValidMatchSettleAtomicBundle>,
     /// The system bus topic on which to send the atomic match settle bundle
     atomic_match_bundle_topic: String,
-    /// A copy of the relayer-global state
-    state: State,
-    /// A handle on the system bus
-    bus: SystemBus<SystemBusMessage>,
-    /// The work queue to add proof management jobs to
-    proof_queue: ProofManagerQueue,
     /// The state of the task
     task_state: SettleMatchExternalTaskState,
+    /// The context of the task
+    ctx: TaskContext,
 }
 
 #[async_trait]
@@ -250,10 +245,8 @@ impl Task for SettleMatchExternalTask {
             internal_order_validity_witness,
             atomic_match_bundle: None,
             atomic_match_bundle_topic,
-            state: ctx.state,
-            proof_queue: ctx.proof_queue,
-            bus: ctx.bus,
             task_state: SettleMatchExternalTaskState::Pending,
+            ctx,
         })
     }
 
@@ -334,7 +327,7 @@ impl SettleMatchExternalTask {
         // Enqueue a job with the proof generation module
         let commitments_link = self.internal_order_validity_witness.copy_commitment_linking_hint();
         let job = ProofJob::ValidMatchSettleAtomic { witness, statement, commitments_link };
-        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
+        let proof_recv = enqueue_proof_job(job, &self.ctx)
             .map_err(SettleMatchExternalTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
@@ -355,7 +348,7 @@ impl SettleMatchExternalTask {
         let match_bundle = self.atomic_match_bundle.clone().unwrap();
         let validity_proofs = self.internal_order_validity_bundle.clone();
         let message = SystemBusMessage::AtomicMatchFound { match_bundle, validity_proofs };
-        self.bus.publish(self.atomic_match_bundle_topic.clone(), message);
+        self.ctx.bus.publish(self.atomic_match_bundle_topic.clone(), message);
 
         Ok(())
     }
@@ -428,7 +421,7 @@ impl SettleMatchExternalTask {
         );
 
         // Compute the fees due by the external party in the match
-        let relayer_fee_address = self.state.get_external_fee_addr()?.unwrap();
+        let relayer_fee_address = self.ctx.state.get_external_fee_addr()?.unwrap();
         let external_party_relayer_fee = self.relayer_fee_rate;
         let external_party_fees = compute_fee_obligation_with_protocol_fee(
             external_party_relayer_fee,

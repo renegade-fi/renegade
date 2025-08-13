@@ -15,14 +15,11 @@ use circuits::zk_circuits::valid_offline_fee_settlement::{
 use common::types::{
     proof_bundles::OfflineFeeSettlementBundle, tasks::PayOfflineFeeTaskDescriptor, wallet::Wallet,
 };
-use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
-use job_types::{
-    network_manager::NetworkManagerQueue,
-    proof_manager::{ProofJob, ProofManagerQueue},
-};
+use darkpool_client::errors::DarkpoolClientError;
+use job_types::proof_manager::ProofJob;
 use num_bigint::BigUint;
 use serde::Serialize;
-use state::{State, error::StateError};
+use state::error::StateError;
 use tracing::instrument;
 use util::{err_str, on_chain::get_protocol_pubkey};
 
@@ -162,16 +159,10 @@ pub struct PayOfflineFeeTask {
     pub proof: Option<OfflineFeeSettlementBundle>,
     /// The transaction receipt of the fee payment
     pub tx: Option<TransactionReceipt>,
-    /// The darkpool client used for submitting transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A hand to the global state
-    pub state: State,
-    /// The work queue for the proof manager
-    pub proof_queue: ProofManagerQueue,
-    /// A sender to the network manager's queue
-    pub network_sender: NetworkManagerQueue,
     /// The current state of the task
     pub task_state: PayOfflineFeeTaskState,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -201,11 +192,8 @@ impl Task for PayOfflineFeeTask {
             note,
             proof: None,
             tx: None,
-            darkpool_client: ctx.darkpool_client,
-            state: ctx.state,
-            proof_queue: ctx.proof_queue,
-            network_sender: ctx.network_queue,
             task_state: PayOfflineFeeTaskState::Pending,
+            ctx,
         })
     }
 
@@ -271,8 +259,8 @@ impl PayOfflineFeeTask {
         let (statement, witness) = self.get_witness_statement()?;
         let job = ProofJob::ValidOfflineFeeSettlement { witness, statement };
 
-        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
-            .map_err(PayOfflineFeeTaskError::ProofGeneration)?;
+        let proof_recv =
+            enqueue_proof_job(job, &self.ctx).map_err(PayOfflineFeeTaskError::ProofGeneration)?;
 
         // Await the proof
         let bundle = proof_recv.await.map_err(err_str!(PayOfflineFeeTaskError::ProofGeneration))?;
@@ -283,27 +271,28 @@ impl PayOfflineFeeTask {
     /// Submit the `settle_offline_fee` transaction for the balance
     async fn submit_payment(&mut self) -> Result<(), PayOfflineFeeTaskError> {
         let proof = self.proof.clone().unwrap();
-        let tx = self.darkpool_client.settle_offline_fee(&proof).await?;
+        let tx = self.ctx.darkpool_client.settle_offline_fee(&proof).await?;
         self.tx = Some(tx);
         Ok(())
     }
 
     /// Find the Merkle opening for the new wallet
     async fn find_merkle_opening(&mut self) -> Result<(), PayOfflineFeeTaskError> {
+        let state = &self.ctx.state;
         let tx = self.tx.as_ref().unwrap();
-        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, &self.darkpool_client, tx)?;
+        let merkle_opening = find_merkle_path_with_tx(&self.new_wallet, tx, &self.ctx)?;
         self.new_wallet.merkle_proof = Some(merkle_opening);
 
         // Update the global state to include the new wallet
-        let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
+        let waiter = state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
 
         // If this was a relayer fee payment and auto-redeem is enabled, enqueue a job
         // for the relayer to redeem the fee
-        let auto_redeem = self.state.get_auto_redeem_fees()?;
-        let decryption_key = self.state.get_fee_key()?.secret_key();
+        let auto_redeem = state.get_auto_redeem_fees()?;
+        let decryption_key = state.get_fee_key()?.secret_key();
         if !self.is_protocol_fee && auto_redeem && decryption_key.is_some() {
-            enqueue_relayer_redeem_job(self.note.clone(), &self.state)
+            enqueue_relayer_redeem_job(self.note.clone(), state)
                 .await
                 .map_err(PayOfflineFeeTaskError::State)?;
         }
@@ -313,14 +302,9 @@ impl PayOfflineFeeTask {
 
     /// Update the validity proofs for the wallet after fee payment
     async fn update_validity_proofs(&self) -> Result<(), PayOfflineFeeTaskError> {
-        update_wallet_validity_proofs(
-            &self.new_wallet,
-            self.proof_queue.clone(),
-            self.state.clone(),
-            self.network_sender.clone(),
-        )
-        .await
-        .map_err(PayOfflineFeeTaskError::UpdateValidityProofs)
+        update_wallet_validity_proofs(&self.new_wallet, &self.ctx)
+            .await
+            .map_err(PayOfflineFeeTaskError::UpdateValidityProofs)
     }
 
     // -----------

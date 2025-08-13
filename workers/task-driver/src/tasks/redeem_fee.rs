@@ -12,13 +12,10 @@ use common::types::{
     merkle::MerkleAuthenticationPath, proof_bundles::FeeRedemptionBundle,
     tasks::RedeemFeeTaskDescriptor, wallet::Wallet,
 };
-use darkpool_client::{DarkpoolClient, errors::DarkpoolClientError};
-use job_types::{
-    network_manager::NetworkManagerQueue,
-    proof_manager::{ProofJob, ProofManagerQueue},
-};
+use darkpool_client::errors::DarkpoolClientError;
+use job_types::proof_manager::ProofJob;
 use serde::Serialize;
-use state::{State, error::StateError};
+use state::error::StateError;
 use tracing::instrument;
 use util::err_str;
 
@@ -156,16 +153,10 @@ pub struct RedeemFeeTask {
     pub proof: Option<FeeRedemptionBundle>,
     /// The transaction receipt of the note redemption
     pub tx: Option<TransactionReceipt>,
-    /// The darkpool client used for submitting transactions
-    pub darkpool_client: DarkpoolClient,
-    /// A handle on the global state
-    pub state: State,
-    /// The work queue for the proof manager
-    pub proof_queue: ProofManagerQueue,
-    /// A sender to the network manager's queue
-    pub network_sender: NetworkManagerQueue,
     /// The current state of the task
     pub task_state: RedeemFeeTaskState,
+    /// The context of the task
+    pub ctx: TaskContext,
 }
 
 #[async_trait]
@@ -192,11 +183,8 @@ impl Task for RedeemFeeTask {
             new_wallet,
             proof: None,
             tx: None,
-            darkpool_client: ctx.darkpool_client,
-            state: ctx.state,
-            proof_queue: ctx.proof_queue,
-            network_sender: ctx.network_queue,
             task_state: RedeemFeeTaskState::Pending,
+            ctx,
         })
     }
 
@@ -257,7 +245,7 @@ impl RedeemFeeTask {
     /// Find the Merkle opening for the note
     async fn find_note_opening(&mut self) -> Result<(), RedeemFeeError> {
         let note_comm = self.note.commitment();
-        let opening = self.darkpool_client.find_merkle_authentication_path(note_comm).await?;
+        let opening = self.ctx.darkpool_client.find_merkle_authentication_path(note_comm).await?;
         self.note_opening = Some(opening);
         Ok(())
     }
@@ -267,8 +255,8 @@ impl RedeemFeeTask {
     async fn generate_proof(&mut self) -> Result<(), RedeemFeeError> {
         let (statement, witness) = self.get_witness_statement()?;
         let job = ProofJob::ValidFeeRedemption { witness, statement };
-        let proof = enqueue_proof_job(job, &self.proof_queue)
-            .map_err(err_str!(RedeemFeeError::ProofGeneration))?;
+        let proof =
+            enqueue_proof_job(job, &self.ctx).map_err(err_str!(RedeemFeeError::ProofGeneration))?;
 
         // Await the proof
         let bundle = proof.await.map_err(err_str!(RedeemFeeError::ProofGeneration))?;
@@ -287,7 +275,7 @@ impl RedeemFeeTask {
             self.old_wallet.sign_commitment(new_wallet_comm).map_err(RedeemFeeError::Signature)?;
         let sig_bytes = sig.as_bytes().to_vec();
 
-        let tx = self.darkpool_client.redeem_fee(proof, sig_bytes).await?;
+        let tx = self.ctx.darkpool_client.redeem_fee(proof, sig_bytes).await?;
         self.tx = Some(tx);
         Ok(())
     }
@@ -295,10 +283,10 @@ impl RedeemFeeTask {
     /// Find the opening for the relayer wallet
     async fn find_wallet_opening(&mut self) -> Result<(), RedeemFeeError> {
         let tx = self.tx.as_ref().unwrap();
-        let opening = find_merkle_path_with_tx(&self.new_wallet, &self.darkpool_client, tx)?;
+        let opening = find_merkle_path_with_tx(&self.new_wallet, tx, &self.ctx)?;
         self.new_wallet.merkle_proof = Some(opening);
 
-        let waiter = self.state.update_wallet(self.new_wallet.clone()).await?;
+        let waiter = self.ctx.state.update_wallet(self.new_wallet.clone()).await?;
         waiter.await?;
         Ok(())
     }
