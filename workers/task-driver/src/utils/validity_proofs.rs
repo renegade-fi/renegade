@@ -3,7 +3,6 @@
 use std::cmp;
 use std::sync::Arc;
 
-use alloy::rpc::types::TransactionReceipt;
 use circuit_types::balance::Balance;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::OrderSettlementIndices;
@@ -11,7 +10,6 @@ use circuit_types::native_helpers::{
     compute_wallet_private_share_commitment, create_wallet_shares_from_private, reblind_wallet,
     wallet_from_blinded_shares,
 };
-use circuit_types::note::Note;
 use circuit_types::order::Order;
 use circuit_types::{PlonkLinkProof, ProofLinkingHint, SizedWallet};
 use circuits::zk_circuits::valid_commitments::{
@@ -23,32 +21,24 @@ use circuits::zk_circuits::valid_reblind::{
 use common::types::proof_bundles::{
     OrderValidityProofBundle, OrderValidityWitnessBundle, ProofBundle,
 };
-use common::types::tasks::RedeemFeeTaskDescriptor;
 use common::types::token::Token;
-use common::types::wallet::{OrderIdentifier, Wallet, WalletAuthenticationPath};
-use darkpool_client::errors::DarkpoolClientError;
+use common::types::wallet::{OrderIdentifier, Wallet};
 use gossip_api::pubsub::PubsubMessage;
 use gossip_api::pubsub::orderbook::{ORDER_BOOK_TOPIC, OrderBookManagementMessage};
 use job_types::network_manager::NetworkManagerJob;
-use job_types::proof_manager::{ProofJob, ProofManagerJob};
+use job_types::proof_manager::ProofJob;
 use num_bigint::BigUint;
-use state::State;
-use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver as TokioReceiver;
 use tracing::instrument;
 
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::TaskContext;
+use crate::utils::enqueue_proof_job;
 
 use super::{
-    ERR_BALANCE_NOT_FOUND, ERR_ENQUEUING_JOB, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
+    ERR_BALANCE_NOT_FOUND, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
     ERR_PROVE_COMMITMENTS_FAILED, ERR_PROVE_REBLIND_FAILED,
 };
-
-/// The error message emitted by the task when the fee decryption key is missing
-const ERR_FEE_KEY_MISSING: &str = "fee decryption key is missing";
-/// The error message emitted by the task when the relayer wallet is missing
-const ERR_RELAYER_WALLET_MISSING: &str = "relayer wallet is missing";
 
 /// The default ticker to use when no ticker is found for an order
 ///
@@ -56,44 +46,70 @@ const ERR_RELAYER_WALLET_MISSING: &str = "relayer wallet is missing";
 /// state is the default fee
 const DEFAULT_FEE_TICKER: &str = "DEFAULT";
 
-/// Enqueue a job with the proof manager
-///
-/// Returns a channel on which the proof manager will send the response
-pub(crate) fn enqueue_proof_job(
-    job: ProofJob,
-    ctx: &TaskContext,
-) -> Result<TokioReceiver<ProofBundle>, String> {
-    let (response_sender, response_receiver) = oneshot::channel();
-    ctx.proof_queue
-        .send(ProofManagerJob { type_: job, response_channel: response_sender })
-        .map_err(|_| ERR_ENQUEUING_JOB.to_string())?;
+// --------------
+// | Entrypoint |
+// --------------
 
-    Ok(response_receiver)
-}
-
-/// Find the merkle authentication path of a wallet
-pub(crate) async fn find_merkle_path(
+/// Find a wallet on-chain, and update its validity proofs. That is, a proof of
+/// `VALID REBLIND` for the wallet, and one proof of `VALID COMMITMENTS` for
+/// each order in the wallet
+pub(crate) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
     ctx: &TaskContext,
-) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
-    // The contract indexes the wallet by its commitment to the public and private
-    // secret shares, find this in the Merkle tree
-    ctx.darkpool_client.find_merkle_authentication_path(wallet.get_wallet_share_commitment()).await
+) -> Result<(), String> {
+    // If there are other tasks in the queue behind the current task, skip proving
+    let queue_length = ctx.state.serial_tasks_queue_len(&wallet.wallet_id).await?;
+    if queue_length > 1 {
+        return Ok(());
+    }
+
+    let matchable_orders = wallet.get_matchable_orders();
+    if matchable_orders.is_empty() {
+        return Ok(());
+    }
+
+    // Dispatch a proof of `VALID REBLIND` for the wallet
+    let (reblind_witness, reblind_response_channel) = construct_wallet_reblind_proof(wallet, ctx)?;
+
+    // For each order, construct a proof of `VALID COMMITMENTS`
+    let mut commitments_instances = Vec::new();
+    for (id, order) in matchable_orders.iter() {
+        // Start a proof of `VALID COMMITMENTS`
+        let (commitments_witness, response_channel) =
+            construct_order_commitment_proof(order.clone().into(), &reblind_witness, ctx)?;
+        commitments_instances.push((*id, commitments_witness, response_channel));
+    }
+
+    // Await the proof of `VALID REBLIND`
+    let reblind_bundle: ProofBundle =
+        reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?;
+
+    // Await proofs of `VALID COMMITMENTS` for each order, store them in the state
+    for (order_id, commitments_witness, receiver) in commitments_instances.into_iter() {
+        // Await a proof
+        let commitments_bundle: ProofBundle =
+            receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?;
+
+        link_and_store_proofs(
+            &order_id,
+            &commitments_witness,
+            &reblind_witness,
+            commitments_bundle,
+            reblind_bundle.clone(),
+            ctx,
+        )
+        .await?;
+    }
+
+    Ok(())
 }
 
-/// Find the merkle authentication path of a wallet given an updating
-/// transaction
-pub(crate) fn find_merkle_path_with_tx(
-    wallet: &Wallet,
-    tx: &TransactionReceipt,
-    ctx: &TaskContext,
-) -> Result<WalletAuthenticationPath, DarkpoolClientError> {
-    let commitment = wallet.get_wallet_share_commitment();
-    ctx.darkpool_client.find_merkle_authentication_path_with_tx(commitment, tx)
-}
+// -----------------
+// | Valid Reblind |
+// -----------------
 
 /// Re-blind the wallet and prove `VALID REBLIND` for the wallet
-pub(crate) fn construct_wallet_reblind_proof(
+fn construct_wallet_reblind_proof(
     wallet: &Wallet,
     ctx: &TaskContext,
 ) -> Result<(SizedValidReblindWitness, TokioReceiver<ProofBundle>), String> {
@@ -133,10 +149,14 @@ pub(crate) fn construct_wallet_reblind_proof(
     Ok((witness, recv))
 }
 
+// ---------------------
+// | Valid Commitments |
+// ---------------------
+
 /// Prove `VALID COMMITMENTS` for an order within a wallet
 ///
 /// Returns a copy of the witness for indexing
-pub(crate) fn construct_order_commitment_proof(
+fn construct_order_commitment_proof(
     order: Order,
     valid_reblind_witness: &SizedValidReblindWitness,
     ctx: &TaskContext,
@@ -266,59 +286,9 @@ fn get_relayer_fee_for_order(
     Ok(fee)
 }
 
-/// Find a wallet on-chain, and update its validity proofs. That is, a proof of
-/// `VALID REBLIND` for the wallet, and one proof of `VALID COMMITMENTS` for
-/// each order in the wallet
-pub(crate) async fn update_wallet_validity_proofs(
-    wallet: &Wallet,
-    ctx: &TaskContext,
-) -> Result<(), String> {
-    // If there are other tasks in the queue behind the current task, skip proving
-    let queue_length = ctx.state.serial_tasks_queue_len(&wallet.wallet_id).await?;
-    if queue_length > 1 {
-        return Ok(());
-    }
-
-    let matchable_orders = wallet.get_matchable_orders();
-    if matchable_orders.is_empty() {
-        return Ok(());
-    }
-
-    // Dispatch a proof of `VALID REBLIND` for the wallet
-    let (reblind_witness, reblind_response_channel) = construct_wallet_reblind_proof(wallet, ctx)?;
-
-    // For each order, construct a proof of `VALID COMMITMENTS`
-    let mut commitments_instances = Vec::new();
-    for (id, order) in matchable_orders.iter() {
-        // Start a proof of `VALID COMMITMENTS`
-        let (commitments_witness, response_channel) =
-            construct_order_commitment_proof(order.clone().into(), &reblind_witness, ctx)?;
-        commitments_instances.push((*id, commitments_witness, response_channel));
-    }
-
-    // Await the proof of `VALID REBLIND`
-    let reblind_bundle: ProofBundle =
-        reblind_response_channel.await.map_err(|_| ERR_PROVE_REBLIND_FAILED.to_string())?;
-
-    // Await proofs of `VALID COMMITMENTS` for each order, store them in the state
-    for (order_id, commitments_witness, receiver) in commitments_instances.into_iter() {
-        // Await a proof
-        let commitments_bundle: ProofBundle =
-            receiver.await.map_err(|_| ERR_PROVE_COMMITMENTS_FAILED.to_string())?;
-
-        link_and_store_proofs(
-            &order_id,
-            &commitments_witness,
-            &reblind_witness,
-            commitments_bundle,
-            reblind_bundle.clone(),
-            ctx,
-        )
-        .await?;
-    }
-
-    Ok(())
-}
+// -----------------
+// | Proof Linking |
+// -----------------
 
 /// Attach a validity proof and witness to the locally managed state
 ///
@@ -385,15 +355,4 @@ pub(crate) async fn link_reblind_commitments(
     let bundle = proof_recv.await.map_err(|_| ERR_AWAITING_PROOF.to_string())?;
     let link_proof = bundle.to_reblind_commitment_link();
     Ok(link_proof)
-}
-
-/// Enqueue a job to redeem a relayer fee into the relayer's wallet
-pub(crate) async fn enqueue_relayer_redeem_job(note: Note, state: &State) -> Result<(), String> {
-    let relayer_wallet_id =
-        state.get_relayer_wallet_id()?.ok_or_else(|| ERR_RELAYER_WALLET_MISSING.to_string())?;
-    let decryption_key =
-        state.get_fee_key()?.secret_key().ok_or_else(|| ERR_FEE_KEY_MISSING.to_string())?;
-    let descriptor = RedeemFeeTaskDescriptor::new(relayer_wallet_id, note, decryption_key);
-
-    state.append_task(descriptor.into()).await.map_err(|e| e.to_string()).map(|_| ())
 }

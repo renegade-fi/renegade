@@ -36,8 +36,9 @@ use util::err_str;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
-use crate::utils::validity_proofs::{
-    enqueue_proof_job, find_merkle_path_with_tx, update_wallet_validity_proofs,
+use crate::utils::{
+    enqueue_proof_job, merkle_path::find_merkle_path_with_tx,
+    validity_proofs::update_wallet_validity_proofs,
 };
 
 /// The human-readable name of the the task

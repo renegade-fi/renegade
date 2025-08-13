@@ -26,9 +26,9 @@ use util::{err_str, on_chain::get_protocol_pubkey};
 use crate::{
     task_state::StateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::validity_proofs::{
-        enqueue_proof_job, enqueue_relayer_redeem_job, find_merkle_path_with_tx,
-        update_wallet_validity_proofs,
+    utils::{
+        enqueue_proof_job, enqueue_relayer_redeem_job, merkle_path::find_merkle_path_with_tx,
+        validity_proofs::update_wallet_validity_proofs,
     },
 };
 

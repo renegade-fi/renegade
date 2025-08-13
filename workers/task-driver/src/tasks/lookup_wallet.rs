@@ -23,7 +23,8 @@ use crate::{
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
         find_wallet::{find_latest_wallet_tx, gen_private_shares},
-        validity_proofs::{find_merkle_path, update_wallet_validity_proofs},
+        merkle_path::find_merkle_path,
+        validity_proofs::update_wallet_validity_proofs,
     },
 };
 

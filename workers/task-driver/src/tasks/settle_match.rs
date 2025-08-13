@@ -27,8 +27,9 @@ use tracing::instrument;
 use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
-use crate::utils::validity_proofs::{
-    find_merkle_path, find_merkle_path_with_tx, update_wallet_validity_proofs,
+use crate::utils::{
+    merkle_path::{find_merkle_path, find_merkle_path_with_tx},
+    validity_proofs::update_wallet_validity_proofs,
 };
 
 /// The error message the contract emits when a nullifier has been used

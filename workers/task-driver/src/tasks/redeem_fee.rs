@@ -23,7 +23,7 @@ use crate::{
     task_state::StateWrapper,
     tasks::ERR_NO_MERKLE_PROOF,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::validity_proofs::{enqueue_proof_job, find_merkle_path_with_tx},
+    utils::{enqueue_proof_job, merkle_path::find_merkle_path_with_tx},
 };
 
 /// The name of the task

@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
-use crate::utils::validity_proofs::enqueue_proof_job;
+use crate::utils::enqueue_proof_job;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
 use circuit_types::r#match::MatchResult;
