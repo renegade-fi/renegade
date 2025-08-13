@@ -28,7 +28,7 @@ use crate::{
     utils::{
         find_wallet::{find_latest_wallet_tx, gen_private_shares},
         merkle_path::find_merkle_path,
-        validity_proofs::update_wallet_validity_proofs,
+        validity_proofs::update_validity_proofs__skip_queue_check,
     },
 };
 
@@ -250,7 +250,7 @@ impl RefreshWalletTask {
     /// Update validity proofs for the wallet
     async fn update_validity_proofs(&self) -> Result<(), RefreshWalletTaskError> {
         let wallet = self.get_wallet().await?;
-        update_wallet_validity_proofs(&wallet, &self.ctx)
+        update_validity_proofs__skip_queue_check(&wallet, &self.ctx)
             .await
             .map_err(RefreshWalletTaskError::ProofGeneration)
     }

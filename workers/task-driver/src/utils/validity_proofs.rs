@@ -50,9 +50,8 @@ const DEFAULT_FEE_TICKER: &str = "DEFAULT";
 // | Entrypoint |
 // --------------
 
-/// Find a wallet on-chain, and update its validity proofs. That is, a proof of
-/// `VALID REBLIND` for the wallet, and one proof of `VALID COMMITMENTS` for
-/// each order in the wallet
+/// Update the validity proofs for a wallet iff there are no other tasks in the
+/// serial queue for the wallet
 pub(crate) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
     ctx: &TaskContext,
@@ -63,6 +62,21 @@ pub(crate) async fn update_wallet_validity_proofs(
         return Ok(());
     }
 
+    update_validity_proofs__skip_queue_check(wallet, ctx).await
+}
+
+/// Update the validity proofs for a wallet.
+///
+/// This involves:
+/// - Proving `VALID REBLIND` for the wallet
+/// - Proving `VALID COMMITMENTS` for each order in the wallet
+/// - Linking the reblind and commitments proofs
+/// - Storing the proofs in the global state
+#[allow(non_snake_case)]
+pub(crate) async fn update_validity_proofs__skip_queue_check(
+    wallet: &Wallet,
+    ctx: &TaskContext,
+) -> Result<(), String> {
     let matchable_orders = wallet.get_matchable_orders();
     if matchable_orders.is_empty() {
         return Ok(());
