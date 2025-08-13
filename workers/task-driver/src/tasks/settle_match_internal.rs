@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::task_state::StateWrapper;
-use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::validity_proofs::{
     enqueue_proof_job, find_merkle_path_with_tx, update_wallet_validity_proofs,
@@ -298,6 +298,8 @@ impl Task for SettleMatchInternalTask {
         self.task_state.clone()
     }
 }
+
+impl Descriptor for SettleMatchInternalTaskDescriptor {}
 
 // -----------------------
 // | Task Implementation |

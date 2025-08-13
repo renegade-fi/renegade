@@ -39,7 +39,7 @@ use crate::{
     await_task,
     state_migration::remove_phantom_orders,
     task_state::StateWrapper,
-    traits::{Task, TaskContext, TaskError, TaskState},
+    traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
 };
 
@@ -273,6 +273,12 @@ impl Task for NodeStartupTask {
 
     fn name(&self) -> String {
         NODE_STARTUP_TASK_NAME.to_string()
+    }
+}
+
+impl Descriptor for NodeStartupTaskDescriptor {
+    fn bypass_task_queue(&self) -> bool {
+        true
     }
 }
 

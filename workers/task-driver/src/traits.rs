@@ -33,7 +33,7 @@ pub trait Task: Send + Sized {
     ///
     /// The descriptor must be serializable so that it can be placed into the
     /// task queue and managed by the consensus engine
-    type Descriptor: Debug + Serialize + for<'de> Deserialize<'de>;
+    type Descriptor: Descriptor;
     /// The state type of the task, used for task introspection
     ///
     /// The state must be orderable so that a commit point can be defined and
@@ -65,6 +65,14 @@ pub trait Task: Send + Sized {
     /// A cleanup step that is run in the event of a task failure
     async fn cleanup(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+}
+
+/// A descriptor for a task, from which the task is constructable
+pub trait Descriptor: Debug + Serialize + for<'de> Deserialize<'de> {
+    /// Whether the task should bypass the task queue
+    fn bypass_task_queue(&self) -> bool {
+        false
     }
 }
 

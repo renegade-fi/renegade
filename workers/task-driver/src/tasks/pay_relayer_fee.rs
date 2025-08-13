@@ -26,7 +26,7 @@ use tracing::instrument;
 use util::err_str;
 
 use crate::task_state::StateWrapper;
-use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::{
     enqueue_proof_job, find_merkle_path_with_tx, update_wallet_validity_proofs,
 };
@@ -266,6 +266,8 @@ impl Task for PayRelayerFeeTask {
         TASK_NAME.to_string()
     }
 }
+
+impl Descriptor for PayRelayerFeeTaskDescriptor {}
 
 // -----------------------
 // | Task Implementation |

@@ -17,7 +17,7 @@ use tracing::instrument;
 
 use crate::{
     task_state::StateWrapper,
-    traits::{Task, TaskContext, TaskError, TaskState},
+    traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::validity_proofs::update_wallet_validity_proofs,
 };
 
@@ -124,6 +124,8 @@ impl From<DarkpoolClientError> for UpdateMerkleProofTaskError {
         UpdateMerkleProofTaskError::Darkpool(value.to_string())
     }
 }
+
+impl Descriptor for UpdateMerkleProofTaskDescriptor {}
 
 // -------------------
 // | Task Definition |

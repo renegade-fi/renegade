@@ -35,7 +35,7 @@ use tracing::instrument;
 use util::err_str;
 
 use crate::task_state::StateWrapper;
-use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::{enqueue_proof_job, find_merkle_path_with_tx};
 
 /// The task name to display when logging
@@ -246,6 +246,8 @@ impl Task for NewWalletTask {
         NEW_WALLET_TASK_NAME.to_string()
     }
 }
+
+impl Descriptor for NewWalletTaskDescriptor {}
 
 // -----------------------
 // | Task Implementation |

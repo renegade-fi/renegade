@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
-use crate::traits::{Task, TaskContext, TaskError, TaskState};
+use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::validity_proofs::enqueue_proof_job;
 use async_trait::async_trait;
 use circuit_types::fixed_point::FixedPoint;
@@ -307,6 +307,12 @@ impl Task for SettleMatchExternalTask {
 
     /// Shared bundles will always have a much higher rate limit than exclusive
     /// For this reason, we bypass the task queue to prevent raft contention
+    fn bypass_task_queue(&self) -> bool {
+        self.shared
+    }
+}
+
+impl Descriptor for SettleExternalMatchTaskDescriptor {
     fn bypass_task_queue(&self) -> bool {
         self.shared
     }
