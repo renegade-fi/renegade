@@ -12,7 +12,7 @@ use std::time::Duration;
 use crate::task_state::StateWrapper;
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
-use crate::utils::validity_proofs::enqueue_proof_job;
+use crate::utils::enqueue_proof_job;
 use async_trait::async_trait;
 use circuit_types::fees::FeeTakeRate;
 use circuit_types::fixed_point::FixedPoint;
@@ -27,11 +27,10 @@ use common::types::tasks::SettleMalleableExternalMatchTaskDescriptor;
 use common::types::wallet::{OrderIdentifier, WalletIdentifier};
 use darkpool_client::errors::DarkpoolClientError;
 use external_api::bus_message::SystemBusMessage;
-use job_types::proof_manager::{ProofJob, ProofManagerQueue};
+use job_types::proof_manager::ProofJob;
 use serde::Serialize;
 use state::State;
 use state::error::StateError;
-use system_bus::SystemBus;
 use tracing::instrument;
 use util::on_chain::get_external_match_fee;
 
@@ -209,14 +208,10 @@ pub struct SettleMalleableExternalMatchTask {
     atomic_match_bundle: Option<ValidMalleableMatchSettleAtomicBundle>,
     /// The system bus topic on which to send the atomic match settle bundle
     atomic_match_bundle_topic: String,
-    /// A copy of the relayer-global state
-    state: State,
-    /// A handle on the system bus
-    bus: SystemBus<SystemBusMessage>,
-    /// The work queue to add proof management jobs to
-    proof_queue: ProofManagerQueue,
     /// The state of the task
     task_state: SettleMalleableExternalMatchTaskState,
+    /// The context of the task
+    ctx: TaskContext,
 }
 
 #[async_trait]
@@ -254,10 +249,8 @@ impl Task for SettleMalleableExternalMatchTask {
             internal_order_validity_witness,
             atomic_match_bundle: None,
             atomic_match_bundle_topic,
-            state: ctx.state,
-            proof_queue: ctx.proof_queue,
-            bus: ctx.bus,
             task_state: SettleMalleableExternalMatchTaskState::Pending,
+            ctx,
         })
     }
 
@@ -339,7 +332,7 @@ impl SettleMalleableExternalMatchTask {
         let commitments_link = self.internal_order_validity_witness.copy_commitment_linking_hint();
         let job =
             ProofJob::ValidMalleableMatchSettleAtomic { witness, statement, commitments_link };
-        let proof_recv = enqueue_proof_job(job, &self.proof_queue)
+        let proof_recv = enqueue_proof_job(job, &self.ctx)
             .map_err(SettleMalleableExternalMatchTaskError::EnqueuingJob)?;
 
         // Await the proof from the proof manager
@@ -360,7 +353,7 @@ impl SettleMalleableExternalMatchTask {
         let match_bundle = self.atomic_match_bundle.clone().unwrap();
         let validity_proofs = self.internal_order_validity_bundle.clone();
         let message = SystemBusMessage::MalleableAtomicMatchFound { match_bundle, validity_proofs };
-        self.bus.publish(self.atomic_match_bundle_topic.clone(), message);
+        self.ctx.bus.publish(self.atomic_match_bundle_topic.clone(), message);
 
         Ok(())
     }
@@ -406,7 +399,7 @@ impl SettleMalleableExternalMatchTask {
     )> {
         let match_res = &self.match_res;
         let commitments_witness = &self.internal_order_validity_witness.commitment_witness;
-        let relayer_fee_address = self.state.get_external_fee_addr()?.unwrap();
+        let relayer_fee_address = self.ctx.state.get_external_fee_addr()?.unwrap();
 
         // Copy values from the witnesses and statements of the order validity proofs
         let internal_party_order = commitments_witness.order.clone();
