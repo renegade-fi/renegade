@@ -29,7 +29,7 @@ use util::{
     on_chain::get_external_match_fee,
 };
 
-use crate::{default_true, deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
+use crate::{deserialize_biguint_from_hex_string, serialize_biguint_to_hex_addr};
 
 #[cfg(feature = "full-api")]
 use common::types::{
@@ -147,12 +147,6 @@ pub struct AssembleExternalMatchRequest {
     /// Whether or not to include gas estimation in the response
     #[serde(default)]
     pub do_gas_estimation: bool,
-    /// Whether or not to allow shared access to the resulting bundle
-    ///
-    /// If true, the bundle may be sent to other clients requesting an external
-    /// match. If false, the bundle will be exclusively held for some time
-    #[serde(default = "default_true")]
-    pub allow_shared: bool,
     /// The matching pool to request a quote from
     pub matching_pool: Option<MatchingPoolName>,
     /// The fee take rate for the relayer in the match
