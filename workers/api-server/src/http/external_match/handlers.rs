@@ -209,7 +209,6 @@ impl TypedHandler for AssembleExternalMatchHandler {
             .processor
             .assemble_external_match(
                 req.do_gas_estimation,
-                req.allow_shared,
                 receiver,
                 price,
                 relayer_fee_rate,
@@ -267,7 +266,6 @@ impl TypedHandler for AssembleMalleableExternalMatchHandler {
             .processor
             .assemble_malleable_external_match(
                 req.do_gas_estimation,
-                req.allow_shared,
                 receiver,
                 price,
                 relayer_fee_rate,

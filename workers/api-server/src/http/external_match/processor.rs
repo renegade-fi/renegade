@@ -171,7 +171,6 @@ impl ExternalMatchProcessor {
     pub(crate) async fn assemble_external_match(
         &self,
         gas_estimation: bool,
-        allow_shared: bool,
         receiver: Option<Address>,
         price: TimestampedPrice,
         relayer_fee_rate: FixedPoint,
@@ -180,7 +179,6 @@ impl ExternalMatchProcessor {
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
-            .with_allow_shared(allow_shared)
             .with_price(price)
             .with_matching_pool(matching_pool)
             .with_relayer_fee_rate(relayer_fee_rate);
@@ -207,7 +205,6 @@ impl ExternalMatchProcessor {
     pub(crate) async fn assemble_malleable_external_match(
         &self,
         gas_estimation: bool,
-        allow_shared: bool,
         receiver: Option<Address>,
         price: TimestampedPrice,
         relayer_fee_rate: FixedPoint,
@@ -216,7 +213,6 @@ impl ExternalMatchProcessor {
     ) -> Result<MalleableAtomicMatchApiBundle, ApiServerError> {
         let opt = ExternalMatchingEngineOptions::new()
             .with_bundle_duration(ASSEMBLE_BUNDLE_TIMEOUT)
-            .with_allow_shared(allow_shared)
             .with_bounded_match(true)
             .with_price(price)
             .with_matching_pool(matching_pool)
@@ -249,7 +245,6 @@ impl ExternalMatchProcessor {
         external_order: ExternalOrder,
     ) -> Result<AtomicMatchApiBundle, ApiServerError> {
         let opt = ExternalMatchingEngineOptions::new()
-            .with_allow_shared(true)
             .with_bundle_duration(DIRECT_MATCH_BUNDLE_TIMEOUT)
             .with_matching_pool(matching_pool)
             .with_relayer_fee_rate(relayer_fee_rate);

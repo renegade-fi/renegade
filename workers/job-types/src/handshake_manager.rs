@@ -159,12 +159,6 @@ pub struct ExternalMatchingEngineOptions {
     /// Whether or not to only generate a quote, without proving validity
     /// for the order's match
     pub only_quote: bool,
-    /// Whether or not to allow shared access to the resulting bundle
-    ///
-    /// If true, the bundle may be sent to other clients requesting an external
-    /// match. If false, the bundle will be exclusively held for
-    /// `bundle_duration`
-    pub allow_shared: bool,
     /// Whether or not to emit a bounded match rather than an exact match
     ///
     /// A `BoundedMatchResult` is one in which the exact `base_amount` is not
@@ -213,12 +207,6 @@ impl ExternalMatchingEngineOptions {
     /// Set whether to only generate a quote
     pub fn with_only_quote(mut self, only_quote: bool) -> Self {
         self.only_quote = only_quote;
-        self
-    }
-
-    /// Set whether to allow shared access to the resulting bundle
-    pub fn with_allow_shared(mut self, allow_shared: bool) -> Self {
-        self.allow_shared = allow_shared;
         self
     }
 
