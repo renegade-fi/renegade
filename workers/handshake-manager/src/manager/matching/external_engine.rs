@@ -252,9 +252,8 @@ impl HandshakeExecutor {
             options.relayer_fee_rate,
             match_res,
             response_topic,
-            options.allow_shared,
         );
-        self.enqueue_settlement_task(task, options).await
+        self.enqueue_settlement_task(task).await
     }
 
     // --- Bounded Match Handler --- //
@@ -311,9 +310,8 @@ impl HandshakeExecutor {
             options.relayer_fee_rate,
             bounded_res,
             response_topic,
-            options.allow_shared,
         );
-        self.enqueue_settlement_task(task, options).await
+        self.enqueue_settlement_task(task).await
     }
 
     /// Derive the bounds for a match
@@ -395,14 +393,9 @@ impl HandshakeExecutor {
     async fn enqueue_settlement_task<T: Into<TaskDescriptor>>(
         &self,
         descriptor: T,
-        options: &ExternalMatchingEngineOptions,
     ) -> Result<(), HandshakeManagerError> {
         let descriptor = descriptor.into();
-        if options.allow_shared {
-            self.forward_bypassing_task(descriptor).await
-        } else {
-            self.forward_queued_task(descriptor).await
-        }
+        self.forward_bypassing_task(descriptor).await
     }
 
     /// Forward a quote to the client

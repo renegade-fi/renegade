@@ -97,12 +97,6 @@ pub struct SettleExternalMatchTaskDescriptor {
     pub match_res: MatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
     pub atomic_match_bundle_topic: String,
-    /// Whether the resulting bundle is shared across requests
-    ///
-    /// Exclusive (shared = false) bundles lock the task queue and gain
-    /// exclusive access to the bundle for the `bundle_duration`
-    #[serde(default)]
-    pub shared: bool,
 }
 
 impl SettleExternalMatchTaskDescriptor {
@@ -116,7 +110,6 @@ impl SettleExternalMatchTaskDescriptor {
         relayer_fee_rate: FixedPoint,
         match_res: MatchResult,
         atomic_match_bundle_topic: String,
-        shared: bool,
     ) -> Self {
         SettleExternalMatchTaskDescriptor {
             bundle_duration,
@@ -126,7 +119,6 @@ impl SettleExternalMatchTaskDescriptor {
             execution_price,
             relayer_fee_rate,
             match_res,
-            shared,
         }
     }
 }
@@ -152,12 +144,6 @@ pub struct SettleMalleableExternalMatchTaskDescriptor {
     pub match_res: BoundedMatchResult,
     /// The system bus topic on which to send the atomic match settle bundle
     pub atomic_match_bundle_topic: String,
-    /// Whether the resulting bundle is shared across requests
-    ///
-    /// Exclusive (shared = false) bundles lock the task queue and gain
-    /// exclusive access to the bundle for the `bundle_duration`
-    #[serde(default)]
-    pub shared: bool,
 }
 
 impl SettleMalleableExternalMatchTaskDescriptor {
@@ -169,7 +155,6 @@ impl SettleMalleableExternalMatchTaskDescriptor {
         relayer_fee_rate: FixedPoint,
         match_res: BoundedMatchResult,
         atomic_match_bundle_topic: String,
-        shared: bool,
     ) -> Self {
         SettleMalleableExternalMatchTaskDescriptor {
             bundle_duration,
@@ -178,7 +163,6 @@ impl SettleMalleableExternalMatchTaskDescriptor {
             atomic_match_bundle_topic,
             relayer_fee_rate,
             match_res,
-            shared,
         }
     }
 }

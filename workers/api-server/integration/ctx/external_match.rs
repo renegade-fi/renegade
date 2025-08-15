@@ -89,7 +89,6 @@ impl IntegrationTestCtx {
         let req = AssembleExternalMatchRequest {
             signed_quote: quote.clone(),
             do_gas_estimation: false,
-            allow_shared: false,
             receiver_address: None,
             updated_order: None,
             relayer_fee_rate,
