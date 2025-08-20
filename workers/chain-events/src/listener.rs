@@ -211,11 +211,14 @@ impl OnChainEventListenerExecutor {
         tx: TxHash,
         nullifier: Nullifier,
     ) -> Result<(), OnChainEventListenerError> {
+        info!("Handling spend of nullifier {nullifier} in tx {tx:#x}");
+
         // Send an MPC shootdown request to the handshake manager
         self.config
             .handshake_manager_job_queue
             .send(HandshakeManagerJob::MpcShootdown { nullifier })
             .map_err(|err| OnChainEventListenerError::SendMessage(err.to_string()))?;
+
         self.state().nullify_orders(nullifier).await?;
 
         // Update internal state
@@ -256,7 +259,10 @@ impl OnChainEventListenerExecutor {
         let maybe_wallet = self.state().get_wallet_for_nullifier(&nullifier).await?;
         let wallet = match maybe_wallet {
             Some(w) => w,
-            None => return Ok(()),
+            None => {
+                info!("No wallet found for nullifier {nullifier}, skipping");
+                return Ok(());
+            },
         };
 
         // Record metrics for any external matches in the transaction
@@ -316,6 +322,7 @@ impl OnChainEventListenerExecutor {
         // Get the wallet ID that this nullifier belongs to
         let maybe_wallet = self.state().get_wallet_for_nullifier(&nullifier).await?;
         if maybe_wallet.is_none() {
+            info!("No wallet found for nullifier {nullifier}, skipping");
             return Ok(());
         }
         let id = maybe_wallet.unwrap();
