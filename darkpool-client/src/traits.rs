@@ -1,6 +1,7 @@
 //! Trait definitions for the `DarkpoolClient`
 
-use alloy::eips::BlockId;
+use std::time::Duration;
+
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::{primitives::Address, rpc::types::TransactionReceipt};
@@ -28,6 +29,16 @@ use constants::Scalar;
 
 use crate::client::{DarkpoolCallBuilder, RenegadeProvider};
 use crate::errors::DarkpoolClientError;
+
+// -------------
+// | Constants |
+// -------------
+
+/// The timeout for awaiting the receipt of a pending transaction
+const TX_RECEIPT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The multiple of the gas price estimate we use for submitting a transaction
+const GAS_PRICE_MULTIPLIER: u128 = 2;
 
 /// The `DarkpoolImpl` trait defines the functionality that must be implemented
 /// for a given blockchain.
@@ -201,11 +212,14 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
         C: CallDecoder + Send + Sync,
     {
         let gas_price = self.get_adjusted_gas_price().await?;
-        let receipt = tx
+        let pending_tx = tx
             .gas_price(gas_price)
             .send()
             .await
-            .map_err(DarkpoolClientError::contract_interaction)?
+            .map_err(DarkpoolClientError::contract_interaction)?;
+
+        let receipt = pending_tx
+            .with_timeout(Some(TX_RECEIPT_TIMEOUT))
             .get_receipt()
             .await
             .map_err(DarkpoolClientError::contract_interaction)?;
@@ -223,20 +237,10 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
     ///
     /// We double the latest basefee to prevent reverts
     async fn get_adjusted_gas_price(&self) -> Result<u128, DarkpoolClientError> {
-        // Set the gas price to 2x the latest basefee for simplicity
-        let latest_block = self
-            .provider()
-            .get_block(BlockId::latest())
-            .await
-            .map_err(DarkpoolClientError::rpc)?
-            .ok_or(DarkpoolClientError::rpc("No latest block found"))?;
-
-        let latest_basefee = latest_block
-            .header
-            .base_fee_per_gas
-            .ok_or(DarkpoolClientError::rpc("No basefee found"))?;
-        let gas_price = (latest_basefee * 2) as u128;
-        Ok(gas_price)
+        // Set the gas price to 2x the latest gas price estimate for simplicity
+        let gas_price = self.provider().get_gas_price().await.map_err(DarkpoolClientError::rpc)?;
+        let adjusted_gas_price = gas_price * GAS_PRICE_MULTIPLIER;
+        Ok(adjusted_gas_price)
     }
 }
 impl<T: DarkpoolImpl> DarkpoolImplExt for T {}
