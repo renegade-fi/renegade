@@ -1,6 +1,6 @@
 # Used for running integration tests on a simulated MPC network
 
-FROM --platform=arm64 rust:latest AS chef
+FROM --platform=arm64 rust:1.89-trixie AS chef
 
 # Create a build dir and add local dependencies
 WORKDIR /build
@@ -52,7 +52,7 @@ RUN cargo build --release --package event-export-sidecar
 RUN cargo build --release --bin renegade-relayer --features "$CARGO_FEATURES"
 
 # Release stage
-FROM --platform=arm64 debian:bookworm-slim
+FROM --platform=arm64 debian:trixie-slim
 
 RUN apt-get update && \
     apt-get install -y libssl-dev && \
