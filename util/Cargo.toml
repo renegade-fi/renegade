@@ -8,13 +8,20 @@ default = ["hex", "errors"]
 blockchain = ["hex", "concurrency"]
 concurrency = []
 errors = []
-hex = ["errors"]
+hex = [
+    "errors",
+    "dep:circuit-types",
+    "dep:constants",
+    "dep:renegade-crypto",
+    "constants/default",
+    "circuit-types/default",
+]
 matching-engine = ["blockchain"]
 mocks = []
 channels = []
 networking = []
 serde = []
-telemetry = []
+telemetry = ["errors"]
 
 [dependencies]
 # === Arithmetic === #
@@ -35,9 +42,9 @@ tokio = { workspace = true }
 crossbeam = { workspace = true }
 
 # === Workspace Dependencies === #
-circuit-types = { workspace = true }
-constants = { workspace = true }
-renegade-crypto = { workspace = true }
+circuit-types = { workspace = true, optional = true }
+constants = { workspace = true, optional = true }
+renegade-crypto = { workspace = true, optional = true }
 
 # === Misc === #
 eyre = { workspace = true }

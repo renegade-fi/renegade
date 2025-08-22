@@ -2,9 +2,10 @@
 
 use std::env;
 
-use constants::VERSION;
-
 use super::TelemetrySetupError;
+
+/// The current relayer version
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod formatter;
 

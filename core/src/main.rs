@@ -17,7 +17,7 @@ use api_server::worker::{ApiServer, ApiServerConfig};
 use chain_events::listener::{OnChainEventListener, OnChainEventListenerConfig};
 use common::worker::{new_worker_failure_channel, watch_worker, Worker};
 use common::{default_wrapper::default_option, types::new_cancel_channel};
-use constants::{in_bootstrap_mode, VERSION};
+use constants::in_bootstrap_mode;
 use darkpool_client::constants::{BLOCK_POLLING_INTERVAL, EVENT_FILTER_POLLING_INTERVAL};
 use darkpool_client::{client::DarkpoolClientConfig, DarkpoolClient};
 use event_manager::{manager::EventManager, worker::EventManagerConfig};
@@ -89,10 +89,7 @@ async fn main() -> Result<(), CoordinatorError> {
     args.configure_telemetry().expect("failed to configure telemetry");
     let min_order_size = args.min_fill_size_decimal_adjusted();
 
-    info!(
-        "Relayer running with\n\t version: {}\n\t port: {}\n\t cluster: {:?}",
-        VERSION, args.p2p_port, args.cluster_id
-    );
+    info!("Relayer running with\n\t port: {}\n\t cluster: {:?}", args.p2p_port, args.cluster_id);
 
     if in_bootstrap_mode() {
         info!("Running in bootstrap mode");
