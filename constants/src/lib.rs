@@ -20,8 +20,6 @@ use ark_mpc::algebra::{
 // | Configuration Constants |
 // ---------------------------
 
-/// The current relayer version
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Whether or not the relayer is in bootstrap mode
 pub static BOOTSTRAP_MODE: OnceLock<bool> = OnceLock::new();
 
