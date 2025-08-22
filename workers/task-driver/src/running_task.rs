@@ -132,10 +132,15 @@ impl<T: Task> RunnableTask<T> {
         //
         // Note: it's important to do this after popping / resuming above, as those
         // code paths will clear task queues in the case of a failure.
-        if !success && self.state().committed() {
-            for wallet_id in affected_wallets {
-                let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
-                info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
+        let state = self.state();
+        if !success && state.committed() {
+            if let StateWrapper::NewWallet(_) = state {
+                info!("skipping wallet refresh enqueue for failed create-new-wallet task");
+            } else {
+                for wallet_id in affected_wallets {
+                    let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
+                    info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
+                }
             }
         }
 
