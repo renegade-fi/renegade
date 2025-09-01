@@ -23,7 +23,7 @@ use darkpool_client::{
 use futures_util::StreamExt;
 use job_types::event_manager::EventManagerQueue;
 use job_types::handshake_manager::{HandshakeManagerJob, HandshakeManagerQueue};
-use rand::{Rng, thread_rng};
+use rand::Rng;
 use state::State;
 use tracing::{error, info};
 use util::concurrency::runtime::sleep_forever_async;
@@ -170,9 +170,12 @@ impl OnChainEventListenerExecutor {
 
             let event = log.log_decode::<NullifierSpentEvent>()?;
             let nullifier = u256_to_scalar(event.data().nullifier);
-            if let Err(e) = self.handle_nullifier_spent(tx_hash, nullifier).await {
-                self.handle_nullifier_spent_error(nullifier, e).await;
-            }
+            let self_clone = self.clone();
+            tokio::task::spawn(async move {
+                if let Err(e) = self_clone.handle_nullifier_spent(tx_hash, nullifier).await {
+                    self_clone.handle_nullifier_spent_error(nullifier, e).await;
+                }
+            });
         }
 
         unreachable!()
@@ -193,9 +196,12 @@ impl OnChainEventListenerExecutor {
             let nullifier = u256_to_scalar(event.nullifier);
 
             // Handle the nullifier spent event
-            if let Err(e) = self.handle_nullifier_spent(tx_hash, nullifier).await {
-                self.handle_nullifier_spent_error(nullifier, e).await;
-            }
+            let self_clone = self.clone();
+            tokio::task::spawn(async move {
+                if let Err(e) = self_clone.handle_nullifier_spent(tx_hash, nullifier).await {
+                    self_clone.handle_nullifier_spent_error(nullifier, e).await;
+                }
+            });
         }
 
         unreachable!()
@@ -249,9 +255,8 @@ impl OnChainEventListenerExecutor {
         // We do this as a crash recovery mechanism to ensure that the updates are
         // processed even if the selected node is crashed
         if !self.should_execute_wallet_updates(nullifier).await? {
-            let mut rng = thread_rng();
-            let timeout =
-                rng.gen_range(MIN_NULLIFIER_REFRESH_DELAY_S..=MAX_NULLIFIER_REFRESH_DELAY_S);
+            let timeout = rand::thread_rng()
+                .gen_range(MIN_NULLIFIER_REFRESH_DELAY_S..=MAX_NULLIFIER_REFRESH_DELAY_S);
             tokio::time::sleep(Duration::from_secs(timeout)).await;
         }
 
