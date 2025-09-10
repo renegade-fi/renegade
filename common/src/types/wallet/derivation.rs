@@ -40,6 +40,8 @@ const KECCAK_HASH_BYTES: usize = 32;
 const EXTENDED_BYTES: usize = 64;
 /// The number of bytes in a wallet ID
 const WALLET_ID_BYTES: usize = 16;
+/// The number of bytes in a signing key
+const SIGNING_KEY_BYTES: usize = 32;
 
 lazy_static! {
     /// The secp256k1 scalar field modulus as a BigUint
@@ -125,7 +127,10 @@ fn derive_signing_key(msg: &[u8], key: &PrivateKeySigner) -> Result<SigningKey, 
     let reduced_val = unreduced_val % &*SECP256K1_SCALAR_MODULUS;
 
     let key_bytes = reduced_val.to_bytes_be();
-    SigningKey::from_bytes(key_bytes.as_slice().into())
+    let mut padded_key_bytes = vec![0_u8; SIGNING_KEY_BYTES];
+    let pad_size = SIGNING_KEY_BYTES - key_bytes.len();
+    padded_key_bytes[pad_size..].copy_from_slice(&key_bytes);
+    SigningKey::from_bytes(padded_key_bytes.as_slice().into())
         .map_err(raw_err_str!("failed to derive signing key from signature: {}"))
 }
 
