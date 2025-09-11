@@ -141,8 +141,6 @@ fn simulate_settle_internal_match(
         .cloned()
         .ok_or(TaskSimulationError::InvalidTask(ERR_ORDER_MISSING))?;
 
-    let fees = compute_fee_obligation(wallet.max_match_fee, my_order.side, &desc.match_result);
-
     // Get the new public and private shares
     let witness =
         if is_party0 { &desc.order1_validity_witness } else { &desc.order2_validity_witness };
@@ -151,6 +149,9 @@ fn simulate_settle_internal_match(
     } else {
         &desc.order2_proof.commitment_proof.statement.indices
     };
+
+    let relayer_fee = witness.commitment_witness.relayer_fee;
+    let fees = compute_fee_obligation(relayer_fee, my_order.side, &desc.match_result);
 
     let mut new_public = witness.commitment_witness.augmented_public_shares.clone();
     let new_private = witness.reblind_witness.reblinded_wallet_private_shares.clone();
