@@ -91,7 +91,7 @@ fn process_settlement_tx(tx: &mut TransactionRequest) {
 // -------------------------------
 
 /// The request type for requesting an external match
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ExternalMatchRequest {
     /// Whether or not to include gas estimation in the response
     #[serde(default)]
