@@ -372,7 +372,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         let queue = self.get_task_queue(key)?;
         let mut can_preempt = queue.can_preempt_serial();
         if let Some(t) = queue.serial_tasks.first() {
-            let task = self.get_task(t)?.ok_or(StorageError::not_found(ERR_TASK_NOT_FOUND))?;
+            let task = self.get_task(t)?.ok_or(StorageError::reject(ERR_TASK_NOT_FOUND))?;
             can_preempt = can_preempt && !task.state.is_committed();
         }
 
@@ -495,7 +495,7 @@ impl StateTxn<'_, RW> {
     ) -> Result<(), StorageError> {
         let mut task = match self.get_task(id)? {
             Some(t) => t,
-            None => return Err(StorageError::not_found(ERR_TASK_NOT_FOUND)),
+            None => return Err(StorageError::reject(ERR_TASK_NOT_FOUND)),
         };
 
         task.state = new_state;
