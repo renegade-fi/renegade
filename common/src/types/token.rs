@@ -234,10 +234,10 @@ impl Token {
     ///
     /// Only USDC and USD are not tradable on Renegade
     pub fn is_tradable(&self) -> bool {
-        let usdc = Token::usdc();
-        let usd = Token::from_ticker(USD_TICKER);
-
-        !(self == &usdc || self == &usd)
+        match self.get_ticker() {
+            Some(ticker) => !(ticker == USDC_TICKER || ticker == USD_TICKER),
+            None => false,
+        }
     }
 
     /// Returns the set of Exchanges that support this token.
