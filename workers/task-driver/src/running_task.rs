@@ -121,9 +121,13 @@ impl<T: Task> RunnableTask<T> {
         }
 
         // Pop the task from the state, unless this task bypasses the task queue
+        // Do not propagate this error; otherwise we may skip the wallet refresh step
+        let mut should_refresh = false;
         if !self.bypass_task_queue() {
-            let waiter = self.state.pop_task(self.task_id, success).await?;
-            waiter.await?;
+            if let Err(e) = self.pop_task_or_clear_queue(success, &affected_wallets).await {
+                error!("error popping task: {e}");
+                should_refresh = true;
+            }
         }
 
         // If the task failed at/after its commit point, we enqueue a wallet refresh
@@ -132,7 +136,9 @@ impl<T: Task> RunnableTask<T> {
         //
         // Note: it's important to do this after popping / resuming above, as those
         // code paths will clear task queues in the case of a failure.
-        if !success && self.state().committed() {
+        let failed_past_commit = !success && self.state().committed();
+        should_refresh = should_refresh || failed_past_commit;
+        if should_refresh {
             for wallet_id in affected_wallets {
                 let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
                 info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
@@ -140,5 +146,29 @@ impl<T: Task> RunnableTask<T> {
         }
 
         Ok(())
+    }
+
+    /// Pop a task from a queue
+    ///
+    /// This method will clear the task queues of the affected wallets if
+    /// popping the task fails
+    async fn pop_task_or_clear_queue(
+        &self,
+        success: bool,
+        affected_wallets: &[WalletIdentifier],
+    ) -> Result<(), TaskDriverError> {
+        let waiter = self.state.pop_task(self.task_id, success).await?;
+        let mut res = waiter.await;
+        if res.is_ok() {
+            return Ok(());
+        }
+
+        // Failing through the match implies we should clear the task queues
+        for wallet_id in affected_wallets {
+            let clear_res = self.state.clear_task_queue(wallet_id).await?.await;
+            res = clear_res.and(res);
+        }
+
+        res.map(|_| ()).map_err(Into::into)
     }
 }
