@@ -121,9 +121,14 @@ impl<T: Task> RunnableTask<T> {
         }
 
         // Pop the task from the state, unless this task bypasses the task queue
+        // Do not propagate this error; otherwise we may skip the wallet refresh step
+        let mut should_refresh = false;
         if !self.bypass_task_queue() {
             let waiter = self.state.pop_task(self.task_id, success).await?;
-            waiter.await?;
+            if let Err(e) = waiter.await {
+                should_refresh = true;
+                error!("error popping task: {e}");
+            }
         }
 
         // If the task failed at/after its commit point, we enqueue a wallet refresh
@@ -132,7 +137,9 @@ impl<T: Task> RunnableTask<T> {
         //
         // Note: it's important to do this after popping / resuming above, as those
         // code paths will clear task queues in the case of a failure.
-        if !success && self.state().committed() {
+        let failed_past_commit = !success && self.state().committed();
+        should_refresh = should_refresh || failed_past_commit;
+        if should_refresh {
             for wallet_id in affected_wallets {
                 let task_id = self.state.append_wallet_refresh_task(wallet_id).await?;
                 info!("enqueued wallet refresh task ({task_id}) for {wallet_id}");
