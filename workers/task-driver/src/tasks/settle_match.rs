@@ -7,6 +7,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::str::FromStr;
 
 use alloy::rpc::types::TransactionReceipt;
 use ark_mpc::PARTY0;
@@ -88,6 +89,21 @@ impl Display for SettleMatchTaskState {
             SettleMatchTaskState::UpdatingState => write!(f, "Updating State"),
             SettleMatchTaskState::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
             SettleMatchTaskState::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl FromStr for SettleMatchTaskState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(SettleMatchTaskState::Pending),
+            "Submitting Match" => Ok(SettleMatchTaskState::SubmittingMatch),
+            "Updating State" => Ok(SettleMatchTaskState::UpdatingState),
+            "Updating Validity Proofs" => Ok(SettleMatchTaskState::UpdatingValidityProofs),
+            "Completed" => Ok(SettleMatchTaskState::Completed),
+            _ => Err(format!("invalid {SETTLE_MATCH_TASK_NAME} task state: {s}")),
         }
     }
 }

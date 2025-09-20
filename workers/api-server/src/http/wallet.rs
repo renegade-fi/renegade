@@ -28,7 +28,6 @@ use external_api::{
     types::ApiOrder,
 };
 use hyper::HeaderMap;
-use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 use price_state::PriceStreamStates;
@@ -74,8 +73,7 @@ pub(crate) async fn find_wallet_for_update(
         .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
     // Apply tasks to the wallet
-    let descriptors = tasks.into_iter().map(|t| t.descriptor).collect_vec();
-    simulate_wallet_tasks(&mut wallet, descriptors).map_err(internal_error)?;
+    simulate_wallet_tasks(&mut wallet, tasks).map_err(internal_error)?;
     Ok(wallet)
 }
 

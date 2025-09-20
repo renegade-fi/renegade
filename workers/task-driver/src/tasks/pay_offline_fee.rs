@@ -4,6 +4,7 @@
 use std::{
     error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
+    str::FromStr,
 };
 
 use alloy::rpc::types::TransactionReceipt;
@@ -81,6 +82,22 @@ impl Display for PayOfflineFeeTaskState {
             PayOfflineFeeTaskState::FindingOpening => write!(f, "Finding Opening"),
             PayOfflineFeeTaskState::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
             PayOfflineFeeTaskState::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl FromStr for PayOfflineFeeTaskState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(PayOfflineFeeTaskState::Pending),
+            "Proving Payment" => Ok(PayOfflineFeeTaskState::ProvingPayment),
+            "Submitting Payment" => Ok(PayOfflineFeeTaskState::SubmittingPayment),
+            "Finding Opening" => Ok(PayOfflineFeeTaskState::FindingOpening),
+            "Updating Validity Proofs" => Ok(PayOfflineFeeTaskState::UpdatingValidityProofs),
+            "Completed" => Ok(PayOfflineFeeTaskState::Completed),
+            _ => Err(format!("invalid {TASK_NAME} task state: {s}")),
         }
     }
 }

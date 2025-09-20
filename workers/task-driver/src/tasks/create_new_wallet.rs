@@ -10,6 +10,7 @@
 use core::panic;
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::str::FromStr;
 
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
@@ -78,6 +79,21 @@ impl Display for NewWalletTaskState {
             NewWalletTaskState::SubmittingTx => write!(f, "Submitting Tx"),
             NewWalletTaskState::FindingMerkleOpening => write!(f, "Finding Opening"),
             NewWalletTaskState::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl FromStr for NewWalletTaskState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(NewWalletTaskState::Pending),
+            "Proving" => Ok(NewWalletTaskState::Proving),
+            "Submitting Tx" => Ok(NewWalletTaskState::SubmittingTx),
+            "Finding Opening" => Ok(NewWalletTaskState::FindingMerkleOpening),
+            "Completed" => Ok(NewWalletTaskState::Completed),
+            _ => Err(format!("invalid {NEW_WALLET_TASK_NAME} task state: {s}")),
         }
     }
 }
