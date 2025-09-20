@@ -12,6 +12,8 @@ pub enum TaskSimulationError {
     InvalidTask(&'static str),
     /// Invalid wallet state to apply a transition
     InvalidWalletState(&'static str),
+    /// Invalid task state on a task provided to the simulator
+    InvalidTaskState(String),
 }
 
 impl Display for TaskSimulationError {
@@ -20,3 +22,11 @@ impl Display for TaskSimulationError {
     }
 }
 impl Error for TaskSimulationError {}
+
+impl TaskSimulationError {
+    /// Create a new task simulation error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn invalid_task_state<T: ToString>(message: T) -> Self {
+        Self::InvalidTaskState(message.to_string())
+    }
+}

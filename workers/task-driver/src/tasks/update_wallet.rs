@@ -6,6 +6,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::str::FromStr;
 
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
@@ -104,6 +105,23 @@ impl Display for UpdateWalletTaskState {
             Self::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
             Self::UpdatingConsensusState => write!(f, "Updating Consensus State"),
             Self::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl FromStr for UpdateWalletTaskState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(Self::Pending),
+            "Proving" => Ok(Self::Proving),
+            "Submitting Tx" => Ok(Self::SubmittingTx),
+            "Finding Opening" => Ok(Self::FindingOpening),
+            "Updating Validity Proofs" => Ok(Self::UpdatingValidityProofs),
+            "Updating Consensus State" => Ok(Self::UpdatingConsensusState),
+            "Completed" => Ok(Self::Completed),
+            _ => Err(format!("invalid {UPDATE_WALLET_TASK_NAME} task state: {s}")),
         }
     }
 }

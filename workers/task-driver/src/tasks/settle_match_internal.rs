@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::str::FromStr;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
@@ -97,6 +98,22 @@ impl Display for SettleMatchInternalTaskState {
             Self::UpdatingState => write!(f, "Updating State"),
             Self::UpdatingValidityProofs => write!(f, "Updating Validity Proofs"),
             Self::Completed => write!(f, "Completed"),
+        }
+    }
+}
+
+impl FromStr for SettleMatchInternalTaskState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(Self::Pending),
+            "Proving Match Settle" => Ok(Self::ProvingMatchSettle),
+            "Submitting Match" => Ok(Self::SubmittingMatch),
+            "Updating State" => Ok(Self::UpdatingState),
+            "Updating Validity Proofs" => Ok(Self::UpdatingValidityProofs),
+            "Completed" => Ok(Self::Completed),
+            _ => Err(format!("invalid {SETTLE_MATCH_INTERNAL_TASK_NAME} task state: {s}")),
         }
     }
 }
