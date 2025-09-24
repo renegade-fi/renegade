@@ -79,6 +79,9 @@ impl StateApplicator {
             return Ok(ApplicatorReturnType::None);
         }
 
+        // TODO: Remove backwards compatibility stores
+        tx.write_validity_proof_bundle(&order_id, &proof)?;
+        tx.write_validity_proof_witness(&order_id, &witness)?;
         tx.attach_validity_proof(&order_id, proof)?;
         tx.attach_validity_witness(&order_id, witness)?;
 
