@@ -1,14 +1,24 @@
 //! Simulates the effect of wallet tasks on the relayer state
 
+use std::str::FromStr;
+
 use ark_mpc::PARTY0;
 use common::types::{
     tasks::{
-        NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor, SettleMatchInternalTaskDescriptor,
-        SettleMatchTaskDescriptor, TaskDescriptor, UpdateWalletTaskDescriptor,
+        NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor, QueuedTask, QueuedTaskState,
+        SettleMatchInternalTaskDescriptor, SettleMatchTaskDescriptor, TaskDescriptor,
+        UpdateWalletTaskDescriptor,
     },
     wallet::Wallet,
 };
+use tracing::warn;
 use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
+
+use crate::tasks::{
+    create_new_wallet::NewWalletTaskState, pay_offline_fee::PayOfflineFeeTaskState,
+    settle_match::SettleMatchTaskState, settle_match_internal::SettleMatchInternalTaskState,
+    update_wallet::UpdateWalletTaskState,
+};
 
 use super::error::TaskSimulationError;
 
@@ -30,13 +40,107 @@ const ERR_BALANCE_MISSING: &str = "Balance not found in wallet";
 /// Simulate the effect of tasks on a wallet, mutates the wallet in place
 pub fn simulate_wallet_tasks(
     wallet: &mut Wallet,
-    tasks: Vec<TaskDescriptor>,
+    tasks: Vec<QueuedTask>,
 ) -> Result<(), TaskSimulationError> {
     for task in tasks {
-        simulate_single_wallet_task(wallet, task)?;
+        if !should_simulate(&task)? {
+            warn!("Skipping simulation for task {}", task.id);
+            continue;
+        }
+
+        simulate_single_wallet_task(wallet, task.descriptor)?;
     }
 
     Ok(())
+}
+
+/// Determine if the task should be simulated
+fn should_simulate(task: &QueuedTask) -> Result<bool, TaskSimulationError> {
+    match task.descriptor {
+        TaskDescriptor::NewWallet(_) => should_simulate_new_wallet(&task.state),
+        TaskDescriptor::UpdateWallet(_) => should_simulate_update_wallet(&task.state),
+        TaskDescriptor::SettleMatch(_) => should_simulate_settle_match(&task.state),
+        TaskDescriptor::SettleMatchInternal(_) => {
+            should_simulate_settle_match_internal(&task.state)
+        },
+        TaskDescriptor::OfflineFee(_) => should_simulate_offline_fee(&task.state),
+        // Skip non-wallet tasks
+        _ => Ok(false),
+    }
+}
+
+/// Determine if a new wallet task should be simulated
+fn should_simulate_new_wallet(task_state: &QueuedTaskState) -> Result<bool, TaskSimulationError> {
+    match task_state {
+        QueuedTaskState::Running { state, .. } => {
+            let task_state = NewWalletTaskState::from_str(state)
+                .map_err(TaskSimulationError::invalid_task_state)?;
+
+            Ok(task_state < NewWalletTaskState::FindingMerkleOpening)
+        },
+        QueuedTaskState::Completed | QueuedTaskState::Failed => Ok(false),
+        _ => Ok(true),
+    }
+}
+
+/// Determine if an update wallet task should be simulated
+fn should_simulate_update_wallet(
+    task_state: &QueuedTaskState,
+) -> Result<bool, TaskSimulationError> {
+    match task_state {
+        QueuedTaskState::Running { state, .. } => {
+            let task_state = UpdateWalletTaskState::from_str(state)
+                .map_err(TaskSimulationError::invalid_task_state)?;
+
+            Ok(task_state < UpdateWalletTaskState::FindingOpening)
+        },
+        QueuedTaskState::Completed | QueuedTaskState::Failed => Ok(false),
+        _ => Ok(true),
+    }
+}
+
+/// Determine if a match settlement task should be simulated
+fn should_simulate_settle_match(task_state: &QueuedTaskState) -> Result<bool, TaskSimulationError> {
+    match task_state {
+        QueuedTaskState::Running { state, .. } => {
+            let task_state = SettleMatchTaskState::from_str(state)
+                .map_err(TaskSimulationError::invalid_task_state)?;
+
+            Ok(task_state < SettleMatchTaskState::UpdatingState)
+        },
+        QueuedTaskState::Completed | QueuedTaskState::Failed => Ok(false),
+        _ => Ok(true),
+    }
+}
+
+/// Determine if an internal match settlement task should be simulated
+fn should_simulate_settle_match_internal(
+    task_state: &QueuedTaskState,
+) -> Result<bool, TaskSimulationError> {
+    match task_state {
+        QueuedTaskState::Running { state, .. } => {
+            let task_state = SettleMatchInternalTaskState::from_str(state)
+                .map_err(TaskSimulationError::invalid_task_state)?;
+
+            Ok(task_state < SettleMatchInternalTaskState::UpdatingState)
+        },
+        QueuedTaskState::Completed | QueuedTaskState::Failed => Ok(false),
+        _ => Ok(true),
+    }
+}
+
+/// Determine if an offline fee payment task should be simulated
+fn should_simulate_offline_fee(task_state: &QueuedTaskState) -> Result<bool, TaskSimulationError> {
+    match task_state {
+        QueuedTaskState::Running { state, .. } => {
+            let task_state = PayOfflineFeeTaskState::from_str(state)
+                .map_err(TaskSimulationError::invalid_task_state)?;
+
+            Ok(task_state < PayOfflineFeeTaskState::FindingOpening)
+        },
+        QueuedTaskState::Completed | QueuedTaskState::Failed => Ok(false),
+        _ => Ok(true),
+    }
 }
 
 /// Simulate the effect of a single task on a wallet
