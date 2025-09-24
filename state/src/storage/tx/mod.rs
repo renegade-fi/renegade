@@ -13,6 +13,7 @@ pub mod node_metadata;
 pub mod order_book;
 pub mod order_history;
 pub mod peer_index;
+pub mod proofs;
 pub mod raft_log;
 pub mod relayer_fees;
 pub mod task_assignments;

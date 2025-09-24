@@ -42,7 +42,7 @@ use uuid::Uuid;
 // -------------
 
 /// The number of tables to open in the database
-const NUM_TABLES: usize = 18;
+const NUM_TABLES: usize = 19;
 
 /// The name of the db table that stores node metadata
 pub(crate) const NODE_METADATA_TABLE: &str = "node-metadata";
@@ -60,6 +60,9 @@ pub(crate) const PRIORITIES_TABLE: &str = "priorities";
 pub(crate) const ORDERS_TABLE: &str = "orders";
 /// The table that stores order metadata indexed by wallet id
 pub(crate) const ORDER_HISTORY_TABLE: &str = "order-history";
+
+/// The name of the db table that stores proofs
+pub(crate) const PROOFS_TABLE: &str = "proofs";
 
 /// The name of the db table mapping orders to their matching pool
 pub(crate) const POOL_TABLE: &str = "matching-pools";
@@ -89,24 +92,25 @@ pub const RAFT_METADATA_TABLE: &str = "raft-metadata";
 pub const RAFT_LOGS_TABLE: &str = "raft-logs";
 /// All tables in the database
 pub const ALL_TABLES: [&str; NUM_TABLES] = [
-    NODE_METADATA_TABLE,
-    RELAYER_FEES_TABLE,
-    PEER_INFO_TABLE,
     CLUSTER_MEMBERSHIP_TABLE,
-    PRIORITIES_TABLE,
-    ORDERS_TABLE,
-    ORDER_HISTORY_TABLE,
-    POOL_TABLE,
-    ORDER_TO_WALLET_TABLE,
+    MPC_PREPROCESSING_TABLE,
+    NODE_METADATA_TABLE,
     NULLIFIER_TO_WALLET_TABLE,
-    WALLETS_TABLE,
-    TASK_QUEUE_TABLE,
-    TASK_TO_KEY_TABLE,
+    ORDER_HISTORY_TABLE,
+    ORDER_TO_WALLET_TABLE,
+    ORDERS_TABLE,
+    PEER_INFO_TABLE,
+    POOL_TABLE,
+    PRIORITIES_TABLE,
+    PROOFS_TABLE,
+    RAFT_LOGS_TABLE,
+    RAFT_METADATA_TABLE,
+    RELAYER_FEES_TABLE,
     TASK_ASSIGNMENT_TABLE,
     TASK_HISTORY_TABLE,
-    MPC_PREPROCESSING_TABLE,
-    RAFT_METADATA_TABLE,
-    RAFT_LOGS_TABLE,
+    TASK_QUEUE_TABLE,
+    TASK_TO_KEY_TABLE,
+    WALLETS_TABLE,
 ];
 
 // ---------------------
