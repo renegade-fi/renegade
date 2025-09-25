@@ -70,7 +70,7 @@ impl StateApplicator {
     pub fn add_order_validity_proof(
         &self,
         order_id: OrderIdentifier,
-        proof: OrderValidityProofBundle,
+        proof: &OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
     ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
@@ -80,7 +80,6 @@ impl StateApplicator {
         }
 
         // TODO: Remove backwards compatibility stores
-        tx.write_validity_proof_bundle(&order_id, &proof)?;
         tx.write_validity_proof_witness(&order_id, &witness)?;
         tx.attach_validity_proof(&order_id, proof)?;
         tx.attach_validity_witness(&order_id, witness)?;
@@ -182,7 +181,7 @@ mod test {
         let witness = dummy_validity_witness_bundle();
         let applicator = base_applicator.clone();
         tokio::task::spawn_blocking(move || {
-            applicator.add_order_validity_proof(order_id, proof, witness).unwrap()
+            applicator.add_order_validity_proof(order_id, &proof, witness).unwrap()
         })
         .await
         .unwrap();
@@ -191,8 +190,9 @@ mod test {
         let db = base_applicator.db();
         let tx = db.new_read_tx().unwrap();
         let order = tx.get_order_info(&order_id).unwrap().unwrap();
+        let proof = tx.get_validity_proof_bundle(&order_id).unwrap();
 
         assert_eq!(order.state, NetworkOrderState::Verified);
-        assert!(order.validity_proofs.is_some());
+        assert!(proof.is_some());
     }
 }

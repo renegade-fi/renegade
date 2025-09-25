@@ -8,9 +8,7 @@ use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
 
 use super::{
-    gossip::ClusterId,
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
-    wallet::OrderIdentifier,
+    gossip::ClusterId, proof_bundles::OrderValidityWitnessBundle, wallet::OrderIdentifier,
 };
 
 /// The state of a known order in the network
@@ -57,9 +55,6 @@ pub struct NetworkOrder {
     pub cluster: ClusterId,
     /// The state of the order via the local peer
     pub state: NetworkOrderState,
-    /// The proofs of `VALID COMMITMENTS` and `VALID REBLIND` that
-    /// have been verified by the local node
-    pub validity_proofs: Option<OrderValidityProofBundle>,
     /// The witnesses to the proofs of `VALID REBLIND` and `VALID COMMITMENTS`,
     /// only stored for orders that the local node directly manages
     ///
@@ -86,7 +81,6 @@ impl NetworkOrder {
             local,
             cluster,
             state: NetworkOrderState::Received,
-            validity_proofs: None,
             validity_proof_witnesses: None,
             timestamp: get_current_time_millis(),
         }
@@ -105,20 +99,6 @@ impl NetworkOrder {
         self.state == NetworkOrderState::Verified
     }
 
-    /// Transitions the state of an order from `Received` to `Verified` by
-    /// attaching two validity proofs:
-    ///   1. `VALID REBLIND`: Commits to a valid reblinding of the wallet that
-    ///      will be revealed upon successful match. Proved per-wallet.
-    ///   2. `VALID COMMITMENTS`: Proves the state elements used as input to the
-    ///      matching engine are valid (orders, balances, fees, etc). Proved
-    ///      per-order.
-    pub fn attach_validity_proofs(&mut self, validity_proofs: OrderValidityProofBundle) {
-        self.state = NetworkOrderState::Verified;
-        self.public_share_nullifier =
-            validity_proofs.reblind_proof.statement.original_shares_nullifier;
-        self.validity_proofs = Some(validity_proofs)
-    }
-
     /// Transitions the state of an order back to the received state, this drops
     /// the existing proof of `VALID COMMITMENTS`
     pub fn transition_received(&mut self) {
@@ -126,8 +106,9 @@ impl NetworkOrder {
     }
 
     /// Transitions the state of an order to the verified state
-    pub fn transition_verified(&mut self, validity_proofs: OrderValidityProofBundle) {
-        self.attach_validity_proofs(validity_proofs);
+    pub fn transition_verified(&mut self, nullifier: Nullifier) {
+        self.state = NetworkOrderState::Verified;
+        self.public_share_nullifier = nullifier;
     }
 
     /// Transitions the state of an order from `Verified` to `Matched`
@@ -140,9 +121,9 @@ impl NetworkOrder {
     pub fn transition_cancelled(&mut self) {
         self.state = NetworkOrderState::Cancelled;
 
+        // TODO: Remove this
         // We no longer need the validity proof (if it exists)
         // so it is safe to drop
-        self.validity_proofs = None;
         self.validity_proof_witnesses = None;
     }
 }
@@ -191,7 +172,6 @@ pub mod test_helpers {
             public_share_nullifier: Scalar::random(&mut rng),
             cluster: ClusterId::from_str("cluster").unwrap(),
             state: NetworkOrderState::Received,
-            validity_proofs: None,
             validity_proof_witnesses: None,
             timestamp: 0,
             local: true,
@@ -227,7 +207,6 @@ mod test {
             local: true,
             cluster: ClusterId::from_str("cluster").unwrap(),
             state: NetworkOrderState::Cancelled,
-            validity_proofs: None,
             validity_proof_witnesses: None,
             timestamp: get_current_time_millis(),
         };

@@ -23,11 +23,6 @@ async fn copy_validity_proofs(order: NetworkOrder, state: &State) -> Result<(), 
     // for the duration of the migration
     state
         .with_write_tx(move |tx| {
-            // Write the validity proof bundle
-            if let Some(p) = order.validity_proofs {
-                tx.write_validity_proof_bundle(&order.id, &p)?;
-            }
-
             // Write the validity proof witness
             if let Some(w) = order.validity_proof_witnesses {
                 tx.write_validity_proof_witness(&order.id, &w)?;

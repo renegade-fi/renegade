@@ -183,15 +183,16 @@ impl StateTxn<'_, RW> {
     pub fn attach_validity_proof(
         &self,
         order_id: &OrderIdentifier,
-        proof: OrderValidityProofBundle,
+        proof: &OrderValidityProofBundle,
     ) -> Result<(), StorageError> {
         // Update the nullifier as per the proof
-        let new_nullifier = proof.reblind_proof.statement.original_shares_nullifier;
-        self.update_order_nullifier_set(order_id, new_nullifier)?;
+        let nullifier = proof.reblind_proof.statement.original_shares_nullifier;
+        self.update_order_nullifier_set(order_id, nullifier)?;
+        self.write_validity_proof_bundle(order_id, proof)?;
 
         // Update the order itself
         let mut order = self.get_order_info_or_err(order_id)?;
-        order.transition_verified(proof);
+        order.transition_verified(nullifier);
 
         self.write_order(&order)
     }
@@ -378,15 +379,16 @@ mod test {
         proof.reblind_proof = Arc::new(reblind_proof);
 
         let tx = db.new_write_tx().unwrap();
-        tx.attach_validity_proof(&order.id, proof).unwrap();
+        tx.attach_validity_proof(&order.id, &proof).unwrap();
         tx.commit().unwrap();
 
         // Check that the order is updated
         let tx = db.new_read_tx().unwrap();
         let stored_order = tx.get_order_info(&order.id).unwrap().unwrap();
+        let stored_proof = tx.get_validity_proof_bundle(&order.id).unwrap();
         assert_eq!(stored_order.state, NetworkOrderState::Verified);
-        assert!(stored_order.validity_proofs.is_some());
         assert_eq!(stored_order.public_share_nullifier, nullifier);
+        assert!(stored_proof.is_some());
 
         // Check that the nullifier sets are updated correctly
         let original_nullifiers = tx.get_orders_by_nullifier(original_nullifier).unwrap();

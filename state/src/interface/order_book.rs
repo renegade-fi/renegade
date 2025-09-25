@@ -335,9 +335,7 @@ impl StateInner {
     ) -> Result<(), StateError> {
         let bus = self.bus.clone();
         self.with_write_tx(move |tx| {
-            // TODO: Remove backwards compatibility stores
-            tx.write_validity_proof_bundle(&order_id, &proof)?;
-            tx.attach_validity_proof(&order_id, proof)?;
+            tx.attach_validity_proof(&order_id, &proof)?;
 
             // Read back the order and check if it is local, if so, abort
             let order = tx.get_order_info(&order_id)?.unwrap();
@@ -503,8 +501,9 @@ mod test {
 
         // Check for the order in the state
         let stored_order = state.get_order(&order.id).await.unwrap().unwrap();
+        let proof = state.get_validity_proofs(&order.id).await.unwrap();
         assert_eq!(stored_order.state, NetworkOrderState::Verified);
-        assert!(stored_order.validity_proofs.is_some());
+        assert!(proof.is_some());
     }
 
     /// Tests nullifying an order
