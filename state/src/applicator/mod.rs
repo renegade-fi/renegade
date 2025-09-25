@@ -83,7 +83,7 @@ impl StateApplicator {
             StateTransition::AddWallet { wallet } => self.add_wallet(&wallet),
             StateTransition::UpdateWallet { wallet } => self.update_wallet(&wallet),
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
-                self.add_order_validity_proof(order_id, proof, witness)
+                self.add_order_validity_proof(order_id, &proof, witness)
             },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
             StateTransition::CreateMatchingPool { pool_name } => {
