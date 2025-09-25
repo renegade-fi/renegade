@@ -368,15 +368,13 @@ impl SettleMalleableExternalMatchTask {
         order_id: OrderIdentifier,
         state: &State,
     ) -> Result<(OrderValidityProofBundle, OrderValidityWitnessBundle)> {
-        let order = state
-            .get_order(&order_id)
+        let validity_proofs = state
+            .get_validity_proofs(&order_id)
             .await?
-            .ok_or_else(|| SettleMalleableExternalMatchTaskError::state(ERR_ORDER_NOT_FOUND))?;
-        let validity_proofs = order
-            .validity_proofs
             .ok_or_else(|| SettleMalleableExternalMatchTaskError::state(ERR_NO_VALIDITY_PROOF))?;
-        let validity_proof_witnesses = order
-            .validity_proof_witnesses
+        let validity_proof_witnesses = state
+            .get_validity_proof_witness(&order_id)
+            .await?
             .ok_or_else(|| SettleMalleableExternalMatchTaskError::state(ERR_NO_VALIDITY_PROOF))?;
 
         Ok((validity_proofs, validity_proof_witnesses))

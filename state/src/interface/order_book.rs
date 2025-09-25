@@ -16,6 +16,7 @@ use common::types::{
 use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
 use futures::future::join_all;
+use gossip_api::request_response::orderbook::NetworkOrderInfo;
 use libmdbx::TransactionKind;
 use rand::{
     distributions::{Distribution, WeightedIndex},
@@ -71,13 +72,17 @@ impl StateInner {
     pub async fn get_orders_batch(
         &self,
         order_ids: &[OrderIdentifier],
-    ) -> Result<Vec<Option<NetworkOrder>>, StateError> {
+    ) -> Result<Vec<NetworkOrderInfo>, StateError> {
         let order_ids = order_ids.to_vec();
         self.with_read_tx(move |tx| {
             let mut orders = Vec::with_capacity(order_ids.len());
             for id in order_ids.iter() {
-                orders.push(tx.get_order_info(id)?);
+                if let Some(o) = tx.get_order_info(id)? {
+                    let proof = tx.get_validity_proof_bundle(&o.id)?;
+                    orders.push(NetworkOrderInfo { order: o, validity_proofs: proof });
+                }
             }
+
             Ok(orders)
         })
         .await
@@ -102,11 +107,7 @@ impl StateInner {
         order_id: &OrderIdentifier,
     ) -> Result<Option<OrderValidityProofBundle>, StateError> {
         let oid = *order_id;
-        self.with_read_tx(move |tx| {
-            let order = tx.get_order_info(&oid)?;
-            Ok(order.and_then(|o| o.validity_proofs))
-        })
-        .await
+        self.with_read_tx(move |tx| tx.get_validity_proof_bundle(&oid).map_err(Into::into)).await
     }
 
     /// Get the validity proof witness for an order
@@ -115,11 +116,7 @@ impl StateInner {
         order_id: &OrderIdentifier,
     ) -> Result<Option<OrderValidityWitnessBundle>, StateError> {
         let oid = *order_id;
-        self.with_read_tx(move |tx| {
-            let order = tx.get_order_info(&oid)?;
-            Ok(order.and_then(|o| o.validity_proof_witnesses))
-        })
-        .await
+        self.with_read_tx(move |tx| tx.get_validity_proof_witness(&oid).map_err(Into::into)).await
     }
 
     /// Return whether the given order is ready for a match
@@ -446,12 +443,20 @@ mod test {
         let order2 = dummy_network_order();
 
         state.add_order(order1.clone()).await.unwrap();
+        state.add_order(order2.clone()).await.unwrap();
+        state.add_order_validity_proof(order1.id, dummy_validity_proof_bundle()).await.unwrap();
 
         // Get the orders in a batch call
-        let res = state.get_orders_batch(&[order1.id, order2.id]).await.unwrap();
+        let mut res = state.get_orders_batch(&[order1.id, order2.id]).await.unwrap();
         assert_eq!(res.len(), 2);
-        assert_eq!(res[0], Some(order1));
-        assert_eq!(res[1], None);
+
+        // TODO: Remove this once the migration is complete
+        let res_order1 = &mut res[0].order;
+        *res_order1 = order1.clone();
+        assert_eq!(res[0].order, order1);
+        assert!(res[0].validity_proofs.is_some());
+        assert_eq!(res[1].order, order2);
+        assert!(res[1].validity_proofs.is_none());
     }
 
     /// Tests getting the missing orders

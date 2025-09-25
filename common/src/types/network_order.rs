@@ -102,7 +102,7 @@ impl NetworkOrder {
     /// This amounts to whether the order has validity proofs and witnesses
     /// attached to it
     pub fn ready_for_match(&self) -> bool {
-        self.validity_proofs.is_some() && self.validity_proof_witnesses.is_some()
+        self.state == NetworkOrderState::Verified
     }
 
     /// Transitions the state of an order from `Received` to `Verified` by

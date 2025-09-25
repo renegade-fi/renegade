@@ -16,7 +16,10 @@ use common::types::{
 use futures::executor::block_on;
 use gossip_api::{
     pubsub::orderbook::OrderBookManagementMessage,
-    request_response::{GossipResponseType, orderbook::OrderInfoResponse},
+    request_response::{
+        GossipResponseType,
+        orderbook::{NetworkOrderInfo, OrderInfoResponse},
+    },
 };
 use tracing::debug;
 use util::err_str;
@@ -39,9 +42,7 @@ impl GossipProtocolExecutor {
         &self,
         order_ids: &[OrderIdentifier],
     ) -> Result<GossipResponseType, GossipError> {
-        let info = self.state.get_orders_batch(order_ids).await?;
-        let order_info = info.into_iter().flatten().collect();
-
+        let order_info = self.state.get_orders_batch(order_ids).await?;
         let resp = OrderInfoResponse { order_info };
         Ok(GossipResponseType::OrderInfo(resp))
     }
@@ -53,9 +54,10 @@ impl GossipProtocolExecutor {
     /// Handles a response to a request for order info
     pub(crate) async fn handle_order_info_response(
         &self,
-        order_info: Vec<NetworkOrder>,
+        order_info: Vec<NetworkOrderInfo>,
     ) -> Result<(), GossipError> {
-        for mut order in order_info.into_iter() {
+        for info in order_info.into_iter() {
+            let mut order = info.order;
             let order_id = order.id;
 
             // Skip local orders, their state is added on wallet update through raft
@@ -67,7 +69,7 @@ impl GossipProtocolExecutor {
             }
 
             // Move fields out of `order_info` before transferring ownership
-            let proof = order.validity_proofs.take();
+            let proof = info.validity_proofs;
 
             order.transition_received();
             order.local = is_local;
