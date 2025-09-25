@@ -37,7 +37,7 @@ use util::{
 
 use crate::{
     await_task,
-    state_migration::remove_phantom_orders,
+    state_migration::{remove_phantom_orders, reserialize_network_orders},
     task_state::StateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
@@ -457,6 +457,17 @@ impl NodeStartupTask {
                 error!("error removing phantom orders: {e}");
             } else {
                 info!("done removing phantom orders");
+            }
+        });
+
+        // Re-serialize network orders to remove the validity proof witnesses
+        let state = self.state.clone();
+        tokio::task::spawn(async move {
+            info!("re-serializing network orders...");
+            if let Err(e) = reserialize_network_orders(&state).await {
+                error!("error re-serializing network orders: {e}");
+            } else {
+                info!("done re-serializing network orders");
             }
         });
 
