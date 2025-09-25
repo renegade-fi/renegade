@@ -37,7 +37,7 @@ use util::{
 
 use crate::{
     await_task,
-    state_migration::{double_write_validity_proofs, remove_phantom_orders},
+    state_migration::remove_phantom_orders,
     task_state::StateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
@@ -457,17 +457,6 @@ impl NodeStartupTask {
                 error!("error removing phantom orders: {e}");
             } else {
                 info!("done removing phantom orders");
-            }
-        });
-
-        // Double write validity proofs
-        let state = self.state.clone();
-        tokio::task::spawn(async move {
-            info!("double writing validity proofs...");
-            if let Err(e) = double_write_validity_proofs(&state).await {
-                error!("error double writing validity proofs: {e}");
-            } else {
-                info!("done double writing validity proofs");
             }
         });
 
