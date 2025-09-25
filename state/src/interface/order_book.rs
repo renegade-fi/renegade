@@ -338,6 +338,8 @@ impl StateInner {
     ) -> Result<(), StateError> {
         let bus = self.bus.clone();
         self.with_write_tx(move |tx| {
+            // TODO: Remove backwards compatibility stores
+            tx.write_validity_proof_bundle(&order_id, &proof)?;
             tx.attach_validity_proof(&order_id, proof)?;
 
             // Read back the order and check if it is local, if so, abort
