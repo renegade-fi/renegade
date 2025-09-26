@@ -7,9 +7,7 @@ use circuit_types::wallet::Nullifier;
 use serde::{Deserialize, Serialize};
 use util::get_current_time_millis;
 
-use super::{
-    gossip::ClusterId, proof_bundles::OrderValidityWitnessBundle, wallet::OrderIdentifier,
-};
+use super::{gossip::ClusterId, wallet::OrderIdentifier};
 
 /// The state of a known order in the network
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,13 +53,6 @@ pub struct NetworkOrder {
     pub cluster: ClusterId,
     /// The state of the order via the local peer
     pub state: NetworkOrderState,
-    /// The witnesses to the proofs of `VALID REBLIND` and `VALID COMMITMENTS`,
-    /// only stored for orders that the local node directly manages
-    ///
-    /// Skip serialization to avoid sending witness, the serialized type will
-    /// have `None` in place
-    #[serde(skip)]
-    pub validity_proof_witnesses: Option<OrderValidityWitnessBundle>,
     /// The timestamp this order was received at, in milliseconds since the UNIX
     /// epoch
     pub timestamp: u64,
@@ -81,7 +72,6 @@ impl NetworkOrder {
             local,
             cluster,
             state: NetworkOrderState::Received,
-            validity_proof_witnesses: None,
             timestamp: get_current_time_millis(),
         }
     }
@@ -115,16 +105,6 @@ impl NetworkOrder {
     #[allow(unused)]
     pub fn transition_matched(&mut self, by_local_node: bool) {
         self.state = NetworkOrderState::Matched { by_local_node };
-    }
-
-    /// Transitions the state of an order to `Cancelled`
-    pub fn transition_cancelled(&mut self) {
-        self.state = NetworkOrderState::Cancelled;
-
-        // TODO: Remove this
-        // We no longer need the validity proof (if it exists)
-        // so it is safe to drop
-        self.validity_proof_witnesses = None;
     }
 }
 
@@ -172,7 +152,6 @@ pub mod test_helpers {
             public_share_nullifier: Scalar::random(&mut rng),
             cluster: ClusterId::from_str("cluster").unwrap(),
             state: NetworkOrderState::Received,
-            validity_proof_witnesses: None,
             timestamp: 0,
             local: true,
         }
@@ -207,7 +186,6 @@ mod test {
             local: true,
             cluster: ClusterId::from_str("cluster").unwrap(),
             state: NetworkOrderState::Cancelled,
-            validity_proof_witnesses: None,
             timestamp: get_current_time_millis(),
         };
         let mut order2 = order1.clone();

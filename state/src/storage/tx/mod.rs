@@ -250,7 +250,9 @@ impl<'db, T: TransactionKind> DbTxn<'db, T> {
 
     /// Open a table if the transaction has not done so already
     fn open_table(&self, table_name: &str) -> Result<Table, StorageError> {
-        self.txn.open_table(Some(table_name)).map_err(StorageError::OpenTable)
+        self.txn
+            .open_table(Some(table_name))
+            .map_err(|e| StorageError::OpenTable(table_name.to_string(), e))
     }
 }
 
@@ -276,7 +278,7 @@ impl DbTxn<'_, RW> {
         let table = self.open_table(table_name);
         let table = match table {
             Ok(t) => t,
-            Err(StorageError::OpenTable(MdbxError::NotFound)) => return Ok(()),
+            Err(StorageError::OpenTable(_, MdbxError::NotFound)) => return Ok(()),
             Err(e) => return Err(e),
         };
 
@@ -288,7 +290,7 @@ impl DbTxn<'_, RW> {
         let table = self.open_table(table_name);
         let table = match table {
             Ok(t) => t,
-            Err(StorageError::OpenTable(MdbxError::NotFound)) => return Ok(()),
+            Err(StorageError::OpenTable(_, MdbxError::NotFound)) => return Ok(()),
             Err(e) => return Err(e),
         };
 

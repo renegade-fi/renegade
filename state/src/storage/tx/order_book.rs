@@ -8,6 +8,7 @@ use common::types::{
     wallet::OrderIdentifier,
 };
 use libmdbx::{RW, TransactionKind};
+use tracing::warn;
 
 use crate::{
     ORDERS_TABLE, PRIORITIES_TABLE,
@@ -60,18 +61,25 @@ impl<T: TransactionKind> StateTxn<'_, T> {
     ) -> Result<Option<NetworkOrder>, StorageError> {
         let key = order_key(order_id);
 
-        // The `NetworkOrder` type skips the validity proof witnesses when serializing
-        // for gossip layer safety, so we store them adjacently and must here re-attach
-        // the witness
-        let res = self
-            .inner()
-            .read::<_, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(ORDERS_TABLE, &key)?
-            .map(|(mut order, witness)| {
-                order.validity_proof_witnesses = witness;
-                order
-            });
+        // TODO: Remove shim code
+        // 1. Try deserializing *just* the order
+        let res = self.inner().read::<_, NetworkOrder>(ORDERS_TABLE, &key);
+        match res {
+            Ok(maybe_order) => Ok(maybe_order),
+            Err(e) => {
+                // Fallback to deserializing the (order, witness) tuple
+                warn!("Error deserializing network order: {e}");
+                let res = self
+                    .inner()
+                    .read::<_, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(
+                        ORDERS_TABLE,
+                        &key,
+                    )?
+                    .map(|(order, _witness)| order);
 
-        Ok(res)
+                Ok(res)
+            },
+        }
     }
 
     /// Get the priority for an order
@@ -112,13 +120,13 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         // Build a cursor over the table
         let cursor = self
             .inner()
-            .cursor::<String, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(ORDERS_TABLE)?
+            .cursor::<String, NetworkOrder>(ORDERS_TABLE)?
             .with_key_filter(|key| key.starts_with("order:"));
 
         // Destructure the result and handle errors
         let mut res = Vec::new();
         for elem in cursor.into_iter().values() {
-            let (order, _) = elem?;
+            let order = elem?;
             res.push(order);
         }
 
@@ -159,9 +167,8 @@ impl StateTxn<'_, RW> {
 
         // The `NetworkOrder` type skips the validity proof witnesses when serializing
         // for gossip layer safety, so we store them adjacently
-        let mut order = order.clone();
-        let validity_witness = order.validity_proof_witnesses.take();
-        self.inner().write(ORDERS_TABLE, &key, &(order, validity_witness))
+        let order = order.clone();
+        self.inner().write(ORDERS_TABLE, &key, &order)
     }
 
     /// Write the priority of an order
@@ -193,18 +200,6 @@ impl StateTxn<'_, RW> {
         // Update the order itself
         let mut order = self.get_order_info_or_err(order_id)?;
         order.transition_verified(nullifier);
-
-        self.write_order(&order)
-    }
-
-    /// Attach a validity witness to an order
-    pub fn attach_validity_witness(
-        &self,
-        order_id: &OrderIdentifier,
-        witness: OrderValidityWitnessBundle,
-    ) -> Result<(), StorageError> {
-        let mut order = self.get_order_info_or_err(order_id)?;
-        order.validity_proof_witnesses = Some(witness);
 
         self.write_order(&order)
     }
@@ -299,9 +294,7 @@ mod test {
 
     use common::types::{
         network_order::{NetworkOrderState, test_helpers::dummy_network_order},
-        proof_bundles::mocks::{
-            dummy_valid_reblind_bundle, dummy_validity_proof_bundle, dummy_validity_witness_bundle,
-        },
+        proof_bundles::mocks::{dummy_valid_reblind_bundle, dummy_validity_proof_bundle},
     };
     use constants::Scalar;
     use itertools::Itertools;
@@ -396,32 +389,6 @@ mod test {
 
         let new_nullifiers = tx.get_orders_by_nullifier(nullifier).unwrap();
         assert_eq!(new_nullifiers, vec![order.id]);
-    }
-
-    /// Tests attaching a validity witness to an order
-    #[test]
-    fn test_write_validity_witness() {
-        let db = mock_db();
-        db.create_table(ORDERS_TABLE).unwrap();
-        db.create_table(PRIORITIES_TABLE).unwrap();
-
-        // Write the order to the book
-        let order = dummy_network_order();
-        let tx = db.new_write_tx().unwrap();
-        tx.write_order(&order).unwrap();
-        tx.commit().unwrap();
-
-        // Attach a validity proof to the order
-        let witness = dummy_validity_witness_bundle();
-
-        let tx = db.new_write_tx().unwrap();
-        tx.attach_validity_witness(&order.id, witness).unwrap();
-        tx.commit().unwrap();
-
-        // Check that the order is updated
-        let tx = db.new_read_tx().unwrap();
-        let stored_order = tx.get_order_info(&order.id).unwrap().unwrap();
-        assert!(stored_order.validity_proof_witnesses.is_some());
     }
 
     /// Tests nullifying an order

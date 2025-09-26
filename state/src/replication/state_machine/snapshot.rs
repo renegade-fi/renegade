@@ -434,7 +434,7 @@ mod tests {
         let v2_err: StorageError = new_db.read::<_, String>(EXCLUDED_TABLE, &k2).err().unwrap();
 
         assert_eq!(value1, v1);
-        assert!(matches!(v2_err, StorageError::OpenTable(MdbxError::NotFound)));
+        assert!(matches!(v2_err, StorageError::OpenTable(_, MdbxError::NotFound)));
     }
 
     /// Test taking multiple snapshots after successive updates, ensuring that
