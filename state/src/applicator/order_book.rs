@@ -71,7 +71,7 @@ impl StateApplicator {
         &self,
         order_id: OrderIdentifier,
         proof: &OrderValidityProofBundle,
-        witness: OrderValidityWitnessBundle,
+        witness: &OrderValidityWitnessBundle,
     ) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
         if tx.get_order_info(&order_id)?.is_none() {
@@ -80,9 +80,8 @@ impl StateApplicator {
         }
 
         // TODO: Remove backwards compatibility stores
-        tx.write_validity_proof_witness(&order_id, &witness)?;
         tx.attach_validity_proof(&order_id, proof)?;
-        tx.attach_validity_witness(&order_id, witness)?;
+        tx.write_validity_proof_witness(&order_id, witness)?;
 
         // Transition the order into a `Matching` state
         self.transition_order_matching(order_id, &tx)?;
@@ -181,7 +180,7 @@ mod test {
         let witness = dummy_validity_witness_bundle();
         let applicator = base_applicator.clone();
         tokio::task::spawn_blocking(move || {
-            applicator.add_order_validity_proof(order_id, &proof, witness).unwrap()
+            applicator.add_order_validity_proof(order_id, &proof, &witness).unwrap()
         })
         .await
         .unwrap();
