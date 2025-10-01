@@ -437,20 +437,23 @@ mod test {
         let state = mock_state().await;
 
         // Create two orders and only add one
-        let order1 = dummy_network_order();
+        let mut order1 = dummy_network_order();
         let order2 = dummy_network_order();
+        let validity_bundle = dummy_validity_proof_bundle();
+        let nullifier = validity_bundle.reblind_proof.statement.original_shares_nullifier;
 
         state.add_order(order1.clone()).await.unwrap();
         state.add_order(order2.clone()).await.unwrap();
-        state.add_order_validity_proof(order1.id, dummy_validity_proof_bundle()).await.unwrap();
+        state.add_order_validity_proof(order1.id, validity_bundle).await.unwrap();
 
         // Get the orders in a batch call
-        let mut res = state.get_orders_batch(&[order1.id, order2.id]).await.unwrap();
+        let res = state.get_orders_batch(&[order1.id, order2.id]).await.unwrap();
         assert_eq!(res.len(), 2);
 
-        // TODO: Remove this once the migration is complete
-        let res_order1 = &mut res[0].order;
-        *res_order1 = order1.clone();
+        // Check the result
+        order1.public_share_nullifier = nullifier;
+        order1.state = NetworkOrderState::Verified;
+
         assert_eq!(res[0].order, order1);
         assert!(res[0].validity_proofs.is_some());
         assert_eq!(res[1].order, order2);
