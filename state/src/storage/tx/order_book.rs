@@ -2,13 +2,10 @@
 
 use circuit_types::wallet::Nullifier;
 use common::types::{
-    gossip::ClusterId,
-    network_order::NetworkOrder,
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    gossip::ClusterId, network_order::NetworkOrder, proof_bundles::OrderValidityProofBundle,
     wallet::OrderIdentifier,
 };
 use libmdbx::{RW, TransactionKind};
-use tracing::warn;
 
 use crate::{
     ORDERS_TABLE, PRIORITIES_TABLE,
@@ -60,26 +57,7 @@ impl<T: TransactionKind> StateTxn<'_, T> {
         order_id: &OrderIdentifier,
     ) -> Result<Option<NetworkOrder>, StorageError> {
         let key = order_key(order_id);
-
-        // TODO: Remove shim code
-        // 1. Try deserializing *just* the order
-        let res = self.inner().read::<_, NetworkOrder>(ORDERS_TABLE, &key);
-        match res {
-            Ok(maybe_order) => Ok(maybe_order),
-            Err(e) => {
-                // Fallback to deserializing the (order, witness) tuple
-                warn!("Error deserializing network order: {e}");
-                let res = self
-                    .inner()
-                    .read::<_, (NetworkOrder, Option<OrderValidityWitnessBundle>)>(
-                        ORDERS_TABLE,
-                        &key,
-                    )?
-                    .map(|(order, _witness)| order);
-
-                Ok(res)
-            },
-        }
+        self.inner().read(ORDERS_TABLE, &key)
     }
 
     /// Get the priority for an order
