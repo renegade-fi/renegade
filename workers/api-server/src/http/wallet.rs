@@ -642,6 +642,7 @@ impl TypedHandler for CancelOrderHandler {
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new_order_cancellation(
+            order_id,
             order.clone(),
             old_wallet,
             new_wallet,

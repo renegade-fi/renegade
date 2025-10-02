@@ -121,6 +121,15 @@ impl StateInner {
         self.with_read_tx(move |tx| tx.get_validity_proof_witness(&oid).map_err(Into::into)).await
     }
 
+    /// Get the cancellation proof for an order
+    pub async fn get_cancellation_proof(
+        &self,
+        order_id: &OrderIdentifier,
+    ) -> Result<Option<ValidWalletUpdateBundle>, StateError> {
+        let oid = *order_id;
+        self.with_read_tx(move |tx| tx.get_cancellation_proof(&oid).map_err(Into::into)).await
+    }
+
     /// Return whether the given order is ready for a match
     pub async fn order_ready_for_match(
         &self,

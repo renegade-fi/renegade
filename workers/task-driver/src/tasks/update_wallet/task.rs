@@ -145,6 +145,14 @@ pub enum UpdateWalletTaskError {
     SendEvent(String),
 }
 
+impl UpdateWalletTaskError {
+    /// Create a new state error
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn state(msg: impl ToString) -> Self {
+        UpdateWalletTaskError::State(msg.to_string())
+    }
+}
+
 impl TaskError for UpdateWalletTaskError {
     fn retryable(&self) -> bool {
         matches!(
@@ -332,9 +340,15 @@ impl UpdateWalletTask {
 
     /// Generate a proof of `VALID WALLET UPDATE` for the wallet
     async fn generate_proof(&mut self) -> Result<(), UpdateWalletTaskError> {
-        let (witness, statement) = self.build_task_witness_statement()?;
+        // First check if we have a precomputed proof
+        if let Some(proof) = self.has_precomputed_update_proof().await? {
+            info!("Using precomputed wallet update proof");
+            self.proof_bundle = Some(proof);
+            return Ok(());
+        }
 
         // Dispatch a job to the proof manager, and await the job's result
+        let (witness, statement) = self.build_task_witness_statement()?;
         let job = ProofJob::ValidWalletUpdate { witness, statement };
         let proof_recv =
             enqueue_proof_job(job, &self.ctx).map_err(UpdateWalletTaskError::ProofGeneration)?;
@@ -401,9 +415,9 @@ impl UpdateWalletTask {
         });
 
         // Precompute a cancellation proof for an order if necessary
-        let cancellation_proof = self.precompute_cancellation_proof().await?;
-        if let Some(proof) = cancellation_proof {
-            self.store_cancellation_proof(&proof).await?;
+        let res = self.precompute_cancellation_proof().await?;
+        if let Some((oid, proof)) = res {
+            self.store_cancellation_proof(oid, proof).await?;
         }
 
         validity_jh

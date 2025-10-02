@@ -5,7 +5,6 @@ use common::types::{
     tasks::WalletUpdateType,
     wallet::{Order, OrderIdentifier},
 };
-use itertools::Itertools;
 use job_types::event_manager::{
     ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent, OrderUpdateEvent,
     RelayerEventType, try_send_event,
@@ -17,9 +16,6 @@ use crate::tasks::update_wallet::{UpdateWalletTask, UpdateWalletTaskError};
 
 /// A deposit or withdrawal wallet update type is missing an external transfer
 const ERR_MISSING_TRANSFER: &str = "missing external transfer";
-/// A cancelled order cannot be found in an order cancellation wallet update
-/// type
-const ERR_MISSING_CANCELLED_ORDER: &str = "missing cancelled order";
 /// An order metadata is missing from the global state
 const ERR_MISSING_ORDER_METADATA: &str = "missing order metadata";
 
@@ -42,8 +38,8 @@ impl UpdateWalletTask {
             WalletUpdateType::PlaceOrder { order, id, matching_pool, .. } => {
                 self.construct_order_placement_or_update_event(id, order, matching_pool)
             },
-            WalletUpdateType::CancelOrder { order } => {
-                self.construct_order_cancellation_event(order).await?
+            WalletUpdateType::CancelOrder { id, order } => {
+                self.construct_order_cancellation_event(*id, order).await?
             },
         };
 
@@ -96,22 +92,13 @@ impl UpdateWalletTask {
     /// Construct an order cancellation event
     async fn construct_order_cancellation_event(
         &self,
+        order_id: OrderIdentifier,
         order: &Order,
     ) -> Result<RelayerEventType, UpdateWalletTaskError> {
         let wallet_id = self.new_wallet.wallet_id;
         let order = order.clone();
 
-        // Find the ID of the cancelled order
-        let mut new_order_ids = self.new_wallet.get_nonzero_orders().into_keys();
-        let order_id = self
-            .old_wallet
-            .get_nonzero_orders()
-            .into_keys()
-            .find(|id| !new_order_ids.contains(id))
-            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_CANCELLED_ORDER.to_string()))?;
-
         let amount_remaining = order.amount;
-
         let amount_filled = self
             .ctx
             .state

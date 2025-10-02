@@ -5,7 +5,9 @@ use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::{
-    proof_bundles::ValidWalletUpdateBundle, tasks::WalletUpdateType, wallet::Wallet,
+    proof_bundles::ValidWalletUpdateBundle,
+    tasks::WalletUpdateType,
+    wallet::{OrderIdentifier, Wallet},
 };
 use job_types::proof_manager::ProofJob;
 use tracing::info;
@@ -19,12 +21,12 @@ use crate::{
 const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 
 impl UpdateWalletTask {
-    // --- Proof Helpers --- //
+    // --- Proof Generation --- //
 
     /// Precompute a cancellation proof for an order
     pub(crate) async fn precompute_cancellation_proof(
         &self,
-    ) -> Result<Option<ValidWalletUpdateBundle>, UpdateWalletTaskError> {
+    ) -> Result<Option<(OrderIdentifier, ValidWalletUpdateBundle)>, UpdateWalletTaskError> {
         // Check if this is necessary
         if !self.should_compute_cancellation_proof() {
             return Ok(None);
@@ -52,7 +54,7 @@ impl UpdateWalletTask {
         // Await the proof
         let bundle =
             recv.await.map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
-        Ok(Some(bundle.into()))
+        Ok(Some((oid, bundle.into())))
     }
 
     /// Build the witness and statement for the update described by the task
@@ -149,12 +151,31 @@ impl UpdateWalletTask {
         }
     }
 
+    // --- Proof Storage --- //
+
     /// Store a precomputed cancellation proof for an order
     pub(crate) async fn store_cancellation_proof(
         &self,
-        _proof: &ValidWalletUpdateBundle,
+        order_id: OrderIdentifier,
+        proof: ValidWalletUpdateBundle,
     ) -> Result<(), UpdateWalletTaskError> {
-        // TODO:  Write the proof to the global state
+        let proofs = vec![(order_id, proof)];
+        let waiter = self.ctx.state.add_local_order_cancellation_proofs(proofs).await?;
+        waiter.await?;
+
         Ok(())
+    }
+
+    /// Check if the current task has a precomputed update proof
+    pub(crate) async fn has_precomputed_update_proof(
+        &self,
+    ) -> Result<Option<ValidWalletUpdateBundle>, UpdateWalletTaskError> {
+        // Check for a cancellation type
+        let oid = match self.update_type {
+            WalletUpdateType::CancelOrder { id, .. } => id,
+            _ => return Ok(None),
+        };
+
+        self.ctx.state.get_cancellation_proof(&oid).await.map_err(UpdateWalletTaskError::state)
     }
 }
