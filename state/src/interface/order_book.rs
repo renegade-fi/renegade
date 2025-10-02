@@ -10,7 +10,9 @@ use common::types::{
     MatchingPoolName,
     gossip::WrappedPeerId,
     network_order::NetworkOrder,
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    proof_bundles::{
+        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
+    },
     wallet::{OrderIdentifier, Pair},
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
@@ -362,6 +364,14 @@ impl StateInner {
     ) -> Result<ProposalWaiter, StateError> {
         self.send_proposal(StateTransition::AddOrderValidityBundle { order_id, proof, witness })
             .await
+    }
+
+    /// Add cancellation proofs for a batch of orders managed by the local node
+    pub async fn add_local_order_cancellation_proofs(
+        &self,
+        proofs: Vec<(OrderIdentifier, ValidWalletUpdateBundle)>,
+    ) -> Result<ProposalWaiter, StateError> {
+        self.send_proposal(StateTransition::AddOrderCancellationProofs { proofs }).await
     }
 
     /// Nullify all orders on the given nullifier
