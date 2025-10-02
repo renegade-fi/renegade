@@ -43,10 +43,10 @@ pub enum WalletUpdateType {
     },
     /// Place an order
     PlaceOrder {
-        /// The order to place
-        order: Order,
         /// The ID of the order
         id: OrderIdentifier,
+        /// The order to place
+        order: Order,
         /// The matching pool to assign the order to.
         /// If `None`, the order is placed in the global pool.
         matching_pool: Option<MatchingPoolName>,
@@ -55,6 +55,8 @@ pub enum WalletUpdateType {
     },
     /// Cancel an order
     CancelOrder {
+        /// The ID of the order that was cancelled
+        id: OrderIdentifier,
         /// The order that was cancelled
         order: Order,
     },
@@ -196,12 +198,13 @@ impl UpdateWalletTaskDescriptor {
 
     /// A new order cancellation
     pub fn new_order_cancellation(
+        id: OrderIdentifier,
         order: Order,
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::CancelOrder { order };
+        let desc = WalletUpdateType::CancelOrder { id, order };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 }

@@ -211,7 +211,7 @@ impl From<WalletUpdateType> for ApiWalletUpdateType {
             WalletUpdateType::PlaceOrder { order, .. } => {
                 Self::PlaceOrder { order: WalletUpdateOrder::from(order) }
             },
-            WalletUpdateType::CancelOrder { order } => {
+            WalletUpdateType::CancelOrder { order, .. } => {
                 Self::CancelOrder { order: WalletUpdateOrder::from(order) }
             },
         }
