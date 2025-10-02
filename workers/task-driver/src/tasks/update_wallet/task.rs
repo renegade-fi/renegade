@@ -10,30 +10,18 @@ use std::str::FromStr;
 
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
-use circuit_types::{SizedWallet as CircuitWallet, transfers::ExternalTransferDirection};
-use circuits::zk_circuits::valid_wallet_update::{
-    SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
-};
-use common::types::MatchingPoolName;
 use common::types::tasks::WalletUpdateType;
-use common::types::wallet::{Order, OrderIdentifier};
 use common::types::{
     proof_bundles::ValidWalletUpdateBundle, tasks::UpdateWalletTaskDescriptor,
     transfer_auth::ExternalTransferWithAuth, wallet::Wallet,
 };
 use darkpool_client::errors::DarkpoolClientError;
-use itertools::Itertools;
-use job_types::event_manager::{
-    ExternalTransferEvent, OrderCancellationEvent, OrderPlacementEvent, OrderUpdateEvent,
-    RelayerEventType, try_send_event,
-};
+use job_types::event_manager::RelayerEventType;
 use job_types::proof_manager::ProofJob;
 use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use serde::Serialize;
 use state::error::StateError;
-use state::storage::tx::matching_pools::GLOBAL_MATCHING_POOL;
 use tracing::{info, instrument};
-use util::err_str;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
@@ -46,17 +34,8 @@ use crate::utils::{
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
 /// The wallet no longer exists in global state
 const ERR_WALLET_MISSING: &str = "wallet not found in global state";
-/// The wallet does not have a known Merkle proof attached
-const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 /// The new wallet does not correspond to a valid reblinding of the old wallet
 const ERR_INVALID_REBLIND: &str = "new wallet is not a valid reblind of old wallet";
-/// A deposit or withdrawal wallet update type is missing an external transfer
-const ERR_MISSING_TRANSFER: &str = "missing external transfer";
-/// A cancelled order cannot be found in an order cancellation wallet update
-/// type
-const ERR_MISSING_CANCELLED_ORDER: &str = "missing cancelled order";
-/// An order metadata is missing from the global state
-const ERR_MISSING_ORDER_METADATA: &str = "missing order metadata";
 
 // --------------
 // | Task State |
@@ -412,9 +391,23 @@ impl UpdateWalletTask {
     /// REBLIND` for the wallet and `VALID COMMITMENTS` for all orders in
     /// the wallet
     async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
-        update_wallet_validity_proofs(&self.new_wallet, &self.ctx)
+        // Spawn the validity proofs update
+        let new_wallet = self.new_wallet.clone();
+        let ctx = self.ctx.clone();
+        let validity_jh = tokio::spawn(async move {
+            update_wallet_validity_proofs(&new_wallet, &ctx)
+                .await
+                .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
+        });
+
+        if self.should_precompute_cancellation_proof() {
+            // TODO: Prove order cancellation
+        }
+
+        validity_jh
             .await
-            .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
+            .map_err(|e| UpdateWalletTaskError::UpdatingValidityProofs(e.to_string()))? // Join error
+            .map_err(|e| UpdateWalletTaskError::UpdatingValidityProofs(e.to_string())) // Validity proof error
     }
 
     /// Update the wallet directly in the global state
@@ -431,201 +424,5 @@ impl UpdateWalletTask {
         let waiter = self.ctx.state.update_wallet(new_wallet).await?;
         waiter.await?;
         Ok(())
-    }
-
-    // -----------
-    // | Helpers |
-    // -----------
-
-    /// Whether the wallet update requires an on-chain update
-    ///
-    /// Some wallet updates do not modify the on-chain state, e.g. marking an
-    /// order as externally matchable. In these cases, we can skip the on-chain
-    /// interaction and just update the local copy of the wallet
-    ///
-    /// Concretely, if an update doesn't change the circuit representation of
-    /// the wallet, we can skip the on-chain update
-    ///
-    /// TODO: In the future we'll want to allow reblind-only updates, for which
-    /// we can force an on-chain update
-    pub(crate) fn requires_onchain_update(&self) -> bool {
-        let old_circuit_wallet: CircuitWallet = self.old_wallet.clone().into();
-        let mut new_circuit_wallet: CircuitWallet = self.new_wallet.clone().into();
-
-        // The wallet blinders are allowed to be different, all other fields must
-        // match exactly to skip the on-chain update
-        new_circuit_wallet.blinder = self.old_wallet.blinder;
-        new_circuit_wallet != old_circuit_wallet
-    }
-
-    /// Check that the wallet's blinder and private shares are the result of
-    /// applying a reblind to the old wallet
-    pub fn check_reblind_progression(old_wallet: &Wallet, new_wallet: &Wallet) -> bool {
-        let mut old_wallet_clone = old_wallet.clone();
-        old_wallet_clone.reblind_wallet();
-        let expected_private_shares = old_wallet_clone.private_shares;
-        let expected_blinder = old_wallet_clone.blinder;
-
-        new_wallet.private_shares == expected_private_shares
-            && new_wallet.blinder == expected_blinder
-    }
-
-    /// Construct a witness and statement for `VALID WALLET UPDATE`
-    fn get_witness_statement(
-        &self,
-    ) -> Result<
-        (SizedValidWalletUpdateWitness, SizedValidWalletUpdateStatement),
-        UpdateWalletTaskError,
-    > {
-        // Get the Merkle opening previously stored to the wallet
-        let merkle_opening = self
-            .old_wallet
-            .merkle_proof
-            .clone()
-            .ok_or_else(|| UpdateWalletTaskError::Missing(ERR_NO_MERKLE_PROOF.to_string()))?;
-        let merkle_root = merkle_opening.compute_root();
-
-        // Build the witness and statement
-        let old_wallet = &self.old_wallet;
-        let new_wallet = &self.new_wallet;
-        let new_wallet_commitment = self.new_wallet.get_wallet_share_commitment();
-
-        let transfer_index = self.get_transfer_idx()?;
-        let transfer = self.transfer.clone().map(|t| t.external_transfer).unwrap_or_default();
-        let statement = SizedValidWalletUpdateStatement {
-            old_shares_nullifier: old_wallet.get_wallet_nullifier(),
-            new_wallet_commitment,
-            new_public_shares: new_wallet.blinded_public_shares.clone(),
-            merkle_root,
-            external_transfer: transfer,
-            old_pk_root: old_wallet.key_chain.public_keys.pk_root.clone(),
-        };
-
-        let witness = SizedValidWalletUpdateWitness {
-            old_wallet_private_shares: old_wallet.private_shares.clone(),
-            old_wallet_public_shares: old_wallet.blinded_public_shares.clone(),
-            old_shares_opening: merkle_opening.into(),
-            new_wallet_private_shares: new_wallet.private_shares.clone(),
-            transfer_index,
-        };
-
-        Ok((witness, statement))
-    }
-
-    /// Get the index that the transfer is applied to
-    fn get_transfer_idx(&self) -> Result<usize, UpdateWalletTaskError> {
-        if let Some(transfer) = self.transfer.as_ref().map(|t| &t.external_transfer) {
-            let mint = &transfer.mint;
-            match transfer.direction {
-                ExternalTransferDirection::Deposit => self.new_wallet.get_balance_index(mint),
-                ExternalTransferDirection::Withdrawal => self.old_wallet.get_balance_index(mint),
-            }
-            .ok_or(UpdateWalletTaskError::Missing(format!("transfer mint {mint:#x} not found")))
-        } else {
-            Ok(0)
-        }
-    }
-
-    /// Emit the completion event to the event manager
-    fn emit_event(&mut self) -> Result<(), UpdateWalletTaskError> {
-        try_send_event(self.completion_event.take().unwrap(), &self.ctx.event_queue)
-            .map_err(err_str!(UpdateWalletTaskError::SendEvent))
-    }
-
-    /// Construct the event to emit after the task is complete & record
-    /// it in the task
-    async fn prepare_completion_event(&mut self) -> Result<(), UpdateWalletTaskError> {
-        let event = match &self.update_type {
-            WalletUpdateType::Deposit { .. } | WalletUpdateType::Withdraw { .. } => {
-                self.construct_external_transfer_event()?
-            },
-            WalletUpdateType::PlaceOrder { order, id, matching_pool, .. } => {
-                self.construct_order_placement_or_update_event(id, order, matching_pool)
-            },
-            WalletUpdateType::CancelOrder { order } => {
-                self.construct_order_cancellation_event(order).await?
-            },
-        };
-
-        self.completion_event = Some(event);
-        Ok(())
-    }
-
-    /// Construct an external transfer event
-    fn construct_external_transfer_event(&self) -> Result<RelayerEventType, UpdateWalletTaskError> {
-        let wallet_id = self.new_wallet.wallet_id;
-        let transfer = self
-            .transfer
-            .clone()
-            .map(|t| t.external_transfer)
-            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_TRANSFER.to_string()))?;
-
-        Ok(RelayerEventType::ExternalTransfer(ExternalTransferEvent::new(wallet_id, transfer)))
-    }
-
-    /// Construct either an order placement or an order update event,
-    /// depending on whether the order already exists in the new wallet
-    fn construct_order_placement_or_update_event(
-        &self,
-        order_id: &OrderIdentifier,
-        order: &Order,
-        matching_pool: &Option<MatchingPoolName>,
-    ) -> RelayerEventType {
-        let wallet_id = self.new_wallet.wallet_id;
-        let order_id = *order_id;
-        let order = order.clone();
-        let matching_pool = matching_pool.clone().unwrap_or(GLOBAL_MATCHING_POOL.to_string());
-
-        if self.old_wallet.contains_order(&order_id) {
-            RelayerEventType::OrderUpdate(OrderUpdateEvent::new(
-                wallet_id,
-                order_id,
-                order,
-                matching_pool,
-            ))
-        } else {
-            RelayerEventType::OrderPlacement(OrderPlacementEvent::new(
-                wallet_id,
-                order_id,
-                order,
-                matching_pool,
-            ))
-        }
-    }
-
-    /// Construct an order cancellation event
-    async fn construct_order_cancellation_event(
-        &self,
-        order: &Order,
-    ) -> Result<RelayerEventType, UpdateWalletTaskError> {
-        let wallet_id = self.new_wallet.wallet_id;
-        let order = order.clone();
-
-        // Find the ID of the cancelled order
-        let mut new_order_ids = self.new_wallet.get_nonzero_orders().into_keys();
-        let order_id = self
-            .old_wallet
-            .get_nonzero_orders()
-            .into_keys()
-            .find(|id| !new_order_ids.contains(id))
-            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_CANCELLED_ORDER.to_string()))?;
-
-        let amount_remaining = order.amount;
-
-        let amount_filled = self
-            .ctx
-            .state
-            .get_order_metadata(&order_id)
-            .await?
-            .ok_or(UpdateWalletTaskError::Missing(ERR_MISSING_ORDER_METADATA.to_string()))?
-            .total_filled();
-
-        Ok(RelayerEventType::OrderCancellation(OrderCancellationEvent::new(
-            wallet_id,
-            order_id,
-            order,
-            amount_remaining,
-            amount_filled,
-        )))
     }
 }
