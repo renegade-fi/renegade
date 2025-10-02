@@ -152,6 +152,16 @@ pub struct CreateOrderRequest {
     /// The authorization parameters for the update
     #[serde(flatten)]
     pub update_auth: WalletUpdateAuthorization,
+    /// The options for creating the order
+    #[serde(default)]
+    pub options: CreateOrderOptions,
+}
+
+/// The options for creating an order
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct CreateOrderOptions {
+    /// Whether to precompute a cancellation proof for the order
+    pub precompute_cancellation_proof: bool,
 }
 
 /// The response type to a request that adds a new order to a wallet
@@ -171,6 +181,16 @@ pub struct UpdateOrderRequest {
     /// The authorization parameters for the update
     #[serde(flatten)]
     pub update_auth: WalletUpdateAuthorization,
+    /// The options for updating the order
+    #[serde(default)]
+    pub options: UpdateOrderOptions,
+}
+
+/// The options for updating an order
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct UpdateOrderOptions {
+    /// Whether to precompute a cancellation proof for the order
+    pub precompute_cancellation_proof: bool,
 }
 
 /// The response type to update an order

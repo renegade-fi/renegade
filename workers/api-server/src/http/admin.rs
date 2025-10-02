@@ -415,6 +415,7 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
             new_wallet,
             req.update_auth.statement_sig,
             Some(matching_pool),
+            req.options.precompute_cancellation_proof,
         )
         .map_err(bad_request)?;
 

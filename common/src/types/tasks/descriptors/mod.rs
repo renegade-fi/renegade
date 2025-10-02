@@ -347,6 +347,7 @@ mod test {
             wallet.clone(),
             wallet,
             vec![],
+            false, // precompute_cancellation_proof
         )
         .unwrap();
     }
@@ -364,6 +365,7 @@ mod test {
             wallet.clone(),
             wallet,
             sig,
+            false, // precompute_cancellation_proof
         )
         .unwrap();
     }
@@ -382,6 +384,7 @@ mod test {
             wallet.clone(),
             wallet,
             sig,
+            false, // precompute_cancellation_proof
         )
         .unwrap();
     }

@@ -526,6 +526,7 @@ impl TypedHandler for CreateOrderHandler {
             old_wallet,
             new_wallet,
             req.update_auth.statement_sig,
+            req.options.precompute_cancellation_proof,
         )
         .map_err(bad_request)?;
 
@@ -587,6 +588,7 @@ impl TypedHandler for UpdateOrderHandler {
             old_wallet,
             new_wallet,
             req.update_auth.statement_sig,
+            req.options.precompute_cancellation_proof,
         )
         .map_err(bad_request)?;
 
