@@ -103,6 +103,19 @@ impl StateTxn<'_, RW> {
         let key = cancellation_proof_key(order_id);
         self.inner().write(PROOFS_TABLE, &key, proof)
     }
+
+    /// Delete all proofs for an order
+    pub fn delete_proofs_for_order(&self, order_id: &OrderIdentifier) -> Result<(), StorageError> {
+        let validity_bundle_key = validity_proof_bundle_key(order_id);
+        let validity_witness_key = validity_proof_witness_key(order_id);
+        let cancellation_key = cancellation_proof_key(order_id);
+
+        self.inner().delete(PROOFS_TABLE, &validity_bundle_key)?;
+        self.inner().delete(PROOFS_TABLE, &validity_witness_key)?;
+        self.inner().delete(PROOFS_TABLE, &cancellation_key)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -193,6 +206,72 @@ mod test {
         let tx = db.new_read_tx().unwrap();
         let stored_proof = tx.get_cancellation_proof(&order_id).unwrap();
         assert!(stored_proof.is_some());
+        tx.commit().unwrap();
+    }
+
+    /// Tests deleting all proofs for an order
+    #[test]
+    fn test_delete_proofs_for_order() {
+        let db = mock_db();
+        db.create_table(PROOFS_TABLE).unwrap();
+
+        let order_id = OrderIdentifier::new_v4();
+
+        // Write all proof types
+        let validity_bundle = dummy_validity_proof_bundle();
+        let validity_witness = dummy_validity_witness_bundle();
+        let cancellation_proof = Arc::new(dummy_valid_wallet_update_bundle());
+
+        let tx = db.new_write_tx().unwrap();
+        tx.write_validity_proof_bundle(&order_id, &validity_bundle).unwrap();
+        tx.write_validity_proof_witness(&order_id, &validity_witness).unwrap();
+        tx.write_cancellation_proof(&order_id, &cancellation_proof).unwrap();
+        tx.commit().unwrap();
+
+        // Delete all proofs
+        let tx = db.new_write_tx().unwrap();
+        tx.delete_proofs_for_order(&order_id).unwrap();
+        tx.commit().unwrap();
+
+        // Verify all proofs are deleted
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_validity_proof_bundle(&order_id).unwrap().is_none());
+        assert!(tx.get_validity_proof_witness(&order_id).unwrap().is_none());
+        assert!(tx.get_cancellation_proof(&order_id).unwrap().is_none());
+        tx.commit().unwrap();
+    }
+
+    /// Tests deleting proofs when only validity proof bundle exists
+    #[test]
+    fn test_delete_proofs_partial() {
+        let db = mock_db();
+        db.create_table(PROOFS_TABLE).unwrap();
+
+        let order_id = OrderIdentifier::new_v4();
+
+        // Write only validity proof bundle
+        let validity_bundle = dummy_validity_proof_bundle();
+        let tx = db.new_write_tx().unwrap();
+        tx.write_validity_proof_bundle(&order_id, &validity_bundle).unwrap();
+        tx.commit().unwrap();
+
+        // Verify only validity proof exists
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_validity_proof_bundle(&order_id).unwrap().is_some());
+        assert!(tx.get_validity_proof_witness(&order_id).unwrap().is_none());
+        assert!(tx.get_cancellation_proof(&order_id).unwrap().is_none());
+        tx.commit().unwrap();
+
+        // Delete all proofs should succeed even when some don't exist
+        let tx = db.new_write_tx().unwrap();
+        tx.delete_proofs_for_order(&order_id).unwrap();
+        tx.commit().unwrap();
+
+        // Verify validity proof is deleted
+        let tx = db.new_read_tx().unwrap();
+        assert!(tx.get_validity_proof_bundle(&order_id).unwrap().is_none());
+        assert!(tx.get_validity_proof_witness(&order_id).unwrap().is_none());
+        assert!(tx.get_cancellation_proof(&order_id).unwrap().is_none());
         tx.commit().unwrap();
     }
 }
