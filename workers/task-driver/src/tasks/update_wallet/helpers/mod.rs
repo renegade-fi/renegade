@@ -7,7 +7,7 @@ use common::types::wallet::Wallet;
 use crate::tasks::update_wallet::UpdateWalletTask;
 
 pub(crate) mod events;
-pub(crate) mod witness_generation;
+pub(crate) mod proofs;
 
 impl UpdateWalletTask {
     // --- General Helpers --- //
@@ -47,7 +47,7 @@ impl UpdateWalletTask {
 
     /// Whether the given wallet update requests a precomputed cancellation
     /// proof
-    pub fn should_precompute_cancellation_proof(&self) -> bool {
+    pub fn should_compute_cancellation_proof(&self) -> bool {
         match &self.update_type {
             WalletUpdateType::PlaceOrder { precompute_cancellation_proof, .. } => {
                 *precompute_cancellation_proof
