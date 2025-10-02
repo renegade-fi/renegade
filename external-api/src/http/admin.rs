@@ -7,7 +7,10 @@
 use common::types::{MatchingPoolName, wallet::OrderIdentifier};
 use serde::{Deserialize, Serialize};
 
-use crate::types::{AdminOrderMetadata, ApiOrder};
+use crate::{
+    http::wallet::CreateOrderOptions,
+    types::{AdminOrderMetadata, ApiOrder},
+};
 
 use super::wallet::WalletUpdateAuthorization;
 
@@ -69,6 +72,9 @@ pub struct CreateOrderInMatchingPoolRequest {
     pub update_auth: WalletUpdateAuthorization,
     /// The matching pool to create the order in
     pub matching_pool: MatchingPoolName,
+    /// The options for creating the order
+    #[serde(default)]
+    pub options: CreateOrderOptions,
 }
 
 /// The response to an admin "order metadata" request

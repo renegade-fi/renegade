@@ -50,6 +50,8 @@ pub enum WalletUpdateType {
         /// The matching pool to assign the order to.
         /// If `None`, the order is placed in the global pool.
         matching_pool: Option<MatchingPoolName>,
+        /// Whether to precompute a cancellation proof for the order
+        precompute_cancellation_proof: bool,
     },
     /// Cancel an order
     CancelOrder {
@@ -160,6 +162,7 @@ impl UpdateWalletTaskDescriptor {
         old_wallet: Wallet,
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
+        precompute_cancellation_proof: bool,
     ) -> Result<Self, String> {
         Self::new_order_with_maybe_pool(
             id,
@@ -168,6 +171,7 @@ impl UpdateWalletTaskDescriptor {
             new_wallet,
             wallet_update_signature,
             None, // matching_pool
+            precompute_cancellation_proof,
         )
     }
 
@@ -179,8 +183,14 @@ impl UpdateWalletTaskDescriptor {
         new_wallet: Wallet,
         wallet_update_signature: Vec<u8>,
         matching_pool: Option<MatchingPoolName>,
+        precompute_cancellation_proof: bool,
     ) -> Result<Self, String> {
-        let desc = WalletUpdateType::PlaceOrder { order, id, matching_pool };
+        let desc = WalletUpdateType::PlaceOrder {
+            order,
+            id,
+            matching_pool,
+            precompute_cancellation_proof,
+        };
         Self::new(desc, None, old_wallet, new_wallet, wallet_update_signature)
     }
 

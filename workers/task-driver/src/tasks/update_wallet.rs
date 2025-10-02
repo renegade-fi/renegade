@@ -539,7 +539,7 @@ impl UpdateWalletTask {
             WalletUpdateType::Deposit { .. } | WalletUpdateType::Withdraw { .. } => {
                 self.construct_external_transfer_event()?
             },
-            WalletUpdateType::PlaceOrder { order, id, matching_pool } => {
+            WalletUpdateType::PlaceOrder { order, id, matching_pool, .. } => {
                 self.construct_order_placement_or_update_event(id, order, matching_pool)
             },
             WalletUpdateType::CancelOrder { order } => {

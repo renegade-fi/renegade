@@ -117,7 +117,13 @@ pub mod historical_mocks {
     pub fn mock_historical_task() -> HistoricalTask {
         let mut rng = thread_rng();
         let id = OrderIdentifier::new_v4();
-        let ty = WalletUpdateType::PlaceOrder { order: mock_order(), id, matching_pool: None };
+        let ty = WalletUpdateType::PlaceOrder {
+            order: mock_order(),
+            id,
+            matching_pool: None,
+            precompute_cancellation_proof: false,
+        };
+
         HistoricalTask {
             id: TaskIdentifier::new_v4(),
             state: QueuedTaskState::Completed,
