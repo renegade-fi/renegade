@@ -2,7 +2,9 @@
 //! discoverability
 
 use common::types::{
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    proof_bundles::{
+        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
+    },
     wallet::{OrderIdentifier, order_metadata::OrderState},
 };
 use constants::ORDER_STATE_CHANGE_TOPIC;
@@ -116,6 +118,20 @@ impl StateApplicator {
         Ok(ApplicatorReturnType::None)
     }
 
+    /// Add cancellation proofs for a batch of orders
+    pub fn add_order_cancellation_proofs(
+        &self,
+        proofs: &[(OrderIdentifier, ValidWalletUpdateBundle)],
+    ) -> Result<ApplicatorReturnType> {
+        let tx = self.db().new_write_tx()?;
+        for (order_id, proof) in proofs {
+            tx.write_cancellation_proof(order_id, proof)?;
+        }
+
+        tx.commit()?;
+        Ok(ApplicatorReturnType::None)
+    }
+
     // -----------
     // | Helpers |
     // -----------
@@ -149,9 +165,14 @@ impl StateApplicator {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use common::types::{
         network_order::NetworkOrderState,
-        proof_bundles::mocks::{dummy_validity_proof_bundle, dummy_validity_witness_bundle},
+        proof_bundles::mocks::{
+            dummy_valid_wallet_update_bundle, dummy_validity_proof_bundle,
+            dummy_validity_witness_bundle,
+        },
         wallet::OrderIdentifier,
         wallet_mocks::{mock_empty_wallet, mock_order},
     };
@@ -193,5 +214,37 @@ mod test {
 
         assert_eq!(order.state, NetworkOrderState::Verified);
         assert!(proof.is_some());
+    }
+
+    /// Test adding cancellation proofs for orders
+    #[tokio::test]
+    async fn test_add_cancellation_proofs() {
+        let base_applicator = mock_applicator();
+
+        // Add an order via a wallet
+        let mut wallet = mock_empty_wallet();
+        let order_id = OrderIdentifier::new_v4();
+        wallet.add_order(order_id, mock_order()).unwrap();
+        let applicator = base_applicator.clone();
+        tokio::task::spawn_blocking(move || applicator.update_wallet(&wallet).unwrap())
+            .await
+            .unwrap();
+
+        // Add a cancellation proof
+        let proof = Arc::new(dummy_valid_wallet_update_bundle());
+        let proofs = vec![(order_id, proof.clone())];
+        let applicator = base_applicator.clone();
+        tokio::task::spawn_blocking(move || {
+            applicator.add_order_cancellation_proofs(&proofs).unwrap()
+        })
+        .await
+        .unwrap();
+
+        // Verify that the proof was written
+        let db = base_applicator.db();
+        let tx = db.new_read_tx().unwrap();
+        let stored_proof = tx.get_cancellation_proof(&order_id).unwrap();
+
+        assert!(stored_proof.is_some());
     }
 }

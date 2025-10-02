@@ -85,6 +85,9 @@ impl StateApplicator {
             StateTransition::AddOrderValidityBundle { order_id, proof, witness } => {
                 self.add_order_validity_proof(order_id, &proof, &witness)
             },
+            StateTransition::AddOrderCancellationProofs { proofs } => {
+                self.add_order_cancellation_proofs(&proofs)
+            },
             StateTransition::UpdateOrderMetadata { meta } => self.update_order_metadata(meta),
             StateTransition::CreateMatchingPool { pool_name } => {
                 self.create_matching_pool(&pool_name)
