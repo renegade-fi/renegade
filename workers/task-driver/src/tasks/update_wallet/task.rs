@@ -401,9 +401,9 @@ impl UpdateWalletTask {
         });
 
         // Precompute a cancellation proof for an order if necessary
-        let cancellation_proof = self.precompute_cancellation_proof().await?;
-        if let Some(proof) = cancellation_proof {
-            self.store_cancellation_proof(&proof).await?;
+        let res = self.precompute_cancellation_proof().await?;
+        if let Some((oid, proof)) = res {
+            self.store_cancellation_proof(oid, proof).await?;
         }
 
         validity_jh

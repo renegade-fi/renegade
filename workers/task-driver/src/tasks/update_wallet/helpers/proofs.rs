@@ -5,7 +5,9 @@ use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::{
-    proof_bundles::ValidWalletUpdateBundle, tasks::WalletUpdateType, wallet::Wallet,
+    proof_bundles::ValidWalletUpdateBundle,
+    tasks::WalletUpdateType,
+    wallet::{OrderIdentifier, Wallet},
 };
 use job_types::proof_manager::ProofJob;
 use tracing::info;
@@ -24,7 +26,7 @@ impl UpdateWalletTask {
     /// Precompute a cancellation proof for an order
     pub(crate) async fn precompute_cancellation_proof(
         &self,
-    ) -> Result<Option<ValidWalletUpdateBundle>, UpdateWalletTaskError> {
+    ) -> Result<Option<(OrderIdentifier, ValidWalletUpdateBundle)>, UpdateWalletTaskError> {
         // Check if this is necessary
         if !self.should_compute_cancellation_proof() {
             return Ok(None);
@@ -52,7 +54,7 @@ impl UpdateWalletTask {
         // Await the proof
         let bundle =
             recv.await.map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
-        Ok(Some(bundle.into()))
+        Ok(Some((oid, bundle.into())))
     }
 
     /// Build the witness and statement for the update described by the task
@@ -152,9 +154,14 @@ impl UpdateWalletTask {
     /// Store a precomputed cancellation proof for an order
     pub(crate) async fn store_cancellation_proof(
         &self,
-        _proof: &ValidWalletUpdateBundle,
+        order_id: OrderIdentifier,
+        proof: ValidWalletUpdateBundle,
     ) -> Result<(), UpdateWalletTaskError> {
         // TODO:  Write the proof to the global state
+        let proofs = vec![(order_id, proof)];
+        let waiter = self.ctx.state.add_local_order_cancellation_proofs(proofs).await?;
+        waiter.await?;
+
         Ok(())
     }
 }
