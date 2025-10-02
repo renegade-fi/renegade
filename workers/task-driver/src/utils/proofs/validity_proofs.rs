@@ -33,11 +33,9 @@ use tracing::instrument;
 
 use crate::tasks::ERR_AWAITING_PROOF;
 use crate::traits::TaskContext;
-use crate::utils::enqueue_proof_job;
-
-use super::{
+use crate::utils::{
     ERR_BALANCE_NOT_FOUND, ERR_MISSING_AUTHENTICATION_PATH, ERR_ORDER_NOT_FOUND,
-    ERR_PROVE_COMMITMENTS_FAILED, ERR_PROVE_REBLIND_FAILED,
+    ERR_PROVE_COMMITMENTS_FAILED, ERR_PROVE_REBLIND_FAILED, enqueue_proof_job,
 };
 
 /// The default ticker to use when no ticker is found for an order
@@ -52,7 +50,7 @@ const DEFAULT_FEE_TICKER: &str = "DEFAULT";
 
 /// Update the validity proofs for a wallet iff there are no other tasks in the
 /// serial queue for the wallet
-pub(crate) async fn update_wallet_validity_proofs(
+pub(super) async fn update_wallet_validity_proofs(
     wallet: &Wallet,
     ctx: &TaskContext,
 ) -> Result<(), String> {
@@ -73,7 +71,7 @@ pub(crate) async fn update_wallet_validity_proofs(
 /// - Linking the reblind and commitments proofs
 /// - Storing the proofs in the global state
 #[allow(non_snake_case)]
-pub(crate) async fn update_validity_proofs__skip_queue_check(
+pub(super) async fn update_validity_proofs__skip_queue_check(
     wallet: &Wallet,
     ctx: &TaskContext,
 ) -> Result<(), String> {

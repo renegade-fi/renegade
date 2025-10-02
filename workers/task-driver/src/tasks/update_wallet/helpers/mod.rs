@@ -1,7 +1,6 @@
 //! Helpers for the update wallet task
 
 use circuit_types::SizedWallet as CircuitWallet;
-use common::types::tasks::WalletUpdateType;
 use common::types::wallet::Wallet;
 
 use crate::tasks::update_wallet::UpdateWalletTask;
@@ -43,14 +42,5 @@ impl UpdateWalletTask {
 
         new_wallet.private_shares == expected_private_shares
             && new_wallet.blinder == expected_blinder
-    }
-
-    /// Whether the given wallet update requests a precomputed cancellation
-    /// proof
-    pub fn should_compute_cancellation_proof(&self) -> bool {
-        match &self.update_type {
-            WalletUpdateType::PlaceOrder { order, .. } => order.precompute_cancellation_proof,
-            _ => false,
-        }
     }
 }

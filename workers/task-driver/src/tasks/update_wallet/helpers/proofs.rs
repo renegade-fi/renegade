@@ -1,20 +1,12 @@
 //! Helpers for generating witness statements for `VALID WALLET UPDATE`
 
+use crate::tasks::update_wallet::{UpdateWalletTask, UpdateWalletTaskError};
 use circuit_types::transfers::{ExternalTransfer, ExternalTransferDirection};
 use circuits::zk_circuits::valid_wallet_update::{
     SizedValidWalletUpdateStatement, SizedValidWalletUpdateWitness,
 };
 use common::types::{
-    proof_bundles::ValidWalletUpdateBundle,
-    tasks::WalletUpdateType,
-    wallet::{OrderIdentifier, Wallet},
-};
-use job_types::proof_manager::ProofJob;
-use tracing::info;
-
-use crate::{
-    tasks::update_wallet::{UpdateWalletTask, UpdateWalletTaskError},
-    utils::enqueue_proof_job,
+    proof_bundles::ValidWalletUpdateBundle, tasks::WalletUpdateType, wallet::Wallet,
 };
 
 /// The wallet does not have a known Merkle proof attached
@@ -22,40 +14,6 @@ const ERR_NO_MERKLE_PROOF: &str = "merkle proof for wallet not found";
 
 impl UpdateWalletTask {
     // --- Proof Generation --- //
-
-    /// Precompute a cancellation proof for an order
-    pub(crate) async fn precompute_cancellation_proof(
-        &self,
-    ) -> Result<Option<(OrderIdentifier, ValidWalletUpdateBundle)>, UpdateWalletTaskError> {
-        // Check if this is necessary
-        if !self.should_compute_cancellation_proof() {
-            return Ok(None);
-        }
-
-        // Get the order that was added
-        let oid = match self.update_type {
-            WalletUpdateType::PlaceOrder { id, .. } => id,
-            _ => return Ok(None),
-        };
-        info!("Pre-computing cancellation proof for order {oid}");
-
-        // Create a post-update wallet
-        let old_wallet = &self.new_wallet;
-        let mut new_wallet = old_wallet.clone();
-        new_wallet.remove_order(&oid);
-        new_wallet.reblind_wallet();
-
-        // Build the witness and statement, then forward a job to the proof manager
-        let (witness, statement) = Self::construct_witness_statement(old_wallet, &new_wallet)?;
-        let job = ProofJob::ValidWalletUpdate { witness, statement };
-        let recv =
-            enqueue_proof_job(job, &self.ctx).map_err(UpdateWalletTaskError::ProofGeneration)?;
-
-        // Await the proof
-        let bundle =
-            recv.await.map_err(|e| UpdateWalletTaskError::ProofGeneration(e.to_string()))?;
-        Ok(Some((oid, bundle.into())))
-    }
 
     /// Build the witness and statement for the update described by the task
     ///
@@ -152,19 +110,6 @@ impl UpdateWalletTask {
     }
 
     // --- Proof Storage --- //
-
-    /// Store a precomputed cancellation proof for an order
-    pub(crate) async fn store_cancellation_proof(
-        &self,
-        order_id: OrderIdentifier,
-        proof: ValidWalletUpdateBundle,
-    ) -> Result<(), UpdateWalletTaskError> {
-        let proofs = vec![(order_id, proof)];
-        let waiter = self.ctx.state.add_local_order_cancellation_proofs(proofs).await?;
-        waiter.await?;
-
-        Ok(())
-    }
 
     /// Check if the current task has a precomputed update proof
     pub(crate) async fn has_precomputed_update_proof(

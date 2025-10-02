@@ -11,7 +11,7 @@ use crate::traits::TaskContext;
 pub mod find_wallet;
 pub(crate) mod merkle_path;
 pub mod order_states;
-pub mod validity_proofs;
+pub mod proofs;
 
 /// Error message emitted when enqueuing a job with the proof manager fails
 const ERR_ENQUEUING_JOB: &str = "error enqueuing job with proof manager";
