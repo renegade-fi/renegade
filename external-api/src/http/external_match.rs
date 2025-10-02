@@ -273,6 +273,7 @@ impl ExternalOrder {
             min_fill_size,
             worst_case_price,
             allow_external_matches: true,
+            precompute_cancellation_proof: false,
         }
     }
 

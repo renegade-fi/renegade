@@ -91,6 +91,7 @@ fn internal_party_order(base: &Token, side: OrderSide) -> Order {
         worst_case_price: FixedPoint::zero(),
         min_fill_size: 0,
         allow_external_matches: true,
+        precompute_cancellation_proof: false,
     }
 }
 

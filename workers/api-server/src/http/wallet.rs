@@ -516,7 +516,8 @@ impl TypedHandler for CreateOrderHandler {
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Add the order to the wallet
-        let new_order: Order = req.order.try_into().map_err(bad_request)?;
+        let mut new_order: Order = req.order.try_into().map_err(bad_request)?;
+        new_order.precompute_cancellation_proof = req.options.precompute_cancellation_proof;
         new_wallet.add_order(oid, new_order.clone()).map_err(bad_request)?;
         new_wallet.reblind_wallet();
 
@@ -526,7 +527,6 @@ impl TypedHandler for CreateOrderHandler {
             old_wallet,
             new_wallet,
             req.update_auth.statement_sig,
-            req.options.precompute_cancellation_proof,
         )
         .map_err(bad_request)?;
 
@@ -580,6 +580,7 @@ impl TypedHandler for UpdateOrderHandler {
             .get_mut(&order_id)
             .ok_or_else(|| not_found(ERR_ORDER_NOT_FOUND.to_string()))?;
         *order = new_order.clone();
+        order.precompute_cancellation_proof = req.options.precompute_cancellation_proof;
         new_wallet.reblind_wallet();
 
         let task = UpdateWalletTaskDescriptor::new_order_placement(
@@ -588,7 +589,6 @@ impl TypedHandler for UpdateOrderHandler {
             old_wallet,
             new_wallet,
             req.update_auth.statement_sig,
-            req.options.precompute_cancellation_proof,
         )
         .map_err(bad_request)?;
 

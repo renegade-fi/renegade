@@ -71,6 +71,9 @@ pub struct Order {
     /// this in order to source external crossing liquidity
     #[serde(default)]
     pub allow_external_matches: bool,
+    /// Whether or not to pre-compute a cancellation proof for the order
+    #[serde(default)]
+    pub precompute_cancellation_proof: bool,
 }
 
 impl From<Order> for CircuitOrder {
@@ -95,6 +98,7 @@ impl From<CircuitOrder> for Order {
             worst_case_price: order.worst_case_price,
             min_fill_size: 0,
             allow_external_matches: false,
+            precompute_cancellation_proof: false,
         }
     }
 }
@@ -143,6 +147,7 @@ impl Order {
             worst_case_price,
             min_fill_size,
             allow_external_matches,
+            precompute_cancellation_proof: false,
         }
     }
 
@@ -231,6 +236,7 @@ pub struct OrderBuilder {
     worst_case_price: Option<FixedPoint>,
     min_fill_size: Option<Amount>,
     allow_external_matches: Option<bool>,
+    precompute_cancellation_proof: Option<bool>,
 }
 
 impl OrderBuilder {
@@ -281,6 +287,12 @@ impl OrderBuilder {
         self
     }
 
+    /// Set whether or not to pre-compute a cancellation proof
+    pub fn precompute_cancellation_proof(mut self, precompute: bool) -> Self {
+        self.precompute_cancellation_proof = Some(precompute);
+        self
+    }
+
     /// Build the order
     pub fn build(self) -> Result<Order, String> {
         let quote_mint = self.quote_mint.ok_or("Quote mint is required")?;
@@ -293,6 +305,7 @@ impl OrderBuilder {
         });
         let min_fill_size = self.min_fill_size.unwrap_or(0);
         let allow_external_matches = self.allow_external_matches.unwrap_or(false);
+        let precompute_cancellation_proof = self.precompute_cancellation_proof.unwrap_or(false);
 
         Ok(Order {
             quote_mint,
@@ -302,6 +315,7 @@ impl OrderBuilder {
             worst_case_price,
             min_fill_size,
             allow_external_matches,
+            precompute_cancellation_proof,
         })
     }
 }

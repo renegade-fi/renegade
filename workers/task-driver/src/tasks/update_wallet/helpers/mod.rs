@@ -49,9 +49,7 @@ impl UpdateWalletTask {
     /// proof
     pub fn should_compute_cancellation_proof(&self) -> bool {
         match &self.update_type {
-            WalletUpdateType::PlaceOrder { precompute_cancellation_proof, .. } => {
-                *precompute_cancellation_proof
-            },
+            WalletUpdateType::PlaceOrder { order, .. } => order.precompute_cancellation_proof,
             _ => false,
         }
     }
