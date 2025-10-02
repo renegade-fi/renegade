@@ -332,7 +332,7 @@ impl UpdateWalletTask {
 
     /// Generate a proof of `VALID WALLET UPDATE` for the wallet
     async fn generate_proof(&mut self) -> Result<(), UpdateWalletTaskError> {
-        let (witness, statement) = self.get_witness_statement()?;
+        let (witness, statement) = self.build_task_witness_statement()?;
 
         // Dispatch a job to the proof manager, and await the job's result
         let job = ProofJob::ValidWalletUpdate { witness, statement };
@@ -400,8 +400,10 @@ impl UpdateWalletTask {
                 .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
         });
 
-        if self.should_precompute_cancellation_proof() {
-            // TODO: Prove order cancellation
+        // Precompute a cancellation proof for an order if necessary
+        let cancellation_proof = self.precompute_cancellation_proof().await?;
+        if let Some(proof) = cancellation_proof {
+            self.store_cancellation_proof(&proof).await?;
         }
 
         validity_jh
