@@ -17,7 +17,9 @@
 use common::types::{
     MatchingPoolName,
     gossip::WrappedPeerId,
-    proof_bundles::{OrderValidityProofBundle, OrderValidityWitnessBundle},
+    proof_bundles::{
+        OrderValidityProofBundle, OrderValidityWitnessBundle, ValidWalletUpdateBundle,
+    },
     tasks::{QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
     wallet::{OrderIdentifier, Wallet, order_metadata::OrderMetadata},
 };
@@ -137,12 +139,16 @@ pub enum StateTransition {
     AddWallet { wallet: Wallet },
     /// Update a wallet in the managed state
     UpdateWallet { wallet: Wallet },
+
+    // --- Order Book --- //
     /// Add a validity proof to an existing order in the book
     AddOrderValidityBundle {
         order_id: OrderIdentifier,
         proof: OrderValidityProofBundle,
         witness: OrderValidityWitnessBundle,
     },
+    /// Add cancellation proofs for a batch of orders in the book
+    AddOrderCancellationProofs { proofs: Vec<(OrderIdentifier, ValidWalletUpdateBundle)> },
 
     // --- Order History --- //
     /// Update the metadata for a given order
