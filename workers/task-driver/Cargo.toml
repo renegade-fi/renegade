@@ -61,13 +61,17 @@ alloy-primitives = { workspace = true }
 
 clap = { version = "4.0", features = ["derive"] }
 colored = "2"
+config = { workspace = true }
+darkpool-client = { workspace = true, features = ["arbitrum"] }
 eyre = { workspace = true }
+flate2 = "1.0"
 inventory = "0.3"
 
 lazy_static = { workspace = true }
 num-traits = "0.2"
 
 rand = { workspace = true }
+state = { workspace = true, features = ["mocks"] }
 test-helpers = { workspace = true }
 util = { workspace = true, features = [
     "blockchain",

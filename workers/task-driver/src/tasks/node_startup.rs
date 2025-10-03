@@ -29,7 +29,7 @@ use job_types::{
 };
 use serde::Serialize;
 use state::{State, error::StateError};
-use tracing::{error, info, instrument};
+use tracing::{info, instrument};
 use util::{
     err_str,
     on_chain::{PROTOCOL_PUBKEY, set_external_match_fee, set_protocol_fee},
@@ -37,7 +37,7 @@ use util::{
 
 use crate::{
     await_task,
-    state_migration::remove_phantom_orders,
+    state_migration::run_state_migrations,
     task_state::StateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::ERR_WALLET_NOT_FOUND,
@@ -449,17 +449,7 @@ impl NodeStartupTask {
     ///
     /// Migrations should be idempotent for safety
     fn run_state_migrations(&self) -> Result<(), NodeStartupTaskError> {
-        // Remove phantom orders in the order book
-        let state = self.state.clone();
-        tokio::task::spawn(async move {
-            info!("removing phantom orders...");
-            if let Err(e) = remove_phantom_orders(&state).await {
-                error!("error removing phantom orders: {e}");
-            } else {
-                info!("done removing phantom orders");
-            }
-        });
-
+        run_state_migrations(&self.state);
         Ok(())
     }
 

@@ -5,7 +5,7 @@ use common::types::{
     wallet::{OrderIdentifier, Wallet},
 };
 use job_types::proof_manager::ProofJob;
-use tracing::error;
+use tracing::{error, info};
 use util::raw_err_str;
 
 use crate::{
@@ -57,6 +57,7 @@ async fn precompute_cancellation_proof_for_order(
     old_wallet: Wallet,
     ctx: &TaskContext,
 ) -> Result<(OrderIdentifier, ValidWalletUpdateBundle), String> {
+    info!("Precomputing cancellation proof for order: {order_id}");
     let mut new_wallet = old_wallet.clone();
     new_wallet.remove_order(&order_id);
     new_wallet.reblind_wallet();
