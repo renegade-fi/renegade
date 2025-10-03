@@ -189,6 +189,8 @@ impl StateApplicator {
             tx.delete_order(&id)?;
         }
 
+        // Remove the proofs for the order
+        tx.delete_proofs_for_order(&id)?;
         Ok(())
     }
 
