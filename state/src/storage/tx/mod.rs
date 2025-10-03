@@ -42,6 +42,9 @@ use super::{
 // | High Level Transaction |
 // --------------------------
 
+/// A high level read-write transaction in the database
+pub type RwTxn<'db> = StateTxn<'db, RW>;
+
 /// A high level transaction in the database
 pub struct StateTxn<'db, T: TransactionKind> {
     /// The underlying `mdbx` transaction

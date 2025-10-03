@@ -54,6 +54,7 @@ pub enum WalletUpdateType {
     /// Cancel an order
     CancelOrder {
         /// The ID of the order that was cancelled
+        #[serde(default)]
         id: OrderIdentifier,
         /// The order that was cancelled
         order: Order,
