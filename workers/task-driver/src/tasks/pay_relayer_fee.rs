@@ -26,7 +26,7 @@ use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::enqueue_proof_job;
 use crate::utils::merkle_path::find_merkle_path_with_tx;
-use crate::utils::validity_proofs::update_wallet_validity_proofs;
+use crate::utils::proofs::update_wallet_proofs;
 
 use super::{ERR_BALANCE_MISSING, ERR_NO_MERKLE_PROOF, ERR_WALLET_MISSING};
 
@@ -318,7 +318,7 @@ impl PayRelayerFeeTask {
     /// The recipient (relayer) wallet does not need to be updated as it holds
     /// no orders
     async fn update_validity_proofs(&self) -> Result<(), PayRelayerFeeTaskError> {
-        update_wallet_validity_proofs(&self.new_sender_wallet, &self.ctx)
+        update_wallet_proofs(&self.new_sender_wallet, &self.ctx)
             .await
             .map_err(PayRelayerFeeTaskError::UpdateValidityProofs)
     }

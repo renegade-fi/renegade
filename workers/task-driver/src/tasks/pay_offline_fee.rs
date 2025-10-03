@@ -29,7 +29,7 @@ use crate::{
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
     utils::{
         enqueue_proof_job, enqueue_relayer_redeem_job, merkle_path::find_merkle_path_with_tx,
-        validity_proofs::update_wallet_validity_proofs,
+        proofs::update_wallet_proofs,
     },
 };
 
@@ -319,7 +319,7 @@ impl PayOfflineFeeTask {
 
     /// Update the validity proofs for the wallet after fee payment
     async fn update_validity_proofs(&self) -> Result<(), PayOfflineFeeTaskError> {
-        update_wallet_validity_proofs(&self.new_wallet, &self.ctx)
+        update_wallet_proofs(&self.new_wallet, &self.ctx)
             .await
             .map_err(PayOfflineFeeTaskError::UpdateValidityProofs)
     }

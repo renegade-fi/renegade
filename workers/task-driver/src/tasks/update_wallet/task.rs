@@ -25,10 +25,8 @@ use tracing::{info, instrument};
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
-use crate::utils::{
-    enqueue_proof_job, merkle_path::find_merkle_path_with_tx,
-    validity_proofs::update_wallet_validity_proofs,
-};
+use crate::utils::proofs::update_wallet_proofs;
+use crate::utils::{enqueue_proof_job, merkle_path::find_merkle_path_with_tx};
 
 /// The human-readable name of the the task
 const UPDATE_WALLET_TASK_NAME: &str = "update-wallet";
@@ -401,29 +399,12 @@ impl UpdateWalletTask {
         Ok(())
     }
 
-    /// After a wallet update has been submitted on-chain, re-prove `VALID
-    /// REBLIND` for the wallet and `VALID COMMITMENTS` for all orders in
-    /// the wallet
+    /// After a wallet update has been submitted on-chain, re-prove all
+    /// pre-computed proofs for the wallet
     async fn update_validity_proofs(&self) -> Result<(), UpdateWalletTaskError> {
-        // Spawn the validity proofs update
-        let new_wallet = self.new_wallet.clone();
-        let ctx = self.ctx.clone();
-        let validity_jh = tokio::spawn(async move {
-            update_wallet_validity_proofs(&new_wallet, &ctx)
-                .await
-                .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
-        });
-
-        // Precompute a cancellation proof for an order if necessary
-        let res = self.precompute_cancellation_proof().await?;
-        if let Some((oid, proof)) = res {
-            self.store_cancellation_proof(oid, proof).await?;
-        }
-
-        validity_jh
+        update_wallet_proofs(&self.new_wallet, &self.ctx)
             .await
-            .map_err(|e| UpdateWalletTaskError::UpdatingValidityProofs(e.to_string()))? // Join error
-            .map_err(|e| UpdateWalletTaskError::UpdatingValidityProofs(e.to_string())) // Validity proof error
+            .map_err(UpdateWalletTaskError::UpdatingValidityProofs)
     }
 
     /// Update the wallet directly in the global state

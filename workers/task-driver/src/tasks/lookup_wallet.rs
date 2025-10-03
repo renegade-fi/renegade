@@ -24,7 +24,7 @@ use crate::{
     utils::{
         find_wallet::{find_latest_wallet_tx, gen_private_shares},
         merkle_path::find_merkle_path,
-        validity_proofs::update_wallet_validity_proofs,
+        proofs::update_wallet_proofs,
     },
 };
 
@@ -250,7 +250,7 @@ impl LookupWalletTask {
             .clone()
             .expect("wallet should be present when CreateValidityProofs state is reached");
 
-        update_wallet_validity_proofs(&wallet, &self.ctx)
+        update_wallet_proofs(&wallet, &self.ctx)
             .await
             .map_err(LookupWalletTaskError::ProofGeneration)
     }

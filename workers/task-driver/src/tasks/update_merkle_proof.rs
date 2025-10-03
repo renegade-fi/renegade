@@ -17,7 +17,7 @@ use tracing::instrument;
 use crate::{
     task_state::StateWrapper,
     traits::{Descriptor, Task, TaskContext, TaskError, TaskState},
-    utils::validity_proofs::update_wallet_validity_proofs,
+    utils::proofs::update_wallet_proofs,
 };
 
 /// The human-readable name of the the task
@@ -212,7 +212,7 @@ impl UpdateMerkleProofTask {
 
     /// Update the validity proofs for all orders in the wallet
     pub async fn update_validity_proofs(&self) -> Result<(), UpdateMerkleProofTaskError> {
-        update_wallet_validity_proofs(&self.wallet, &self.ctx)
+        update_wallet_proofs(&self.wallet, &self.ctx)
             .await
             .map_err(|e| UpdateMerkleProofTaskError::UpdatingValidityProofs(e.to_string()))
     }

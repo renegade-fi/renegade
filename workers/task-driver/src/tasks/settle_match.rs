@@ -30,7 +30,7 @@ use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
 use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::{
     merkle_path::{find_merkle_path, find_merkle_path_with_tx},
-    validity_proofs::update_wallet_validity_proofs,
+    proofs::update_wallet_proofs,
 };
 
 /// The error message the contract emits when a nullifier has been used
@@ -347,7 +347,7 @@ impl SettleMatchTask {
     /// Update the validity proofs for all orders in the wallet after settlement
     async fn update_validity_proofs(&self) -> Result<(), SettleMatchTaskError> {
         let wallet = self.ctx.state.get_wallet(&self.wallet_id).await?.unwrap();
-        update_wallet_validity_proofs(&wallet, &self.ctx)
+        update_wallet_proofs(&wallet, &self.ctx)
             .await
             .map_err(SettleMatchTaskError::UpdatingValidityProofs)
     }
