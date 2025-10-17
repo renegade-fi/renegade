@@ -76,7 +76,8 @@ impl<T: Task> RunnableTask<T> {
         // Handle a failed step
         if let Err(e) = self.task.step().await {
             error!("error executing task step: {e}");
-            return if e.retryable() { Ok(false) } else { Err(e.into()) };
+            let retryable = e.retryable() && self.is_task_running().await?;
+            return if retryable { Ok(false) } else { Err(e.into()) };
         };
 
         // Successful step, attempt to transition the state
@@ -170,5 +171,17 @@ impl<T: Task> RunnableTask<T> {
         }
 
         res.map(|_| ()).map_err(Into::into)
+    }
+
+    /// Returns whether the task is marked as running in the state
+    async fn is_task_running(&self) -> Result<bool, TaskDriverError> {
+        let task = self.state.get_task(&self.task_id).await?;
+        let is_running = task.is_some_and(|t| t.state.is_running());
+
+        if !is_running {
+            error!("task {} is not running", self.task_id);
+        }
+
+        Ok(is_running)
     }
 }
