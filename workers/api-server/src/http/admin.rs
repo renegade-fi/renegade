@@ -400,7 +400,7 @@ impl TypedHandler for AdminCreateOrderInMatchingPoolHandler {
         }
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 

@@ -8,7 +8,8 @@ use circuit_types::{
 use common::types::{
     tasks::{
         LookupWalletTaskDescriptor, NewWalletTaskDescriptor, PayOfflineFeeTaskDescriptor,
-        RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier, UpdateWalletTaskDescriptor,
+        QueuedTask, RedeemFeeTaskDescriptor, TaskDescriptor, TaskIdentifier,
+        UpdateWalletTaskDescriptor,
     },
     token::Token,
     transfer_auth::{DepositAuth, ExternalTransferWithAuth, WithdrawalAuth},
@@ -16,14 +17,18 @@ use common::types::{
 };
 use external_api::{
     EmptyRequestResponse,
-    http::wallet::{
-        CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
-        CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest, DepositBalanceResponse,
-        FindWalletRequest, FindWalletResponse, GetBalanceByMintResponse, GetBalancesResponse,
-        GetOrderByIdResponse, GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse,
-        PayFeesResponse, RedeemNoteRequest, RedeemNoteResponse, RefreshWalletResponse,
-        UpdateOrderRequest, UpdateOrderResponse, WalletUpdateAuthorization, WithdrawBalanceRequest,
-        WithdrawBalanceResponse,
+    http::{
+        task::ApiTaskStatus,
+        wallet::{
+            CancelOrderRequest, CancelOrderResponse, CreateOrderRequest, CreateOrderResponse,
+            CreateWalletRequest, CreateWalletResponse, DepositBalanceRequest,
+            DepositBalanceResponse, FindWalletRequest, FindWalletResponse,
+            GetBalanceByMintResponse, GetBalancesResponse, GetOrderByIdResponse,
+            GetOrderHistoryResponse, GetOrdersResponse, GetWalletResponse, PayFeesResponse,
+            RedeemNoteRequest, RedeemNoteResponse, RefreshWalletResponse, UpdateOrderRequest,
+            UpdateOrderResponse, WalletUpdateAuthorization, WithdrawBalanceRequest,
+            WithdrawBalanceResponse,
+        },
     },
     types::ApiOrder,
 };
@@ -65,7 +70,7 @@ const ORDER_HISTORY_LEN_PARAM: &str = "order_history_len";
 pub(crate) async fn find_wallet_for_update(
     wallet_id: WalletIdentifier,
     state: &State,
-) -> Result<Wallet, ApiServerError> {
+) -> Result<(Wallet, Vec<QueuedTask>), ApiServerError> {
     // Find the wallet and tasks
     let (mut wallet, tasks) = state
         .get_wallet_and_tasks(&wallet_id)
@@ -73,8 +78,8 @@ pub(crate) async fn find_wallet_for_update(
         .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
     // Apply tasks to the wallet
-    simulate_wallet_tasks(&mut wallet, tasks).map_err(internal_error)?;
-    Ok(wallet)
+    simulate_wallet_tasks(&mut wallet, tasks.clone()).map_err(internal_error)?;
+    Ok((wallet, tasks))
 }
 
 /// Append a task to a task queue and await consensus on this queue update
@@ -194,7 +199,7 @@ impl TypedHandler for GetWalletHandler {
             .await?
             .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
 
-        Ok(GetWalletResponse { wallet: wallet.into() })
+        Ok(GetWalletResponse { wallet: wallet.into(), task_queue: vec![] })
     }
 }
 
@@ -225,8 +230,9 @@ impl TypedHandler for GetBackOfQueueWalletHandler {
     ) -> Result<Self::Response, ApiServerError> {
         // Fetch the wallet and its tasks from state
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
-        Ok(GetWalletResponse { wallet: wallet.into() })
+        let (wallet, tasks) = find_wallet_for_update(wallet_id, &self.state).await?;
+        let task_queue: Vec<ApiTaskStatus> = tasks.into_iter().map(|t| t.into()).collect();
+        Ok(GetWalletResponse { wallet: wallet.into(), task_queue })
     }
 }
 
@@ -511,7 +517,7 @@ impl TypedHandler for CreateOrderHandler {
         }
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
@@ -569,7 +575,7 @@ impl TypedHandler for UpdateOrderHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
@@ -631,7 +637,7 @@ impl TypedHandler for CancelOrderHandler {
         let order_id = parse_order_id_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
@@ -802,7 +808,7 @@ impl TypedHandler for DepositBalanceHandler {
         let wallet_id = parse_wallet_id_from_params(&params)?;
 
         // Lookup the old wallet by id
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
@@ -880,7 +886,7 @@ impl TypedHandler for WithdrawBalanceHandler {
         let mint = parse_mint_from_params(&params)?;
 
         // Lookup the wallet in the global state
-        let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
@@ -962,7 +968,7 @@ impl TypedHandler for RedeemNoteHandler {
 
         // Lookup the wallet in the global state, then verify that the note _can_ be
         // redeemed into the wallet
-        let mut old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (mut old_wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
         let bal = req.note.as_balance();
         old_wallet.add_balance(bal).map_err(bad_request)?;
 
@@ -1009,7 +1015,7 @@ impl TypedHandler for PayFeesHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let (wallet, _) = find_wallet_for_update(wallet_id, &self.state).await?;
 
         // Pay all fees in the wallet
         let mut tasks = Vec::new();
