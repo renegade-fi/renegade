@@ -13,6 +13,7 @@
 #![allow(incomplete_features)]
 #![feature(let_chains)]
 #![feature(io_error_more)]
+#![feature(duration_millis_float)]
 
 use common::types::{
     MatchingPoolName,

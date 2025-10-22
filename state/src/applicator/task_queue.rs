@@ -2,7 +2,9 @@
 
 use common::types::{
     gossip::WrappedPeerId,
-    tasks::{HistoricalTask, QueuedTask, QueuedTaskState, TaskIdentifier, TaskQueueKey},
+    tasks::{
+        HistoricalTask, QueuedTask, QueuedTaskState, TaskDescriptor, TaskIdentifier, TaskQueueKey,
+    },
     wallet::WalletIdentifier,
 };
 use external_api::{
@@ -17,7 +19,7 @@ use job_types::{
 };
 use libmdbx::{RW, TransactionKind};
 use tracing::{error, info, instrument, warn};
-use util::err_str;
+use util::{err_str, get_current_time_millis};
 
 use crate::storage::tx::StateTxn;
 
@@ -69,11 +71,20 @@ impl StateApplicator {
 
         // Index the task
         tx.enqueue_serial_task(&queue_key, task)?;
+
         tx.add_assigned_task(executor, &task.id)?;
 
         // Run the task if possible
         self.maybe_run_task(task, &tx)?;
         tx.commit()?;
+
+        if let TaskDescriptor::OfflineFee(descriptor) = &task.descriptor {
+            let now = get_current_time_millis();
+            info!(
+                "Appended offline fee task {} for wallet {} at {}",
+                task.id, descriptor.wallet_id, now
+            );
+        }
 
         self.publish_task_updates(queue_key, task);
         Ok(ApplicatorReturnType::None)

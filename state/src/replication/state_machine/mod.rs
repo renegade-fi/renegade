@@ -9,16 +9,17 @@ use std::{
     sync::Arc,
 };
 
+use common::types::tasks::TaskDescriptor;
 use openraft::{
     EntryPayload, ErrorSubject, ErrorVerb, LogId, OptionalSend, Snapshot, SnapshotMeta,
     StorageError as RaftStorageError, StoredMembership, storage::RaftStateMachine,
 };
 use tokio::fs::File;
-use tracing::error;
-use util::{err_str, res_some};
+use tracing::{error, info};
+use util::{err_str, get_current_time_millis, res_some};
 
 use crate::{
-    Proposal,
+    Proposal, StateTransition,
     applicator::{StateApplicator, error::StateApplicatorError},
     error::StateError,
     notifications::OpenNotifications,
@@ -214,6 +215,15 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                 },
                 EntryPayload::Normal(proposal) => {
                     let Proposal { id, transition } = proposal;
+                    if let StateTransition::AppendTask { task, .. } = transition.as_ref()
+                        && let TaskDescriptor::OfflineFee(descriptor) = &task.descriptor
+                    {
+                        let now = get_current_time_millis();
+                        info!(
+                            "Processing offline fee task proposal {} for wallet {} at {}",
+                            task.id, descriptor.wallet_id, now
+                        );
+                    }
 
                     // DB methods will naturally block the applicator without throwing an error, so
                     // we must spawn a blocking thread for each update
