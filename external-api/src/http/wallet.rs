@@ -9,10 +9,13 @@ use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::types::{ApiOrder, ApiPrivateKeychain, ApiWallet};
 use crate::{
     deserialize_biguint_from_hex_string, deserialize_bytes_or_base64, deserialize_limbs_or_number,
     serialize_biguint_to_hex_addr,
+};
+use crate::{
+    http::task::ApiTaskStatus,
+    types::{ApiOrder, ApiPrivateKeychain, ApiWallet},
 };
 
 /// The type encapsulating a wallet update's authorization parameters
@@ -77,6 +80,8 @@ pub const ORDER_HISTORY_ROUTE: &str = "/v0/wallet/:wallet_id/order-history";
 pub struct GetWalletResponse {
     /// The wallet requested by the client
     pub wallet: ApiWallet,
+    /// The task queue at the time of the request
+    pub task_queue: Vec<ApiTaskStatus>,
 }
 
 /// The request type to create a new wallet
