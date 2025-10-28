@@ -133,6 +133,46 @@ pub(crate) fn get_usdc_denominated_value(
     Ok(Some(value))
 }
 
+/// Enqueue fee payment tasks for all unpaid fees in a wallet, returning the
+/// enqueued task IDs.
+///
+/// Zeroes out the fee balances in the passed-in wallet.
+pub(crate) async fn pay_all_fees(
+    wallet: &mut Wallet,
+    state: &State,
+) -> Result<Vec<TaskIdentifier>, ApiServerError> {
+    let wallet_id = wallet.wallet_id;
+
+    // Pay all fees in the wallet
+    let mut tasks = Vec::new();
+    let balances = wallet.balances.clone();
+    for (mint, balance) in balances {
+        if balance.relayer_fee_balance > 0 {
+            let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, balance.clone())
+                .expect("infallible");
+
+            let task_id = append_task_and_await(task.into(), state).await?;
+            tasks.push(task_id);
+
+            wallet.get_balance_mut(&mint).unwrap().relayer_fee_balance = 0;
+            wallet.reblind_wallet();
+        }
+
+        if balance.protocol_fee_balance > 0 {
+            let task = PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, balance.clone())
+                .expect("infallible");
+
+            let task_id = append_task_and_await(task.into(), state).await?;
+            tasks.push(task_id);
+
+            wallet.get_balance_mut(&mint).unwrap().protocol_fee_balance = 0;
+            wallet.reblind_wallet();
+        }
+    }
+
+    Ok(tasks)
+}
+
 // ------------------
 // | Error Messages |
 // ------------------
@@ -146,8 +186,6 @@ const ERR_ORDER_ALREADY_EXISTS: &str = "order id already exists";
 
 /// Error message displayed when a given order cannot be found
 pub const ERR_ORDER_NOT_FOUND: &str = "order not found";
-/// Error message emitted when a withdrawal is attempted with non-zero fees
-const ERR_WITHDRAW_NONZERO_FEES: &str = "cannot withdraw with non-zero fees";
 /// Error message emitted when a withdrawal is attempted with an amount less
 /// than the minimum allowed
 const ERR_MIN_WITHDRAWAL_AMOUNT: &str = "cannot withdraw less than the minimum allowed amount";
@@ -882,12 +920,11 @@ impl TypedHandler for WithdrawBalanceHandler {
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
         let mut new_wallet = old_wallet.clone();
-        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
-        // Check that fees are paid for the wallet
-        if old_wallet.has_outstanding_fees() {
-            return Err(bad_request(ERR_WITHDRAW_NONZERO_FEES.to_string()));
-        }
+        // Enqueue fee payment tasks for all unpaid fees in the wallet
+        let _tasks = pay_all_fees(&mut new_wallet, &self.state).await?;
+
+        maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
         // Apply the withdrawal to the wallet
         let withdrawal_amount = req.amount.to_u128().unwrap();
@@ -1009,26 +1046,9 @@ impl TypedHandler for PayFeesHandler {
         _query_params: QueryParams,
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
-        let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        let mut wallet = find_wallet_for_update(wallet_id, &self.state).await?;
 
-        // Pay all fees in the wallet
-        let mut tasks = Vec::new();
-        for (_mint, balance) in wallet.balances.iter() {
-            if balance.relayer_fee_balance > 0 {
-                let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, balance.clone())
-                    .expect("infallible");
-                let task_id = append_task_and_await(task.into(), &self.state).await?;
-                tasks.push(task_id);
-            }
-
-            if balance.protocol_fee_balance > 0 {
-                let task =
-                    PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, balance.clone())
-                        .expect("infallible");
-                let task_id = append_task_and_await(task.into(), &self.state).await?;
-                tasks.push(task_id);
-            }
-        }
+        let tasks = pay_all_fees(&mut wallet, &self.state).await?;
 
         Ok(PayFeesResponse { task_ids: tasks })
     }
