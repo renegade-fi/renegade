@@ -7,25 +7,28 @@
 #![allow(incomplete_features)]
 #![feature(future_join)]
 
-pub mod balance;
+// Top-level modules
 pub mod elgamal;
 #[cfg(feature = "proof-system-types")]
 pub mod errors;
-pub mod fees;
 pub mod fixed_point;
-pub mod keychain;
 #[cfg(feature = "proof-system-types")]
 pub mod macro_tests;
-pub mod r#match;
-pub mod merkle;
-pub mod note;
-pub mod order;
 #[cfg(feature = "proof-system-types")]
 pub mod srs;
 #[cfg(feature = "proof-system-types")]
 pub mod traits;
-pub mod transfers;
-pub mod wallet;
+
+// Versioned modules
+#[cfg(feature = "v1")]
+pub mod v1;
+#[cfg(feature = "v2")]
+pub mod v2;
+
+#[cfg(feature = "v1")]
+pub use v1::*;
+#[cfg(feature = "v2")]
+pub use v2::*;
 
 use ark_ff::BigInt;
 use bigdecimal::Num;

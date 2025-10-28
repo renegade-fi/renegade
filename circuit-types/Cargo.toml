@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["proof-system-types"]
+default = ["proof-system-types", "v1"]
 # This feature enables rich proof system types that are not necessary for
 # all use cases outside of the relayer, but are used extensively within the
 # relayer
@@ -18,6 +18,8 @@ proof-system-types = [
     "dep:mpc-relation",
 ]
 test-helpers = ["proof-system-types", "mpc-plonk/test-srs"]
+v1 = []
+v2 = []
 
 [dependencies]
 # === Cryptography === #

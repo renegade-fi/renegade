@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{scalar_from_hex_string, scalar_to_hex_string};
 
-use super::{biguint_from_hex_string, biguint_to_hex_string};
+use crate::{biguint_from_hex_string, biguint_to_hex_string};
 
 #[cfg(feature = "proof-system-types")]
 use {

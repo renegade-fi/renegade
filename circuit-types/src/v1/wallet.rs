@@ -12,9 +12,9 @@ use crate::{
     elgamal::EncryptionKey, fixed_point::FixedPoint, scalar_from_hex_string, scalar_to_hex_string,
 };
 
-use super::{
-    balance::Balance, deserialize_array, keychain::PublicKeyChain, order::Order, serialize_array,
-};
+use super::{balance::Balance, keychain::PublicKeyChain, order::Order};
+
+use crate::{deserialize_array, serialize_array};
 
 #[cfg(feature = "proof-system-types")]
 use {

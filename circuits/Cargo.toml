@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
+default = ["v1"]
 test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
+v1 = []
+v2 = []
 
 [[test]]
 name = "integration"
@@ -16,71 +19,89 @@ required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_wallet_create"
+path = "benches/v1/valid_wallet_create.rs"
 harness = false
 required-features = ["test_helpers"]
 
+#####################
+### V1 Benchmarks ###
+#####################
+
 [[bench]]
 name = "valid_wallet_update"
+path = "benches/v1/valid_wallet_update.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_reblind"
+path = "benches/v1/valid_reblind.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_commitments"
+path = "benches/v1/valid_commitments.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "match"
+path = "benches/v1/match.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "full_match"
+path = "benches/v1/full_match.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "internal_match_settlement"
+path = "benches/v1/internal_match_settlement.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_match_settle_with_commitments"
+path = "benches/v1/valid_match_settle_with_commitments.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_match_settle_atomic"
+path = "benches/v1/valid_match_settle_atomic.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_match_settle_atomic_with_commitments"
+path = "benches/v1/valid_match_settle_atomic_with_commitments.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_malleable_match_settle_atomic"
+path = "benches/v1/valid_malleable_match_settle_atomic.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_relayer_fee_settlement"
+path = "benches/v1/valid_relayer_fee_settlement.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_offline_fee_settlement"
+path = "benches/v1/valid_offline_fee_settlement.rs"
 harness = false
 required-features = ["test_helpers"]
 
 [[bench]]
 name = "valid_fee_redemption"
+path = "benches/v1/valid_fee_redemption.rs"
 harness = false
 required-features = ["test_helpers"]
 
