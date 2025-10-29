@@ -105,7 +105,15 @@ impl ToContractType for SizedValidWalletUpdateStatement {
                 .map(scalar_to_u256)
                 .collect(),
             merkleRoot: scalar_to_u256(self.merkle_root),
-            externalTransfer: self.external_transfer.to_contract_type()?,
+            externalTransfer: ExternalTransferStruct {
+                account: biguint_to_address(&self.external_transfer.account_addr)?,
+                mint: biguint_to_address(&self.external_transfer.mint)?,
+                amount: U256::from(self.external_transfer.amount),
+                transferType: match self.external_transfer.direction {
+                    ExternalTransferDirection::Deposit => 0,
+                    ExternalTransferDirection::Withdrawal => 1,
+                },
+            },
             oldPkRoot: self.old_pk_root.to_contract_type()?,
         })
     }
@@ -286,7 +294,7 @@ impl ToContractType for SizedValidFeeRedemptionStatement {
 // ---------------------
 
 impl ToContractType for CircuitExternalTransfer {
-    type ContractType = ExternalTransfer;
+    type ContractType = ExternalTransferStruct;
 
     fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
         let transfer_type = match self.direction {
@@ -510,16 +518,14 @@ impl ToContractType for CircuitPlonkProof {
             .try_collect()?;
 
         Ok(Self::ContractType {
-            wire_comms: size_vec(wire_comms)?,
-            z_comm: self.prod_perm_poly_comm.to_contract_type()?,
-            quotient_comms: size_vec(quotient_comms)?,
-            w_zeta: self.opening_proof.to_contract_type()?,
-            w_zeta_omega: self.shifted_opening_proof.to_contract_type()?,
-            wire_evals: size_vec(evals.wires_evals.iter().copied().map(fr_to_u256).collect())?,
-            sigma_evals: size_vec(
-                evals.wire_sigma_evals.iter().copied().map(fr_to_u256).collect(),
-            )?,
-            z_bar: fr_to_u256(evals.perm_next_eval),
+            wireComms: size_vec(wire_comms)?,
+            zComm: self.prod_perm_poly_comm.to_contract_type()?,
+            quotientComms: size_vec(quotient_comms)?,
+            wZeta: self.opening_proof.to_contract_type()?,
+            wZetaOmega: self.shifted_opening_proof.to_contract_type()?,
+            wireEvals: size_vec(evals.wires_evals.iter().copied().map(fr_to_u256).collect())?,
+            sigmaEvals: size_vec(evals.wire_sigma_evals.iter().copied().map(fr_to_u256).collect())?,
+            zBar: fr_to_u256(evals.perm_next_eval),
         })
     }
 }
@@ -529,8 +535,8 @@ impl ToContractType for CircuitPlonkLinkProof {
 
     fn to_contract_type(&self) -> Result<Self::ContractType, DarkpoolClientError> {
         Ok(Self::ContractType {
-            linking_quotient_poly_comm: self.quotient_commitment.to_contract_type()?,
-            linking_poly_opening: self.opening_proof.proof.to_contract_type()?,
+            linkingQuotientPolyComm: self.quotient_commitment.to_contract_type()?,
+            linkingPolyOpening: self.opening_proof.proof.to_contract_type()?,
         })
     }
 }
