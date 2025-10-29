@@ -75,6 +75,8 @@ impl StateApplicator {
         self.maybe_run_task(task, &tx)?;
         tx.commit()?;
 
+        info!("Appended task {} for wallet {}", task.id, queue_key);
+
         self.publish_task_updates(queue_key, task);
         Ok(ApplicatorReturnType::None)
     }
@@ -125,6 +127,7 @@ impl StateApplicator {
         task_id: TaskIdentifier,
         state: QueuedTaskState,
     ) -> Result<ApplicatorReturnType> {
+        let display_description = state.display_description();
         let tx = self.db().new_write_tx()?;
         let keys = tx.get_queue_keys_for_task(&task_id)?;
 
@@ -141,6 +144,8 @@ impl StateApplicator {
         tx.transition_task(&task_id, state)?;
         let updated_task = tx.get_task(&task_id)?.expect("task should exist");
         tx.commit()?;
+
+        info!("Transitioned task {task_id} to {display_description} state");
 
         self.publish_task_updates_multiple(&keys, &updated_task);
         Ok(ApplicatorReturnType::None)

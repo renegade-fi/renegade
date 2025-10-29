@@ -35,6 +35,7 @@ use renegade_crypto::fields::biguint_to_scalar;
 use reqwest::Url;
 use state::State;
 use task_driver::simulation::simulate_wallet_tasks;
+use tracing::info;
 use util::{
     err_str,
     hex::{biguint_to_hex_addr, jubjub_to_hex_string, public_sign_key_from_hex_string},
@@ -71,6 +72,23 @@ pub(crate) async fn find_wallet_for_update(
         .get_wallet_and_tasks(&wallet_id)
         .await?
         .ok_or_else(|| not_found(ERR_WALLET_NOT_FOUND.to_string()))?;
+
+    info!("FOUND WALLET {wallet_id} WITH BALANCES: {}", format_balances(&wallet)?);
+
+    let tasks_string = tasks
+        .iter()
+        .map(|t| {
+            format!(
+                "{}({}): {}",
+                t.descriptor.display_description(),
+                t.id,
+                t.state.display_description()
+            )
+        })
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    info!("QUEUED TASKS FOR {wallet_id}: {tasks_string}");
 
     // Apply tasks to the wallet
     simulate_wallet_tasks(&mut wallet, tasks).map_err(internal_error)?;
@@ -131,6 +149,16 @@ pub(crate) fn get_usdc_denominated_value(
     let price = price_streams.peek_price(&base_token)?;
     let value = amount_with_decimals * price;
     Ok(Some(value))
+}
+
+/// Returns a string representation of the balances in the wallet
+fn format_balances(wallet: &Wallet) -> Result<String, ApiServerError> {
+    let balance_string_results: Result<Vec<String>, _> =
+        wallet.balances.values().map(serde_json::to_string_pretty).collect();
+
+    let balance_string = format!("{:?}", balance_string_results.map_err(internal_error)?);
+
+    Ok(balance_string)
 }
 
 // ------------------
@@ -881,6 +909,8 @@ impl TypedHandler for WithdrawBalanceHandler {
 
         // Lookup the wallet in the global state
         let old_wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        info!("OLD WALLET BALANCES: {}", format_balances(&old_wallet)?);
+
         let mut new_wallet = old_wallet.clone();
         maybe_rotate_root_key(&req.update_auth, &mut new_wallet)?;
 
@@ -914,6 +944,8 @@ impl TypedHandler for WithdrawBalanceHandler {
             withdrawal_amount,
             WithdrawalAuth { external_transfer_signature: req.external_transfer_sig },
         );
+
+        info!("NEW WALLET BALANCES: {}", format_balances(&new_wallet)?);
 
         let task = UpdateWalletTaskDescriptor::new_withdrawal(
             withdrawal_with_auth,
@@ -1010,22 +1042,28 @@ impl TypedHandler for PayFeesHandler {
     ) -> Result<Self::Response, ApiServerError> {
         let wallet_id = parse_wallet_id_from_params(&params)?;
         let wallet = find_wallet_for_update(wallet_id, &self.state).await?;
+        info!("BACK-OF-QUEUE WALLET BALANCES: {}", format_balances(&wallet)?);
 
         // Pay all fees in the wallet
         let mut tasks = Vec::new();
-        for (_mint, balance) in wallet.balances.iter() {
+        for (mint, balance) in wallet.balances.iter() {
+            let mint_str = biguint_to_hex_addr(mint);
             if balance.relayer_fee_balance > 0 {
+                info!("APPENDING RELAYER FEE TASK FOR {mint_str} ON {wallet_id}");
                 let task = PayOfflineFeeTaskDescriptor::new_relayer_fee(wallet_id, balance.clone())
                     .expect("infallible");
                 let task_id = append_task_and_await(task.into(), &self.state).await?;
+                info!("APPENDED RELAYER FEE TASK FOR {mint_str} ON {wallet_id} WITH ID {task_id}");
                 tasks.push(task_id);
             }
 
             if balance.protocol_fee_balance > 0 {
+                info!("APPENDING PROTOCOL FEE TASK FOR {mint_str} ON {wallet_id}");
                 let task =
                     PayOfflineFeeTaskDescriptor::new_protocol_fee(wallet_id, balance.clone())
                         .expect("infallible");
                 let task_id = append_task_and_await(task.into(), &self.state).await?;
+                info!("APPENDED PROTOCOL FEE TASK FOR {mint_str} ON {wallet_id} WITH ID {task_id}");
                 tasks.push(task_id);
             }
         }
