@@ -259,4 +259,19 @@ impl BoundedMatchResult {
             direction: self.direction,
         }
     }
+
+    /// Convert to an external match result given an exact base and quote amount
+    pub fn to_external_match_with_exact_amounts(
+        &self,
+        base_amount: Amount,
+        quote_amount: Amount,
+    ) -> ExternalMatchResult {
+        ExternalMatchResult {
+            quote_mint: self.quote_mint.clone(),
+            base_mint: self.base_mint.clone(),
+            quote_amount,
+            base_amount,
+            direction: self.direction,
+        }
+    }
 }
