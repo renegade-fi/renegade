@@ -92,7 +92,9 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle(
     // Compute the match result from the bounded match result and base amount
     let bounded_match = call.matchSettleStatement.matchResult.to_circuit_type()?;
     let base_amount = u256_to_amount(call.baseAmount)?;
-    let external_match = bounded_match.to_external_match_result(base_amount);
+    let quote_amount = u256_to_amount(call.quoteAmount)?;
+    let external_match =
+        bounded_match.to_external_match_with_exact_amounts(base_amount, quote_amount);
     let (_, recv) = external_match.external_party_send();
     let side = external_match.internal_party_side();
     let match_res = external_match.to_match_result();

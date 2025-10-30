@@ -163,6 +163,7 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle(
     apply_malleable_match_result_to_wallet_share(
         &mut wallet_share,
         call.base_amount,
+        call.quote_amount,
         indices,
         &statement,
     )?;
@@ -190,6 +191,7 @@ pub fn parse_shares_from_process_malleable_atomic_match_settle_with_receiver(
     apply_malleable_match_result_to_wallet_share(
         &mut wallet_share,
         call.base_amount,
+        call.quote_amount,
         indices,
         &statement,
     )?;
@@ -271,14 +273,17 @@ pub fn parse_shares_from_redeem_fee(
 pub fn apply_malleable_match_result_to_wallet_share(
     wallet_share: &mut SizedWalletShare,
     base_amount: U256,
+    quote_amount: U256,
     indices: OrderSettlementIndices,
     statement: &ContractValidMalleableMatchSettleAtomicStatement,
 ) -> Result<(), DarkpoolClientError> {
     let base_amt: Amount = base_amount.try_into().expect("base amount too large");
+    let quote_amt: Amount = quote_amount.try_into().expect("quote amount too large");
 
     // Compute the amounts traded
     let bounded_match = to_circuit_bounded_match_result(&statement.match_result)?;
-    let external_match_res = bounded_match.to_external_match_result(base_amt);
+    let external_match_res =
+        bounded_match.to_external_match_with_exact_amounts(base_amt, quote_amt);
     let match_res = external_match_res.to_match_result();
 
     // Compute the fees due by the internal party
