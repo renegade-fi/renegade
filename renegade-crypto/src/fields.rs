@@ -3,6 +3,7 @@
 
 use std::ops::Neg;
 
+use alloy_primitives::{Address, U160};
 use ark_ec::CurveGroup;
 use ark_ff::PrimeField;
 use bigdecimal::BigDecimal;
@@ -38,6 +39,18 @@ pub fn scalar_to_bigint(a: &Scalar) -> BigInt {
 /// Convert a scalar to a BigUint
 pub fn scalar_to_biguint(a: &Scalar) -> BigUint {
     a.to_biguint()
+}
+
+/// Convert a scalar to an Address
+pub fn scalar_to_address(a: &Scalar) -> Address {
+    // Take the lowest 20 bytes of the scalar
+    let bytes = a.to_bytes_be();
+    let mut address_bytes = [0u8; U160::BYTES];
+    address_bytes.copy_from_slice(&bytes[bytes.len() - U160::BYTES..]);
+
+    // Convert to address
+    let u160 = U160::from_be_slice(&address_bytes);
+    Address::from(u160)
 }
 
 /// Convert a scalar to a BabyJubJub scalar
@@ -112,6 +125,15 @@ pub fn bigint_to_scalar_bits<const D: usize>(a: &BigInt) -> Vec<Scalar> {
     res
 }
 
+// ------------------------------
+// | Conversions from Addresses |
+// ------------------------------
+
+/// Convert an Address to a scalar
+pub fn address_to_scalar(a: &Address) -> Scalar {
+    Scalar::from_be_bytes_mod_order(&a.0.0)
+}
+
 // ---------------------------------------
 // | Conversions from BabyJubJub Scalars |
 // ---------------------------------------
@@ -132,11 +154,15 @@ pub fn jubjub_to_scalar(a: EmbeddedScalarField) -> Scalar {
 
 #[cfg(test)]
 mod field_helper_test {
+    use alloy_primitives::Address;
     use constants::Scalar;
     use num_bigint::BigInt;
     use rand::{Rng, RngCore, thread_rng};
 
-    use crate::fields::{bigint_to_scalar, bigint_to_scalar_bits, scalar_to_bigint};
+    use crate::fields::{
+        address_to_scalar, bigint_to_scalar, bigint_to_scalar_bits, scalar_to_address,
+        scalar_to_bigint,
+    };
 
     #[test]
     fn test_scalar_to_bigint() {
@@ -172,5 +198,40 @@ mod field_helper_test {
 
         assert_eq!(res.len(), scalar_bits.len());
         assert_eq!(res, scalar_bits);
+    }
+
+    #[test]
+    fn test_scalar_address_round_trip() {
+        let mut rng = thread_rng();
+        let original_scalar = Scalar::random(&mut rng);
+
+        // Convert scalar to address (only preserves lowest 20 bytes)
+        let address = scalar_to_address(&original_scalar);
+        let round_trip_scalar = address_to_scalar(&address);
+
+        // Verify that the lowest 20 bytes match (we lose higher-order bytes)
+        let original_bytes = original_scalar.to_bytes_be();
+        let round_trip_bytes = round_trip_scalar.to_bytes_be();
+        assert_eq!(
+            &original_bytes[original_bytes.len() - 20..],
+            &round_trip_bytes[round_trip_bytes.len() - 20..],
+            "Lowest 20 bytes should match after round trip conversion"
+        );
+    }
+
+    #[test]
+    fn test_address_scalar_round_trip() {
+        let mut rng = thread_rng();
+        // Generate a random address
+        let mut address_bytes = [0u8; 20];
+        rng.fill(&mut address_bytes);
+        let original_address = Address::from(address_bytes);
+
+        // Convert address to scalar
+        let scalar = address_to_scalar(&original_address);
+
+        // Convert scalar back to address
+        let round_trip_address = scalar_to_address(&scalar);
+        assert_eq!(original_address, round_trip_address);
     }
 }

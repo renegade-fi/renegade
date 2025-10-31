@@ -85,6 +85,7 @@ impl Poseidon2Sponge {
     /// Permute the inner state
     #[allow(clippy::missing_docs_in_private_items)]
     pub(crate) fn permute(&mut self) {
+        println!("Running poseidon2 permutation");
         // Multiply by the external round matrix
         self.external_mds();
 
