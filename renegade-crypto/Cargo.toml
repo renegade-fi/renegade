@@ -9,6 +9,8 @@ inline = []
 # We define a feature flag that gates all uses of wasm incompatible dependencies
 # specifically for use in stylus contracts
 non-wasm = ["dep:ark-mpc", "dep:rand", "constants/scalar", "inline"]
+v1 = []
+v2 = []
 
 [[bench]]
 name = "elgamal"
@@ -18,7 +20,7 @@ required-features = ["non-wasm"]
 [[bench]]
 name = "poseidon"
 harness = false
-required-features = ["non-wasm"]
+required-features = ["non-wasm", "v1"]
 
 [dependencies]
 # === Cryptography + Arithmetic === #
@@ -32,6 +34,7 @@ num-bigint = { version = "0.4", features = ["rand", "serde"] }
 constants = { workspace = true }
 
 # === Misc Dependencies === #
+alloy-primitives = { workspace = true }
 itertools = "0.10"
 lazy_static = { workspace = true }
 rand = { version = "0.8", optional = true }
