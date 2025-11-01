@@ -15,7 +15,6 @@ use constants::{
 use itertools::Itertools;
 use num_bigint::BigUint;
 use rand::{CryptoRng, Rng};
-use renegade_crypto::fields::biguint_to_jubjub;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
 use std::ops::Add;
 
@@ -37,6 +36,7 @@ use {
         elgamal::{Ciphertext, DecKey, EncKey},
     },
     mpc_relation::{Variable, gadgets::ecc::PointVariable, traits::Circuit},
+    renegade_crypto::fields::biguint_to_jubjub,
 };
 
 // ---------------------
@@ -57,6 +57,7 @@ pub struct DecryptionKey {
     pub key: EmbeddedScalarField,
 }
 
+#[cfg(feature = "proof-system-types")]
 impl DecryptionKey {
     /// Parse a decryption key from a hex string
     pub fn from_hex_str(s: &str) -> Result<Self, String> {
