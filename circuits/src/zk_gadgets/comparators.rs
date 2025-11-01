@@ -434,7 +434,7 @@ impl MultiproverGreaterThanEqGadget {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "v1"))]
 mod test {
     use ark_ff::One;
     use ark_mpc::{PARTY0, PARTY1};

@@ -10,7 +10,7 @@ use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
 use crate::zk_gadgets::elgamal::ElGamalGadget;
 
-use super::{comparators::EqGadget, poseidon::PoseidonHashGadget};
+use crate::zk_gadgets::{comparators::EqGadget, poseidon::PoseidonHashGadget};
 
 /// A gadget for verifying operations on notes
 pub struct NoteGadget;

@@ -38,7 +38,7 @@ mod test {
         let input_vars = values.iter().map(|v| v.create_witness(&mut cs)).collect_vec();
         let output_var = expected.create_public_var(&mut cs);
 
-        gadget.hash(&input_vars, output_var, &mut cs).unwrap();
+        gadget.hash_constrained(&input_vars, output_var, &mut cs).unwrap();
 
         // Check that the constraints are satisfied
         assert!(cs.check_circuit_satisfiability(&[expected.inner()]).is_ok());
