@@ -2,10 +2,8 @@
 
 use circuit_types::{
     PlonkCircuit,
-    csprng_state::{CSPRNGState, CSPRNGStateVar},
-    traits::{
-        CircuitBaseType, CircuitVarType, SecretShareBaseType, SecretShareType, SecretShareVarType,
-    },
+    csprng_state::PoseidonCSPRNGVar,
+    traits::{CircuitVarType, SecretShareVarType},
 };
 use itertools::Itertools;
 use mpc_relation::traits::Circuit;
@@ -22,7 +20,7 @@ impl StreamCipherGadget {
     /// (ciphertext)
     pub fn encrypt<V: SecretShareVarType>(
         value: &V::Base,
-        csprng_state: &mut CSPRNGStateVar,
+        csprng_state: &mut PoseidonCSPRNGVar,
         cs: &mut PlonkCircuit,
     ) -> Result<(V, V), CircuitError> {
         // Generate new one-time pads (private shares) for the values

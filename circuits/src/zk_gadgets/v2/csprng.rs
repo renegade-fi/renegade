@@ -1,6 +1,6 @@
 //! Gadgets for operating on CSPRNGs
 
-use circuit_types::{PlonkCircuit, csprng_state::CSPRNGStateVar};
+use circuit_types::{PlonkCircuit, csprng_state::PoseidonCSPRNGVar};
 use mpc_relation::traits::Circuit;
 use mpc_relation::{Variable, errors::CircuitError};
 
@@ -13,7 +13,7 @@ impl CSPRNGGadget {
     ///
     /// Does *not* mutate the CSPRNG state
     pub fn get_ith(
-        csprng_state: &CSPRNGStateVar,
+        csprng_state: &PoseidonCSPRNGVar,
         i: Variable,
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError> {
@@ -25,7 +25,7 @@ impl CSPRNGGadget {
 
     /// Generate a value from a CSPRNG
     pub fn next(
-        csprng_state: &mut CSPRNGStateVar,
+        csprng_state: &mut PoseidonCSPRNGVar,
         cs: &mut PlonkCircuit,
     ) -> Result<Variable, CircuitError> {
         // Compute the next value as H(seed || index)
@@ -40,7 +40,7 @@ impl CSPRNGGadget {
 
     /// Generate the next `k` values from a CSPRNG
     pub fn next_k(
-        csprng_state: &mut CSPRNGStateVar,
+        csprng_state: &mut PoseidonCSPRNGVar,
         k: usize,
         cs: &mut PlonkCircuit,
     ) -> Result<Vec<Variable>, CircuitError> {
@@ -50,20 +50,19 @@ impl CSPRNGGadget {
 
 #[cfg(test)]
 mod test {
-    use circuit_types::{PlonkCircuit, csprng_state::CSPRNGState, traits::CircuitBaseType};
+    use circuit_types::{PlonkCircuit, csprng_state::PoseidonCSPRNG, traits::CircuitBaseType};
     use constants::Scalar;
     use eyre::Result;
     use mpc_relation::traits::Circuit;
     use rand::{Rng, thread_rng};
-    use renegade_crypto::hash::PoseidonCSPRNG;
 
     use crate::zk_gadgets::{comparators::EqGadget, csprng::CSPRNGGadget};
 
     /// Get a random CSPRNG state
-    fn random_csprng() -> CSPRNGState {
+    fn random_csprng() -> PoseidonCSPRNG {
         let mut rng = thread_rng();
         let seed = Scalar::random(&mut rng);
-        CSPRNGState::new(seed)
+        PoseidonCSPRNG::new(seed)
     }
 
     /// Get the ith value in a CSPRNG with the given seed
