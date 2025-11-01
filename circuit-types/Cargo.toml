@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["proof-system-types", "v1"]
+default = ["proof-system-types"]
 # This feature enables rich proof system types that are not necessary for
 # all use cases outside of the relayer, but are used extensively within the
 # relayer
@@ -18,8 +18,8 @@ proof-system-types = [
     "dep:mpc-relation",
 ]
 test-helpers = ["proof-system-types", "mpc-plonk/test-srs"]
-v1 = []
-v2 = []
+v1 = ["renegade-crypto/v1"]
+v2 = ["renegade-crypto/v2"]
 
 [dependencies]
 # === Cryptography === #
@@ -42,6 +42,9 @@ num-bigint = { version = "0.4", features = ["rand", "serde"] }
 num-integer = "0.1"
 num-traits = "0.2"
 rand = "0.8"
+
+# === Blockchain === #
+alloy-primitives = { workspace = true, features = ["serde"] }
 
 # === Async + Runtime === #
 async-trait = { workspace = true }

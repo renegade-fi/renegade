@@ -16,6 +16,7 @@
 //!     - MPC types: base types that have been allocated in an MPC fabric
 //!     - Secret share types: Additive sharings of a base type
 
+use alloy_primitives::Address;
 use ark_mpc::{algebra::AuthenticatedScalarResult, network::PartyId};
 use async_trait::async_trait;
 use constants::{AuthenticatedScalar, EmbeddedScalarField, Scalar, ScalarField, SystemCurve};
@@ -39,8 +40,8 @@ use mpc_relation::{
 use num_bigint::BigUint;
 use rand::thread_rng;
 use renegade_crypto::fields::{
-    biguint_to_scalar, jubjub_to_scalar, scalar_to_biguint, scalar_to_jubjub, scalar_to_u64,
-    scalar_to_u128,
+    address_to_scalar, biguint_to_scalar, jubjub_to_scalar, scalar_to_address, scalar_to_biguint,
+    scalar_to_jubjub, scalar_to_u64, scalar_to_u128,
 };
 use std::{
     collections::HashMap,
@@ -435,6 +436,18 @@ impl BaseType for BigUint {
     }
 }
 
+impl BaseType for Address {
+    const NUM_SCALARS: usize = 1;
+
+    fn to_scalars(&self) -> Vec<Scalar> {
+        vec![address_to_scalar(self)]
+    }
+
+    fn from_scalars<I: Iterator<Item = Scalar>>(i: &mut I) -> Self {
+        scalar_to_address(&i.next().unwrap())
+    }
+}
+
 impl BaseType for () {
     const NUM_SCALARS: usize = 0;
 
@@ -485,6 +498,10 @@ impl CircuitBaseType for usize {
 }
 
 impl CircuitBaseType for BigUint {
+    type VarType = Variable;
+}
+
+impl CircuitBaseType for Address {
     type VarType = Variable;
 }
 
@@ -725,6 +742,10 @@ impl SecretShareBaseType for usize {
 }
 
 impl SecretShareBaseType for BigUint {
+    type ShareType = Scalar;
+}
+
+impl SecretShareBaseType for Address {
     type ShareType = Scalar;
 }
 
