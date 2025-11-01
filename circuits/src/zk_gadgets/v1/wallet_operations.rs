@@ -12,7 +12,7 @@ use circuit_types::{
 use constants::ScalarField;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 
-use super::{
+use crate::zk_gadgets::{
     bits::{BitRangeGadget, MultiproverBitRangeGadget},
     merkle::PoseidonMerkleHashGadget,
     poseidon::{PoseidonCSPRNGGadget, PoseidonHashGadget},
@@ -359,9 +359,7 @@ mod test {
     use renegade_crypto::hash::PoseidonCSPRNG;
     use std::ops::Neg;
 
-    use crate::zk_gadgets::wallet_operations::{FeeGadget, PriceGadget, WalletGadget};
-
-    use super::AmountGadget;
+    use super::{AmountGadget, FeeGadget, PriceGadget, WalletGadget};
 
     // -----------
     // | Helpers |

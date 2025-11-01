@@ -132,9 +132,7 @@ pub(crate) mod merkle_test {
     use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
     use renegade_crypto::hash::compute_poseidon_hash;
 
-    use crate::{
-        test_helpers::random_field_elements, zk_gadgets::merkle::PoseidonMerkleHashGadget,
-    };
+    use crate::{test_helpers::random_scalars_vec, zk_gadgets::merkle::PoseidonMerkleHashGadget};
 
     // -----------
     // | Helpers |
@@ -211,7 +209,7 @@ pub(crate) mod merkle_test {
 
     /// Generate random leaf data
     fn random_leaf_data() -> Vec<ScalarField> {
-        random_field_elements(LEAF_SIZE).iter().map(Scalar::inner).collect_vec()
+        random_scalars_vec(LEAF_SIZE).iter().map(Scalar::inner).collect_vec()
     }
 
     /// Get the opening indices from the index, this can be done by

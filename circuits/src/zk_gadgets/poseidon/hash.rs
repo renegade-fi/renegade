@@ -89,9 +89,19 @@ impl PoseidonHashGadget {
         self.in_squeeze_state = false;
     }
 
+    /// Hashes the given input and returns the result
+    pub fn hash<C: Circuit<ScalarField>>(
+        &mut self,
+        hash_input: &[Variable],
+        cs: &mut C,
+    ) -> Result<Variable, CircuitError> {
+        self.batch_absorb(hash_input, cs)?;
+        self.squeeze(cs)
+    }
+
     /// Hashes the given input and constraints the result to equal the expected
     /// output
-    pub fn hash<C: Circuit<ScalarField>>(
+    pub fn hash_constrained<C: Circuit<ScalarField>>(
         &mut self,
         hash_input: &[Variable],
         expected_output: Variable,
