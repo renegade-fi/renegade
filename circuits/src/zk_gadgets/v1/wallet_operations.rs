@@ -342,6 +342,7 @@ impl MultiproverPriceGadget {
 mod test {
     use std::iter;
 
+    use circuit_types::csprng_state::PoseidonCSPRNG;
     use circuit_types::{
         AMOUNT_BITS, FEE_BITS, PRICE_BITS, PlonkCircuit, SizedWalletShare,
         fixed_point::FixedPoint,
@@ -356,7 +357,6 @@ mod test {
     use itertools::Itertools;
     use mpc_relation::traits::Circuit;
     use rand::{Rng, thread_rng};
-    use renegade_crypto::hash::PoseidonCSPRNG;
     use std::ops::Neg;
 
     use super::{AmountGadget, FeeGadget, PriceGadget, WalletGadget};
