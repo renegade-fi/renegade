@@ -47,3 +47,113 @@ impl CSPRNGGadget {
         (0..k).map(|_| Self::next(csprng_state, cs)).collect()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use circuit_types::{PlonkCircuit, csprng_state::CSPRNGState, traits::CircuitBaseType};
+    use constants::Scalar;
+    use eyre::Result;
+    use mpc_relation::traits::Circuit;
+    use rand::{Rng, thread_rng};
+    use renegade_crypto::hash::PoseidonCSPRNG;
+
+    use crate::zk_gadgets::{comparators::EqGadget, csprng::CSPRNGGadget};
+
+    /// Get a random CSPRNG state
+    fn random_csprng() -> CSPRNGState {
+        let mut rng = thread_rng();
+        let seed = Scalar::random(&mut rng);
+        CSPRNGState::new(seed)
+    }
+
+    /// Get the ith value in a CSPRNG with the given seed
+    fn get_csprng_ith(seed: Scalar, index: usize) -> Scalar {
+        let mut csprng = PoseidonCSPRNG::new(seed);
+        csprng.advance_by(index);
+        csprng.next().unwrap()
+    }
+
+    /// Test the `ith` method
+    #[test]
+    fn test_get_ith() -> Result<()> {
+        let mut rng = thread_rng();
+
+        // Test data
+        let index: usize = rng.r#gen();
+        let csprng_state = random_csprng();
+        let expected = get_csprng_ith(csprng_state.seed, index);
+
+        // Allocate in a constraint system
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let index_var = index.create_witness(&mut cs);
+        let csprng_state_var = csprng_state.create_witness(&mut cs);
+        let expected_var = expected.create_witness(&mut cs);
+
+        // Compute the gadget value and check that it matches the expected value
+        let value = CSPRNGGadget::get_ith(&csprng_state_var, index_var, &mut cs)?;
+        EqGadget::constrain_eq(&value, &expected_var, &mut cs)?;
+        cs.check_circuit_satisfiability(&[])?;
+        Ok(())
+    }
+
+    /// Test the `next` method
+    #[test]
+    fn test_next() -> Result<()> {
+        // Test data
+        let csprng_state = random_csprng();
+        let seed = csprng_state.seed;
+
+        // Compute expected values
+        let expected_first = get_csprng_ith(seed, 0);
+        let expected_second = get_csprng_ith(seed, 1);
+
+        // Allocate in a constraint system
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let mut csprng_state_var = csprng_state.create_witness(&mut cs);
+        let expected_first_var = expected_first.create_witness(&mut cs);
+        let expected_second_var = expected_second.create_witness(&mut cs);
+
+        // Call next() and verify it returns the first value
+        let value_first = CSPRNGGadget::next(&mut csprng_state_var, &mut cs)?;
+        EqGadget::constrain_eq(&value_first, &expected_first_var, &mut cs)?;
+
+        // Call next() again and verify it returns the second value
+        let value_second = CSPRNGGadget::next(&mut csprng_state_var, &mut cs)?;
+        EqGadget::constrain_eq(&value_second, &expected_second_var, &mut cs)?;
+
+        // Check satisfiability
+        cs.check_circuit_satisfiability(&[])?;
+        Ok(())
+    }
+
+    /// Test the `next_k` method
+    #[test]
+    fn test_next_k() -> Result<()> {
+        let mut rng = thread_rng();
+
+        // Test data
+        let csprng_state = random_csprng();
+        let seed = csprng_state.seed;
+        let k: usize = rng.gen_range(1..=100);
+
+        // Compute expected values using the CSPRNG
+        let csprng = PoseidonCSPRNG::new(seed);
+        let expected_values: Vec<Scalar> = csprng.take(k).collect();
+
+        // Allocate in a constraint system
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let mut csprng_state_var = csprng_state.create_witness(&mut cs);
+        let expected_vars: Vec<_> =
+            expected_values.iter().map(|val| val.create_witness(&mut cs)).collect();
+
+        // Call next_k() and verify all values match
+        let values = CSPRNGGadget::next_k(&mut csprng_state_var, k, &mut cs)?;
+        for (value, expected_var) in values.iter().zip(expected_vars.iter()) {
+            EqGadget::constrain_eq(value, expected_var, &mut cs)?;
+        }
+
+        // Check satisfiability
+        cs.check_circuit_satisfiability(&[])?;
+        Ok(())
+    }
+}
