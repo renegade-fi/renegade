@@ -7,7 +7,10 @@ use std::ops::Add;
 use alloy_primitives::Address;
 use serde::{Deserialize, Serialize};
 
-use crate::{Amount, state_wrapper::StateWrapper};
+use crate::{
+    Amount,
+    state_wrapper::{StateWrapper, StateWrapperVar},
+};
 
 #[cfg(feature = "proof-system-types")]
 use {
@@ -22,6 +25,8 @@ use {
 
 /// A balance wrapped in a state wrapper
 pub type DarkpoolStateBalance = StateWrapper<Balance>;
+/// A balance wrapped in a state wrapper variable
+pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
 
 /// A balance in the V2 darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]

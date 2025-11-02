@@ -206,13 +206,17 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidDeposit<MERKLE_HEI
 pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::{
-        balance::Balance, csprng::PoseidonCSPRNG, deposit::Deposit, traits::BaseType,
-        v2::state_wrapper::StateWrapper,
+        balance::{Balance, BalanceShare},
+        deposit::Deposit,
     };
     use constants::Scalar;
-    use rand::{Rng, thread_rng};
 
-    use crate::zk_gadgets::test_helpers::{create_merkle_opening, create_random_shares};
+    use crate::{
+        test_helpers::{random_address, random_amount},
+        zk_gadgets::test_helpers::{
+            create_merkle_opening, create_random_shares, create_state_wrapper,
+        },
+    };
 
     use super::{ValidDepositStatement, ValidDepositWitness};
 
@@ -230,102 +234,50 @@ pub mod test_helpers {
 
     /// Construct a witness and statement with valid data
     pub fn create_dummy_witness_statement() -> (SizedWitness, SizedStatement) {
-        let mut rng = thread_rng();
-
-        // Create an old balance with properly initialized CSPRNGs
-        // The recovery_stream must have index > 0 for nullifier computation
-        let recovery_seed = Scalar::random(&mut rng);
-        let mut recovery_stream = PoseidonCSPRNG::new(recovery_seed);
-        recovery_stream.index = 1; // Set to 1 so we can compute nullifier (needs index - 1)
-
-        let share_seed = Scalar::random(&mut rng);
-        let mut share_stream = PoseidonCSPRNG::new(share_seed);
-        // Balance has 6 scalar fields, so after encrypting all fields, share_stream
-        // should be at index 6
-        share_stream.index = Balance::NUM_SCALARS as u64;
-
-        // Create random addresses for testing
-        let mut token_bytes = [0u8; 20];
-        rng.fill(&mut token_bytes);
-        let token = Address::from(token_bytes);
-
-        let mut owner_bytes = [0u8; 20];
-        rng.fill(&mut owner_bytes);
-        let owner = Address::from(owner_bytes);
-        let old_balance_inner = Balance {
-            mint: token,
-            owner,
+        // Create a deposit that matches the balance's mint and owner
+        let deposit = create_random_deposit();
+        let old_balance = create_state_wrapper(Balance {
+            mint: deposit.token,
+            owner: deposit.from,
             one_time_authority: Address::ZERO,
-            relayer_fee_balance: 1000,
-            protocol_fee_balance: 500,
-            amount: 10000,
-        };
-
-        let old_balance = StateWrapper {
-            recovery_stream: recovery_stream.clone(),
-            share_stream: share_stream.clone(),
-            inner: old_balance_inner.clone(),
-        };
+            relayer_fee_balance: random_amount(),
+            protocol_fee_balance: random_amount(),
+            amount: random_amount(),
+        });
 
         // Create valid complementary shares for the old balance
-        let (old_balance_private_shares, old_balance_public_shares): (
-            circuit_types::balance::BalanceShare,
-            circuit_types::balance::BalanceShare,
-        ) = create_random_shares(&old_balance_inner);
+        let (old_balance_private_shares, old_balance_public_shares) =
+            create_random_shares::<BalanceShare>(&old_balance.inner);
 
-        // Compute the old balance commitment
+        // Compute commitment, nullifier, and Merkle opening for the old balance
         let old_balance_commitment =
             old_balance.compute_commitment(&old_balance_private_shares, &old_balance_public_shares);
-
-        // Create a valid Merkle opening for the old balance
+        let old_balance_nullifier = old_balance.compute_nullifier();
         let (merkle_root, old_balance_opening) =
             create_merkle_opening::<MERKLE_HEIGHT>(old_balance_commitment);
 
-        // Compute the old balance nullifier
-        let old_balance_nullifier = old_balance.compute_nullifier();
-
-        // Create a deposit that matches the balance's mint and owner
-        let deposit_amount = 5000u128;
-        let deposit = Deposit { from: owner, token, amount: deposit_amount };
-
         // Create the new balance by adding the deposit amount
-        let mut new_balance_inner = old_balance_inner.clone();
-        new_balance_inner.amount += deposit_amount;
+        let mut new_balance = old_balance.clone();
+        new_balance.inner.amount += deposit.amount;
 
         // To compute the new amount share, we need to simulate the stream cipher
-        // encryption. The circuit clones the old balance and then encrypts the new
-        // amount using the share_stream, advancing it by 1.
-        let mut new_share_stream = share_stream.clone();
-        // The amount field is a single scalar, so we need one pad value
-        let amount_pad = new_share_stream.next().unwrap();
-        let new_amount_scalar = Scalar::from(new_balance_inner.amount);
-        let new_amount_share = new_amount_scalar - amount_pad;
+        // encryption.
+        let new_amount_scalar = Scalar::from(new_balance.inner.amount);
+        let (new_amount_private_share, new_amount_public_share) =
+            new_balance.stream_cipher_encrypt(&new_amount_scalar);
 
-        // Create the new balance wrapper with the advanced share_stream
-        let new_balance = StateWrapper {
-            recovery_stream: recovery_stream.clone(),
-            share_stream: new_share_stream.clone(),
-            inner: new_balance_inner.clone(),
-        };
+        // Compute a commitment to the new balance
+        let mut new_private_shares = old_balance_private_shares.clone();
+        let mut new_public_shares = old_balance_public_shares.clone();
+        new_public_shares.amount = new_amount_public_share;
+        new_private_shares.amount = new_amount_private_share;
 
-        // Compute the new balance shares
-        // Most fields haven't changed, so we can reuse the old shares
-        let mut new_balance_private_shares = old_balance_private_shares.clone();
-        let mut new_balance_public_shares = old_balance_public_shares.clone();
-        // Update the amount field shares
-        new_balance_private_shares.amount = amount_pad;
-        new_balance_public_shares.amount = new_amount_share;
+        // Compute recovery_id, which will advance the recovery stream
+        let recovery_id = new_balance.compute_recovery_id();
+        let new_balance_commitment =
+            new_balance.compute_commitment(&new_private_shares, &new_public_shares);
 
-        // Compute the recovery_id for the new balance FIRST (this advances
-        // recovery_stream) The rotation gadget computes recovery_id before
-        // computing the commitment
-        let mut new_balance_for_recovery = new_balance.clone();
-        let recovery_id = new_balance_for_recovery.compute_recovery_id();
-
-        // Now compute the commitment using the advanced recovery_stream
-        let new_balance_commitment = new_balance_for_recovery
-            .compute_commitment(&new_balance_private_shares, &new_balance_public_shares);
-
+        // Build the witness and statement
         let witness =
             ValidDepositWitness { old_balance, old_balance_public_shares, old_balance_opening };
 
@@ -335,10 +287,15 @@ pub mod test_helpers {
             old_balance_nullifier,
             new_balance_commitment,
             recovery_id,
-            new_amount_share,
+            new_amount_share: new_amount_public_share,
         };
 
         (witness, statement)
+    }
+
+    /// Build a random deposit
+    pub fn create_random_deposit() -> Deposit {
+        Deposit { from: random_address(), token: random_address(), amount: random_amount() }
     }
 }
 

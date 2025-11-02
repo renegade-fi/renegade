@@ -218,17 +218,19 @@ impl StateElementGadget {
 #[cfg(test)]
 mod test {
     use circuit_macros::circuit_type;
+    use circuit_types::fixed_point::FixedPoint;
     use circuit_types::merkle::MerkleOpening;
     use circuit_types::state_wrapper::StateWrapper;
     use circuit_types::{PlonkCircuit, traits::*};
-    use circuit_types::{csprng::PoseidonCSPRNG, fixed_point::FixedPoint};
     use constants::{Scalar, ScalarField};
     use eyre::Result;
     use mpc_relation::{Variable, traits::Circuit};
     use rand::{Rng, thread_rng};
     use std::ops::Add;
 
-    use crate::zk_gadgets::test_helpers::{create_merkle_opening, create_random_shares};
+    use crate::zk_gadgets::test_helpers::{
+        create_merkle_opening, create_random_shares, create_state_wrapper,
+    };
 
     use super::*;
 
@@ -382,21 +384,6 @@ mod test {
             fp: FixedPoint::from_f64_round_down(rng.r#gen()),
             scalar: Scalar::random(&mut rng),
         }
-    }
-
-    /// Create a state wrapper from a state element
-    fn create_state_wrapper(state: TestStateElement) -> StateWrapper<TestStateElement> {
-        let mut rng = thread_rng();
-        let recovery_seed = Scalar::random(&mut rng);
-        let share_seed = Scalar::random(&mut rng);
-
-        // Build the streams at a random index
-        let mut recovery_stream = PoseidonCSPRNG::new(recovery_seed);
-        let mut share_stream = PoseidonCSPRNG::new(share_seed);
-        recovery_stream.index = rng.r#gen();
-        share_stream.index = rng.r#gen();
-
-        StateWrapper { recovery_stream, share_stream, inner: state }
     }
 
     // ---------

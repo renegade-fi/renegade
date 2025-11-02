@@ -1,14 +1,35 @@
 //! Test helpers for ZK gadgets
 
 use circuit_types::{
+    csprng::PoseidonCSPRNG,
     merkle::MerkleOpening,
-    traits::{BaseType, SecretShareType},
+    state_wrapper::StateWrapper,
+    traits::{BaseType, CircuitBaseType, SecretShareType},
 };
 use constants::Scalar;
 use itertools::Itertools;
+use rand::{Rng, thread_rng};
 use renegade_crypto::hash::compute_poseidon_hash;
 
 use crate::test_helpers::random_scalars_vec;
+
+// ------------------
+// | State Elements |
+// ------------------
+
+/// Create a state wrapper for a given state element
+pub fn create_state_wrapper<V: CircuitBaseType>(state: V) -> StateWrapper<V> {
+    let mut rng = thread_rng();
+    let recovery_seed = Scalar::random(&mut rng);
+    let share_seed = Scalar::random(&mut rng);
+
+    let mut recovery_stream = PoseidonCSPRNG::new(recovery_seed);
+    let mut share_stream = PoseidonCSPRNG::new(share_seed);
+    recovery_stream.index = rng.r#gen();
+    share_stream.index = rng.r#gen();
+
+    StateWrapper { recovery_stream, share_stream, inner: state }
+}
 
 // ----------------
 // | Secret Share |
