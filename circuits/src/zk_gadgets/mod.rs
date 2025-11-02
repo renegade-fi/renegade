@@ -27,5 +27,5 @@ pub use v1::*;
 #[cfg(feature = "v2")]
 pub use v2::*;
 
-#[cfg(any(test, feature = "test-helpers"))]
+#[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers;
