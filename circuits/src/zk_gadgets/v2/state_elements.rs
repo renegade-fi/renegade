@@ -221,7 +221,7 @@ mod test {
     use circuit_types::merkle::MerkleOpening;
     use circuit_types::state_wrapper::StateWrapper;
     use circuit_types::{PlonkCircuit, traits::*};
-    use circuit_types::{csprng_state::PoseidonCSPRNG, fixed_point::FixedPoint};
+    use circuit_types::{csprng::PoseidonCSPRNG, fixed_point::FixedPoint};
     use constants::{Scalar, ScalarField};
     use eyre::Result;
     use mpc_relation::{Variable, traits::Circuit};

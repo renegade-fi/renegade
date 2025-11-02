@@ -7,7 +7,7 @@ use std::ops::Add;
 use alloy_primitives::Address;
 use serde::{Deserialize, Serialize};
 
-use crate::{Amount, csprng_state::CSPRNGState, state_wrapper::StateWrapper};
+use crate::{Amount, state_wrapper::StateWrapper};
 
 #[cfg(feature = "proof-system-types")]
 use {
@@ -29,6 +29,8 @@ pub type DarkpoolStateBalance = StateWrapper<Balance>;
 pub struct Balance {
     /// The mint of the token in the balance
     pub mint: Address,
+    /// The owner of the balance
+    pub owner: Address,
     /// A one-time signing authority for the balance
     ///
     /// This authorizes the balance to be spent by an order for the first time,

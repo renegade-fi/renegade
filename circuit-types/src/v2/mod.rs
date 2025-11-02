@@ -1,7 +1,7 @@
 //! V2 circuit types
 
 pub mod balance;
-pub mod csprng_state;
+pub mod csprng;
 pub mod deposit;
 pub mod state_wrapper;
 

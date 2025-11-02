@@ -97,7 +97,7 @@ fn build_circuit_base_type_impl(base_type: &ItemStruct) -> TokenStream2 {
 pub(crate) fn build_var_type(base_type: &ItemStruct) -> TokenStream2 {
     let base_name = base_type.ident.clone();
     let var_name = ident_with_suffix(&base_name.to_string(), VAR_TYPE_SUFFIX);
-    let derive_clone: Attribute = parse_quote!(#[derive(Clone, Debug)]);
+    let derive_clone: Attribute = parse_quote!(#[derive(Clone)]);
 
     let generics = base_type.generics.clone();
     let var_struct = build_modified_struct_from_associated_types(
