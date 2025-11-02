@@ -46,6 +46,17 @@ macro_rules! print_wire {
     }};
 }
 
+/// A debug macro used for printing wires in a single-prover circuit during
+/// execution. Uses a debug format string to print the value.
+#[allow(unused)]
+macro_rules! print_wire_debug {
+    ($x:expr, $cs:ident) => {{
+        use circuit_types::traits::CircuitVarType;
+        let x_eval = $x.eval($cs);
+        println!("eval({}): {x_eval:?}", stringify!($x));
+    }};
+}
+
 /// A debug macro used for printing wires in a raw MPC circuit during execution
 #[allow(unused)]
 macro_rules! print_mpc_wire {
@@ -81,6 +92,8 @@ pub(crate) use print_mpc_wire;
 pub(crate) use print_multiprover_wire;
 #[allow(unused)]
 pub(crate) use print_wire;
+#[allow(unused)]
+pub(crate) use print_wire_debug;
 
 // -----------
 // | Helpers |
@@ -170,26 +183,13 @@ pub async fn multiprover_prove_and_verify<C: MultiProverCircuit>(
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
 
-    use std::iter;
-
+    use alloy_primitives::Address;
     use ark_mpc::error::MpcError;
-    use circuit_types::{
-        AMOUNT_BITS, Amount,
-        balance::Balance,
-        fixed_point::FixedPoint,
-        r#match::{MatchResult, OrderSettlementIndices},
-        order::{Order, OrderSide},
-        traits::BaseType,
-        wallet::{Wallet, WalletShare},
-    };
+    use circuit_types::{AMOUNT_BITS, Amount};
     use constants::{AuthenticatedScalar, Scalar};
     use futures::{Future, FutureExt, future::join_all};
     use itertools::Itertools;
-    use rand::{Rng, RngCore, thread_rng};
-    use renegade_crypto::fields::scalar_to_biguint;
-    use util::matching_engine::match_orders_with_max_min_amounts;
-
-    use crate::zk_circuits::test_helpers::{MAX_BALANCES, MAX_ORDERS};
+    use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
 
     // -----------
     // | Helpers |
@@ -212,37 +212,24 @@ pub mod test_helpers {
     }
 
     /// Create a random sequence of field elements
-    #[allow(unused)]
-    pub fn random_field_elements(n: usize) -> Vec<Scalar> {
+    pub fn random_scalars_vec(n: usize) -> Vec<Scalar> {
         let mut rng = thread_rng();
         (0..n).map(|_| Scalar::random(&mut rng)).collect_vec()
     }
 
-    /// Generate a random set of settlement indices
-    pub fn random_indices() -> OrderSettlementIndices {
-        let balance_send = random_index(MAX_BALANCES);
-        let mut balance_receive = random_index(MAX_BALANCES);
-
-        while balance_send == balance_receive {
-            balance_receive = random_index(MAX_BALANCES);
-        }
-
-        OrderSettlementIndices { order: random_index(MAX_ORDERS), balance_send, balance_receive }
-    }
-
-    /// Generate a random index bounded by a max
-    fn random_index(max: usize) -> usize {
-        let mut rng = thread_rng();
-        rng.gen_range(0..max)
+    /// Create a random sequence of field elements as an array
+    pub fn random_scalars_array<const N: usize>() -> [Scalar; N] {
+        random_scalars_vec(N).try_into().unwrap()
     }
 
     /// Generate a random amount valid in a wallet
-    pub fn random_wallet_amount() -> Amount {
+    ///
+    /// Leave buffer for additions and subtractions
+    pub fn random_amount() -> Amount {
         let mut rng = thread_rng();
-        let amt_unreduced: Amount = rng.r#gen();
+        let amt = (0..max_amount()).sample_single(&mut rng);
 
-        let max_amount = 1u128 << AMOUNT_BITS;
-        amt_unreduced % max_amount
+        amt / 10
     }
 
     /// Get the maximum amount allowed
@@ -250,25 +237,12 @@ pub mod test_helpers {
         (1u128 << AMOUNT_BITS) - 1u128
     }
 
-    /// Get a dummy set of wallet shares
-    pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
-    -> WalletShare<MAX_BALANCES, MAX_ORDERS> {
-        let mut iter = iter::from_fn(|| Some(Scalar::zero()));
-        WalletShare::from_scalars(&mut iter)
-    }
-
-    /// Create a wallet with random zero'd balances
-    pub fn wallet_with_random_balances<const MAX_BALANCES: usize, const MAX_FEES: usize>()
-    -> Wallet<MAX_BALANCES, MAX_FEES> {
+    /// Generate a random address
+    pub fn random_address() -> Address {
         let mut rng = thread_rng();
-        let mut wallet = Wallet::<MAX_BALANCES, MAX_FEES>::default();
-
-        for bal in wallet.balances.iter_mut() {
-            let mint = scalar_to_biguint(&Scalar::random(&mut rng));
-            *bal = Balance::new_from_mint(mint);
-        }
-
-        wallet
+        let mut address_bytes = [0u8; 20];
+        rng.fill(&mut address_bytes);
+        Address::from(address_bytes)
     }
 
     /// Open a batch of values and join into a single future
@@ -282,50 +256,5 @@ pub mod test_helpers {
         }
 
         join_all(futures).map(|res| res.into_iter().collect::<Result<Vec<_>, _>>())
-    }
-
-    /// Get two random orders that cross along with their match result
-    pub fn random_orders_and_match() -> (Order, Order, FixedPoint, MatchResult) {
-        let mut rng = thread_rng();
-        let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
-        let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
-
-        let price = FixedPoint::from_f64_round_down(rng.gen_range(0.0..100.0));
-        let base_amount = rng.next_u32() as u128;
-
-        // Buy side
-        let o1 = Order {
-            quote_mint: quote_mint.clone(),
-            base_mint: base_mint.clone(),
-            side: OrderSide::Buy,
-            amount: rng.gen_range(1..base_amount),
-            worst_case_price: price + Scalar::from(2u8),
-        };
-
-        // Sell side
-        let o2 = Order {
-            quote_mint: quote_mint.clone(),
-            base_mint: base_mint.clone(),
-            side: OrderSide::Sell,
-            amount: rng.gen_range(1..base_amount),
-            worst_case_price: price - Scalar::from(2u8),
-        };
-
-        // Randomly permute the orders
-        let (o1, o2) = if rng.gen_bool(0.5) { (o1, o2) } else { (o2, o1) };
-
-        // Match orders assuming they are fully capitalized
-        let match_res = match_orders_with_max_min_amounts(
-            &o1,
-            &o2,
-            o1.amount,
-            o2.amount,
-            Amount::MIN, // min_quote_amount
-            Amount::MIN, // min_base_amount
-            price,
-        )
-        .unwrap();
-
-        (o1, o2, price, match_res)
     }
 }

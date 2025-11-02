@@ -11,12 +11,13 @@
 
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 
-use crate::csprng::PoseidonCSPRNG;
 use crate::traits::BaseType;
+use crate::{csprng::PoseidonCSPRNG, traits::SecretShareType};
 use constants::Scalar;
 
 #[cfg(feature = "proof-system-types")]
@@ -124,5 +125,25 @@ where
         let rid = csprng.next().unwrap();
         self.recovery_stream.index += 1;
         rid
+    }
+
+    /// Encrypt a sequence of values using the share stream
+    ///
+    /// Returns the private shares (one-time pads) and the public shares
+    /// (ciphertext)
+    pub fn stream_cipher_encrypt<V: SecretShareType>(&mut self, value: &V::Base) -> (V, V) {
+        // Generate one time pads for each value
+        let value_scalars = value.to_scalars();
+        let share_stream = &mut self.share_stream;
+        let pads = share_stream.take(value_scalars.len()).collect_vec();
+
+        // Advance the index after collecting the values
+        let ciphertexts =
+            value_scalars.iter().zip(pads.iter()).map(|(value, pad)| value - pad).collect_vec();
+
+        // Deserialize
+        let private_shares = V::from_scalars(&mut pads.into_iter());
+        let public_shares = V::from_scalars(&mut ciphertexts.into_iter());
+        (private_shares, public_shares)
     }
 }

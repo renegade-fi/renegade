@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["v1"]
+default = []
 test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
-v1 = []
-v2 = []
+v1 = ["circuit-types/v1", "util/v1"]
+v2 = ["circuit-types/v2", "util/v2"]
 
 [[test]]
 name = "integration"
@@ -105,8 +105,19 @@ path = "benches/v1/valid_fee_redemption.rs"
 harness = false
 required-features = ["test_helpers"]
 
+#####################
+### V2 Benchmarks ###
+#####################
+
+[[bench]]
+name = "valid_deposit"
+path = "benches/v2/valid_deposit.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
-# === Crytography + Arithmetic === #
+# === Cryptography + Arithmetic === #
+alloy-primitives = { workspace = true }
 ark-crypto-primitives = { version = "0.4", features = [
     "crh",
     "merkle_tree",
@@ -124,7 +135,9 @@ num-integer = "0.1"
 
 # === Workspace Dependencies === #
 circuit-macros = { workspace = true }
-circuit-types = { workspace = true, features = ["proof-system-types"] }
+circuit-types = { workspace = true, default-features = false, features = [
+    "proof-system-types",
+] }
 constants = { workspace = true, features = ["mpc-types"] }
 renegade-crypto = { workspace = true, features = ["non-wasm"] }
 util = { workspace = true, features = ["blockchain"] }
