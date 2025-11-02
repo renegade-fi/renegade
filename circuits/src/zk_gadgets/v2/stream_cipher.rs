@@ -2,7 +2,7 @@
 
 use circuit_types::{
     PlonkCircuit,
-    csprng_state::PoseidonCSPRNGVar,
+    csprng::PoseidonCSPRNGVar,
     traits::{CircuitVarType, SecretShareVarType},
 };
 use itertools::Itertools;
