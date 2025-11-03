@@ -28,10 +28,6 @@ use crate::{
 // | Circuit Definition |
 // ----------------------
 
-/// A type alias for the `ValidBalanceCreate` circuit with default size
-/// parameters attached
-pub type SizedValidBalanceCreate = ValidBalanceCreate;
-
 /// The `VALID BALANCE CREATE` circuit
 pub struct ValidBalanceCreate;
 
@@ -135,10 +131,6 @@ pub struct ValidBalanceCreateWitness {
     pub balance: DarkpoolStateBalance,
 }
 
-/// A `VALID BALANCE CREATE` witness with default const generic sizing
-/// parameters
-pub type SizedValidBalanceCreateWitness = ValidBalanceCreateWitness;
-
 // -----------------------------
 // | Statement Type Definition |
 // -----------------------------
@@ -158,10 +150,6 @@ pub struct ValidBalanceCreateStatement {
     /// The encrypted balance; i.e. the public shares of the balance
     pub new_balance_share: BalanceShare,
 }
-
-/// A `VALID BALANCE CREATE` statement with default const generic sizing
-/// parameters
-pub type SizedValidBalanceCreateStatement = ValidBalanceCreateStatement;
 
 // ---------------------
 // | Prove Verify Flow |
@@ -198,13 +186,10 @@ pub mod test_helpers {
     use crate::{
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
         zk_circuits::v2::valid_balance_create::{
-            SizedValidBalanceCreate, SizedValidBalanceCreateStatement,
-            SizedValidBalanceCreateWitness,
+            ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
         },
         zk_gadgets::test_helpers::create_state_wrapper,
     };
-
-    use super::{ValidBalanceCreateStatement, ValidBalanceCreateWitness};
 
     // -----------
     // | Helpers |
@@ -213,15 +198,14 @@ pub mod test_helpers {
     /// Check that the constraints are satisfied on the given witness and
     /// statement
     pub fn check_constraints(
-        witness: &SizedValidBalanceCreateWitness,
-        statement: &SizedValidBalanceCreateStatement,
+        witness: &ValidBalanceCreateWitness,
+        statement: &ValidBalanceCreateStatement,
     ) -> bool {
-        check_constraints_satisfied::<SizedValidBalanceCreate>(witness, statement)
+        check_constraints_satisfied::<ValidBalanceCreate>(witness, statement)
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_witness_statement()
-    -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
+    pub fn create_witness_statement() -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create a deposit that matches the balance's mint and owner
         let deposit = create_random_deposit();
         create_witness_statement_with_deposit(deposit)
@@ -230,7 +214,7 @@ pub mod test_helpers {
     /// Create a dummy witness and statement with a given deposit
     pub fn create_witness_statement_with_deposit(
         deposit: Deposit,
-    ) -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
+    ) -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create a new balance matching the deposit
         let balance_inner = Balance {
             mint: deposit.token,
@@ -248,7 +232,7 @@ pub mod test_helpers {
     pub fn create_witness_statement_with_deposit_and_balance(
         deposit: Deposit,
         balance_inner: &Balance,
-    ) -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
+    ) -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement) {
         // Create the witness balance with initial stream states
         let pre_update_balance = create_state_wrapper(balance_inner.clone());
         let mut balance = pre_update_balance.clone();
