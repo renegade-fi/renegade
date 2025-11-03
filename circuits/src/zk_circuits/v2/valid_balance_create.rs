@@ -183,3 +183,117 @@ impl SingleProverCircuit for ValidBalanceCreate {
         Self::circuit(&statement_var, &mut witness_var, cs).map_err(PlonkError::CircuitError)
     }
 }
+
+// ---------
+// | Tests |
+// ---------
+
+#[cfg(any(test, feature = "test_helpers"))]
+pub mod test_helpers {
+    use circuit_types::{
+        balance::{Balance, BalanceShare},
+        deposit::Deposit,
+    };
+
+    use crate::{
+        test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        zk_circuits::v2::valid_balance_create::{
+            SizedValidBalanceCreate, SizedValidBalanceCreateStatement,
+            SizedValidBalanceCreateWitness,
+        },
+        zk_gadgets::test_helpers::create_state_wrapper,
+    };
+
+    use super::{ValidBalanceCreateStatement, ValidBalanceCreateWitness};
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Check that the constraints are satisfied on the given witness and
+    /// statement
+    pub fn check_constraints(
+        witness: &SizedValidBalanceCreateWitness,
+        statement: &SizedValidBalanceCreateStatement,
+    ) -> bool {
+        check_constraints_satisfied::<SizedValidBalanceCreate>(witness, statement)
+    }
+
+    /// Construct a witness and statement with valid data
+    pub fn create_dummy_witness_statement()
+    -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
+        // Create a deposit that matches the balance's mint and owner
+        let deposit = create_random_deposit();
+        create_dummy_witness_statement_with_deposit(deposit)
+    }
+
+    /// Create a dummy witness and statement with a given deposit
+    pub fn create_dummy_witness_statement_with_deposit(
+        deposit: Deposit,
+    ) -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
+        // Create a new balance matching the deposit
+        let balance_inner = Balance {
+            mint: deposit.token,
+            owner: deposit.from,
+            one_time_authority: random_address(),
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
+            amount: deposit.amount,
+        };
+
+        // Create the witness balance with initial stream states
+        let pre_update_balance = create_state_wrapper(balance_inner.clone());
+        let mut balance = pre_update_balance.clone();
+
+        // Encrypt the entire balance using the stream cipher
+        let (balance_private_shares, balance_public_shares) =
+            balance.stream_cipher_encrypt::<BalanceShare>(&balance_inner);
+        let recovery_id = balance.compute_recovery_id();
+
+        // Compute commitment to the balance
+        let balance_commitment =
+            balance.compute_commitment(&balance_private_shares, &balance_public_shares);
+
+        // Build the witness and statement using the pre-update balance
+        let witness = ValidBalanceCreateWitness { balance: pre_update_balance };
+        let statement = ValidBalanceCreateStatement {
+            deposit,
+            balance_commitment,
+            recovery_id,
+            new_balance_share: balance_public_shares,
+        };
+
+        (witness, statement)
+    }
+
+    /// Build a random deposit
+    pub fn create_random_deposit() -> Deposit {
+        Deposit { from: random_address(), token: random_address(), amount: random_amount() }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use circuit_types::traits::SingleProverCircuit;
+
+    /// A helper to print the number of constraints in the circuit
+    ///
+    /// Useful when benchmarking the circuit
+    #[test]
+    fn test_n_constraints() {
+        let layout = ValidBalanceCreate::get_circuit_layout().unwrap();
+
+        let n_gates = layout.n_gates;
+        let circuit_size = layout.circuit_size();
+        println!("Number of constraints: {n_gates}");
+        println!("Next power of two: {circuit_size}");
+    }
+
+    /// Test that constraints are satisfied on a valid witness and statement
+    #[test]
+    fn test_valid_balance_create_constraints() {
+        let (witness, statement) = test_helpers::create_dummy_witness_statement();
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+}

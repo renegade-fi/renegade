@@ -115,6 +115,12 @@ path = "benches/v2/valid_deposit.rs"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "valid_balance_create"
+path = "benches/v2/valid_balance_create.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 alloy-primitives = { workspace = true }

@@ -127,10 +127,22 @@ where
         rid
     }
 
+    /// Get the current recovery identifier without mutating the recovery stream
+    ///
+    /// Returns the recovery identifier at the current index (index - 1).
+    /// This is useful when you need to read the recovery ID without advancing
+    /// the stream state.
+    pub fn peek_recovery_id(&self) -> Scalar {
+        let index = self.recovery_stream.index;
+        self.recovery_stream.get_ith(index)
+    }
+
     /// Encrypt a sequence of values using the share stream
     ///
     /// Returns the private shares (one-time pads) and the public shares
     /// (ciphertext)
+    ///
+    /// This method mutates the share stream state by advancing the index.
     pub fn stream_cipher_encrypt<V: SecretShareType>(&mut self, value: &V::Base) -> (V, V) {
         // Generate one time pads for each value
         let value_scalars = value.to_scalars();
@@ -145,5 +157,107 @@ where
         let private_shares = V::from_scalars(&mut pads.into_iter());
         let public_shares = V::from_scalars(&mut ciphertexts.into_iter());
         (private_shares, public_shares)
+    }
+
+    /// Encrypt a sequence of values using the share stream without mutating the
+    /// stream state
+    ///
+    /// Returns the private shares (one-time pads) and the public shares
+    /// (ciphertext) that would be generated from the current stream position.
+    ///
+    /// This method does not mutate the share stream state; it is useful for
+    /// for peeking at what the encryption would produce without advancing the
+    /// stream.
+    pub fn peek_stream_cipher_encrypt<V: SecretShareType>(&self, value: &V::Base) -> (V, V) {
+        // Generate one time pads for each value using get_ith without mutating
+        let value_scalars = value.to_scalars();
+        let start_index = self.share_stream.index;
+        let pads: Vec<Scalar> = (0..value_scalars.len())
+            .map(|i| self.share_stream.get_ith(start_index + i as u64))
+            .collect_vec();
+
+        // Compute ciphertexts
+        let ciphertexts =
+            value_scalars.iter().zip(pads.iter()).map(|(value, pad)| value - pad).collect_vec();
+
+        // Deserialize
+        let private_shares = V::from_scalars(&mut pads.into_iter());
+        let public_shares = V::from_scalars(&mut ciphertexts.into_iter());
+        (private_shares, public_shares)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use constants::Scalar;
+    use rand::thread_rng;
+
+    // -----------
+    // | Helpers |
+    // -----------
+
+    /// Create a dummy state wrapper
+    ///
+    /// For these tests the inner type is unimportant; so we use a `Scalar`
+    pub fn random_state_wrapper() -> StateWrapper<Scalar> {
+        let recovery_stream = random_csprng_state();
+        let share_stream = random_csprng_state();
+        StateWrapper { recovery_stream, share_stream, inner: Scalar::zero() }
+    }
+
+    /// Create a random csprng state
+    pub fn random_csprng_state() -> PoseidonCSPRNG {
+        let mut rng = thread_rng();
+        let seed = Scalar::random(&mut rng);
+        PoseidonCSPRNG::new(seed)
+    }
+
+    // ---------
+    // | Tests |
+    // ---------
+
+    /// Test that peek_recovery_id returns the same value as compute_recovery_id
+    /// would before mutation
+    #[test]
+    fn test_recovery_id_consistency() {
+        let mut wrapper = random_state_wrapper();
+
+        // Compute the recovery ID in both ways
+        let peeked_id = wrapper.peek_recovery_id();
+        let computed_id = wrapper.compute_recovery_id();
+        assert_eq!(
+            peeked_id, computed_id,
+            "peek_recovery_id should return the same value as compute_recovery_id"
+        );
+    }
+
+    /// Test that peek_stream_cipher_encrypt returns the same values as
+    /// stream_cipher_encrypt would before mutation
+    #[test]
+    fn test_peek_stream_cipher_encrypt_matches_compute() {
+        const N: usize = 10;
+        let mut rng = thread_rng();
+        let values = (0..N).map(|_| Scalar::random(&mut rng)).collect_vec();
+        let values_arr = <[Scalar; N]>::from_scalars(&mut values.into_iter());
+
+        // Compute the encryption in both ways
+        let mut wrapper = random_state_wrapper();
+        let (peeked_private, peeked_public) =
+            wrapper.peek_stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
+        let (computed_private, computed_public) =
+            wrapper.stream_cipher_encrypt::<[Scalar; N]>(&values_arr);
+
+        // Check that the private and public shares match
+        assert_eq!(
+            peeked_private.to_scalars(),
+            computed_private.to_scalars(),
+            "peek_stream_cipher_encrypt private shares should match stream_cipher_encrypt"
+        );
+        assert_eq!(
+            peeked_public.to_scalars(),
+            computed_public.to_scalars(),
+            "peek_stream_cipher_encrypt public shares should match stream_cipher_encrypt"
+        );
     }
 }
