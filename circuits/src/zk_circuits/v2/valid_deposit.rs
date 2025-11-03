@@ -177,10 +177,6 @@ pub struct ValidDepositStatement {
     pub new_amount_share: Scalar,
 }
 
-/// A `VALID DEPOSIT` statement with default const generic sizing
-/// parameters
-pub type SizedValidDepositStatement = ValidDepositStatement;
-
 // ---------------------
 // | Prove Verify Flow |
 // ---------------------
@@ -217,9 +213,7 @@ pub mod test_helpers {
 
     use crate::{
         test_helpers::{check_constraints_satisfied, random_address, random_amount},
-        zk_circuits::valid_deposit::{
-            SizedValidDeposit, SizedValidDepositStatement, SizedValidDepositWitness,
-        },
+        zk_circuits::valid_deposit::{SizedValidDeposit, SizedValidDepositWitness},
         zk_gadgets::test_helpers::{
             create_merkle_opening, create_random_shares, create_state_wrapper,
         },
@@ -238,14 +232,13 @@ pub mod test_helpers {
     /// statement
     pub fn check_constraints(
         witness: &SizedValidDepositWitness,
-        statement: &SizedValidDepositStatement,
+        statement: &ValidDepositStatement,
     ) -> bool {
         check_constraints_satisfied::<SizedValidDeposit>(witness, statement)
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_dummy_witness_statement() -> (SizedValidDepositWitness, SizedValidDepositStatement)
-    {
+    pub fn create_dummy_witness_statement() -> (SizedValidDepositWitness, ValidDepositStatement) {
         // Create a deposit that matches the balance's mint and owner
         let deposit = create_random_deposit();
         create_dummy_witness_statement_with_deposit(deposit)
@@ -254,7 +247,7 @@ pub mod test_helpers {
     /// Create a dummy witness and statement with a given deposit
     pub fn create_dummy_witness_statement_with_deposit(
         deposit: Deposit,
-    ) -> (SizedValidDepositWitness, SizedValidDepositStatement) {
+    ) -> (SizedValidDepositWitness, ValidDepositStatement) {
         let old_balance = create_state_wrapper(Balance {
             mint: deposit.token,
             owner: deposit.from,
