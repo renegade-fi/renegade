@@ -30,7 +30,7 @@ pub type DarkpoolStateBalanceVar = StateWrapperVar<Balance>;
 
 /// A balance in the V2 darkpool
 #[cfg_attr(feature = "proof-system-types", circuit_type(serde, singleprover_circuit, secret_share))]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Balance {
     /// The mint of the token in the balance
     pub mint: Address,
