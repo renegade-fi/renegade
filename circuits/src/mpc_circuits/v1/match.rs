@@ -55,7 +55,8 @@ mod test {
 
     use test_helpers::mpc_network::execute_mock_mpc;
 
-    use crate::{mpc_circuits::r#match::compute_match, test_helpers::random_orders_and_match};
+    use crate::mpc_circuits::r#match::compute_match;
+    use crate::zk_circuits::v1::test_helpers::random_orders_and_match;
 
     /// Tests the match computation circuit
     #[tokio::test]

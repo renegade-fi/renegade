@@ -84,15 +84,18 @@ pub fn check_constraint_satisfaction_multiprover<C: MultiProverCircuit>(
 
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
-    use std::iter::from_fn;
+    use std::iter::{self, from_fn};
 
+    use circuit_types::csprng_state::PoseidonCSPRNG;
     use circuit_types::{
-        Address,
+        Address, Amount,
         balance::Balance,
         elgamal::{DecryptionKey, EncryptionKey},
         fixed_point::FixedPoint,
         keychain::{NUM_KEYS, NonNativeScalar, PublicKeyChain, PublicSigningKey},
+        r#match::{MatchResult, OrderSettlementIndices},
         merkle::MerkleOpening,
+        native_helpers::create_wallet_shares_with_randomness,
         order::{Order, OrderSide},
         wallet::{Wallet, WalletShare},
     };
@@ -101,9 +104,8 @@ pub mod test_helpers {
     use lazy_static::lazy_static;
     use num_bigint::BigUint;
     use rand::thread_rng;
-    use renegade_crypto::hash::{PoseidonCSPRNG, compute_poseidon_hash};
-
-    use circuit_types::native_helpers::create_wallet_shares_with_randomness;
+    use renegade_crypto::{fields::scalar_to_biguint, hash::compute_poseidon_hash};
+    use util::matching_engine::match_orders_with_max_min_amounts;
 
     // --------------
     // | Dummy Data |
@@ -222,101 +224,6 @@ pub mod test_helpers {
         create_wallet_shares_with_randomness(wallet, blinder, private_share, shares)
     }
 
-    /// Create a multi-item opening in a Merkle tree, do so by constructing the
-    /// Merkle tree from the given items, padded with zeros
-    ///
-    /// The return type is structured as a tuple with the following elements in
-    /// order:
-    ///     - root: The root of the Merkle tree
-    ///     - openings: A vector of opening vectors; the sister nodes hashed
-    ///       with the Merkle path
-    ///     - opening_indices: A vector of opening index vectors; the left/right
-    ///       booleans for the path
-    pub fn create_multi_opening<const HEIGHT: usize>(
-        items: &[Scalar],
-    ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
-        create_multi_opening_with_default_leaf(items, Scalar::zero() /* default_value */)
-    }
-
-    /// Create a multi opening with a non-zero default (empty) leaf value
-    pub fn create_multi_opening_with_default_leaf<const HEIGHT: usize>(
-        items: &[Scalar],
-        default_leaf: Scalar,
-    ) -> (Scalar, Vec<MerkleOpening<HEIGHT>>) {
-        let tree_capacity = 2usize.pow(HEIGHT as u32);
-        assert!(items.len() <= tree_capacity, "tree capacity exceeded by seed items");
-        assert!(!items.is_empty(), "cannot create a multi-opening for an empty tree");
-
-        let (root, mut opening_paths) =
-            create_multi_opening_helper(items.to_vec(), default_leaf, HEIGHT);
-        opening_paths.truncate(items.len());
-
-        // Create Merkle opening paths from each of the results
-        let merkle_paths = opening_paths
-            .into_iter()
-            .enumerate()
-            .map(|(i, path)| (get_opening_indices(i, HEIGHT), path))
-            .map(|(indices, path)| MerkleOpening {
-                indices: indices.try_into().unwrap(),
-                elems: path.try_into().unwrap(),
-            })
-            .collect_vec();
-
-        (root, merkle_paths)
-    }
-
-    /// A recursive helper to compute a multi-opening for a set of leaves
-    ///
-    /// Returns the root and a set of paths, where path[i] is hte path for
-    /// leaves[i]
-    fn create_multi_opening_helper(
-        mut leaves: Vec<Scalar>,
-        zero_value: Scalar,
-        height: usize,
-    ) -> (Scalar, Vec<Vec<Scalar>>) {
-        // If the height is zero we are at the root of the tree, return
-        if height == 0 {
-            return (leaves[0], vec![Vec::new()]);
-        }
-
-        // Otherwise, pad the leaves with zeros to an even number and fold into the next
-        // recursive level
-        let pad_length = leaves.len() % 2;
-        leaves.append(&mut vec![zero_value; pad_length]);
-        let next_level_leaves = leaves.chunks_exact(2).map(compute_poseidon_hash).collect_vec();
-
-        // Recurse up the tree
-        let zero_value = compute_poseidon_hash(&[zero_value, zero_value]);
-        let (root, parent_openings) =
-            create_multi_opening_helper(next_level_leaves, zero_value, height - 1);
-
-        // Append sister nodes to each recursive result
-        let mut openings: Vec<Vec<Scalar>> = Vec::with_capacity(leaves.len());
-        for (leaf_chunk, recursive_opening) in leaves.chunks_exact(2).zip(parent_openings) {
-            // Add the leaves to each other's paths
-            let (left, right) = (leaf_chunk[0], leaf_chunk[1]);
-            openings.push([vec![right], recursive_opening.clone()].concat());
-            openings.push([vec![left], recursive_opening].concat());
-        }
-
-        (root, openings)
-    }
-
-    /// Get the opening indices for a given insertion index into a Merkle tree
-    ///
-    /// Here, the indices are represented as `Scalar` values where `0`
-    /// represents a left child and `1` represents a right child
-    fn get_opening_indices(leaf_index: usize, height: usize) -> Vec<bool> {
-        let mut leaf_index = leaf_index as u64;
-        let mut indices = Vec::with_capacity(height);
-
-        for _ in 0..height {
-            indices.push(leaf_index % 2 == 1);
-            leaf_index >>= 1;
-        }
-        indices
-    }
-
     // ---------------------
     // | Helper Validation |
     // ---------------------
@@ -410,5 +317,93 @@ pub mod test_helpers {
 
         wallet.blinder = recovered_blinder;
         assert_eq!(wallet, recovered_wallet);
+    }
+
+    // -----------
+    // | Additional Helpers from lib.rs |
+    // -----------
+
+    /// Generate a random set of settlement indices
+    pub fn random_indices() -> OrderSettlementIndices {
+        let balance_send = random_index(MAX_BALANCES);
+        let mut balance_receive = random_index(MAX_BALANCES);
+
+        while balance_send == balance_receive {
+            balance_receive = random_index(MAX_BALANCES);
+        }
+
+        OrderSettlementIndices { order: random_index(MAX_ORDERS), balance_send, balance_receive }
+    }
+
+    /// Generate a random index bounded by a max
+    fn random_index(max: usize) -> usize {
+        let mut rng = thread_rng();
+        rng.gen_range(0..max)
+    }
+
+    /// Get a dummy set of wallet shares
+    pub fn dummy_wallet_share<const MAX_BALANCES: usize, const MAX_ORDERS: usize>()
+    -> WalletShare<MAX_BALANCES, MAX_ORDERS> {
+        let mut iter = iter::from_fn(|| Some(Scalar::zero()));
+        WalletShare::from_scalars(&mut iter)
+    }
+
+    /// Create a wallet with random zero'd balances
+    pub fn wallet_with_random_balances<const MAX_BALANCES: usize, const MAX_FEES: usize>()
+    -> Wallet<MAX_BALANCES, MAX_FEES> {
+        let mut rng = thread_rng();
+        let mut wallet = Wallet::<MAX_BALANCES, MAX_FEES>::default();
+
+        for bal in wallet.balances.iter_mut() {
+            let mint = scalar_to_biguint(&Scalar::random(&mut rng));
+            *bal = Balance::new_from_mint(mint);
+        }
+
+        wallet
+    }
+
+    /// Get two random orders that cross along with their match result
+    pub fn random_orders_and_match() -> (Order, Order, FixedPoint, MatchResult) {
+        let mut rng = thread_rng();
+        let quote_mint = scalar_to_biguint(&Scalar::random(&mut rng));
+        let base_mint = scalar_to_biguint(&Scalar::random(&mut rng));
+
+        let price = FixedPoint::from_f64_round_down(rng.gen_range(0.0..100.0));
+        let base_amount = rng.next_u32() as u128;
+
+        // Buy side
+        let o1 = Order {
+            quote_mint: quote_mint.clone(),
+            base_mint: base_mint.clone(),
+            side: OrderSide::Buy,
+            amount: rng.gen_range(1..base_amount),
+            worst_case_price: price + Scalar::from(2u8),
+        };
+
+        // Sell side
+        let o2 = Order {
+            quote_mint: quote_mint.clone(),
+            base_mint: base_mint.clone(),
+            side: OrderSide::Sell,
+            amount: rng.gen_range(1..base_amount),
+            worst_case_price: price - Scalar::from(2u8),
+        };
+
+        // Randomly permute the orders
+        let (o1, o2) = if rng.gen_bool(0.5) { (o1, o2) } else { (o2, o1) };
+
+        // Match orders assuming they are fully capitalized
+        let match_res = match_orders_with_max_min_amounts(
+            &o1,
+            &o2,
+            o1.amount,
+            o2.amount,
+            Amount::MIN, // min_quote_amount
+            Amount::MIN, // min_base_amount
+            price,
+        )
+        .unwrap();
+
+        (o1, o2, price, match_res)
     }
 }

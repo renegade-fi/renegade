@@ -128,7 +128,8 @@ mod test {
     use test_helpers::mpc_network::execute_mock_mpc;
     use util::matching_engine::{apply_match_to_shares, compute_fee_obligation};
 
-    use crate::{mpc_circuits::settle::settle_match, test_helpers::random_indices};
+    use crate::mpc_circuits::settle::settle_match;
+    use crate::zk_circuits::v1::test_helpers::random_indices;
 
     /// The parameterization of a test
     #[derive(Clone)]

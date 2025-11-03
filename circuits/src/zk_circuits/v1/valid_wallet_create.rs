@@ -20,7 +20,7 @@ use mpc_plonk::errors::PlonkError;
 use mpc_relation::{Variable, errors::CircuitError, traits::Circuit};
 use serde::{Deserialize, Serialize};
 
-use crate::zk_gadgets::wallet_operations::{FeeGadget, WalletGadget};
+use crate::zk_gadgets::v1::wallet_operations::{FeeGadget, WalletGadget};
 
 /// A type alias for an instantiation of this circuit with default generics
 pub type SizedValidWalletCreate = ValidWalletCreate<MAX_BALANCES, MAX_ORDERS>;
