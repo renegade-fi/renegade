@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::SingleProverCircuit;
 use crate::zk_gadgets::bitlength::AmountGadget;
-use crate::zk_gadgets::comparators::{EqGadget, GreaterThanEqGadget};
+use crate::zk_gadgets::comparators::{EqGadget, EqZeroGadget, GreaterThanEqGadget};
 use crate::zk_gadgets::shares::ShareGadget;
 use crate::zk_gadgets::state_elements::{StateElementRotationArgs, StateElementRotationGadget};
 use crate::zk_gadgets::stream_cipher::StreamCipherGadget;
@@ -75,7 +75,7 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
     }
 
     /// Validate the withdrawal
-    fn validate_withdrawal(
+    pub(crate) fn validate_withdrawal(
         statement: &ValidWithdrawalStatementVar,
         witness: &ValidWithdrawalWitnessVar<MERKLE_HEIGHT>,
         cs: &mut PlonkCircuit,
@@ -85,6 +85,8 @@ impl<const MERKLE_HEIGHT: usize> ValidWithdrawal<MERKLE_HEIGHT> {
 
         // 1. Verify the withdrawal amount is valid
         AmountGadget::constrain_valid_amount(withdrawal.amount, cs)?;
+        let eq_zero = EqZeroGadget::eq_zero(&withdrawal.amount, cs)?;
+        cs.enforce_false(eq_zero)?;
 
         // 2. The token must match the balance mint, and the withdrawal address must
         //    match the balance owner
@@ -332,8 +334,16 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use crate::{
+        test_helpers::{random_address, random_amount, random_scalar},
+        zk_gadgets::test_helpers::create_state_wrapper,
+    };
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{balance::Balance, max_amount, traits::SingleProverCircuit};
+    use constants::MERKLE_HEIGHT;
+    use itertools::Itertools;
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -353,5 +363,135 @@ mod test {
     fn test_valid_withdrawal_constraints() {
         let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test that a full withdrawal (where withdrawal amount equals balance
+    /// amount) is valid
+    #[test]
+    fn test_valid_full_withdrawal() {
+        // Create a balance with the exact withdrawal amount
+        let withdrawal = test_helpers::create_random_withdrawal();
+        let balance = create_state_wrapper(Balance {
+            mint: withdrawal.token,
+            owner: withdrawal.to,
+            one_time_authority: random_address(),
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
+            amount: withdrawal.amount,
+        });
+
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_withdrawal_and_balance(
+                withdrawal, &balance,
+            );
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Withdrawal Validation Tests --- //
+
+    /// Test the case in which the withdrawal amount is zero
+    #[test]
+    fn test_invalid_withdrawal_amount() {
+        let mut withdrawal = test_helpers::create_random_withdrawal();
+        withdrawal.amount = 0;
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_withdrawal(withdrawal);
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the withdrawal amount exceeds the maximum allowed
+    /// amount
+    #[test]
+    fn test_invalid_withdrawal_amount_too_large() {
+        let mut withdrawal = test_helpers::create_random_withdrawal();
+        withdrawal.amount = max_amount() + 1;
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_withdrawal(withdrawal);
+
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the withdrawal exceeds the balance amount
+    #[test]
+    fn test_invalid_withdrawal_exceeds_balance() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.withdrawal.amount = witness.old_balance.inner.amount + 1;
+
+        // Apply only the withdrawal validation constraints to isolate the failure
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+        ValidWithdrawal::<MERKLE_HEIGHT>::validate_withdrawal(
+            &statement_var,
+            &witness_var,
+            &mut cs,
+        )
+        .unwrap();
+
+        let statement_scalars = statement.to_scalars().iter().map(|s| s.inner()).collect_vec();
+        let satisfied = cs.check_circuit_satisfiability(&statement_scalars).is_ok();
+        assert!(!satisfied);
+    }
+
+    /// Test the case in which the withdrawal token does not match the balance
+    /// mint
+    #[test]
+    fn test_invalid_withdrawal_token_mismatch() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.withdrawal.token = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the withdrawal to does not match the balance
+    /// owner
+    #[test]
+    fn test_invalid_withdrawal_to_mismatch() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.withdrawal.to = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Outstanding Fees Tests --- //
+
+    /// Test the case in which the balance has outstanding fees
+    #[test]
+    fn test_invalid_withdrawal_outstanding_fees() {
+        let mut rng = thread_rng();
+        let withdrawal = test_helpers::create_random_withdrawal();
+        let mut balance = create_state_wrapper(Balance {
+            mint: withdrawal.token,
+            owner: withdrawal.to,
+            one_time_authority: random_address(),
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
+            amount: withdrawal.amount,
+        });
+
+        // Randomly set one of the fees to a non-zero value
+        if rng.gen_bool(0.5) {
+            balance.inner.relayer_fee_balance = random_amount();
+        } else {
+            balance.inner.protocol_fee_balance = random_amount();
+        }
+
+        // Generate a witness and statement with the modified balance
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_withdrawal_and_balance(
+                withdrawal, &balance,
+            );
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- State Rotation Tests --- //
+    // The majority of these tests are covered by the state rotation gadgets in
+    // the `StateElementRotationGadget` test suite
+
+    /// Test an invalid encryption of the amount field on the new balance
+    #[test]
+    fn test_invalid_new_balance_amount_encryption() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.new_amount_share = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
