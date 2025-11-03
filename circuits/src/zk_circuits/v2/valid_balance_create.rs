@@ -220,15 +220,15 @@ pub mod test_helpers {
     }
 
     /// Construct a witness and statement with valid data
-    pub fn create_dummy_witness_statement()
+    pub fn create_witness_statement()
     -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
         // Create a deposit that matches the balance's mint and owner
         let deposit = create_random_deposit();
-        create_dummy_witness_statement_with_deposit(deposit)
+        create_witness_statement_with_deposit(deposit)
     }
 
     /// Create a dummy witness and statement with a given deposit
-    pub fn create_dummy_witness_statement_with_deposit(
+    pub fn create_witness_statement_with_deposit(
         deposit: Deposit,
     ) -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
         // Create a new balance matching the deposit
@@ -241,13 +241,21 @@ pub mod test_helpers {
             amount: deposit.amount,
         };
 
+        create_witness_statement_with_deposit_and_balance(deposit, &balance_inner)
+    }
+
+    /// Create a witness and statement with the given deposit and balance
+    pub fn create_witness_statement_with_deposit_and_balance(
+        deposit: Deposit,
+        balance_inner: &Balance,
+    ) -> (SizedValidBalanceCreateWitness, SizedValidBalanceCreateStatement) {
         // Create the witness balance with initial stream states
         let pre_update_balance = create_state_wrapper(balance_inner.clone());
         let mut balance = pre_update_balance.clone();
 
         // Encrypt the entire balance using the stream cipher
         let (balance_private_shares, balance_public_shares) =
-            balance.stream_cipher_encrypt::<BalanceShare>(&balance_inner);
+            balance.stream_cipher_encrypt::<BalanceShare>(balance_inner);
         let recovery_id = balance.compute_recovery_id();
 
         // Compute commitment to the balance
@@ -274,8 +282,11 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+    use crate::test_helpers::{random_address, random_amount, random_scalar};
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{balance::Balance, traits::SingleProverCircuit};
+    use rand::{Rng, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -293,7 +304,106 @@ mod test {
     /// Test that constraints are satisfied on a valid witness and statement
     #[test]
     fn test_valid_balance_create_constraints() {
-        let (witness, statement) = test_helpers::create_dummy_witness_statement();
+        let (witness, statement) = test_helpers::create_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test a valid balance creation with a zero'd out deposit
+    #[test]
+    fn test_valid_balance_create_with_zeroed_out_deposit() {
+        let mut deposit = test_helpers::create_random_deposit();
+        deposit.amount = 0;
+        let (witness, statement) = test_helpers::create_witness_statement_with_deposit(deposit);
+        assert!(test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Balance Validation Tests --- //
+
+    /// Test the case in which the balance amount is not equal to the deposit
+    /// amount
+    #[test]
+    fn test_invalid_balance_amount() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.deposit.amount = random_amount();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which a balance fee is non-zero
+    #[test]
+    fn test_invalid_balance_fees() {
+        let mut rng = thread_rng();
+        let deposit = test_helpers::create_random_deposit();
+        let mut balance = Balance {
+            mint: deposit.token,
+            owner: deposit.from,
+            one_time_authority: random_address(),
+            relayer_fee_balance: 0,
+            protocol_fee_balance: 0,
+            amount: deposit.amount,
+        };
+
+        // Modify one of the fees
+        if rng.gen_bool(0.5) {
+            balance.relayer_fee_balance = random_amount();
+        } else {
+            balance.protocol_fee_balance = random_amount();
+        }
+
+        // Verify that the constraints are not satisfied
+        let (witness, statement) =
+            test_helpers::create_witness_statement_with_deposit_and_balance(deposit, &balance);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance owner is not the same as the deposit
+    /// from field
+    #[test]
+    fn test_invalid_balance_owner() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.deposit.from = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance mint is not the same as the deposit
+    /// token
+    #[test]
+    fn test_invalid_balance_mint() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.deposit.token = random_address();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Encryption Validation Tests --- //
+
+    /// Test the case in which the new balance share is not correctly encrypted
+    #[test]
+    fn test_invalid_new_balance_share() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+
+        // Modify a share in the new balance public shares
+        let mut shares = statement.new_balance_share.to_scalars();
+        let random_index = rng.gen_range(0..shares.len());
+        shares[random_index] = random_scalar();
+        statement.new_balance_share = BalanceShare::from_scalars(&mut shares.into_iter());
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- State Rotation Tests --- //
+
+    /// Test the case in which the recovery ID is computed incorrectly
+    #[test]
+    fn test_invalid_recovery_id() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.recovery_id = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the balance commitment is computed incorrectly
+    #[test]
+    fn test_invalid_balance_commitment() {
+        let (witness, mut statement) = test_helpers::create_witness_statement();
+        statement.balance_commitment = random_scalar();
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }
