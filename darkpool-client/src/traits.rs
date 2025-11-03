@@ -26,7 +26,6 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::Scalar;
-use tracing::info;
 
 use crate::client::{DarkpoolCallBuilder, RenegadeProvider};
 use crate::errors::DarkpoolClientError;
@@ -37,6 +36,13 @@ use crate::errors::DarkpoolClientError;
 
 /// The timeout for awaiting the receipt of a pending transaction
 const TX_RECEIPT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The number of confirmations required for a transaction to be considered
+/// successful.
+///
+/// We set this to 2 to ensure that we get fully-confirmed transaction
+/// receipts on Base.
+const REQUIRED_CONFIRMATIONS: u64 = 2;
 
 /// The multiple of the gas price estimate we use for submitting a transaction
 const GAS_PRICE_MULTIPLIER: u128 = 2;
@@ -219,10 +225,9 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
             .await
             .map_err(DarkpoolClientError::contract_interaction)?;
 
-        // TODO: Remove this debug log
-        info!("Pending tx hash: {:#x}", pending_tx.tx_hash());
         let receipt = pending_tx
             .with_timeout(Some(TX_RECEIPT_TIMEOUT))
+            .with_required_confirmations(REQUIRED_CONFIRMATIONS) // TODO: Remove this
             .get_receipt()
             .await
             .map_err(DarkpoolClientError::contract_interaction)?;
