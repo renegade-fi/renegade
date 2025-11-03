@@ -1,23 +1,23 @@
-//! Tests the process of proving and verifying a `VALID BALANCE CREATE` circuit
+//! Tests the process of proving and verifying a `VALID WITHDRAWAL` circuit
 #![allow(incomplete_features)]
 #![allow(missing_docs)]
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuits::zk_circuits::v2::valid_balance_create::test_helpers::create_witness_statement;
-use circuits::zk_circuits::v2::valid_balance_create::{
-    ValidBalanceCreate, ValidBalanceCreateStatement, ValidBalanceCreateWitness,
+use circuits::zk_circuits::v2::valid_withdrawal::test_helpers::create_witness_statement;
+use circuits::zk_circuits::v2::valid_withdrawal::{
+    SizedValidWithdrawal, SizedValidWithdrawalWitness, ValidWithdrawalStatement,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
+use constants::MERKLE_HEIGHT;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
 // -----------
 // | Helpers |
 // -----------
 
-/// Create a witness and statement for the `VALID BALANCE CREATE` circuit
-pub fn create_witness_statement_bench() -> (ValidBalanceCreateWitness, ValidBalanceCreateStatement)
-{
+/// Create a witness and statement for the `VALID WITHDRAWAL` circuit
+pub fn create_witness_statement_bench() -> (SizedValidWithdrawalWitness, ValidWithdrawalStatement) {
     create_witness_statement()
 }
 
@@ -36,12 +36,12 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
     let statement_var = statement.create_public_var(&mut cs);
 
     // Run the benchmark
-    let mut group = c.benchmark_group("valid_balance_create");
-    let benchmark_id = BenchmarkId::new("constraint-generation", "");
+    let mut group = c.benchmark_group("valid_withdrawal");
+    let benchmark_id = BenchmarkId::new("constraint-generation", format!("({MERKLE_HEIGHT})"));
 
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            ValidBalanceCreate::apply_constraints(
+            SizedValidWithdrawal::apply_constraints(
                 witness_var.clone(),
                 statement_var.clone(),
                 &mut cs,
@@ -55,11 +55,11 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 pub fn bench_prover(c: &mut Criterion) {
     // Build a witness and statement
     let (witness, statement) = create_witness_statement_bench();
-    let mut group = c.benchmark_group("valid_balance_create");
-    let benchmark_id = BenchmarkId::new("prover", "");
+    let mut group = c.benchmark_group("valid_withdrawal");
+    let benchmark_id = BenchmarkId::new("prover", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<ValidBalanceCreate>(witness.clone(), statement.clone()).unwrap();
+            singleprover_prove::<SizedValidWithdrawal>(witness.clone(), statement.clone()).unwrap();
         });
     });
 }
@@ -68,14 +68,14 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_witness_statement_bench();
-    let proof = singleprover_prove::<ValidBalanceCreate>(witness, statement.clone()).unwrap();
+    let proof = singleprover_prove::<SizedValidWithdrawal>(witness, statement.clone()).unwrap();
 
     // Run the benchmark
-    let mut group = c.benchmark_group("valid_balance_create");
-    let benchmark_id = BenchmarkId::new("verifier", "");
+    let mut group = c.benchmark_group("valid_withdrawal");
+    let benchmark_id = BenchmarkId::new("verifier", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<ValidBalanceCreate>(statement.clone(), &proof).unwrap();
+            verify_singleprover_proof::<SizedValidWithdrawal>(statement.clone(), &proof).unwrap();
         });
     });
 }
@@ -85,8 +85,8 @@ pub fn bench_verifier(c: &mut Criterion) {
 // -------------------
 
 criterion_group! {
-    name = valid_balance_create;
+    name = valid_withdrawal;
     config = Criterion::default().sample_size(10);
     targets = bench_apply_constraints, bench_prover, bench_verifier
 }
-criterion_main!(valid_balance_create);
+criterion_main!(valid_withdrawal);

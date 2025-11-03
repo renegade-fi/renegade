@@ -6,7 +6,7 @@ use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
 use circuits::zk_circuits::v2::valid_deposit::test_helpers::create_dummy_witness_statement;
 use circuits::zk_circuits::v2::valid_deposit::{
-    SizedValidDeposit, SizedValidDepositStatement, SizedValidDepositWitness,
+    SizedValidDeposit, SizedValidDepositWitness, ValidDepositStatement,
 };
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::MERKLE_HEIGHT;
@@ -17,7 +17,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 // -----------
 
 /// Create a witness and statement for the `VALID DEPOSIT` circuit
-pub fn create_witness_statement() -> (SizedValidDepositWitness, SizedValidDepositStatement) {
+pub fn create_witness_statement() -> (SizedValidDepositWitness, ValidDepositStatement) {
     create_dummy_witness_statement()
 }
 
