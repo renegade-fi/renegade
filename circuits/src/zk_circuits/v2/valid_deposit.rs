@@ -202,6 +202,10 @@ impl<const MERKLE_HEIGHT: usize> SingleProverCircuit for ValidDeposit<MERKLE_HEI
     }
 }
 
+// ---------
+// | Tests |
+// ---------
+
 #[cfg(any(test, feature = "test_helpers"))]
 pub mod test_helpers {
     use alloy_primitives::Address;
@@ -212,7 +216,10 @@ pub mod test_helpers {
     use constants::Scalar;
 
     use crate::{
-        test_helpers::{random_address, random_amount},
+        test_helpers::{check_constraints_satisfied, random_address, random_amount},
+        zk_circuits::valid_deposit::{
+            SizedValidDeposit, SizedValidDepositStatement, SizedValidDepositWitness,
+        },
         zk_gadgets::test_helpers::{
             create_merkle_opening, create_random_shares, create_state_wrapper,
         },
@@ -223,19 +230,31 @@ pub mod test_helpers {
     /// The height of the Merkle tree to test on
     const MERKLE_HEIGHT: usize = 10;
 
-    /// The witness type with default size parameters attached
-    pub type SizedWitness = ValidDepositWitness<MERKLE_HEIGHT>;
-    /// The statement type with default size parameters attached
-    pub type SizedStatement = ValidDepositStatement;
-
     // -----------
     // | Helpers |
     // -----------
 
+    /// Check that the constraints are satisfied on the given witness and
+    /// statement
+    pub fn check_constraints(
+        witness: &SizedValidDepositWitness,
+        statement: &SizedValidDepositStatement,
+    ) -> bool {
+        check_constraints_satisfied::<SizedValidDeposit>(witness, statement)
+    }
+
     /// Construct a witness and statement with valid data
-    pub fn create_dummy_witness_statement() -> (SizedWitness, SizedStatement) {
+    pub fn create_dummy_witness_statement() -> (SizedValidDepositWitness, SizedValidDepositStatement)
+    {
         // Create a deposit that matches the balance's mint and owner
         let deposit = create_random_deposit();
+        create_dummy_witness_statement_with_deposit(deposit)
+    }
+
+    /// Create a dummy witness and statement with a given deposit
+    pub fn create_dummy_witness_statement_with_deposit(
+        deposit: Deposit,
+    ) -> (SizedValidDepositWitness, SizedValidDepositStatement) {
         let old_balance = create_state_wrapper(Balance {
             mint: deposit.token,
             owner: deposit.from,
@@ -302,8 +321,16 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::zk_circuits::v2::valid_deposit::test_helpers::create_dummy_witness_statement;
-    use circuit_types::traits::SingleProverCircuit;
+    use crate::{
+        test_helpers::{random_address, random_scalar},
+        zk_circuits::{
+            v2::valid_deposit::test_helpers::create_dummy_witness_statement,
+            valid_deposit::test_helpers::{
+                create_dummy_witness_statement_with_deposit, create_random_deposit,
+            },
+        },
+    };
+    use circuit_types::{max_amount, traits::SingleProverCircuit};
     use itertools::Itertools;
 
     /// A helper to print the number of constraints in the circuit
@@ -336,5 +363,87 @@ mod test {
         // Verify satisfiability with public inputs
         let statement_scalars = statement.to_scalars().iter().map(|s| s.inner()).collect_vec();
         cs.check_circuit_satisfiability(&statement_scalars).expect("Circuit should be satisfiable");
+    }
+
+    // --- Deposit Validation Tests --- //
+
+    /// Test the case in which the deposit amount is too large
+    #[test]
+    fn test_invalid_deposit_amount() {
+        let mut deposit = create_random_deposit();
+        deposit.amount = max_amount() + 1;
+        let (witness, statement) = create_dummy_witness_statement_with_deposit(deposit);
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the deposit mint does not match the balance's
+    /// mint
+    #[test]
+    fn test_invalid_deposit_mint() {
+        let (witness, mut statement) = create_dummy_witness_statement();
+        statement.deposit.token = random_address();
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the deposit from does not match the balance's
+    /// owner
+    #[test]
+    fn test_invalid_deposit_from() {
+        let (witness, mut statement) = create_dummy_witness_statement();
+        statement.deposit.from = random_address();
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- Balance Update Tests --- //
+
+    /// Test the case in which the deposit overflows the balance's amount
+    #[test]
+    fn test_invalid_deposit_overflow() {
+        let mut deposit = create_random_deposit();
+        deposit.amount = max_amount() - 1; // Valid amount, but will overflow
+        let (witness, statement) = create_dummy_witness_statement_with_deposit(deposit);
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the new amount share is not correctly encrypted
+    #[test]
+    fn test_invalid_new_amount_share() {
+        let (witness, mut statement) = create_dummy_witness_statement();
+        statement.new_amount_share = random_scalar();
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // --- State Rotation Tests --- //
+    // Most of these tests are covered by the state rotation gadgets in
+    // the `StateElementRotationGadget` test suite
+
+    /// Test the case in which the old balance's public shares are invalid
+    #[test]
+    fn test_invalid_old_balance_public_shares() {
+        let (mut witness, statement) = create_dummy_witness_statement();
+        witness.old_balance_public_shares.amount = random_scalar();
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the new balance's commitment is modified
+    #[test]
+    fn test_invalid_new_balance_commitment() {
+        let (witness, mut statement) = create_dummy_witness_statement();
+        statement.new_balance_commitment = random_scalar();
+
+        // Apply circuit constraints
+        assert!(!test_helpers::check_constraints(&witness, &statement));
     }
 }

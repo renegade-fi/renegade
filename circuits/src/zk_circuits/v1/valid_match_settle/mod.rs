@@ -32,7 +32,7 @@ use mpc_relation::{
 use circuit_macros::circuit_type;
 use serde::{Deserialize, Serialize};
 
-use crate::zk_gadgets::wallet_operations::WalletGadget;
+use crate::zk_gadgets::v1::wallet_operations::WalletGadget;
 
 use super::{VALID_COMMITMENTS_MATCH_SETTLE_LINK0, VALID_COMMITMENTS_MATCH_SETTLE_LINK1};
 

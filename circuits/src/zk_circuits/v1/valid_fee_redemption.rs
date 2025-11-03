@@ -20,9 +20,9 @@ use serde::{Deserialize, Serialize};
 use crate::zk_gadgets::comparators::{EqGadget, EqVecGadget, EqZeroGadget};
 use crate::zk_gadgets::elgamal::ElGamalGadget;
 use crate::zk_gadgets::merkle::PoseidonMerkleHashGadget;
-use crate::zk_gadgets::note::NoteGadget;
 use crate::zk_gadgets::select::CondSelectGadget;
-use crate::zk_gadgets::wallet_operations::{AmountGadget, WalletGadget};
+use crate::zk_gadgets::v1::note::NoteGadget;
+use crate::zk_gadgets::v1::wallet_operations::{AmountGadget, WalletGadget};
 
 // ----------------------
 // | Circuit Definition |
@@ -455,17 +455,6 @@ mod test {
 
     /// The Merkle height used for testing
     const MERKLE_HEIGHT: usize = 5;
-
-    /// Check that the constraints for the circuit are satisfied on the given
-    /// witness, statement pair
-    fn check_constraints_satisfied(
-        witness: &ValidFeeRedemptionWitness<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>,
-        statement: &ValidFeeRedemptionStatement<MAX_BALANCES, MAX_ORDERS>,
-    ) -> bool {
-        check_constraint_satisfaction::<ValidFeeRedemption<MAX_BALANCES, MAX_ORDERS, MERKLE_HEIGHT>>(
-            witness, statement,
-        )
-    }
 
     /// Get a wallet and note for testing
     fn get_testing_wallet_and_note() -> (Wallet<MAX_BALANCES, MAX_ORDERS>, Note) {

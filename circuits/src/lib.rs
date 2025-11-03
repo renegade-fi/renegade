@@ -185,15 +185,21 @@ pub mod test_helpers {
 
     use alloy_primitives::Address;
     use ark_mpc::error::MpcError;
-    use circuit_types::{AMOUNT_BITS, Amount};
+    use circuit_types::{
+        AMOUNT_BITS, Amount, PlonkCircuit,
+        traits::{BaseType, CircuitBaseType, SingleProverCircuit},
+    };
     use constants::{AuthenticatedScalar, Scalar};
     use futures::{Future, FutureExt, future::join_all};
     use itertools::Itertools;
+    use mpc_relation::traits::Circuit;
     use rand::{Rng, distributions::uniform::SampleRange, thread_rng};
 
     // -----------
     // | Helpers |
     // -----------
+
+    // --- Macros --- //
 
     /// Open a value and unwrap the result
     #[macro_export]
@@ -209,6 +215,14 @@ pub mod test_helpers {
         ($x:expr) => {
             $crate::test_helpers::joint_open($x).await.unwrap()
         };
+    }
+
+    // --- Fuzzing --- //
+
+    /// Generate a random scalar
+    pub fn random_scalar() -> Scalar {
+        let mut rng = thread_rng();
+        Scalar::random(&mut rng)
     }
 
     /// Create a random sequence of field elements
@@ -256,5 +270,23 @@ pub mod test_helpers {
         }
 
         join_all(futures).map(|res| res.into_iter().collect::<Result<Vec<_>, _>>())
+    }
+
+    // --- Circuits --- //
+
+    /// Check that the constraints for a given circuit are satisfied on the
+    /// given witness, statement pair
+    pub fn check_constraints_satisfied<C: SingleProverCircuit>(
+        witness: &C::Witness,
+        statement: &C::Statement,
+    ) -> bool {
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let witness_var = witness.create_witness(&mut cs);
+        let statement_var = statement.create_public_var(&mut cs);
+
+        C::apply_constraints(witness_var, statement_var, &mut cs).unwrap();
+
+        let statement_scalars = statement.to_scalars().iter().map(Scalar::inner).collect_vec();
+        cs.check_circuit_satisfiability(&statement_scalars).is_ok()
     }
 }

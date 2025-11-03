@@ -37,3 +37,53 @@ impl StreamCipherGadget {
         Ok((private_share, public_share))
     }
 }
+
+#[cfg(test)]
+mod test {
+    use circuit_types::{PlonkCircuit, balance::Balance, traits::CircuitBaseType};
+    use constants::Scalar;
+    use eyre::Result;
+    use mpc_relation::Variable;
+    use mpc_relation::traits::Circuit;
+
+    use crate::{
+        test_helpers::random_scalars_array,
+        zk_gadgets::{
+            comparators::EqGadget, stream_cipher::StreamCipherGadget,
+            test_helpers::create_state_wrapper,
+        },
+    };
+
+    /// Test that the encrypt gadget aligns with the native implementation
+    #[test]
+    fn test_encrypt() -> Result<()> {
+        // Create a state wrapper, the inner type is unimportant for this test
+        let mut cs = PlonkCircuit::new_turbo_plonk();
+        let mut state = create_state_wrapper(Balance::default());
+        let mut state_var = state.create_witness(&mut cs);
+
+        // Generate test data to encrypt
+        const N: usize = 1;
+        let values = random_scalars_array::<N>();
+        let values_var = values.create_witness(&mut cs);
+        let (expected_private, expected_public) =
+            state.stream_cipher_encrypt::<[Scalar; N]>(&values);
+
+        // Encrypt in a constraint system
+        let (private_share, public_share) = StreamCipherGadget::encrypt::<[Variable; N]>(
+            &values_var,
+            &mut state_var.share_stream,
+            &mut cs,
+        )?;
+
+        // Check that the private and public shares match the expected values
+        let expected_private_vars = expected_private.create_witness(&mut cs);
+        let expected_public_vars = expected_public.create_witness(&mut cs);
+        EqGadget::constrain_eq(&private_share, &expected_private_vars, &mut cs)?;
+        EqGadget::constrain_eq(&public_share, &expected_public_vars, &mut cs)?;
+
+        // Check satisfiability
+        assert!(cs.check_circuit_satisfiability(&[]).is_ok());
+        Ok(())
+    }
+}
