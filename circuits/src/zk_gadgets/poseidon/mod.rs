@@ -53,7 +53,7 @@ mod test {
 
         // Compute the expected result
         let mut hasher = Poseidon2Sponge::new();
-        hasher.absorb_batch(&absorb_values.iter().map(Scalar::inner).collect_vec());
+        hasher.absorb_batch(absorb_values.iter().map(Scalar::inner).collect_vec());
         let expected_squeeze_values =
             hasher.squeeze_batch(N).into_iter().map(Scalar::new).collect_vec();
 
