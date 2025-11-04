@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use alloy::rpc::types::TransactionReceipt;
+use alloy::{eips::BlockNumberOrTag, hex, providers::Provider, rpc::types::TransactionReceipt};
 use async_trait::async_trait;
 use circuit_types::{native_helpers::encrypt_note, note::Note};
 use circuits::zk_circuits::valid_offline_fee_settlement::{
@@ -21,7 +21,7 @@ use job_types::proof_manager::ProofJob;
 use num_bigint::BigUint;
 use serde::Serialize;
 use state::error::StateError;
-use tracing::instrument;
+use tracing::{info, instrument};
 use util::{err_str, on_chain::get_protocol_pubkey};
 
 use crate::{
@@ -288,6 +288,25 @@ impl PayOfflineFeeTask {
     /// Submit the `settle_offline_fee` transaction for the balance
     async fn submit_payment(&mut self) -> Result<(), PayOfflineFeeTaskError> {
         let proof = self.proof.clone().unwrap();
+
+        let merkle_root = proof.statement.merkle_root;
+        let merkle_root_hex = hex::encode_prefixed(merkle_root.to_bytes_be());
+        let pending_block_num = self
+            .ctx
+            .darkpool_client
+            .provider()
+            .get_block_by_number(BlockNumberOrTag::Pending)
+            .await
+            .map_err(err_str!(PayOfflineFeeTaskError::Darkpool))?
+            .map(|b| b.header.number);
+
+        info!(
+            merkle_root = %merkle_root,
+            merkle_root_hex = %merkle_root_hex,
+            pending_block_num = ?pending_block_num,
+            "Submitting offline fee payment tx"
+        );
+
         let tx = self.ctx.darkpool_client.settle_offline_fee(&proof).await?;
         self.tx = Some(tx);
         Ok(())

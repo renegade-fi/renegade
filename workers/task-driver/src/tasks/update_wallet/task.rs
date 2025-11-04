@@ -8,6 +8,9 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 
+use alloy::eips::BlockNumberOrTag;
+use alloy::hex;
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use common::types::tasks::WalletUpdateType;
@@ -22,6 +25,7 @@ use renegade_metrics::helpers::maybe_record_transfer_metrics;
 use serde::Serialize;
 use state::error::StateError;
 use tracing::{info, instrument};
+use util::err_str;
 
 use crate::task_state::StateWrapper;
 use crate::traits::{Descriptor, Task, TaskContext, TaskError, TaskState};
@@ -365,6 +369,26 @@ impl UpdateWalletTask {
         let proof = self.proof_bundle.clone().unwrap();
         let transfer_auth = self.transfer.as_ref().map(|t| t.transfer_auth.clone());
         let sig = self.wallet_update_signature.clone();
+
+        let merkle_root = proof.statement.merkle_root;
+        let merkle_root_hex = hex::encode_prefixed(merkle_root.to_bytes_be());
+
+        let pending_block_num = self
+            .ctx
+            .darkpool_client
+            .provider()
+            .get_block_by_number(BlockNumberOrTag::Pending)
+            .await
+            .map_err(err_str!(UpdateWalletTaskError::Darkpool))?
+            .map(|b| b.header.number);
+
+        info!(
+            merkle_root = %merkle_root,
+            merkle_root_hex = %merkle_root_hex,
+            pending_block_num = ?pending_block_num,
+            "Submitting update wallet tx"
+        );
+
         let tx = self.ctx.darkpool_client.update_wallet(&proof, sig, transfer_auth).await?;
         self.tx = Some(tx);
 

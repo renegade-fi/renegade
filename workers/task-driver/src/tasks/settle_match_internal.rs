@@ -10,6 +10,9 @@ use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::{
     enqueue_proof_job, merkle_path::find_merkle_path_with_tx, proofs::update_wallet_proofs,
 };
+use alloy::eips::BlockNumberOrTag;
+use alloy::hex;
+use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::r#match::MatchResult;
@@ -32,7 +35,7 @@ use renegade_metrics::helpers::record_match_volume;
 use serde::Serialize;
 use state::error::StateError;
 use tokio::task::JoinHandle as TokioJoinHandle;
-use tracing::{Instrument, instrument};
+use tracing::{Instrument, info, instrument};
 use util::err_str;
 use util::matching_engine::{
     compute_fee_obligation, compute_max_amount, settle_match_into_wallets,
@@ -346,6 +349,30 @@ impl SettleMatchInternalTask {
         transition_order_settling(self.order_id2, state)
             .await
             .map_err(SettleMatchInternalTaskError::State)?;
+
+        let merkle_root1 = self.order1_proof.reblind_proof.statement.merkle_root;
+        let merkle_root1_hex = hex::encode_prefixed(merkle_root1.to_bytes_be());
+
+        let merkle_root2 = self.order2_proof.reblind_proof.statement.merkle_root;
+        let merkle_root2_hex = hex::encode_prefixed(merkle_root2.to_bytes_be());
+
+        let pending_block_num = self
+            .ctx
+            .darkpool_client
+            .provider()
+            .get_block_by_number(BlockNumberOrTag::Pending)
+            .await
+            .map_err(err_str!(SettleMatchInternalTaskError::Darkpool))?
+            .map(|b| b.header.number);
+
+        info!(
+            merkle_root1 = %merkle_root1,
+            merkle_root1_hex = %merkle_root1_hex,
+            merkle_root2 = %merkle_root2,
+            merkle_root2_hex = %merkle_root2_hex,
+            pending_block_num = ?pending_block_num,
+            "Submitting internal match tx"
+        );
 
         // Submit a `match` transaction
         let tx = self

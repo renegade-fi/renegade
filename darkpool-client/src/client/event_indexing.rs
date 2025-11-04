@@ -93,6 +93,11 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         commitment: Scalar,
         tx: &TransactionReceipt,
     ) -> Result<MerkleAuthenticationPath, DarkpoolClientError> {
+        info!(
+            "Finding Merkle authentication path for tx {:#x} in block {:?}",
+            tx.transaction_hash, tx.block_number
+        );
+
         // The number of Merkle insertions that occurred in a transaction
         let mut n_insertions = 0;
         let mut insertion_idx = 0;
