@@ -238,12 +238,10 @@ pub mod test_helpers {
     use alloy_primitives::Address;
     use circuit_types::{
         balance::{Balance, BalanceShare, DarkpoolStateBalance},
-        elgamal::DecryptionKey,
-        note::{NOTE_CIPHERTEXT_SIZE, Note},
+        note::Note,
     };
     use constants::Scalar;
     use rand::thread_rng;
-    use renegade_crypto::fields::jubjub_to_scalar;
 
     use crate::{
         test_helpers::{
@@ -383,8 +381,12 @@ pub mod test_helpers {
 
 #[cfg(test)]
 mod test {
+
+    use crate::test_helpers::{random_address, random_elgamal_encryption_key, random_scalar};
+
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use circuit_types::{note::Note, traits::SingleProverCircuit};
+    use rand::{Rng, RngCore, thread_rng};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -405,4 +407,123 @@ mod test {
         let (witness, statement) = test_helpers::create_dummy_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
     }
+
+    // --- Invalid Note Test Cases --- //
+
+    /// Test the case in which the note does not pay for the full balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__partial_payment() {
+        let (mut witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        let balance = &witness.old_balance.inner;
+        let invalid_note = Note {
+            mint: balance.mint,
+            amount: balance.protocol_fee_balance - 1,
+            receiver: statement.protocol_fee_receiver,
+            blinder: witness.blinder,
+        };
+        (statement.note_ciphertext, witness.encryption_randomness) =
+            invalid_note.encrypt(&statement.protocol_encryption_key);
+        statement.note_commitment = invalid_note.commitment();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note mint is incorrect
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_mint() {
+        let (mut witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        let balance = &witness.old_balance.inner;
+        let invalid_note = Note {
+            mint: random_address(),
+            amount: balance.protocol_fee_balance,
+            receiver: statement.protocol_fee_receiver,
+            blinder: witness.blinder,
+        };
+        (statement.note_ciphertext, witness.encryption_randomness) =
+            invalid_note.encrypt(&statement.protocol_encryption_key);
+        statement.note_commitment = invalid_note.commitment();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's receive is not correct
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_receiver() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.protocol_fee_receiver = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's blinder doesn't match the witness
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_blinder() {
+        let (mut witness, statement) = test_helpers::create_dummy_witness_statement();
+        witness.blinder = random_scalar();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's commitment has been tampered with
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__tampered_commitment() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.note_commitment = random_scalar();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's ciphertext has been tampered with
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__tampered_ciphertext() {
+        let mut rng = thread_rng();
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+
+        // Modify one index in the ciphertext
+        let mut ciphertext_scalars = statement.note_ciphertext.to_scalars();
+        let random_idx = rng.gen_range(0..ciphertext_scalars.len());
+        ciphertext_scalars[random_idx] = random_scalar();
+        statement.note_ciphertext =
+            ElGamalCiphertext::from_scalars(&mut ciphertext_scalars.into_iter());
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the protocol encryption key is incorrect
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_encryption_key() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.protocol_encryption_key = random_elgamal_encryption_key();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the encryption randomness is incorrect
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_encryption_randomness() {
+        let mut rng = thread_rng();
+        let (mut witness, statement) = test_helpers::create_dummy_witness_statement();
+        witness.encryption_randomness = From::<u64>::from(rng.next_u64());
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // Other state rotation test cases are covered by the state rotation gadgets
+    // in the `StateElementRotationGadget` test suite
 }
