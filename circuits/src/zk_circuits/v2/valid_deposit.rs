@@ -21,8 +21,8 @@ use crate::{
     zk_gadgets::{
         bitlength::AmountGadget,
         shares::ShareGadget,
-        state_elements::{StateElementRotationArgs, StateElementRotationGadget},
         stream_cipher::StreamCipherGadget,
+        v2::state_rotation::{StateElementRotationArgs, StateElementRotationGadget},
     },
 };
 
@@ -250,6 +250,7 @@ pub mod test_helpers {
     ) -> (SizedValidDepositWitness, ValidDepositStatement) {
         let old_balance = create_state_wrapper(Balance {
             mint: deposit.token,
+            fee_recipient: Address::ZERO,
             owner: deposit.from,
             one_time_authority: Address::ZERO,
             relayer_fee_balance: random_amount(),

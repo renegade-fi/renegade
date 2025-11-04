@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     SingleProverCircuit,
     zk_gadgets::{
-        bitlength::AmountGadget, comparators::EqGadget, state_elements::StateElementGadget,
+        bitlength::AmountGadget,
+        comparators::EqGadget,
+        state_primitives::{CommitmentGadget, RecoveryIdGadget},
         stream_cipher::StreamCipherGadget,
     },
 };
@@ -47,13 +49,13 @@ impl ValidBalanceCreate {
             Self::verify_balance_encryption(witness, statement, cs)?;
 
         // 3. Compute the recovery identifier for the new balance
-        let recovery_id = StateElementGadget::compute_recovery_id(&mut witness.balance, cs)?;
+        let recovery_id = RecoveryIdGadget::compute_recovery_id(&mut witness.balance, cs)?;
         EqGadget::constrain_eq(&recovery_id, &statement.recovery_id, cs)?;
 
         // 4. Compute the commitment to the new balance
         // This must be done after encrypting and computing the recovery identifier so
         // that we commit to the updated stream states for the CSPRNGs
-        let commitment = StateElementGadget::compute_commitment(
+        let commitment = CommitmentGadget::compute_commitment(
             &private_share,
             &public_share,
             &witness.balance,
@@ -219,6 +221,7 @@ pub mod test_helpers {
         let balance_inner = Balance {
             mint: deposit.token,
             owner: deposit.from,
+            fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
@@ -320,6 +323,7 @@ mod test {
         let mut balance = Balance {
             mint: deposit.token,
             owner: deposit.from,
+            fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
