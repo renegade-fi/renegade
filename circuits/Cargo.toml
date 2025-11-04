@@ -121,6 +121,18 @@ path = "benches/v2/valid_balance_create.rs"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "valid_withdrawal"
+path = "benches/v2/valid_withdrawal.rs"
+harness = false
+required-features = ["test_helpers"]
+
+[[bench]]
+name = "valid_private_protocol_fee_payment"
+path = "benches/v2/valid_private_protocol_fee_payment.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 alloy-primitives = { workspace = true }
