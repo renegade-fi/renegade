@@ -187,6 +187,7 @@ pub mod test_helpers {
     use ark_mpc::error::MpcError;
     use circuit_types::{
         AMOUNT_BITS, Amount, PlonkCircuit,
+        elgamal::{DecryptionKey, EncryptionKey},
         traits::{BaseType, CircuitBaseType, SingleProverCircuit},
     };
     use constants::{AuthenticatedScalar, Scalar};
@@ -257,6 +258,20 @@ pub mod test_helpers {
         let mut address_bytes = [0u8; 20];
         rng.fill(&mut address_bytes);
         Address::from(address_bytes)
+    }
+
+    /// Create a random ElGamal encryption key
+    pub fn random_elgamal_encryption_key() -> EncryptionKey {
+        let (enc_key, _) = random_elgamal_keypair();
+        enc_key
+    }
+
+    /// Create a random ElGamal keypair
+    pub fn random_elgamal_keypair() -> (EncryptionKey, DecryptionKey) {
+        let mut rng = thread_rng();
+        let dec_key = DecryptionKey::random(&mut rng);
+        let enc_key = dec_key.public_key();
+        (enc_key, dec_key)
     }
 
     /// Open a batch of values and join into a single future
