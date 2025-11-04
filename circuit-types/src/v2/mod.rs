@@ -3,7 +3,9 @@
 pub mod balance;
 pub mod csprng;
 pub mod deposit;
+pub mod note;
 pub mod state_wrapper;
+pub mod withdrawal;
 
 use constants::Scalar;
 
