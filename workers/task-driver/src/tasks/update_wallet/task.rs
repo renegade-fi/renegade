@@ -8,9 +8,6 @@ use std::error::Error;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::str::FromStr;
 
-use alloy::eips::BlockNumberOrTag;
-use alloy::hex;
-use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use common::types::tasks::WalletUpdateType;
@@ -371,20 +368,23 @@ impl UpdateWalletTask {
         let sig = self.wallet_update_signature.clone();
 
         let merkle_root = proof.statement.merkle_root;
-        let merkle_root_hex = hex::encode_prefixed(merkle_root.to_bytes_be());
+
+        let root_check_pending =
+            self.ctx.darkpool_client.check_merkle_root_valid(merkle_root).await?;
+        let root_check_latest =
+            self.ctx.darkpool_client.check_merkle_root_valid_latest(merkle_root).await?;
 
         let pending_block_num = self
             .ctx
             .darkpool_client
-            .provider()
-            .get_block_by_number(BlockNumberOrTag::Pending)
+            .pending_block_number()
             .await
-            .map_err(err_str!(UpdateWalletTaskError::Darkpool))?
-            .map(|b| b.header.number);
+            .map_err(err_str!(UpdateWalletTaskError::Darkpool))?;
 
         info!(
             merkle_root = %merkle_root,
-            merkle_root_hex = %merkle_root_hex,
+            root_check_pending = %root_check_pending,
+            root_check_latest = %root_check_latest,
             pending_block_num = ?pending_block_num,
             "Submitting update wallet tx"
         );

@@ -71,10 +71,10 @@ futures = "0.3"
 tokio = { version = "1" }
 
 # === Ethereum Libraries === #
-alloy = "1.0.1"
-alloy-contract = "1.0.1"
-alloy-primitives = "1.0.1"
-alloy-sol-types = "1.0.1"
+alloy = "1.0.32"
+alloy-contract = "1.0.32"
+alloy-primitives = "1.0.32"
+alloy-sol-types = "1.0.32"
 
 # === HTTP === #
 reqwest = { version = "0.12", features = ["json"] }

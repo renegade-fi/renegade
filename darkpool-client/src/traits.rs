@@ -26,7 +26,6 @@ use common::types::{
     transfer_auth::TransferAuth,
 };
 use constants::Scalar;
-use tracing::info;
 
 use crate::client::{DarkpoolCallBuilder, RenegadeProvider};
 use crate::errors::DarkpoolClientError;
@@ -84,6 +83,11 @@ pub trait DarkpoolImpl: Clone {
 
     /// Check whether a given root is in the contract's history
     async fn check_merkle_root(&self, root: MerkleRoot) -> Result<bool, DarkpoolClientError>;
+
+    /// Check (against the latest block) whether a given root is in the
+    /// contract's history
+    async fn check_merkle_root_latest(&self, root: MerkleRoot)
+    -> Result<bool, DarkpoolClientError>;
 
     /// Check whether a given nullifier is used
     async fn is_nullifier_spent(&self, nullifier: Nullifier) -> Result<bool, DarkpoolClientError>;
@@ -219,10 +223,9 @@ pub trait DarkpoolImplExt: DarkpoolImpl {
             .await
             .map_err(DarkpoolClientError::contract_interaction)?;
 
-        // TODO: Remove this debug log
-        info!("Pending tx hash: {:#x}", pending_tx.tx_hash());
         let receipt = pending_tx
             .with_timeout(Some(TX_RECEIPT_TIMEOUT))
+            .with_required_confirmations(2)
             .get_receipt()
             .await
             .map_err(DarkpoolClientError::contract_interaction)?;

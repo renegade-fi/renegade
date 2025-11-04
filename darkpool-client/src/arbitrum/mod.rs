@@ -29,6 +29,7 @@ use abi::{
 };
 use alloy::{
     consensus::constants::SELECTOR_LEN,
+    eips::BlockNumberOrTag,
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use alloy_primitives::{Address, Bytes, Selector, U256};
@@ -168,6 +169,22 @@ impl DarkpoolImpl for ArbitrumDarkpool {
         self.darkpool()
             .rootInHistory(root_u256)
             .call()
+            .block(BlockNumberOrTag::Pending.into()) // This is the default behavior, we're just making it explicit
+            .await
+            .map_err(DarkpoolClientError::contract_interaction)
+    }
+
+    /// Check (against the latest block) whether a given root is in the
+    /// contract's history
+    async fn check_merkle_root_latest(
+        &self,
+        root: MerkleRoot,
+    ) -> Result<bool, DarkpoolClientError> {
+        let root_u256 = scalar_to_u256(root);
+        self.darkpool()
+            .rootInHistory(root_u256)
+            .call()
+            .block(BlockNumberOrTag::Latest.into())
             .await
             .map_err(DarkpoolClientError::contract_interaction)
     }

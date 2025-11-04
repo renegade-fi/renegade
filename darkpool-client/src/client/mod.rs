@@ -4,6 +4,7 @@
 use std::{str::FromStr, time::Duration};
 
 use alloy::{
+    eips::BlockNumberOrTag,
     providers::{
         DynProvider, Provider, ProviderBuilder,
         fillers::{BlobGasFiller, ChainIdFiller, GasFiller},
@@ -136,9 +137,18 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         self.provider().get_chain_id().await.map_err(err_str!(DarkpoolClientError::Rpc))
     }
 
-    /// Get the current Stylus block number
+    /// Get the current block number
     pub async fn block_number(&self) -> Result<BlockNumber, DarkpoolClientError> {
         self.provider().get_block_number().await.map_err(err_str!(DarkpoolClientError::Rpc))
+    }
+
+    /// Get the current pending block number
+    pub async fn pending_block_number(&self) -> Result<Option<BlockNumber>, DarkpoolClientError> {
+        self.provider()
+            .get_block_by_number(BlockNumberOrTag::Pending)
+            .await
+            .map_err(err_str!(DarkpoolClientError::Rpc))
+            .map(|b| b.map(|b| b.header.number))
     }
 
     /// Create an event filter

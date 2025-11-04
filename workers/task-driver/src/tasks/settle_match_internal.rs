@@ -10,9 +10,6 @@ use crate::utils::order_states::{record_order_fill, transition_order_settling};
 use crate::utils::{
     enqueue_proof_job, merkle_path::find_merkle_path_with_tx, proofs::update_wallet_proofs,
 };
-use alloy::eips::BlockNumberOrTag;
-use alloy::hex;
-use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use async_trait::async_trait;
 use circuit_types::r#match::MatchResult;
@@ -351,25 +348,31 @@ impl SettleMatchInternalTask {
             .map_err(SettleMatchInternalTaskError::State)?;
 
         let merkle_root1 = self.order1_proof.reblind_proof.statement.merkle_root;
-        let merkle_root1_hex = hex::encode_prefixed(merkle_root1.to_bytes_be());
+        let root1_check_pending =
+            self.ctx.darkpool_client.check_merkle_root_valid(merkle_root1).await?;
+        let root1_check_latest =
+            self.ctx.darkpool_client.check_merkle_root_valid_latest(merkle_root1).await?;
 
         let merkle_root2 = self.order2_proof.reblind_proof.statement.merkle_root;
-        let merkle_root2_hex = hex::encode_prefixed(merkle_root2.to_bytes_be());
+        let root2_check_pending =
+            self.ctx.darkpool_client.check_merkle_root_valid(merkle_root2).await?;
+        let root2_check_latest =
+            self.ctx.darkpool_client.check_merkle_root_valid_latest(merkle_root2).await?;
 
         let pending_block_num = self
             .ctx
             .darkpool_client
-            .provider()
-            .get_block_by_number(BlockNumberOrTag::Pending)
+            .pending_block_number()
             .await
-            .map_err(err_str!(SettleMatchInternalTaskError::Darkpool))?
-            .map(|b| b.header.number);
+            .map_err(err_str!(SettleMatchInternalTaskError::Darkpool))?;
 
         info!(
             merkle_root1 = %merkle_root1,
-            merkle_root1_hex = %merkle_root1_hex,
+            root1_check_pending = %root1_check_pending,
+            root1_check_latest = %root1_check_latest,
             merkle_root2 = %merkle_root2,
-            merkle_root2_hex = %merkle_root2_hex,
+            root2_check_pending = %root2_check_pending,
+            root2_check_latest = %root2_check_latest,
             pending_block_num = ?pending_block_num,
             "Submitting internal match tx"
         );

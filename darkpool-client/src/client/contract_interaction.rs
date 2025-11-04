@@ -67,6 +67,16 @@ impl<D: DarkpoolImpl> DarkpoolClientInner<D> {
         self.darkpool.check_merkle_root(root).await
     }
 
+    /// Check (against the latest block) whether the given Merkle root is a
+    /// valid historical root
+    #[instrument(skip_all, err, fields(root = %root))]
+    pub async fn check_merkle_root_valid_latest(
+        &self,
+        root: MerkleRoot,
+    ) -> Result<bool, DarkpoolClientError> {
+        self.darkpool.check_merkle_root_latest(root).await
+    }
+
     /// Check whether the given nullifier is used
     ///
     /// Returns `true` if the nullifier is used, `false` otherwise
