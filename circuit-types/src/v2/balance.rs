@@ -36,6 +36,8 @@ pub struct Balance {
     pub mint: Address,
     /// The owner of the balance
     pub owner: Address,
+    /// The address to which the fees are paid
+    pub fee_recipient: Address,
     /// A one-time signing authority for the balance
     ///
     /// This authorizes the balance to be spent by an order for the first time,

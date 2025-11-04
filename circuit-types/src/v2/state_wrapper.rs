@@ -12,6 +12,7 @@
 #![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 use itertools::Itertools;
+use renegade_crypto::hash::compute_poseidon_hash;
 use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
@@ -58,12 +59,12 @@ where
         // Build a list of inputs
         let num_inputs = T::NUM_SCALARS + 2 * PoseidonCSPRNG::NUM_SCALARS;
         let mut inputs = Vec::with_capacity(num_inputs);
+        inputs.extend(private_share.to_scalars());
         inputs.extend(self.recovery_stream.to_scalars());
         inputs.extend(self.share_stream.to_scalars());
-        inputs.extend(private_share.to_scalars());
 
         // Hash the inputs to commit to them
-        renegade_crypto::hash::compute_poseidon_hash(&inputs)
+        compute_poseidon_hash(&inputs)
     }
 
     /// Compute a commitment to a state element given a commitment to the
@@ -72,12 +73,13 @@ where
         private_commitment: Scalar,
         public_share: &V,
     ) -> Scalar {
-        let mut comm = private_commitment;
-        for share in public_share.to_scalars().iter() {
-            comm = renegade_crypto::hash::compute_poseidon_hash(&[comm, *share]);
+        let public_scalars = public_share.to_scalars();
+        let mut public_comm = public_scalars[0];
+        for share in public_scalars.iter().skip(1) {
+            public_comm = compute_poseidon_hash(&[public_comm, *share]);
         }
 
-        comm
+        compute_poseidon_hash(&[private_commitment, public_comm])
     }
 
     /// Compute a commitment to a value
@@ -112,7 +114,7 @@ where
 
         // Compute the nullifier as H(recovery_id || recovery_stream_seed)
         let recovery_stream_seed = self.recovery_stream.seed;
-        renegade_crypto::hash::compute_poseidon_hash(&[recovery_id, recovery_stream_seed])
+        compute_poseidon_hash(&[recovery_id, recovery_stream_seed])
     }
 
     /// Compute a recovery identifier for a state element
