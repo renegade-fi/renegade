@@ -20,8 +20,8 @@ use crate::SingleProverCircuit;
 use crate::zk_gadgets::bitlength::AmountGadget;
 use crate::zk_gadgets::comparators::{EqGadget, EqZeroGadget, GreaterThanEqGadget};
 use crate::zk_gadgets::shares::ShareGadget;
-use crate::zk_gadgets::state_elements::{StateElementRotationArgs, StateElementRotationGadget};
 use crate::zk_gadgets::stream_cipher::StreamCipherGadget;
+use crate::zk_gadgets::v2::state_rotation::{StateElementRotationArgs, StateElementRotationGadget};
 
 // ----------------------
 // | Circuit Definition |
@@ -262,6 +262,7 @@ pub mod test_helpers {
         let old_balance = create_state_wrapper(Balance {
             mint: withdrawal.token,
             owner: withdrawal.to,
+            fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
@@ -374,6 +375,7 @@ mod test {
         let balance = create_state_wrapper(Balance {
             mint: withdrawal.token,
             owner: withdrawal.to,
+            fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
@@ -462,6 +464,7 @@ mod test {
         let mut balance = create_state_wrapper(Balance {
             mint: withdrawal.token,
             owner: withdrawal.to,
+            fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
