@@ -1,11 +1,12 @@
-//! Tests the process of proving and verifying a `VALID DEPOSIT` circuit
+//! Tests the process of proving and verifying a `VALID PRIVATE RELAYER FEE
+//! PAYMENT` circuit
 #![allow(incomplete_features)]
 #![allow(missing_docs)]
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
-use circuits::zk_circuits::v2::valid_deposit::SizedValidDeposit;
-use circuits::zk_circuits::v2::valid_deposit::test_helpers::create_dummy_witness_statement;
+use circuits::zk_circuits::v2::fees::valid_private_relayer_fee_payment::SizedValidPrivateRelayerFeePayment;
+use circuits::zk_circuits::v2::fees::valid_private_relayer_fee_payment::test_helpers::create_dummy_witness_statement;
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::MERKLE_HEIGHT;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -21,12 +22,12 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
     let statement_var = statement.create_public_var(&mut cs);
 
     // Run the benchmark
-    let mut group = c.benchmark_group("valid_deposit");
+    let mut group = c.benchmark_group("valid_private_relayer_fee_payment");
     let benchmark_id = BenchmarkId::new("constraint-generation", format!("({MERKLE_HEIGHT})"));
 
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            SizedValidDeposit::apply_constraints(
+            SizedValidPrivateRelayerFeePayment::apply_constraints(
                 witness_var.clone(),
                 statement_var.clone(),
                 &mut cs,
@@ -40,11 +41,15 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 pub fn bench_prover(c: &mut Criterion) {
     // Build a witness and statement
     let (witness, statement) = create_dummy_witness_statement();
-    let mut group = c.benchmark_group("valid_deposit");
+    let mut group = c.benchmark_group("valid_private_relayer_fee_payment");
     let benchmark_id = BenchmarkId::new("prover", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            singleprover_prove::<SizedValidDeposit>(witness.clone(), statement.clone()).unwrap();
+            singleprover_prove::<SizedValidPrivateRelayerFeePayment>(
+                witness.clone(),
+                statement.clone(),
+            )
+            .unwrap();
         });
     });
 }
@@ -53,14 +58,20 @@ pub fn bench_prover(c: &mut Criterion) {
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
     let (witness, statement) = create_dummy_witness_statement();
-    let proof = singleprover_prove::<SizedValidDeposit>(witness, statement.clone()).unwrap();
+    let proof =
+        singleprover_prove::<SizedValidPrivateRelayerFeePayment>(witness, statement.clone())
+            .unwrap();
 
     // Run the benchmark
-    let mut group = c.benchmark_group("valid_deposit");
+    let mut group = c.benchmark_group("valid_private_relayer_fee_payment");
     let benchmark_id = BenchmarkId::new("verifier", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
         b.iter(|| {
-            verify_singleprover_proof::<SizedValidDeposit>(statement.clone(), &proof).unwrap();
+            verify_singleprover_proof::<SizedValidPrivateRelayerFeePayment>(
+                statement.clone(),
+                &proof,
+            )
+            .unwrap();
         });
     });
 }
@@ -70,8 +81,8 @@ pub fn bench_verifier(c: &mut Criterion) {
 // -------------------
 
 criterion_group! {
-    name = valid_deposit;
+    name = valid_private_relayer_fee_payment;
     config = Criterion::default().sample_size(10);
     targets = bench_apply_constraints, bench_prover, bench_verifier
 }
-criterion_main!(valid_deposit);
+criterion_main!(valid_private_relayer_fee_payment);

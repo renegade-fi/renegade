@@ -4,31 +4,16 @@
 
 use circuit_types::PlonkCircuit;
 use circuit_types::traits::{CircuitBaseType, SingleProverCircuit};
+use circuits::zk_circuits::v2::valid_withdrawal::SizedValidWithdrawal;
 use circuits::zk_circuits::v2::valid_withdrawal::test_helpers::create_witness_statement;
-use circuits::zk_circuits::v2::valid_withdrawal::{
-    SizedValidWithdrawal, SizedValidWithdrawalWitness, ValidWithdrawalStatement,
-};
 use circuits::{singleprover_prove, verify_singleprover_proof};
 use constants::MERKLE_HEIGHT;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 
-// -----------
-// | Helpers |
-// -----------
-
-/// Create a witness and statement for the `VALID WITHDRAWAL` circuit
-pub fn create_witness_statement_bench() -> (SizedValidWithdrawalWitness, ValidWithdrawalStatement) {
-    create_witness_statement()
-}
-
-// --------------
-// | Benchmarks |
-// --------------
-
 /// Benchmark applying constraints to a circuit
 pub fn bench_apply_constraints(c: &mut Criterion) {
     // Build a witness and statement
-    let (witness, statement) = create_witness_statement_bench();
+    let (witness, statement) = create_witness_statement();
 
     // Allocate in the constraint system
     let mut cs = PlonkCircuit::new_turbo_plonk();
@@ -54,7 +39,7 @@ pub fn bench_apply_constraints(c: &mut Criterion) {
 /// Benchmark proving a circuit
 pub fn bench_prover(c: &mut Criterion) {
     // Build a witness and statement
-    let (witness, statement) = create_witness_statement_bench();
+    let (witness, statement) = create_witness_statement();
     let mut group = c.benchmark_group("valid_withdrawal");
     let benchmark_id = BenchmarkId::new("prover", format!("({MERKLE_HEIGHT})"));
     group.bench_function(benchmark_id, |b| {
@@ -67,7 +52,7 @@ pub fn bench_prover(c: &mut Criterion) {
 /// Benchmark verifying a circuit
 pub fn bench_verifier(c: &mut Criterion) {
     // First generate a proof that will be verified multiple times
-    let (witness, statement) = create_witness_statement_bench();
+    let (witness, statement) = create_witness_statement();
     let proof = singleprover_prove::<SizedValidWithdrawal>(witness, statement.clone()).unwrap();
 
     // Run the benchmark
