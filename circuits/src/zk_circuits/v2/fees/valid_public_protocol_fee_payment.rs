@@ -346,8 +346,13 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
 
+    use crate::test_helpers::{random_address, random_amount};
+    use crate::zk_gadgets::test_helpers::create_state_wrapper;
+
+    use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use alloy_primitives::Address;
+    use circuit_types::{balance::Balance, traits::SingleProverCircuit};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -368,4 +373,62 @@ mod test {
         let (witness, statement) = test_helpers::create_dummy_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
     }
+
+    // --- Invalid Note Test Cases --- //
+
+    /// Test the case in which the protocol fee balance is zero
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid__zero_protocol_fee_balance() {
+        let balance = create_state_wrapper(Balance {
+            mint: random_address(),
+            relayer_fee_recipient: Address::ZERO,
+            owner: random_address(),
+            one_time_authority: Address::ZERO,
+            relayer_fee_balance: random_amount(),
+            protocol_fee_balance: 0u128,
+            amount: random_amount(),
+        });
+
+        // Check that the constraints are not satisfied
+        let (witness, statement) = create_dummy_witness_statement_with_balance(balance);
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note does not pay for the full balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__partial_payment() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        let balance = &witness.old_balance.inner;
+        statement.note.amount = balance.protocol_fee_balance - 1;
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note mint is incorrect
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_mint() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.note.mint = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note amount exceeds the protocol fee balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__over_payment() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        let balance = &witness.old_balance.inner;
+        statement.note.amount = balance.protocol_fee_balance + 1;
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // Other state rotation test cases are covered by the state rotation gadgets
 }
