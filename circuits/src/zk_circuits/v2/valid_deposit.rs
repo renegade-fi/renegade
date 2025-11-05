@@ -21,8 +21,8 @@ use crate::{
     zk_gadgets::{
         bitlength::AmountGadget,
         shares::ShareGadget,
+        state_rotation::{StateElementRotationArgs, StateElementRotationGadget},
         stream_cipher::StreamCipherGadget,
-        v2::state_rotation::{StateElementRotationArgs, StateElementRotationGadget},
     },
 };
 

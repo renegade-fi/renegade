@@ -16,10 +16,9 @@ proof-system-types = [
     "dep:jf-primitives",
     "dep:mpc-plonk",
     "dep:mpc-relation",
+    "dep:renegade-crypto",
 ]
 test-helpers = ["proof-system-types", "mpc-plonk/test-srs"]
-v1 = ["renegade-crypto/v1"]
-v2 = ["renegade-crypto/v2"]
 
 [dependencies]
 # === Cryptography === #
@@ -53,7 +52,7 @@ futures = { workspace = true }
 # === Workspace Crates === #
 circuit-macros = { workspace = true, optional = true }
 constants = { workspace = true, features = ["scalar"] }
-renegade-crypto = { workspace = true }
+renegade-crypto = { workspace = true, optional = true }
 
 # === Misc === #
 hex = "0.4"

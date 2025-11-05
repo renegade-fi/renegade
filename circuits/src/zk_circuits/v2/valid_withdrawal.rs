@@ -20,8 +20,8 @@ use crate::SingleProverCircuit;
 use crate::zk_gadgets::bitlength::AmountGadget;
 use crate::zk_gadgets::comparators::{EqGadget, EqZeroGadget, GreaterThanEqGadget};
 use crate::zk_gadgets::shares::ShareGadget;
+use crate::zk_gadgets::state_rotation::{StateElementRotationArgs, StateElementRotationGadget};
 use crate::zk_gadgets::stream_cipher::StreamCipherGadget;
-use crate::zk_gadgets::v2::state_rotation::{StateElementRotationArgs, StateElementRotationGadget};
 
 // ----------------------
 // | Circuit Definition |

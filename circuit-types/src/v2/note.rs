@@ -98,7 +98,7 @@ impl Note {
     pub fn as_balance(&self) -> Balance {
         Balance {
             mint: self.mint,
-            fee_recipient: Address::ZERO,
+            relayer_fee_recipient: Address::ZERO,
             owner: Address::ZERO,              // Default owner
             one_time_authority: Address::ZERO, // Default one-time authority
             relayer_fee_balance: 0,

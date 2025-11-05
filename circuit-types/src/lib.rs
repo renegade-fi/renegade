@@ -20,15 +20,7 @@ pub mod srs;
 #[cfg(feature = "proof-system-types")]
 pub mod traits;
 
-// Versioned modules
-#[cfg(feature = "v1")]
-pub mod v1;
-#[cfg(feature = "v2")]
 pub mod v2;
-
-#[cfg(feature = "v1")]
-pub use v1::*;
-#[cfg(feature = "v2")]
 pub use v2::*;
 
 use ark_ff::BigInt;

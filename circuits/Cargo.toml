@@ -8,8 +8,6 @@ default = []
 test_helpers = ["dep:ctor", "util/mocks", "util/matching-engine"]
 stats = ["ark-mpc/stats"]
 ci = ["test_helpers"]
-v1 = ["circuit-types/v1", "util/v1"]
-v2 = ["circuit-types/v2", "util/v2"]
 
 [[test]]
 name = "integration"

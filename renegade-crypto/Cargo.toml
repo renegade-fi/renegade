@@ -9,8 +9,6 @@ inline = []
 # We define a feature flag that gates all uses of wasm incompatible dependencies
 # specifically for use in stylus contracts
 non-wasm = ["dep:ark-mpc", "dep:rand", "constants/scalar", "inline"]
-v1 = []
-v2 = []
 
 [[bench]]
 name = "elgamal"

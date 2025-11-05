@@ -5,14 +5,14 @@ mod poseidon2;
 pub use constants::*;
 pub use poseidon2::*;
 
-#[cfg(feature = "v1")]
-pub mod v1;
-#[cfg(feature = "v2")]
-pub mod v2;
+use ::constants::Scalar;
+use itertools::Itertools;
 
-// Re-exports from v1
-#[cfg(feature = "v1")]
-pub use v1::*;
-// Re-exports from v2
-#[cfg(feature = "v2")]
-pub use v2::*;
+/// Compute the hash of the randomness of a given wallet
+pub fn compute_poseidon_hash(values: &[Scalar]) -> Scalar {
+    let input_seq = values.iter().map(Scalar::inner).collect_vec();
+    let mut hasher = Poseidon2Sponge::new();
+    let res = hasher.hash(&input_seq);
+
+    Scalar::new(res)
+}

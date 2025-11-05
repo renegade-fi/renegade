@@ -15,16 +15,7 @@ pub mod merkle;
 pub mod poseidon;
 pub mod select;
 
-#[cfg(feature = "v1")]
-pub mod v1;
-#[cfg(feature = "v2")]
-pub mod v2;
-
-// Re-exports from v1
-#[cfg(feature = "v1")]
-pub use v1::*;
-// Re-exports from v2
-#[cfg(feature = "v2")]
+mod v2;
 pub use v2::*;
 
 #[cfg(any(test, feature = "test_helpers"))]

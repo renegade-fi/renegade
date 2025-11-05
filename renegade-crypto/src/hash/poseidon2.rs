@@ -1,7 +1,7 @@
 //! Defines an implementation of the Poseidon 2 hash function: https://eprint.iacr.org/2023/323.pdf
 
 use ark_ff::{Field, Zero};
-use std::ops::MulAssign;
+use std::{borrow::Borrow, ops::MulAssign};
 
 use crate::hash::{CAPACITY, R_F, R_P, RATE};
 
@@ -33,7 +33,10 @@ impl Poseidon2Sponge {
     // --------------------
 
     /// Hash the given input and return a single-squeeze
-    pub fn hash(&mut self, seq: &[ScalarField]) -> ScalarField {
+    pub fn hash<I: IntoIterator<Item = T>, T: Borrow<ScalarField>>(
+        &mut self,
+        seq: I,
+    ) -> ScalarField {
         self.absorb_batch(seq);
         self.squeeze()
     }
@@ -54,8 +57,8 @@ impl Poseidon2Sponge {
     }
 
     /// Absorb a batch of scalars into the sponge
-    pub fn absorb_batch(&mut self, x: &[ScalarField]) {
-        x.iter().for_each(|x| self.absorb(x));
+    pub fn absorb_batch<I: IntoIterator<Item = T>, T: Borrow<ScalarField>>(&mut self, x: I) {
+        x.into_iter().for_each(|x| self.absorb(x.borrow()));
     }
 
     /// Squeeze a single scalar from the sponge
@@ -85,7 +88,6 @@ impl Poseidon2Sponge {
     /// Permute the inner state
     #[allow(clippy::missing_docs_in_private_items)]
     pub(crate) fn permute(&mut self) {
-        println!("Running poseidon2 permutation");
         // Multiply by the external round matrix
         self.external_mds();
 
@@ -275,7 +277,7 @@ mod test {
         let expected_res = perm_out[1];
 
         // Run our hash
-        let res = hasher.hash(&values);
+        let res = hasher.hash(values);
         assert_eq!(expected_res, BigInt::from(res));
     }
 }
