@@ -151,6 +151,12 @@ path = "benches/v2/valid_public_relayer_fee_payment.rs"
 harness = false
 required-features = ["test_helpers"]
 
+[[bench]]
+name = "valid_note_redemption"
+path = "benches/v2/valid_note_redemption.rs"
+harness = false
+required-features = ["test_helpers"]
+
 [dependencies]
 # === Cryptography + Arithmetic === #
 alloy-primitives = { workspace = true }
