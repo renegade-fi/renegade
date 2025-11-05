@@ -221,7 +221,7 @@ pub mod test_helpers {
         let balance_inner = Balance {
             mint: deposit.token,
             owner: deposit.from,
-            fee_recipient: random_address(),
+            relayer_fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,
@@ -323,7 +323,7 @@ mod test {
         let mut balance = Balance {
             mint: deposit.token,
             owner: deposit.from,
-            fee_recipient: random_address(),
+            relayer_fee_recipient: random_address(),
             one_time_authority: random_address(),
             relayer_fee_balance: 0,
             protocol_fee_balance: 0,

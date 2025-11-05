@@ -284,7 +284,7 @@ pub mod test_helpers {
         // The address to which protocol fees are paid
         let old_balance = create_state_wrapper(Balance {
             mint: random_address(),
-            fee_recipient: Address::ZERO,
+            relayer_fee_recipient: Address::ZERO,
             owner: random_address(),
             one_time_authority: Address::ZERO,
             relayer_fee_balance: random_amount(),
