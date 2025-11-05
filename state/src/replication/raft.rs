@@ -10,7 +10,10 @@ use common::types::gossip::WrappedPeerId;
 use openraft::{ChangeMembers, Config as RaftConfig, Membership, RaftMetrics, ServerState};
 use tokio::sync::Mutex;
 use tracing::{error, info, instrument};
-use util::{err_str, telemetry::helpers::backfill_trace_field};
+use util::{
+    err_str,
+    telemetry::{helpers::backfill_trace_field, propagation::set_parent_span_from_context},
+};
 
 use crate::{
     Proposal, StateTransition,
@@ -287,7 +290,11 @@ impl RaftClient {
     // -------------
 
     /// Propose an update to the raft
+    #[instrument(name = "propose_transition", skip_all, err, fields(proposal_id = %update.id))]
     pub async fn propose_transition(&self, update: Proposal) -> Result<(), ReplicationError> {
+        // Use the proposal's tracing context
+        set_parent_span_from_context(&update.tracing_context);
+
         // If the current node is not the leader, forward to the leader
         let (mut leader_nid, leader_info) = self
             .leader_info()
@@ -326,6 +333,7 @@ impl RaftClient {
     }
 
     /// Handle a proposal for an application level write
+    #[instrument(name = "handle_client_write", skip_all, err, fields(proposal_id = %update.id))]
     async fn handle_client_write(&self, update: Proposal) -> Result<(), ReplicationError> {
         let rx = self
             .raft()

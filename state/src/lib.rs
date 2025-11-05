@@ -37,6 +37,7 @@ pub mod tui;
 
 /// Re-export the state interface
 pub use interface::*;
+use util::telemetry::propagation::{TraceContext, trace_context};
 use uuid::Uuid;
 
 // -------------
@@ -126,6 +127,9 @@ pub struct Proposal {
     id: ProposalId,
     /// The state transition to apply
     transition: Box<StateTransition>,
+    /// The tracing context for the proposal
+    #[serde(default)]
+    tracing_context: TraceContext,
 }
 
 /// The `StateTransitionType` encapsulates all possible state transitions,
@@ -195,8 +199,9 @@ pub enum StateTransition {
 
 impl From<StateTransition> for Proposal {
     fn from(transition: StateTransition) -> Self {
+        let tracing_context = trace_context();
         let transition = Box::new(transition);
-        Self { id: Uuid::new_v4(), transition }
+        Self { id: Uuid::new_v4(), transition, tracing_context }
     }
 }
 

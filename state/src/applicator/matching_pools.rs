@@ -1,6 +1,7 @@
 //! Applicator methods for matching pools
 
 use common::types::wallet::OrderIdentifier;
+use tracing::instrument;
 
 use crate::storage::tx::matching_pools::MATCHING_POOL_DOES_NOT_EXIST_ERR;
 
@@ -8,6 +9,7 @@ use super::{StateApplicator, error::StateApplicatorError, return_type::Applicato
 
 impl StateApplicator {
     /// Create a matching pool with the given name
+    #[instrument(skip_all, fields(pool_name = %pool_name))]
     pub fn create_matching_pool(
         &self,
         pool_name: &str,
@@ -20,6 +22,7 @@ impl StateApplicator {
     }
 
     /// Destroy a matching pool
+    #[instrument(skip_all, fields(pool_name = %pool_name))]
     pub fn destroy_matching_pool(
         &self,
         pool_name: &str,
@@ -37,6 +40,7 @@ impl StateApplicator {
     }
 
     /// Assign an order to a matching pool
+    #[instrument(skip_all, fields(order_id = %order_id, pool_name = %pool_name))]
     pub fn assign_order_to_matching_pool(
         &self,
         order_id: &OrderIdentifier,

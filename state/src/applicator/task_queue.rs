@@ -162,6 +162,7 @@ impl StateApplicator {
     }
 
     /// Enqueue a preemptive task onto the given task queues
+    #[instrument(skip_all, fields(task_id = %task.id, executor = %executor))]
     pub fn enqueue_preemptive_task(
         &self,
         keys: &[TaskQueueKey],
@@ -183,6 +184,7 @@ impl StateApplicator {
     }
 
     /// Reassign all tasks from one peer to another
+    #[instrument(skip_all, fields(from = %from, to = %to))]
     pub fn reassign_tasks(
         &self,
         from: &WrappedPeerId,

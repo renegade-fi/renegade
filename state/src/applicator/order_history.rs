@@ -6,12 +6,14 @@ use super::{StateApplicator, error::StateApplicatorError, return_type::Applicato
 use common::types::wallet::order_metadata::OrderMetadata;
 use external_api::bus_message::{SystemBusMessage, wallet_order_history_topic};
 use libmdbx::RW;
+use tracing::instrument;
 
 /// Error emitted when a wallet cannot be found for an order
 const ERR_MISSING_WALLET: &str = "wallet not found";
 
 impl StateApplicator {
     /// Handle an update to an order's metadata
+    #[instrument(skip_all, fields(meta = %meta.id))]
     pub fn update_order_metadata(
         &self,
         meta: OrderMetadata,

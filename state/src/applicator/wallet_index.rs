@@ -10,6 +10,7 @@ use common::types::{
 use external_api::bus_message::{ADMIN_WALLET_UPDATES_TOPIC, SystemBusMessage, wallet_topic};
 use itertools::Itertools;
 use libmdbx::RW;
+use tracing::instrument;
 
 use crate::storage::tx::StateTxn;
 
@@ -29,6 +30,7 @@ impl StateApplicator {
     ///
     /// This may happen, for example, when a new wallet is created by
     /// a user on one cluster node, and the others must replicate it
+    #[instrument(skip_all, fields(wallet_id = %wallet.wallet_id))]
     pub fn add_wallet(&self, wallet: &Wallet) -> Result<ApplicatorReturnType> {
         // Add the wallet to the wallet indices
         let tx = self.db().new_write_tx()?;
@@ -54,6 +56,7 @@ impl StateApplicator {
     /// on-chain before this method is called. That is, we maintain the
     /// invariant that the state stored by this module is valid -- but
     /// possibly stale -- contract state
+    #[instrument(skip_all, fields(wallet_id = %wallet.wallet_id))]
     pub fn update_wallet(&self, wallet: &Wallet) -> Result<ApplicatorReturnType> {
         let tx = self.db().new_write_tx()?;
 

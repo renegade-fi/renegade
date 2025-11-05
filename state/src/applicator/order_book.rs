@@ -11,7 +11,7 @@ use constants::ORDER_STATE_CHANGE_TOPIC;
 use external_api::bus_message::SystemBusMessage;
 use libmdbx::RW;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{instrument, warn};
 
 use crate::{applicator::error::StateApplicatorError, storage::tx::StateTxn};
 
@@ -69,6 +69,7 @@ impl StateApplicator {
     // -------------
 
     /// Add a validity proof for an order
+    #[instrument(skip_all, fields(order_id = %order_id))]
     pub fn add_order_validity_proof(
         &self,
         order_id: OrderIdentifier,
@@ -119,6 +120,7 @@ impl StateApplicator {
     }
 
     /// Add cancellation proofs for a batch of orders
+    #[instrument(skip_all)]
     pub fn add_order_cancellation_proofs(
         &self,
         proofs: &[(OrderIdentifier, ValidWalletUpdateBundle)],

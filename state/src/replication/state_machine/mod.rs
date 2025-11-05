@@ -14,8 +14,8 @@ use openraft::{
     StorageError as RaftStorageError, StoredMembership, storage::RaftStateMachine,
 };
 use tokio::fs::File;
-use tracing::error;
-use util::{err_str, res_some};
+use tracing::{error, info_span};
+use util::{err_str, res_some, telemetry::propagation::set_parent_span_from_context};
 
 use crate::{
     Proposal,
@@ -213,13 +213,17 @@ impl RaftStateMachine<TypeConfig> for StateMachine {
                     self.last_membership = StoredMembership::new(Some(log_id), membership);
                 },
                 EntryPayload::Normal(proposal) => {
-                    let Proposal { id, transition } = proposal;
+                    let Proposal { id, transition, tracing_context } = proposal;
 
                     // DB methods will naturally block the applicator without throwing an error, so
                     // we must spawn a blocking thread for each update
                     let applicator = self.applicator.clone();
                     let res = tokio::task::spawn_blocking(move || {
-                        applicator.handle_state_transition(transition)
+                        let span = info_span!("handle_state_transition", proposal_id = %id);
+                        span.in_scope(|| {
+                            set_parent_span_from_context(&tracing_context);
+                            applicator.handle_state_transition(transition)
+                        })
                     })
                     .await
                     .map_err(|e| new_apply_error(log_id, e))?;
