@@ -270,7 +270,13 @@ pub mod test_helpers {
             protocol_fee_balance: random_amount(),
             amount: random_amount(),
         });
+        create_dummy_witness_statement_with_balance(old_balance)
+    }
 
+    /// Create a dummy witness and statement with a given balance
+    pub fn create_dummy_witness_statement_with_balance(
+        old_balance: DarkpoolStateBalance,
+    ) -> (SizedValidPrivateRelayerFeePaymentWitness, ValidPrivateRelayerFeePaymentStatement) {
         // Create valid complementary shares for the old balance
         let (old_balance_private_shares, old_balance_public_shares) =
             create_random_shares::<BalanceShare>(&old_balance.inner);
@@ -358,8 +364,13 @@ pub mod test_helpers {
 #[cfg(test)]
 mod test {
 
+    use crate::test_helpers::{random_address, random_amount, random_scalar};
+    use crate::zk_gadgets::test_helpers::create_state_wrapper;
+
+    use super::test_helpers::create_dummy_witness_statement_with_balance;
     use super::*;
-    use circuit_types::traits::SingleProverCircuit;
+    use alloy_primitives::Address;
+    use circuit_types::{balance::Balance, note::Note, traits::SingleProverCircuit};
 
     /// A helper to print the number of constraints in the circuit
     ///
@@ -380,4 +391,98 @@ mod test {
         let (witness, statement) = test_helpers::create_dummy_witness_statement();
         assert!(test_helpers::check_constraints(&witness, &statement));
     }
+
+    // --- Invalid Note Test Cases --- //
+
+    /// Test the case in which the relayer fee balance is zero
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid__zero_relayer_fee_balance() {
+        let balance = create_state_wrapper(Balance {
+            mint: random_address(),
+            relayer_fee_recipient: random_address(),
+            owner: random_address(),
+            one_time_authority: Address::ZERO,
+            relayer_fee_balance: 0u128,
+            protocol_fee_balance: random_amount(),
+            amount: random_amount(),
+        });
+
+        let (witness, statement) = create_dummy_witness_statement_with_balance(balance);
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note does not pay for the full balance
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__partial_payment() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        let balance = &witness.old_balance.inner;
+        let invalid_note = Note {
+            mint: balance.mint,
+            amount: balance.relayer_fee_balance - 1,
+            receiver: statement.relayer_fee_receiver,
+            blinder: witness.blinder,
+        };
+        statement.note_commitment = invalid_note.commitment();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note mint is incorrect
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_mint() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        let balance = &witness.old_balance.inner;
+        let invalid_note = Note {
+            mint: random_address(),
+            amount: balance.relayer_fee_balance,
+            receiver: statement.relayer_fee_receiver,
+            blinder: witness.blinder,
+        };
+        statement.note_commitment = invalid_note.commitment();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's receiver is not correct
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_receiver() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.relayer_fee_receiver = random_address();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's blinder doesn't match the witness
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__incorrect_blinder() {
+        let (mut witness, statement) = test_helpers::create_dummy_witness_statement();
+        witness.blinder = random_scalar();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    /// Test the case in which the note's commitment has been tampered with
+    #[test]
+    #[allow(non_snake_case)]
+    fn test_invalid_note__tampered_commitment() {
+        let (witness, mut statement) = test_helpers::create_dummy_witness_statement();
+        statement.note_commitment = random_scalar();
+
+        // Check that the constraints are not satisfied
+        assert!(!test_helpers::check_constraints(&witness, &statement));
+    }
+
+    // Other state rotation test cases are covered by the state rotation gadgets
+    // in the `StateElementRotationGadget` test suite
 }
